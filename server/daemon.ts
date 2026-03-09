@@ -9,8 +9,9 @@
  *   Phase 1d: Covert output listings — pricing + knife inputs (~30 calls)
  *   Phase 2: Prioritized knife input fetch — sparse collections (~60 calls)
  *   Phase 3: Discovery Sweep — Broad Covert listing fetch (~8 calls)
- *   Phase 4: Float-sorted Classified fetch — lowest float first (~80 calls, PRIORITY)
- *   Phase 5: Targeted per-skin fill — classified coverage gaps (~60 calls)
+ *   Phase 4: Smart per-skin Classified fetch — zero waste (~140 calls, PRIORITY)
+ *            High-value collections → under-covered → FN gaps → stale refresh
+ *            Skips skins fetched <6h ago, per-skin targeting (no bulk sweeps)
  *   Phase 6: Classified→Covert deterministic calculation
  *   Phase 7: Knife trade-up calculation (deterministic)
  *   Phase 8: Reverse lookup — target expensive outputs, find cheapest inputs
@@ -35,6 +36,7 @@ import {
   syncSaleHistory,
   syncClassifiedSaleHistory,
   syncLowFloatClassifiedListings,
+  syncSmartClassifiedListings,
   purgeStaleListings,
   syncCovertOutputListings,
   verifyTopTradeUpListings,
@@ -311,107 +313,29 @@ async function phase3DiscoverySweep(budget: BudgetTracker) {
   }
 }
 
-// ─── Phase 4: Float-Sorted Classified Fetch (PRIORITY) ──────────────────────
+// ─── Phase 4: Smart Classified Fetch (PRIORITY — zero waste) ─────────────────
 
-async function phase4ClassifiedFloatFetch(budget: BudgetTracker) {
-  console.log(`\n[${timestamp()}] ── Phase 4: Float-sorted classified fetch (FN/MW targeting) ──`);
-  setDaemonStatus("fetching", "Phase 4: Classified listings sorted by lowest float");
+async function phase4SmartClassifiedFetch(budget: BudgetTracker) {
+  console.log(`\n[${timestamp()}] ── Phase 4: Smart per-skin classified fetch ──`);
+  setDaemonStatus("fetching", "Phase 4: Smart classified fetch (per-skin targeting)");
 
-  const maxCalls = Math.min(budget.remaining, 80);
-  if (maxCalls < 10) {
-    console.log(`  Skipping — only ${budget.remaining} budget left`);
-    return;
-  }
-
-  // Split budget: 50 calls for per-skin FN targeting, 30 for broad float-sorted sweep
-  const fnBudget = Math.min(Math.ceil(maxCalls * 0.6), 50);
-  const sweepBudget = maxCalls - fnBudget;
-
-  // Part A: Per-skin FN listing fetch (skins with fewest FN listings first)
-  if (fnBudget >= 5) {
-    try {
-      const result = await syncLowFloatClassifiedListings(db, {
-        apiKey: apiKey!,
-        maxCalls: fnBudget,
-        onProgress: (msg) => setDaemonStatus("fetching", msg),
-      });
-      budget.use(result.apiCalls);
-      console.log(`  FN targeting: ${result.apiCalls} calls, ${result.inserted} FN listings (budget: ${budget.remaining} left)`);
-    } catch (err: any) {
-      console.error(`  FN targeting error: ${err.message}`);
-    }
-  }
-
-  // Part B: Broad classified sweep sorted by lowest_float (catches MW/FT low floats too)
-  if (sweepBudget >= 5 && budget.hasBudget(sweepBudget)) {
-    const sweepJobs = [
-      { sortBy: "lowest_float", pages: Math.min(Math.ceil(sweepBudget * 0.6), 12) },
-      { sortBy: "most_recent", pages: Math.min(Math.floor(sweepBudget * 0.4), 8) },
-    ];
-
-    for (const job of sweepJobs) {
-      if (!budget.hasBudget(job.pages)) continue;
-
-      console.log(`  Classified sweep (${job.sortBy}, ${job.pages}p)...`);
-      try {
-        const count = await syncListingsForRarity(db, "Classified", {
-          pages: job.pages,
-          apiKey,
-          sortBy: job.sortBy,
-        });
-        budget.use(job.pages);
-        console.log(`    → ${count} listings (budget: ${budget.remaining} left)`);
-      } catch (err: any) {
-        console.error(`    → Error: ${err.message}`);
-      }
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  }
-}
-
-// ─── Phase 5: Targeted Per-Skin Fill ────────────────────────────────────────
-
-async function phase5TargetedFill(budget: BudgetTracker) {
-  console.log(`\n[${timestamp()}] ── Phase 5: Targeted per-skin fill (classified coverage) ──`);
-  setDaemonStatus("fetching", "Phase 5: Filling classified coverage gaps");
-
-  const maxCalls = Math.min(budget.remaining, 60);
+  const maxCalls = Math.min(budget.remaining, 140);
   if (maxCalls < 5) {
     console.log(`  Skipping — only ${budget.remaining} budget left`);
     return;
   }
 
-  // Find Classified skins with poor coverage — prioritize collections with high-value Covert outputs
-  const needCoverage = getSkinsNeedingCoverage(db, "Classified", {
-    minListings: 5,
-    minConditions: 3,
-    limit: 60,
-  });
-
-  if (needCoverage.length === 0) {
-    console.log("  All Classified skins have adequate coverage");
-    return;
+  try {
+    const result = await syncSmartClassifiedListings(db, {
+      apiKey: apiKey!,
+      maxCalls,
+      onProgress: (msg) => setDaemonStatus("fetching", msg),
+    });
+    budget.use(result.apiCalls);
+    console.log(`  → ${result.skinsFetched} skins, ${result.apiCalls} calls, ${result.inserted} listings, ${result.skipped} skipped (budget: ${budget.remaining} left)`);
+  } catch (err: any) {
+    console.error(`  → Error: ${err.message}`);
   }
-
-  console.log(`  ${needCoverage.length} Classified skins need coverage`);
-  let skinsFetched = 0;
-  let totalInserted = 0;
-
-  for (const skin of needCoverage) {
-    const validConditions = getValidConditions(skin.min_float, skin.max_float);
-    if (!budget.hasBudget(validConditions.length)) break;
-
-    try {
-      const result = await syncListingsForSkin(db, skin, { apiKey });
-      budget.use(result.apiCalls);
-      totalInserted += result.inserted;
-      skinsFetched++;
-    } catch (err: any) {
-      console.log(`    ${skin.name}: error — ${err.message}`);
-    }
-  }
-
-  console.log(`  Fetched ${skinsFetched} skins, ${totalInserted} new listings (budget: ${budget.remaining} left)`);
 }
 
 // ─── Phase 6: Calculate ─────────────────────────────────────────────────────
@@ -458,6 +382,50 @@ async function phase6Calculate() {
     setDaemonStatus("idle", `${profitable.length} profitable classified→covert trade-ups`);
   } catch (err: any) {
     console.error(`  Classified→Covert calculation error: ${err.message}`);
+    setDaemonStatus("error", err.message);
+  }
+}
+
+// ─── Phase 6b: FN-Targeted Classified→Covert Discovery ──────────────────────
+
+async function phase6bFNDiscovery() {
+  console.log(`\n[${timestamp()}] ── Phase 6b: Condition-targeted classified→covert discovery ──`);
+  setDaemonStatus("calculating", "Condition-targeted discovery (FN/MW/FT breakpoints)...");
+
+  try {
+    const results = findFNTradeUps(db, {
+      onProgress: (msg) => {
+        process.stdout.write(`\r  ${msg}                    `);
+        setDaemonStatus("calculating", msg);
+      },
+    });
+    console.log("");
+
+    if (results.length > 0) {
+      saveTradeUps(db, results, true, "classified_covert_fn");
+
+      const profitable = results.filter(t => t.profit_cents > 0);
+      const fnOutputs = results.filter(t => t.outcomes.some(o => o.predicted_condition === "Factory New"));
+      const mwOutputs = results.filter(t => t.outcomes.some(o => o.predicted_condition === "Minimal Wear"));
+      console.log(`  Saved ${results.length} condition-targeted trade-ups (${profitable.length} profitable, ${fnOutputs.length} FN / ${mwOutputs.length} MW)`);
+
+      // Show top 3 by upside ratio
+      const withUpside = results
+        .map(tu => {
+          const bestOut = tu.outcomes.reduce((best, o) => o.estimated_price_cents > best.estimated_price_cents ? o : best);
+          return { tu, bestOut, upside: bestOut.estimated_price_cents - tu.total_cost_cents };
+        })
+        .filter(r => r.upside > 0)
+        .sort((a, b) => (b.upside / b.tu.total_cost_cents) - (a.upside / a.tu.total_cost_cents));
+
+      for (const r of withUpside.slice(0, 3)) {
+        console.log(`    ${r.bestOut.skin_name} ${r.bestOut.predicted_condition} $${(r.bestOut.estimated_price_cents / 100).toFixed(0)} (${(r.bestOut.probability * 100).toFixed(0)}%) on $${(r.tu.total_cost_cents / 100).toFixed(0)} cost`);
+      }
+    }
+
+    setDaemonStatus("idle", `${results.length} condition-targeted trade-ups`);
+  } catch (err: any) {
+    console.error(`  Condition-targeted discovery error: ${err.message}`);
     setDaemonStatus("error", err.message);
   }
 }
@@ -646,7 +614,7 @@ async function continuousOptimization(durationMs: number) {
   while (Date.now() < endTime) {
     pass++;
     const timeLeft = Math.round((endTime - Date.now()) / 60000);
-    const strategy = pass % 8;
+    const strategy = pass % 9;
 
     try {
       if (strategy === 1) {
@@ -723,6 +691,11 @@ async function continuousOptimization(durationMs: number) {
         updateExplorationStats({ last_strategy: "Reverse + StatTrak", passes_this_cycle: pass, total_passes: explorationStats.total_passes + 1 });
         await phase8ReverseLookup();
         await phase9StatTrakSearch();
+      } else if (strategy === 8) {
+        // Condition-targeted classified→covert discovery (FN/MW/FT breakpoints)
+        console.log(`\n[${timestamp()}] Pass ${pass}: Condition-targeted discovery (${timeLeft} min left)`);
+        updateExplorationStats({ last_strategy: "Condition-targeted discovery", passes_this_cycle: pass, total_passes: explorationStats.total_passes + 1 });
+        await phase6bFNDiscovery();
       } else {
         // Random knife exploration — discovers new profitable combos (strategies 0, 5)
         console.log(`\n[${timestamp()}] Pass ${pass}: Random knife explore (${timeLeft} min left)`);
@@ -821,11 +794,10 @@ async function main() {
       // Phase 3: Broad Covert listing sweep (knife/glove inputs, maintenance)
       await phase3DiscoverySweep(budget);
 
-      // Phase 4: Float-sorted classified fetch (PRIORITY — FN/MW targeting)
-      await phase4ClassifiedFloatFetch(budget);
-
-      // Phase 5: Targeted per-skin fill (classified coverage gaps)
-      await phase5TargetedFill(budget);
+      // Phase 4: Smart per-skin classified fetch (replaces old bulk sweeps + targeted fill)
+      // Prioritizes: high-value collections > under-covered skins > FN gaps > stale refresh
+      // Skips skins fetched <6h ago. Zero waste — every call discovers new data.
+      await phase4SmartClassifiedFetch(budget);
 
       // Force price cache rebuild after fetching new data
       buildPriceCache(db, true);
@@ -837,6 +809,9 @@ async function main() {
 
     // Phase 6: Classified→Covert deterministic calculation
     await phase6Calculate();
+
+    // Phase 6b: FN/condition-targeted classified→covert discovery
+    await phase6bFNDiscovery();
 
     // Phase 7: Deterministic knife trade-up calculation
     await phase7KnifeTradeUps();
