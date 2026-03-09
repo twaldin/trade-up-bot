@@ -1184,21 +1184,47 @@ export function randomExplore(
   return { found, explored };
 }
 
-// ─── FN-Targeted Classified→Covert Discovery ────────────────────────────────
+// ─── Condition-Targeted Classified→Covert Discovery ─────────────────────────
+
+// Condition boundaries: FN <0.07, MW 0.07-0.15, FT 0.15-0.38, WW 0.38-0.45, BS 0.45+
+const CONDITION_BOUNDARIES = [
+  { name: "Factory New", threshold: 0.07 },
+  { name: "Minimal Wear", threshold: 0.15 },
+  { name: "Field-Tested", threshold: 0.38 },
+  { name: "Well-Worn", threshold: 0.45 },
+] as const;
+
+interface ConditionBreakpoint {
+  outcome: DbSkinOutcome;
+  betterCondition: string;
+  worseCondition: string;
+  maxAdjusted: number;         // max avg_adjusted to land in betterCondition
+  betterPrice: number;         // price in cents at better condition
+  worsePrice: number;          // price at worse condition
+  priceJump: number;           // absolute jump in cents
+  jumpRatio: number;           // betterPrice / worsePrice
+  collectionId: string;
+  numCovertsInCollection: number;
+}
 
 /**
- * Factory New targeted trade-up discovery.
+ * Condition-targeted trade-up discovery.
  *
- * The FN premium for Covert skins is massive (10-20x FT price for top skins).
- * This function specifically seeks Classified inputs with low enough floats
- * to push output floats below 0.07 (FN threshold).
+ * Finds classified→covert trade-ups that push output floats across condition
+ * boundaries where there's a significant price premium. Targets ALL profitable
+ * condition jumps, not just FN:
  *
- * Two modes:
- * 1. Single-collection: 100% chance of target Covert, need 10 low-float inputs
- * 2. Coinflip: 2-collection mix (5+5) for ~50% chance at high-value FN output
+ * - FT→MW: Dragon Lore MW $9,284 vs FT $683 (13.6x)
+ * - MW→FN: AK-47 Asiimov FN $645 vs FT $44 (14.6x)
+ * - BS→WW, WW→FT: sometimes valuable for specific skins
+ *
+ * Three modes:
+ * 1. Single-collection: 100% chance of target Covert, 10 float-controlled inputs
+ * 2. Coinflip: 2-collection mix for ~50% chance at high-value condition upgrade
+ * 3. Multi-covert: 2+ outcomes in same collection, target best breakpoint
  *
  * Float formula: output_float = avg_adjusted * (out_max - out_min) + out_min
- * For FN: avg_adjusted < (0.07 - out_min) / (out_max - out_min)
+ * For condition X: avg_adjusted < (threshold_X - out_min) / (out_max - out_min)
  */
 export function findFNTradeUps(
   db: Database.Database,
@@ -1238,47 +1264,67 @@ export function findFNTradeUps(
     (outcomesByCol.get(o.collection_id) ?? (outcomesByCol.set(o.collection_id, []), outcomesByCol.get(o.collection_id)!)).push(o);
   }
 
-  // Calculate FN feasibility for each collection's Covert outcomes
-  interface FNTarget {
-    outcome: DbSkinOutcome;
-    maxAdjForFN: number;        // max avg_adjusted to achieve FN output
-    fnPrice: number;            // FN price in cents
-    ftPrice: number;            // FT price for comparison
-    premium: number;            // fnPrice / ftPrice ratio
-    collectionId: string;
-    numCovertsInCollection: number;
-  }
+  // ── Build condition breakpoints for every Covert outcome ──
+  // For each outcome, find every condition boundary that produces a significant price jump
+  const conditionNames = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
 
-  const fnTargets: FNTarget[] = [];
+  const allBreakpoints: ConditionBreakpoint[] = [];
   for (const o of allOutcomes) {
     const range = o.max_float - o.min_float;
     if (range <= 0) continue;
-    const maxAdj = (0.07 - o.min_float) / range;
-    if (maxAdj <= 0) continue; // Can't produce FN at all
-
-    const fnPrice = priceCache.get(`${o.name}:Factory New`) ?? 0;
-    const ftPrice = priceCache.get(`${o.name}:Field-Tested`) ?? priceCache.get(`${o.name}:Minimal Wear`) ?? 0;
-    if (fnPrice <= 0) continue;
 
     const colOutcomes = outcomesByCol.get(o.collection_id) ?? [];
 
-    fnTargets.push({
-      outcome: o,
-      maxAdjForFN: maxAdj,
-      fnPrice,
-      ftPrice,
-      premium: ftPrice > 0 ? fnPrice / ftPrice : 999,
-      collectionId: o.collection_id,
-      numCovertsInCollection: colOutcomes.length,
-    });
+    // Get prices at each condition
+    const prices: { condition: string; price: number }[] = [];
+    for (const cond of conditionNames) {
+      const p = priceCache.get(`${o.name}:${cond}`) ?? 0;
+      if (p > 0) prices.push({ condition: cond, price: p });
+    }
+    if (prices.length < 2) continue;
+
+    // Check each condition boundary for a price jump
+    for (const boundary of CONDITION_BOUNDARIES) {
+      const maxAdj = (boundary.threshold - o.min_float) / range;
+      if (maxAdj <= 0 || maxAdj > 1.0) continue; // Boundary outside skin's float range
+
+      // Find prices on each side of this boundary
+      const betterCond = boundary.name;
+      const betterIdx = conditionNames.indexOf(betterCond);
+      const worseCond = conditionNames[betterIdx + 1];
+      if (!worseCond) continue;
+
+      const betterPrice = prices.find(p => p.condition === betterCond)?.price ?? 0;
+      const worsePrice = prices.find(p => p.condition === worseCond)?.price ?? 0;
+      if (betterPrice <= 0 || worsePrice <= 0) continue;
+
+      const priceJump = betterPrice - worsePrice;
+      const jumpRatio = betterPrice / worsePrice;
+
+      // Only include if the jump is meaningful (>20% premium AND >$5 absolute)
+      if (jumpRatio < 1.2 || priceJump < 500) continue;
+
+      allBreakpoints.push({
+        outcome: o,
+        betterCondition: betterCond,
+        worseCondition: worseCond,
+        maxAdjusted: maxAdj,
+        betterPrice,
+        worsePrice,
+        priceJump,
+        jumpRatio,
+        collectionId: o.collection_id,
+        numCovertsInCollection: colOutcomes.length,
+      });
+    }
   }
 
-  // Sort by FN premium (highest first) — these are the most interesting targets
-  fnTargets.sort((a, b) => b.premium - a.premium || b.fnPrice - a.fnPrice);
+  // Sort by absolute price jump (highest value opportunities first)
+  allBreakpoints.sort((a, b) => b.priceJump - a.priceJump || b.jumpRatio - a.jumpRatio);
 
-  options.onProgress?.(`Found ${fnTargets.length} FN-viable Covert outcomes`);
-  for (const t of fnTargets.slice(0, 10)) {
-    options.onProgress?.(`  ${t.outcome.name}: FN $${(t.fnPrice / 100).toFixed(0)} / FT $${(t.ftPrice / 100).toFixed(0)} (${t.premium.toFixed(1)}x) maxAdj=${t.maxAdjForFN.toFixed(4)} coverts=${t.numCovertsInCollection}`);
+  options.onProgress?.(`Found ${allBreakpoints.length} condition breakpoints across ${new Set(allBreakpoints.map(b => b.outcome.name)).size} skins`);
+  for (const bp of allBreakpoints.slice(0, 10)) {
+    options.onProgress?.(`  ${bp.outcome.name}: ${bp.worseCondition} $${(bp.worsePrice / 100).toFixed(0)} → ${bp.betterCondition} $${(bp.betterPrice / 100).toFixed(0)} (${bp.jumpRatio.toFixed(1)}x, +$${(bp.priceJump / 100).toFixed(0)}) maxAdj=${bp.maxAdjusted.toFixed(4)}`);
   }
 
   const results: TradeUp[] = [];
@@ -1293,58 +1339,63 @@ export function findFNTradeUps(
     results.push(tu);
   };
 
-  // ── Part 1: Single-Collection FN Trade-Ups ──
-  // For collections with a single Covert (100% chance), use 10 low-float inputs
-  options.onProgress?.("FN: scanning single-collection targets...");
+  // ── Part 1: Single-Collection Condition Targeting ──
+  // For each breakpoint, try to build 10-input trade-ups that cross the boundary
+  options.onProgress?.("Condition targeting: single-collection scan...");
 
-  for (const target of fnTargets) {
-    if (target.numCovertsInCollection > 1) continue; // Skip multi-covert (handled in coinflip)
+  // Group breakpoints by collection for efficiency
+  const bpByCol = new Map<string, ConditionBreakpoint[]>();
+  for (const bp of allBreakpoints) {
+    (bpByCol.get(bp.collectionId) ?? (bpByCol.set(bp.collectionId, []), bpByCol.get(bp.collectionId)!)).push(bp);
+  }
 
-    const colFloatSorted = byColFloat.get(target.collectionId);
+  for (const [colId, breakpoints] of bpByCol) {
+    const colFloatSorted = byColFloat.get(colId);
     if (!colFloatSorted || colFloatSorted.length < 10) continue;
 
-    const outcomes = outcomesByCol.get(target.collectionId) ?? [];
+    const outcomes = outcomesByCol.get(colId) ?? [];
+    const quotas = new Map([[colId, 10]]);
 
-    // Select the 10 lowest-float listings
-    const lowestFloat10 = colFloatSorted.slice(0, 10);
-    const avgAdj = lowestFloat10.reduce((s, l) => s + l.adjustedFloat, 0) / 10;
+    for (const bp of breakpoints) {
+      // Try lowest-float selection
+      const lowestFloat10 = colFloatSorted.slice(0, 10);
+      const avgAdj = lowestFloat10.reduce((s, l) => s + l.adjustedFloat, 0) / 10;
 
-    if (avgAdj < target.maxAdjForFN) {
-      // FN output is achievable!
-      tryAdd(evaluateTradeUp(db, lowestFloat10, outcomes));
+      if (avgAdj < bp.maxAdjusted) {
+        tryAdd(evaluateTradeUp(db, lowestFloat10, outcomes));
+      }
 
-      // Also try cheapest-within-FN-budget: selectForFloatTarget
-      const quotas = new Map([[target.collectionId, 10]]);
-      const selected = selectForFloatTarget(byCol, quotas, target.maxAdjForFN - 0.002);
+      // Try cheapest within float budget
+      const selected = selectForFloatTarget(byCol, quotas, bp.maxAdjusted - 0.002);
       if (selected) {
         tryAdd(evaluateTradeUp(db, selected, outcomes));
       }
 
-      // Try slightly above FN boundary for MW (still valuable)
-      const maxAdjForMW = (0.15 - target.outcome.min_float) / (target.outcome.max_float - target.outcome.min_float);
-      if (maxAdjForMW > target.maxAdjForFN) {
-        const mwSelected = selectForFloatTarget(byCol, quotas, maxAdjForMW - 0.002);
-        if (mwSelected) {
-          tryAdd(evaluateTradeUp(db, mwSelected, outcomes));
+      // Also try just barely crossing the boundary (cheapest possible upgrade)
+      // Use a slightly tighter target (80% of maxAdj) for a safer margin
+      const saferTarget = bp.maxAdjusted * 0.8;
+      if (saferTarget > 0.001) {
+        const saferSelected = selectForFloatTarget(byCol, quotas, saferTarget);
+        if (saferSelected) {
+          tryAdd(evaluateTradeUp(db, saferSelected, outcomes));
         }
       }
     }
   }
 
-  options.onProgress?.(`FN: single-collection done (${results.length} trade-ups)`);
+  options.onProgress?.(`Condition targeting: single-collection done (${results.length} trade-ups)`);
 
-  // ── Part 2: FN Coinflip Trade-Ups (2-collection, ~50% chance) ──
-  // Mix collections to get a coin-flip: one outcome is expensive FN, other is cheaper
-  options.onProgress?.("FN: scanning coinflip combos...");
+  // ── Part 2: Coinflip Trade-Ups (2-collection combos) ──
+  // Mix collections for ~50% chance at a condition-upgraded output
+  options.onProgress?.("Condition targeting: coinflip combos...");
 
-  // Focus on the top FN targets by premium
-  const topFNTargets = fnTargets.filter(t => t.fnPrice >= 10000); // $100+ FN outputs
+  // Focus on breakpoints with price jump >= $50 for coinflip discovery
+  const coinflipTargets = allBreakpoints.filter(bp => bp.priceJump >= 5000);
 
-  for (const target of topFNTargets) {
+  for (const target of coinflipTargets) {
     const targetColId = target.collectionId;
     const targetOutcomes = outcomesByCol.get(targetColId) ?? [];
 
-    // Try pairing with every other collection
     for (const [otherColId, otherListings] of byCol) {
       if (otherColId === targetColId) continue;
       if (otherListings.length < 1) continue;
@@ -1354,20 +1405,7 @@ export function findFNTradeUps(
 
       const combinedOutcomes = [...targetOutcomes, ...otherOutcomes];
 
-      // Calculate tightest FN constraint across ALL outcomes in this combo
-      let tightestMaxAdj = Infinity;
-      for (const o of combinedOutcomes) {
-        const range = o.max_float - o.min_float;
-        if (range <= 0) continue;
-        const maxAdj = (0.07 - o.min_float) / range;
-        if (maxAdj > 0 && maxAdj < tightestMaxAdj) {
-          tightestMaxAdj = maxAdj;
-        }
-      }
-      if (tightestMaxAdj === Infinity || tightestMaxAdj <= 0) continue;
-
-      // Try the canonical coinflip split: 5+5
-      // Also try skewed splits: 6+4, 7+3, 8+2, 9+1
+      // For each split ratio
       for (const targetCount of [5, 6, 7, 8, 9, 4, 3, 2, 1]) {
         const otherCount = 10 - targetCount;
 
@@ -1376,61 +1414,69 @@ export function findFNTradeUps(
         if (!targetFloats || targetFloats.length < targetCount) continue;
         if (!otherFloats || otherFloats.length < otherCount) continue;
 
-        // Strategy A: lowest-float from both collections
+        const quotas = new Map([[targetColId, targetCount], [otherColId, otherCount]]);
+
+        // Strategy A: target's breakpoint (upgrade target outcome; other outcome at whatever condition)
+        const selected = selectForFloatTarget(byCol, quotas, target.maxAdjusted - 0.002);
+        if (selected) {
+          tryAdd(evaluateTradeUp(db, selected, combinedOutcomes));
+        }
+
+        // Strategy B: lowest-float from both
         const lowestInputs = [
           ...targetFloats.slice(0, targetCount),
           ...otherFloats.slice(0, otherCount),
         ];
         const avgAdj = lowestInputs.reduce((s, l) => s + l.adjustedFloat, 0) / 10;
-
-        if (avgAdj < tightestMaxAdj) {
-          // FN is achievable for ALL outcomes!
+        if (avgAdj < target.maxAdjusted) {
           tryAdd(evaluateTradeUp(db, lowestInputs, combinedOutcomes));
         }
 
-        // Strategy B: cheapest listings within FN float budget
-        const quotas = new Map([[targetColId, targetCount], [otherColId, otherCount]]);
-        const budgetSelected = selectForFloatTarget(byCol, quotas, tightestMaxAdj - 0.002);
-        if (budgetSelected) {
-          tryAdd(evaluateTradeUp(db, budgetSelected, combinedOutcomes));
+        // Strategy C: tightest constraint across ALL outcomes (all outcomes upgraded)
+        let tightestMaxAdj = Infinity;
+        for (const o of combinedOutcomes) {
+          const range = o.max_float - o.min_float;
+          if (range <= 0) continue;
+          // Use the target's condition boundary for all outcomes
+          const maxAdj = (CONDITION_BOUNDARIES.find(b => b.name === target.betterCondition)!.threshold - o.min_float) / range;
+          if (maxAdj > 0 && maxAdj < tightestMaxAdj) {
+            tightestMaxAdj = maxAdj;
+          }
         }
-
-        // Strategy C: FN for the target outcome only (other outcome might be MW/FT)
-        // Use target's maxAdjForFN instead of tightest constraint
-        if (target.maxAdjForFN > tightestMaxAdj) {
-          const relaxedSelected = selectForFloatTarget(byCol, quotas, target.maxAdjForFN - 0.002);
-          if (relaxedSelected) {
-            tryAdd(evaluateTradeUp(db, relaxedSelected, combinedOutcomes));
+        if (isFinite(tightestMaxAdj) && tightestMaxAdj > 0 && tightestMaxAdj !== target.maxAdjusted) {
+          const tightSelected = selectForFloatTarget(byCol, quotas, tightestMaxAdj - 0.002);
+          if (tightSelected) {
+            tryAdd(evaluateTradeUp(db, tightSelected, combinedOutcomes));
           }
         }
 
-        // Strategy D: MW fallback — still captures premium over FT
-        const maxAdjForMW = Math.min(
-          ...combinedOutcomes.map(o => {
-            const range = o.max_float - o.min_float;
-            return range > 0 ? (0.15 - o.min_float) / range : Infinity;
-          }).filter(v => v > 0)
-        );
-        if (maxAdjForMW > tightestMaxAdj && isFinite(maxAdjForMW)) {
-          const mwSelected = selectForFloatTarget(byCol, quotas, maxAdjForMW - 0.002);
-          if (mwSelected) {
-            tryAdd(evaluateTradeUp(db, mwSelected, combinedOutcomes));
+        // Strategy D: try the NEXT easier boundary if the target boundary is too tight
+        // e.g., if FN is impossible, try MW; if MW is impossible, try FT
+        const targetBoundaryIdx = CONDITION_BOUNDARIES.findIndex(b => b.name === target.betterCondition);
+        if (targetBoundaryIdx < CONDITION_BOUNDARIES.length - 1) {
+          const easierBoundary = CONDITION_BOUNDARIES[targetBoundaryIdx + 1];
+          const easierMaxAdj = (easierBoundary.threshold - target.outcome.min_float) / (target.outcome.max_float - target.outcome.min_float);
+          if (easierMaxAdj > target.maxAdjusted && easierMaxAdj > 0) {
+            const easierSelected = selectForFloatTarget(byCol, quotas, easierMaxAdj - 0.002);
+            if (easierSelected) {
+              tryAdd(evaluateTradeUp(db, easierSelected, combinedOutcomes));
+            }
           }
         }
       }
     }
   }
 
-  options.onProgress?.(`FN: coinflip done (${results.length} trade-ups)`);
+  options.onProgress?.(`Condition targeting: coinflip done (${results.length} trade-ups)`);
 
-  // ── Part 3: Multi-Covert Collection FN Discovery ──
-  // For collections with 2+ Coverts, FN inputs still valuable if one Covert is expensive
-  options.onProgress?.("FN: scanning multi-covert collections...");
+  // ── Part 3: Multi-Covert Collection Targeting ──
+  // Collections with 2+ Coverts — target the most profitable breakpoint
+  options.onProgress?.("Condition targeting: multi-covert collections...");
 
   const multiCovertCols = new Set<string>();
-  for (const t of fnTargets) {
-    if (t.numCovertsInCollection >= 2 && t.fnPrice >= 10000) {
-      multiCovertCols.add(t.collectionId);
+  for (const bp of allBreakpoints) {
+    if (bp.numCovertsInCollection >= 2 && bp.priceJump >= 5000) {
+      multiCovertCols.add(bp.collectionId);
     }
   }
 
@@ -1439,64 +1485,41 @@ export function findFNTradeUps(
     if (!colFloatSorted || colFloatSorted.length < 10) continue;
 
     const outcomes = outcomesByCol.get(colId) ?? [];
-    const fnTargetsInCol = fnTargets.filter(t => t.collectionId === colId);
-
-    // Use the tightest FN constraint among all outcomes
-    const tightestMaxAdj = Math.min(...fnTargetsInCol.map(t => t.maxAdjForFN));
-    if (tightestMaxAdj <= 0) continue;
-
-    // Try lowest-float selection
-    const lowestFloat10 = colFloatSorted.slice(0, 10);
-    const avgAdj = lowestFloat10.reduce((s, l) => s + l.adjustedFloat, 0) / 10;
-
-    if (avgAdj < tightestMaxAdj) {
-      tryAdd(evaluateTradeUp(db, lowestFloat10, outcomes));
-    }
-
-    // Also try cheapest within FN budget
+    const colBreakpoints = bpByCol.get(colId) ?? [];
     const quotas = new Map([[colId, 10]]);
-    const selected = selectForFloatTarget(byCol, quotas, tightestMaxAdj - 0.002);
-    if (selected) {
-      tryAdd(evaluateTradeUp(db, selected, outcomes));
-    }
 
-    // Try MW fallback
-    const maxAdjForMW = Math.min(
-      ...outcomes.map(o => {
-        const range = o.max_float - o.min_float;
-        return range > 0 ? (0.15 - o.min_float) / range : Infinity;
-      }).filter(v => v > 0)
-    );
-    if (isFinite(maxAdjForMW) && maxAdjForMW > tightestMaxAdj) {
-      const mwSelected = selectForFloatTarget(byCol, quotas, maxAdjForMW - 0.002);
-      if (mwSelected) {
-        tryAdd(evaluateTradeUp(db, mwSelected, outcomes));
+    // Try each breakpoint target
+    for (const bp of colBreakpoints) {
+      const selected = selectForFloatTarget(byCol, quotas, bp.maxAdjusted - 0.002);
+      if (selected) {
+        tryAdd(evaluateTradeUp(db, selected, outcomes));
       }
     }
+
+    // Also try lowest-float (may cross multiple breakpoints)
+    const lowestFloat10 = colFloatSorted.slice(0, 10);
+    tryAdd(evaluateTradeUp(db, lowestFloat10, outcomes));
   }
 
-  options.onProgress?.(`FN: multi-covert done (${results.length} trade-ups)`);
+  options.onProgress?.(`Condition targeting: multi-covert done (${results.length} trade-ups)`);
 
   // Sort by profit descending
   results.sort((a, b) => b.profit_cents - a.profit_cents);
 
   // Log summary
   const profitable = results.filter(r => r.profit_cents > 0);
-  const fnOutputs = results.filter(r =>
-    r.outcomes.some(o => o.predicted_condition === "Factory New")
-  );
-  options.onProgress?.(`FN discovery complete: ${results.length} total, ${profitable.length} profitable, ${fnOutputs.length} with FN outputs`);
+  const fnOutputs = results.filter(r => r.outcomes.some(o => o.predicted_condition === "Factory New"));
+  const mwOutputs = results.filter(r => r.outcomes.some(o => o.predicted_condition === "Minimal Wear"));
+  options.onProgress?.(`Condition-targeted discovery complete: ${results.length} total, ${profitable.length} profitable, ${fnOutputs.length} FN / ${mwOutputs.length} MW outputs`);
 
   // Log top results
   for (const tu of results.slice(0, 5)) {
-    const fnOut = tu.outcomes.filter(o => o.predicted_condition === "Factory New");
     const bestOut = tu.outcomes.reduce((best, o) => o.estimated_price_cents > best.estimated_price_cents ? o : best);
     console.log(
       `  Cost $${(tu.total_cost_cents / 100).toFixed(0)} → EV $${(tu.expected_value_cents / 100).toFixed(0)} ` +
       `(${tu.roi_percentage > 0 ? "+" : ""}${tu.roi_percentage.toFixed(1)}%) ` +
       `Best: ${bestOut.skin_name} ${bestOut.predicted_condition} $${(bestOut.estimated_price_cents / 100).toFixed(0)} ` +
-      `(${(bestOut.probability * 100).toFixed(0)}%) ` +
-      `[${fnOut.length} FN outcomes]`
+      `(${(bestOut.probability * 100).toFixed(0)}%)`
     );
   }
 

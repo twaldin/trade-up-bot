@@ -14,7 +14,7 @@ CS2 trade-up contract analyzer. Finds profitable knife/glove and classified→co
 
 ## Engine Module Structure
 
-`server/engine.ts` is the barrel file that re-exports from submodules in `server/engine/`:
+`server/engine.ts` is a slim barrel file (~88 lines) that re-exports from submodules in `server/engine/`:
 - `types.ts` — shared interfaces (DbListing, ListingWithCollection, AdjustedListing, etc.)
 - `core.ts` — pure math: calculateOutputFloat, calculateOutcomeProbabilities
 - `data-load.ts` — DB queries: getListingsForRarity, getOutcomesForCollections, getNextRarity
@@ -23,9 +23,12 @@ CS2 trade-up contract analyzer. Finds profitable knife/glove and classified→co
 - `evaluation.ts` — evaluateTradeUp: computes EV, profit, ROI for a set of inputs
 - `db-ops.ts` — saveTradeUps, saveKnifeTradeUps, updateCollectionScores
 - `knife-data.ts` — CASE_KNIFE_MAP, finish sets, glove generations (pure constants)
+- `knife-evaluation.ts` — evaluateKnifeTradeUp, getKnifeFinishesWithPrices
 - `pricing.ts` — multi-source price cache with 5-min TTL, lookup, interpolation
+- `discovery.ts` — classified→covert discovery: findProfitableTradeUps, optimizeTradeUps, anchorSpikeExplore, deepOptimize, randomExplore, findFNTradeUps
+- `knife-discovery.ts` — knife/glove discovery: findProfitableKnifeTradeUps, randomKnifeExplore
+- `strategies.ts` — tier-2 strategies: findTradeUpsForTargetOutputs, optimizeConditionBreakpoints, findStatTrakKnifeTradeUps, huntBudgetRange
 
-Discovery/optimization functions remain in `engine.ts` (barrel file).
 All external consumers import from `./engine.js` — never from submodules directly.
 
 ## Running

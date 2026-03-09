@@ -1169,6 +1169,218 @@ export async function syncLowFloatClassifiedListings(
   return { apiCalls: totalApiCalls, inserted: totalInserted };
 }
 
+// ─── Smart Per-Skin Classified Fetching ──────────────────────────────────────
+
+// High-value single-Covert collections — their Classified inputs are always worth fetching
+const HIGH_VALUE_COLLECTIONS = [
+  "The Cobblestone Collection",     // → AWP Dragon Lore
+  "The St. Marc Collection",       // → AK-47 Wild Lotus
+  "The Norse Collection",          // → AWP Gungnir
+  "The Rising Sun Collection",     // → AUG Akihabara Accept
+  "The Gods and Monsters Collection", // → AWP Medusa
+  "The Havoc Collection",          // → AK-47 X-Ray
+  "The Anubis Collection",         // → M4A4 Eye of Horus
+];
+
+interface SmartFetchSkin {
+  id: string;
+  name: string;
+  min_float: number;
+  max_float: number;
+  listing_count: number;
+  fn_count: number;
+  newest_age_days: number;
+  is_high_value: boolean;
+  priority: number;
+}
+
+/**
+ * Smart per-skin classified listing fetch — zero waste.
+ *
+ * Prioritization:
+ * 1. High-value collection skins (always fetch regardless of count)
+ * 2. Skins with <10 listings (critical coverage gaps)
+ * 3. FN-capable skins with <5 FN listings (for FN-targeting trade-ups)
+ * 4. Skins with 50+ listings all >7 days old (stale refresh, 1 condition only)
+ *
+ * Skips skins fetched <6h ago (tracked via sync_meta).
+ * Uses per-skin name fetches (syncListingsForSkin) instead of bulk sweeps.
+ */
+export async function syncSmartClassifiedListings(
+  db: Database.Database,
+  options: {
+    apiKey: string;
+    maxCalls?: number;
+    onProgress?: (msg: string) => void;
+  }
+): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; skipped: number }> {
+  const maxCalls = options.maxCalls ?? 140;
+
+  // Load last-fetched timestamps
+  const { getSyncMeta } = await import("./db.js");
+  const rawFetchTimes = getSyncMeta(db, "skin_fetch_times");
+  const fetchTimes: Record<string, number> = rawFetchTimes ? JSON.parse(rawFetchTimes) : {};
+  const now = Date.now();
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+  // Get all Classified skins with coverage stats
+  const skins = db.prepare(`
+    SELECT s.id, s.name, s.min_float, s.max_float,
+      COUNT(l.id) as listing_count,
+      COUNT(CASE WHEN l.float_value < 0.07 THEN 1 END) as fn_count,
+      COALESCE(MIN(julianday('now') - julianday(l.created_at)), 999) as newest_age_days
+    FROM skins s
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
+    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    GROUP BY s.id
+  `).all() as { id: string; name: string; min_float: number; max_float: number; listing_count: number; fn_count: number; newest_age_days: number }[];
+
+  // Get high-value collection skin IDs
+  const highValueSkinIds = new Set<string>();
+  const hvRows = db.prepare(`
+    SELECT DISTINCT sc.skin_id
+    FROM skin_collections sc
+    JOIN collections c ON sc.collection_id = c.id
+    JOIN skins s ON sc.skin_id = s.id
+    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+      AND c.name IN (${HIGH_VALUE_COLLECTIONS.map(() => "?").join(",")})
+  `).all(...HIGH_VALUE_COLLECTIONS) as { skin_id: string }[];
+  for (const r of hvRows) highValueSkinIds.add(r.skin_id);
+
+  // Build prioritized list
+  const candidates: SmartFetchSkin[] = [];
+  let skipped = 0;
+
+  for (const skin of skins) {
+    // Skip if fetched <6h ago
+    if (fetchTimes[skin.id] && (now - fetchTimes[skin.id]) < SIX_HOURS) {
+      skipped++;
+      continue;
+    }
+
+    const isHighValue = highValueSkinIds.has(skin.id);
+    const canFN = skin.min_float < 0.07;
+
+    // Calculate priority score (higher = fetch first)
+    let priority = 0;
+
+    if (isHighValue) {
+      priority += 1000; // Always fetch high-value collection skins
+    }
+
+    if (skin.listing_count < 3) {
+      priority += 500; // Critical: almost no data
+    } else if (skin.listing_count < 10) {
+      priority += 300; // Under-covered
+    } else if (skin.listing_count < 20) {
+      priority += 100; // Moderate
+    }
+
+    if (canFN && skin.fn_count < 5) {
+      priority += 200; // FN-capable but few FN listings
+    }
+
+    // Stale refresh: lots of listings but all old
+    if (skin.listing_count >= 50 && skin.newest_age_days > 7) {
+      priority += 50; // Low priority — just needs a refresh
+    }
+
+    // Skip well-covered skins that aren't high-value and aren't stale
+    if (priority === 0 && skin.listing_count >= 20) {
+      skipped++;
+      continue;
+    }
+
+    // Even skins with no explicit priority get a baseline if they have < 20 listings
+    if (priority === 0) {
+      priority = 10;
+    }
+
+    candidates.push({
+      ...skin,
+      is_high_value: isHighValue,
+      priority,
+    });
+  }
+
+  // Sort by priority descending
+  candidates.sort((a, b) => b.priority - a.priority);
+
+  console.log(`  Smart fetch: ${candidates.length} candidates, ${skipped} skipped (recent/well-covered), ${highValueSkinIds.size} high-value`);
+  if (candidates.length > 0) {
+    console.log(`  Top 5: ${candidates.slice(0, 5).map(s => `${s.name} (${s.listing_count} listings, p=${s.priority})`).join(", ")}`);
+  }
+
+  let totalApiCalls = 0;
+  let totalInserted = 0;
+  let skinsFetched = 0;
+  let consecutiveRateLimits = 0;
+
+  for (const skin of candidates) {
+    if (totalApiCalls >= maxCalls) break;
+    if (consecutiveRateLimits >= 2) {
+      console.log("  Bailing — consecutive rate limits");
+      break;
+    }
+
+    // For stale-but-well-covered skins, only fetch FN condition (1 call) to refresh
+    const isStaleRefresh = skin.listing_count >= 50 && skin.newest_age_days > 7 && !skin.is_high_value;
+    const conditions = isStaleRefresh
+      ? (skin.min_float < 0.07 ? ["Factory New"] : ["Field-Tested"])
+      : undefined; // undefined = all valid conditions
+
+    const remainingBudget = maxCalls - totalApiCalls;
+    const validConditions = getValidConditions(skin.min_float, skin.max_float);
+    const callsNeeded = conditions ? conditions.length : validConditions.length;
+
+    if (callsNeeded > remainingBudget) {
+      // Not enough budget for all conditions — try just FN if applicable
+      if (skin.min_float < 0.07 && remainingBudget >= 1) {
+        // Fetch just FN
+      } else {
+        break;
+      }
+    }
+
+    try {
+      const result = await syncListingsForSkin(db, skin, {
+        apiKey: options.apiKey,
+        conditions: conditions ?? (callsNeeded > remainingBudget && skin.min_float < 0.07 ? ["Factory New"] : undefined),
+      });
+      totalApiCalls += result.apiCalls;
+      totalInserted += result.inserted;
+      skinsFetched++;
+      consecutiveRateLimits = 0;
+
+      // Track fetch time
+      fetchTimes[skin.id] = now;
+
+      if (skinsFetched % 10 === 0) {
+        const msg = `Smart fetch: ${skinsFetched} skins, ${totalApiCalls}/${maxCalls} calls, ${totalInserted} listings`;
+        options.onProgress?.(msg);
+        console.log(`  ${msg}`);
+      }
+    } catch (err: any) {
+      if (err.message?.includes("429")) {
+        consecutiveRateLimits++;
+      }
+      console.log(`    Error: ${skin.name}: ${err.message}`);
+    }
+  }
+
+  // Persist fetch times
+  try {
+    const { setSyncMeta } = await import("./db.js");
+    setSyncMeta(db, "skin_fetch_times", JSON.stringify(fetchTimes));
+  } catch {}
+
+  const msg = `Smart fetch done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (${skipped} skipped)`;
+  options.onProgress?.(msg);
+  console.log(`  ${msg}`);
+
+  return { apiCalls: totalApiCalls, inserted: totalInserted, skinsFetched, skipped };
+}
+
 // Fetch reference prices from Skinport (free, no auth)
 export async function syncSkinportPrices(db: Database.Database) {
   console.log("Fetching Skinport prices...");
