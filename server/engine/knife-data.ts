@@ -6,7 +6,7 @@
 export interface CaseMapping {
   knifeTypes: string[];
   knifeFinishes: string[]; // specific finish names (e.g. "Fade", "Doppler") — empty = all
-  gloveGen: 1 | 2 | 3 | null; // which glove generation, null = no gloves
+  gloveGen: 1 | 2 | 3 | 4 | null; // which glove generation, null = no gloves
 }
 
 // Knife finish sets — each case only drops finishes from ONE set
@@ -47,6 +47,11 @@ export const GLOVE_GEN_SKINS: Record<number, Record<string, string[]>> = {
     "Moto Gloves": ["Blood Pressure", "Smoke Out", "Finish Line", "3rd Commando Company"],
     "Specialist Gloves": ["Marble Fade", "Tiger Strike", "Field Agent", "Lt. Commander"],
     "Sport Gloves": ["Scarlet Shamagh", "Nocts", "Slingshot", "Big Game"],
+  },
+  4: {
+    "Driver Gloves": ["Wave Chaser", "Seigaiha", "Plum Quill", "Hand Sweaters", "Garden", "Dragon Fists", "Brocade Flowers", "Brocade Crane"],
+    "Specialist Gloves": ["Big Swell", "Sunburst", "Pillow Punchers", "Chocolate Chesterfield", "Blackbook", "Cloud Chaser", "Lime Polycam"],
+    "Sport Gloves": ["Ultra Violent", "Creme Pinstripe", "Red Racer", "Blaze", "Frosty", "Violet Beadwork", "Occult"],
   },
 };
 
@@ -127,7 +132,39 @@ export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
   "The Operation Broken Fang Collection": { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
   "The Snakebite Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
   "The Recoil Collection":             { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
+
+  // ── Gen 4 gloves (Dead Hand Terminal — Driver, Specialist, Sport) ──
+  "The Dead Hand Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: 4 },
 };
+
+// Doppler/Gamma Doppler phase weights (probability of each phase when traded up)
+export const DOPPLER_PHASES: Record<string, { phase: string; weight: number }[]> = {
+  "Doppler": [
+    { phase: "Phase 1",     weight: 0.2465 },
+    { phase: "Phase 2",     weight: 0.2465 },
+    { phase: "Phase 3",     weight: 0.2465 },
+    { phase: "Phase 4",     weight: 0.2465 },
+    { phase: "Ruby",        weight: 0.0040 },
+    { phase: "Sapphire",    weight: 0.0040 },
+    { phase: "Black Pearl", weight: 0.0060 },
+  ],
+  "Gamma Doppler": [
+    { phase: "Phase 1", weight: 0.248 },
+    { phase: "Phase 2", weight: 0.248 },
+    { phase: "Phase 3", weight: 0.248 },
+    { phase: "Phase 4", weight: 0.246 },
+    { phase: "Emerald",  weight: 0.010 },
+  ],
+};
+
+/** All knife weapon types — used to filter knife listings from gun listings. */
+export const KNIFE_WEAPONS = [
+  "Bayonet", "Karambit", "Butterfly Knife", "Flip Knife", "Gut Knife",
+  "Huntsman Knife", "M9 Bayonet", "Falchion Knife", "Shadow Daggers",
+  "Bowie Knife", "Navaja Knife", "Stiletto Knife", "Ursus Knife",
+  "Talon Knife", "Classic Knife", "Paracord Knife", "Survival Knife",
+  "Nomad Knife", "Skeleton Knife", "Kukri Knife",
+] as const;
 
 export interface FinishData {
   name: string;

@@ -16,7 +16,7 @@ export function getListingsForRarity(
     SELECT
       l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
       l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
-      s.rarity, sc.collection_id, c.name as collection_name
+      s.rarity, l.source, sc.collection_id, c.name as collection_name
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
     JOIN skin_collections sc ON s.id = sc.skin_id
@@ -36,7 +36,8 @@ export function getListingsForRarity(
 export function getOutcomesForCollections(
   db: Database.Database,
   collectionIds: string[],
-  targetRarity: string
+  targetRarity: string,
+  stattrak: boolean = false
 ): DbSkinOutcome[] {
   if (collectionIds.length === 0) return [];
   const placeholders = collectionIds.map(() => "?").join(",");
@@ -48,9 +49,9 @@ export function getOutcomesForCollections(
        JOIN skin_collections sc ON s.id = sc.skin_id
        JOIN collections c ON sc.collection_id = c.id
        WHERE sc.collection_id IN (${placeholders})
-       AND s.rarity = ?`
+       AND s.rarity = ? AND s.stattrak = ?`
     )
-    .all(...collectionIds, targetRarity) as DbSkinOutcome[];
+    .all(...collectionIds, targetRarity, stattrak ? 1 : 0) as DbSkinOutcome[];
 }
 
 export function getNextRarity(rarity: string): string | null {

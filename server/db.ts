@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "..", "data", "tradeup.db");
+export const DB_PATH = path.join(__dirname, "..", "data", "tradeup.db");
 
 let _db: Database.Database | null = null;
 
@@ -125,18 +125,51 @@ function createTables(db: Database.Database) {
 
   // Safe column migrations
   const tuCols = db.pragma("table_info(trade_ups)") as { name: string }[];
+
+  // Listing status tracking: 'active' | 'partial' | 'stale'
+  if (!tuCols.some((c) => c.name === "listing_status")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN listing_status TEXT NOT NULL DEFAULT 'active'");
+  }
+  if (!tuCols.some((c) => c.name === "preserved_at")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN preserved_at TEXT");
+  }
+  if (!tuCols.some((c) => c.name === "peak_profit_cents")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN peak_profit_cents INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE trade_ups SET peak_profit_cents = MAX(profit_cents, 0)");
+  }
   if (!tuCols.some((c) => c.name === "chance_to_profit")) {
     db.exec("ALTER TABLE trade_ups ADD COLUMN chance_to_profit REAL NOT NULL DEFAULT 0");
+  }
+  if (!tuCols.some((c) => c.name === "previous_inputs")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN previous_inputs TEXT"); // JSON: old inputs before revival
   }
 
   const listingCols = db.pragma("table_info(listings)") as { name: string }[];
   if (!listingCols.some((c) => c.name === "listing_type")) {
     db.exec("ALTER TABLE listings ADD COLUMN listing_type TEXT NOT NULL DEFAULT 'buy_now'");
   }
+  if (!listingCols.some((c) => c.name === "phase")) {
+    db.exec("ALTER TABLE listings ADD COLUMN phase TEXT");
+  }
 
   // Add trade-up type column (classified_covert vs covert_knife)
   if (!tuCols.some((c) => c.name === "type")) {
     db.exec("ALTER TABLE trade_ups ADD COLUMN type TEXT NOT NULL DEFAULT 'classified_covert'");
+  }
+
+  // Theoretical flag: 1 = computed from ref prices only, no real listings
+  if (!tuCols.some((c) => c.name === "is_theoretical")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN is_theoretical INTEGER NOT NULL DEFAULT 0");
+  }
+
+  // Source column: 'discovery' (default), 'materialized', 'reverse_lookup', etc.
+  if (!tuCols.some((c) => c.name === "source")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN source TEXT NOT NULL DEFAULT 'discovery'");
+  }
+
+  // Combo key: identifies the collection+split combo for theory tracking
+  if (!tuCols.some((c) => c.name === "combo_key")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN combo_key TEXT");
   }
 
   // Pre-computed best/worst case columns (avoids expensive correlated subqueries)
@@ -151,6 +184,30 @@ function createTables(db: Database.Database) {
     `);
   }
 
+  // Add theory_type to theory_tracking (knife vs classified)
+  const ttCols = db.pragma("table_info(theory_tracking)") as { name: string }[];
+  if (!ttCols.some((c) => c.name === "theory_type")) {
+    db.exec("ALTER TABLE theory_tracking ADD COLUMN theory_type TEXT NOT NULL DEFAULT 'knife'");
+  }
+
+  // Add theory_type to near_misses (knife vs classified)
+  const nmCols = db.pragma("table_info(near_misses)") as { name: string }[];
+  if (!nmCols.some((c) => c.name === "theory_type")) {
+    db.exec("ALTER TABLE near_misses ADD COLUMN theory_type TEXT NOT NULL DEFAULT 'knife'");
+  }
+
+  // Add combo_type to profitable_combos (knife vs classified)
+  const pcCols = db.pragma("table_info(profitable_combos)") as { name: string }[];
+  if (!pcCols.some((c) => c.name === "combo_type")) {
+    db.exec("ALTER TABLE profitable_combos ADD COLUMN combo_type TEXT NOT NULL DEFAULT 'knife'");
+  }
+
+  // Add source to trade_up_inputs (for multi-marketplace link routing)
+  const tiCols = db.pragma("table_info(trade_up_inputs)") as { name: string }[];
+  if (!tiCols.some((c) => c.name === "source")) {
+    db.exec("ALTER TABLE trade_up_inputs ADD COLUMN source TEXT NOT NULL DEFAULT 'csfloat'");
+  }
+
   db.exec(`
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_skins_rarity ON skins(rarity);
@@ -161,6 +218,9 @@ function createTables(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_trade_ups_roi ON trade_ups(roi_percentage DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_trade ON trade_up_inputs(trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_outcomes_trade ON trade_up_outcomes(trade_up_id);
+
+    -- Theoretical flag index
+    CREATE INDEX IF NOT EXISTS idx_trade_ups_theoretical ON trade_ups(is_theoretical, type, profit_cents DESC);
 
     -- Composite indexes for type-filtered sorting (avoids full table scan)
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_profit ON trade_ups(type, profit_cents DESC);
@@ -185,6 +245,15 @@ function createTables(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_sale_history_skin ON sale_history(skin_name, condition);
     CREATE INDEX IF NOT EXISTS idx_sale_history_sold ON sale_history(sold_at);
 
+    -- Track persistent sale fetch errors (403s) to avoid wasting budget
+    CREATE TABLE IF NOT EXISTS sale_fetch_errors (
+      market_hash_name TEXT PRIMARY KEY,
+      error_code INTEGER NOT NULL,
+      error_count INTEGER NOT NULL DEFAULT 1,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Collection profitability scores (updated after each calculation)
     CREATE TABLE IF NOT EXISTS collection_scores (
       collection_id TEXT PRIMARY KEY,
@@ -204,6 +273,172 @@ function createTables(db: Database.Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- Float-range-specific pricing learned from validation
+    CREATE TABLE IF NOT EXISTS float_price_data (
+      skin_name TEXT NOT NULL,
+      float_min REAL NOT NULL,
+      float_max REAL NOT NULL,
+      avg_price_cents INTEGER NOT NULL,
+      listing_count INTEGER NOT NULL DEFAULT 0,
+      last_checked TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (skin_name, float_min, float_max)
+    );
+
+    -- Theory validation tracking
+    CREATE TABLE IF NOT EXISTS theory_validations (
+      trade_up_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      price_deviation REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      PRIMARY KEY (trade_up_id),
+      FOREIGN KEY (trade_up_id) REFERENCES trade_ups(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_theory_validations_status ON theory_validations(status);
+
+    -- Theory tracking: persists materialization results across daemon cycles
+    CREATE TABLE IF NOT EXISTS theory_tracking (
+      combo_key TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'pending',
+      theory_profit_cents INTEGER NOT NULL DEFAULT 0,
+      real_profit_cents INTEGER,
+      gap_cents INTEGER NOT NULL DEFAULT 0,
+      cost_gap_cents INTEGER NOT NULL DEFAULT 0,
+      ev_gap_cents INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 1,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_profitable_at TEXT,
+      cooldown_until TEXT,
+      notes TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_theory_tracking_status ON theory_tracking(status);
+    CREATE INDEX IF NOT EXISTS idx_theory_tracking_cooldown ON theory_tracking(cooldown_until);
+
+    -- Persisted near-miss data (survives daemon restarts)
+    CREATE TABLE IF NOT EXISTS near_misses (
+      combo_key TEXT PRIMARY KEY,
+      gap_cents INTEGER NOT NULL,
+      theory_profit_cents INTEGER NOT NULL,
+      real_profit_cents INTEGER NOT NULL,
+      collections TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Price observations: individual (float, price) data points per skin.
+    CREATE TABLE IF NOT EXISTS price_observations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      skin_name TEXT NOT NULL,
+      float_value REAL NOT NULL,
+      price_cents INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'listing',
+      observed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_price_obs_skin_float ON price_observations(skin_name, float_value);
+    CREATE INDEX IF NOT EXISTS idx_price_obs_skin ON price_observations(skin_name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents);
+
+    -- Performance indexes
+    CREATE INDEX IF NOT EXISTS idx_skins_name_stattrak ON skins(name, stattrak);
+    CREATE INDEX IF NOT EXISTS idx_skins_weapon_stattrak ON skins(weapon, stattrak);
+    CREATE INDEX IF NOT EXISTS idx_price_data_source ON price_data(source);
+    CREATE INDEX IF NOT EXISTS idx_trade_up_outcomes_skin_cond ON trade_up_outcomes(skin_name, predicted_condition);
+    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin ON trade_up_inputs(skin_name);
+    CREATE INDEX IF NOT EXISTS idx_listings_stattrak_type_price ON listings(stattrak, listing_type, price_cents);
+    CREATE INDEX IF NOT EXISTS idx_listings_float_stattrak ON listings(float_value, stattrak);
+    CREATE INDEX IF NOT EXISTS idx_float_price_data_listing_count ON float_price_data(listing_count);
+
+    CREATE INDEX IF NOT EXISTS idx_trade_ups_listing_status ON trade_ups(listing_status, preserved_at);
+    CREATE INDEX IF NOT EXISTS idx_trade_ups_peak_profit ON trade_ups(peak_profit_cents DESC);
+
+    -- Profitable combo history: tracks combos that have been profitable, with their recipe
+    CREATE TABLE IF NOT EXISTS profitable_combos (
+      combo_key TEXT PRIMARY KEY,
+      collections TEXT NOT NULL,
+      best_profit_cents INTEGER NOT NULL DEFAULT 0,
+      best_roi REAL NOT NULL DEFAULT 0,
+      times_profitable INTEGER NOT NULL DEFAULT 0,
+      first_profitable_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_profitable_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_cost_cents INTEGER NOT NULL DEFAULT 0,
+      input_recipe TEXT NOT NULL DEFAULT '',
+      notes TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_profitable_combos_profit ON profitable_combos(best_profit_cents DESC);
+
+    -- Daemon event feed (ring buffer, purged every 6h)
+    CREATE TABLE IF NOT EXISTS daemon_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      detail TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_daemon_events_created ON daemon_events(created_at);
+
+    -- Market snapshots: periodic aggregate stats for historical analysis
+    CREATE TABLE IF NOT EXISTS market_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_at TEXT NOT NULL DEFAULT (datetime('now')),
+      cycle INTEGER,
+      type TEXT NOT NULL DEFAULT 'covert_knife',
+      total_tradeups INTEGER NOT NULL DEFAULT 0,
+      profitable_count INTEGER NOT NULL DEFAULT 0,
+      best_profit_cents INTEGER NOT NULL DEFAULT 0,
+      avg_profit_cents INTEGER NOT NULL DEFAULT 0,
+      best_roi REAL NOT NULL DEFAULT 0,
+      avg_cost_cents INTEGER NOT NULL DEFAULT 0,
+      avg_chance REAL NOT NULL DEFAULT 0,
+      coverage_skins INTEGER NOT NULL DEFAULT 0,
+      coverage_listings INTEGER NOT NULL DEFAULT 0,
+      theory_count INTEGER NOT NULL DEFAULT 0,
+      theory_profitable INTEGER NOT NULL DEFAULT 0,
+      near_miss_count INTEGER NOT NULL DEFAULT 0,
+      closest_gap_cents INTEGER,
+      cooldowns_active INTEGER NOT NULL DEFAULT 0,
+      api_listing_remaining INTEGER,
+      api_sale_remaining INTEGER,
+      api_individual_remaining INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshots_at ON market_snapshots(snapshot_at);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_type ON market_snapshots(type, snapshot_at);
+
+    -- Snapshot top trade-ups: denormalized top N trade-ups at each snapshot
+    CREATE TABLE IF NOT EXISTS snapshot_tradeups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL,
+      rank INTEGER NOT NULL,
+      trade_up_id INTEGER NOT NULL,
+      profit_cents INTEGER NOT NULL,
+      roi_percentage REAL NOT NULL,
+      total_cost_cents INTEGER NOT NULL,
+      chance_to_profit REAL NOT NULL,
+      best_case_cents INTEGER NOT NULL DEFAULT 0,
+      worst_case_cents INTEGER NOT NULL DEFAULT 0,
+      is_theoretical INTEGER NOT NULL DEFAULT 0,
+      source TEXT,
+      combo_key TEXT,
+      collections TEXT NOT NULL,
+      input_skins TEXT NOT NULL,
+      output_skins TEXT NOT NULL,
+      FOREIGN KEY (snapshot_id) REFERENCES market_snapshots(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshot_tradeups_snapshot ON snapshot_tradeups(snapshot_id);
+    CREATE INDEX IF NOT EXISTS idx_snapshot_tradeups_combo ON snapshot_tradeups(combo_key, snapshot_id);
+
+    -- Staircase trade-ups: stage1 feeds into a stage2 trade-up
+    CREATE TABLE IF NOT EXISTS staircase_trade_ups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trade_up_id INTEGER REFERENCES trade_ups(id) ON DELETE CASCADE,
+      stage1_trade_up_ids TEXT NOT NULL,
+      manufacturing_edge_cents INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_staircase_trade_up ON staircase_trade_ups(trade_up_id);
   `);
 }
 
@@ -216,4 +451,12 @@ export function getSyncMeta(db: Database.Database, key: string): string | null {
 
 export function setSyncMeta(db: Database.Database, key: string, value: string) {
   db.prepare("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)").run(key, value);
+}
+
+export function emitEvent(db: Database.Database, type: string, summary: string, detail?: string) {
+  db.prepare("INSERT INTO daemon_events (event_type, summary, detail) VALUES (?, ?, ?)").run(type, summary, detail ?? null);
+}
+
+export function purgeOldEvents(db: Database.Database, maxAgeHours = 6) {
+  db.prepare("DELETE FROM daemon_events WHERE julianday('now') - julianday(created_at) > ?").run(maxAgeHours / 24);
 }

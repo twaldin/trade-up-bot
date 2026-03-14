@@ -6,9 +6,10 @@ import Database from "better-sqlite3";
 import { floatToCondition, type TradeUp, type TradeUpInput, type TradeUpOutcome } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 import type { FinishData } from "./knife-data.js";
-import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./knife-data.js";
+import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS, DOPPLER_PHASES } from "./knife-data.js";
 import { calculateOutputFloat } from "./core.js";
-import { lookupPrice } from "./pricing.js";
+import { lookupOutputPrice } from "./pricing.js";
+import { effectiveBuyCost } from "./fees.js";
 
 /**
  * Get all knife/glove finish skins with prices for a weapon type.
@@ -27,23 +28,70 @@ export function getKnifeFinishesWithPrices(
   const results: FinishData[] = [];
 
   for (const skin of skins) {
-    const prices = db.prepare(`
-      SELECT condition, median_price_cents, min_price_cents
-      FROM price_data
-      WHERE skin_name = ? AND median_price_cents > 0
-      ORDER BY median_price_cents ASC
-    `).all(skin.name) as { condition: string; median_price_cents: number; min_price_cents: number }[];
+    const finishPart = skin.name.includes(" | ") ? skin.name.split(" | ")[1] : null;
+    const dopplerPhases = finishPart ? DOPPLER_PHASES[finishPart] : undefined;
 
-    if (prices.length === 0) continue;
+    if (dopplerPhases) {
+      // For Doppler/Gamma Doppler: compute weighted average across phases
+      let totalWeightedPrice = 0;
+      let totalWeight = 0;
+      let hasAnyPrice = false;
 
-    const avgPrice = prices.reduce((s, p) => s + p.median_price_cents, 0) / prices.length;
-    const minPrice = Math.min(...prices.map(p => p.median_price_cents));
-    const maxPrice = Math.max(...prices.map(p => p.median_price_cents));
+      for (const { phase, weight } of dopplerPhases) {
+        const phaseName = `${skin.name} ${phase}`;
+        const phasePrices = db.prepare(`
+          SELECT condition, median_price_cents FROM price_data
+          WHERE skin_name = ? AND median_price_cents > 0
+          ORDER BY median_price_cents ASC
+        `).all(phaseName) as { condition: string; median_price_cents: number }[];
 
-    results.push({
-      name: skin.name, avgPrice, minPrice, maxPrice, conditions: prices.length,
-      skinMinFloat: skin.min_float, skinMaxFloat: skin.max_float,
-    });
+        if (phasePrices.length > 0) {
+          const phaseAvg = phasePrices.reduce((s, p) => s + p.median_price_cents, 0) / phasePrices.length;
+          totalWeightedPrice += phaseAvg * weight;
+          totalWeight += weight;
+          hasAnyPrice = true;
+        }
+      }
+
+      if (!hasAnyPrice) {
+        // Fall back to base name
+        const basePrices = db.prepare(`
+          SELECT condition, median_price_cents FROM price_data
+          WHERE skin_name = ? AND median_price_cents > 0
+        `).all(skin.name) as { condition: string; median_price_cents: number }[];
+        if (basePrices.length === 0) continue;
+        totalWeightedPrice = basePrices.reduce((s, p) => s + p.median_price_cents, 0) / basePrices.length;
+        totalWeight = 1;
+      }
+
+      if (totalWeight === 0) continue;
+      const avgPrice = totalWeightedPrice / totalWeight;
+
+      results.push({
+        name: skin.name, avgPrice, minPrice: avgPrice * 0.5, maxPrice: avgPrice * 2,
+        conditions: 1, skinMinFloat: skin.min_float, skinMaxFloat: skin.max_float,
+      });
+    } else {
+      const prices = db.prepare(`
+        SELECT condition,
+          COALESCE(NULLIF(median_price_cents, 0), avg_price_cents) as median_price_cents,
+          min_price_cents
+        FROM price_data
+        WHERE skin_name = ? AND (median_price_cents > 0 OR avg_price_cents > 0)
+        ORDER BY median_price_cents ASC
+      `).all(skin.name) as { condition: string; median_price_cents: number; min_price_cents: number }[];
+
+      if (prices.length === 0) continue;
+
+      const avgPrice = prices.reduce((s, p) => s + p.median_price_cents, 0) / prices.length;
+      const minPrice = Math.min(...prices.map(p => p.median_price_cents));
+      const maxPrice = Math.max(...prices.map(p => p.median_price_cents));
+
+      results.push({
+        name: skin.name, avgPrice, minPrice, maxPrice, conditions: prices.length,
+        skinMinFloat: skin.min_float, skinMaxFloat: skin.max_float,
+      });
+    }
   }
 
   return results;
@@ -64,7 +112,7 @@ export function evaluateKnifeTradeUp(
 ): TradeUp | null {
   if (inputs.length !== 5) return null;
 
-  const totalCost = inputs.reduce((sum, i) => sum + i.price_cents, 0);
+  const totalCost = inputs.reduce((sum, i) => sum + effectiveBuyCost(i), 0);
 
   const inputFloats = inputs.map(i => ({
     float_value: i.float_value,
@@ -128,24 +176,64 @@ export function evaluateKnifeTradeUp(
     for (const finish of allFinishes) {
       const predFloat = calculateOutputFloat(inputFloats, finish.skinMinFloat, finish.skinMaxFloat);
       const predCondition = floatToCondition(predFloat);
-      const price = lookupPrice(db, finish.name, predFloat);
-      if (price <= 0) continue;
 
-      totalEv += perFinishProb * price;
+      // Check if this is a Doppler/Gamma Doppler — expand into per-phase outcomes
+      const finishPart = finish.name.includes(" | ") ? finish.name.split(" | ")[1] : null;
+      const dopplerPhases = finishPart ? DOPPLER_PHASES[finishPart] : undefined;
 
-      outcomes.push({
-        skin_id: "",
-        skin_name: finish.name,
-        collection_name: finish.itemType,
-        probability: perFinishProb,
-        predicted_float: predFloat,
-        predicted_condition: predCondition,
-        estimated_price_cents: price,
-      });
+      if (dopplerPhases) {
+        for (const { phase, weight } of dopplerPhases) {
+          const phaseName = `${finish.name} ${phase}`;
+          const phaseProb = perFinishProb * weight;
+          const output = lookupOutputPrice(db, phaseName, predFloat);
+          if (output.priceCents <= 0) continue;
+
+          totalEv += phaseProb * output.priceCents;
+          outcomes.push({
+            skin_id: "",
+            skin_name: phaseName,
+            collection_name: finish.itemType,
+            probability: phaseProb,
+            predicted_float: predFloat,
+            predicted_condition: predCondition,
+            estimated_price_cents: output.priceCents,
+            sell_marketplace: output.marketplace,
+          });
+        }
+      } else {
+        const output = lookupOutputPrice(db, finish.name, predFloat);
+        if (output.priceCents <= 0) continue;
+
+        totalEv += perFinishProb * output.priceCents;
+        outcomes.push({
+          skin_id: "",
+          skin_name: finish.name,
+          collection_name: finish.itemType,
+          probability: perFinishProb,
+          predicted_float: predFloat,
+          predicted_condition: predCondition,
+          estimated_price_cents: output.priceCents,
+          sell_marketplace: output.marketplace,
+        });
+      }
     }
   }
 
   if (outcomes.length === 0) return null;
+
+  // Merge duplicate outcomes (e.g. two collections sharing a glove generation)
+  const mergedMap = new Map<string, TradeUpOutcome>();
+  for (const o of outcomes) {
+    const key = `${o.skin_name}:${o.predicted_condition}`;
+    const existing = mergedMap.get(key);
+    if (existing) {
+      existing.probability += o.probability;
+      // Recalculate weighted EV contribution is already summed in totalEv — just merge the outcome entries
+    } else {
+      mergedMap.set(key, { ...o });
+    }
+  }
+  const mergedOutcomes = [...mergedMap.values()];
 
   const evCents = Math.round(totalEv);
   const profit = evCents - totalCost;
@@ -156,15 +244,16 @@ export function evaluateKnifeTradeUp(
     skin_id: i.skin_id,
     skin_name: i.skin_name,
     collection_name: i.collection_name,
-    price_cents: i.price_cents,
+    price_cents: effectiveBuyCost(i),
     float_value: i.float_value,
     condition: floatToCondition(i.float_value),
+    source: i.source ?? "csfloat",
   }));
 
   return {
     id: 0,
     inputs: tradeUpInputs,
-    outcomes,
+    outcomes: mergedOutcomes,
     total_cost_cents: totalCost,
     expected_value_cents: evCents,
     profit_cents: profit,
