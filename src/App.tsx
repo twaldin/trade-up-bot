@@ -1,194 +1,100 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { TradeUp, TradeUpListResponse, SyncStatus, ExplorationStats } from "../shared/types.js";
-import { TradeUpTable } from "./components/TradeUpTable.js";
+import { useState, lazy, Suspense } from "react";
+import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import type { SyncStatus } from "../shared/types.js";
+import { timeAgo } from "./utils/format.js";
+import { useStatus, type StatusDiffs } from "./hooks/useStatus.js";
+import { DaemonModal } from "./components/DaemonModal.js";
+import { TradeUpsPage } from "./pages/TradeUpsPage.js";
+const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
+const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
+const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return "never";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function Diff({ value, label }: { value: number; label?: string }) {
+  if (value === 0) return null;
+  const color = value > 0 ? "#22c55e" : "#ef4444";
+  return <span style={{ color, fontSize: "0.85em" }}> {value > 0 ? "+" : ""}{value.toLocaleString()}{label ? ` ${label}` : ""}</span>;
 }
 
-function DaemonIndicator({ status }: { status: SyncStatus["daemon_status"] }) {
-  if (!status) {
+function StatusBar({ status, diffs, view }: { status: SyncStatus | null; diffs: StatusDiffs; view: string }) {
+  if (view === "data") {
     return (
-      <div className="daemon-status daemon-offline">
-        <span className="daemon-dot" />
-        <span>Daemon offline</span>
+      <div className="status-bar">
+        <div className="status-stats">
+          <span className="status-item">
+            Skins: <strong>{status?.total_skins?.toLocaleString() ?? "..."}</strong>
+            <span className="status-sub"> ({status?.covert_skins ?? "?"} covert, {status?.knife_glove_with_listings ?? "?"}/{status?.knife_glove_skins ?? "?"} knives/gloves)</span>
+          </span>
+          <span className="status-item">
+            Listings: <strong>{status?.total_listings?.toLocaleString() ?? "..."}</strong>
+          </span>
+          <span className="status-item">
+            Sales: <strong>{status?.total_sales?.toLocaleString() ?? "..."}</strong>
+          </span>
+          <span className="status-item">
+            Output Prices: <strong>{status?.covert_sale_prices ?? "..."}</strong> sale-based
+            <span className="status-sub"> + {status?.covert_ref_prices ?? "?"} ref</span>
+          </span>
+        </div>
       </div>
     );
   }
 
-  const phaseLabels: Record<string, { label: string; className: string }> = {
-    fetching: { label: "Fetching", className: "daemon-active" },
-    calculating: { label: "Calculating", className: "daemon-active" },
-    waiting: { label: "Cooldown", className: "daemon-waiting" },
-    idle: { label: "Idle", className: "daemon-idle" },
-    error: { label: "Error", className: "daemon-error" },
-  };
-
-  const info = phaseLabels[status.phase] ?? { label: status.phase, className: "daemon-idle" };
-
-  return (
-    <div className={`daemon-status ${info.className}`}>
-      <span className="daemon-dot" />
-      <div className="daemon-text">
-        <span className="daemon-label">{info.label}</span>
-        {status.detail && <span className="daemon-detail">{status.detail}</span>}
-      </div>
-    </div>
-  );
-}
-
-function formatDollars(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-export default function App() {
-  const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [perPage] = useState(50);
-  const [sort, setSort] = useState("profit");
-  const [order, setOrder] = useState<"asc" | "desc">("desc");
-  const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Trade-up type toggle
-  const [tradeUpType, setTradeUpType] = useState<"classified_covert" | "covert_knife">("covert_knife");
-
-  // Draft filters (what user types — does NOT trigger fetch)
-  const [minProfit, setMinProfit] = useState("");
-  const [minRoi, setMinRoi] = useState("");
-  const [maxCost, setMaxCost] = useState("");
-  const [minChance, setMinChance] = useState("");
-  const [maxOutcomes, setMaxOutcomes] = useState("");
-  const [skinSearch, setSkinSearch] = useState("");
-  const [maxLoss, setMaxLoss] = useState("");
-  const [minWin, setMinWin] = useState("");
-
-  // Applied filters (only updated on Apply click — triggers fetch)
-  const [appliedFilters, setAppliedFilters] = useState({
-    minProfit: "", minRoi: "", maxCost: "", minChance: "", maxOutcomes: "", skinSearch: "", maxLoss: "", minWin: "",
-  });
-
-  const applyFilters = useCallback(() => {
-    setAppliedFilters({ minProfit, minRoi, maxCost, minChance, maxOutcomes, skinSearch, maxLoss, minWin });
-    setPage(1);
-  }, [minProfit, minRoi, maxCost, minChance, maxOutcomes, skinSearch, maxLoss, minWin]);
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/status");
-      const data = await res.json();
-      setStatus(data);
-    } catch {}
-  }, []);
-
-  const fetchTradeUps = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        sort,
-        order,
-        page: String(page),
-        per_page: String(perPage),
-        type: tradeUpType,
-      });
-      const f = appliedFilters;
-      if (f.minProfit) params.set("min_profit", String(Math.round(parseFloat(f.minProfit) * 100)));
-      if (f.minRoi) params.set("min_roi", f.minRoi);
-      if (f.maxCost) params.set("max_cost", String(Math.round(parseFloat(f.maxCost) * 100)));
-      if (f.minChance) params.set("min_chance", f.minChance);
-      if (f.maxOutcomes) params.set("max_outcomes", f.maxOutcomes);
-      if (f.skinSearch.trim()) params.set("skin", f.skinSearch.trim());
-      if (f.maxLoss) params.set("max_loss", String(Math.round(parseFloat(f.maxLoss) * 100)));
-      if (f.minWin) params.set("min_win", String(Math.round(parseFloat(f.minWin) * 100)));
-
-      const res = await fetch(`/api/trade-ups?${params}`);
-      const data: TradeUpListResponse = await res.json();
-      setTradeUps(data.trade_ups);
-      setTotal(data.total);
-    } catch (err) {
-      console.error("Failed to fetch trade-ups:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [sort, order, page, perPage, appliedFilters, tradeUpType]);
-
-  useEffect(() => {
-    fetchStatus();
-    fetchTradeUps();
-  }, [fetchStatus, fetchTradeUps]);
-
-  // Auto-refresh
-  const prevTradeUpCount = useRef(0);
-  useEffect(() => {
-    const statusInterval = setInterval(fetchStatus, 10_000);
-    const dataInterval = setInterval(async () => {
-      const res = await fetch("/api/status").then(r => r.json()).catch(() => null);
-      if (res && res.trade_ups_count !== prevTradeUpCount.current) {
-        prevTradeUpCount.current = res.trade_ups_count;
-        fetchTradeUps();
-      }
-    }, 30_000);
-    return () => { clearInterval(statusInterval); clearInterval(dataInterval); };
-  }, [fetchStatus, fetchTradeUps]);
-
-  useEffect(() => {
-    if (status) prevTradeUpCount.current = status.trade_ups_count;
-  }, [status?.trade_ups_count]);
-
-  const handleSort = (column: string) => {
-    if (sort === column) {
-      setOrder(order === "desc" ? "asc" : "desc");
-    } else {
-      setSort(column);
-      setOrder("desc");
-    }
-    setPage(1);
-  };
-
-  const totalPages = Math.ceil(total / perPage);
-
-  return (
-    <>
-      <div className="header">
-        <h1>CS2 Trade-Up Bot</h1>
-        {status && <DaemonIndicator status={status.daemon_status} />}
-      </div>
-
-      {/* Stats bar */}
+  if (view === "collections") {
+    return (
       <div className="status-bar">
         <div className="status-stats">
-          {tradeUpType === "covert_knife" ? (
+          <span className="status-item">
+            Collections: <strong>{status?.collection_count ?? "..."}</strong>
+            <span className="status-sub"> ({status?.collections_with_knives ?? "?"} with knife/glove pool)</span>
+          </span>
+          <span className="status-item">
+            Trade-Ups: <strong>{status?.knife_trade_ups?.toLocaleString() ?? "..."}</strong>
+            {status && status.knife_profitable > 0 && (
+              <span className="status-highlight"> ({status.knife_profitable} profitable)</span>
+            )}
+          </span>
+          <span className="status-item">
+            Output Prices: <strong>{status?.covert_sale_prices ?? "..."}</strong> sale-based
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "collection") {
+    return (
+      <div className="status-bar">
+        <div className="status-stats">
+          <span className="status-item">
+            Last Calc: <strong>{timeAgo(status?.last_calculation ?? null)}</strong>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "theories") {
+    return (
+      <div className="status-bar">
+        <div className="status-stats">
+          <span className="status-item">
+            Theories: <strong>{status?.theory_trade_ups?.toLocaleString() ?? "..."}</strong>
+            <Diff value={diffs.theory_trade_ups} />
+            {status && status.theory_profitable > 0 && (
+              <span className="status-highlight"> ({status.theory_profitable.toLocaleString()} profitable<Diff value={diffs.theory_profitable} />)</span>
+            )}
+          </span>
+          {status?.theory_tracking && (
             <>
               <span className="status-item">
-                Knife/Glove Trade-Ups: <strong>{status?.knife_trade_ups?.toLocaleString() ?? "..."}</strong>
-                {status && status.knife_profitable > 0 && (
-                  <span className="status-highlight"> ({status.knife_profitable.toLocaleString()} profitable)</span>
+                Validated: <strong>{status.theory_tracking.profitable}</strong> real
+                <span className="status-sub"> / {status.theory_tracking.near_miss} near-miss / {status.theory_tracking.invalidated} invalid</span>
+              </span>
+              <span className="status-item">
+                Cooldown: <strong>{status.theory_tracking.on_cooldown}</strong> combos
+                {status.theory_tracking.avg_gap_cents > 0 && (
+                  <span className="status-sub"> (avg gap ${(status.theory_tracking.avg_gap_cents / 100).toFixed(0)})</span>
                 )}
-              </span>
-              <span className="status-item">
-                Covert Inputs: <strong>{status?.covert_listings?.toLocaleString() ?? "..."}</strong> listings
-                <span className="status-sub"> ({status?.covert_skins ?? "?"}/{status?.covert_total ?? "?"} skins)</span>
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="status-item">
-                Covert Trade-Ups: <strong>{status?.covert_trade_ups?.toLocaleString() ?? "..."}</strong>
-                {status && status.covert_profitable > 0 && (
-                  <span className="status-highlight"> ({status.covert_profitable.toLocaleString()} profitable)</span>
-                )}
-              </span>
-              <span className="status-item">
-                Classified Inputs: <strong>{status?.classified_listings?.toLocaleString() ?? "..."}</strong> listings
-                <span className="status-sub"> ({status?.classified_skins ?? "?"}/{status?.classified_total ?? "?"} skins)</span>
               </span>
             </>
           )}
@@ -198,158 +104,211 @@ export default function App() {
               <span className="status-sub"> ({status.total_sales.toLocaleString()} sales)</span>
             )}
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Default: trade-ups (knife + classified + staircase)
+  return (
+    <div className="status-bar">
+      <div className="status-stats">
+        <span className="status-item">
+          Knife/Glove: <strong>{status?.knife_trade_ups?.toLocaleString() ?? "..."}</strong>
+          <Diff value={diffs.knife_trade_ups} />
+          {status && status.knife_profitable > 0 && (
+            <span className="status-highlight"> ({status.knife_profitable.toLocaleString()} profitable<Diff value={diffs.knife_profitable} />)</span>
+          )}
+        </span>
+        <span className="status-item">
+          Classified: <strong>{status?.covert_trade_ups?.toLocaleString() ?? "..."}</strong>
+          <Diff value={diffs.covert_trade_ups} />
+          {status && status.covert_profitable > 0 && (
+            <span className="status-highlight"> ({status.covert_profitable} profitable<Diff value={diffs.covert_profitable} />)</span>
+          )}
+        </span>
+        {status && (status.knife_partial > 0 || status.knife_stale > 0) && (
           <span className="status-item">
-            Last Calc: <strong>{timeAgo(status?.last_calculation ?? null)}</strong>
+            <span style={{ color: "#22c55e" }}>{status.knife_active.toLocaleString()} active</span>
+            {status.knife_partial > 0 && <span style={{ color: "#f59e0b" }}> / {status.knife_partial.toLocaleString()} partial</span>}
+            {status.knife_stale > 0 && <span style={{ color: "#ef4444" }}> / {status.knife_stale.toLocaleString()} stale</span>}
           </span>
-          {status?.exploration_stats && (
-            <span className="status-item">
-              Passes: <strong>{status.exploration_stats.passes_this_cycle}</strong>
-              <span className="status-sub"> (+{status.exploration_stats.new_tradeups_found} new, {status.exploration_stats.tradeups_improved} improved)</span>
-            </span>
-          )}
-        </div>
+        )}
+        <span className="status-item">
+          Inputs: <strong>{status?.covert_listings?.toLocaleString() ?? "..."}</strong> covert
+          <span className="status-sub"> + {status?.classified_listings ?? "?"} classified</span>
+        </span>
+        <span className="status-item">
+          Last Calc: <strong>{timeAgo(status?.last_calculation ?? null)}</strong>
+        </span>
+        {status?.exploration_stats && (
+          <span className="status-item">
+            Passes: <strong>{status.exploration_stats.passes_this_cycle}</strong>
+            <span className="status-sub"> (+{status.exploration_stats.new_tradeups_found} new, {status.exploration_stats.tradeups_improved} improved)</span>
+          </span>
+        )}
       </div>
+    </div>
+  );
+}
 
-      {/* Type Toggle */}
-      <div className="type-toggle">
-        <button
-          className={tradeUpType === "covert_knife" ? "toggle-active" : ""}
-          onClick={() => { setTradeUpType("covert_knife"); setPage(1); }}
-        >
-          Covert → Knife/Gloves
-        </button>
-        <button
-          className={tradeUpType === "classified_covert" ? "toggle-active" : ""}
-          onClick={() => { setTradeUpType("classified_covert"); setPage(1); }}
-        >
-          Classified → Covert
-        </button>
-      </div>
+const TRADE_UP_TYPES = [
+  { value: "covert_knife" as const, label: "Knife/Gloves" },
+  { value: "classified_covert" as const, label: "Classified" },
+  { value: "classified_covert_st" as const, label: "StatTrak" },
+  { value: "staircase" as const, label: "Staircases" },
+];
 
-      {/* Filter Presets */}
-      <div className="filter-presets">
-        <span className="presets-label">Quick:</span>
-        {[
-          { label: "Best Odds $150-300", values: { minChance: "30", maxCost: "300", minProfit: "", minRoi: "", maxOutcomes: "", skinSearch: "", maxLoss: "", minWin: "" } },
-          { label: "High Upside", values: { minWin: "500", minChance: "", maxCost: "", minProfit: "", minRoi: "", maxOutcomes: "", skinSearch: "", maxLoss: "" } },
-          { label: "Low Risk", values: { minChance: "40", maxLoss: "100", maxCost: "", minProfit: "", minRoi: "", maxOutcomes: "", skinSearch: "", minWin: "" } },
-          { label: "Profitable", values: { minProfit: "1", minChance: "", maxCost: "", minRoi: "", maxOutcomes: "", skinSearch: "", maxLoss: "", minWin: "" } },
-          { label: "All", values: { minProfit: "", minRoi: "", maxCost: "", minChance: "", maxOutcomes: "", skinSearch: "", maxLoss: "", minWin: "" } },
-        ].map((preset) => (
+const THEORY_TYPES = [
+  { value: "theory_knife" as const, label: "Knife/Gloves" },
+  { value: "theory_classified" as const, label: "Classified" },
+  { value: "theory_staircase" as const, label: "Staircases" },
+];
+
+function CollectionPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+  const { name } = useParams<{ name: string }>();
+  const navigate = useNavigate();
+
+  if (!name) return null;
+
+  return (
+    <>
+      <StatusBar status={status} diffs={diffs} view="collection" />
+      <Suspense fallback={<div className="loading">Loading</div>}>
+        <CollectionViewer
+          collectionName={decodeURIComponent(name)}
+          onBack={() => navigate("/collections")}
+          onNavigateCollection={(n) => navigate(`/collections/${encodeURIComponent(n)}`)}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+function CollectionListPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <StatusBar status={status} diffs={diffs} view="collections" />
+      <Suspense fallback={<div className="loading">Loading</div>}>
+        <CollectionListViewer
+          onSelectCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+function DataPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get("search") || undefined;
+
+  return (
+    <>
+      <StatusBar status={status} diffs={diffs} view="data" />
+      <Suspense fallback={<div className="loading">Loading</div>}>
+        <DataViewer
+          key={initialSearch || "data"}
+          onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+          initialSearch={initialSearch}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+function TradeUpsMainPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <StatusBar status={status} diffs={diffs} view="tradeups" />
+      <TradeUpsPage
+        types={TRADE_UP_TYPES}
+        defaultType="covert_knife"
+        status={status}
+        onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
+        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+      />
+    </>
+  );
+}
+
+function TheoriesMainPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <StatusBar status={status} diffs={diffs} view="theories" />
+      <TradeUpsPage
+        types={THEORY_TYPES}
+        defaultType="theory_knife"
+        status={status}
+        onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
+        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+      />
+    </>
+  );
+}
+
+export default function App() {
+  const { status, diffs, newDataHint, refresh } = useStatus();
+  const [showDaemonModal, setShowDaemonModal] = useState(false);
+
+  return (
+    <>
+      <div className="header">
+        <h1>CS2 Trade-Up Bot</h1>
+        <div className="header-actions">
           <button
-            key={preset.label}
-            className="preset-btn"
-            onClick={() => {
-              const v = preset.values;
-              setMinProfit(v.minProfit); setMinRoi(v.minRoi); setMaxCost(v.maxCost);
-              setMinChance(v.minChance); setMaxOutcomes(v.maxOutcomes); setSkinSearch(v.skinSearch);
-              setMaxLoss(v.maxLoss); setMinWin(v.minWin);
-              setAppliedFilters(v);
-              setPage(1);
-            }}
+            className={`refresh-btn${newDataHint ? " refresh-hint" : ""}`}
+            onClick={refresh}
           >
-            {preset.label}
+            {newDataHint ? "Refresh (new data)" : "Refresh"}
+            {newDataHint && <span className="refresh-dot" />}
           </button>
-        ))}
+          <button
+            className={`daemon-btn${!status?.daemon_status || status.daemon_status.phase === "idle" ? " daemon-inactive" : " daemon-active"}`}
+            onClick={() => setShowDaemonModal(true)}
+          >
+            {!status?.daemon_status || status.daemon_status.phase === "idle" ? "Daemon (inactive)" : (() => {
+              const ds = status?.daemon_status;
+              const cycle = ds?.cycle ?? 0;
+              let uptime = "";
+              if (ds?.startedAt) {
+                const mins = Math.floor((Date.now() - new Date(ds.startedAt).getTime()) / 60000);
+                uptime = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 > 0 ? `${mins % 60}m` : ""}`;
+              }
+              return `Daemon C${cycle}${uptime ? ` ${uptime}` : ""}`;
+            })()}
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters">
-        <div className="filter-grid">
-          <label>
-            Min Profit ($)
-            <input type="number" value={minProfit} onChange={(e) => setMinProfit(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="0.00" step="0.01" />
-          </label>
-          <label>
-            Min ROI (%)
-            <input type="number" value={minRoi} onChange={(e) => setMinRoi(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="0" step="1" />
-          </label>
-          <label>
-            Max Cost ($)
-            <input type="number" value={maxCost} onChange={(e) => setMaxCost(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="any" step="1" />
-          </label>
-          <label>
-            Min Chance (%)
-            <input type="number" value={minChance} onChange={(e) => setMinChance(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="0" step="5" min="0" max="100" />
-          </label>
-          <label>
-            Max Outcomes
-            <input type="number" value={maxOutcomes} onChange={(e) => setMaxOutcomes(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="any" step="1" min="1" />
-          </label>
-          <label>
-            Max Loss ($)
-            <input type="number" value={maxLoss} onChange={(e) => setMaxLoss(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="any" step="1" min="0" />
-          </label>
-          <label>
-            Min Best Win ($)
-            <input type="number" value={minWin} onChange={(e) => setMinWin(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="any" step="1" min="0" />
-          </label>
-          <label>
-            Skin Search
-            <input type="text" value={skinSearch} onChange={(e) => setSkinSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyFilters()} placeholder="AK-47, AWP..." />
-          </label>
-        </div>
-        <button className="apply-btn" onClick={applyFilters}>Apply</button>
-      </div>
+      {showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
 
-      {/* Table */}
-      {loading ? (
-        <div className="loading">Loading</div>
-      ) : tradeUps.length === 0 ? (
-        <div className="empty-state">
-          {status?.daemon_status?.phase === "calculating" ? (
-            <>
-              <div className="empty-icon">&#9881;</div>
-              <p>Calculating trade-ups...</p>
-              <p className="empty-detail">{status.daemon_status.detail}</p>
-            </>
-          ) : status?.daemon_status?.phase === "fetching" ? (
-            <>
-              <div className="empty-icon">&#8635;</div>
-              <p>Fetching listing data from CSFloat...</p>
-              <p className="empty-detail">Trade-ups will appear after the first calculation cycle.</p>
-            </>
-          ) : (
-            <>
-              <div className="empty-icon">&#128200;</div>
-              <p>No trade-ups found matching your filters.</p>
-              <p className="empty-detail">Try adjusting the filters above, or wait for the daemon to collect more data.</p>
-            </>
-          )}
-        </div>
-      ) : (
-        <>
-          <TradeUpTable
-            tradeUps={tradeUps}
-            sort={sort}
-            order={order}
-            onSort={handleSort}
-          />
+      {/* Navigation */}
+      <nav className="type-toggle">
+        <NavLink to="/" end className={({ isActive }) => isActive ? "toggle-active" : ""}>
+          Trade-Ups
+        </NavLink>
+        <NavLink to="/theories" className={({ isActive }) => isActive ? "toggle-active" : ""}>
+          Theories
+        </NavLink>
+        <NavLink to="/data" className={({ isActive }) => isActive ? "toggle-active" : ""}>
+          Data
+        </NavLink>
+        <NavLink to="/collections" className={({ isActive }) => isActive ? "toggle-active" : ""}>
+          Collections
+        </NavLink>
+      </nav>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="pagination">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Prev
-              </button>
-              <span>
-                Page {page} of {totalPages} ({total.toLocaleString()} results)
-              </span>
-              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </button>
-            </div>
-          )}
-        </>
-      )}
+      <Routes>
+        <Route path="/" element={<TradeUpsMainPage status={status} diffs={diffs} />} />
+        <Route path="/theories" element={<TheoriesMainPage status={status} diffs={diffs} />} />
+        <Route path="/data" element={<DataPage status={status} diffs={diffs} />} />
+        <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
+        <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
+      </Routes>
     </>
   );
 }

@@ -6,14 +6,16 @@ import Database from "better-sqlite3";
 import { floatToCondition, type TradeUp, type TradeUpInput, type TradeUpOutcome } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome } from "./types.js";
 import { calculateOutputFloat, calculateOutcomeProbabilities } from "./core.js";
-import { lookupPrice } from "./pricing.js";
+import { lookupOutputPrice } from "./pricing.js";
+import { effectiveBuyCost } from "./fees.js";
+import { DOPPLER_PHASES } from "./knife-data.js";
 
 export function evaluateTradeUp(
   db: Database.Database,
   inputs: ListingWithCollection[],
   outcomes: DbSkinOutcome[]
 ): TradeUp | null {
-  const totalCost = inputs.reduce((sum, i) => sum + i.price_cents, 0);
+  const totalCost = inputs.reduce((sum, i) => sum + effectiveBuyCost(i), 0);
   const inputFloats = inputs.map((i) => ({
     float_value: i.float_value,
     min_float: i.min_float,
@@ -29,17 +31,45 @@ export function evaluateTradeUp(
   for (const { outcome, probability } of probabilities) {
     const predFloat = calculateOutputFloat(inputFloats, outcome.min_float, outcome.max_float);
     const predCondition = floatToCondition(predFloat);
-    const price = lookupPrice(db, outcome.name, predFloat);
-    ev += probability * price;
-    tradeUpOutcomes.push({
-      skin_id: outcome.id,
-      skin_name: outcome.name,
-      collection_name: outcome.collection_name,
-      probability,
-      predicted_float: predFloat,
-      predicted_condition: predCondition,
-      estimated_price_cents: price,
-    });
+
+    // Check for Doppler/Gamma Doppler phase expansion
+    const finishPart = outcome.name.includes(" | ") ? outcome.name.split(" | ")[1] : null;
+    const dopplerPhases = finishPart ? DOPPLER_PHASES[finishPart] : undefined;
+
+    if (dopplerPhases) {
+      // Expand into per-phase outcomes with phase-weighted probabilities
+      for (const { phase, weight } of dopplerPhases) {
+        const phaseName = `${outcome.name} ${phase}`;
+        const phaseProb = probability * weight;
+        const output = lookupOutputPrice(db, phaseName, predFloat);
+        if (output.priceCents <= 0) continue;
+        ev += phaseProb * output.priceCents;
+        tradeUpOutcomes.push({
+          skin_id: outcome.id,
+          skin_name: phaseName,
+          collection_name: outcome.collection_name,
+          probability: phaseProb,
+          predicted_float: predFloat,
+          predicted_condition: predCondition,
+          estimated_price_cents: output.priceCents,
+          sell_marketplace: output.marketplace,
+        });
+      }
+    } else {
+      const output = lookupOutputPrice(db, outcome.name, predFloat);
+      const price = output.priceCents;
+      ev += probability * price;
+      tradeUpOutcomes.push({
+        skin_id: outcome.id,
+        skin_name: outcome.name,
+        collection_name: outcome.collection_name,
+        probability,
+        predicted_float: predFloat,
+        predicted_condition: predCondition,
+        estimated_price_cents: price,
+        sell_marketplace: output.marketplace,
+      });
+    }
   }
 
   const evCents = Math.round(ev);
@@ -51,9 +81,10 @@ export function evaluateTradeUp(
     skin_id: i.skin_id,
     skin_name: i.skin_name,
     collection_name: i.collection_name,
-    price_cents: i.price_cents,
+    price_cents: effectiveBuyCost(i),
     float_value: i.float_value,
     condition: floatToCondition(i.float_value),
+    source: i.source ?? "csfloat",
   }));
 
   return {

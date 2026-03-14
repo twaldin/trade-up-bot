@@ -99,6 +99,7 @@ export interface TradeUpOutcome {
   predicted_float: number;
   predicted_condition: Condition;
   estimated_price_cents: number;
+  sell_marketplace?: string;
 }
 
 export interface TradeUpInput {
@@ -109,10 +110,22 @@ export interface TradeUpInput {
   price_cents: number;
   float_value: number;
   condition: Condition;
+  source: string;
+}
+
+export interface TheoryTracking {
+  status: 'profitable' | 'near_miss' | 'invalidated' | 'no_listings' | 'pending';
+  real_profit_cents: number | null;
+  gap_cents: number;
+  attempts: number;
+  last_checked_at: string;
+  cooldown_until: string | null;
+  notes: string | null;
 }
 
 export interface TradeUp {
   id: number;
+  type?: string; // "classified_covert" | "covert_knife" | "staircase" | "classified_covert_fn"
   inputs: TradeUpInput[];
   outcomes: TradeUpOutcome[];
   total_cost_cents: number;
@@ -120,6 +133,20 @@ export interface TradeUp {
   profit_cents: number;
   roi_percentage: number;
   created_at: string;
+  is_theoretical?: boolean; // true = computed from ref prices only, no real listings
+  tracking?: TheoryTracking; // validation status from materialization attempts
+  listing_status?: 'active' | 'partial' | 'stale'; // input listing availability
+  missing_inputs?: number; // count of inputs whose listings are gone
+  peak_profit_cents?: number; // highest profit ever seen for this trade-up
+  preserved_at?: string | null; // when this trade-up was first marked stale
+  previous_inputs?: {
+    old_profit_cents: number;
+    old_cost_cents: number;
+    replaced: {
+      old: { skin_name: string; price_cents: number; float_value: number; condition: string; listing_id: string };
+      new: { skin_name: string; price_cents: number; float_value: number; condition: string; listing_id: string } | null;
+    }[];
+  } | null;
 }
 
 // API response types
@@ -134,6 +161,18 @@ export interface DaemonStatus {
   phase: "fetching" | "calculating" | "waiting" | "idle" | "error";
   detail: string;
   timestamp: string;
+  cycle?: number;
+  startedAt?: string;  // ISO timestamp of daemon start
+}
+
+export interface TheoryTrackingSummary {
+  total: number;
+  profitable: number;
+  near_miss: number;
+  invalidated: number;
+  no_listings: number;
+  on_cooldown: number;
+  avg_gap_cents: number;
 }
 
 export interface TopCollection {
@@ -153,6 +192,16 @@ export interface ExplorationStats {
   started_at: string;
 }
 
+export interface RefCoverage {
+  total: number;
+  covered: number;
+  pct: number;
+  mode: "bootstrap" | "steady_state";
+  missing: { knife_glove: number; classified: number; covert_gun: number };
+  oldest_age_days: number;
+  avg_age_days: number;
+}
+
 export interface SyncStatus {
   classified_listings: number;
   classified_skins: number;
@@ -165,12 +214,27 @@ export interface SyncStatus {
   total_sales: number;
   knife_trade_ups: number;
   knife_profitable: number;
+  knife_active: number;
+  knife_partial: number;
+  knife_stale: number;
   covert_trade_ups: number;
   covert_profitable: number;
+  theory_trade_ups: number;
+  theory_profitable: number;
   trade_ups_count: number;
   profitable_count: number;
+  theoretical_count: number;
   last_calculation: string | null;
   daemon_status: DaemonStatus | null;
   top_collections: TopCollection[];
   exploration_stats: ExplorationStats | null;
+  ref_coverage: RefCoverage | null;
+  theory_tracking: TheoryTrackingSummary | null;
+  total_skins: number;
+  total_listings: number;
+  knife_glove_skins: number;
+  knife_glove_with_listings: number;
+  knife_glove_listings: number;
+  collection_count: number;
+  collections_with_knives: number;
 }

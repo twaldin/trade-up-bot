@@ -5,8 +5,6 @@
 
 import type { ListingWithCollection, DbSkinOutcome } from "./types.js";
 
-// ─── Float Calculation (Post-October 2025) ──────────────────────────────────
-
 export function calculateOutputFloat(
   inputs: { float_value: number; min_float: number; max_float: number }[],
   outputMinFloat: number,
@@ -22,8 +20,6 @@ export function calculateOutputFloat(
   const outputFloat = outputMinFloat + avgAdjusted * (outputMaxFloat - outputMinFloat);
   return Math.max(outputMinFloat, Math.min(outputMaxFloat, outputFloat));
 }
-
-// ─── Probability Calculation (Post-October 2024 Per-Input Ratio) ─────────────
 
 export function calculateOutcomeProbabilities(
   inputs: ListingWithCollection[],

@@ -3,7 +3,7 @@
  * Used by discovery and optimization modules to pick optimal inputs.
  */
 
-import type { ListingWithCollection, AdjustedListing, DbSkinOutcome } from "./types.js";
+import { CONDITION_BOUNDS, type ListingWithCollection, type AdjustedListing, type DbSkinOutcome } from "./types.js";
 
 /**
  * Pre-compute normalized adjusted float for each listing.
@@ -25,7 +25,7 @@ export function addAdjustedFloat(listings: ListingWithCollection[]): AdjustedLis
  * Evaluating EV at each transition point finds the optimal float target.
  */
 export function getConditionTransitions(outcomes: DbSkinOutcome[]): number[] {
-  const condBoundaries = [0.07, 0.15, 0.38, 0.45];
+  const condBoundaries = CONDITION_BOUNDS.slice(0, 4).map(b => b.max);
   const points = new Set<number>();
 
   for (const o of outcomes) {
@@ -94,15 +94,15 @@ export function selectForFloatTarget(
   for (const l of candidates) {
     if (result.length >= count) break;
 
-    const colPicked = picked.get(l.collection_id) ?? 0;
-    const colQuota = quotas.get(l.collection_id) ?? 0;
+    const colPicked = picked.get(l.collection_name) ?? 0;
+    const colQuota = quotas.get(l.collection_name) ?? 0;
     if (colPicked >= colQuota) continue;
     if (usedIds.has(l.id)) continue;
 
     if (usedFloat + l.adjustedFloat <= totalBudget) {
       result.push(l);
       usedFloat += l.adjustedFloat;
-      picked.set(l.collection_id, colPicked + 1);
+      picked.set(l.collection_name, colPicked + 1);
       usedIds.add(l.id);
     }
   }
@@ -150,4 +150,81 @@ export function selectLowestFloat(
   }
 
   return result.length === count ? result : null;
+}
+
+/**
+ * Float-greedy selection within a float budget: prioritizes LOW FLOAT over price.
+ * Sorts by adjustedFloat ascending within budget, maximizing chance of better-condition outputs.
+ * Counterpart to selectForFloatTarget which is price-greedy.
+ */
+export function selectForFloatTargetFloatGreedy(
+  byCol: Map<string, AdjustedListing[]>,
+  quotas: Map<string, number>,
+  maxAvgAdjusted: number,
+  count: number = 10
+): AdjustedListing[] | null {
+  const totalBudget = count * maxAvgAdjusted;
+
+  const candidates: AdjustedListing[] = [];
+  for (const [colId, quota] of quotas) {
+    if (quota <= 0) continue;
+    const pool = byCol.get(colId);
+    if (!pool || pool.length < quota) return null;
+    for (const l of pool) {
+      if (l.adjustedFloat <= totalBudget) candidates.push(l);
+    }
+  }
+
+  candidates.sort((a, b) => a.adjustedFloat - b.adjustedFloat || a.price_cents - b.price_cents);
+
+  const picked = new Map<string, number>();
+  const result: AdjustedListing[] = [];
+  let usedFloat = 0;
+  const usedIds = new Set<string>();
+
+  for (const l of candidates) {
+    if (result.length >= count) break;
+    const colPicked = picked.get(l.collection_name) ?? 0;
+    const colQuota = quotas.get(l.collection_name) ?? 0;
+    if (colPicked >= colQuota) continue;
+    if (usedIds.has(l.id)) continue;
+    if (usedFloat + l.adjustedFloat <= totalBudget) {
+      result.push(l);
+      usedFloat += l.adjustedFloat;
+      picked.set(l.collection_name, colPicked + 1);
+      usedIds.add(l.id);
+    }
+  }
+
+  for (const [colId, quota] of quotas) {
+    if ((picked.get(colId) ?? 0) < quota) return null;
+  }
+  return result.length === count ? result : null;
+}
+
+/**
+ * Try multiple selection strategies and return all valid results.
+ * Callers can evaluate each and pick the most profitable.
+ */
+export function selectMultiStrategy(
+  byCol: Map<string, AdjustedListing[]>,
+  quotas: Map<string, number>,
+  maxAvgAdjusted: number,
+  count: number = 10
+): AdjustedListing[][] {
+  const results: AdjustedListing[][] = [];
+
+  const priceGreedy = selectForFloatTarget(byCol, quotas, maxAvgAdjusted, count);
+  if (priceGreedy) results.push(priceGreedy);
+
+  const floatGreedy = selectForFloatTargetFloatGreedy(byCol, quotas, maxAvgAdjusted, count);
+  if (floatGreedy) results.push(floatGreedy);
+
+  const relaxed = selectForFloatTarget(byCol, quotas, maxAvgAdjusted * 1.15, count);
+  if (relaxed) results.push(relaxed);
+
+  const lowest = selectLowestFloat(byCol, quotas, count);
+  if (lowest) results.push(lowest);
+
+  return results;
 }

@@ -90,6 +90,18 @@ export const GLOVE_POOL_GEN3 = {
   },
 } as const;
 
+export const GLOVE_POOL_GEN4 = {
+  label: 'Gen 4',
+  types: [
+    'Driver Gloves', 'Specialist Gloves', 'Sport Gloves',
+  ],
+  skins: {
+    'Driver Gloves': ['Wave Chaser', 'Seigaiha', 'Plum Quill', 'Hand Sweaters', 'Garden', 'Dragon Fists', 'Brocade Flowers', 'Brocade Crane'],
+    'Specialist Gloves': ['Big Swell', 'Sunburst', 'Pillow Punchers', 'Chocolate Chesterfield', 'Blackbook', 'Cloud Chaser', 'Lime Polycam'],
+    'Sport Gloves': ['Ultra Violent', 'Creme Pinstripe', 'Red Racer', 'Blaze', 'Frosty', 'Violet Beadwork', 'Occult'],
+  },
+} as const;
+
 // ---------------------------------------------------------------------------
 // Case data type
 // ---------------------------------------------------------------------------
@@ -99,7 +111,7 @@ export interface CaseData {
   collectionName: string;
   knifeTypes: string[];
   knifeFinishSet: 'original' | 'chroma' | 'gamma';
-  glovePool: typeof GLOVE_POOL_GEN1 | typeof GLOVE_POOL_GEN2 | typeof GLOVE_POOL_GEN3 | null;
+  glovePool: typeof GLOVE_POOL_GEN1 | typeof GLOVE_POOL_GEN2 | typeof GLOVE_POOL_GEN3 | typeof GLOVE_POOL_GEN4 | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +467,15 @@ export const CS2_CASES: CaseData[] = [
     knifeTypes: [],
     knifeFinishSet: 'original', // n/a
     glovePool: GLOVE_POOL_GEN3,
+  },
+
+  // --- Gen 4 gloves (Dead Hand Terminal — Driver, Specialist, Sport) ---
+  {
+    caseName: 'Sealed Dead Hand Terminal',
+    collectionName: 'The Dead Hand Collection',
+    knifeTypes: [],
+    knifeFinishSet: 'original', // n/a
+    glovePool: GLOVE_POOL_GEN4,
   },
 ];
 

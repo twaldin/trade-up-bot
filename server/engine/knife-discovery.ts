@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { floatToCondition, type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import type { ListingWithCollection, AdjustedListing } from "./types.js";
 import type { FinishData } from "./knife-data.js";
-import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./knife-data.js";
+import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS, KNIFE_WEAPONS } from "./knife-data.js";
 import { buildPriceCache } from "./pricing.js";
 import { getListingsForRarity } from "./data-load.js";
 import { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./selection.js";
@@ -23,22 +23,15 @@ export function findProfitableKnifeTradeUps(
   db: Database.Database,
   options: {
     onProgress?: (msg: string) => void;
+    extraTransitionPoints?: number[];
   } = {}
 ): TradeUp[] {
   options.onProgress?.("Building price cache for knife trade-ups...");
   buildPriceCache(db);
 
   // Get all Covert gun listings (knife trade-up inputs)
-  const KNIFE_WEAPONS = [
-    "Bayonet", "Karambit", "Butterfly Knife", "Flip Knife", "Gut Knife",
-    "Huntsman Knife", "M9 Bayonet", "Falchion Knife", "Shadow Daggers",
-    "Bowie Knife", "Navaja Knife", "Stiletto Knife", "Ursus Knife",
-    "Talon Knife", "Classic Knife", "Paracord Knife", "Survival Knife",
-    "Nomad Knife", "Skeleton Knife", "Kukri Knife",
-  ];
-
   const allListings = getListingsForRarity(db, "Covert")
-    .filter(l => !KNIFE_WEAPONS.includes(l.weapon)); // Only gun skins, not knives
+    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon)); // Only gun skins, not knives
 
   if (allListings.length === 0) {
     options.onProgress?.("No Covert gun listings found");
@@ -109,7 +102,10 @@ export function findProfitableKnifeTradeUps(
 
   // Pre-compute float transitions for knife outcomes
   // For knives, transition points matter because output float determines condition → price
-  const knifeTransitionPoints = [0.001, 0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.35, 0.45];
+  // Base 9 points + theory-informed targets from pessimistic analysis
+  const baseTransitions = [0.001, 0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.35, 0.45];
+  const extra = options.extraTransitionPoints ?? [];
+  const knifeTransitionPoints = [...new Set([...baseTransitions, ...extra])].sort((a, b) => a - b);
 
   // Knife selection helpers use the parameterized versions from selection.ts with count=5
   const selectForKnifeFloat = (quotas: Map<string, number>, maxAvgAdjusted: number) =>
@@ -236,7 +232,7 @@ export function findProfitableKnifeTradeUps(
 
   // ── Step 3: Three-collection knife trade-ups ──
   options.onProgress?.("Knife: three-collection combos...");
-  const maxTripleKnife = Math.min(knifeCollections.length, 20);
+  const maxTripleKnife = Math.min(knifeCollections.length, 35);
   for (let i = 0; i < maxTripleKnife; i++) {
     for (let j = i + 1; j < maxTripleKnife; j++) {
       for (let k = j + 1; k < maxTripleKnife; k++) {
@@ -281,6 +277,54 @@ export function findProfitableKnifeTradeUps(
 
   options.onProgress?.(`Knife: triples done (${results.length} trade-ups)`);
 
+  // Step 4: Four-collection knife trade-ups
+  options.onProgress?.("Knife: four-collection combos...");
+  const maxQuadKnife = Math.min(knifeCollections.length, 20);
+  for (let i = 0; i < maxQuadKnife; i++) {
+    for (let j = i + 1; j < maxQuadKnife; j++) {
+      for (let k = j + 1; k < maxQuadKnife; k++) {
+        for (let l = k + 1; l < maxQuadKnife; l++) {
+          const cols = [knifeCollections[i], knifeCollections[j], knifeCollections[k], knifeCollections[l]];
+          const pooled = cols
+            .flatMap(c => byCollection.get(c) ?? [])
+            .sort((a, b) => a.price_cents - b.price_cents);
+          if (pooled.length < 5) continue;
+
+          tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
+
+          // Float-targeted: lowest float
+          const quotas = new Map<string, number>();
+          const colCounts = cols.map(c => ({ name: c, count: byCollection.get(c)?.length ?? 0 }))
+            .sort((a, b) => b.count - a.count);
+          quotas.set(colCounts[0].name, 2);
+          for (let r = 1; r < 4; r++) quotas.set(colCounts[r].name, 1);
+          const lowestFloat = selectLowestKnifeFloat(quotas);
+          if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
+        }
+      }
+    }
+  }
+  options.onProgress?.(`Knife: quads done (${results.length} trade-ups)`);
+
+  // Step 5: Five-collection knife trade-ups (cheapest pool only)
+  const maxQuintKnife = Math.min(knifeCollections.length, 16);
+  for (let i = 0; i < maxQuintKnife; i++) {
+    for (let j = i + 1; j < maxQuintKnife; j++) {
+      for (let k = j + 1; k < maxQuintKnife; k++) {
+        for (let l = k + 1; l < maxQuintKnife; l++) {
+          for (let m = l + 1; m < maxQuintKnife; m++) {
+            const pooled = [knifeCollections[i], knifeCollections[j], knifeCollections[k], knifeCollections[l], knifeCollections[m]]
+              .flatMap(c => byCollection.get(c) ?? [])
+              .sort((a, b) => a.price_cents - b.price_cents);
+            if (pooled.length < 5) continue;
+            tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
+          }
+        }
+      }
+    }
+  }
+  options.onProgress?.(`Knife: quints done (${results.length} trade-ups)`);
+
   // Sort by profit
   results.sort((a, b) => b.profit_cents - a.profit_cents);
   return results;
@@ -302,16 +346,8 @@ export function randomKnifeExplore(
   const iterations = options.iterations ?? 500;
   buildPriceCache(db);
 
-  const KNIFE_WEAPONS = [
-    "Bayonet", "Karambit", "Butterfly Knife", "Flip Knife", "Gut Knife",
-    "Huntsman Knife", "M9 Bayonet", "Falchion Knife", "Shadow Daggers",
-    "Bowie Knife", "Navaja Knife", "Stiletto Knife", "Ursus Knife",
-    "Talon Knife", "Classic Knife", "Paracord Knife", "Survival Knife",
-    "Nomad Knife", "Skeleton Knife", "Kukri Knife",
-  ];
-
   const allListings = getListingsForRarity(db, "Covert")
-    .filter(l => !KNIFE_WEAPONS.includes(l.weapon));
+    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
 
   const allAdjusted = addAdjustedFloat(allListings);
@@ -361,8 +397,8 @@ export function randomKnifeExplore(
   }
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents)
-    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?)
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source)
+    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 'explore')
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
@@ -664,8 +700,8 @@ export function randomKnifeExplore(
       });
       saveTu();
       found++;
-    } catch {
-      // Skip errors in random exploration
+    } catch (err) {
+      console.error("  Knife explore error:", err instanceof Error ? err.message : err);
     }
   }
 
