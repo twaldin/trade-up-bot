@@ -124,7 +124,9 @@ function createTables(db: Database.Database) {
     -- Add chance_to_profit column if missing
   `);
 
-  // Safe column migrations
+  // Column migrations for upgrading existing DBs.
+  // Wrapped in try/catch: on fresh DBs, tables don't exist yet (created below).
+  try {
   const tuCols = db.pragma("table_info(trade_ups)") as { name: string }[];
 
   // Listing status tracking: 'active' | 'partial' | 'stale'
@@ -222,6 +224,8 @@ function createTables(db: Database.Database) {
       console.log(`  Backfilled outcomes_json for ${allTuIds.length} trade-ups`);
     }
   }
+
+  } catch { /* Migrations fail on fresh DB — tables created below */ }
 
   db.exec(`
     -- Indexes for performance
