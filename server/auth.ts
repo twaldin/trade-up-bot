@@ -145,13 +145,22 @@ export function setupAuth(app: Express, db: Database.Database) {
 
     // Auth routes
     app.get("/auth/steam", passport.authenticate("steam"));
-    app.get("/auth/steam/callback",
-      passport.authenticate("steam", { failureRedirect: "/?auth=failed" }),
-      (req, res) => {
-        console.log(`Steam login: ${(req.user as any)?.display_name} (${(req.user as any)?.steam_id})`);
-        res.redirect("/");
-      }
-    );
+    app.get("/auth/steam/callback", (req, res, next) => {
+      passport.authenticate("steam", (err: any, user: any) => {
+        if (err || !user) {
+          console.error("Steam auth failed:", err?.message || "no user");
+          return res.redirect("/?auth=failed");
+        }
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            console.error("Session login failed:", loginErr.message);
+            return res.redirect("/?auth=failed");
+          }
+          console.log(`Steam login: ${user.display_name} (${user.steam_id})`);
+          res.redirect("/");
+        });
+      })(req, res, next);
+    });
   }
 
   // Logout
