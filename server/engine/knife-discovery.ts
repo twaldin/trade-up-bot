@@ -129,9 +129,22 @@ export function findProfitableKnifeTradeUps(
     const listings = byCollection.get(colName)!;
     if (listings.length < 5) continue;
 
-    // Sliding windows (cheapest) — cap at 15 (offsets beyond that use expensive listings)
+    // Sliding windows (cheapest) — cap at 15
     for (let offset = 0; offset + 5 <= listings.length && offset < 15; offset++) {
       tryAdd(evaluateKnifeTradeUp(db, listings.slice(offset, offset + 5), knifeFinishCache));
+    }
+
+    // Value-sorted: sort by lowest adjusted float (best output condition), then cheapest.
+    // More expensive low-float listings may produce higher-condition outputs worth much more.
+    const valueSorted = [...listings].sort(
+      (a, b) => {
+        const adjA = (a.max_float - a.min_float) > 0 ? (a.float_value - a.min_float) / (a.max_float - a.min_float) : 0;
+        const adjB = (b.max_float - b.min_float) > 0 ? (b.float_value - b.min_float) / (b.max_float - b.min_float) : 0;
+        return adjA - adjB || a.price_cents - b.price_cents;
+      }
+    );
+    for (let offset = 0; offset + 5 <= valueSorted.length && offset < 15; offset += 5) {
+      tryAdd(evaluateKnifeTradeUp(db, valueSorted.slice(offset, offset + 5), knifeFinishCache));
     }
 
     // Float-targeted: for each transition point
@@ -145,7 +158,8 @@ export function findProfitableKnifeTradeUps(
     const lowestFloat = selectLowestKnifeFloat(quotas);
     if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
 
-    // Condition-pure groups
+    // Condition-pure groups — deeper windows to find combos systematic cheapest misses.
+    // Random explore proved $100 trade-ups hide in non-cheapest condition groups.
     const byCondition = new Map<string, ListingWithCollection[]>();
     for (const l of listings) {
       const cond = floatToCondition(l.float_value);
@@ -154,21 +168,43 @@ export function findProfitableKnifeTradeUps(
       byCondition.set(cond, list);
     }
     for (const [, condListings] of byCondition) {
-      if (condListings.length >= 5) {
-        tryAdd(evaluateKnifeTradeUp(db, condListings.slice(0, 5), knifeFinishCache));
-        if (condListings.length >= 10) {
-          tryAdd(evaluateKnifeTradeUp(db, condListings.slice(5, 10), knifeFinishCache));
+      // Try multiple windows within each condition (cheapest, 2nd cheapest, 3rd cheapest)
+      for (let window = 0; window < 3; window++) {
+        const off = window * 5;
+        if (condListings.length >= off + 5) {
+          tryAdd(evaluateKnifeTradeUp(db, condListings.slice(off, off + 5), knifeFinishCache));
         }
       }
     }
 
-    // Per-skin pooling
+    // Per-skin combos — different skins have different float ranges, producing different outputs.
+    // "All Dragonfire FN" (range 0-0.6) produces different output float than "All Buzz Kill" (0-0.5).
     const bySkin = new Map<string, ListingWithCollection[]>();
     for (const l of listings) {
       const list = bySkin.get(l.skin_id) ?? [];
       list.push(l);
       bySkin.set(l.skin_id, list);
     }
+    // Try each skin individually (if enough listings)
+    for (const [, skinListings] of bySkin) {
+      if (skinListings.length >= 5) {
+        tryAdd(evaluateKnifeTradeUp(db, skinListings.slice(0, 5), knifeFinishCache));
+        // Also try per-condition within the skin
+        const skinByCondition = new Map<string, ListingWithCollection[]>();
+        for (const l of skinListings) {
+          const cond = floatToCondition(l.float_value);
+          const list = skinByCondition.get(cond) ?? [];
+          list.push(l);
+          skinByCondition.set(cond, list);
+        }
+        for (const [, condSkinListings] of skinByCondition) {
+          if (condSkinListings.length >= 5) {
+            tryAdd(evaluateKnifeTradeUp(db, condSkinListings.slice(0, 5), knifeFinishCache));
+          }
+        }
+      }
+    }
+    // Multi-skin pooling
     const skinGroups = [...bySkin.values()];
     if (skinGroups.length >= 2) {
       const pooled = skinGroups.flatMap(g => g.slice(0, 3)).sort((a, b) => a.price_cents - b.price_cents);

@@ -1,17 +1,15 @@
 # CS2 Trade-Up Bot
 
-Automated CS2 trade-up contract analyzer. Finds profitable trade-ups across all rarity tiers by combining market data from CSFloat, DMarket, and Skinport.
+Finds profitable CS2 trade-up contracts by analyzing market data from CSFloat, DMarket, and Skinport.
 
-## What It Does
+## How It Works
 
-CS2 trade-up contracts let you trade 10 gun skins of one rarity for 1 gun skin of the next rarity (or 5 Covert skins for 1 knife/glove). The output skin's float (wear) is deterministic based on input floats. The bot:
+CS2 trade-up contracts let you trade 10 skins of one rarity for 1 skin of the next rarity (or 5 Covert skins for 1 knife/glove). The output float is deterministic: `outFloat = outMin + avg(normalized_inputs) × (outMax - outMin)`. The bot:
 
-1. **Fetches listings** from CSFloat and DMarket marketplaces
-2. **Evaluates every combination** of inputs across collections, targeting specific output float values
-3. **Calculates expected value** accounting for all possible outcomes weighted by probability
-4. **Finds profitable trade-ups** where EV > total input cost (after marketplace fees)
-5. **Tracks theories** — pre-screens combos before spending API budget to fetch their listings
-6. **Builds multi-step staircases** — chains of trade-ups (e.g., 100 cheap Restricted skins → 10 Classified → 1 expensive Covert)
+1. **Fetches listings** continuously from CSFloat (API) and DMarket (2 RPS fetcher)
+2. **Evaluates combinations** across collections at ~45 float targets per combo
+3. **Calculates EV** from all possible outcomes weighted by collection probability
+4. **Finds profitable trade-ups** where EV exceeds cost after marketplace fees
 
 ## Architecture
 
@@ -22,97 +20,110 @@ CS2 trade-up contracts let you trade 10 gun skins of one rarity for 1 gun skin o
 │  port 5173   │     └──────────────┘     └────────────────┘
 └─────────────┘              ▲                     ▲
                              │              ┌──────┴───────┐
-                    ┌────────┴────────┐     │              │
-                    │     Daemon      │     │   DMarket    │
-                    │  Multi-phase    │     │   Fetcher    │
-                    │  20-min cycles  │     │  2 RPS cont. │
-                    └─────────────────┘     └──────────────┘
+                    ┌────────┴────────┐     │   DMarket    │
+                    │     Daemon      │     │   Fetcher    │
+                    │  10-min cycles  │     │  2 RPS cont. │
+                    │  5 workers      │     └──────────────┘
+                    └─────────────────┘
 ```
 
-### Key Directories
+### Project Structure
 
 ```
 server/
-├── engine/              # Trade-up math, pricing, discovery (barrel: engine.ts)
+├── engine/              # Trade-up math + discovery (barrel: engine.ts)
 │   ├── core.ts          # Float calculation, probability math
-│   ├── pricing.ts       # Multi-source price cache (CSFloat/DMarket/Skinport)
-│   ├── discovery.ts     # Generic rarity discovery engine
-│   ├── knife-discovery.ts  # Knife/glove specific discovery
-│   ├── evaluation.ts    # EV calculation for gun trade-ups
-│   ├── knife-evaluation.ts # EV calculation for knife trade-ups
-│   ├── rarity-tiers.ts  # Config-driven tier system
-│   ├── staircase-generic.ts # Multi-step staircase chains
-│   └── db-ops.ts        # Save/merge/revive trade-ups
+│   ├── pricing.ts       # Multi-source price cache (CSFloat-primary)
+│   ├── knn-pricing.ts   # KNN float-precise pricing for knife/glove outputs
+│   ├── discovery.ts     # Generic rarity discovery (all tiers)
+│   ├── knife-discovery.ts   # Knife/glove discovery with condition targeting
+│   ├── evaluation.ts    # EV for gun trade-ups
+│   ├── knife-evaluation.ts  # EV for knife trade-ups (Doppler phase expansion)
+│   ├── selection.ts     # Float-targeted listing selection strategies
+│   ├── store.ts         # Diversity-controlled result deduplication
+│   ├── rarity-tiers.ts  # Config-driven tier definitions
+│   ├── staircase.ts     # 2-stage staircase (Classified→Covert→Knife)
+│   ├── fees.ts          # Per-marketplace fee calculations
+│   ├── db-ops.ts        # Merge-save, revival, trimming
+│   └── knife-data.ts    # Knife/glove constants, Doppler phases
 ├── daemon-knife/        # Daemon loop
 │   ├── index.ts         # Main loop, worker spawning
-│   ├── phases/          # Per-phase logic (split from monolithic phases.ts)
-│   │   ├── housekeeping.ts
-│   │   ├── theory.ts
-│   │   ├── data-fetch.ts
-│   │   ├── knife-calc.ts
-│   │   └── classified-calc.ts
-│   ├── calc-worker.ts   # Child process for parallel discovery
-│   └── state.ts         # Budget tracking, rate limit pacing
+│   ├── phases/          # Per-phase logic
+│   ├── calc-worker.ts   # Child process for parallel discovery (NDJSON IPC)
+│   ├── loops.ts         # Cooldown: staleness + random exploration
+│   └── state.ts         # Budget pacing, rate limit tracking
 ├── sync/                # Data fetchers (barrel: sync.ts)
 │   ├── csfloat.ts       # CSFloat listing search
-│   ├── dmarket.ts       # DMarket listings + buy API
+│   ├── dmarket.ts       # DMarket listings
 │   ├── sales.ts         # CSFloat sale history
-│   ├── skinport-ws.ts   # Skinport WebSocket (passive)
-│   └── wanted.ts        # Theory-guided targeted fetching
+│   └── skinport-ws.ts   # Skinport WebSocket (passive)
 ├── routes/              # Express API routes
 ├── dmarket-fetcher.ts   # Standalone continuous DMarket fetcher
-└── db.ts                # SQLite schema + connection
+└── db.ts                # SQLite schema + migrations
 
 src/                     # React frontend
 ├── App.tsx              # Routing, nav, status bar
-├── pages/               # Route pages
-└── components/          # UI components
+├── pages/               # TradeUpsPage, CalculatorPage
+└── components/          # TradeUpTable, DataViewer, DaemonModal, etc.
 
-shared/
-├── types.ts             # Shared TypeScript interfaces
-└── caseData.ts          # Case → collection → knife mappings
+shared/types.ts          # Shared TypeScript types
 ```
 
 ## Trade-Up Types
 
-| Type | Formula | Example |
-|------|---------|---------|
-| Knife/Glove | 5 Covert → 1 ★ | 5× M4A4 Buzz Kill → 1× Butterfly Knife Fade |
-| Classified→Covert | 10 Classified → 1 Covert | 10× AUG Syd Mead → 1× AK-47 Asiimov |
-| Restricted→Classified | 10 Restricted → 1 Classified | 10× P2000 Space Race → 1× AK-47 Crane Flight |
-| Mil-Spec→Restricted | 10 Mil-Spec → 1 Restricted | 10× Galil AR Metallic Squeezer → 1× M4A1-S Electrum |
-| Staircase RC | 100 R → 10 C → 1 Cv | Chain of trade-ups producing a Covert |
-| Staircase RCK | 500 R → 50 C → 5 Cv → 1 K | Chain producing a Knife/Glove |
+| Type | Inputs | Output |
+|------|--------|--------|
+| Knife/Glove | 5 Covert guns | 1 Knife or Gloves |
+| Classified→Covert | 10 Classified | 1 Covert gun |
+| Restricted→Classified | 10 Restricted | 1 Classified |
+| Mil-Spec→Restricted | 10 Mil-Spec | 1 Restricted |
+| Industrial→Mil-Spec | 10 Industrial Grade | 1 Mil-Spec |
+| Staircase | 50 Classified | 5 Covert → 1 Knife |
 
-## Daemon Cycle (20-min target)
+## Daemon Cycle (10-min target)
 
 1. **Housekeeping** — purge stale data, refresh listing statuses
-2. **Theory** — pre-screen combos using pricing models (knife, classified, restricted, milspec)
-3. **API Probe** — check CSFloat rate limit pools
-4. **Data Fetch** — sale history, listings, DMarket coverage, wanted list
-5. **Parallel Discovery** — 5 worker processes find trade-ups simultaneously
-6. **Materialization** — validate theories with real listing data
-7. **Staircase Evaluation** — build multi-step chains from existing trade-ups
-8. **Cooldown** — staleness checks using individual lookup pool
+2. **API Probe** — check CSFloat rate limit pools (3 independent pools)
+3. **Data Fetch** — sale history + CSFloat listings (Covert + Extraordinary only)
+4. **Parallel Discovery** — 5 worker processes (knife, classified, restricted, milspec, industrial)
+5. **Staircase** — build 2-stage chains from classified trade-ups
+6. **Cooldown** — staleness checks + random exploration + revival
+
+CSFloat budget goes 100% to Covert inputs + Extraordinary outputs. DMarket fetcher handles all lower rarities at 2 RPS continuously.
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env
-# Add CSFLOAT_API_KEY, DMARKET_PUBLIC_KEY, DMARKET_SECRET_KEY to .env
+# Add API keys to .env:
+#   CSFLOAT_API_KEY=...
+#   DMARKET_PUBLIC_KEY=...
+#   DMARKET_SECRET_KEY=...
+
+# Start all processes:
+npx tsx watch server/index.ts              # API server (port 3001)
+npm run dev                                 # Frontend (port 5173)
+NODE_OPTIONS="--max-old-space-size=8192" npx tsx server/daemon.ts   # Daemon
+npx tsx server/dmarket-fetcher.ts           # DMarket fetcher (2 RPS)
 ```
 
-## Data Sources
+## Pricing
 
-- **CSFloat** — primary marketplace. Listings, sale history, ref prices. Auth required.
-- **DMarket** — secondary marketplace. Listings (commodity skins), purchase API. Auth required.
-- **Skinport** — passive WebSocket feed. Listings + sale events for price observations. No auth.
+**Output pricing** (sell side) — CSFloat-primary, conservative:
+- CSFloat sale history → DMarket/Skinport floor (gap-fill) → CSFloat ref → KNN float-precise (★ items)
 
-## Key Technical Details
+**Input pricing** (buy side) — actual listing prices + marketplace fees:
+- CSFloat: 2.8% + $0.30 deposit | DMarket: 2.5% | Skinport: 0%
 
-- **Float formula**: `outputFloat = outMin + avg((inFloat - inMin)/(inMax - inMin)) × (outMax - outMin)` — fully deterministic
-- **Probability**: weighted by input collection representation (e.g., 3 from Collection A + 2 from Collection B = 60%/40% chance)
-- **Price values**: stored as integer cents throughout
-- **DB**: SQLite with WAL mode for concurrent access. 12GB+ with 45M+ outcome rows (optimization planned).
-- **Workers**: child_process.fork() with NDJSON temp file IPC (avoids V8 string limits on large result sets)
+**Seller fees** deducted from outputs: CSFloat 2% | DMarket 2% | Skinport 12%
+
+## Technical Details
+
+- **Float formula**: `outFloat = outMin + avg((inFloat - inMin)/(inMax - inMin)) × (outMax - outMin)` — fully deterministic
+- **Probability**: weighted by input collection representation
+- **Prices**: integer cents throughout (no floating point for money)
+- **DB**: SQLite WAL mode, ~2GB. 50K cap per type with composite score trimming.
+- **Workers**: `child_process.fork()` with NDJSON temp file IPC (avoids V8 string limits)
+- **Discovery**: ~45 float targets per knife combo, condition-pure groups, per-skin combos, value-sorted selection
+- **Chance-to-profit**: first-class metric — trade-ups with >25% chance kept even if EV-negative

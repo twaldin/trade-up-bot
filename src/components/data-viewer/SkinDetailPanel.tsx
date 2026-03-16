@@ -15,7 +15,7 @@ interface SkinDetailPanelProps {
   onNavigateCollection?: (name: string) => void;
 }
 
-/** Skeleton pulse block for loading state */
+// Loading placeholder
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className ?? ""}`} />;
 }

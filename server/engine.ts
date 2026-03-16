@@ -29,7 +29,7 @@ export {
 } from "./engine/db-ops.js";
 
 // Selection
-export { addAdjustedFloat, selectForFloatTarget, selectForFloatTargetFloatGreedy, selectLowestFloat } from "./engine/selection.js";
+export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./engine/selection.js";
 
 // Data loading
 export { getListingsForRarity, getOutcomesForCollections, getNextRarity } from "./engine/data-load.js";

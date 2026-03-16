@@ -1,6 +1,4 @@
-/**
- * Knife/glove trade-up evaluation: EV calculation for 5-input → knife/glove pool.
- */
+// Knife/glove trade-up evaluation: EV calculation for 5-input → knife/glove pool.
 
 import Database from "better-sqlite3";
 import { floatToCondition, type TradeUp, type TradeUpInput, type TradeUpOutcome } from "../../shared/types.js";
@@ -11,10 +9,7 @@ import { calculateOutputFloat } from "./core.js";
 import { lookupOutputPrice } from "./pricing.js";
 import { effectiveBuyCost } from "./fees.js";
 
-/**
- * Get all knife/glove finish skins with prices for a weapon type.
- * Returns skins with their average price across conditions.
- */
+// Get all knife/glove finish skins with prices for a weapon type.
 export function getKnifeFinishesWithPrices(
   db: Database.Database,
   knifeType: string
@@ -97,14 +92,7 @@ export function getKnifeFinishesWithPrices(
   return results;
 }
 
-/**
- * Evaluate a knife trade-up: given 5 Covert listings, compute EV from knife pool.
- *
- * For single-collection: 100% chance of that collection's knife pool.
- * For mixed collections: weighted by input proportion.
- *
- * Within each case's knife pool, all finishes are equally likely.
- */
+// Evaluate a knife trade-up: 5 Covert inputs → EV from knife/glove pool.
 export function evaluateKnifeTradeUp(
   db: Database.Database,
   inputs: ListingWithCollection[],
@@ -235,6 +223,7 @@ export function evaluateKnifeTradeUp(
   }
   const mergedOutcomes = [...mergedMap.values()];
 
+  // Unpriced outcomes contribute $0 (conservative).
   const evCents = Math.round(totalEv);
   const profit = evCents - totalCost;
   const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;

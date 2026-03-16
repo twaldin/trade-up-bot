@@ -8,9 +8,7 @@ export interface StatusDiffs {
   covert_profitable: number;
 }
 
-/**
- * Polls /api/status and provides status + new-data detection + diffs.
- */
+// Poll /api/status for updates and detect changes.
 export function useStatus(pollInterval = 30_000) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [diffs, setDiffs] = useState<StatusDiffs>({ knife_trade_ups: 0, knife_profitable: 0, covert_trade_ups: 0, covert_profitable: 0 });

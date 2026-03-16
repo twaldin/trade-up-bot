@@ -16,6 +16,16 @@ import {
   checkDMarketStaleness,
   isDMarketConfigured,
 } from "../sync.js";
+import {
+  randomKnifeExplore,
+  randomExplore,
+  reviveStaleGunTradeUps,
+  getKnifeFinishesWithPrices,
+  reviveStaleTradeUps,
+  CASE_KNIFE_MAP,
+  GLOVE_GEN_SKINS,
+  type FinishData,
+} from "../engine.js";
 import { timestamp, setDaemonStatus, updateExplorationStats } from "./utils.js";
 import type { FreshnessTracker, BudgetTracker } from "./state.js";
 
@@ -71,6 +81,9 @@ export async function cooldownLoop(
   const dmarketEnabled = isDMarketConfigured();
   let dmarketChecked = 0;
   let dmarketRemoved = 0;
+  let cooldownExploreFound = 0;
+  let cooldownExploreImproved = 0;
+  let cooldownRevived = 0;
 
   while (Date.now() < endTime && !rateLimited && batchCount < totalBatches) {
     batchCount++;
@@ -130,8 +143,28 @@ export async function cooldownLoop(
       break;
     }
 
-    // Pace: wait between batches to spread evenly across cooldown
+    // Use wait time between staleness batches for CPU-only work:
+    // random exploration + revival (no API calls, just computation on existing data)
     const nextBatchAt = Date.now() + batchIntervalMs;
+    if (nextBatchAt - Date.now() > 3000) {
+      // Random explore: ~100μs per iteration, fill available time
+      const availMs = nextBatchAt - Date.now() - 1000; // leave 1s buffer
+      const knifeIters = Math.min(500, Math.floor(availMs / 2)); // ~half for knife
+      const classifiedIters = Math.min(500, Math.floor(availMs / 2)); // ~half for classified
+
+      const knifeExp = randomKnifeExplore(db, { iterations: knifeIters });
+      const classifiedExp = randomExplore(db, { iterations: classifiedIters });
+      cooldownExploreFound += knifeExp.found + classifiedExp.found;
+      cooldownExploreImproved += knifeExp.improved + classifiedExp.improved;
+
+      // Revival: check a batch of stale/partial trade-ups (CPU-only DB queries)
+      if (batchCount % 3 === 0) {
+        // Classified revival every 3rd batch
+        const gunRevival = reviveStaleGunTradeUps(db, 100);
+        cooldownRevived += gunRevival.revived;
+      }
+    }
+
     while (Date.now() < nextBatchAt && Date.now() < endTime) {
       await new Promise(r => setTimeout(r, Math.min(1000, nextBatchAt - Date.now())));
     }
@@ -143,14 +176,17 @@ export async function cooldownLoop(
   if (dmarketChecked > 0) {
     console.log(`  DMarket staleness: ${dmarketChecked} skins checked, ${dmarketRemoved} listings removed`);
   }
+  if (cooldownExploreFound > 0 || cooldownExploreImproved > 0 || cooldownRevived > 0) {
+    console.log(`  Cooldown work: +${cooldownExploreFound} explored, ${cooldownExploreImproved} improved, ${cooldownRevived} revived`);
+  }
 
   setDaemonStatus(db, "waiting", "Starting next cycle");
   console.log(`\n[${timestamp()}] Cooldown done (${elapsed} min, ${totalListingsChecked} staleness checks)`);
 
   return {
     passes: batchCount,
-    newFound: 0,
-    improved: 0,
+    newFound: cooldownExploreFound,
+    improved: cooldownExploreImproved,
     listingsChecked: totalListingsChecked,
     listingsSold: totalListingsSold,
     listingsRemoved: totalListingsRemoved,

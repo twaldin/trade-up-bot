@@ -72,7 +72,7 @@ function StatusBar({ status, diffs, view }: { status: SyncStatus | null; diffs: 
     <Stat label="Last Calc">{timeAgo(status?.last_calculation ?? null)}</Stat>
     {status?.daemon_status && (
       <Stat label="Daemon">{status.daemon_status.phase}
-        {(status.daemon_status as any).cycle > 0 && <span className="text-muted-foreground font-normal"> C{(status.daemon_status as any).cycle}</span>}
+        {(status.daemon_status?.cycle ?? 0) > 0 && <span className="text-muted-foreground font-normal"> C{status.daemon_status?.cycle}</span>}
       </Stat>
     )}
   </>);
