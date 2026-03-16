@@ -335,7 +335,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
                   <span className="text-[0.8rem] text-foreground/60">
-                    {tu.outcomes.length} possible
+                    {(tu as any).outcome_count || tu.outcomes.length} possible
                   </span>
                   {tu.is_theoretical && <ValidationBadge tracking={tu.tracking} />}
                 </td>

@@ -13,9 +13,9 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
     <div className="my-2 px-1">
       {tu.listing_status === 'stale' && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-red-950/50 border-l-[3px] border-l-red-500 text-red-300">
-          <strong className="mr-1">Stale</strong> &mdash; All {tu.missing_inputs ?? tu.inputs.length} input listings gone
+          <strong className="mr-1">Stale</strong> &mdash; {tu.missing_inputs || tu.inputs.length}/{tu.inputs.length} input listings gone
           {tu.preserved_at && <span className="text-muted-foreground"> (since {timeAgo(tu.preserved_at)})</span>}
-          . Waiting for replacement listings. Auto-purges after 7 days.
+          . Waiting for replacement listings. Auto-purges after 2 days.
         </div>
       )}
       {tu.listing_status === 'partial' && (
