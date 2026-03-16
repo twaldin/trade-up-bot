@@ -11,7 +11,6 @@ import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { snapshotsRouter } from "./routes/snapshots.js";
-import { buyRouter } from "./routes/buy.js";
 import { calculatorRouter } from "./routes/calculator.js";
 import { claimsRouter } from "./routes/claims.js";
 
@@ -75,7 +74,6 @@ app.use(tradeUpsRouter(db));
 app.use(dataRouter(db, knifeTypeToCases, collectionKnifePool));
 app.use(collectionsRouter(db, collectionKnifePool));
 app.use(snapshotsRouter(db));
-app.use(buyRouter(db));
 app.use(calculatorRouter(db));
 app.use(claimsRouter(db));
 

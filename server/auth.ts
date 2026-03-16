@@ -49,8 +49,49 @@ export function setupAuth(app: Express, db: Database.Database) {
     )
   `);
 
-  // Session setup (cookie-based, stored in memory — fine for single-server)
+  // Session store in SQLite (persists across PM2 restarts)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid TEXT PRIMARY KEY,
+      sess TEXT NOT NULL,
+      expired INTEGER NOT NULL
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+
+  // Clean expired sessions on startup
+  db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
+
+  const SqliteStore = {
+    get: (sid: string, cb: (err: any, sess?: any) => void) => {
+      try {
+        const row = db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
+        cb(null, row ? JSON.parse(row.sess) : null);
+      } catch (e) { cb(e); }
+    },
+    set: (sid: string, sess: any, cb: (err?: any) => void) => {
+      try {
+        const maxAge = sess?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+        const expired = Math.floor((Date.now() + maxAge) / 1000);
+        db.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
+        cb();
+      } catch (e) { cb(e); }
+    },
+    destroy: (sid: string, cb: (err?: any) => void) => {
+      try { db.prepare("DELETE FROM sessions WHERE sid = ?").run(sid); cb(); } catch (e) { cb(e); }
+    },
+    touch: (sid: string, sess: any, cb: (err?: any) => void) => {
+      try {
+        const maxAge = sess?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+        const expired = Math.floor((Date.now() + maxAge) / 1000);
+        db.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
+        cb();
+      } catch (e) { cb(e); }
+    },
+  };
+
   app.use(session({
+    store: SqliteStore as any,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -145,10 +186,17 @@ export function requireTier(...tiers: string[]) {
   };
 }
 
-// Middleware: apply tier-based filtering to trade-up queries
+// Middleware: apply tier-based filtering to trade-up queries.
+// Admins can pass ?view_as=free|basic|pro to preview other tiers.
 export function getTierConfig(req: Request): { delay: number; limit: number; showListingIds: boolean } {
   const user = req.user as User | undefined;
-  const tier = user?.tier || "free";
+  let tier = user?.tier || "free";
+
+  // Admin "view as" override
+  const viewAs = req.query.view_as as string | undefined;
+  if (viewAs && user?.tier === "admin" && ["free", "basic", "pro"].includes(viewAs)) {
+    tier = viewAs as typeof tier;
+  }
 
   switch (tier) {
     case "admin":
