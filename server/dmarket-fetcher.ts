@@ -2,19 +2,14 @@
  * Continuous DMarket listing fetcher — runs as a separate process.
  *
  * Fetches DMarket listings at a steady 2 RPS, completely independent of the
- * main daemon process. Reads priorities from the DB (wanted list + coverage gaps)
- * and writes listings directly to the same SQLite DB (WAL mode enables concurrent writes).
+ * main daemon process. Writes listings directly to SQLite (WAL mode).
  *
- * Strategy:
- *   1. Wanted list skins (from theory — highest priority)
- *   2. Coverage gaps (skins with fewest DMarket listings, all rarities)
- *   3. Staleness refresh (re-check skins not fetched in 30+ minutes)
+ * Strategy (coverage-first):
+ *   1. Coverage gaps (skins with fewest DMarket listings — Restricted priority)
+ *   2. Staleness refresh (re-check skins not fetched in 30+ minutes)
  *
  * Usage:
  *   npx tsx server/dmarket-fetcher.ts
- *
- * The daemon writes its wanted list to sync_meta.dmarket_wanted_list (JSON).
- * This process reads it and prioritizes those skins.
  */
 
 import Database from "better-sqlite3";
@@ -45,16 +40,9 @@ function log(msg: string) {
   fs.appendFileSync(LOG_PATH, line + "\n");
 }
 
-interface WantedEntry {
-  skin_name: string;
-  priority: number;
-  rarity?: string;
-}
-
 interface FetchStats {
   totalCalls: number;
   totalInserted: number;
-  wantedFetched: number;
   coverageFetched: number;
   cycleCount: number;
   startedAt: string;
@@ -65,7 +53,6 @@ interface FetchStats {
 const stats: FetchStats = {
   totalCalls: 0,
   totalInserted: 0,
-  wantedFetched: 0,
   coverageFetched: 0,
   cycleCount: 0,
   startedAt: new Date().toISOString(),
@@ -73,34 +60,32 @@ const stats: FetchStats = {
   errorsThisHour: 0,
 };
 
-/**
- * Load the wanted list that the daemon persists to sync_meta.
- */
-function loadWantedList(db: Database.Database): WantedEntry[] {
-  try {
-    const row = db.prepare(
-      "SELECT value FROM sync_meta WHERE key = 'dmarket_wanted_list'"
-    ).get() as { value: string } | undefined;
-    if (!row) return [];
-    return JSON.parse(row.value) as WantedEntry[];
-  } catch { /* DB may be locked */
-    return [];
-  }
-}
 
 /**
  * Get skins with lowest DMarket coverage, across all rarities.
  * Returns skins ordered by fewest listings first.
+ * Priority weighting: Restricted > Mil-Spec > Classified > Covert > Extraordinary.
+ * Restricted skins have the biggest coverage gap (19K vs 29K Mil-Spec) and thin
+ * profit margins that need fresh data to capture.
  */
 function getCoverageGaps(db: Database.Database, limit: number = 50): { skinName: string; rarity: string; listingCount: number }[] {
   return db.prepare(`
-    SELECT s.name as skinName, s.rarity, COUNT(l.id) as listingCount
+    SELECT s.name as skinName, s.rarity, COUNT(l.id) as listingCount,
+      CASE s.rarity
+        WHEN 'Industrial Grade' THEN 0
+        WHEN 'Restricted' THEN 1
+        WHEN 'Mil-Spec' THEN 2
+        WHEN 'Classified' THEN 3
+        WHEN 'Covert' THEN 4
+        WHEN 'Extraordinary' THEN 5
+        ELSE 6
+      END as rarity_priority
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
     WHERE s.stattrak = 0
-      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary')
+      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade')
     GROUP BY s.id
-    ORDER BY listingCount ASC, s.rarity DESC
+    ORDER BY listingCount ASC, rarity_priority ASC
     LIMIT ?
   `).all(limit) as { skinName: string; rarity: string; listingCount: number }[];
 }
@@ -115,7 +100,7 @@ function getStaleSkins(db: Database.Database, limit: number = 30): string[] {
     FROM skins s
     JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket'
     WHERE s.stattrak = 0
-      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary')
+      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade')
     GROUP BY s.id
     HAVING newest < datetime('now', '-30 minutes')
     ORDER BY newest ASC
@@ -125,22 +110,13 @@ function getStaleSkins(db: Database.Database, limit: number = 30): string[] {
 }
 
 /**
- * Build a prioritized fetch queue combining wanted list, coverage gaps, and stale skins.
+ * Build a prioritized fetch queue: coverage gaps first, then stale refresh.
  */
 function buildFetchQueue(db: Database.Database): string[] {
   const queue: string[] = [];
   const seen = new Set<string>();
 
-  // 1. Wanted list (highest priority)
-  const wanted = loadWantedList(db);
-  for (const w of wanted) {
-    if (!seen.has(w.skin_name)) {
-      queue.push(w.skin_name);
-      seen.add(w.skin_name);
-    }
-  }
-
-  // 2. Coverage gaps (skins with fewest/no DMarket listings)
+  // 1. Coverage gaps (skins with fewest/no DMarket listings — Restricted priority)
   const gaps = getCoverageGaps(db, 200);
   for (const g of gaps) {
     if (!seen.has(g.skinName)) {
@@ -149,7 +125,7 @@ function buildFetchQueue(db: Database.Database): string[] {
     }
   }
 
-  // 3. Stale skins (refresh old data)
+  // 2. Stale skins (refresh old data)
   const stale = getStaleSkins(db, 100);
   for (const s of stale) {
     if (!seen.has(s)) {
@@ -209,9 +185,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 10_000));
       continue;
     }
-    let wantedCount = 0;
-    try { wantedCount = loadWantedList(db).length; } catch { /* non-critical */ }
-    log(`\nCycle ${stats.cycleCount}: ${queue.length} skins to fetch (${wantedCount} wanted)`);
+    log(`\nCycle ${stats.cycleCount}: ${queue.length} skins to fetch`);
     try { writeStatus(db); } catch { /* non-critical */ }
 
     let cycleInserted = 0;

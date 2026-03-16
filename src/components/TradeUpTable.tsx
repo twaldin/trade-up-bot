@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { TradeUp, TradeUpInput, TheoryTracking } from "../../shared/types.js";
+import type { TradeUp, TradeUpInput } from "../../shared/types.js";
 import { formatDollars, condAbbr, csfloatSearchUrl } from "../utils/format.js";
 import { Badge } from "../../shared/components/ui/badge.js";
 import { OutcomeChart } from "./trade-up/OutcomeChart.js";
@@ -70,45 +70,6 @@ function worstCase(tu: TradeUp): number {
   if ((tu as any).worst_case_cents !== undefined && (tu as any).worst_case_cents !== 0) return (tu as any).worst_case_cents;
   if (tu.outcomes.length === 0) return -tu.total_cost_cents;
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
-}
-
-function ValidationBadge({ tracking }: { tracking?: TheoryTracking }) {
-  if (!tracking) return null;
-
-  const statusConfig: Record<string, { label: string; className: string; title: string }> = {
-    profitable: {
-      label: "Validated",
-      className: "border-green-800 bg-green-950 text-green-500",
-      title: `Real profit: ${formatDollars(tracking.real_profit_cents ?? 0)} (${tracking.attempts} checks)`,
-    },
-    near_miss: {
-      label: `-${formatDollars(tracking.gap_cents)}`,
-      className: "border-yellow-800 bg-yellow-950 text-amber-500",
-      title: `Near miss: need ${formatDollars(tracking.gap_cents)} cheaper inputs (${tracking.attempts} checks)`,
-    },
-    invalidated: {
-      label: "Invalid",
-      className: "border-red-800 bg-red-950 text-red-500",
-      title: `Gap: ${formatDollars(tracking.gap_cents)} from profitable (${tracking.attempts} checks)${tracking.cooldown_until ? ` \u2014 on cooldown` : ""}`,
-    },
-    no_listings: {
-      label: "No data",
-      className: "border-border bg-secondary text-muted-foreground",
-      title: `No listings available to validate (${tracking.attempts} checks)`,
-    },
-    pending: {
-      label: "Pending",
-      className: "border-border bg-card text-muted-foreground/50",
-      title: "Not yet validated",
-    },
-  };
-
-  const config = statusConfig[tracking.status] ?? statusConfig.pending;
-  return (
-    <Badge variant="outline" className={`ml-1.5 cursor-help text-[0.65rem] ${config.className}`} title={config.title}>
-      {config.label}
-    </Badge>
-  );
 }
 
 export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection }: Props) {
@@ -337,7 +298,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   <span className="text-[0.8rem] text-foreground/60">
                     {(tu as any).outcome_count || tu.outcomes.length} possible
                   </span>
-                  {tu.is_theoretical && <ValidationBadge tracking={tu.tracking} />}
                 </td>
               </tr>
               {expandedId === tu.id && (

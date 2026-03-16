@@ -77,6 +77,8 @@ export function findProfitableKnifeTradeUps(
 
   const tryAdd = (tu: TradeUp | null) => {
     if (!tu || tu.expected_value_cents === 0) return;
+    // Keep profitable OR high chance-to-profit trade-ups
+    if (tu.profit_cents <= 0 && (tu.chance_to_profit ?? 0) < 0.25) return;
     const key = tu.inputs.map(i => i.listing_id).sort().join(",");
     if (seen.has(key)) return;
     seen.add(key);
@@ -100,12 +102,20 @@ export function findProfitableKnifeTradeUps(
   }
   for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
-  // Pre-compute float transitions for knife outcomes
-  // For knives, transition points matter because output float determines condition → price
-  // Base 9 points + theory-informed targets from pessimistic analysis
-  const baseTransitions = [0.001, 0.01, 0.03, 0.05, 0.10, 0.15, 0.25, 0.35, 0.45];
-  const extra = options.extraTransitionPoints ?? [];
-  const knifeTransitionPoints = [...new Set([...baseTransitions, ...extra])].sort((a, b) => a - b);
+  // Dense float targets — condition boundaries are where profit lives.
+  // FT at 0.16 is worth way more than FT at 0.37. 30 points catches the sweet spots.
+  const baseTransitions: number[] = [];
+  for (let t = 0.001; t <= 0.50; t = Math.round((t + 0.015) * 1000) / 1000) {
+    baseTransitions.push(t);
+  }
+  // Extra density near condition boundaries (FN/MW=0.07, MW/FT=0.15, FT/WW=0.38, WW/BS=0.45)
+  for (const boundary of [0.07, 0.15, 0.38, 0.45]) {
+    for (const offset of [-0.01, -0.005, 0.005, 0.01]) {
+      const pt = Math.round((boundary + offset) * 1000) / 1000;
+      if (pt > 0 && pt < 1) baseTransitions.push(pt);
+    }
+  }
+  const knifeTransitionPoints = [...new Set(baseTransitions)].sort((a, b) => a - b);
 
   // Knife selection helpers use the parameterized versions from selection.ts with count=5
   const selectForKnifeFloat = (quotas: Map<string, number>, maxAvgAdjusted: number) =>
@@ -224,6 +234,19 @@ export function findProfitableKnifeTradeUps(
         // Lowest-float
         const lowestFloat = selectLowestKnifeFloat(quotas);
         if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
+
+        // Condition-targeted pairs: cheapest N at each condition (FN, MW, FT, WW, BS)
+        // More expensive inputs can produce higher-condition outputs worth 10x more.
+        for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
+          const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
+          const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
+          if (condA.length >= countA && condB.length >= countB) {
+            tryAdd(evaluateKnifeTradeUp(db, [
+              ...condA.slice(0, countA),
+              ...condB.slice(0, countB),
+            ], knifeFinishCache));
+          }
+        }
       }
     }
   }

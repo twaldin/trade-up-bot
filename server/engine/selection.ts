@@ -40,10 +40,10 @@ export function getConditionTransitions(outcomes: DbSkinOutcome[]): number[] {
     }
   }
 
-  // Add a few fixed targets for general coverage
-  points.add(0.01);  // Very low = best possible conditions
-  points.add(0.05);
-  points.add(0.15);
+  // Fixed targets for general coverage across the float range
+  for (const p of [0.01, 0.03, 0.05, 0.08, 0.12, 0.15, 0.20, 0.30, 0.40]) {
+    points.add(p);
+  }
 
   return [...points].filter(p => p > 0 && p <= 1.0).sort((a, b) => a - b);
 }

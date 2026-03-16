@@ -2,7 +2,7 @@ import { Router } from "express";
 import type Database from "better-sqlite3";
 import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
-import type { TradeUp, TradeUpInput, TradeUpOutcome, TheoryTracking } from "../../shared/types.js";
+import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 
 export function tradeUpsRouter(db: Database.Database): Router {
   const router = Router();
@@ -228,11 +228,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
     // Load inputs for each trade-up; outcomes come from outcomes_json column
     const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
 
-    // For theories, also load tracking data
-    const getTracking = isTheory
-      ? db.prepare("SELECT * FROM theory_tracking WHERE combo_key = ?")
-      : null;
-
     // Always compute missing count for non-active trade-ups
     const countMissing = db.prepare(`
       SELECT COUNT(*) as cnt FROM trade_up_inputs tui
@@ -264,25 +259,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
         preserved_at: row.preserved_at ?? null,
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
-
-      // Attach tracking data for theories
-      if (isTheory && getTracking && row.combo_key) {
-        const tracking = getTracking.get(row.combo_key) as {
-          status: string; real_profit_cents: number | null; gap_cents: number;
-          attempts: number; last_checked_at: string; cooldown_until: string | null; notes: string | null;
-        } | undefined;
-        if (tracking) {
-          tu.tracking = {
-            status: tracking.status as TheoryTracking['status'],
-            real_profit_cents: tracking.real_profit_cents,
-            gap_cents: tracking.gap_cents,
-            attempts: tracking.attempts,
-            last_checked_at: tracking.last_checked_at,
-            cooldown_until: tracking.cooldown_until,
-            notes: tracking.notes,
-          };
-        }
-      }
 
       return tu;
     });

@@ -76,6 +76,10 @@ export function evaluateTradeUp(
   const profit = evCents - totalCost;
   const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;
 
+  // Chance to profit: sum of probabilities where outcome price exceeds total cost
+  const chanceToProfit = tradeUpOutcomes.reduce((sum, o) =>
+    sum + (o.estimated_price_cents > totalCost ? o.probability : 0), 0);
+
   const tradeUpInputs: TradeUpInput[] = inputs.map((i) => ({
     listing_id: i.id,
     skin_id: i.skin_id,
@@ -95,6 +99,7 @@ export function evaluateTradeUp(
     expected_value_cents: evCents,
     profit_cents: profit,
     roi_percentage: Math.round(roi * 100) / 100,
+    chance_to_profit: Math.round(chanceToProfit * 10000) / 10000,
     created_at: new Date().toISOString(),
   };
 }

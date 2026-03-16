@@ -12,7 +12,7 @@ import Database from "better-sqlite3";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
-import { knnOutputPriceAtFloat } from "./theory-validation.js";
+import { knnOutputPriceAtFloat } from "./knn-pricing.js";
 
 const CONDITION_MIDPOINTS: { name: string; mid: number }[] = [
   { name: "Factory New", mid: 0.035 },

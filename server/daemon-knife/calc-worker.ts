@@ -15,7 +15,7 @@ import { join } from "path";
 import { findProfitableKnifeTradeUps, findProfitableTradeUps } from "../engine.js";
 
 interface WorkerInput {
-  task: "knife" | "classified" | "restricted" | "milspec";
+  task: "knife" | "classified" | "restricted" | "milspec" | "industrial";
   dbPath: string;
   extraTransitionPoints?: number[];
 }
@@ -76,6 +76,10 @@ try {
 
     case "milspec":
       tradeUps = findProfitableTradeUps(db, { rarities: ["Mil-Spec"], limit: 50000 });
+      break;
+
+    case "industrial":
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Industrial Grade"], limit: 50000 });
       break;
   }
 

@@ -7,7 +7,7 @@ import type { Filters } from "../components/FilterBar.js";
 import { formatDollars } from "../utils/format.js";
 import { Button } from "@shared/components/ui/button.js";
 
-type TradeUpType = "all" | "covert_knife" | "theory_knife" | "classified_covert" | "staircase" | "theory_classified" | "theory_staircase" | "restricted_classified" | "milspec_restricted";
+type TradeUpType = "all" | "covert_knife" | "classified_covert" | "staircase" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
 
 interface TypeOption {
   value: TradeUpType;
@@ -77,12 +77,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     debounceRef.current = setTimeout(() => setPage(1), 300);
   }, []);
 
-  // Map frontend type names to API type param
-  const apiType = type === "theory_classified" ? "classified_covert"
-    : type === "theory_staircase" ? "staircase"
-    : type;
-  const isTheory = type === "theory_knife" || type === "theory_classified" || type === "theory_staircase";
-
   const fetchTradeUps = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -91,17 +85,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       params.set("order", order);
       params.set("page", String(page));
       params.set("per_page", String(perPage));
-      // For theory types, we need to tell the API it's a theory query
-      if (isTheory) {
-        params.set("type", "theory_knife"); // triggers is_theoretical=1 filter
-        // Always filter by the underlying type so tabs don't mix
-        if (type === "theory_knife") params.set("theory_type", "covert_knife");
-        else if (type === "theory_classified") params.set("theory_type", "classified_covert");
-        else if (type === "theory_staircase") params.set("theory_type", "staircase");
-      } else if (apiType === "all") {
-        // Don't set type param — API returns all types
-      } else {
-        params.set("type", apiType);
+      if (type !== "all") {
+        params.set("type", type);
       }
       if (includeStale) params.set("include_stale", "true");
 
@@ -114,7 +99,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, apiType, isTheory, includeStale, refreshKey]);
+  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey]);
 
   useEffect(() => {
     fetchTradeUps();
@@ -139,12 +124,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   return (
     <>
-      {isTheory && (
-        <div className="mb-3 px-3.5 py-2 bg-muted/50 border border-border/50 rounded-md text-xs text-muted-foreground leading-relaxed">
-          Theory estimates — optimistic screener, discovery validates. Inputs priced via float-aware KNN.
-        </div>
-      )}
-
       {/* Type selector */}
       {types.length > 1 && (
         <div className="flex gap-0 mb-2 w-fit">

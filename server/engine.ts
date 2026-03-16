@@ -1,8 +1,8 @@
 // All external consumers import from ./engine.js — never from submodules directly.
 
 // Types
-export type { DbListing, DbSkinOutcome, ListingWithCollection, AdjustedListing, PriceAnchor, TheoryCandidate } from "./engine/types.js";
-export type { ClassifiedTheory } from "./engine/types.js";
+export type { DbListing, DbSkinOutcome, ListingWithCollection, AdjustedListing, PriceAnchor } from "./engine/types.js";
+
 export type { CaseMapping, FinishData } from "./engine/knife-data.js";
 export type { ProgressCallback } from "./engine/discovery.js";
 
@@ -21,20 +21,11 @@ export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFl
 export type { OutputPriceResult } from "./engine/pricing.js";
 
 // DB operations
-export { saveTradeUps, saveClassifiedTradeUps, updateCollectionScores } from "./engine/db-ops.js";
+export { saveTradeUps, mergeTradeUps, updateCollectionScores } from "./engine/db-ops.js";
 
 // Listing status & preservation
 export {
-  refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleClassifiedTradeUps,
-  recordProfitableCombo, getProfitableCombosForWantedList,
-} from "./engine/db-ops.js";
-
-// Theory tracking
-export {
-  saveTheoryValidations, loadTheoryCooldowns,
-  loadTheoryTracking, getTheoryTrackingSummary,
-  saveNearMissesToDb, loadNearMissesFromDb, cleanupTheoryTracking,
-  type TheoryTrackingEntry, type TheoryValidationResult,
+  refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
 } from "./engine/db-ops.js";
 
 // Selection
@@ -47,7 +38,7 @@ export { getListingsForRarity, getOutcomesForCollections, getNextRarity } from "
 export { getKnifeFinishesWithPrices, evaluateKnifeTradeUp } from "./engine/knife-evaluation.js";
 
 // Discovery (classified→covert)
-export { findProfitableTradeUps, randomClassifiedExplore } from "./engine/discovery.js";
+export { findProfitableTradeUps, randomExplore } from "./engine/discovery.js";
 
 // Classified→Covert evaluation
 export { evaluateTradeUp } from "./engine/evaluation.js";
@@ -55,27 +46,12 @@ export { evaluateTradeUp } from "./engine/evaluation.js";
 // Knife/Glove discovery
 export { findProfitableKnifeTradeUps, randomKnifeExplore } from "./engine/knife-discovery.js";
 
-// Theory engine (float-aware)
+// KNN pricing + observation management (float-precise output pricing for knife/glove skins)
 export {
-  generatePessimisticKnifeTheories, saveTheoryTradeUps,
-  buildWantedList, theoryComboKey,
-  type PessimisticTheory, type DataGap, type TheoryOutcome, type WantedListing, type TheoryGenOptions,
-  type NearMissInfo,
-} from "./engine/theory-pessimistic.js";
-
-// Theory validation (float pricing infrastructure)
-export {
-  bootstrapLearnedPrices, seedPriceObservations, seedKnifeSaleObservations, pruneObservations,
-  snapshotListingsToObservations, clearLearnedCache, clearKnnCache,
+  pruneObservations,
+  snapshotListingsToObservations, clearKnnCache,
   knnOutputPriceAtFloat,
-} from "./engine/theory-validation.js";
-
-// Generic rarity-tier theory engine
-export {
-  generateTheoriesForTier, buildWantedListForTier,
-  genericComboKey, saveTheoryTradeUpsForTier,
-  type ClassifiedTheoryResult,
-} from "./engine/theory-classified.js";
+} from "./engine/knn-pricing.js";
 
 // Rarity tier config system
 export {
@@ -90,11 +66,3 @@ export {
   type StaircaseTradeUp,
   type StaircaseResult,
 } from "./engine/staircase.js";
-
-// Staircase theory engine
-export {
-  generateStaircaseTheories, saveStaircaseTheoryTradeUps,
-  type StaircaseTheory, type StaircaseTheoryResult,
-} from "./engine/theory-staircase.js";
-
-

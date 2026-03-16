@@ -51,29 +51,21 @@ interface CycleRow {
   api_available: number;
   knife_tradeups_total: number;
   knife_profitable: number;
-  theories_generated: number;
-  theories_profitable: number;
   cooldown_new_found: number;
   cooldown_improved: number;
   top_profit_cents: number;
   classified_total: number;
   classified_profitable: number;
-  classified_theories: number;
-  classified_theories_profitable: number;
 }
 
 const DAEMON_PHASES = [
   "Housekeeping",
-  "Theory",
-  "Classified Theory",
-  "Staircase Theory",
   "API Probe",
   "Data Fetch",
   "Knife Calc",
   "Classified Calc",
   "Staircase",
   "Cooldown",
-  "Re-materialize",
 ];
 
 function RateLimitBar({ label, pool }: { label: string; pool: RateLimitPool }) {
@@ -131,7 +123,7 @@ function RateLimitBar({ label, pool }: { label: string; pool: RateLimitPool }) {
   );
 }
 
-type CycleSortKey = "time" | "duration" | "api" | "profitable" | "top_profit" | "theories" | "explore";
+type CycleSortKey = "time" | "duration" | "api" | "profitable" | "top_profit" | "explore";
 
 function cycleSortValue(c: CycleRow, key: CycleSortKey): number {
   switch (key) {
@@ -140,7 +132,6 @@ function cycleSortValue(c: CycleRow, key: CycleSortKey): number {
     case "api": return c.api_calls_used;
     case "profitable": return c.knife_profitable;
     case "top_profit": return c.top_profit_cents;
-    case "theories": return c.theories_generated;
     case "explore": return c.cooldown_new_found + c.cooldown_improved;
   }
 }
@@ -202,7 +193,6 @@ function CycleHistory() {
               <SortTh k="profitable">Knife</SortTh>
               <th className="px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground bg-background border-b border-border font-semibold whitespace-nowrap">Classified</th>
               <SortTh k="top_profit">Top Profit</SortTh>
-              <SortTh k="theories">Theories</SortTh>
               <SortTh k="explore">Explore</SortTh>
             </tr>
           </thead>
@@ -222,13 +212,6 @@ function CycleHistory() {
                 <td className={`px-2 py-1 border-b border-border/30 ${c.classified_profitable > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}`}>{c.classified_profitable || "-"}</td>
                 <td className={`px-2 py-1 border-b border-border/30 ${c.top_profit_cents > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}`}>
                   {c.top_profit_cents > 0 ? `$${(c.top_profit_cents / 100).toFixed(0)}` : "-"}
-                </td>
-                <td className="px-2 py-1 border-b border-border/30 text-muted-foreground">
-                  {c.theories_generated > 0 ? `${c.theories_generated}` : "-"}
-                  {c.theories_profitable > 0 && <span className="text-green-500 font-medium"> ({c.theories_profitable})</span>}
-                  {c.classified_theories > 0 && (
-                    <span className="text-muted-foreground/50"> +{c.classified_theories}{c.classified_theories_profitable > 0 && <span className="text-green-500 font-medium">({c.classified_theories_profitable})</span>}</span>
-                  )}
                 </td>
                 <td className="px-2 py-1 border-b border-border/30 text-muted-foreground">
                   {(c.cooldown_new_found > 0 || c.cooldown_improved > 0)

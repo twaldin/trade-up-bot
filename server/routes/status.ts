@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import type Database from "better-sqlite3";
 import { getSyncMeta } from "../db.js";
-import { CASE_KNIFE_MAP, getTheoryTrackingSummary, loadTheoryTracking } from "../engine.js";
+import { CASE_KNIFE_MAP } from "../engine.js";
 import type { SyncStatus } from "../../shared/types.js";
 
 export function statusRouter(db: Database.Database): Router {
@@ -54,18 +54,8 @@ export function statusRouter(db: Database.Database): Router {
       } catch { /* DB may be locked */ return { cnt: 0, profitable: 0, active: 0, partial: 0, stale: 0 }; }
     })();
     const covertTu = tuStats.find(r => r.type === "classified_covert");
-    // Theories are stored as type='covert_knife' with is_theoretical=1
-    const theoryRow = (() => {
-      try {
-        return db.prepare(`
-          SELECT COUNT(*) as cnt,
-            SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-          FROM trade_ups WHERE is_theoretical = 1
-        `).get() as { cnt: number; profitable: number };
-      } catch { /* DB may be locked */ return { cnt: 0, profitable: 0 }; }
-    })();
-    const totalTu = tuStats.reduce((s, r) => s + r.cnt, 0) - (theoryRow?.cnt ?? 0);
-    const totalProfitable = tuStats.reduce((s, r) => s + r.profitable, 0) - (theoryRow?.profitable ?? 0);
+    const totalTu = tuStats.reduce((s, r) => s + r.cnt, 0);
+    const totalProfitable = tuStats.reduce((s, r) => s + r.profitable, 0);
 
     const topCollections = db.prepare(`
       SELECT collection_name, priority_score, profitable_count, avg_profit_cents
@@ -89,16 +79,8 @@ export function statusRouter(db: Database.Database): Router {
       knife_stale: knifeTu?.stale ?? 0,
       covert_trade_ups: covertTu?.cnt ?? 0,
       covert_profitable: covertTu?.profitable ?? 0,
-      theory_trade_ups: theoryRow.cnt,
-      theory_profitable: theoryRow.profitable,
       trade_ups_count: totalTu,
       profitable_count: totalProfitable,
-      theoretical_count: (() => {
-        try {
-          const row = db.prepare("SELECT COUNT(*) as cnt FROM trade_ups WHERE is_theoretical = 1").get() as { cnt: number };
-          return row.cnt;
-        } catch { /* DB may be locked */ return 0; }
-      })(),
       last_calculation: getSyncMeta(db, "last_calculation"),
       daemon_status: (() => {
         try {
@@ -147,9 +129,6 @@ export function statusRouter(db: Database.Database): Router {
         return r.c;
       })(),
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
-      theory_tracking: (() => {
-        try { return getTheoryTrackingSummary(db); } catch { /* DB may be locked */ return null; }
-      })(),
     } satisfies SyncStatus);
   });
 
@@ -344,16 +323,6 @@ export function statusRouter(db: Database.Database): Router {
         `).all(limit);
       }
       res.json({ events: (events as { id: number; event_type: string; summary: string; detail: string; created_at: string }[]).reverse() });
-    } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
-    }
-  });
-
-  router.get("/api/theory-tracking", (_req, res) => {
-    try {
-      const entries = loadTheoryTracking(db);
-      const summary = getTheoryTrackingSummary(db);
-      res.json({ entries, summary });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
