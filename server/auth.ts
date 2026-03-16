@@ -83,15 +83,19 @@ export function setupAuth(app: Express, db: Database.Database) {
       const displayName = profile.displayName || `User ${steamId}`;
       const avatar = profile.photos?.[2]?.value || profile.photos?.[0]?.value || "";
 
-      // Upsert user
+      // Upsert user — auto-promote admin if ADMIN_STEAM_ID matches
+      const adminSteamId = process.env.ADMIN_STEAM_ID;
+      const tier = steamId === adminSteamId ? "admin" : "free";
+
       db.prepare(`
-        INSERT INTO users (steam_id, display_name, avatar_url, last_login_at)
-        VALUES (?, ?, ?, datetime('now'))
+        INSERT INTO users (steam_id, display_name, avatar_url, tier, last_login_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
         ON CONFLICT(steam_id) DO UPDATE SET
           display_name = excluded.display_name,
           avatar_url = excluded.avatar_url,
+          tier = CASE WHEN excluded.tier = 'admin' THEN 'admin' ELSE users.tier END,
           last_login_at = datetime('now')
-      `).run(steamId, displayName, avatar);
+      `).run(steamId, displayName, avatar, tier);
 
       const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User;
       done(null, user);
