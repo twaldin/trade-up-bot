@@ -47,6 +47,7 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
       if (collectionFilter) params.set("collection", collectionFilter);
       if (outputCollection) params.set("outputCollection", outputCollection);
       if (stattrak) params.set("stattrak", "1");
+      params.set("limit", "200"); // Paginated — fast even for "all" tab
       const res = await fetch(`/api/skin-data?${params}`);
       const data = await res.json();
       const fp = new URLSearchParams({ since: lastViewedAt });

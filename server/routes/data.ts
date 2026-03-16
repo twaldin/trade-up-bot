@@ -64,7 +64,12 @@ export function dataRouter(
     `).get() as { started_at: string } | undefined;
     const cycleStart = lastCycle?.started_at || new Date(Date.now() - 600000).toISOString();
 
-    // Deduplicate by skin name (Doppler skins have multiple IDs for phases)
+    // Pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = (page - 1) * limit;
+
+    // Fast query — no correlated subqueries. Listing stats via simple JOIN + GROUP BY.
     const skins = db.prepare(`
       SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, ? as stattrak,
         GROUP_CONCAT(DISTINCT c.name) as collection_names,
@@ -73,12 +78,7 @@ export function dataRouter(
         ROUND(AVG(l.price_cents)) as avg_price,
         MAX(l.price_cents) as max_price,
         MIN(l.float_value) as min_float_seen,
-        MAX(l.float_value) as max_float_seen,
-        COALESCE((SELECT COUNT(*) FROM sale_history sh WHERE sh.skin_name = s.name), 0)
-          + COALESCE((SELECT COUNT(*) FROM price_observations po WHERE po.skin_name = s.name AND po.source = 'sale'), 0) as sale_count,
-        (SELECT COUNT(*) FROM listings nl JOIN skins ns ON nl.skin_id = ns.id
-          WHERE ns.name = s.name AND nl.stattrak = ? AND nl.created_at > ?) as new_listings,
-        (SELECT COUNT(*) FROM sale_history nsh WHERE nsh.skin_name = s.name AND nsh.sold_at > ?) as new_sales
+        MAX(l.float_value) as max_float_seen
       FROM skins s
       LEFT JOIN skin_collections sc ON s.id = sc.skin_id
       LEFT JOIN collections c ON sc.collection_id = c.id
@@ -88,39 +88,40 @@ export function dataRouter(
         ${search ? "AND s.name LIKE ?" : ""}
       GROUP BY s.name
       ORDER BY listing_count DESC
-    `).all(stattrak, stattrak, cycleStart, cycleStart, stattrak, stattrak, ...queryParams) as {
+      LIMIT ? OFFSET ?
+    `).all(stattrak, stattrak, stattrak, ...queryParams, limit, offset) as {
       id: string; name: string; rarity: string; weapon: string;
       min_float: number; max_float: number; stattrak: number;
       collection_names: string | null; listing_count: number;
       min_price: number | null; avg_price: number | null; max_price: number | null;
       min_float_seen: number | null; max_float_seen: number | null;
-      sale_count: number; new_listings: number; new_sales: number;
     }[];
 
-    // Attach price_data summary per skin
-    const priceDataStmt = db.prepare(`
-      SELECT source, condition, avg_price_cents, volume
-      FROM price_data WHERE skin_name = ? AND avg_price_cents > 0
-      ORDER BY CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'listing' THEN 2 WHEN 'csfloat_ref' THEN 3 WHEN 'skinport' THEN 4 ELSE 5 END
-    `);
+    // Batch load price_data for all returned skins in one query
+    const skinNames = skins.map(s => s.name);
+    const priceMap = new Map<string, Record<string, Record<string, number>>>();
+    if (skinNames.length > 0) {
+      const placeholders = skinNames.map(() => "?").join(",");
+      const allPrices = db.prepare(`
+        SELECT skin_name, source, condition, avg_price_cents
+        FROM price_data WHERE skin_name IN (${placeholders}) AND avg_price_cents > 0
+      `).all(...skinNames) as { skin_name: string; source: string; condition: string; avg_price_cents: number }[];
+      for (const p of allPrices) {
+        if (!priceMap.has(p.skin_name)) priceMap.set(p.skin_name, {});
+        const byC = priceMap.get(p.skin_name)!;
+        if (!byC[p.condition]) byC[p.condition] = {};
+        byC[p.condition][p.source] = p.avg_price_cents;
+      }
+    }
 
     const result = skins.map((s) => {
-      const prices = priceDataStmt.all(s.name) as { source: string; condition: string; avg_price_cents: number; volume: number }[];
-      const byCondition: Record<string, Record<string, number>> = {};
-      for (const p of prices) {
-        if (!byCondition[p.condition]) byCondition[p.condition] = {};
-        byCondition[p.condition][p.source] = p.avg_price_cents;
-      }
-      // Resolve collection name(s)
       let collectionName = s.collection_names;
       if (!collectionName && s.name.startsWith("★")) {
         const weapon = s.weapon || s.name.replace(/^★\s*/, "").split(" | ")[0];
         const cases = knifeTypeToCases.get(weapon);
-        if (cases && cases.length > 0) {
-          collectionName = cases.join(", ");
-        }
+        if (cases && cases.length > 0) collectionName = cases.join(", ");
       }
-      return { ...s, collection_name: collectionName, prices: byCondition };
+      return { ...s, collection_name: collectionName, prices: priceMap.get(s.name) || {} };
     });
 
     res.json(result);

@@ -53,21 +53,23 @@ function summarizeInputs(inputs: TradeUpInput[]): { name: string; count: number;
 }
 
 function chanceToProfit(tu: TradeUp): number {
+  // Use pre-computed value from DB if available (outcomes may not be loaded yet)
+  if ((tu as any).chance_to_profit !== undefined) return (tu as any).chance_to_profit;
   return tu.outcomes.reduce((sum, o) =>
     sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0
   );
 }
 
 function bestCase(tu: TradeUp): number {
+  if ((tu as any).best_case_cents !== undefined && (tu as any).best_case_cents !== 0) return (tu as any).best_case_cents;
   if (tu.outcomes.length === 0) return -tu.total_cost_cents;
-  const maxOutcome = Math.max(...tu.outcomes.map(o => o.estimated_price_cents));
-  return maxOutcome - tu.total_cost_cents;
+  return Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
 function worstCase(tu: TradeUp): number {
+  if ((tu as any).worst_case_cents !== undefined && (tu as any).worst_case_cents !== 0) return (tu as any).worst_case_cents;
   if (tu.outcomes.length === 0) return -tu.total_cost_cents;
-  const minOutcome = Math.min(...tu.outcomes.map(o => o.estimated_price_cents));
-  return minOutcome - tu.total_cost_cents;
+  return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
 function ValidationBadge({ tracking }: { tracking?: TheoryTracking }) {
@@ -114,8 +116,24 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
   const [verifyResults, setVerifyResults] = useState<Map<number, VerifyResult>>(new Map());
-  // Price overrides from verify — updates cost/profit/roi when prices changed
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
+  // Lazy-loaded outcomes (not included in list response)
+  const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
+
+  const handleExpand = useCallback(async (tuId: number) => {
+    if (expandedId === tuId) { setExpandedId(null); return; }
+    setExpandedId(tuId);
+    // Load outcomes if not cached
+    if (!loadedOutcomes.has(tuId)) {
+      try {
+        const res = await fetch(`/api/trade-up/${tuId}/outcomes`);
+        if (res.ok) {
+          const data = await res.json();
+          setLoadedOutcomes(prev => new Map(prev).set(tuId, data.outcomes || []));
+        }
+      } catch { /* non-critical */ }
+    }
+  }, [expandedId, loadedOutcomes]);
 
   const handleVerify = useCallback(async (tuId: number) => {
     setVerifying(tuId);
@@ -188,12 +206,12 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           {tradeUps.map((rawTu) => {
             // Apply verify price overrides if available
             const override = priceOverrides.get(rawTu.id);
-            const tu = override ? {
+            // Inject lazy-loaded outcomes + price overrides
+            const tu = {
               ...rawTu,
-              total_cost_cents: override.total_cost_cents,
-              profit_cents: override.profit_cents,
-              roi_percentage: override.roi_percentage,
-            } : rawTu;
+              outcomes: loadedOutcomes.get(rawTu.id) ?? rawTu.outcomes,
+              ...(override ? { total_cost_cents: override.total_cost_cents, profit_cents: override.profit_cents, roi_percentage: override.roi_percentage } : {}),
+            };
             const chance = chanceToProfit(tu);
             const best = bestCase(tu);
             const worst = worstCase(tu);
@@ -203,7 +221,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               <tr
                 key={tu.id}
                 className={`cursor-pointer hover:bg-muted ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
-                onClick={() => setExpandedId(expandedId === tu.id ? null : tu.id)}
+                onClick={() => handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">{expandedId === tu.id ? "\u25BC" : "\u25B6"}</td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
