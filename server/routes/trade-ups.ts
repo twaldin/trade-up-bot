@@ -250,7 +250,10 @@ export function tradeUpsRouter(db: Database.Database): Router {
         created_at: row.created_at,
         is_theoretical: row.is_theoretical === 1,
         inputs: getInputs.all(row.id) as TradeUpInput[],
-        outcomes: JSON.parse((row as { outcomes_json?: string }).outcomes_json || '[]') as TradeUpOutcome[],
+        outcomes: [], // Outcomes loaded on-demand via /api/trade-up/:id/outcomes
+        chance_to_profit: (row as any).chance_to_profit ?? 0,
+        best_case_cents: (row as any).best_case_cents ?? 0,
+        worst_case_cents: (row as any).worst_case_cents ?? 0,
         listing_status: (row.listing_status as TradeUp['listing_status']) ?? 'active',
         missing_inputs: row.listing_status !== 'active' && countMissing
           ? (countMissing.get(row.id) as { cnt: number }).cnt : 0,
@@ -577,6 +580,15 @@ export function tradeUpsRouter(db: Database.Database): Router {
       any_price_changed: anyPriceChanged,
       updated_trade_up: updatedTradeUp,
     });
+  });
+
+  // Load outcomes on-demand (not included in list response to save bandwidth)
+  router.get("/api/trade-up/:id/outcomes", (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+    const row = db.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(id) as { outcomes_json: string | null } | undefined;
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    res.json({ outcomes: JSON.parse(row.outcomes_json || "[]") });
   });
 
   router.get("/api/price-details", (req, res) => {
