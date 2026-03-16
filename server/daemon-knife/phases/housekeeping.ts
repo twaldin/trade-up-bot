@@ -2,63 +2,18 @@
  * Phase 1: Housekeeping — purge stale listings, prune observations, clean corrupt data.
  */
 
-import { initDb, emitEvent, purgeOldEvents } from "../../db.js";
+import { initDb, purgeOldEvents } from "../../db.js";
 import {
   purgeStaleListings,
 } from "../../sync.js";
 import {
   snapshotListingsToObservations,
   pruneObservations,
-  cleanupTheoryTracking,
   refreshListingStatuses,
   purgeExpiredPreserved,
 } from "../../engine.js";
 
 import { timestamp, setDaemonStatus } from "../utils.js";
-
-/**
- * Clear theory cooldowns for combos that discovery proves profitable.
- * Called after both Phase 5 materialization and Phase 7 re-materialization.
- */
-export function clearDiscoveryProfitableCooldowns(db: ReturnType<typeof initDb>): number {
-  // Get collection counts per profitable trade-up (need counts, not DISTINCT)
-  const profitable = db.prepare(`
-    SELECT t.id, i.collection_name, COUNT(*) as cnt
-    FROM trade_ups t
-    JOIN trade_up_inputs i ON t.id = i.trade_up_id
-    WHERE t.is_theoretical = 0 AND t.profit_cents > 0
-    GROUP BY t.id, i.collection_name
-  `).all() as { id: number; collection_name: string; cnt: number }[];
-
-  if (profitable.length === 0) return 0;
-
-  // Build combo keys from profitable trade-ups
-  const profitableComboKeys = new Set<string>();
-  const byTradeUp = new Map<number, { collection_name: string; cnt: number }[]>();
-  for (const row of profitable) {
-    const list = byTradeUp.get(row.id) ?? [];
-    list.push({ collection_name: row.collection_name, cnt: row.cnt });
-    byTradeUp.set(row.id, list);
-  }
-  for (const [, cols] of byTradeUp) {
-    const ck = cols.map(c => `${c.collection_name}:${c.cnt}`).sort().join("|");
-    profitableComboKeys.add(ck);
-  }
-
-  // Only clear cooldowns — don't override accuracy-based status.
-  // Discovery proving a combo profitable doesn't mean theory was accurate.
-  const clearCooldown = db.prepare(`
-    UPDATE theory_tracking
-    SET cooldown_until = NULL, last_profitable_at = datetime('now')
-    WHERE combo_key = ? AND cooldown_until IS NOT NULL
-  `);
-  let cleared = 0;
-  for (const ck of profitableComboKeys) {
-    const result = clearCooldown.run(ck);
-    if (result.changes > 0) cleared++;
-  }
-  return cleared;
-}
 
 export async function phase1Housekeeping(db: ReturnType<typeof initDb>, cycleCount: number) {
   console.log(`\n[${timestamp()}] Phase 1: Housekeeping`);
@@ -106,9 +61,6 @@ export async function phase1Housekeeping(db: ReturnType<typeof initDb>, cycleCou
 
   // Purge old daemon events
   purgeOldEvents(db, 6);
-
-  // Clean old theory tracking entries
-  cleanupTheoryTracking(db);
 
   // Clean corrupt trade-ups (0 EV or 0 cost)
   const cleaned = db.prepare(`

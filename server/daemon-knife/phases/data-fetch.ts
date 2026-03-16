@@ -12,13 +12,10 @@ import {
   syncPrioritizedKnifeInputs,
   syncSmartListingsForRarity,
   syncCovertOutputListings,
-  syncWantedListings,
   checkListingStaleness,
   syncDMarketListingsForRarity,
-  syncDMarketListingsForSkin,
   isDMarketConfigured,
 } from "../../sync.js";
-import type { WantedListing } from "../../engine.js";
 
 import { BudgetTracker, FreshnessTracker } from "../state.js";
 import {
@@ -168,7 +165,7 @@ export async function phase4DataFetch(
   budget: BudgetTracker,
   freshness: FreshnessTracker,
   apiKey: string,
-  wantedList: WantedListing[],
+  _wantedList: unknown[],
   probe: ApiProbeResult
 ) {
   console.log(`\n[${timestamp()}] Phase 4: Data Fetch`);
@@ -291,23 +288,24 @@ export async function phase4DataFetch(
     const listingBudget = budget.cycleListingBudget();
     console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
 
-    // Budget allocation: coverage-first, theory-guided wanted as supplement.
-    // Good theory requires good coverage — invest in broad data before targeted fetching.
-    // At 15-min cycles: ~90-100 calls/cycle from 200/30min pool.
+    // Budget allocation: CSFloat for Covert + Extraordinary ONLY.
+    // DMarket handles Classified/Restricted/Mil-Spec at 2 RPS (29K+ listings).
+    // CSFloat's scarce 200/30min budget is best spent on:
+    //   - Covert gun inputs (knife trade-ups, CSFloat-primary pricing)
+    //   - Extraordinary outputs (knife/glove output pricing, no DMarket data)
     let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
     if (listingBudget < 20) {
-      knifeInputCalls = 0; classifiedInputCalls = 0; outputCalls = 0;
-      wantedCalls = listingBudget;
+      knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
+      wantedCalls = 0;
     } else {
-      knifeInputCalls = Math.floor(listingBudget * 0.25);   // 25% — Covert gun coverage (160 skins missing)
-      classifiedInputCalls = Math.floor(listingBudget * 0.15); // 15% — Classified coverage
-      outputCalls = Math.floor(listingBudget * 0.30);        // 30% — knife/glove output pricing (critical)
-      wantedCalls = listingBudget - knifeInputCalls - classifiedInputCalls - outputCalls; // ~30% remainder
-      wantedCalls = Math.min(wantedCalls, wantedList.length); // Don't waste calls if wanted list is small
-      // Redistribute unused wanted calls back to coverage
-      const unused = (listingBudget - knifeInputCalls - classifiedInputCalls - outputCalls) - wantedCalls;
-      if (unused > 0) { knifeInputCalls += Math.floor(unused / 2); outputCalls += unused - Math.floor(unused / 2); }
-      console.log(`    Budget: ${knifeInputCalls} knife in + ${classifiedInputCalls} classified in + ${outputCalls} output + ${wantedCalls} wanted = ${listingBudget}`);
+      knifeInputCalls = Math.floor(listingBudget * 0.55);   // 55% — Covert gun coverage (CSFloat-only data)
+      classifiedInputCalls = 0;                               // 0% — DMarket covers Classified at 2 RPS
+      outputCalls = Math.floor(listingBudget * 0.45);        // 45% — knife/glove output pricing (critical, CSFloat-only)
+      wantedCalls = 0;
+      // Remaining goes to knife inputs
+      const remaining = listingBudget - knifeInputCalls - classifiedInputCalls - outputCalls;
+      if (remaining > 0) knifeInputCalls += remaining;
+      console.log(`    Budget: ${knifeInputCalls} knife in + ${outputCalls} output = ${listingBudget} (Covert+Extraordinary only, DMarket handles lower rarities)`);
     }
 
     // Prioritized knife inputs (Covert gun skins)
@@ -367,59 +365,20 @@ export async function phase4DataFetch(
       }
     }
 
-    // 4c: Theory-guided wanted list fetch
-    if (!budget.isListingRateLimited() && wantedList.length > 0 && wantedCalls >= 5) {
-      console.log(`  [${timestamp()}] 4c: Theory-guided input fetch`);
-      setDaemonStatus(db, "fetching", "Phase 4c: Fetching wanted inputs");
-      try {
-        const result = await syncWantedListings(db, wantedList, {
-          apiKey,
-          maxCalls: wantedCalls,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
-        });
-        budget.useListing(result.apiCalls);
-        if (result.inserted > 0) freshness.markListingsChanged();
-        console.log(`    Wanted: ${result.apiCalls} calls, ${result.inserted} listings, ${result.skinsFetched} skins`);
-        if (result.inserted > 0) emitEvent(db, "listings_fetched", `Wanted: +${result.inserted} theory-targeted listings (${result.skinsFetched} skins)`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
-        else console.error(`    Wanted fetch error: ${(err as Error).message}`);
-      }
-    }
+    // 4c: Theory-guided wanted list disabled — redirected to broader coverage above.
+    // All profits come from discovery; theory wanted list never produced profitable trade-ups.
   } else {
     console.log(`  [${timestamp()}] 4b: Listing search — rate limited, skipping`);
   }
 
   // 4d: DMarket listings (independent API — 2 RPS, doesn't use CSFloat budget)
-  // Priority: wanted list skins first, then coverage-based Covert + Classified
   if (isDMarketConfigured()) {
     console.log(`  [${timestamp()}] 4d: DMarket listing fetch`);
     setDaemonStatus(db, "fetching", "Phase 4d: DMarket listings");
-    let dmWantedInserted = 0;
-    let dmWantedSkins = 0;
     let dmCoverageInserted = 0;
 
     try {
-      // 4d-1: Wanted list — same theory-guided skins as CSFloat, fetched from DMarket too
-      const wantedSkins = wantedList.slice(0, 20); // Top 20 by priority
-      if (wantedSkins.length > 0) {
-        setDaemonStatus(db, "fetching", "Phase 4d: DMarket wanted list");
-        for (const w of wantedSkins) {
-          try {
-            const inserted = await syncDMarketListingsForSkin(db, w.skin_name, { maxListings: 50 });
-            if (inserted > 0) {
-              dmWantedInserted += inserted;
-              dmWantedSkins++;
-            }
-          } catch {
-            // Individual skin failures don't stop the batch
-          }
-        }
-        if (dmWantedInserted > 0) freshness.markListingsChanged();
-        console.log(`    DMarket wanted: ${dmWantedSkins}/${wantedSkins.length} skins, ${dmWantedInserted} listings`);
-      }
-
-      // 4d-2: Coverage — Covert + Classified skins with fewest DMarket listings
+      // Coverage — Covert + Classified skins with fewest DMarket listings
       setDaemonStatus(db, "fetching", "Phase 4d: DMarket coverage");
       const covertResult = await syncDMarketListingsForRarity(db, "Covert", {
         maxSkinsPerCall: 8,
@@ -454,9 +413,8 @@ export async function phase4DataFetch(
       const totalSkinsChecked = covertResult.skinsChecked + classifiedResult.skinsChecked + restrictedResult.skinsChecked + milspecResult.skinsChecked;
       console.log(`    DMarket coverage: ${totalSkinsChecked} skins, ${dmCoverageInserted} listings (R:${restrictedResult.listingsInserted} MS:${milspecResult.listingsInserted})`);
 
-      const totalDm = dmWantedInserted + dmCoverageInserted;
-      if (totalDm > 0) {
-        emitEvent(db, "listings_fetched", `DMarket: +${totalDm} listings (${dmWantedInserted} wanted, ${dmCoverageInserted} coverage)`);
+      if (dmCoverageInserted > 0) {
+        emitEvent(db, "listings_fetched", `DMarket: +${dmCoverageInserted} listings`);
       }
     } catch (err) {
       console.error(`    DMarket fetch error: ${(err as Error).message}`);

@@ -52,8 +52,12 @@ export function findProfitableTradeUps(
   const tryAdd = (tu: TradeUp | null) => {
     if (!tu) return;
     if (options.maxTotalCost && tu.total_cost_cents > options.maxTotalCost) return;
-    if (options.minProfit && tu.profit_cents < options.minProfit) return;
-    if (options.minRoi && tu.roi_percentage < options.minRoi) return;
+    // High chance-to-profit trade-ups bypass profit/ROI filters — they're gambles worth tracking
+    const highChance = (tu.chance_to_profit ?? 0) >= 0.25;
+    if (!highChance) {
+      if (options.minProfit && tu.profit_cents < options.minProfit) return;
+      if (options.minRoi && tu.roi_percentage < options.minRoi) return;
+    }
     store.add(tu);
   };
 
@@ -200,9 +204,10 @@ export function findProfitableTradeUps(
         const colB = colIds[j];
         const listingsA = byCollection.get(colA) ?? [];
         const listingsB = byCollection.get(colB) ?? [];
-        const outcomes = outcomesForCols(colA, colB);
 
-        // Pre-compute float transition targets for this pair
+        // Pre-compute outcomes and transitions ONCE per pair (reused across all 9 splits)
+        const outcomes = outcomesForCols(colA, colB);
+        if (outcomes.length === 0) continue;
         const transitions = getConditionTransitions(outcomes);
 
         for (let countA = 1; countA <= 9; countA++) {
@@ -315,7 +320,7 @@ export function findProfitableTradeUps(
  * Mirrors randomKnifeExplore pattern but with 10 inputs, Classified rarity,
  * and Covert gun outcomes via evaluateTradeUp.
  */
-export function randomClassifiedExplore(
+export function randomExplore(
   db: Database.Database,
   options: {
     iterations?: number;
@@ -503,7 +508,9 @@ export function randomClassifiedExplore(
       const usedCols = [...new Set(inputs.map(l => l.collection_id))];
       const outcomes = outcomesForCols(...usedCols);
       const result = evaluateTradeUp(db, inputs, outcomes);
-      if (!result || result.profit_cents <= 0) continue;
+      if (!result) continue;
+      // Keep profitable OR high chance-to-profit trade-ups
+      if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
       const chanceToProfit = result.outcomes.reduce((sum, o) =>

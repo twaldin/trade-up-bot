@@ -4,15 +4,18 @@
 
 import Database from "better-sqlite3";
 import { setSyncMeta } from "../db.js";
-import { floatToCondition, type TradeUp } from "../../shared/types.js";
-import { theoryComboKey, type NearMissInfo } from "./theory-pessimistic.js";
+import { type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
+
+interface NearMissInfo {
+  combo: string;
+  gap: number;
+  theoryProfit: number;
+}
 import type { FinishData } from "./knife-data.js";
 import { evaluateKnifeTradeUp } from "./knife-evaluation.js";
 import { evaluateTradeUp } from "./evaluation.js";
 import { getOutcomesForCollections } from "./data-load.js";
-
-export { theoryComboKey };
 
 /**
  * Retry a function that may fail with SQLITE_BUSY or SQLITE_BUSY_SNAPSHOT.
@@ -37,222 +40,6 @@ function withRetry<T>(fn: () => T, maxRetries = 5, label = "DB operation"): T {
     }
   }
   throw new Error("unreachable");
-}
-
-export interface TheoryTrackingEntry {
-  combo_key: string;
-  status: 'profitable' | 'near_miss' | 'invalidated' | 'no_listings' | 'pending';
-  theory_profit_cents: number;
-  real_profit_cents: number | null;
-  gap_cents: number;
-  cost_gap_cents: number;
-  ev_gap_cents: number;
-  attempts: number;
-  first_seen_at: string;
-  last_checked_at: string;
-  last_profitable_at: string | null;
-  cooldown_until: string | null;
-  notes: string | null;
-}
-
-export interface TheoryValidationResult {
-  combo_key: string;
-  status: 'profitable' | 'near_miss' | 'invalidated' | 'no_listings';
-  theory_profit_cents: number;
-  real_profit_cents: number | null;
-  cost_gap_cents: number;
-  ev_gap_cents: number;
-  notes: string;
-}
-
-export function saveTheoryValidations(db: Database.Database, results: TheoryValidationResult[]) {
-  const upsert = db.prepare(`
-    INSERT INTO theory_tracking (
-      combo_key, status, theory_profit_cents, real_profit_cents, gap_cents,
-      cost_gap_cents, ev_gap_cents, attempts, first_seen_at, last_checked_at,
-      last_profitable_at, cooldown_until, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'), ?, ?, ?)
-    ON CONFLICT(combo_key) DO UPDATE SET
-      status = excluded.status,
-      theory_profit_cents = excluded.theory_profit_cents,
-      real_profit_cents = excluded.real_profit_cents,
-      gap_cents = excluded.gap_cents,
-      cost_gap_cents = excluded.cost_gap_cents,
-      ev_gap_cents = excluded.ev_gap_cents,
-      attempts = theory_tracking.attempts + 1,
-      last_checked_at = datetime('now'),
-      last_profitable_at = CASE WHEN excluded.status = 'profitable' THEN datetime('now') ELSE theory_tracking.last_profitable_at END,
-      cooldown_until = excluded.cooldown_until,
-      notes = excluded.notes
-  `);
-
-  const saveAll = db.transaction(() => {
-    for (const r of results) {
-      // Gap = distance from profitability (how far is the real result from breaking even?)
-      // NOT theory accuracy — a combo can be close to profitable even if theory was way off
-      const gap = r.real_profit_cents !== null
-        ? Math.max(0, -r.real_profit_cents) // 0 if profitable, positive if losing money
-        : Math.abs(r.theory_profit_cents);
-
-      // Cooldown based on how far from profitable the real result is.
-      // Short cooldowns for near-misses — data changes fast, re-evaluate often.
-      let cooldownMinutes: number;
-      if (r.status === 'profitable') {
-        cooldownMinutes = 0;
-      } else if (r.status === 'no_listings') {
-        cooldownMinutes = 30;
-      } else if (gap < 500) {       // < $5 from profitable
-        cooldownMinutes = 10;        // ~2 cycles — very close, re-check soon
-      } else if (gap < 2000) {      // < $20 from profitable
-        cooldownMinutes = 30;        // ~6 cycles
-      } else if (gap < 5000) {      // < $50 from profitable
-        cooldownMinutes = 60;        // ~12 cycles
-      } else if (gap < 20000) {     // < $200 from profitable
-        cooldownMinutes = 180;       // 3h — still worth rechecking
-      } else {
-        cooldownMinutes = 360;       // 6h — far from profitable, check less often
-      }
-
-      const cooldownUntil = cooldownMinutes > 0
-        ? new Date(Date.now() + cooldownMinutes * 60_000).toISOString()
-        : null;
-
-      const lastProfitableAt = r.status === 'profitable' ? new Date().toISOString() : null;
-
-      upsert.run(
-        r.combo_key, r.status, r.theory_profit_cents, r.real_profit_cents,
-        gap, r.cost_gap_cents, r.ev_gap_cents,
-        lastProfitableAt, cooldownUntil, r.notes
-      );
-    }
-  });
-
-  saveAll();
-}
-
-/**
- * Load cooldown map for theory generator.
- * Returns combo_keys that are currently on cooldown with their gap info.
- */
-export function loadTheoryCooldowns(db: Database.Database, theoryType: string = "knife"): Map<string, { status: string; gap: number; cooldownUntil: string }> {
-  const rows = db.prepare(`
-    SELECT combo_key, status, gap_cents, cooldown_until
-    FROM theory_tracking
-    WHERE cooldown_until IS NOT NULL AND cooldown_until > datetime('now')
-      AND theory_type = ?
-  `).all(theoryType) as { combo_key: string; status: string; gap_cents: number; cooldown_until: string }[];
-
-  const map = new Map<string, { status: string; gap: number; cooldownUntil: string }>();
-  for (const r of rows) {
-    map.set(r.combo_key, { status: r.status, gap: r.gap_cents, cooldownUntil: r.cooldown_until });
-  }
-  return map;
-}
-
-/**
- * Load all theory tracking entries (for API/UI).
- */
-export function loadTheoryTracking(db: Database.Database): TheoryTrackingEntry[] {
-  return db.prepare(`
-    SELECT * FROM theory_tracking ORDER BY last_checked_at DESC
-  `).all() as TheoryTrackingEntry[];
-}
-
-/**
- * Get tracking summary stats.
- */
-export function getTheoryTrackingSummary(db: Database.Database): {
-  total: number;
-  profitable: number;
-  near_miss: number;
-  invalidated: number;
-  no_listings: number;
-  on_cooldown: number;
-  avg_gap_cents: number;
-} {
-  const row = db.prepare(`
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN status = 'profitable' THEN 1 ELSE 0 END) as profitable,
-      SUM(CASE WHEN status = 'near_miss' THEN 1 ELSE 0 END) as near_miss,
-      SUM(CASE WHEN status = 'invalidated' THEN 1 ELSE 0 END) as invalidated,
-      SUM(CASE WHEN status = 'no_listings' THEN 1 ELSE 0 END) as no_listings,
-      SUM(CASE WHEN cooldown_until > datetime('now') THEN 1 ELSE 0 END) as on_cooldown,
-      AVG(CASE WHEN status IN ('near_miss','invalidated') THEN gap_cents ELSE NULL END) as avg_gap
-    FROM theory_tracking
-  `).get() as {
-    total: number;
-    profitable: number;
-    near_miss: number;
-    invalidated: number;
-    no_listings: number;
-    on_cooldown: number;
-    avg_gap: number | null;
-  };
-  return {
-    total: row.total ?? 0,
-    profitable: row.profitable ?? 0,
-    near_miss: row.near_miss ?? 0,
-    invalidated: row.invalidated ?? 0,
-    no_listings: row.no_listings ?? 0,
-    on_cooldown: row.on_cooldown ?? 0,
-    avg_gap_cents: Math.round(row.avg_gap ?? 0),
-  };
-}
-
-export function saveNearMissesToDb(db: Database.Database, nearMisses: NearMissInfo[], theoryType: string = "knife") {
-  const upsert = db.prepare(`
-    INSERT INTO near_misses (combo_key, gap_cents, theory_profit_cents, real_profit_cents, collections, theory_type, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(combo_key) DO UPDATE SET
-      gap_cents = excluded.gap_cents,
-      theory_profit_cents = excluded.theory_profit_cents,
-      real_profit_cents = excluded.real_profit_cents,
-      collections = excluded.collections,
-      theory_type = excluded.theory_type,
-      updated_at = datetime('now')
-  `);
-
-  const saveAll = db.transaction(() => {
-    // Clear old near-misses (>48h) — stale data isn't useful
-    db.prepare("DELETE FROM near_misses WHERE updated_at < datetime('now', '-48 hours')").run();
-
-    for (const nm of nearMisses) {
-      // combo_key derived from the combo string (collections comma-separated)
-      const comboKey = nm.combo.split(",").map(c => c.trim()).sort().join("|");
-      upsert.run(comboKey, nm.gap, nm.theoryProfit, -nm.gap, nm.combo, theoryType);
-    }
-  });
-
-  saveAll();
-}
-
-export function loadNearMissesFromDb(db: Database.Database, theoryType: string = "knife"): NearMissInfo[] {
-  const rows = db.prepare(`
-    SELECT combo_key, gap_cents, theory_profit_cents, collections
-    FROM near_misses
-    WHERE updated_at > datetime('now', '-48 hours')
-      AND theory_type = ?
-    ORDER BY gap_cents ASC
-  `).all(theoryType) as { combo_key: string; gap_cents: number; theory_profit_cents: number; collections: string }[];
-
-  return rows.map(r => ({
-    combo: r.collections,
-    gap: r.gap_cents,
-    theoryProfit: r.theory_profit_cents,
-  }));
-}
-
-/**
- * Clean up old theory tracking entries (>7 days with no update).
- */
-export function cleanupTheoryTracking(db: Database.Database) {
-  const deleted = db.prepare(
-    "DELETE FROM theory_tracking WHERE last_checked_at < datetime('now', '-7 days')"
-  ).run();
-  if (deleted.changes > 0) {
-    console.log(`  Cleaned ${deleted.changes} old theory tracking entries`);
-  }
 }
 
 /**
@@ -417,7 +204,7 @@ export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFi
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 }
 
-export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[], type: string = "classified_covert") {
+export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: string = "classified_covert") {
   // Merge-save: update existing trade-ups by signature, mark missing ones as stale.
 
   const insertTradeUp = db.prepare(`
@@ -503,7 +290,7 @@ export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[
     }
   });
 
-  withRetry(() => mergeAll(), 3, "saveClassifiedTradeUps");
+  withRetry(() => mergeAll(), 3, "mergeTradeUps");
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 }
 
@@ -716,7 +503,7 @@ export function reviveStaleTradeUps(
  * Revive stale/partial classified→covert trade-ups by finding replacement listings.
  * Same pattern as reviveStaleTradeUps but for 10 Classified inputs → Covert outputs.
  */
-export function reviveStaleClassifiedTradeUps(
+export function reviveStaleGunTradeUps(
   db: Database.Database,
   limit = 100
 ): { checked: number; revived: number; improved: number } {

@@ -250,6 +250,10 @@ export function evaluateKnifeTradeUp(
     source: i.source ?? "csfloat",
   }));
 
+  // Chance to profit: sum of probabilities where outcome price exceeds total cost
+  const chanceToProfit = mergedOutcomes.reduce((sum, o) =>
+    sum + (o.estimated_price_cents > totalCost ? o.probability : 0), 0);
+
   return {
     id: 0,
     inputs: tradeUpInputs,
@@ -258,6 +262,7 @@ export function evaluateKnifeTradeUp(
     expected_value_cents: evCents,
     profit_cents: profit,
     roi_percentage: Math.round(roi * 100) / 100,
+    chance_to_profit: Math.round(chanceToProfit * 10000) / 10000,
     created_at: new Date().toISOString(),
   };
 }

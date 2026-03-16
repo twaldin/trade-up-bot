@@ -64,26 +64,6 @@ function StatusBar({ status, diffs, view }: { status: SyncStatus | null; diffs: 
     return bar(<Stat label="Last Calc">{timeAgo(status?.last_calculation ?? null)}</Stat>);
   }
 
-  if (view === "theories") {
-    return bar(<>
-      <Stat label="Theories">{status?.theory_trade_ups?.toLocaleString() ?? "..."}
-        <Diff value={diffs.theory_trade_ups} />
-        {status && status.theory_profitable > 0 && <span className="text-green-500"> ({status.theory_profitable.toLocaleString()} profitable<Diff value={diffs.theory_profitable} />)</span>}
-      </Stat>
-      {status?.theory_tracking && (<>
-        <Stat label="Validated">{status.theory_tracking.profitable} real
-          <span className="text-muted-foreground font-normal"> / {status.theory_tracking.near_miss} near-miss / {status.theory_tracking.invalidated} invalid</span>
-        </Stat>
-        <Stat label="Cooldown">{status.theory_tracking.on_cooldown} combos
-          {status.theory_tracking.avg_gap_cents > 0 && <span className="text-muted-foreground font-normal"> (avg gap ${(status.theory_tracking.avg_gap_cents / 100).toFixed(0)})</span>}
-        </Stat>
-      </>)}
-      <Stat label="Output Prices">{status?.covert_sale_prices ?? "..."} sale-based
-        {status && status.total_sales > 0 && <span className="text-muted-foreground font-normal"> ({status.total_sales.toLocaleString()} sales)</span>}
-      </Stat>
-    </>);
-  }
-
   // Default: trade-ups — show key stats
   return bar(<>
     <Stat label="Listings">{status?.total_listings?.toLocaleString() ?? "..."}</Stat>
@@ -104,14 +84,10 @@ const TRADE_UP_TYPES = [
   { value: "classified_covert" as const, label: "Classified" },
   { value: "restricted_classified" as const, label: "Restricted" },
   { value: "milspec_restricted" as const, label: "Mil-Spec" },
+  { value: "industrial_milspec" as const, label: "Industrial" },
   { value: "staircase" as const, label: "Staircases" },
 ];
 
-const THEORY_TYPES = [
-  { value: "theory_knife" as const, label: "Knife/Gloves" },
-  { value: "theory_classified" as const, label: "Classified" },
-  { value: "theory_staircase" as const, label: "Staircases" },
-];
 
 function CollectionPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
   const { name } = useParams<{ name: string }>();
@@ -177,21 +153,6 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
   );
 }
 
-function TheoriesMainPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
-  const navigate = useNavigate();
-  return (
-    <>
-      <StatusBar status={status} diffs={diffs} view="theories" />
-      <TradeUpsPage
-        types={THEORY_TYPES}
-        defaultType="theory_knife"
-        status={status}
-        onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
-        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
-      />
-    </>
-  );
-}
 
 export default function App() {
   const { status, diffs, newDataHint, refresh } = useStatus();
@@ -239,7 +200,6 @@ export default function App() {
       <nav className="flex gap-1 mb-4 p-1 rounded-lg bg-muted/50 w-fit">
         {[
           { to: "/", label: "Trade-Ups", end: true },
-          { to: "/theories", label: "Theories" },
           { to: "/data", label: "Data" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
@@ -263,7 +223,6 @@ export default function App() {
 
       <Routes>
         <Route path="/" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
-        <Route path="/theories" element={<TheoriesMainPage status={status} diffs={diffs} />} />
         <Route path="/data" element={<DataPage />} />
         <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
         <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
