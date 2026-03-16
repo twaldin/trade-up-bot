@@ -33,6 +33,9 @@ export function setupAuth(app: Express, db: Database.Database) {
   const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
   const baseUrl = process.env.BASE_URL || "http://localhost:3001";
 
+  // Trust nginx proxy (needed for secure cookies behind reverse proxy)
+  app.set("trust proxy", 1);
+
   // Create users table
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -97,8 +100,11 @@ export function setupAuth(app: Express, db: Database.Database) {
     // Auth routes
     app.get("/auth/steam", passport.authenticate("steam"));
     app.get("/auth/steam/callback",
-      passport.authenticate("steam", { failureRedirect: "/" }),
-      (_req, res) => res.redirect("/")
+      passport.authenticate("steam", { failureRedirect: "/?auth=failed" }),
+      (req, res) => {
+        console.log(`Steam login: ${(req.user as any)?.display_name} (${(req.user as any)?.steam_id})`);
+        res.redirect("/");
+      }
     );
   }
 
@@ -111,6 +117,7 @@ export function setupAuth(app: Express, db: Database.Database) {
   app.get("/api/auth/me", (req, res) => {
     if (req.user) {
       const u = req.user as User;
+      console.log(`Auth check: ${u.display_name} (${u.tier})`);
       res.json({ steam_id: u.steam_id, display_name: u.display_name, avatar_url: u.avatar_url, tier: u.tier });
     } else {
       res.json(null);
