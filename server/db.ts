@@ -71,6 +71,9 @@ function createTables(db: Database.Database) {
       stattrak INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       source TEXT NOT NULL DEFAULT 'csfloat',
+      listing_type TEXT NOT NULL DEFAULT 'buy_now',
+      phase TEXT,
+      staleness_checked_at TEXT,
       FOREIGN KEY (skin_id) REFERENCES skins(id)
     );
 
@@ -93,6 +96,19 @@ function createTables(db: Database.Database) {
       expected_value_cents INTEGER NOT NULL,
       profit_cents INTEGER NOT NULL,
       roi_percentage REAL NOT NULL,
+      chance_to_profit REAL NOT NULL DEFAULT 0,
+      type TEXT NOT NULL DEFAULT 'classified_covert',
+      best_case_cents INTEGER NOT NULL DEFAULT 0,
+      worst_case_cents INTEGER NOT NULL DEFAULT 0,
+      is_theoretical INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'discovery',
+      combo_key TEXT,
+      listing_status TEXT NOT NULL DEFAULT 'active',
+      preserved_at TEXT,
+      peak_profit_cents INTEGER NOT NULL DEFAULT 0,
+      profit_streak INTEGER NOT NULL DEFAULT 0,
+      previous_inputs TEXT,
+      outcomes_json TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -105,6 +121,7 @@ function createTables(db: Database.Database) {
       price_cents INTEGER NOT NULL,
       float_value REAL NOT NULL,
       condition TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'csfloat',
       FOREIGN KEY (trade_up_id) REFERENCES trade_ups(id) ON DELETE CASCADE
     );
 
