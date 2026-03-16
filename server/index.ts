@@ -75,6 +75,15 @@ app.use(buyRouter(db));
 app.use(calculatorRouter(db));
 app.use(claimsRouter(db));
 
+// Serve built frontend in production (Vite handles this in dev via proxy)
+const distPath = path.join(__dirname, "..", "dist");
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
 });

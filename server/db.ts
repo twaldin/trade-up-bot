@@ -185,17 +185,7 @@ function createTables(db: Database.Database) {
     `);
   }
 
-  // Add theory_type to theory_tracking (knife vs classified)
-  const ttCols = db.pragma("table_info(theory_tracking)") as { name: string }[];
-  if (!ttCols.some((c) => c.name === "theory_type")) {
-    db.exec("ALTER TABLE theory_tracking ADD COLUMN theory_type TEXT NOT NULL DEFAULT 'knife'");
-  }
-
-  // Add theory_type to near_misses (knife vs classified)
-  const nmCols = db.pragma("table_info(near_misses)") as { name: string }[];
-  if (!nmCols.some((c) => c.name === "theory_type")) {
-    db.exec("ALTER TABLE near_misses ADD COLUMN theory_type TEXT NOT NULL DEFAULT 'knife'");
-  }
+  // Legacy theory migrations removed — tables still created for backward compat but unused.
 
   // Add combo_type to profitable_combos (knife vs classified)
   const pcCols = db.pragma("table_info(profitable_combos)") as { name: string }[];
