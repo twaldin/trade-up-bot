@@ -1,0 +1,250 @@
+import { useState } from "react";
+import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
+import { formatDollars, condAbbr, timeAgo, csfloatSearchUrl, listingUrl, listingSource, sourceLabel, sourceColor } from "../../utils/format.js";
+import { Badge } from "../../../shared/components/ui/badge.js";
+
+interface VerifyResult {
+  trade_up_id: number;
+  inputs: {
+    listing_id: string;
+    skin_name: string;
+    status: "active" | "sold" | "delisted" | "theoretical" | "error";
+    current_price?: number;
+    original_price: number;
+    price_changed?: boolean;
+    sold_at?: string;
+  }[];
+  all_active: boolean;
+  any_unavailable: boolean;
+  any_price_changed: boolean;
+}
+
+interface InputListProps {
+  tu: TradeUp;
+  verifyResult?: VerifyResult;
+  verifying: boolean;
+  onVerify: (tuId: number) => void;
+  onNavigateSkin?: (skinName: string) => void;
+  buyingId: string | null;
+  buyResult: Map<string, { success: boolean; error?: string }>;
+  onBuyDMarket: (listingId: string, priceCents: number) => void;
+}
+
+function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
+  const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
+  return (
+    <div className="rounded-md border border-border/50 bg-muted/50 px-2 py-1.5 text-[0.75rem]">
+      {/* Row 1: Skin name */}
+      <div className="flex items-start justify-between gap-1 mb-0.5">
+        <a
+          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate"
+          title={input.skin_name}
+        >
+          {input.skin_name}
+        </a>
+        {onNavigateSkin && (
+          <button
+            className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.6rem] cursor-pointer px-[3px] py-0 shrink-0 leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
+            title={`View ${input.skin_name} data`}
+            onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
+          >&#x1F4CA;</button>
+        )}
+      </div>
+      {/* Row 2: Source + condition + float */}
+      <div className="flex items-center gap-1 mb-0.5">
+        {!isTheory && input.source && input.source !== "csfloat" && (
+          <span className="inline-block px-1 py-0 text-[0.55rem] font-semibold rounded text-white shrink-0" style={{ backgroundColor: sourceColor(input.source) }}>{sourceLabel(input.source)}</span>
+        )}
+        {isTheory && (
+          <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
+        )}
+        <span className="text-muted-foreground text-[0.68rem]">
+          {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
+        </span>
+      </div>
+      {/* Row 3: Price */}
+      <div className="text-foreground/80 text-[0.72rem] font-medium">
+        {formatDollars(input.price_cents)}
+      </div>
+    </div>
+  );
+}
+
+function RegularInputCard({ input, verifyResult, onNavigateSkin, buyingId, buyResult, onBuyDMarket }: {
+  input: TradeUpInput;
+  verifyResult?: VerifyResult;
+  onNavigateSkin?: (skinName: string) => void;
+  buyingId: string | null;
+  buyResult: Map<string, { success: boolean; error?: string }>;
+  onBuyDMarket: (listingId: string, priceCents: number) => void;
+}) {
+  const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
+  const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
+  const isSoldOrDelisted = inputStatus?.status === "sold" || inputStatus?.status === "delisted";
+
+  return (
+    <div className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
+      isSoldOrDelisted ? "opacity-50 border-border/30 bg-muted/20" : "border-border/50 bg-muted/50"
+    }`}>
+      {/* Row 1: Skin name + verify status */}
+      <div className="flex items-start justify-between gap-1 mb-0.5">
+        <a
+          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isSoldOrDelisted ? "line-through" : ""}`}
+          title={input.skin_name}
+        >
+          {input.skin_name}
+        </a>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {inputStatus && inputStatus.status === "active" && <span className="text-green-500 font-bold text-[0.7rem]" title="Still listed">&#10003;</span>}
+          {inputStatus && inputStatus.status === "sold" && (
+            <Badge variant="outline" className="text-[0.55rem] bg-red-950 text-red-500 border-red-800 font-semibold py-0 h-3.5" title={`Sold ${inputStatus.sold_at ? timeAgo(inputStatus.sold_at) : ""}`}>SOLD</Badge>
+          )}
+          {inputStatus && inputStatus.status === "delisted" && (
+            <Badge variant="outline" className="text-[0.55rem] bg-yellow-950 text-amber-500 border-yellow-800 font-semibold py-0 h-3.5" title="Removed from market">GONE</Badge>
+          )}
+          {onNavigateSkin && (
+            <button
+              className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.6rem] cursor-pointer px-[3px] py-0 leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
+              title={`View ${input.skin_name} data`}
+              onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
+            >&#x1F4CA;</button>
+          )}
+        </div>
+      </div>
+      {/* Row 2: Source + condition + float */}
+      <div className="flex items-center gap-1 mb-0.5">
+        {!isTheory && input.source && input.source !== "csfloat" && (
+          <span className="inline-block px-1 py-0 text-[0.55rem] font-semibold rounded text-white shrink-0" style={{ backgroundColor: sourceColor(input.source) }}>{sourceLabel(input.source)}</span>
+        )}
+        {isTheory && (
+          <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
+        )}
+        <span className="text-muted-foreground text-[0.68rem]">
+          {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
+        </span>
+      </div>
+      {/* Row 3: Price + buy button */}
+      <div className="flex items-center justify-between">
+        <span className="text-foreground/80 text-[0.72rem] font-medium">
+          {formatDollars(input.price_cents)}
+          {inputStatus && inputStatus.price_changed && inputStatus.current_price && (
+            <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatDollars(inputStatus.original_price)}, now ${formatDollars(inputStatus.current_price)}`}>
+              {formatDollars(inputStatus.current_price)}
+            </span>
+          )}
+        </span>
+        {!isTheory && listingSource(input.listing_id) === "dmarket" && (
+          <button
+            className="inline-block px-[5px] py-0 text-[0.55rem] font-semibold rounded-[3px] bg-green-950 text-green-400 border border-green-800 cursor-pointer leading-relaxed transition-colors hover:bg-green-900 hover:border-green-400 disabled:opacity-50 disabled:cursor-default"
+            disabled={buyingId === input.listing_id || buyResult.has(input.listing_id)}
+            title={buyResult.get(input.listing_id)?.success ? "Purchased!" : buyResult.get(input.listing_id)?.error ?? "Buy on DMarket"}
+            onClick={(e) => { e.stopPropagation(); onBuyDMarket(input.listing_id, input.price_cents); }}
+          >
+            {buyingId === input.listing_id ? "..." : buyResult.get(input.listing_id)?.success ? "OK" : buyResult.get(input.listing_id) ? "ERR" : "BUY"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
+  stage: TradeUpInput[];
+  stageIndex: number;
+  onNavigateSkin?: (skinName: string) => void;
+}) {
+  const [open, setOpen] = useState(stageIndex === 0);
+  const stageCost = stage.reduce((s, inp) => s + inp.price_cents, 0);
+  const stageCollections = [...new Set(stage.map(inp => inp.collection_name))];
+
+  return (
+    <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="text-[0.8rem] font-semibold text-muted-foreground cursor-pointer select-none py-1 pb-1.5 border-b border-border hover:text-foreground transition-colors">
+        Trade-Up #{stageIndex + 1} ({stage.length} inputs) &mdash; {formatDollars(stageCost)}
+        <span className="ml-1.5 font-normal text-[0.72rem] text-muted-foreground/70">{stageCollections.join(" + ")}</span>
+      </summary>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5 pt-1.5">
+        {stage.map((input, i) => (
+          <InputCard key={i} input={input} onNavigateSkin={onNavigateSkin} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, buyingId, buyResult, onBuyDMarket }: InputListProps) {
+  return (
+    <div>
+      <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
+        {tu.type?.startsWith("staircase") && tu.inputs.length > 10
+          ? `Inputs (${tu.inputs.length} — ${Math.ceil(tu.inputs.length / 10)} trade-ups)`
+          : `Inputs (${tu.inputs.length})`}
+        {tu.type?.startsWith("staircase_") && (
+          <span className="ml-2 text-[0.65rem] font-normal text-amber-400/70" title="Intermediate stages are probabilistic — output skins at each step are random (weighted by collection). The EV and outcome probabilities account for this variance.">
+            multi-stage: intermediate outputs are probabilistic
+          </span>
+        )}
+        {!tu.is_theoretical && (
+          <button
+            className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-blue-400 border border-border cursor-pointer align-middle hover:bg-accent disabled:opacity-50 disabled:cursor-wait"
+            onClick={(e) => { e.stopPropagation(); onVerify(tu.id); }}
+            disabled={verifying}
+            title="Check if all inputs are still listed"
+          >
+            {verifying ? "Checking..." : "Verify"}
+          </button>
+        )}
+        {verifyResult && (() => {
+          const vr = verifyResult;
+          const activeCount = vr.inputs.filter(i => i.status === "active").length;
+          const unavailCount = vr.inputs.filter(i => i.status === "sold" || i.status === "delisted").length;
+          const errorCount = vr.inputs.filter(i => i.status === "error").length;
+          if (errorCount === vr.inputs.length) return <span className="ml-2 text-[0.7rem] text-amber-500 font-semibold" title="Rate limited — try again later">Rate limited</span>;
+          if (vr.all_active && !vr.any_price_changed) return <span className="ml-2 text-[0.7rem] text-green-500 font-semibold" title="All inputs verified active">{activeCount}/{vr.inputs.length} active</span>;
+          if (vr.all_active && vr.any_price_changed) return <span className="ml-2 text-[0.7rem] text-amber-500 font-semibold" title="Some prices changed">{activeCount}/{vr.inputs.length} price changed</span>;
+          if (vr.any_unavailable) return <span className="ml-2 text-[0.7rem] text-red-500 font-semibold" title={`${unavailCount} sold/delisted`}>{unavailCount}/{vr.inputs.length} missing</span>;
+          if (errorCount > 0) return <span className="ml-2 text-[0.7rem] text-amber-500 font-semibold" title={`${errorCount} couldn't be checked (rate limited)`}>{activeCount}/{vr.inputs.length} checked</span>;
+          return null;
+        })()}
+      </h4>
+      {tu.type?.startsWith("staircase") && tu.inputs.length > 10 ? (() => {
+        // Group staircase inputs into stage-1 trade-ups (10 inputs each)
+        const chunkSize = 10;
+        const numStages = Math.ceil(tu.inputs.length / chunkSize);
+        const stages: typeof tu.inputs[] = [];
+        for (let s = 0; s < numStages; s++) {
+          stages.push(tu.inputs.slice(s * chunkSize, (s + 1) * chunkSize));
+        }
+        return (
+          <div className="flex flex-col gap-3">
+            {stages.map((stage, si) => (
+              <div key={si} className="border border-border rounded-md p-2 bg-white/[0.02]">
+                <StaircaseStage stage={stage} stageIndex={si} onNavigateSkin={onNavigateSkin} />
+              </div>
+            ))}
+          </div>
+        );
+      })() : (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5">
+        {tu.inputs.map((input, i) => (
+          <RegularInputCard
+            key={i}
+            input={input}
+            verifyResult={verifyResult}
+            onNavigateSkin={onNavigateSkin}
+            buyingId={buyingId}
+            buyResult={buyResult}
+            onBuyDMarket={onBuyDMarket}
+          />
+        ))}
+      </div>
+      )}
+    </div>
+  );
+}

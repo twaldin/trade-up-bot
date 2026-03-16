@@ -71,7 +71,7 @@ export const SW4 = ["Nomad Knife", "Paracord Knife", "Skeleton Knife", "Survival
  *   - Each case has a specific finish set (original/chroma/gamma)
  */
 export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
-  // ── Group A: Original 5 knives ──
+  // Group A: Original 5 knives
   // Original finishes
   "The Arms Deal Collection":          { knifeTypes: OG5, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Arms Deal 2 Collection":        { knifeTypes: OG5, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
@@ -92,7 +92,7 @@ export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
   "The Gamma Collection":   { knifeTypes: OG5, knifeFinishes: KNIFE_FINISHES_GAMMA, gloveGen: null },
   "The Gamma 2 Collection": { knifeTypes: OG5, knifeFinishes: KNIFE_FINISHES_GAMMA, gloveGen: null },
 
-  // ── Group B: Secondary 5 knives ──
+  // Group B: Secondary 5 knives
   // Original finishes (single-knife cases)
   "The Huntsman Collection": { knifeTypes: ["Huntsman Knife"], knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Breakout Collection": { knifeTypes: ["Butterfly Knife"], knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
@@ -106,25 +106,25 @@ export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
   "The Operation Riptide Collection":      { knifeTypes: SEC5, knifeFinishes: KNIFE_FINISHES_GAMMA, gloveGen: null },
   "The Dreams & Nightmares Collection": { knifeTypes: SEC5, knifeFinishes: KNIFE_FINISHES_GAMMA, gloveGen: null },
 
-  // ── Group C: Horizon knives ──
+  // Group C: Horizon knives
   "The Horizon Collection":    { knifeTypes: HOR4, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Danger Zone Collection": { knifeTypes: HOR4, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Prisma Collection":     { knifeTypes: HOR4, knifeFinishes: KNIFE_FINISHES_CHROMA, gloveGen: null },
   "The Prisma 2 Collection":   { knifeTypes: HOR4, knifeFinishes: KNIFE_FINISHES_CHROMA, gloveGen: null },
 
-  // ── Group D: Classic Knife ──
+  // Group D: Classic Knife
   "The CS20 Collection": { knifeTypes: ["Classic Knife"], knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
 
-  // ── Group E: Shattered Web knives ──
+  // Group E: Shattered Web knives
   "The Shattered Web Collection": { knifeTypes: SW4, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Fracture Collection":     { knifeTypes: SW4, knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Fever Collection":        { knifeTypes: SW4, knifeFinishes: KNIFE_FINISHES_CHROMA, gloveGen: null },
 
-  // ── Group F: Kukri Knife ──
+  // Group F: Kukri Knife
   "The Kilowatt Collection": { knifeTypes: ["Kukri Knife"], knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
   "The Gallery Collection":  { knifeTypes: ["Kukri Knife"], knifeFinishes: KNIFE_FINISHES_ORIGINAL, gloveGen: null },
 
-  // ── Glove-only cases ──
+  // Glove-only cases
   "The Glove Collection":              { knifeTypes: [], knifeFinishes: [], gloveGen: 1 },
   "The Operation Hydra Collection":    { knifeTypes: [], knifeFinishes: [], gloveGen: 1 },
   "The Clutch Collection":             { knifeTypes: [], knifeFinishes: [], gloveGen: 2 },
@@ -133,7 +133,7 @@ export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
   "The Snakebite Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
   "The Recoil Collection":             { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
 
-  // ── Gen 4 gloves (Dead Hand Terminal — Driver, Specialist, Sport) ──
+  // Gen 4 gloves (Dead Hand Terminal -- Driver, Specialist, Sport)
   "The Dead Hand Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: 4 },
 };
 

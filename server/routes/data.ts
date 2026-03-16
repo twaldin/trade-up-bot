@@ -15,20 +15,23 @@ export function dataRouter(
 
   router.get("/api/skin-data", (req, res) => {
     const search = (req.query.search as string) || "";
-    const rarity = (req.query.rarity as string) || "Covert";
+    const rarity = (req.query.rarity as string) || "all";
     const collection = (req.query.collection as string) || "";
     const outputCollection = (req.query.outputCollection as string) || "";
     const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1 ? 1 : 0;
 
-    // "Covert" = gun skins only, "knife_glove" = ★ items, "" = all
+    // Rarity filter: specific rarity, "knife_glove" for ★ items, "all" for everything
     let rarityFilter = "";
     const queryParams: (string | number)[] = [];
-    if (rarity === "Covert") {
+    if (rarity === "all" || rarity === "") {
+      rarityFilter = ""; // no filter — show all rarities
+    } else if (rarity === "Covert") {
       rarityFilter = "AND s.rarity = 'Covert' AND s.name NOT LIKE '★%'";
-    } else if (rarity === "Classified") {
-      rarityFilter = "AND s.rarity = 'Classified'";
     } else if (rarity === "knife_glove") {
       rarityFilter = "AND s.name LIKE '★%'";
+    } else if (["Classified", "Restricted", "Mil-Spec", "Extraordinary", "Consumer Grade", "Industrial Grade"].includes(rarity)) {
+      rarityFilter = "AND s.rarity = ?";
+      queryParams.push(rarity);
     }
 
     // Output collection filter: find knives/gloves from a specific case's pool

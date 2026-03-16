@@ -4,6 +4,22 @@ import { CSFLOAT_BASE, CONDITION_FROM_FLOAT } from "./types.js";
 import type { CSFloatSaleEntry } from "./types.js";
 
 /**
+ * Store a sale as a price observation for KNN float-precise pricing.
+ * Called from all sale history sync functions. Dedup handled by unique index.
+ */
+const _obsStmtCache = new WeakMap<Database.Database, ReturnType<Database.Database["prepare"]>>();
+function recordSaleObservation(db: Database.Database, skinName: string, floatValue: number, priceCents: number, soldAt: string) {
+  let stmt = _obsStmtCache.get(db);
+  if (!stmt) {
+    stmt = db.prepare(
+      "INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at) VALUES (?, ?, ?, 'sale', ?)"
+    );
+    _obsStmtCache.set(db, stmt);
+  }
+  (stmt as any).run(skinName, floatValue, priceCents, soldAt);
+}
+
+/**
  * Fetch sale history for a specific skin+condition from CSFloat.
  * Endpoint: GET /api/v1/history/{market_hash_name}/sales
  * Returns ~40 recent sales. CF-cached so repeat calls are free.
@@ -186,6 +202,7 @@ export async function syncSaleHistory(
             sale.item.float_value,
             sale.created_at
           );
+          recordSaleObservation(db, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
           totalSales++;
         }
       });
@@ -404,6 +421,7 @@ export async function syncStatTrakSaleHistory(
             sale.id, pair.skinName, pair.condition,
             sale.price, sale.item.float_value, sale.created_at
           );
+          recordSaleObservation(db, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
           totalSales++;
         }
       });
@@ -467,25 +485,27 @@ export async function syncStatTrakSaleHistory(
 }
 
 /**
- * Sync sale history for Classified skins (trade-up inputs for classified->covert).
- * These need accurate pricing so we know the true cost of each trade-up.
+ * Sync sale history for skins of any rarity.
+ * Fetches recent sales from CSFloat for each skin+condition, stores in sale_history,
+ * and updates price_data with median sale prices (source='csfloat_sales').
  * Prioritizes skins WITHOUT csfloat_sales data first.
  */
-export async function syncClassifiedSaleHistory(
+export async function syncSaleHistoryForRarity(
   db: Database.Database,
+  rarity: string,
   options: {
     apiKey: string;
     onProgress?: (msg: string) => void;
     maxCalls?: number;
   }
 ): Promise<{ fetched: number; sales: number; pricesUpdated: number }> {
-  // Get all Classified skins that are trade-up inputs
+  // Get all skins of this rarity
   const skins = db.prepare(`
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    WHERE s.rarity = ? AND s.stattrak = 0
     ORDER BY s.name
-  `).all() as { name: string; min_float: number; max_float: number }[];
+  `).all(rarity) as { name: string; min_float: number; max_float: number }[];
 
   // Build list of skin+condition pairs
   const pairs: { skinName: string; condition: string; marketHashName: string }[] = [];
@@ -538,7 +558,7 @@ export async function syncClassifiedSaleHistory(
   const limited = toFetch.slice(0, maxCalls);
 
   console.log(
-    `  Classified sale history: ${pairs.length} total pairs, ${recentlyFetched.size} recent, ${hasSalesPrice.size} with sales data, ${limited.length} to fetch`
+    `  ${rarity} sale history: ${pairs.length} total pairs, ${recentlyFetched.size} recent, ${hasSalesPrice.size} with sales data, ${limited.length} to fetch`
   );
 
   const insertSale = db.prepare(`
@@ -600,6 +620,7 @@ export async function syncClassifiedSaleHistory(
             sale.id, pair.skinName, pair.condition,
             sale.price, sale.item.float_value, sale.created_at
           );
+          recordSaleObservation(db, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
           totalSales++;
         }
       });
@@ -635,7 +656,7 @@ export async function syncClassifiedSaleHistory(
       }
 
       if (totalFetched % 10 === 0) {
-        const msg = `Classified sales: ${totalFetched}/${limited.length}, ${totalSales} sales, ${pricesUpdated} prices`;
+        const msg = `${rarity} sales: ${totalFetched}/${limited.length}, ${totalSales} sales, ${pricesUpdated} prices`;
         options.onProgress?.(msg);
         console.log(`  ${msg}`);
       }
@@ -657,7 +678,7 @@ export async function syncClassifiedSaleHistory(
     }
   }
 
-  const finalMsg = `Classified sale history: ${totalFetched} fetched, ${totalSales} sales, ${pricesUpdated} prices`;
+  const finalMsg = `${rarity} sale history: ${totalFetched} fetched, ${totalSales} sales, ${pricesUpdated} prices`;
   options.onProgress?.(finalMsg);
   console.log(`  ${finalMsg}`);
 
@@ -825,6 +846,7 @@ export async function syncKnifeGloveSaleHistory(
             sale.id, pair.skinName, pair.condition,
             sale.price, sale.item.float_value, sale.created_at
           );
+          recordSaleObservation(db, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
           totalSales++;
         }
       });

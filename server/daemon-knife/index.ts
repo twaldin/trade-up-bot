@@ -20,9 +20,12 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "node:child_process";
-import { initDb, DB_PATH } from "../db.js";
+import { initDb, DB_PATH, setSyncMeta } from "../db.js";
 import { takeSnapshot, purgeOldSnapshots } from "../snapshot.js";
-import { loadNearMissesFromDb, type NearMissInfo, type WantedListing } from "../engine.js";
+import {
+  loadNearMissesFromDb, type NearMissInfo, type WantedListing,
+  generateTheoriesForTier, buildWantedListForTier, saveTheoryTradeUpsForTier, getTierById,
+} from "../engine.js";
 import type { TradeUp } from "../../shared/types.js";
 
 import { startSkinportListener, getSkinportStats, isDMarketConfigured } from "../sync.js";
@@ -44,6 +47,8 @@ import {
   phase5ClassifiedCalc,
   phase5cStaircase,
   phase5dStatTrak,
+  phase5GenericCalc,
+  phase5cGenericStaircases,
   phase2cStaircaseTheory,
   phase7Rematerialization,
   printTheoryAccuracy,
@@ -65,7 +70,7 @@ if (fs.existsSync(envPath)) {
  * hooks aren't inherited by worker threads in Node.js v24.
  */
 function runCalcWorker(
-  task: "knife" | "classified" | "stattrak",
+  task: "knife" | "classified" | "stattrak" | "restricted" | "milspec",
   dbPath: string,
   extraTransitionPoints?: number[],
 ): Promise<TradeUp[]> {
@@ -92,11 +97,29 @@ function runCalcWorker(
     });
 
     let settled = false;
-    child.on("message", (msg: { ok: boolean; tradeUps?: TradeUp[]; error?: string }) => {
+    child.on("message", (msg: { ok: boolean; tradeUps?: TradeUp[]; resultFile?: string; error?: string }) => {
       if (settled) return;
       settled = true;
       if (msg.ok) {
-        resolve(msg.tradeUps!);
+        if (msg.resultFile) {
+          // Large result set written as NDJSON (one JSON object per line).
+          // Stream-read line-by-line to avoid V8 string length limit.
+          import("readline").then(({ createInterface }) => {
+            const data: TradeUp[] = [];
+            const rl = createInterface({ input: fs.createReadStream(msg.resultFile!), crlfDelay: Infinity });
+            rl.on("line", (line: string) => {
+              if (line.trim()) {
+                try { data.push(JSON.parse(line)); } catch { /* skip malformed */ }
+              }
+            });
+            rl.on("close", () => {
+              try { fs.unlinkSync(msg.resultFile!); } catch { /* expected — temp file already cleaned up */ }
+              resolve(data);
+            });
+          });
+        } else {
+          resolve(msg.tradeUps!);
+        }
       } else {
         reject(new Error(`Worker ${task}: ${msg.error}`));
       }
@@ -143,7 +166,6 @@ export async function main() {
   console.log(`  Skinport WebSocket: listener started (passive listing feed)`);
 
   if (freshStart) {
-    db.prepare("DELETE FROM trade_up_outcomes").run();
     db.prepare("DELETE FROM trade_up_inputs").run();
     const purged = db.prepare("DELETE FROM trade_ups").run();
     console.log(`  --fresh: purged ${purged.changes} trade-ups for clean start`);
@@ -215,14 +237,63 @@ export async function main() {
       }
     }
 
+    // Phase 2d: Theory for new rarity tiers (every 3 cycles — less critical than knife/classified)
+    let restrictedWanted: WantedListing[] = [];
+    let milspecWanted: WantedListing[] = [];
+    if (cycleCount % 3 === 1) {
+      try {
+        const restrictedTier = getTierById("restricted_classified")!;
+        console.log(`\n[${timestamp()}] Phase 2d: Restricted→Classified Theory`);
+        const restrictedTheories = generateTheoriesForTier(db, restrictedTier, {
+          onProgress: (msg) => console.log(`  ${msg}`),
+          maxTheories: 1000,
+        });
+        if (restrictedTheories.length > 0) {
+          saveTheoryTradeUpsForTier(db, restrictedTheories, "restricted_classified");
+          restrictedWanted = buildWantedListForTier(restrictedTheories);
+          console.log(`  Restricted wanted list: ${restrictedWanted.length} skins`);
+        }
+      } catch (err) { console.error(`  Restricted theory error: ${(err as Error).message}`); }
+
+      try {
+        const milspecTier = getTierById("milspec_restricted")!;
+        console.log(`[${timestamp()}] Phase 2e: Mil-Spec→Restricted Theory`);
+        const milspecTheories = generateTheoriesForTier(db, milspecTier, {
+          onProgress: (msg) => console.log(`  ${msg}`),
+          maxTheories: 500,
+        });
+        if (milspecTheories.length > 0) {
+          saveTheoryTradeUpsForTier(db, milspecTheories, "milspec_restricted");
+          milspecWanted = buildWantedListForTier(milspecTheories);
+          console.log(`  Mil-Spec wanted list: ${milspecWanted.length} skins`);
+        }
+      } catch (err) { console.error(`  Mil-Spec theory error: ${(err as Error).message}`); }
+    }
+
     // Merge wanted lists — fetch most impactful skins first regardless of type
     const unifiedWantedList: WantedListing[] = [
       ...theoryResult.wantedList,
       ...classifiedTheoryResult.wantedList,
+      ...restrictedWanted,
+      ...milspecWanted,
     ].sort((a, b) => b.priority_score - a.priority_score);
     if (unifiedWantedList.length > 0) {
-      console.log(`\n  Unified wanted list: ${unifiedWantedList.length} skins (${theoryResult.wantedList.length} knife + ${classifiedTheoryResult.wantedList.length} classified)`);
+      const parts = [
+        `${theoryResult.wantedList.length} knife`,
+        `${classifiedTheoryResult.wantedList.length} classified`,
+        restrictedWanted.length > 0 ? `${restrictedWanted.length} restricted` : null,
+        milspecWanted.length > 0 ? `${milspecWanted.length} milspec` : null,
+      ].filter(Boolean).join(" + ");
+      console.log(`\n  Unified wanted list: ${unifiedWantedList.length} skins (${parts})`);
     }
+
+    // Persist wanted list for the continuous DMarket fetcher process
+    setSyncMeta(db, "dmarket_wanted_list", JSON.stringify(
+      unifiedWantedList.slice(0, 200).map(w => ({
+        skin_name: w.skin_name,
+        priority: w.priority_score,
+      }))
+    ));
 
     // Phase 3: API Probe (tests all 3 rate limit pools independently)
     const probe = await phase3ApiProbe(db, budget, apiKey);
@@ -249,35 +320,39 @@ export async function main() {
     let knifeDiscovery: TradeUp[] | undefined;
     let classifiedDiscovery: TradeUp[] | undefined;
     let stDiscovery: TradeUp[] | undefined;
+    let restrictedDiscovery: TradeUp[] | undefined;
+    let milspecDiscovery: TradeUp[] | undefined;
 
     {
-      const workerPromises: Promise<void>[] = [];
+      type WorkerTask = { name: string; promise: Promise<TradeUp[]> };
+      const tasks: WorkerTask[] = [];
       if (shouldRunKnife) {
-        workerPromises.push(
-          runCalcWorker("knife", DB_PATH, theoryResult.bestFloatTargets)
-            .then(r => { knifeDiscovery = r; })
-        );
+        tasks.push({ name: "knife", promise: runCalcWorker("knife", DB_PATH, theoryResult.bestFloatTargets) });
       }
-      workerPromises.push(
-        runCalcWorker("classified", DB_PATH)
-          .then(r => { classifiedDiscovery = r; })
-      );
-      if (shouldRunST) {
-        workerPromises.push(
-          runCalcWorker("stattrak", DB_PATH)
-            .then(r => { stDiscovery = r; })
-        );
-      }
+      tasks.push({ name: "classified", promise: runCalcWorker("classified", DB_PATH) });
+      tasks.push({ name: "restricted", promise: runCalcWorker("restricted", DB_PATH) });
+      tasks.push({ name: "milspec", promise: runCalcWorker("milspec", DB_PATH) });
+      // ST worker disabled — output pricing unreliable (Skinport-only, inflated)
+      // if (shouldRunST) {
+      //   tasks.push({ name: "stattrak", promise: runCalcWorker("stattrak", DB_PATH) });
+      // }
 
-      const workerCount = workerPromises.length;
-      console.log(`\n[${timestamp()}] Spawning ${workerCount} worker threads for parallel discovery...`);
-      setDaemonStatus(db, "calculating", `Phase 5: ${workerCount} parallel discovery workers`);
-      try {
-        await Promise.all(workerPromises);
-        console.log(`[${timestamp()}] All ${workerCount} discovery workers complete`);
-      } catch (err) {
-        console.error(`  Worker error: ${(err as Error).message} — falling back to main thread`);
-        // On failure, leave discovery vars undefined so phase functions run inline
+      console.log(`\n[${timestamp()}] Spawning ${tasks.length} worker threads for parallel discovery...`);
+      setDaemonStatus(db, "calculating", `Phase 5: ${tasks.length} parallel discovery workers`);
+
+      const results = await Promise.allSettled(tasks.map(t => t.promise));
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.status === "fulfilled") {
+          if (tasks[i].name === "knife") knifeDiscovery = r.value;
+          else if (tasks[i].name === "classified") classifiedDiscovery = r.value;
+          else if (tasks[i].name === "stattrak") stDiscovery = r.value;
+          else if (tasks[i].name === "restricted") restrictedDiscovery = r.value;
+          else if (tasks[i].name === "milspec") milspecDiscovery = r.value;
+          console.log(`  Worker ${tasks[i].name}: ${r.value.length} trade-ups`);
+        } else {
+          console.error(`  Worker ${tasks[i].name} failed: ${r.reason?.message} — falling back to main thread`);
+        }
       }
     }
 
@@ -289,14 +364,25 @@ export async function main() {
     const classifiedCalcResult = phase5ClassifiedCalc(db, freshness, cycleCount === 1, classifiedTheoryResult.theories, classifiedDiscovery);
     previousClassifiedNearMisses = classifiedCalcResult.nearMisses;
 
+    // Phase 5d: StatTrak — DISABLED
+    // 100% of profitable ST trade-ups rely on Skinport-only output pricing (2-vol inflated).
+    // CSFloat has zero ST sale data. Re-enable once ST sale data accumulates via staleness checks.
+    // if (shouldRunST) {
+    //   phase5dStatTrak(db, stDiscovery);
+    // }
+
+    // Phase 5e: Restricted→Classified discovery (must run before staircases)
+    phase5GenericCalc(db, "restricted_classified", restrictedDiscovery);
+
+    // Phase 5f: Mil-Spec→Restricted discovery (must run before staircases)
+    phase5GenericCalc(db, "milspec_restricted", milspecDiscovery);
+
     // Phase 5c: Staircase (every 5 cycles — depends on classified results being saved)
+    // Only the original staircase (50 Classified → 5 Covert → 1 Knife) is enabled.
+    // Generic staircases (RC/RCK/MRC) disabled — intermediate stage variance is too high
+    // to present accurate profit numbers without Monte Carlo simulation.
     if (cycleCount % 5 === 1) {
       phase5cStaircase(db);
-    }
-
-    // Phase 5d: StatTrak (every 3 cycles)
-    if (shouldRunST) {
-      phase5dStatTrak(db, stDiscovery);
     }
 
     // Coverage report

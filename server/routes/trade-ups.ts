@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
-import { priceCache, priceSources } from "../engine.js";
+import { priceCache, priceSources, findArbitrageOpportunities, findFloatSnipes } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, TheoryTracking } from "../../shared/types.js";
 
@@ -10,14 +10,23 @@ export function tradeUpsRouter(db: Database.Database): Router {
   // Lightweight autocomplete data for filter UI
 
   router.get("/api/filter-options", (_req, res) => {
-    const skins = db.prepare(`
-      SELECT DISTINCT skin_name as name, 'input' as role
+    // Get input skin names from trade_up_inputs table
+    const inputSkins = db.prepare(`
+      SELECT DISTINCT skin_name as name
       FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
-      UNION
-      SELECT DISTINCT skin_name as name, 'output' as role
-      FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
-      ORDER BY name
-    `).all() as { name: string; role: string }[];
+    `).all() as { name: string }[];
+
+    // Get output skin names from outcomes_json column
+    const outputSkinRows = db.prepare(`
+      SELECT DISTINCT json_extract(je.value, '$.skin_name') as name
+      FROM trade_ups t, json_each(t.outcomes_json) je
+      WHERE t.is_theoretical = 0 AND t.outcomes_json IS NOT NULL
+    `).all() as { name: string }[];
+
+    const skins: { name: string; role: string }[] = [
+      ...inputSkins.map(s => ({ name: s.name, role: 'input' })),
+      ...outputSkinRows.filter(s => s.name).map(s => ({ name: s.name, role: 'output' })),
+    ];
 
     // Dedupe and tag roles
     const skinMap = new Map<string, { name: string; input: boolean; output: boolean }>();
@@ -130,28 +139,17 @@ export function tradeUpsRouter(db: Database.Database): Router {
     if (skin) {
       const skinNames = skin.split("||").map(s => s.trim()).filter(Boolean);
       if (skinNames.length === 1 && !skinNames[0].includes("%")) {
-        // Exact skin name match
-        where += ` AND t.id IN (
-          SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = ?
-          UNION
-          SELECT trade_up_id FROM trade_up_outcomes WHERE skin_name = ?
-        )`;
-        params.push(skinNames[0], skinNames[0]);
+        // Exact skin name match — check inputs table + outcomes_json LIKE
+        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = ?) OR t.outcomes_json LIKE ?)`;
+        params.push(skinNames[0], `%"skin_name":"${skinNames[0].replace(/"/g, '\\"')}"%`);
       } else if (skinNames.length > 1) {
-        // Multiple exact skin names (OR)
-        const placeholders = skinNames.map(() => "?").join(",");
-        where += ` AND t.id IN (
-          SELECT trade_up_id FROM trade_up_inputs WHERE skin_name IN (${placeholders})
-          UNION
-          SELECT trade_up_id FROM trade_up_outcomes WHERE skin_name IN (${placeholders})
-        )`;
-        params.push(...skinNames, ...skinNames);
+        // Multiple exact skin names (OR) — check inputs + outcomes_json LIKE for each
+        const inputPlaceholders = skinNames.map(() => "?").join(",");
+        const outcomeLikes = skinNames.map(() => "t.outcomes_json LIKE ?").join(" OR ");
+        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name IN (${inputPlaceholders})) OR ${outcomeLikes})`;
+        params.push(...skinNames, ...skinNames.map(s => `%"skin_name":"${s.replace(/"/g, '\\"')}"%`));
       } else {
-        where += ` AND t.id IN (
-          SELECT trade_up_id FROM trade_up_inputs WHERE skin_name LIKE ?
-          UNION
-          SELECT trade_up_id FROM trade_up_outcomes WHERE skin_name LIKE ?
-        )`;
+        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name LIKE ?) OR t.outcomes_json LIKE ?)`;
         const pattern = `%${skin}%`;
         params.push(pattern, pattern);
       }
@@ -167,9 +165,9 @@ export function tradeUpsRouter(db: Database.Database): Router {
       params.push(...collNames);
     }
 
-    // Max outcomes filter — needs a subquery
+    // Max outcomes filter — count from outcomes_json array
     if (max_outcomes) {
-      where += ` AND (SELECT COUNT(*) FROM trade_up_outcomes WHERE trade_up_id = t.id) <= ?`;
+      where += ` AND json_array_length(COALESCE(t.outcomes_json, '[]')) <= ?`;
       params.push(parseInt(max_outcomes));
     }
 
@@ -221,14 +219,14 @@ export function tradeUpsRouter(db: Database.Database): Router {
       is_theoretical: number;
       listing_status: string | null;
       peak_profit_cents: number | null;
+      profit_streak: number | null;
       preserved_at: string | null;
       previous_inputs: string | null;
       combo_key: string | null;
     }[];
 
-    // Load inputs and outcomes for each trade-up
+    // Load inputs for each trade-up; outcomes come from outcomes_json column
     const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
-    const getOutcomes = db.prepare("SELECT * FROM trade_up_outcomes WHERE trade_up_id = ?");
 
     // For theories, also load tracking data
     const getTracking = isTheory
@@ -252,10 +250,11 @@ export function tradeUpsRouter(db: Database.Database): Router {
         created_at: row.created_at,
         is_theoretical: row.is_theoretical === 1,
         inputs: getInputs.all(row.id) as TradeUpInput[],
-        outcomes: getOutcomes.all(row.id) as TradeUpOutcome[],
+        outcomes: JSON.parse((row as { outcomes_json?: string }).outcomes_json || '[]') as TradeUpOutcome[],
         listing_status: (row.listing_status as TradeUp['listing_status']) ?? 'active',
         missing_inputs: row.listing_status !== 'active' && countMissing
           ? (countMissing.get(row.id) as { cnt: number }).cnt : 0,
+        profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
         preserved_at: row.preserved_at ?? null,
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
@@ -306,9 +305,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const inputs = db
       .prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?")
       .all(row.id) as TradeUpInput[];
-    const outcomes = db
-      .prepare("SELECT * FROM trade_up_outcomes WHERE trade_up_id = ?")
-      .all(row.id) as TradeUpOutcome[];
+    const outcomes = JSON.parse((row as { outcomes_json?: string }).outcomes_json || '[]') as TradeUpOutcome[];
 
     res.json({ ...row, inputs, outcomes });
   });
@@ -482,7 +479,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
           const salePrice = data.price || input.price_cents;
           const saleFloat = data.item?.float_value || input.float_value;
           const soldAt = data.sold_at || data.created_at || new Date().toISOString();
-          insertObservation.run(input.skin_name, saleFloat, salePrice, soldAt);
+          // Phase-qualify Doppler names for accurate per-phase pricing data
+          const phase = db.prepare("SELECT phase FROM listings WHERE id = ?").get(input.listing_id) as { phase: string | null } | undefined;
+          const obsName = phase?.phase && input.skin_name.includes("Doppler")
+            ? `${input.skin_name} ${phase.phase}`
+            : input.skin_name;
+          insertObservation.run(obsName, saleFloat, salePrice, soldAt);
           deleteListing.run(input.listing_id);
           results.push({
             listing_id: input.listing_id,
@@ -505,7 +507,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
 
         // Brief pause between API calls
         await new Promise(r => setTimeout(r, 100));
-      } catch {
+      } catch { /* network error — non-critical */
         results.push({
           listing_id: input.listing_id,
           skin_name: input.skin_name,
@@ -534,12 +536,46 @@ export function tradeUpsRouter(db: Database.Database): Router {
       ).run(tradeUpId);
     }
 
+    // Recalculate trade-up if prices changed
+    let updatedTradeUp: { total_cost_cents: number; expected_value_cents: number; profit_cents: number; roi_percentage: number } | null = null;
+    if (anyPriceChanged && allActive) {
+      // Sum up current prices (use verified price if available, else original)
+      const newTotalCost = results.reduce((sum, r) => {
+        const price = r.current_price ?? r.original_price;
+        return sum + price;
+      }, 0);
+
+      // Get current EV from outcomes
+      const tu = db.prepare("SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = ?").get(tradeUpId) as { expected_value_cents: number; outcomes_json: string | null } | undefined;
+      if (tu) {
+        const ev = tu.expected_value_cents;
+        const profit = ev - newTotalCost;
+        const roi = newTotalCost > 0 ? Math.round((profit / newTotalCost) * 10000) / 100 : 0;
+
+        // Update DB with new cost
+        db.prepare(
+          "UPDATE trade_ups SET total_cost_cents = ?, profit_cents = ?, roi_percentage = ? WHERE id = ?"
+        ).run(newTotalCost, profit, roi, tradeUpId);
+
+        // Also update input prices in trade_up_inputs
+        for (const r of results) {
+          if (r.price_changed && r.current_price !== undefined) {
+            db.prepare("UPDATE trade_up_inputs SET price_cents = ? WHERE trade_up_id = ? AND listing_id = ?")
+              .run(r.current_price, tradeUpId, r.listing_id);
+          }
+        }
+
+        updatedTradeUp = { total_cost_cents: newTotalCost, expected_value_cents: ev, profit_cents: profit, roi_percentage: roi };
+      }
+    }
+
     res.json({
       trade_up_id: tradeUpId,
       inputs: results,
       all_active: allActive,
       any_unavailable: anyUnavailable,
       any_price_changed: anyPriceChanged,
+      updated_trade_up: updatedTradeUp,
     });
   });
 
@@ -594,6 +630,45 @@ export function tradeUpsRouter(db: Database.Database): Router {
       listings,
       recent_sales: sales,
     });
+  });
+
+  // Outcome skin stats — listings, sales, price data sources per skin
+  router.get("/api/outcome-stats", (req, res) => {
+    const skins = ((req.query.skins as string) || "").split("||").filter(Boolean);
+    if (skins.length === 0) { res.json({ stats: {} }); return; }
+
+    const stats: Record<string, { listings: number; sales: number; sources: string[] }> = {};
+    for (const name of skins.slice(0, 100)) {
+      const listings = (db.prepare(
+        "SELECT COUNT(*) as c FROM listings WHERE skin_id IN (SELECT id FROM skins WHERE name = ?) AND stattrak = 0"
+      ).get(name) as { c: number }).c;
+      const sales = (db.prepare(
+        "SELECT COUNT(*) as c FROM price_observations WHERE skin_name = ? AND source = 'sale'"
+      ).get(name) as { c: number }).c;
+      const sources = db.prepare(
+        "SELECT DISTINCT source FROM price_data WHERE skin_name = ?"
+      ).all(name).map((r: any) => r.source as string);
+      stats[name] = { listings, sales, sources };
+    }
+    res.json({ stats });
+  });
+
+  // Market scanner: cross-marketplace arbitrage
+  router.get("/api/scanner/arbitrage", (req, res) => {
+    const minProfit = parseInt(req.query.minProfit as string) || 50;
+    const minVolume = parseInt(req.query.minVolume as string) || 3;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const results = findArbitrageOpportunities(db, { minProfitCents: minProfit, minSalesVolume: minVolume, limit });
+    res.json({ opportunities: results, total: results.length });
+  });
+
+  // Market scanner: low-float premium snipes
+  router.get("/api/scanner/float-snipes", (req, res) => {
+    const maxFloat = parseFloat(req.query.maxFloat as string) || 0.01;
+    const minDiscount = parseInt(req.query.minDiscount as string) || 15;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const results = findFloatSnipes(db, { maxFloat, minDiscountPct: minDiscount, limit });
+    res.json({ snipes: results, total: results.length });
   });
 
   return router;

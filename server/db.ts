@@ -26,6 +26,7 @@ export function initDb(): Database.Database {
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
+  _db.pragma("busy_timeout = 30000"); // Wait up to 30s for concurrent writers
 
   createTables(_db);
   return _db;
@@ -206,6 +207,30 @@ function createTables(db: Database.Database) {
   const tiCols = db.pragma("table_info(trade_up_inputs)") as { name: string }[];
   if (!tiCols.some((c) => c.name === "source")) {
     db.exec("ALTER TABLE trade_up_inputs ADD COLUMN source TEXT NOT NULL DEFAULT 'csfloat'");
+  }
+
+  // Profit streak: consecutive cycles a trade-up has been profitable
+  if (!tuCols.some((c) => c.name === "profit_streak")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN profit_streak INTEGER NOT NULL DEFAULT 0");
+  }
+
+  // outcomes_json: denormalized JSON blob replaces trade_up_outcomes table
+  if (!tuCols.some((c) => c.name === "outcomes_json")) {
+    db.exec("ALTER TABLE trade_ups ADD COLUMN outcomes_json TEXT");
+    // Backfill from existing trade_up_outcomes rows
+    const allTuIds = db.prepare("SELECT DISTINCT trade_up_id FROM trade_up_outcomes").all() as { trade_up_id: number }[];
+    if (allTuIds.length > 0) {
+      const getOutcomes = db.prepare("SELECT skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace FROM trade_up_outcomes WHERE trade_up_id = ?");
+      const setJson = db.prepare("UPDATE trade_ups SET outcomes_json = ? WHERE id = ?");
+      const backfill = db.transaction(() => {
+        for (const row of allTuIds) {
+          const outcomes = getOutcomes.all(row.trade_up_id);
+          setJson.run(JSON.stringify(outcomes), row.trade_up_id);
+        }
+      });
+      backfill();
+      console.log(`  Backfilled outcomes_json for ${allTuIds.length} trade-ups`);
+    }
   }
 
   db.exec(`

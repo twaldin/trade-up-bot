@@ -59,6 +59,7 @@ export interface SkinportListenerStats {
   totalReceived: number;
   totalStored: number;
   totalSold: number;
+  totalSaleObservations: number;
   lastEventAt: string | null;
 }
 
@@ -67,6 +68,7 @@ const stats: SkinportListenerStats = {
   totalReceived: 0,
   totalStored: 0,
   totalSold: 0,
+  totalSaleObservations: 0,
   lastEventAt: null,
 };
 
@@ -101,6 +103,10 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
   const upsertListing = db.prepare(`
     INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'skinport', 'buy_now')
+  `);
+  const insertSaleObservation = db.prepare(`
+    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+    VALUES (?, ?, ?, 'skinport_sale', datetime('now'))
   `);
 
   const socket: Socket = io("wss://skinport.com", {
@@ -155,6 +161,11 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
         stats.totalStored++;
       } else if (data.eventType === "sold") {
         stats.totalSold++;
+        // Record sale as a price observation (free real-time sale data)
+        if (item.salePrice > 0) {
+          insertSaleObservation.run(skinName, item.wear, item.salePrice);
+          stats.totalSaleObservations++;
+        }
         // Remove sold listing from DB if we had it
         db.prepare("DELETE FROM listings WHERE id = ?").run(`skinport:${item.saleId}`);
       }

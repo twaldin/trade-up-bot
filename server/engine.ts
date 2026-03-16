@@ -21,7 +21,7 @@ export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFl
 export type { OutputPriceResult } from "./engine/pricing.js";
 
 // DB operations
-export { saveTradeUps, saveKnifeTradeUps, saveClassifiedTradeUps, updateCollectionScores } from "./engine/db-ops.js";
+export { saveTradeUps, saveClassifiedTradeUps, updateCollectionScores } from "./engine/db-ops.js";
 
 // Listing status & preservation
 export {
@@ -70,12 +70,19 @@ export {
   knnOutputPriceAtFloat,
 } from "./engine/theory-validation.js";
 
-// Classified→Covert theory engine
+// Generic rarity-tier theory engine
 export {
-  generateClassifiedTheories, buildClassifiedWantedList,
-  classifiedComboKey, saveClassifiedTheoryTradeUps,
+  generateTheoriesForTier, buildWantedListForTier,
+  genericComboKey, saveTheoryTradeUpsForTier,
   type ClassifiedTheoryResult,
 } from "./engine/theory-classified.js";
+
+// Rarity tier config system
+export {
+  RARITY_TIERS, STAIRCASE_CHAINS,
+  getTierById, getGunTiers, getNewTiers,
+  type RarityTierConfig, type StaircaseChainConfig,
+} from "./engine/rarity-tiers.js";
 
 // Staircase evaluation (real trade-ups)
 export {
@@ -84,9 +91,21 @@ export {
   type StaircaseResult,
 } from "./engine/staircase.js";
 
+// Generic N-stage staircase engine
+export {
+  findGenericStaircaseTradeUps, findAllGenericStaircases,
+  type GenericStaircaseTradeUp, type GenericStaircaseResult,
+} from "./engine/staircase-generic.js";
+
 // Staircase theory engine
 export {
   generateStaircaseTheories, saveStaircaseTheoryTradeUps,
   type StaircaseTheory, type StaircaseTheoryResult,
 } from "./engine/theory-staircase.js";
+
+// Market scanners
+export {
+  findArbitrageOpportunities, findFloatSnipes,
+  type ArbitrageOpportunity, type FloatSnipe,
+} from "./engine/scanner.js";
 

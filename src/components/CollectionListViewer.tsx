@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { formatDollars } from "../utils/format.js";
+import { Input } from "@shared/components/ui/input.js";
+import { Badge } from "@shared/components/ui/badge.js";
+import { Card, CardContent } from "@shared/components/ui/card.js";
 
 interface CollectionInfo {
   name: string;
@@ -15,6 +18,13 @@ interface CollectionInfo {
   has_knives: boolean;
   has_gloves: boolean;
 }
+
+const FILTER_OPTIONS = [
+  ["all", "All"],
+  ["knives", "Knives"],
+  ["gloves", "Gloves"],
+  ["profitable", "Profitable"],
+] as const;
 
 export function CollectionListViewer({ onSelectCollection }: { onSelectCollection: (name: string) => void }) {
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
@@ -42,63 +52,121 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
     return result;
   }, [collections, search, filter]);
 
-  if (loading) return <div className="loading-text">Loading collections...</div>;
+  if (loading) {
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        Loading collections...
+      </div>
+    );
+  }
 
   return (
-    <div className="data-viewer">
-      <div className="dv-controls">
-        <div className="dv-rarity-tabs">
-          {([["all", "All"], ["knives", "Knives"], ["gloves", "Gloves"], ["profitable", "Profitable"]] as const).map(([val, label]) => (
-            <button key={val} className={filter === val ? "toggle-active" : ""} onClick={() => setFilter(val)}>
+    <div className="mt-4">
+      <div className="flex gap-2 items-center mb-3 flex-wrap">
+        <div className="flex gap-0 w-fit">
+          {FILTER_OPTIONS.map(([val, label], i) => (
+            <button
+              key={val}
+              className={`px-5 py-2 text-sm border border-border transition-colors cursor-pointer ${
+                i === 0 ? "rounded-l-md" : ""
+              } ${i === FILTER_OPTIONS.length - 1 ? "rounded-r-md" : ""} ${
+                i > 0 ? "border-l-0" : ""
+              } ${
+                filter === val
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              onClick={() => setFilter(val)}
+            >
               {label}
             </button>
           ))}
         </div>
-        <div className="dv-search-row">
-          <input
+        <div className="flex gap-2 items-center flex-wrap">
+          <Input
             type="text"
-            className="dv-search"
             placeholder="Search collections..."
             value={search}
             onChange={e => setSearch(e.target.value)}
+            className="min-w-[200px] flex-1"
           />
         </div>
       </div>
-      <div className="collection-grid">
+
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2.5 py-1">
         {filtered.map(c => (
-          <div key={c.name} className="collection-card" onClick={() => onSelectCollection(c.name)}>
-            <div className="collection-card-name">{c.name}</div>
-            <div className="collection-card-stats">
-              <span>{c.skin_count} skins</span>
-              <span>{c.covert_count} covert</span>
-              <span className="dv-listing-count">{c.listing_count.toLocaleString()} listings</span>
-              {c.sale_count > 0 && <span className="dv-sale-count">{c.sale_count.toLocaleString()} sales</span>}
-            </div>
-            {(c.has_knives || c.has_gloves) && (
-              <div className="collection-card-pool">
-                {c.has_knives && (
-                  <span className="pool-badge knife-badge">{c.knife_type_count} knife{c.knife_type_count !== 1 ? "s" : ""}</span>
-                )}
-                {c.has_gloves && (
-                  <span className="pool-badge glove-badge">{c.glove_type_count} glove{c.glove_type_count !== 1 ? "s" : ""}</span>
-                )}
-                {c.finish_count > 0 && (
-                  <span className="pool-badge finish-badge">{c.finish_count} finishes</span>
+          <Card
+            key={c.name}
+            size="sm"
+            className="cursor-pointer transition-colors hover:ring-muted-foreground/30 py-0!"
+            onClick={() => onSelectCollection(c.name)}
+          >
+            <CardContent className="py-3">
+              <div className="font-semibold text-sm mb-1.5 text-foreground">
+                {c.name}
+              </div>
+
+              <div className="flex gap-2.5 text-[0.72rem] text-muted-foreground mb-1.5">
+                <span>{c.skin_count} skins</span>
+                <span>{c.covert_count} covert</span>
+                <span className="text-blue-400">{c.listing_count.toLocaleString()} listings</span>
+                {c.sale_count > 0 && (
+                  <span className="text-amber-500">{c.sale_count.toLocaleString()} sales</span>
                 )}
               </div>
-            )}
-            {!c.has_knives && !c.has_gloves && (
-              <div className="collection-card-pool">
-                <span className="pool-badge no-pool-badge">No case pool</span>
-              </div>
-            )}
-            {c.profitable_count > 0 && (
-              <div className="collection-card-profit">
-                <span className="profit-positive">{c.profitable_count} profitable</span>
-                <span className="collection-card-best">best {formatDollars(c.best_profit_cents)}</span>
-              </div>
-            )}
-          </div>
+
+              {(c.has_knives || c.has_gloves) && (
+                <div className="flex gap-1.5 flex-wrap mb-1">
+                  {c.has_knives && (
+                    <Badge
+                      variant="outline"
+                      className="text-[0.65rem] bg-blue-400/10 text-blue-400 border-blue-400/25"
+                    >
+                      {c.knife_type_count} knife{c.knife_type_count !== 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  {c.has_gloves && (
+                    <Badge
+                      variant="outline"
+                      className="text-[0.65rem] bg-fuchsia-400/10 text-fuchsia-400 border-fuchsia-400/25"
+                    >
+                      {c.glove_type_count} glove{c.glove_type_count !== 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  {c.finish_count > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[0.65rem] bg-amber-500/10 text-amber-500 border-amber-500/20"
+                    >
+                      {c.finish_count} finishes
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {!c.has_knives && !c.has_gloves && (
+                <div className="flex gap-1.5 flex-wrap mb-1">
+                  <Badge
+                    variant="outline"
+                    className="text-[0.65rem] bg-muted text-muted-foreground border-border"
+                  >
+                    No case pool
+                  </Badge>
+                </div>
+              )}
+
+              {c.profitable_count > 0 && (
+                <div className="flex gap-2 items-center text-[0.72rem]">
+                  <span className="text-green-500 font-semibold">
+                    {c.profitable_count} profitable
+                  </span>
+                  <span className="text-muted-foreground">
+                    best {formatDollars(c.best_profit_cents)}
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>

@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Badge } from "@shared/components/ui/badge.js";
+import { Button } from "@shared/components/ui/button.js";
+import { Input } from "@shared/components/ui/input.js";
 
 interface FilterOptions {
   skins: { name: string; input: boolean; output: boolean }[];
@@ -89,27 +92,27 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
   }, [items, query, selected]);
 
   return (
-    <div className="ac-wrap" ref={ref}>
-      <input
+    <div className="relative w-[200px]" ref={ref}>
+      <Input
         type="text"
-        className="ac-input"
+        className="h-8 text-sm"
         placeholder={placeholder}
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
       />
       {open && filtered.length > 0 && (
-        <div className="ac-dropdown">
+        <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border border-t-0 rounded-b-md max-h-60 overflow-y-auto shadow-lg">
           {filtered.map(item => (
             <div
               key={item.label}
-              className="ac-item"
+              className="flex justify-between items-center px-2.5 py-1.5 cursor-pointer text-xs text-popover-foreground hover:bg-accent transition-colors"
               onMouseDown={(e) => { e.preventDefault(); onAdd(item.label); setQuery(""); setOpen(false); }}
             >
               {renderItem ? renderItem(item) : (
                 <>
-                  <span className="ac-item-label">{item.label}</span>
-                  {item.sublabel && <span className="ac-item-sub">{item.sublabel}</span>}
+                  <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{item.label}</span>
+                  {item.sublabel && <span className="text-muted-foreground text-[0.7rem] ml-2 shrink-0">{item.sublabel}</span>}
                 </>
               )}
             </div>
@@ -139,26 +142,33 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
     : "any";
 
   return (
-    <div className="rf-wrap">
-      <button className={`rf-trigger ${hasValue ? "rf-active" : ""}`} onClick={() => setExpanded(e => !e)}>
-        <span className="rf-label">{label}</span>
-        <span className="rf-summary">{summary}</span>
+    <div className="relative">
+      <button
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border whitespace-nowrap transition-colors ${
+          hasValue
+            ? "border-blue-600 text-blue-400"
+            : "border-border bg-muted/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+        }`}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <span className="font-medium">{label}</span>
+        <span className={`text-[0.72rem] ${hasValue ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
       </button>
       {expanded && (
-        <div className="rf-panel">
-          <div className="rf-inputs">
-            <label>
+        <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[220px] shadow-lg">
+          <div className="flex gap-2 mb-2">
+            <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
               <span>Min</span>
-              <input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
-                placeholder="any" step={step} />
+              <Input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
+                placeholder="any" step={step} className="h-7 text-xs" />
             </label>
-            <label>
+            <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
               <span>Max</span>
-              <input type="number" value={maxVal} onChange={(e) => onMaxChange(e.target.value)}
-                placeholder="any" step={step} />
+              <Input type="number" value={maxVal} onChange={(e) => onMaxChange(e.target.value)}
+                placeholder="any" step={step} className="h-7 text-xs" />
             </label>
           </div>
-          <div className="rf-slider-row">
+          <div className="flex flex-col gap-1">
             <input type="range" className="rf-slider"
               min={sliderMin} max={sliderMax} step={step}
               value={minVal ? parseFloat(minVal) : sliderMin}
@@ -211,14 +221,21 @@ function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Fi
   if (chips.length === 0) return null;
 
   return (
-    <div className="filter-chips">
+    <div className="flex gap-1.5 flex-wrap mb-2 items-center">
       {chips.map((chip, i) => (
-        <span key={i} className="filter-chip">
+        <Badge key={i} variant="secondary" className="gap-1 text-[0.72rem] font-normal">
           {chip.label}
-          <button className="filter-chip-x" onClick={chip.onRemove}>&times;</button>
-        </span>
+          <button
+            className="text-muted-foreground hover:text-destructive text-sm leading-none p-0"
+            onClick={chip.onRemove}
+          >
+            &times;
+          </button>
+        </Badge>
       ))}
-      <button className="filter-clear-all" onClick={() => onUpdate({ ...EMPTY_FILTERS })}>Clear All</button>
+      <Button variant="ghost" size="sm" className="h-5 text-[0.7rem] px-2.5 text-muted-foreground hover:text-destructive" onClick={() => onUpdate({ ...EMPTY_FILTERS })}>
+        Clear All
+      </Button>
     </div>
   );
 }
@@ -241,7 +258,6 @@ export function FilterBar({ filters, onFiltersChange }: {
       label: s.name,
       sublabel: s.input && s.output ? "input & output" : s.input ? "input" : "output",
     }));
-    // Sort output skins first (★ knife/glove names), then inputs
     mapped.sort((a, b) => {
       const aOut = a.sublabel === "output";
       const bOut = b.sublabel === "output";
@@ -264,14 +280,11 @@ export function FilterBar({ filters, onFiltersChange }: {
   }, [filters, onFiltersChange]);
 
   return (
-    <div className="filter-bar">
-      {/* Active filter chips */}
+    <div className="mb-3.5">
       <FilterChips filters={filters} onUpdate={onFiltersChange} />
 
-      {/* Filter controls row */}
-      <div className="filter-controls">
-        {/* Autocomplete filters */}
-        <div className="filter-ac-group">
+      <div className="flex gap-2.5 items-start flex-wrap">
+        <div className="flex gap-2 shrink-0">
           <AutocompleteInput
             placeholder="Filter by skin..."
             items={skinItems}
@@ -288,8 +301,7 @@ export function FilterBar({ filters, onFiltersChange }: {
           />
         </div>
 
-        {/* Range filters */}
-        <div className="filter-ranges">
+        <div className="flex gap-1.5 flex-wrap flex-1">
           <RangeFilter label="Profit" unit="$" step={1}
             minVal={filters.minProfit} maxVal={filters.maxProfit}
             onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })}

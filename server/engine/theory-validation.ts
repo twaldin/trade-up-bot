@@ -33,31 +33,6 @@ export function getFloatBucket(float: number): { min: number; max: number } | nu
   return null;
 }
 
-/**
- * Get the realistic float you'd actually achieve when buying from a bucket.
- *
- * Theory scans a specific float (e.g., 0.1653, bottom of FT-low bucket) but
- * prices come from the bucket average. The cheapest listings in a bucket tend
- * to have HIGHER floats (worse condition). Using the scan point float for
- * output calculation makes theory optimistic.
- *
- * Returns the 65th percentile of the bucket (biased toward the upper end
- * since cheap listings cluster there), mapped back to the skin's float range.
- */
-export function getRealisticBucketFloat(skinFloat: number, skinMinFloat: number, skinMaxFloat: number): number {
-  const bucket = getFloatBucket(skinFloat);
-  if (!bucket) return skinFloat;
-
-  const skinRange = skinMaxFloat - skinMinFloat;
-  if (skinRange <= 0) return skinFloat;
-
-  const normMin = Math.max(0, (bucket.min - skinMinFloat) / skinRange);
-  const normMax = Math.min(1, (bucket.max - skinMinFloat) / skinRange);
-
-  // Use 65th percentile within the bucket (cheap listings have higher floats)
-  const realisticNorm = normMin + (normMax - normMin) * 0.65;
-  return realisticNorm * skinRange + skinMinFloat;
-}
 
 const _learnedCache = new Map<string, { price: number | null; unavailable: boolean; listingCount: number }>();
 let _learnedCacheLoadedAt = 0;
@@ -561,7 +536,7 @@ export function isFloatUnavailable(
   return cached?.unavailable ?? false;
 }
 
-export function storeLearnedPrice(
+function storeLearnedPrice(
   db: Database.Database,
   skinName: string,
   floatMin: number,

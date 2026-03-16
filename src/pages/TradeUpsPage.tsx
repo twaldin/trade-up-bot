@@ -4,8 +4,10 @@ import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/type
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
+import { formatDollars } from "../utils/format.js";
+import { Button } from "@shared/components/ui/button.js";
 
-type TradeUpType = "covert_knife" | "theory_knife" | "classified_covert" | "classified_covert_st" | "staircase" | "theory_classified" | "theory_staircase";
+type TradeUpType = "all" | "covert_knife" | "theory_knife" | "classified_covert" | "classified_covert_st" | "staircase" | "theory_classified" | "theory_staircase" | "restricted_classified" | "milspec_restricted" | "staircase_rc" | "staircase_rck" | "staircase_mrc";
 
 interface TypeOption {
   value: TradeUpType;
@@ -16,11 +18,12 @@ interface Props {
   types: TypeOption[];
   defaultType?: TradeUpType;
   status: SyncStatus | null;
+  refreshKey?: number;
   onNavigateSkin: (skinName: string) => void;
   onNavigateCollection: (name: string) => void;
 }
 
-export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNavigateCollection }: Props) {
+export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigateSkin, onNavigateCollection }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
@@ -95,6 +98,8 @@ export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNav
         if (type === "theory_knife") params.set("theory_type", "covert_knife");
         else if (type === "theory_classified") params.set("theory_type", "classified_covert");
         else if (type === "theory_staircase") params.set("theory_type", "staircase");
+      } else if (apiType === "all") {
+        // Don't set type param — API returns all types
       } else {
         params.set("type", apiType);
       }
@@ -109,7 +114,7 @@ export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNav
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, apiType, isTheory, includeStale]);
+  }, [sort, order, page, perPage, filters, type, apiType, isTheory, includeStale, refreshKey]);
 
   useEffect(() => {
     fetchTradeUps();
@@ -135,18 +140,26 @@ export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNav
   return (
     <>
       {isTheory && (
-        <div className="theory-notice">
+        <div className="mb-3 px-3.5 py-2 bg-muted/50 border border-border/50 rounded-md text-xs text-muted-foreground leading-relaxed">
           Theory estimates — optimistic screener, discovery validates. Inputs priced via float-aware KNN.
         </div>
       )}
 
       {/* Type selector */}
       {types.length > 1 && (
-        <div className="dv-rarity-tabs" style={{ marginBottom: 8 }}>
-          {types.map(t => (
+        <div className="flex gap-0 mb-2 w-fit">
+          {types.map((t, i) => (
             <button
               key={t.value}
-              className={type === t.value ? "toggle-active" : ""}
+              className={`px-5 py-2 text-sm border border-border transition-colors cursor-pointer ${
+                i === 0 ? "rounded-l-md" : ""
+              } ${i === types.length - 1 ? "rounded-r-md" : ""} ${
+                i > 0 ? "border-l-0" : ""
+              } ${
+                type === t.value
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
               onClick={() => handleTypeChange(t.value)}
             >
               {t.label}
@@ -157,38 +170,56 @@ export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNav
 
       <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-        <label className="stale-toggle" title="Show trade-ups with missing input listings (sold/delisted)">
+      <div className="flex items-center justify-between mb-2">
+        {/* Tab-specific stats */}
+        {!loading && total > 0 && (() => {
+          const profitable = tradeUps.filter(t => t.profit_cents > 0).length;
+          const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
+          return (
+            <span className="text-sm text-muted-foreground">
+              {total.toLocaleString()} results
+              <span className="mx-1.5 text-border">·</span>
+              <span className={profitable > 0 ? "text-green-500" : ""}>{profitable} profitable</span>
+              {bestProfit > 0 && <>
+                <span className="mx-1.5 text-border">·</span>
+                Best: <span className="text-green-500 font-medium">{formatDollars(bestProfit)}</span>
+              </>}
+            </span>
+          );
+        })()}
+        {(loading || total === 0) && <span />}
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none" title="Show trade-ups with missing input listings (sold/delisted)">
           <input
             type="checkbox"
             checked={includeStale}
             onChange={(e) => { setIncludeStale(e.target.checked); setPage(1); }}
+            className="accent-red-500"
           />
           Show stale
         </label>
       </div>
 
       {loading ? (
-        <div className="loading">Loading</div>
+        <div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>
       ) : tradeUps.length === 0 ? (
-        <div className="empty-state">
+        <div className="text-center py-16 px-5 text-muted-foreground">
           {status?.daemon_status?.phase === "calculating" ? (
             <>
-              <div className="empty-icon">&#9881;</div>
-              <p>Calculating trade-ups...</p>
-              <p className="empty-detail">{status.daemon_status.detail}</p>
+              <div className="text-4xl mb-3 opacity-50">&#9881;</div>
+              <p className="mb-2">Calculating trade-ups...</p>
+              <p className="text-sm text-muted-foreground/70">{status.daemon_status.detail}</p>
             </>
           ) : status?.daemon_status?.phase === "fetching" ? (
             <>
-              <div className="empty-icon">&#8635;</div>
-              <p>Fetching listing data from CSFloat...</p>
-              <p className="empty-detail">Trade-ups will appear after the first calculation cycle.</p>
+              <div className="text-4xl mb-3 opacity-50">&#8635;</div>
+              <p className="mb-2">Fetching listing data from CSFloat...</p>
+              <p className="text-sm text-muted-foreground/70">Trade-ups will appear after the first calculation cycle.</p>
             </>
           ) : (
             <>
-              <div className="empty-icon">&#128200;</div>
-              <p>No trade-ups found matching your filters.</p>
-              <p className="empty-detail">Try adjusting the filters above, or wait for the daemon to collect more data.</p>
+              <div className="text-4xl mb-3 opacity-50">&#128200;</div>
+              <p className="mb-2">No trade-ups found matching your filters.</p>
+              <p className="text-sm text-muted-foreground/70">Try adjusting the filters above, or wait for the daemon to collect more data.</p>
             </>
           )}
         </div>
@@ -204,16 +235,16 @@ export function TradeUpsPage({ types, defaultType, status, onNavigateSkin, onNav
           />
 
           {totalPages > 1 && (
-            <div className="pagination">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            <div className="flex gap-2 justify-center items-center mt-4 text-sm text-muted-foreground">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                 Prev
-              </button>
+              </Button>
               <span>
                 Page {page} of {totalPages} ({total.toLocaleString()} results)
               </span>
-              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
                 Next
-              </button>
+              </Button>
             </div>
           )}
         </>

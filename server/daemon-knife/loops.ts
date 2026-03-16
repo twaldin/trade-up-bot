@@ -56,7 +56,7 @@ export async function cooldownLoop(
   let rateLimited = false;
 
   const cooldownMinutes = Math.round(durationMs / 60000);
-  console.log(`\n[${timestamp()}] ── Phase 6: Cooldown (${cooldownMinutes} min) ──`);
+  console.log(`\n[${timestamp()}] Phase 6: Cooldown (${cooldownMinutes} min)`);
 
   // Use paced budget from BudgetTracker (respects safety buffer + time-to-reset)
   const budgetThisCooldown = options.budget.cycleIndividualBudget();

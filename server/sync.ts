@@ -22,7 +22,7 @@ export {
   syncListingsForSkin,
   syncListingsByPriceRanges,
   syncLowFloatClassifiedListings,
-  syncSmartClassifiedListings,
+  syncSmartListingsForRarity,
   syncPrioritizedKnifeInputs,
   syncCovertOutputListings,
   verifyTopTradeUpListings,
@@ -32,7 +32,7 @@ export {
 export {
   fetchSaleHistory,
   syncSaleHistory,
-  syncClassifiedSaleHistory,
+  syncSaleHistoryForRarity,
   syncKnifeGloveSaleHistory,
   syncStatTrakSaleHistory,
 } from "./sync/sales.js";

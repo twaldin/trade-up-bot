@@ -39,7 +39,7 @@ export interface StaircaseTheoryResult {
   generated: number;
   profitable: number;
   theories: StaircaseTheory[];
-  boostMap: Map<string, number>; // classifiedComboKey → boost score
+  boostMap: Map<string, number>; // genericComboKey → boost score
 }
 
 export function generateStaircaseTheories(
@@ -270,21 +270,16 @@ export function saveStaircaseTheoryTradeUps(db: Database.Database, theories: Sta
   const lookupSkinId = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1");
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source)
-    VALUES (?, ?, ?, ?, ?, 'staircase', ?, ?, 1, 'theory')
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, 'staircase', ?, ?, 1, 'theory', ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   const saveAll = db.transaction(() => {
     // Clear old staircase theoretical trade-ups only
-    db.exec("DELETE FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'staircase')");
     db.exec("DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'staircase')");
     db.exec("DELETE FROM trade_ups WHERE is_theoretical = 1 AND type = 'staircase'");
 
@@ -300,7 +295,8 @@ export function saveStaircaseTheoryTradeUps(db: Database.Database, theories: Sta
 
       const result = insertTradeUp.run(
         tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents,
-        tu.roi_percentage, chanceToProfit, bestCase, worstCase
+        tu.roi_percentage, chanceToProfit, bestCase, worstCase,
+        JSON.stringify(tu.outcomes)
       );
       const tradeUpId = result.lastInsertRowid;
 
@@ -313,17 +309,6 @@ export function saveStaircaseTheoryTradeUps(db: Database.Database, theories: Sta
             input.collection, input.priceCents, input.floatValue, input.condition
           );
         }
-      }
-
-      // Outcomes: knife/glove finishes
-      for (const outcome of tu.outcomes) {
-        if (outcome.estimated_price_cents <= 0 && outcome.probability <= 0) continue;
-        const skinRow = lookupSkinId.get(outcome.skin_name) as { id: string } | undefined;
-        insertOutcome.run(
-          tradeUpId, skinRow?.id ?? "", outcome.skin_name, outcome.collection_name,
-          outcome.probability, outcome.predicted_float,
-          outcome.predicted_condition, outcome.estimated_price_cents
-        );
       }
     }
   });
