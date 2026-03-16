@@ -9,12 +9,16 @@ tradeup.db
 *.db-wal
 *.db-shm
 
+# Claude Code config
+.claude/
+
 # Personal notes / internal docs (keep README.md only)
 improvements.md
 overnight_tracking.md
 notes.md
 RESEARCH.md
 CLAUDE.md
+deployment.md
 
 # Logs
 *.log
