@@ -44,7 +44,7 @@ function rotateLog() {
   } catch { /* log file rotation is best-effort */ }
 }
 
-import { main } from "./daemon-knife/index.js";
+import { main } from "./daemon/index.js";
 
 main().catch((err) => {
   console.error("Daemon crashed:", err);
