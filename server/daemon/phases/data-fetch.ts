@@ -293,19 +293,20 @@ export async function phase4DataFetch(
     // CSFloat's scarce 200/30min budget is best spent on:
     //   - Covert gun inputs (knife trade-ups, CSFloat-primary pricing)
     //   - Extraordinary outputs (knife/glove output pricing, no DMarket data)
+    // Budget: Covert inputs (knife discovery) + Extraordinary outputs (knife pricing)
+    // + Classified inputs (improves classified→covert output pricing via CSFloat ref/sales)
     let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
     if (listingBudget < 20) {
       knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
       wantedCalls = 0;
     } else {
-      knifeInputCalls = Math.floor(listingBudget * 0.55);   // 55% — Covert gun coverage (CSFloat-only data)
-      classifiedInputCalls = 0;                               // 0% — DMarket covers Classified at 2 RPS
-      outputCalls = Math.floor(listingBudget * 0.45);        // 45% — knife/glove output pricing (critical, CSFloat-only)
+      knifeInputCalls = Math.floor(listingBudget * 0.45);   // 45% — Covert gun inputs
+      classifiedInputCalls = Math.floor(listingBudget * 0.10); // 10% — Classified for output pricing quality
+      outputCalls = Math.floor(listingBudget * 0.40);        // 40% — knife/glove output pricing
       wantedCalls = 0;
-      // Remaining goes to knife inputs
       const remaining = listingBudget - knifeInputCalls - classifiedInputCalls - outputCalls;
       if (remaining > 0) knifeInputCalls += remaining;
-      console.log(`    Budget: ${knifeInputCalls} knife in + ${outputCalls} output = ${listingBudget} (Covert+Extraordinary only, DMarket handles lower rarities)`);
+      console.log(`    Budget: ${knifeInputCalls} knife in + ${classifiedInputCalls} classified in + ${outputCalls} output = ${listingBudget}`);
     }
 
     // Prioritized knife inputs (Covert gun skins)

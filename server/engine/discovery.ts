@@ -135,6 +135,18 @@ export function findProfitableTradeUps(
         tryAdd(evaluateTradeUp(db, colListings.slice(offset, offset + 10), outcomes));
       }
 
+      // Value-sorted: lowest adjusted float first (best output condition, may cost more)
+      const valueSorted = [...colListings].sort(
+        (a, b) => {
+          const adjA = (a.max_float - a.min_float) > 0 ? (a.float_value - a.min_float) / (a.max_float - a.min_float) : 0;
+          const adjB = (b.max_float - b.min_float) > 0 ? (b.float_value - b.min_float) / (b.max_float - b.min_float) : 0;
+          return adjA - adjB || a.price_cents - b.price_cents;
+        }
+      );
+      for (let offset = 0; offset + 10 <= valueSorted.length && offset < 30; offset += 10) {
+        tryAdd(evaluateTradeUp(db, valueSorted.slice(offset, offset + 10), outcomes));
+      }
+
       // Float-targeted: for each transition point, select optimal listings
       const quotas = new Map([[colId, 10]]);
       for (const target of transitions) {
@@ -261,6 +273,18 @@ export function findProfitableTradeUps(
           const lowestFloat = selectLowestFloat(byColAdj, quotas);
           if (lowestFloat) {
             tryAdd(evaluateTradeUp(db, lowestFloat, outcomes));
+          }
+
+          // Condition-targeted pairs: cheapest N at each condition
+          for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
+            const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
+            const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
+            if (condA.length >= countA && condB.length >= countB) {
+              tryAdd(evaluateTradeUp(db, [
+                ...condA.slice(0, countA),
+                ...condB.slice(0, countB),
+              ], outcomes));
+            }
           }
         }
       }
