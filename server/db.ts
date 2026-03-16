@@ -464,6 +464,19 @@ function createTables(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_staircase_trade_up ON staircase_trade_ups(trade_up_id);
+
+    -- Trade-up claims: locks a trade-up for a user while they buy listings
+    CREATE TABLE IF NOT EXISTS trade_up_claims (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trade_up_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      released_at TEXT,
+      UNIQUE(trade_up_id, user_id),
+      FOREIGN KEY (trade_up_id) REFERENCES trade_ups(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_claims_active ON trade_up_claims(trade_up_id) WHERE released_at IS NULL;
   `);
 }
 
