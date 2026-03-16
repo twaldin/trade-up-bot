@@ -3,9 +3,45 @@
 import passport from "passport";
 import { Strategy as SteamStrategy } from "passport-steam";
 import session from "express-session";
-import { EventEmitter } from "events";
 import type { Express, Request, Response, NextFunction } from "express";
 import Database from "better-sqlite3";
+
+// SQLite session store extending express-session.Store (provides regenerate/save/etc)
+class SqliteSessionStore extends session.Store {
+  private db: Database.Database;
+  constructor(db: Database.Database) {
+    super();
+    this.db = db;
+    db.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+    db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
+  }
+  get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
+    try {
+      const row = this.db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
+      cb(null, row ? JSON.parse(row.sess) : null);
+    } catch (e) { cb(e); }
+  }
+  set(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
+    try {
+      const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+      const expired = Math.floor((Date.now() + maxAge) / 1000);
+      this.db.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
+      cb?.();
+    } catch (e) { cb?.(e); }
+  }
+  destroy(sid: string, cb?: (err?: any) => void) {
+    try { this.db.prepare("DELETE FROM sessions WHERE sid = ?").run(sid); cb?.(); } catch (e) { cb?.(e); }
+  }
+  touch(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
+    try {
+      const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+      const expired = Math.floor((Date.now() + maxAge) / 1000);
+      this.db.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
+      cb?.();
+    } catch (e) { cb?.(e); }
+  }
+}
 
 export interface User {
   steam_id: string;
@@ -50,49 +86,10 @@ export function setupAuth(app: Express, db: Database.Database) {
     )
   `);
 
-  // Session store in SQLite (persists across PM2 restarts)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      sid TEXT PRIMARY KEY,
-      sess TEXT NOT NULL,
-      expired INTEGER NOT NULL
-    )
-  `);
-  db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
-
-  // Clean expired sessions on startup
-  db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
-
-  const SqliteStore = Object.assign(new EventEmitter(), {
-    get: (sid: string, cb: (err: any, sess?: any) => void) => {
-      try {
-        const row = db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
-        cb(null, row ? JSON.parse(row.sess) : null);
-      } catch (e) { cb(e); }
-    },
-    set: (sid: string, sess: any, cb: (err?: any) => void) => {
-      try {
-        const maxAge = sess?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
-        const expired = Math.floor((Date.now() + maxAge) / 1000);
-        db.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
-        cb();
-      } catch (e) { cb(e); }
-    },
-    destroy: (sid: string, cb: (err?: any) => void) => {
-      try { db.prepare("DELETE FROM sessions WHERE sid = ?").run(sid); cb(); } catch (e) { cb(e); }
-    },
-    touch: (sid: string, sess: any, cb: (err?: any) => void) => {
-      try {
-        const maxAge = sess?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
-        const expired = Math.floor((Date.now() + maxAge) / 1000);
-        db.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
-        cb();
-      } catch (e) { cb(e); }
-    },
-  });
+  const store = new SqliteSessionStore(db);
 
   app.use(session({
-    store: SqliteStore as any,
+    store,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -103,18 +100,6 @@ export function setupAuth(app: Express, db: Database.Database) {
       sameSite: "lax",
     },
   }));
-
-  // Passport 0.6+ requires session.regenerate() and session.save()
-  // Our custom SQLite store doesn't add these — patch them on each request
-  app.use((req, _res, next) => {
-    if (req.session && !req.session.regenerate) {
-      (req.session as any).regenerate = (cb: any) => cb();
-    }
-    if (req.session && !req.session.save) {
-      (req.session as any).save = (cb: any) => cb();
-    }
-    next();
-  });
 
   app.use(passport.initialize());
   app.use(passport.session());
