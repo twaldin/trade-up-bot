@@ -160,6 +160,12 @@ function AppShell() {
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Apply app-shell constraint (landing page is full-width)
+  useEffect(() => {
+    document.getElementById("root")?.classList.add("app-shell");
+    return () => { document.getElementById("root")?.classList.remove("app-shell"); };
+  }, []);
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
