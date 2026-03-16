@@ -6,7 +6,6 @@ import { useStatus, type StatusDiffs } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
 import { TradeUpsPage } from "./pages/TradeUpsPage.js";
 import { Button } from "../shared/components/ui/button.js";
-import { Badge } from "../shared/components/ui/badge.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
@@ -148,39 +147,33 @@ function CollectionListPage({ status, diffs }: { status: SyncStatus | null; diff
   );
 }
 
-function DataPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+function DataPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get("search") || undefined;
 
   return (
-    <>
-      <StatusBar status={status} diffs={diffs} view="data" />
-      <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-        <DataViewer
-          key={initialSearch || "data"}
-          onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
-          initialSearch={initialSearch}
-        />
-      </Suspense>
-    </>
+    <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+      <DataViewer
+        key={initialSearch || "data"}
+        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+        initialSearch={initialSearch}
+      />
+    </Suspense>
   );
 }
 
-function TradeUpsMainPage({ status, diffs, refreshKey }: { status: SyncStatus | null; diffs: StatusDiffs; refreshKey?: number }) {
+function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; refreshKey?: number }) {
   const navigate = useNavigate();
   return (
-    <>
-      <StatusBar status={status} diffs={diffs} view="tradeups" />
-      <TradeUpsPage
-        types={TRADE_UP_TYPES}
-        defaultType="covert_knife"
-        status={status}
-        refreshKey={refreshKey}
-        onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
-        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
-      />
-    </>
+    <TradeUpsPage
+      types={TRADE_UP_TYPES}
+      defaultType="covert_knife"
+      status={status}
+      refreshKey={refreshKey}
+      onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
+      onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+    />
   );
 }
 
@@ -269,9 +262,9 @@ export default function App() {
       </nav>
 
       <Routes>
-        <Route path="/" element={<TradeUpsMainPage status={status} diffs={diffs} refreshKey={refreshKey} />} />
+        <Route path="/" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
         <Route path="/theories" element={<TheoriesMainPage status={status} diffs={diffs} />} />
-        <Route path="/data" element={<DataPage status={status} diffs={diffs} />} />
+        <Route path="/data" element={<DataPage />} />
         <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
         <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
         <Route path="/calculator" element={
