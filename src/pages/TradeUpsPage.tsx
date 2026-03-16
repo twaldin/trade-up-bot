@@ -184,6 +184,12 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
                 <span className="mx-1.5 text-border">·</span>
                 Best: <span className="text-green-500 font-medium">{formatDollars(bestProfit)}</span>
               </>}
+              {status && <>
+                <span className="mx-1.5 text-border">·</span>
+                <span>{status.total_listings?.toLocaleString()} listings</span>
+                <span className="mx-1.5 text-border">·</span>
+                <span>{status.total_sales?.toLocaleString()} sales</span>
+              </>}
             </span>
           );
         })()}

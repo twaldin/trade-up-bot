@@ -93,7 +93,6 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
   }, [filtered, sortBy]);
 
   const totalListings = skins.reduce((s, sk) => s + (sk.listing_count || 0), 0);
-  const totalSales = skins.reduce((s, sk) => s + (sk.sale_count || 0), 0);
   const skinsWithListings = skins.filter(s => s.listing_count > 0).length;
 
   const markSeen = () => {
@@ -116,21 +115,19 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
       )}
 
       {/* Stats bar */}
-      <div className="flex gap-5 px-3 py-2 bg-card border border-border rounded-md text-sm text-muted-foreground mb-3">
-        <span className="text-foreground/70">{skins.length} skins</span>
-        <span className="text-foreground/70">{skinsWithListings} with listings</span>
-        <span className="text-foreground/70">
-          {totalListings.toLocaleString()} listings
-          {newListings > 0 && <span className="text-green-500 font-semibold"> +{newListings} new!</span>}
-        </span>
-        <span className="text-foreground/70">
-          {totalSales.toLocaleString()} sales
-          {newSales > 0 && <span className="text-green-500 font-semibold"> +{newSales} new!</span>}
-        </span>
-        {(newListings > 0 || newSales > 0) && (
-          <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-green-500" onClick={markSeen}>seen</Button>
-        )}
-      </div>
+      {!loading && skins.length > 0 && (
+        <div className="flex gap-5 px-3 py-2 bg-card border border-border rounded-md text-sm text-muted-foreground mb-3">
+          <span className="text-foreground/70">{skins.length} skins</span>
+          <span className="text-foreground/70">{skinsWithListings} with listings</span>
+          <span className="text-foreground/70">
+            {totalListings.toLocaleString()} listings
+            {newListings > 0 && <span className="text-green-500 font-semibold"> +{newListings} new!</span>}
+          </span>
+          {(newListings > 0 || newSales > 0) && (
+            <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-green-500" onClick={markSeen}>seen</Button>
+          )}
+        </div>
+      )}
 
       {/* Rarity tabs + Search + Sort */}
       <div className="flex gap-2 items-center mb-3 flex-wrap">

@@ -64,10 +64,6 @@ export function SkinList({ skins, selectedSkin, onSelectSkin, loading, onNavigat
               {skin.listing_count || 0} listings
               {skin.new_listings > 0 && <span className="text-green-500 text-[0.65rem] font-semibold"> (+{skin.new_listings})</span>}
             </span>
-            <span className={skin.sale_count > 0 ? "text-purple-400" : "text-muted-foreground/40"}>
-              {skin.sale_count || 0} sales
-              {skin.new_sales > 0 && <span className="text-green-500 text-[0.65rem] font-semibold"> (+{skin.new_sales})</span>}
-            </span>
             {skin.min_price != null && skin.min_price > 0 && <span className="text-green-500 font-medium">{formatDollars(skin.min_price)}</span>}
           </div>
           {skin.prices && Object.keys(skin.prices).length > 0 && (
