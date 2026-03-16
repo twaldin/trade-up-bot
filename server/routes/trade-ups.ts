@@ -204,7 +204,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     // Get trade-ups
     const rows = db
       .prepare(
-        `SELECT t.* FROM trade_ups t ${where}
+        `SELECT t.*, json_array_length(t.outcomes_json) as outcome_count FROM trade_ups t ${where}
          ORDER BY ${sortCol} ${sortOrder}
          LIMIT ? OFFSET ?`
       )
@@ -233,11 +233,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
       ? db.prepare("SELECT * FROM theory_tracking WHERE combo_key = ?")
       : null;
 
-    const countMissing = includeStale ? db.prepare(`
+    // Always compute missing count for non-active trade-ups
+    const countMissing = db.prepare(`
       SELECT COUNT(*) as cnt FROM trade_up_inputs tui
       LEFT JOIN listings l ON tui.listing_id = l.id
       WHERE tui.trade_up_id = ? AND l.id IS NULL
-    `) : null;
+    `);
 
     const tradeUps: TradeUp[] = rows.map((row) => {
       const tu: TradeUp = {
@@ -254,8 +255,9 @@ export function tradeUpsRouter(db: Database.Database): Router {
         chance_to_profit: (row as any).chance_to_profit ?? 0,
         best_case_cents: (row as any).best_case_cents ?? 0,
         worst_case_cents: (row as any).worst_case_cents ?? 0,
+        outcome_count: (row as any).outcome_count ?? 0,
         listing_status: (row.listing_status as TradeUp['listing_status']) ?? 'active',
-        missing_inputs: row.listing_status !== 'active' && countMissing
+        missing_inputs: row.listing_status !== 'active'
           ? (countMissing.get(row.id) as { cnt: number }).cnt : 0,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
