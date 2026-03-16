@@ -1,12 +1,4 @@
-/**
- * Price lookup engine: condition-level cache for OUTPUT pricing.
- *
- * Outputs are sold at condition level ("I can sell FN for $X"), not float-level.
- * Sale history is ground truth — real buyers at real prices.
- *
- * Priority: csfloat_sales > listing floor (lower, conservative) > csfloat_ref > knife listing floor > condition extrapolation (★ items)
- * Skinport removed entirely — inaccurate, adds noise. Steam removed. CSFloat is all we need.
- */
+// Condition-level output pricing with multi-source cache.
 
 import Database from "better-sqlite3";
 import { floatToCondition } from "../../shared/types.js";

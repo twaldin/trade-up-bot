@@ -2,4 +2,24 @@ node_modules/
 dist/
 data/
 .env
+.env.*
+!.env.example
 tradeup.db
+*.db
+*.db-wal
+*.db-shm
+
+# Personal notes / internal docs (keep README.md only)
+improvements.md
+overnight_tracking.md
+notes.md
+RESEARCH.md
+CLAUDE.md
+
+# Logs
+*.log
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db

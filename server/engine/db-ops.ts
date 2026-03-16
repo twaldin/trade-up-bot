@@ -7,11 +7,6 @@ import { setSyncMeta } from "../db.js";
 import { type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 
-interface NearMissInfo {
-  combo: string;
-  gap: number;
-  theoryProfit: number;
-}
 import type { FinishData } from "./knife-data.js";
 import { evaluateKnifeTradeUp } from "./knife-evaluation.js";
 import { evaluateTradeUp } from "./evaluation.js";
@@ -205,7 +200,7 @@ export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFi
 }
 
 export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: string = "classified_covert") {
-  // Merge-save: update existing trade-ups by signature, mark missing ones as stale.
+  // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
 
   const insertTradeUp = db.prepare(`
     INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
@@ -292,17 +287,52 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
 
   withRetry(() => mergeAll(), 3, "mergeTradeUps");
   setSyncMeta(db, "last_calculation", new Date().toISOString());
+
+  // Trim excess: keep top 50K by composite score (profit + chance-to-profit bonus).
+  // Merge-save accumulates forever — classified hit 400K+, knife 220K+. Purge the rest.
+  trimExcessTradeUps(db, type, 50000);
+}
+
+/**
+ * Trim trade-ups for a type down to maxKeep, scored by profit + chance-to-profit.
+ * Profitable and high-chance trade-ups are kept; low-value unprofitable ones are purged.
+ */
+function trimExcessTradeUps(db: Database.Database, type: string, maxKeep: number) {
+  const count = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM trade_ups WHERE type = ? AND is_theoretical = 0"
+  ).get(type) as { cnt: number }).cnt;
+
+  if (count <= maxKeep) return;
+
+  const toDelete = count - maxKeep;
+  // Delete lowest-scored: sort by (profit + chance_bonus) ascending, delete the bottom N
+  // Profitable trade-ups and high-chance ones are preserved
+  const deleted = db.prepare(`
+    DELETE FROM trade_up_inputs WHERE trade_up_id IN (
+      SELECT id FROM trade_ups
+      WHERE type = ? AND is_theoretical = 0
+      ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) ASC
+      LIMIT ?
+    )
+  `).run(type, toDelete);
+
+  const deleted2 = db.prepare(`
+    DELETE FROM trade_ups WHERE type = ? AND is_theoretical = 0
+      AND id NOT IN (
+        SELECT id FROM trade_ups
+        WHERE type = ? AND is_theoretical = 0
+        ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) DESC
+        LIMIT ?
+      )
+  `).run(type, type, maxKeep);
+
+  if (deleted2.changes > 0) {
+    console.log(`  Trimmed ${deleted2.changes} excess ${type} trade-ups (kept top ${maxKeep})`);
+  }
 }
 
 
-/**
- * Try to revive stale/partial trade-ups by finding replacement listings in DB.
- * For each trade-up with missing inputs, searches for alternative listings:
- *   1. Same skin_id (exact same skin, different listing)
- *   2. Same collection + rarity (different skin, similar float)
- * Re-evaluates with replacements via evaluateKnifeTradeUp.
- * Returns count of revived trade-ups.
- */
+// Replace missing inputs with alternative listings from same skin/collection.
 export function reviveStaleTradeUps(
   db: Database.Database,
   knifeFinishCache: Map<string, FinishData[]>,

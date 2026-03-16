@@ -150,7 +150,7 @@ export function findProfitableTradeUps(
         tryAdd(evaluateTradeUp(db, lowestFloat, outcomes));
       }
 
-      // Condition-pure groups
+      // Condition-pure groups — deeper windows catch non-cheapest profitable combos
       const byCondition = new Map<string, ListingWithCollection[]>();
       for (const l of colListings) {
         const cond = floatToCondition(l.float_value);
@@ -159,10 +159,10 @@ export function findProfitableTradeUps(
         byCondition.set(cond, list);
       }
       for (const [, condListings] of byCondition) {
-        if (condListings.length >= 10) {
-          tryAdd(evaluateTradeUp(db, condListings.slice(0, 10), outcomes));
-          if (condListings.length >= 20) {
-            tryAdd(evaluateTradeUp(db, condListings.slice(10, 20), outcomes));
+        for (let window = 0; window < 3; window++) {
+          const off = window * 10;
+          if (condListings.length >= off + 10) {
+            tryAdd(evaluateTradeUp(db, condListings.slice(off, off + 10), outcomes));
           }
         }
       }

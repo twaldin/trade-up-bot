@@ -54,20 +54,20 @@ function summarizeInputs(inputs: TradeUpInput[]): { name: string; count: number;
 
 function chanceToProfit(tu: TradeUp): number {
   // Use pre-computed value from DB if available (outcomes may not be loaded yet)
-  if ((tu as any).chance_to_profit !== undefined) return (tu as any).chance_to_profit;
+  if (tu.chance_to_profit !== undefined) return tu.chance_to_profit;
   return tu.outcomes.reduce((sum, o) =>
     sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0
   );
 }
 
 function bestCase(tu: TradeUp): number {
-  if ((tu as any).best_case_cents !== undefined && (tu as any).best_case_cents !== 0) return (tu as any).best_case_cents;
+  if (tu.best_case_cents !== undefined && tu.best_case_cents !== 0) return tu.best_case_cents;
   if (tu.outcomes.length === 0) return -tu.total_cost_cents;
   return Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
 function worstCase(tu: TradeUp): number {
-  if ((tu as any).worst_case_cents !== undefined && (tu as any).worst_case_cents !== 0) return (tu as any).worst_case_cents;
+  if (tu.worst_case_cents !== undefined && tu.worst_case_cents !== 0) return tu.worst_case_cents;
   if (tu.outcomes.length === 0) return -tu.total_cost_cents;
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
@@ -130,8 +130,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
       });
       const data = await res.json();
       setBuyResult(prev => new Map(prev).set(listingId, data));
-    } catch (err: any) {
-      setBuyResult(prev => new Map(prev).set(listingId, { success: false, error: err.message }));
+    } catch (err: unknown) {
+      setBuyResult(prev => new Map(prev).set(listingId, { success: false, error: err instanceof Error ? err.message : "Unknown error" }));
     } finally {
       setBuyingId(null);
     }
@@ -296,7 +296,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
                   <span className="text-[0.8rem] text-foreground/60">
-                    {(tu as any).outcome_count || tu.outcomes.length} possible
+                    {tu.outcome_count || tu.outcomes.length} possible
                   </span>
                 </td>
               </tr>
