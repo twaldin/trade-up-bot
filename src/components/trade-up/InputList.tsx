@@ -185,11 +185,6 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
         {tu.type?.startsWith("staircase") && tu.inputs.length > 10
           ? `Inputs (${tu.inputs.length} — ${Math.ceil(tu.inputs.length / 10)} trade-ups)`
           : `Inputs (${tu.inputs.length})`}
-        {tu.type?.startsWith("staircase_") && (
-          <span className="ml-2 text-[0.65rem] font-normal text-amber-400/70" title="Intermediate stages are probabilistic — output skins at each step are random (weighted by collection). The EV and outcome probabilities account for this variance.">
-            multi-stage: intermediate outputs are probabilistic
-          </span>
-        )}
         {!tu.is_theoretical && (
           <button
             className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-blue-400 border border-border cursor-pointer align-middle hover:bg-accent disabled:opacity-50 disabled:cursor-wait"

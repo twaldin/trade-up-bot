@@ -208,9 +208,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 <td className="px-3.5 py-2.5 border-b border-border/70">{expandedId === tu.id ? "\u25BC" : "\u25B6"}</td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
                   <span className="text-[0.8rem] text-foreground/60">
-                    {tu.type === "staircase_rck" && <span className="text-violet-400 mr-1">500R→50C→5Cv→K</span>}
-                    {tu.type === "staircase_rc" && <span className="text-violet-400 mr-1">100R→10C→Cv</span>}
-                    {tu.type === "staircase_mrc" && <span className="text-violet-400 mr-1">1000MS→100R→10C→Cv</span>}
                     {inputSummary.map((item, i) => (
                       <span key={i}>
                         {i > 0 && ", "}

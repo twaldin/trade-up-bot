@@ -7,7 +7,7 @@ import type { Filters } from "../components/FilterBar.js";
 import { formatDollars } from "../utils/format.js";
 import { Button } from "@shared/components/ui/button.js";
 
-type TradeUpType = "all" | "covert_knife" | "theory_knife" | "classified_covert" | "classified_covert_st" | "staircase" | "theory_classified" | "theory_staircase" | "restricted_classified" | "milspec_restricted" | "staircase_rc" | "staircase_rck" | "staircase_mrc";
+type TradeUpType = "all" | "covert_knife" | "theory_knife" | "classified_covert" | "staircase" | "theory_classified" | "theory_staircase" | "restricted_classified" | "milspec_restricted";
 
 interface TypeOption {
   value: TradeUpType;

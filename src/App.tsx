@@ -10,7 +10,6 @@ import { Badge } from "../shared/components/ui/badge.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
-const ScannerPage = lazy(() => import("./pages/ScannerPage.js").then(m => ({ default: m.ScannerPage })));
 
 function Diff({ value, label }: { value: number; label?: string }) {
   if (value === 0) return null;
@@ -105,8 +104,6 @@ const TRADE_UP_TYPES = [
   { value: "classified_covert" as const, label: "Classified" },
   { value: "restricted_classified" as const, label: "Restricted" },
   { value: "milspec_restricted" as const, label: "Mil-Spec" },
-  // StatTrak disabled — output pricing unreliable (no CSFloat sale data, Skinport inflated)
-  // { value: "classified_covert_st" as const, label: "StatTrak" },
   { value: "staircase" as const, label: "Staircases" },
 ];
 
@@ -250,9 +247,6 @@ export default function App() {
           { to: "/", label: "Trade-Ups", end: true },
           { to: "/theories", label: "Theories" },
           { to: "/data", label: "Data" },
-          // Scanner disabled — KNN with 3-5 observations produces unreliable results for rare knives/gloves.
-          // Needs pattern awareness (Case Hardened blue gems) and more observation data to be trustworthy.
-          // { to: "/scanner", label: "Scanner" },
           { to: "/collections", label: "Collections" },
         ].map(({ to, label, end }) => (
           <NavLink
@@ -276,7 +270,6 @@ export default function App() {
         <Route path="/" element={<TradeUpsMainPage status={status} diffs={diffs} refreshKey={refreshKey} />} />
         <Route path="/theories" element={<TheoriesMainPage status={status} diffs={diffs} />} />
         <Route path="/data" element={<DataPage status={status} diffs={diffs} />} />
-        <Route path="/scanner" element={<Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading...</div>}><ScannerPage /></Suspense>} />
         <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
         <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
       </Routes>
