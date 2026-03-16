@@ -3,6 +3,7 @@
 import passport from "passport";
 import { Strategy as SteamStrategy } from "passport-steam";
 import session from "express-session";
+import { EventEmitter } from "events";
 import type { Express, Request, Response, NextFunction } from "express";
 import Database from "better-sqlite3";
 
@@ -62,7 +63,7 @@ export function setupAuth(app: Express, db: Database.Database) {
   // Clean expired sessions on startup
   db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
 
-  const SqliteStore = {
+  const SqliteStore = Object.assign(new EventEmitter(), {
     get: (sid: string, cb: (err: any, sess?: any) => void) => {
       try {
         const row = db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
@@ -88,7 +89,7 @@ export function setupAuth(app: Express, db: Database.Database) {
         cb();
       } catch (e) { cb(e); }
     },
-  };
+  });
 
   app.use(session({
     store: SqliteStore as any,
