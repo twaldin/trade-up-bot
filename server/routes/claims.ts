@@ -1,11 +1,9 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
+import { requireTier, type User } from "../auth.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 3;
-
-// Placeholder user ID until Steam auth is implemented
-const PLACEHOLDER_USER_ID = "anonymous";
 
 interface ClaimRow {
   id: number;
@@ -80,15 +78,15 @@ export function claimsRouter(db: Database.Database): Router {
     return { status, total, active, missing };
   }
 
-  // POST /api/trade-ups/:id/claim - claim a trade-up
-  router.post("/api/trade-ups/:id/claim", (req, res) => {
-    const tradeUpId = parseInt(req.params.id);
+  // POST /api/trade-ups/:id/claim - claim a trade-up (Pro only)
+  router.post("/api/trade-ups/:id/claim", requireTier("pro"), (req, res) => {
+    const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
       return;
     }
 
-    const userId = PLACEHOLDER_USER_ID;
+    const userId = (req.user as User)?.steam_id || "anonymous";
 
     releaseExpiredClaims();
 
@@ -172,7 +170,7 @@ export function claimsRouter(db: Database.Database): Router {
       return;
     }
 
-    const userId = PLACEHOLDER_USER_ID;
+    const userId = (req.user as User)?.steam_id || "anonymous";
 
     const result = db.prepare(
       "UPDATE trade_up_claims SET released_at = datetime('now') WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
@@ -188,7 +186,7 @@ export function claimsRouter(db: Database.Database): Router {
 
   // GET /api/claims - list user's active claims
   router.get("/api/claims", (req, res) => {
-    const userId = PLACEHOLDER_USER_ID;
+    const userId = (req.user as User)?.steam_id || "anonymous";
 
     releaseExpiredClaims();
 

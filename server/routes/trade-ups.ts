@@ -2,6 +2,7 @@ import { Router } from "express";
 import type Database from "better-sqlite3";
 import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
+import { getTierConfig, type User } from "../auth.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 
 export function tradeUpsRouter(db: Database.Database): Router {
@@ -71,44 +72,40 @@ export function tradeUpsRouter(db: Database.Database): Router {
       min_win,
     } = req.query as Record<string, string>;
 
+    // Tier gating: apply delay, result limits, and listing ID visibility per user tier
+    const tierConfig = getTierConfig(req);
+    const user = req.user as User | undefined;
+    const userId = user?.steam_id || "anonymous";
+
     const pageNum = parseInt(page);
-    const perPage = Math.min(parseInt(per_page), 500);
+    const perPage = tierConfig.limit > 0 ? Math.min(parseInt(per_page), tierConfig.limit) : Math.min(parseInt(per_page), 500);
     const offset = (pageNum - 1) * perPage;
 
-    // Build query — theories skip listing existence check (theoretical inputs don't have real listings)
-    const isTheory = type === "theory_knife";
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    if (isTheory) {
-      where = "WHERE t.is_theoretical = 1";
-    } else if (includeStale) {
-      // Show all non-theoretical, including stale/partial (preserved up to 7 days)
+    if (includeStale) {
       where = `WHERE t.is_theoretical = 0 AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
-      // Default: only show trade-ups with all inputs available
       where = `WHERE t.is_theoretical = 0 AND t.listing_status = 'active'`;
     }
     const params: (string | number)[] = [];
 
-    // Exclude trade-ups actively claimed by OTHER users (don't hide user's own claims)
-    const claimUserId = "anonymous"; // placeholder until Steam auth
+    // Tier delay: free users see 30-min delayed data, basic 5-min, pro/admin real-time
+    if (tierConfig.delay > 0) {
+      where += ` AND t.created_at <= datetime('now', '-${tierConfig.delay} seconds')`;
+    }
+
+    // Exclude trade-ups claimed by OTHER users
     where += ` AND t.id NOT IN (
       SELECT trade_up_id FROM trade_up_claims
       WHERE released_at IS NULL AND expires_at > datetime('now')
       AND user_id != ?
     )`;
-    params.push(claimUserId);
+    params.push(userId);
 
-    if (type && !isTheory) {
+    if (type) {
       where += " AND t.type = ?";
       params.push(type);
-    }
-
-    // For theories, optionally filter by underlying type (classified_covert, staircase, etc.)
-    const theoryType = req.query.theory_type as string | undefined;
-    if (isTheory && theoryType) {
-      where += " AND t.type = ?";
-      params.push(theoryType);
     }
 
     if (min_profit) {
@@ -272,7 +269,25 @@ export function tradeUpsRouter(db: Database.Database): Router {
       return tu;
     });
 
-    res.json({ trade_ups: tradeUps, total, page: pageNum, per_page: perPage });
+    // Redact listing IDs for free users (show skin name + price but not specific listing)
+    if (!tierConfig.showListingIds) {
+      for (const tu of tradeUps) {
+        if (tu.inputs) {
+          for (const inp of tu.inputs) {
+            (inp as any).listing_id = "hidden";
+          }
+        }
+      }
+    }
+
+    res.json({
+      trade_ups: tradeUps,
+      total,
+      page: pageNum,
+      per_page: perPage,
+      tier: user?.tier || "free",
+      tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
+    });
   });
 
   router.get("/api/trade-ups/:id", (req, res) => {
