@@ -146,6 +146,8 @@ export function setupAuth(app: Express, db: Database.Database) {
     // Auth routes
     app.get("/auth/steam", passport.authenticate("steam"));
     app.get("/auth/steam/callback", (req, res, next) => {
+      // Fix for nginx proxy stripping query params from req.url
+      req.url = req.originalUrl;
       passport.authenticate("steam", (err: any, user: any, info: any) => {
         if (err || !user) {
           console.error("Steam auth failed:", err?.message || err || "no user", info || "");
