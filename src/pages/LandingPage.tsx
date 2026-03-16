@@ -44,13 +44,13 @@ function Hero() {
 
       <div className="flex flex-wrap justify-center gap-3 mt-10">
         <button
-          onClick={() => navigate("/")}
+          onClick={() => window.location.href = "/auth/steam"}
           className="h-11 px-6 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-all hover:opacity-90 active:translate-y-px"
         >
           Get Started
         </button>
         <button
-          onClick={() => navigate("/")}
+          onClick={() => window.location.href = "/demo"}
           className="h-11 px-6 rounded-lg border border-border bg-background text-foreground font-semibold text-sm transition-all hover:bg-muted active:translate-y-px"
         >
           View Demo
@@ -336,7 +336,7 @@ function Footer() {
             Built for the CS2 community.
           </p>
           <a
-            href="https://github.com"
+            href="https://github.com/twaldin/trade-up-bot"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -346,7 +346,7 @@ function Footer() {
         </div>
 
         <button
-          onClick={() => navigate("/")}
+          onClick={() => window.location.href = "/auth/steam"}
           className="h-10 px-5 rounded-lg border border-border bg-background text-foreground font-semibold text-sm transition-all hover:bg-muted active:translate-y-px flex items-center gap-2"
         >
           <span>{"\u{1F3AE}"}</span>
