@@ -34,7 +34,6 @@ export {
   syncSaleHistory,
   syncSaleHistoryForRarity,
   syncKnifeGloveSaleHistory,
-  syncStatTrakSaleHistory,
 } from "./sync/sales.js";
 
 // Skinport prices

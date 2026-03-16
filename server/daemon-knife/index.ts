@@ -46,9 +46,7 @@ import {
   phase5KnifeCalc,
   phase5ClassifiedCalc,
   phase5cStaircase,
-  phase5dStatTrak,
   phase5GenericCalc,
-  phase5cGenericStaircases,
   phase2cStaircaseTheory,
   phase7Rematerialization,
   printTheoryAccuracy,
@@ -70,7 +68,7 @@ if (fs.existsSync(envPath)) {
  * hooks aren't inherited by worker threads in Node.js v24.
  */
 function runCalcWorker(
-  task: "knife" | "classified" | "stattrak" | "restricted" | "milspec",
+  task: "knife" | "classified" | "restricted" | "milspec",
   dbPath: string,
   extraTransitionPoints?: number[],
 ): Promise<TradeUp[]> {
@@ -155,7 +153,7 @@ export async function main() {
   setDaemonMeta(0, daemonStartedAt);
 
   console.log(`[${timestamp()}] Trade-Up Daemon started`);
-  console.log(`  Phases: Housekeeping → Theory (knife+classified) → Probe → Fetch → Parallel Calc (knife+classified+ST workers) → Staircase → Cooldown → Re-materialize`);
+  console.log(`  Phases: Housekeeping → Theory (knife+classified) → Probe → Fetch → Parallel Calc (knife+classified workers) → Staircase → Cooldown → Re-materialize`);
   console.log(`  Theory runs first (pure computation) → unified wanted list guides API fetching`);
   console.log(`  Rate limits (3 separate pools):`);
   console.log(`    Listing search: 200/~30min | Sale history: 500/~12h | Individual: 50K/~12h`);
@@ -314,12 +312,10 @@ export async function main() {
     // Knife, Classified, and ST discovery run concurrently in separate threads.
     // Each worker opens a read-only DB connection and builds its own price cache.
     // Materialization + saving happens sequentially on the main thread after.
-    const shouldRunST = cycleCount % 3 === 1;
     const shouldRunKnife = freshness.needsRecalc() || cycleCount === 1;
 
     let knifeDiscovery: TradeUp[] | undefined;
     let classifiedDiscovery: TradeUp[] | undefined;
-    let stDiscovery: TradeUp[] | undefined;
     let restrictedDiscovery: TradeUp[] | undefined;
     let milspecDiscovery: TradeUp[] | undefined;
 
@@ -332,10 +328,6 @@ export async function main() {
       tasks.push({ name: "classified", promise: runCalcWorker("classified", DB_PATH) });
       tasks.push({ name: "restricted", promise: runCalcWorker("restricted", DB_PATH) });
       tasks.push({ name: "milspec", promise: runCalcWorker("milspec", DB_PATH) });
-      // ST worker disabled — output pricing unreliable (Skinport-only, inflated)
-      // if (shouldRunST) {
-      //   tasks.push({ name: "stattrak", promise: runCalcWorker("stattrak", DB_PATH) });
-      // }
 
       console.log(`\n[${timestamp()}] Spawning ${tasks.length} worker threads for parallel discovery...`);
       setDaemonStatus(db, "calculating", `Phase 5: ${tasks.length} parallel discovery workers`);
@@ -346,7 +338,6 @@ export async function main() {
         if (r.status === "fulfilled") {
           if (tasks[i].name === "knife") knifeDiscovery = r.value;
           else if (tasks[i].name === "classified") classifiedDiscovery = r.value;
-          else if (tasks[i].name === "stattrak") stDiscovery = r.value;
           else if (tasks[i].name === "restricted") restrictedDiscovery = r.value;
           else if (tasks[i].name === "milspec") milspecDiscovery = r.value;
           console.log(`  Worker ${tasks[i].name}: ${r.value.length} trade-ups`);
@@ -364,13 +355,6 @@ export async function main() {
     const classifiedCalcResult = phase5ClassifiedCalc(db, freshness, cycleCount === 1, classifiedTheoryResult.theories, classifiedDiscovery);
     previousClassifiedNearMisses = classifiedCalcResult.nearMisses;
 
-    // Phase 5d: StatTrak — DISABLED
-    // 100% of profitable ST trade-ups rely on Skinport-only output pricing (2-vol inflated).
-    // CSFloat has zero ST sale data. Re-enable once ST sale data accumulates via staleness checks.
-    // if (shouldRunST) {
-    //   phase5dStatTrak(db, stDiscovery);
-    // }
-
     // Phase 5e: Restricted→Classified discovery (must run before staircases)
     phase5GenericCalc(db, "restricted_classified", restrictedDiscovery);
 
@@ -378,9 +362,6 @@ export async function main() {
     phase5GenericCalc(db, "milspec_restricted", milspecDiscovery);
 
     // Phase 5c: Staircase (every 5 cycles — depends on classified results being saved)
-    // Only the original staircase (50 Classified → 5 Covert → 1 Knife) is enabled.
-    // Generic staircases (RC/RCK/MRC) disabled — intermediate stage variance is too high
-    // to present accurate profit numbers without Monte Carlo simulation.
     if (cycleCount % 5 === 1) {
       phase5cStaircase(db);
     }

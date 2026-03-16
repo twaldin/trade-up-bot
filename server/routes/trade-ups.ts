@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
-import { priceCache, priceSources, findArbitrageOpportunities, findFloatSnipes } from "../engine.js";
+import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, TheoryTracking } from "../../shared/types.js";
 
@@ -651,24 +651,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
       stats[name] = { listings, sales, sources };
     }
     res.json({ stats });
-  });
-
-  // Market scanner: cross-marketplace arbitrage
-  router.get("/api/scanner/arbitrage", (req, res) => {
-    const minProfit = parseInt(req.query.minProfit as string) || 50;
-    const minVolume = parseInt(req.query.minVolume as string) || 3;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const results = findArbitrageOpportunities(db, { minProfitCents: minProfit, minSalesVolume: minVolume, limit });
-    res.json({ opportunities: results, total: results.length });
-  });
-
-  // Market scanner: low-float premium snipes
-  router.get("/api/scanner/float-snipes", (req, res) => {
-    const maxFloat = parseFloat(req.query.maxFloat as string) || 0.01;
-    const minDiscount = parseInt(req.query.minDiscount as string) || 15;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const results = findFloatSnipes(db, { maxFloat, minDiscountPct: minDiscount, limit });
-    res.json({ snipes: results, total: results.length });
   });
 
   return router;

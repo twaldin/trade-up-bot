@@ -279,11 +279,7 @@ export function refreshListingStatuses(db: Database.Database): { active: number;
         ELSE COALESCE(preserved_at, datetime('now'))
       END
     WHERE is_theoretical = 0
-      AND type NOT IN ('staircase_rc', 'staircase_rck', 'staircase_mrc')
   `).run();
-
-  // Generic staircases use synthetic input IDs — always mark active
-  db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE type IN ('staircase_rc', 'staircase_rck', 'staircase_mrc') AND is_theoretical = 0").run();
 
   const counts = db.prepare(`
     SELECT listing_status, COUNT(*) as cnt

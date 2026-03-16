@@ -17,14 +17,6 @@ export interface RarityTierConfig {
   isKnifeTier: boolean;          // true for covert→knife (5 inputs, special evaluation)
 }
 
-export interface StaircaseChainConfig {
-  id: string;                    // e.g. "staircase_rck"
-  label: string;                 // display name, e.g. "Restricted→Classified→Covert→Knife"
-  stages: string[];              // tier IDs in order, e.g. ["restricted_classified", "classified_covert"]
-  tradeUpType: string;           // DB type, e.g. "staircase_rck"
-  isKnifeOutput: boolean;        // final output is knife/glove
-}
-
 // ---------------------------------------------------------------------------
 // Tier definitions
 // ---------------------------------------------------------------------------
@@ -77,41 +69,6 @@ export const RARITY_TIERS: RarityTierConfig[] = [
     listingBudgetFraction: 0.20,
     saleBudgetFraction: 0.15,
     isKnifeTier: true,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Staircase chain definitions
-// ---------------------------------------------------------------------------
-
-export const STAIRCASE_CHAINS: StaircaseChainConfig[] = [
-  {
-    id: "staircase",
-    label: "Classified→Covert→Knife",
-    stages: ["classified_covert"],
-    tradeUpType: "staircase",
-    isKnifeOutput: true,
-  },
-  {
-    id: "staircase_rc",
-    label: "Restricted→Classified→Covert",
-    stages: ["restricted_classified", "classified_covert"],
-    tradeUpType: "staircase_rc",
-    isKnifeOutput: false,
-  },
-  {
-    id: "staircase_rck",
-    label: "Restricted→Classified→Covert→Knife",
-    stages: ["restricted_classified", "classified_covert"],
-    tradeUpType: "staircase_rck",
-    isKnifeOutput: true,
-  },
-  {
-    id: "staircase_mrc",
-    label: "Mil-Spec→Restricted→Classified→Covert",
-    stages: ["milspec_restricted", "restricted_classified", "classified_covert"],
-    tradeUpType: "staircase_mrc",
-    isKnifeOutput: false,
   },
 ];
 

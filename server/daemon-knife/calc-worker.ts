@@ -15,7 +15,7 @@ import { join } from "path";
 import { findProfitableKnifeTradeUps, findProfitableTradeUps } from "../engine.js";
 
 interface WorkerInput {
-  task: "knife" | "classified" | "stattrak" | "restricted" | "milspec";
+  task: "knife" | "classified" | "restricted" | "milspec";
   dbPath: string;
   extraTransitionPoints?: number[];
 }
@@ -69,20 +69,6 @@ try {
     case "classified":
       tradeUps = findProfitableTradeUps(db);
       break;
-
-    case "stattrak": {
-      // Check if ST listings exist before heavy computation
-      const count = (db.prepare(`
-        SELECT COUNT(*) as c FROM listings l
-        JOIN skins s ON l.skin_id = s.id
-        WHERE s.rarity = 'Classified' AND l.stattrak = 1
-      `).get() as { c: number }).c;
-
-      tradeUps = count > 0
-        ? findProfitableTradeUps(db, { stattrak: true })
-        : [];
-      break;
-    }
 
     case "restricted":
       tradeUps = findProfitableTradeUps(db, { rarities: ["Restricted"], limit: 50000 });

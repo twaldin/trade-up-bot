@@ -61,9 +61,8 @@ npm run dev
 - `theory-pessimistic.ts` — knife theory screener + deep scan
 - `theory-classified.ts` — generic rarity-tier theory: generateTheoriesForTier
 - `theory-validation.ts` — KNN pricing, learned prices, observation seeding
-- `rarity-tiers.ts` — RarityTierConfig + StaircaseChainConfig definitions
+- `rarity-tiers.ts` — RarityTierConfig definitions
 - `staircase.ts` — original 2-stage staircase (Classified→Covert→Knife)
-- `staircase-generic.ts` — N-stage staircase chains (RC, RCK, MRC)
 
 **Import rule**: All external consumers import from `./engine.js` barrel — never from submodules directly.
 
@@ -74,7 +73,7 @@ npm run dev
 - `theory.ts` — Phase 2: knife + classified + restricted + milspec theory generation
 - `data-fetch.ts` — Phase 3-4: API probing, sale history, listing search, DMarket coverage
 - `knife-calc.ts` — Phase 5: knife discovery + materialization + deep scan + rematerialization
-- `classified-calc.ts` — Phase 5b-5f: classified, stattrak, restricted, milspec, staircase calc
+- `classified-calc.ts` — Phase 5b-5f: classified, restricted, milspec, staircase calc
 
 Other daemon files:
 - `index.ts` — main loop orchestration, worker spawning, cycle management
@@ -102,7 +101,7 @@ Other daemon files:
 **Output pricing** (what we'd sell for): conservative — uses LOWEST of available sources:
 - CSFloat sale-based prices (highest priority, most accurate)
 - DMarket listing floor (for non-knife commodity skins — reliable with many listings)
-- Skinport listing floor (for non-StatTrak skins)
+- Skinport listing floor
 - CSFloat ref prices (fallback)
 - Condition extrapolation (last resort, ★ items only)
 - KNN float-precise pricing (★ knife/glove skins only — uses 112K+ price observations)
@@ -141,7 +140,6 @@ Other daemon files:
 ### Data Quality
 - **DMarket name verification**: `cleanTitle !== skinName` check prevents fuzzy match contamination (e.g., "Fade" matching "Amber Fade").
 - **Dead Hand Collection excluded**: trade-locked until late March 2026, no market data.
-- **StatTrak output pricing**: Skinport data excluded for ST (unreliable thin-volume). CSFloat-only.
 
 ### DB
 - **WAL mode + busy_timeout=30s**: enables concurrent reads/writes between daemon and fetcher.

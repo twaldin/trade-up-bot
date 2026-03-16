@@ -9,7 +9,6 @@ import {
   syncKnifeGloveSaleHistory,
   syncSaleHistory,
   syncSaleHistoryForRarity,
-  syncStatTrakSaleHistory,
   syncPrioritizedKnifeInputs,
   syncSmartListingsForRarity,
   syncCovertOutputListings,
@@ -228,25 +227,6 @@ export async function phase4DataFetch(
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) console.log(`    Covert sales: rate limited, moving on`);
         else console.error(`    Covert sales error: ${(err as Error).message}`);
-      }
-    }
-
-    // StatTrak Covert sale history (ST output pricing — was missing entirely)
-    setDaemonStatus(db, "fetching", "Phase 4a: StatTrak Covert sale history");
-    const stCovertSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
-    if (stCovertSaleBudget >= 1) {
-      try {
-        const result = await syncStatTrakSaleHistory(db, {
-          apiKey,
-          maxCalls: stCovertSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    ST Covert sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) emitEvent(db, "sale_history", `ST Covert: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    ST Covert sales: rate limited, moving on`);
-        else console.error(`    ST Covert sales error: ${(err as Error).message}`);
       }
     }
 

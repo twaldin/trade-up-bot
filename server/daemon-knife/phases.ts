@@ -9,7 +9,6 @@
  * Phase 5: Knife Calc (only if data changed)
  * Phase 5b: Classified Calc
  * Phase 5c: Staircase
- * Phase 5d: StatTrak
  * Phase 5e/5f: Generic rarity tiers
  * Phase 6: Cooldown (staleness checks)
  * Phase 7: Re-materialization (re-check theories with updated data)
@@ -30,8 +29,6 @@ export { phase3ApiProbe, phase4DataFetch, phase4p5VerifyInputs } from "./phases/
 export { phase5KnifeCalc, phase7Rematerialization, type KnifeCalcResult } from "./phases/knife-calc.js";
 export {
   phase5ClassifiedCalc,
-  phase5dStatTrak,
   phase5GenericCalc,
-  phase5cGenericStaircases,
   phase5cStaircase,
 } from "./phases/classified-calc.js";

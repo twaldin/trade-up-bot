@@ -79,9 +79,9 @@ export {
 
 // Rarity tier config system
 export {
-  RARITY_TIERS, STAIRCASE_CHAINS,
+  RARITY_TIERS,
   getTierById, getGunTiers, getNewTiers,
-  type RarityTierConfig, type StaircaseChainConfig,
+  type RarityTierConfig,
 } from "./engine/rarity-tiers.js";
 
 // Staircase evaluation (real trade-ups)
@@ -91,21 +91,10 @@ export {
   type StaircaseResult,
 } from "./engine/staircase.js";
 
-// Generic N-stage staircase engine
-export {
-  findGenericStaircaseTradeUps, findAllGenericStaircases,
-  type GenericStaircaseTradeUp, type GenericStaircaseResult,
-} from "./engine/staircase-generic.js";
-
 // Staircase theory engine
 export {
   generateStaircaseTheories, saveStaircaseTheoryTradeUps,
   type StaircaseTheory, type StaircaseTheoryResult,
 } from "./engine/theory-staircase.js";
 
-// Market scanners
-export {
-  findArbitrageOpportunities, findFloatSnipes,
-  type ArbitrageOpportunity, type FloatSnipe,
-} from "./engine/scanner.js";
 

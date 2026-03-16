@@ -1,8 +1,7 @@
 /**
  * Phase 5b: Classified→Covert Calc — discovery + materialization.
- * Phase 5d: StatTrak Classified→Covert.
  * Phase 5e/5f: Generic rarity tier calc (Restricted→Classified, Mil-Spec→Restricted).
- * Phase 5c: Staircase evaluation (multi-stage chains).
+ * Phase 5c: Staircase evaluation.
  */
 
 import { initDb, emitEvent } from "../../db.js";
@@ -24,7 +23,6 @@ import {
   reviveStaleClassifiedTradeUps,
   getTierById,
   findStaircaseTradeUps,
-  findAllGenericStaircases,
   type NearMissInfo,
   type TheoryValidationResult,
 } from "../../engine.js";
@@ -204,79 +202,6 @@ export function phase5ClassifiedCalc(
   }
 }
 
-export function phase5dStatTrak(db: ReturnType<typeof initDb>, discoveryResults?: TradeUp[]) {
-  console.log(`\n[${timestamp()}] Phase 5d: StatTrak Classified→Covert${discoveryResults ? ' (worker)' : ''}`);
-  setDaemonStatus(db, "calculating", "Phase 5d: StatTrak discovery");
-  emitEvent(db, "phase", "Phase 5d: StatTrak Calc");
-
-  try {
-    let tradeUps: TradeUp[];
-
-    if (discoveryResults) {
-      tradeUps = discoveryResults;
-      if (tradeUps.length === 0) {
-        console.log("  No StatTrak trade-ups found");
-      }
-    } else {
-      // Check if we have any StatTrak classified listings
-      const stListingCount = (db.prepare(`
-        SELECT COUNT(*) as c FROM listings l
-        JOIN skins s ON l.skin_id = s.id
-        WHERE s.rarity = 'Classified' AND l.stattrak = 1
-      `).get() as { c: number }).c;
-
-      if (stListingCount === 0) {
-        console.log("  No StatTrak classified listings — skipping");
-        return { total: 0, profitable: 0 };
-      }
-      console.log(`  ${stListingCount} StatTrak classified listings available`);
-
-      tradeUps = findProfitableTradeUps(db, {
-        stattrak: true,
-        onProgress: (msg) => {
-          process.stdout.write(`\r  ST: ${msg}                    `);
-          setDaemonStatus(db, "calculating", `ST: ${msg}`);
-        },
-      });
-      console.log("");
-    }
-
-    const profitable = tradeUps.filter(t => t.profit_cents > 0);
-    console.log(`  StatTrak: ${tradeUps.length} trade-ups (${profitable.length} profitable)`);
-
-    // Random StatTrak explore
-    const exploreResult = randomClassifiedExplore(db, {
-      iterations: 100,
-      stattrak: true,
-      onProgress: (msg) => setDaemonStatus(db, "calculating", `ST: ${msg}`),
-    });
-    if (exploreResult.found > 0) {
-      console.log(`  ST explore: ${exploreResult.explored} iterations, +${exploreResult.found} new`);
-    }
-
-    tradeUps.sort((a, b) => b.profit_cents - a.profit_cents);
-    if (tradeUps.length > 0) {
-      saveClassifiedTradeUps(db, tradeUps, "classified_covert_st");
-      console.log(`  Saved ${tradeUps.length} StatTrak classified→covert trade-ups`);
-
-      const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
-      if (allProfitable.length > 0) {
-        console.log("  Top StatTrak trade-ups:");
-        for (const tu of allProfitable.slice(0, 3)) {
-          const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
-          console.log(`    $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) | ${inputNames}`);
-        }
-        emitEvent(db, "st_classified_calc", `${allProfitable.length} profitable, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
-      }
-    }
-
-    return { total: tradeUps.length, profitable: profitable.length };
-  } catch (err) {
-    console.error(`  StatTrak calc error: ${(err as Error).message}`);
-    return { total: 0, profitable: 0 };
-  }
-}
-
 /**
  * Generic Phase 5 calc for any rarity tier (restricted→classified, milspec→restricted).
  * Simpler than phase5ClassifiedCalc — no theory materialization yet, just discovery + save.
@@ -320,68 +245,6 @@ export function phase5GenericCalc(
     }
   } catch (err) {
     console.error(`  ${label} calc error: ${(err as Error).message}`);
-  }
-}
-
-/**
- * Run all generic multi-stage staircase chains (RC, RCK, MRC).
- * Depends on restricted_classified and milspec_restricted trade-ups being saved first.
- */
-export function phase5cGenericStaircases(db: ReturnType<typeof initDb>) {
-  console.log(`\n[${timestamp()}] Phase 5c: Generic Staircases`);
-  setDaemonStatus(db, "calculating", "Phase 5c: Multi-stage staircase evaluation");
-
-  try {
-    const results = findAllGenericStaircases(db, {
-      onProgress: (msg) => console.log(msg),
-    });
-
-    for (const result of results) {
-      if (result.total === 0) continue;
-
-      console.log(`  ${result.chainId}: ${result.total} evaluated, ${result.profitable} profitable`);
-
-      if (result.profitable > 0 && result.tradeUps.length > 0) {
-        const profitable = result.tradeUps.filter(s => s.tradeUp.profit_cents > 0).slice(0, 500);
-
-        // Load real inputs from base trade-ups (e.g., 50 restricted_classified trade-ups → 500 inputs)
-        const loadInputs = db.prepare(
-          "SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source FROM trade_up_inputs WHERE trade_up_id = ?"
-        );
-        for (const st of profitable) {
-          if (st.stageIds[0] && st.stageIds[0].length > 0) {
-            const realInputs: typeof st.tradeUp.inputs = [];
-            for (const baseId of st.stageIds[0]) {
-              const rows = loadInputs.all(baseId) as { listing_id: string; skin_id: string; skin_name: string; collection_name: string; price_cents: number; float_value: number; condition: string; source: string | null }[];
-              for (const r of rows) {
-                realInputs.push({
-                  listing_id: r.listing_id,
-                  skin_id: r.skin_id,
-                  skin_name: r.skin_name,
-                  collection_name: r.collection_name,
-                  price_cents: r.price_cents,
-                  float_value: r.float_value,
-                  condition: r.condition as "Factory New" | "Minimal Wear" | "Field-Tested" | "Well-Worn" | "Battle-Scarred",
-                  source: r.source ?? "csfloat",
-                });
-              }
-            }
-            if (realInputs.length > 0) {
-              st.tradeUp.inputs = realInputs;
-            }
-          }
-        }
-
-        const toSave = profitable.map(s => s.tradeUp);
-        if (toSave.length > 0) {
-          saveTradeUps(db, toSave, true, result.chainId, false, "staircase");
-          console.log(`    Saved ${toSave.length} ${result.chainId} trade-ups (${toSave[0].inputs.length} inputs each, best $${(toSave[0].profit_cents / 100).toFixed(2)})`);
-          emitEvent(db, `staircase_${result.chainId}`, `${toSave.length} profitable, best +$${(toSave[0].profit_cents / 100).toFixed(2)}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error(`  Generic staircase error: ${(err as Error).message}`);
   }
 }
 
