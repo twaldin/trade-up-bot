@@ -10,6 +10,7 @@ import { Badge } from "../shared/components/ui/badge.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
+const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 
 function Diff({ value, label }: { value: number; label?: string }) {
   if (value === 0) return null;
@@ -248,6 +249,7 @@ export default function App() {
           { to: "/theories", label: "Theories" },
           { to: "/data", label: "Data" },
           { to: "/collections", label: "Collections" },
+          { to: "/calculator", label: "Calculator" },
         ].map(({ to, label, end }) => (
           <NavLink
             key={to}
@@ -272,6 +274,11 @@ export default function App() {
         <Route path="/data" element={<DataPage status={status} diffs={diffs} />} />
         <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
         <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
+        <Route path="/calculator" element={
+          <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+            <CalculatorPage />
+          </Suspense>
+        } />
       </Routes>
     </>
   );
