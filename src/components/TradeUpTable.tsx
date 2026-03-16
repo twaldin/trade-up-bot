@@ -116,26 +116,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     finally { setVerifying(null); }
   }, []);
 
-  const [buyingId, setBuyingId] = useState<string | null>(null);
-  const [buyResult, setBuyResult] = useState<Map<string, { success: boolean; error?: string }>>(new Map());
 
-  const handleBuyDMarket = useCallback(async (listingId: string, priceCents: number) => {
-    if (!confirm(`Buy DMarket item for ${formatDollars(priceCents)}?`)) return;
-    setBuyingId(listingId);
-    try {
-      const res = await fetch("/api/buy/dmarket", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId, expectedPriceCents: priceCents }),
-      });
-      const data = await res.json();
-      setBuyResult(prev => new Map(prev).set(listingId, data));
-    } catch (err: unknown) {
-      setBuyResult(prev => new Map(prev).set(listingId, { success: false, error: err instanceof Error ? err.message : "Unknown error" }));
-    } finally {
-      setBuyingId(null);
-    }
-  }, []);
 
   const columns = [
     { key: "profit", label: "Profit" },
@@ -316,9 +297,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         verifying={verifying === tu.id}
                         onVerify={handleVerify}
                         onNavigateSkin={onNavigateSkin}
-                        buyingId={buyingId}
-                        buyResult={buyResult}
-                        onBuyDMarket={handleBuyDMarket}
                       />
                       <OutcomeList
                         tu={tu}

@@ -25,9 +25,6 @@ interface InputListProps {
   verifying: boolean;
   onVerify: (tuId: number) => void;
   onNavigateSkin?: (skinName: string) => void;
-  buyingId: string | null;
-  buyResult: Map<string, { success: boolean; error?: string }>;
-  onBuyDMarket: (listingId: string, priceCents: number) => void;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -73,13 +70,10 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
   );
 }
 
-function RegularInputCard({ input, verifyResult, onNavigateSkin, buyingId, buyResult, onBuyDMarket }: {
+function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
   input: TradeUpInput;
   verifyResult?: VerifyResult;
   onNavigateSkin?: (skinName: string) => void;
-  buyingId: string | null;
-  buyResult: Map<string, { success: boolean; error?: string }>;
-  onBuyDMarket: (listingId: string, priceCents: number) => void;
 }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
@@ -129,7 +123,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, buyingId, buyRe
           {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
         </span>
       </div>
-      {/* Row 3: Price + buy button */}
+      {/* Row 3: Price */}
       <div className="flex items-center justify-between">
         <span className="text-foreground/80 text-[0.72rem] font-medium">
           {formatDollars(input.price_cents)}
@@ -139,16 +133,6 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, buyingId, buyRe
             </span>
           )}
         </span>
-        {!isTheory && listingSource(input.listing_id) === "dmarket" && (
-          <button
-            className="inline-block px-[5px] py-0 text-[0.55rem] font-semibold rounded-[3px] bg-green-950 text-green-400 border border-green-800 cursor-pointer leading-relaxed transition-colors hover:bg-green-900 hover:border-green-400 disabled:opacity-50 disabled:cursor-default"
-            disabled={buyingId === input.listing_id || buyResult.has(input.listing_id)}
-            title={buyResult.get(input.listing_id)?.success ? "Purchased!" : buyResult.get(input.listing_id)?.error ?? "Buy on DMarket"}
-            onClick={(e) => { e.stopPropagation(); onBuyDMarket(input.listing_id, input.price_cents); }}
-          >
-            {buyingId === input.listing_id ? "..." : buyResult.get(input.listing_id)?.success ? "OK" : buyResult.get(input.listing_id) ? "ERR" : "BUY"}
-          </button>
-        )}
       </div>
     </div>
   );
@@ -178,7 +162,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, buyingId, buyResult, onBuyDMarket }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -233,9 +217,6 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
             input={input}
             verifyResult={verifyResult}
             onNavigateSkin={onNavigateSkin}
-            buyingId={buyingId}
-            buyResult={buyResult}
-            onBuyDMarket={onBuyDMarket}
           />
         ))}
       </div>
