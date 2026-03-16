@@ -11,6 +11,7 @@ import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { snapshotsRouter } from "./routes/snapshots.js";
 import { buyRouter } from "./routes/buy.js";
+import { calculatorRouter } from "./routes/calculator.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -70,6 +71,7 @@ app.use(dataRouter(db, knifeTypeToCases, collectionKnifePool));
 app.use(collectionsRouter(db, collectionKnifePool));
 app.use(snapshotsRouter(db));
 app.use(buyRouter(db));
+app.use(calculatorRouter(db));
 
 app.listen(PORT, () => {
   console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);

@@ -41,7 +41,7 @@ export {
 export { addAdjustedFloat, selectForFloatTarget, selectForFloatTargetFloatGreedy, selectLowestFloat } from "./engine/selection.js";
 
 // Data loading
-export { getListingsForRarity, getOutcomesForCollections } from "./engine/data-load.js";
+export { getListingsForRarity, getOutcomesForCollections, getNextRarity } from "./engine/data-load.js";
 
 // Knife evaluation
 export { getKnifeFinishesWithPrices, evaluateKnifeTradeUp } from "./engine/knife-evaluation.js";
