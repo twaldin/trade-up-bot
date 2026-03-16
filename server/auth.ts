@@ -104,6 +104,18 @@ export function setupAuth(app: Express, db: Database.Database) {
     },
   }));
 
+  // Passport 0.6+ requires session.regenerate() and session.save()
+  // Our custom SQLite store doesn't add these to the session prototype — patch them
+  app.use((req, _res, next) => {
+    if (req.session && !req.session.regenerate) {
+      req.session.regenerate = (cb: (err?: any) => void) => cb();
+    }
+    if (req.session && !req.session.save) {
+      req.session.save = (cb: (err?: any) => void) => cb();
+    }
+    next();
+  });
+
   app.use(passport.initialize());
   app.use(passport.session());
 
