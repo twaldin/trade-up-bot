@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initDb } from "./db.js";
+import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { statusRouter } from "./routes/status.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
@@ -60,10 +61,13 @@ if (fs.existsSync(envPath)) {
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const db = initDb();
+
+// Auth (Steam OpenID + sessions) — must be before route mounting
+setupAuth(app, db);
 
 // Mount route modules
 app.use(statusRouter(db));

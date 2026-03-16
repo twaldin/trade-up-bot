@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
 import { timeAgo } from "./utils/format.js";
@@ -237,11 +237,33 @@ function AppShell() {
   );
 }
 
+interface AuthUser {
+  steam_id: string;
+  display_name: string;
+  avatar_url: string;
+  tier: string;
+}
+
 export default function App() {
-  // /landing shows the marketing page; all other routes show the app
-  if (window.location.pathname === "/landing") {
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined); // undefined = loading
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setUser(data))
+      .catch(() => setUser(null));
+  }, []);
+
+  // Loading
+  if (user === undefined) {
+    return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
+  }
+
+  // Not logged in: show landing page (except /landing which is always landing)
+  if (!user) {
     return <LandingPage />;
   }
 
+  // Logged in: show app
   return <AppShell />;
 }
