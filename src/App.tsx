@@ -5,6 +5,7 @@ import { timeAgo } from "./utils/format.js";
 import { useStatus, type StatusDiffs } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
 import { TradeUpsPage } from "./pages/TradeUpsPage.js";
+import { LandingPage } from "./pages/LandingPage.js";
 import { Button } from "../shared/components/ui/button.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
@@ -154,7 +155,7 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
 }
 
 
-export default function App() {
+function AppShell() {
   const { status, diffs, newDataHint, refresh } = useStatus();
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -234,4 +235,13 @@ export default function App() {
       </Routes>
     </>
   );
+}
+
+export default function App() {
+  // /landing shows the marketing page; all other routes show the app
+  if (window.location.pathname === "/landing") {
+    return <LandingPage />;
+  }
+
+  return <AppShell />;
 }

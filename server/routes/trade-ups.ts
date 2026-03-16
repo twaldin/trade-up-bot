@@ -90,6 +90,15 @@ export function tradeUpsRouter(db: Database.Database): Router {
     }
     const params: (string | number)[] = [];
 
+    // Exclude trade-ups actively claimed by OTHER users (don't hide user's own claims)
+    const claimUserId = "anonymous"; // placeholder until Steam auth
+    where += ` AND t.id NOT IN (
+      SELECT trade_up_id FROM trade_up_claims
+      WHERE released_at IS NULL AND expires_at > datetime('now')
+      AND user_id != ?
+    )`;
+    params.push(claimUserId);
+
     if (type && !isTheory) {
       where += " AND t.type = ?";
       params.push(type);
