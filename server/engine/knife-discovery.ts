@@ -113,14 +113,14 @@ export function findProfitableKnifeTradeUps(
   const selectLowestKnifeFloat = (quotas: Map<string, number>) =>
     selectLowestFloat(byColAdj, quotas, 5);
 
-  // ── Step 1: Single-collection knife trade-ups ──
+  // Step 1: Single-collection knife trade-ups
   options.onProgress?.("Knife: single-collection combos...");
   for (const colName of knifeCollections) {
     const listings = byCollection.get(colName)!;
     if (listings.length < 5) continue;
 
-    // Sliding windows (cheapest)
-    for (let offset = 0; offset + 5 <= listings.length && offset < 30; offset++) {
+    // Sliding windows (cheapest) — cap at 15 (offsets beyond that use expensive listings)
+    for (let offset = 0; offset + 5 <= listings.length && offset < 15; offset++) {
       tryAdd(evaluateKnifeTradeUp(db, listings.slice(offset, offset + 5), knifeFinishCache));
     }
 
@@ -172,7 +172,7 @@ export function findProfitableKnifeTradeUps(
 
   options.onProgress?.(`Knife: singles done (${results.length} trade-ups)`);
 
-  // ── Step 2: Two-collection knife trade-ups ──
+  // Step 2: Two-collection knife trade-ups
   options.onProgress?.("Knife: two-collection combos...");
   for (let i = 0; i < knifeCollections.length; i++) {
     for (let j = i + 1; j < knifeCollections.length; j++) {
@@ -230,9 +230,11 @@ export function findProfitableKnifeTradeUps(
 
   options.onProgress?.(`Knife: pairs done (${results.length} trade-ups)`);
 
-  // ── Step 3: Three-collection knife trade-ups ──
+  // Step 3: Three-collection knife trade-ups (reduced scope)
+  // Data shows 0% historically profitable for 3+ collections, but keep triples
+  // with reduced limits in case the market shifts.
   options.onProgress?.("Knife: three-collection combos...");
-  const maxTripleKnife = Math.min(knifeCollections.length, 35);
+  const maxTripleKnife = Math.min(knifeCollections.length, 20); // was 35
   for (let i = 0; i < maxTripleKnife; i++) {
     for (let j = i + 1; j < maxTripleKnife; j++) {
       for (let k = j + 1; k < maxTripleKnife; k++) {
@@ -241,89 +243,13 @@ export function findProfitableKnifeTradeUps(
           .flatMap(c => byCollection.get(c) ?? [])
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length < 5) continue;
-
-        // Cheapest 5
+        // Just cheapest-5 pooled — no float targeting for triples (saves ~80% of triple eval time)
         tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
-
-        // Ratio patterns: [3,1,1], [2,2,1]
-        for (const ratios of [[3, 1, 1], [2, 2, 1]]) {
-          const colsSorted = cols
-            .map(c => ({ name: c, count: byCollection.get(c)?.length ?? 0 }))
-            .sort((a, b) => b.count - a.count);
-          const quotas = new Map<string, number>();
-          for (let r = 0; r < 3; r++) quotas.set(colsSorted[r].name, ratios[r]);
-
-          // Cheapest per quota
-          const inputs: ListingWithCollection[] = [];
-          let valid = true;
-          for (const [colName, count] of quotas) {
-            const list = byCollection.get(colName) ?? [];
-            if (list.length < count) { valid = false; break; }
-            inputs.push(...list.slice(0, count));
-          }
-          if (valid && inputs.length === 5) {
-            tryAdd(evaluateKnifeTradeUp(db, inputs, knifeFinishCache));
-          }
-
-          // Float-targeted
-          for (const target of knifeTransitionPoints.slice(0, 5)) {
-            const selected = selectForKnifeFloat(quotas, target);
-            if (selected) tryAdd(evaluateKnifeTradeUp(db, selected, knifeFinishCache));
-          }
-        }
       }
     }
   }
-
   options.onProgress?.(`Knife: triples done (${results.length} trade-ups)`);
-
-  // Step 4: Four-collection knife trade-ups
-  options.onProgress?.("Knife: four-collection combos...");
-  const maxQuadKnife = Math.min(knifeCollections.length, 20);
-  for (let i = 0; i < maxQuadKnife; i++) {
-    for (let j = i + 1; j < maxQuadKnife; j++) {
-      for (let k = j + 1; k < maxQuadKnife; k++) {
-        for (let l = k + 1; l < maxQuadKnife; l++) {
-          const cols = [knifeCollections[i], knifeCollections[j], knifeCollections[k], knifeCollections[l]];
-          const pooled = cols
-            .flatMap(c => byCollection.get(c) ?? [])
-            .sort((a, b) => a.price_cents - b.price_cents);
-          if (pooled.length < 5) continue;
-
-          tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
-
-          // Float-targeted: lowest float
-          const quotas = new Map<string, number>();
-          const colCounts = cols.map(c => ({ name: c, count: byCollection.get(c)?.length ?? 0 }))
-            .sort((a, b) => b.count - a.count);
-          quotas.set(colCounts[0].name, 2);
-          for (let r = 1; r < 4; r++) quotas.set(colCounts[r].name, 1);
-          const lowestFloat = selectLowestKnifeFloat(quotas);
-          if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
-        }
-      }
-    }
-  }
-  options.onProgress?.(`Knife: quads done (${results.length} trade-ups)`);
-
-  // Step 5: Five-collection knife trade-ups (cheapest pool only)
-  const maxQuintKnife = Math.min(knifeCollections.length, 16);
-  for (let i = 0; i < maxQuintKnife; i++) {
-    for (let j = i + 1; j < maxQuintKnife; j++) {
-      for (let k = j + 1; k < maxQuintKnife; k++) {
-        for (let l = k + 1; l < maxQuintKnife; l++) {
-          for (let m = l + 1; m < maxQuintKnife; m++) {
-            const pooled = [knifeCollections[i], knifeCollections[j], knifeCollections[k], knifeCollections[l], knifeCollections[m]]
-              .flatMap(c => byCollection.get(c) ?? [])
-              .sort((a, b) => a.price_cents - b.price_cents);
-            if (pooled.length < 5) continue;
-            tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
-          }
-        }
-      }
-    }
-  }
-  options.onProgress?.(`Knife: quints done (${results.length} trade-ups)`);
+  // Steps 4-5: Quads/quints removed — never profitable historically.
 
   // Sort by profit
   results.sort((a, b) => b.profit_cents - a.profit_cents);
@@ -397,15 +323,11 @@ export function randomKnifeExplore(
   }
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source)
-    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 'explore')
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 'explore', ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -431,11 +353,10 @@ export function randomKnifeExplore(
   const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
 
   const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents = ?, expected_value_cents = ?, profit_cents = ?, roi_percentage = ?, chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?
+    UPDATE trade_ups SET total_cost_cents = ?, expected_value_cents = ?, profit_cents = ?, roi_percentage = ?, chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?, outcomes_json = ?
     WHERE id = ?
   `);
   const deleteInputs = db.prepare("DELETE FROM trade_up_inputs WHERE trade_up_id = ?");
-  const deleteOutcomes = db.prepare("DELETE FROM trade_up_outcomes WHERE trade_up_id = ?");
 
   for (let iter = 0; iter < iterations; iter++) {
     if (iter % 100 === 0) {
@@ -641,18 +562,12 @@ export function randomKnifeExplore(
               updateTradeUp.run(
                 bestResult!.total_cost_cents, bestResult!.expected_value_cents,
                 bestResult!.profit_cents, bestResult!.roi_percentage, chanceToProfit,
-                bestCaseSwap, worstCaseSwap, existing.id
+                bestCaseSwap, worstCaseSwap, JSON.stringify(bestResult!.outcomes), existing.id
               );
               deleteInputs.run(existing.id);
-              deleteOutcomes.run(existing.id);
               for (const input of bestResult!.inputs) {
                 insertInput.run(existing.id, input.listing_id, input.skin_id, input.skin_name,
                   input.collection_name, input.price_cents, input.float_value, input.condition);
-              }
-              for (const outcome of bestResult!.outcomes) {
-                insertOutcome.run(existing.id, outcome.skin_id, outcome.skin_name, outcome.collection_name,
-                  outcome.probability, outcome.predicted_float, outcome.predicted_condition,
-                  outcome.estimated_price_cents);
               }
             });
             applyUpdate();
@@ -685,17 +600,12 @@ export function randomKnifeExplore(
         const info = insertTradeUp.run(
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          bestCaseNew, worstCaseNew
+          bestCaseNew, worstCaseNew, JSON.stringify(result.outcomes)
         );
         const tuId = info.lastInsertRowid;
         for (const input of result.inputs) {
           insertInput.run(tuId, input.listing_id, input.skin_id, input.skin_name,
             input.collection_name, input.price_cents, input.float_value, input.condition);
-        }
-        for (const outcome of result.outcomes) {
-          insertOutcome.run(tuId, outcome.skin_id, outcome.skin_name, outcome.collection_name,
-            outcome.probability, outcome.predicted_float, outcome.predicted_condition,
-            outcome.estimated_price_cents);
         }
       });
       saveTu();

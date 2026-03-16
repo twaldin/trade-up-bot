@@ -138,9 +138,7 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // Step 2b: Skinport price data (fill gaps — covers StatTrak items CSFloat doesn't have)
-  // Use min_price (listing floor) not median — Skinport medians are inflated by overpriced listings
-  // and Skinport prices include their 12% seller fee baked into ask prices
+  // Step 2b: Skinport price data (fill gaps — covers items CSFloat ref doesn't have)
   let skinportPriceCount = 0;
   const skinportRows = db.prepare(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
@@ -154,6 +152,21 @@ export function buildPriceCache(db: Database.Database, force = false) {
       priceCache.set(key, price);
       priceSources.set(key, `skinport (${row.volume} vol)`);
       skinportPriceCount++;
+    }
+  }
+
+  // Step 2c: Steam price data (fill remaining gaps — broadest coverage, 44+ volume typical)
+  const steamRows = db.prepare(`
+    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
+    FROM price_data WHERE source = 'steam' AND volume >= 5
+  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
+  for (const row of steamRows) {
+    const key = `${row.skin_name}:${row.condition}`;
+    if (priceCache.has(key)) continue;
+    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
+    if (price > 0) {
+      priceCache.set(key, price);
+      priceSources.set(key, `steam (${row.volume} vol)`);
     }
   }
 
@@ -259,14 +272,17 @@ function buildSourceFloorCaches(db: Database.Database) {
   for (const source of ["dmarket", "skinport"] as const) {
     const cache = source === "dmarket" ? dmarketFloorCache : skinportFloorCache;
     for (const cond of condBounds) {
+      // Require 2+ listings for floor price — single listings are unreliable
+      // (collector prices, mispriced items, etc.)
       const rows = db.prepare(`
-        SELECT s.name, MIN(l.price_cents) as lowest_price
+        SELECT s.name, MIN(l.price_cents) as lowest_price, COUNT(*) as cnt
         FROM listings l JOIN skins s ON l.skin_id = s.id
         WHERE l.float_value >= ? AND l.float_value < ?
           AND l.source = ?
           AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
         GROUP BY s.name
-      `).all(cond.min, cond.max, source) as { name: string; lowest_price: number }[];
+        HAVING cnt >= 2
+      `).all(cond.min, cond.max, source) as { name: string; lowest_price: number; cnt: number }[];
 
       for (const row of rows) {
         if (row.lowest_price <= 0) continue;
@@ -308,14 +324,14 @@ export function lookupOutputPrice(
 ): OutputPriceResult {
   const condition = floatToCondition(predictedFloat);
 
-  // For knife/glove skins, try float-precise KNN first
+  // Float-precise KNN for knife/glove skins only (they have rich sale observation data).
+  // Non-knife skins lack observations — KNN returns null, falling through to condition-level.
   if (skinName.startsWith("★")) {
     const knn = knnOutputPriceAtFloat(db, skinName, predictedFloat);
     if (knn && knn.confidence >= 0.5) {
       // Find the best marketplace net proceeds for the KNN price
+      // DMarket excluded from output pricing — unreliable floor prices
       const csfNet = effectiveSellProceeds(knn.priceCents, "csfloat");
-      const dmGross = dmarketFloorCache.get(`${skinName}:${condition}`) ?? 0;
-      const dmNet = dmGross > 0 ? effectiveSellProceeds(dmGross, "dmarket") : 0;
       const spGross = skinportFloorCache.get(`${skinName}:${condition}`) ?? 0;
       const spNet = spGross > 0 ? effectiveSellProceeds(spGross, "skinport") : 0;
 
@@ -325,9 +341,6 @@ export function lookupOutputPrice(
         grossPrice: knn.priceCents,
         feePct: MARKETPLACE_FEES.csfloat.sellerFee,
       };
-      if (dmNet > best.priceCents) {
-        best = { priceCents: dmNet, marketplace: "dmarket", grossPrice: dmGross, feePct: MARKETPLACE_FEES.dmarket.sellerFee };
-      }
       if (spNet > best.priceCents) {
         best = { priceCents: spNet, marketplace: "skinport", grossPrice: spGross, feePct: MARKETPLACE_FEES.skinport.sellerFee };
       }
@@ -350,15 +363,21 @@ export function lookupOutputPrice(
   const csfloatGross = lookupPrice(db, skinName, predictedFloat);
   const csfloatNet = csfloatGross > 0 ? effectiveSellProceeds(csfloatGross, "csfloat") : 0;
 
-  // DMarket: listing floor only
-  const dmGross = dmarketFloorCache.get(`${skinName}:${condition}`) ?? 0;
+  // DMarket: use listing floor for NON-knife skins only.
+  // Knife/glove skins excluded (thin liquidity, collector outliers).
+  // Commodity gun skins have many DMarket listings — floor is reliable.
+  const isKnife = skinName.startsWith("★");
+  const dmGross = isKnife ? 0 : (dmarketFloorCache.get(`${skinName}:${condition}`) ?? 0);
   const dmNet = dmGross > 0 ? effectiveSellProceeds(dmGross, "dmarket") : 0;
 
-  // Skinport: listing floor only
-  const spGross = skinportFloorCache.get(`${skinName}:${condition}`) ?? 0;
+  // Skinport: listing floor only (skip for StatTrak — unreliable thin-volume data)
+  const isStatTrak = skinName.startsWith("StatTrak");
+  const spGross = isStatTrak ? 0 : (skinportFloorCache.get(`${skinName}:${condition}`) ?? 0);
   const spNet = spGross > 0 ? effectiveSellProceeds(spGross, "skinport") : 0;
 
-  // Pick highest net proceeds
+  // CSFloat price cache (sales + ref) is the primary source — highest volume, most reliable.
+  // DMarket/Skinport floors only used to FILL GAPS when CSFloat has no data for this skin+condition.
+  // This prevents low-volume Skinport outliers ($471, 5 vol) from overriding CSFloat sales ($210, 40 vol).
   let best: OutputPriceResult = {
     priceCents: csfloatNet,
     marketplace: "csfloat",
@@ -366,11 +385,14 @@ export function lookupOutputPrice(
     feePct: MARKETPLACE_FEES.csfloat.sellerFee,
   };
 
-  if (dmNet > best.priceCents) {
-    best = { priceCents: dmNet, marketplace: "dmarket", grossPrice: dmGross, feePct: MARKETPLACE_FEES.dmarket.sellerFee };
-  }
-  if (spNet > best.priceCents) {
-    best = { priceCents: spNet, marketplace: "skinport", grossPrice: spGross, feePct: MARKETPLACE_FEES.skinport.sellerFee };
+  // Only use DMarket/Skinport when CSFloat has NO price (gap-filling)
+  if (best.priceCents === 0) {
+    if (dmNet > 0) {
+      best = { priceCents: dmNet, marketplace: "dmarket", grossPrice: dmGross, feePct: MARKETPLACE_FEES.dmarket.sellerFee };
+    }
+    if (spNet > best.priceCents) {
+      best = { priceCents: spNet, marketplace: "skinport", grossPrice: spGross, feePct: MARKETPLACE_FEES.skinport.sellerFee };
+    }
   }
 
   return best;
@@ -402,7 +424,15 @@ export function getConditionPrices(
   }[];
 
   if (rows.length === 0) {
-    // Try Skinport price data (covers StatTrak items CSFloat doesn't have)
+    // StatTrak: don't use Skinport-only pricing for outputs — too unreliable
+    // (Skinport has thin volume and inflated prices for ST items)
+    const isStatTrak = skinName.startsWith("StatTrak™");
+    if (isStatTrak) {
+      conditionPricesCache.set(skinName, []);
+      return [];
+    }
+
+    // Try Skinport price data (covers non-ST items CSFloat doesn't have)
     // Use min_price as avg — Skinport avg/median are inflated by overpriced listings
     rows = db
       .prepare(
@@ -417,10 +447,6 @@ export function getConditionPrices(
       conditionPricesCache.set(skinName, result);
       return result;
     }
-
-    // StatTrak: no fake multiplier — return empty if no real ST data
-    const cleanName = skinName.replace(/^StatTrak™\s+/, "");
-    if (cleanName !== skinName) { conditionPricesCache.set(skinName, []); return []; }
     // Doppler phase fallback: "★ Karambit | Doppler Phase 1" → "★ Karambit | Doppler"
     // Covers: "Phase N", "Ruby", "Sapphire", "Black Pearl", "Emerald"
     const phaseMatch = skinName.match(/^(.+\| (?:Doppler|Gamma Doppler))\s+(?:Phase \d|Ruby|Sapphire|Black Pearl|Emerald)$/);

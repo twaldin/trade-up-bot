@@ -1,17 +1,17 @@
 /**
- * Classified→Covert theory engine — optimistic screener.
+ * Generic rarity-tier theory engine — optimistic screener.
  *
- * Mirrors theory-pessimistic.ts pattern but structurally simpler:
- * - 10 inputs (not 5), Classified rarity
- * - Outputs are Covert gun skins (no knife/glove enumeration, no Doppler phases)
- * - Input pricing uses LISTING FLOOR per condition (not KNN) — matches what
- *   discovery pays. KNN undervalues classified inputs because bottom-N selection
- *   picks historical bargains that are ~10% cheaper than current listing floor.
- *   For $3-50 classified skins, float premiums within a condition are negligible.
- * - Output pricing uses condition-level lookupPrice() (same as discovery)
+ * Originally Classified→Covert only, now parameterized by RarityTierConfig
+ * to support any rarity tier (Restricted→Classified, Mil-Spec→Restricted, etc.).
+ *
+ * - N inputs (configurable via tier.inputCount), parameterized input rarity
+ * - Outputs are gun skins of the next rarity tier
+ * - excludeKnifeOutputs filters ★ skins (only needed for Classified→Covert)
+ * - Input pricing uses KNN chain → listing floor fallback
+ * - Output pricing uses condition-level lookupPrice()
  * - Optimistic: no seller fee on outputs, discovery validates with 2% fee
  *
- * Flow: theory gen → buildClassifiedWantedList() → daemon fetches → discovery validates
+ * Flow: theory gen → buildWantedListForTier() → daemon fetches → discovery validates
  */
 
 import Database from "better-sqlite3";
@@ -23,6 +23,8 @@ import { lookupPrice } from "./pricing.js";
 import { effectiveBuyCostRaw } from "./fees.js";
 import { knnPriceAtFloat, getLearnedPrice, getInterpolatedPrice } from "./theory-validation.js";
 import type { WantedListing, NearMissInfo } from "./theory-pessimistic.js";
+import type { RarityTierConfig } from "./rarity-tiers.js";
+
 
 export interface ClassifiedTheoryResult {
   generated: number;
@@ -32,16 +34,7 @@ export interface ClassifiedTheoryResult {
   theories: ClassifiedTheory[];
 }
 
-interface ClassifiedSkin {
-  id: string;
-  name: string;
-  collection: string;
-  collectionId: string;
-  minFloat: number;
-  maxFloat: number;
-}
-
-interface CovertOutcome {
+interface TierSkin {
   id: string;
   name: string;
   collection: string;
@@ -74,7 +67,7 @@ const _listingsByColCond = new Map<string, ListingEntry[]>();
 // Key: "skin:condition" → cheapest listing price
 const _skinFloorCache = new Map<string, number>();
 
-function buildListingPriceCache(db: Database.Database): void {
+function buildListingPriceCache(db: Database.Database, rarity: string = "Classified"): void {
   _listingsByColCond.clear();
   _skinFloorCache.clear();
 
@@ -85,9 +78,9 @@ function buildListingPriceCache(db: Database.Database): void {
     JOIN skins s ON l.skin_id = s.id
     JOIN skin_collections sc ON s.id = sc.skin_id
     JOIN collections c ON sc.collection_id = c.id
-    WHERE s.rarity = 'Classified' AND l.stattrak = 0 AND l.listing_type = 'buy_now'
+    WHERE s.rarity = ? AND l.stattrak = 0 AND l.listing_type = 'buy_now'
     ORDER BY c.name, l.price_cents ASC
-  `).all() as { skin_name: string; collection_name: string; price_cents: number; float_value: number; min_float: number; max_float: number; source: string }[];
+  `).all(rarity) as { skin_name: string; collection_name: string; price_cents: number; float_value: number; min_float: number; max_float: number; source: string }[];
 
   for (const r of rows) {
     const condition = floatToCondition(r.float_value);
@@ -141,17 +134,17 @@ function cheapestNListings(db: Database.Database, collection: string, condition:
   return { totalCost, listings: selected };
 }
 
-function loadClassifiedSkins(db: Database.Database): Map<string, ClassifiedSkin[]> {
+function loadSkinsForRarity(db: Database.Database, rarity: string = "Classified"): Map<string, TierSkin[]> {
   const rows = db.prepare(`
     SELECT s.id, s.name, s.min_float, s.max_float,
       c.name as collection_name, c.id as collection_id
     FROM skins s
     JOIN skin_collections sc ON s.id = sc.skin_id
     JOIN collections c ON sc.collection_id = c.id
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
-  `).all() as { id: string; name: string; min_float: number; max_float: number; collection_name: string; collection_id: string }[];
+    WHERE s.rarity = ? AND s.stattrak = 0
+  `).all(rarity) as { id: string; name: string; min_float: number; max_float: number; collection_name: string; collection_id: string }[];
 
-  const byCollection = new Map<string, ClassifiedSkin[]>();
+  const byCollection = new Map<string, TierSkin[]>();
   for (const r of rows) {
     if (EXCLUDED_COLLECTIONS.has(r.collection_id)) continue;
     const list = byCollection.get(r.collection_name) ?? [];
@@ -168,18 +161,18 @@ function loadClassifiedSkins(db: Database.Database): Map<string, ClassifiedSkin[
   return byCollection;
 }
 
-function loadCovertOutcomes(db: Database.Database): Map<string, CovertOutcome[]> {
+function loadOutputSkins(db: Database.Database, outputRarity: string = "Covert", excludeKnife: boolean = true): Map<string, TierSkin[]> {
+  const knifeFilter = excludeKnife ? " AND s.name NOT LIKE '★%'" : "";
   const rows = db.prepare(`
     SELECT s.id, s.name, s.min_float, s.max_float,
       c.name as collection_name, c.id as collection_id
     FROM skins s
     JOIN skin_collections sc ON s.id = sc.skin_id
     JOIN collections c ON sc.collection_id = c.id
-    WHERE s.rarity = 'Covert' AND s.stattrak = 0
-      AND s.name NOT LIKE '★%'
-  `).all() as { id: string; name: string; min_float: number; max_float: number; collection_name: string; collection_id: string }[];
+    WHERE s.rarity = ? AND s.stattrak = 0${knifeFilter}
+  `).all(outputRarity) as { id: string; name: string; min_float: number; max_float: number; collection_name: string; collection_id: string }[];
 
-  const byCollection = new Map<string, CovertOutcome[]>();
+  const byCollection = new Map<string, TierSkin[]>();
   for (const r of rows) {
     if (EXCLUDED_COLLECTIONS.has(r.collection_id)) continue;
     const list = byCollection.get(r.collection_name) ?? [];
@@ -205,12 +198,13 @@ interface EvalOutcome {
   estimatedPriceCents: number;
 }
 
-function evalCovertPool(
+function evalOutputPool(
   db: Database.Database,
   collections: string[],
   inputCounts: number[],
+  totalInputCount: number,
   inputFloats: { float_value: number; min_float: number; max_float: number }[],
-  outcomesByCol: Map<string, CovertOutcome[]>
+  outcomesByCol: Map<string, TierSkin[]>
 ): { ev: number; dataGaps: string[]; outcomes: EvalOutcome[] } {
   let totalEv = 0;
   const dataGaps: string[] = [];
@@ -226,7 +220,7 @@ function evalCovertPool(
 
   for (let ci = 0; ci < collections.length; ci++) {
     const colName = collections[ci];
-    const colWeight = inputCounts[ci] / 10;
+    const colWeight = inputCounts[ci] / totalInputCount;
     const outcomes = outcomesByCol.get(colName) ?? [];
     if (outcomes.length === 0) continue;
 
@@ -254,16 +248,20 @@ function evalCovertPool(
   return { ev: totalEv * OUTPUT_DISCOUNT, dataGaps: [...new Set(dataGaps)], outcomes: evalOutcomes };
 }
 
-export function classifiedComboKey(collections: string[], split: number[]): string {
+export function genericComboKey(prefix: string, collections: string[], split: number[]): string {
   const parts: string[] = [];
   for (let i = 0; i < collections.length; i++) {
     parts.push(`${collections[i]}:${split[i]}`);
   }
-  return "classified:" + parts.sort().join("|");
+  return prefix + parts.sort().join("|");
 }
 
-export function generateClassifiedTheories(
+/**
+ * Generate theories for any rarity tier.
+ */
+export function generateTheoriesForTier(
   db: Database.Database,
+  tier: RarityTierConfig,
   options: {
     onProgress?: (msg: string) => void;
     maxTheories?: number;
@@ -273,44 +271,47 @@ export function generateClassifiedTheories(
 ): ClassifiedTheory[] {
   const maxTheories = options.maxTheories ?? 3000;
   const cooldownMap = options.cooldownMap ?? new Map();
+  const label = `${tier.inputRarity}→${tier.outputRarity} theory`;
 
   // Clear caches and build Nth-cheapest listing price cache
   _lpCache.clear();
   _listingsByColCond.clear();
   _skinFloorCache.clear();
-  buildListingPriceCache(db);
-  options.onProgress?.(`Classified theory: ${_listingsByColCond.size} collection+condition pools, ${_skinFloorCache.size} skin floors`);
+  buildListingPriceCache(db, tier.inputRarity);
+  options.onProgress?.(`${label}: ${_listingsByColCond.size} collection+condition pools, ${_skinFloorCache.size} skin floors`);
 
-  const classifiedByCol = loadClassifiedSkins(db);
-  const covertByCol = loadCovertOutcomes(db);
+  const inputsByCol = loadSkinsForRarity(db, tier.inputRarity);
+  const outputsByCol = loadOutputSkins(db, tier.outputRarity, tier.excludeKnifeOutputs);
 
-  // Find collections with both Classified inputs AND Covert outputs
+  // Find collections with both input AND output skins
   const eligibleCollections: string[] = [];
-  for (const [colName] of classifiedByCol) {
-    if (covertByCol.has(colName)) {
+  for (const [colName] of inputsByCol) {
+    if (outputsByCol.has(colName)) {
       eligibleCollections.push(colName);
     }
   }
 
   if (eligibleCollections.length === 0) {
-    options.onProgress?.("Classified theory: no eligible collections");
+    options.onProgress?.(`${label}: no eligible collections`);
     return [];
   }
 
-  options.onProgress?.(`Classified theory: ${eligibleCollections.length} eligible collections`);
+  options.onProgress?.(`${label}: ${eligibleCollections.length} eligible collections`);
 
   const theories: ClassifiedTheory[] = [];
 
   // Conditions to scan — each produces different output float/condition/value
   const CONDITIONS_TO_SCAN = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
 
-  // ── Single-collection theories ──
+  const N = tier.inputCount;
+
+  // Single-collection theories
   for (const colName of eligibleCollections) {
-    const comboKey = classifiedComboKey([colName], [10]);
+    const comboKey = genericComboKey(tier.comboKeyPrefix, [colName], [N]);
     if (cooldownMap.has(comboKey)) continue;
 
     for (const condition of CONDITIONS_TO_SCAN) {
-      const result = cheapestNListings(db, colName, condition, 10);
+      const result = cheapestNListings(db, colName, condition, N);
       if (!result) continue;
 
       const { totalCost, listings } = result;
@@ -322,8 +323,8 @@ export function generateClassifiedTheories(
         max_float: l.maxFloat,
       }));
 
-      const { ev, dataGaps, outcomes } = evalCovertPool(
-        db, [colName], [10], inputFloats, covertByCol
+      const { ev, dataGaps, outcomes } = evalOutputPool(
+        db, [colName], [N], N, inputFloats, outputsByCol
       );
       if (ev <= 0) continue;
 
@@ -357,9 +358,9 @@ export function generateClassifiedTheories(
     }
   }
 
-  options.onProgress?.(`Classified theory: singles done (${theories.length} theories)`);
+  options.onProgress?.(`${label}: singles done (${theories.length} theories)`);
 
-  // ── Multi-collection helper: evaluate a combo at a given condition ──
+  // Multi-collection helper: evaluate a combo at a given condition
   function evaluateCombo(
     collections: string[], split: number[], condition: string
   ): ClassifiedTheory | null {
@@ -377,8 +378,8 @@ export function generateClassifiedTheories(
       float_value: l.float, min_float: l.minFloat, max_float: l.maxFloat,
     }));
 
-    const { ev, dataGaps, outcomes } = evalCovertPool(
-      db, collections, split, inputFloats, covertByCol
+    const { ev, dataGaps, outcomes } = evalOutputPool(
+      db, collections, split, N, inputFloats, outputsByCol
     );
     if (ev <= 0) return null;
 
@@ -386,7 +387,7 @@ export function generateClassifiedTheories(
     const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;
     if (roi < (options.minRoiThreshold ?? -100)) return null;
 
-    const comboKey = classifiedComboKey(collections, split);
+    const comboKey = genericComboKey(tier.comboKeyPrefix, collections, split);
     if (cooldownMap.has(comboKey)) return null;
 
     const avgFloat = allInputs.reduce((s, l) => s + l.float, 0) / allInputs.length;
@@ -418,15 +419,15 @@ export function generateClassifiedTheories(
     };
   }
 
-  // ── Two-collection theories ──
+  // Two-collection theories
   const maxPairs = Math.min(eligibleCollections.length, 30);
   for (let i = 0; i < maxPairs; i++) {
     for (let j = i + 1; j < maxPairs; j++) {
       const colA = eligibleCollections[i];
       const colB = eligibleCollections[j];
 
-      for (const splitA of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
-        const splitB = 10 - splitA;
+      for (let splitA = 1; splitA < N; splitA++) {
+        const splitB = N - splitA;
         for (const condition of CONDITIONS_TO_SCAN) {
           const theory = evaluateCombo([colA, colB], [splitA, splitB], condition);
           if (theory) theories.push(theory);
@@ -435,12 +436,14 @@ export function generateClassifiedTheories(
     }
   }
 
-  options.onProgress?.(`Classified theory: pairs done (${theories.length} theories)`);
+  options.onProgress?.(`${label}: pairs done (${theories.length} theories)`);
 
-  // ── Three-collection theories ──
+  // Three-collection theories
   const maxTriples = Math.min(eligibleCollections.length, 25);
   let tripleCount = 0;
-  const splitPatterns3 = [[8, 1, 1], [5, 3, 2], [4, 4, 2], [4, 3, 3]];
+  const splitPatterns3 = N === 10
+    ? [[8, 1, 1], [5, 3, 2], [4, 4, 2], [4, 3, 3]]
+    : [[N - 2, 1, 1], [Math.ceil(N / 2), Math.floor(N / 4), N - Math.ceil(N / 2) - Math.floor(N / 4)]];
   for (let i = 0; i < maxTriples; i++) {
     for (let j = i + 1; j < maxTriples; j++) {
       for (let k = j + 1; k < maxTriples; k++) {
@@ -468,7 +471,7 @@ export function generateClassifiedTheories(
     }
   }
 
-  options.onProgress?.(`Classified theory: triples done (+${tripleCount}, ${theories.length} total theories)`);
+  options.onProgress?.(`${label}: triples done (+${tripleCount}, ${theories.length} total theories)`);
 
   // Sort by profit descending, deduplicate by comboKey (keep best per combo)
   theories.sort((a, b) => b.profitCents - a.profitCents);
@@ -482,16 +485,16 @@ export function generateClassifiedTheories(
   const deduped = [...bestPerCombo.values()].sort((a, b) => b.profitCents - a.profitCents).slice(0, maxTheories);
   const profitable = deduped.filter(t => t.profitCents > 0).length;
 
-  options.onProgress?.(`Classified theory: ${deduped.length} theories (${profitable} profitable)`);
+  options.onProgress?.(`${label}: ${deduped.length} theories (${profitable} profitable)`);
 
   return deduped;
 }
 
-export function buildClassifiedWantedList(
+export function buildWantedListForTier(
   theories: ClassifiedTheory[],
   nearMisses?: NearMissInfo[]
 ): WantedListing[] {
-  // Aggregate: which classified skins are needed, at what floats, with what priority?
+  // Aggregate: which skins are needed, at what floats, with what priority?
   const skinMap = new Map<string, { collection: string; maxFloat: number; refPrice: number; priority: number }>();
 
   for (const theory of theories) {
@@ -543,27 +546,22 @@ export function buildClassifiedWantedList(
   return wantedList;
 }
 
-export function saveClassifiedTheoryTradeUps(db: Database.Database, theories: ClassifiedTheory[]) {
+export function saveTheoryTradeUpsForTier(db: Database.Database, theories: ClassifiedTheory[], tradeUpType: string = "classified_covert") {
   const lookupSkinId = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1");
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, combo_key)
-    VALUES (?, ?, ?, ?, ?, 'classified_covert', ?, ?, 1, ?)
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, combo_key, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   const saveAll = db.transaction(() => {
-    // Clear old classified theoretical trade-ups only
-    db.exec("DELETE FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'classified_covert')");
-    db.exec("DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'classified_covert')");
-    db.exec("DELETE FROM trade_ups WHERE is_theoretical = 1 AND type = 'classified_covert'");
+    // Clear old theoretical trade-ups of this type only
+    db.prepare("DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = ?)").run(tradeUpType);
+    db.prepare("DELETE FROM trade_ups WHERE is_theoretical = 1 AND type = ?").run(tradeUpType);
 
     for (const theory of theories) {
       const chanceToProfit = theory.outcomes.reduce((sum, o) =>
@@ -575,9 +573,26 @@ export function saveClassifiedTheoryTradeUps(db: Database.Database, theories: Cl
       const worstCase = posOutcomes.length > 0
         ? Math.min(...posOutcomes.map(o => o.estimatedPriceCents)) - theory.totalCostCents : -theory.totalCostCents;
 
+      // Build outcomes JSON — normalize theory outcome field names to TradeUpOutcome
+      const outcomesForJson = theory.outcomes
+        .filter(o => o.estimatedPriceCents > 0 || o.probability > 0)
+        .map(o => {
+          const skinRow = lookupSkinId.get(o.skinName) as { id: string } | undefined;
+          return {
+            skin_id: skinRow?.id ?? "",
+            skin_name: o.skinName,
+            collection_name: o.collection,
+            probability: o.probability,
+            predicted_float: o.predictedFloat,
+            predicted_condition: o.predictedCondition,
+            estimated_price_cents: o.estimatedPriceCents,
+          };
+        });
+
       const result = insertTradeUp.run(
         theory.totalCostCents, theory.evCents, theory.profitCents,
-        theory.roiPct, chanceToProfit, bestCase, worstCase, theory.comboKey
+        theory.roiPct, chanceToProfit, tradeUpType, bestCase, worstCase, theory.comboKey,
+        JSON.stringify(outcomesForJson)
       );
       const tradeUpId = result.lastInsertRowid;
 
@@ -588,18 +603,9 @@ export function saveClassifiedTheoryTradeUps(db: Database.Database, theories: Cl
           input.collection, input.priceCents, input.floatValue, input.condition
         );
       }
-
-      for (const outcome of theory.outcomes) {
-        if (outcome.estimatedPriceCents <= 0 && outcome.probability <= 0) continue;
-        const skinRow = lookupSkinId.get(outcome.skinName) as { id: string } | undefined;
-        insertOutcome.run(
-          tradeUpId, skinRow?.id ?? "", outcome.skinName, outcome.collection,
-          outcome.probability, outcome.predictedFloat,
-          outcome.predictedCondition, outcome.estimatedPriceCents
-        );
-      }
     }
   });
 
   saveAll();
 }
+

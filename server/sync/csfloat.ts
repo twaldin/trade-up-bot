@@ -448,7 +448,7 @@ export async function syncLowFloatClassifiedListings(
 }
 
 /**
- * Smart per-skin classified listing fetch — zero waste.
+ * Smart per-skin listing fetch for any rarity — zero waste.
  *
  * Prioritization:
  * 1. High-value collection skins (always fetch regardless of count)
@@ -459,8 +459,9 @@ export async function syncLowFloatClassifiedListings(
  * Skips skins fetched <6h ago (tracked via sync_meta).
  * Uses per-skin name fetches (syncListingsForSkin) instead of bulk sweeps.
  */
-export async function syncSmartClassifiedListings(
+export async function syncSmartListingsForRarity(
   db: Database.Database,
+  rarity: string,
   options: {
     apiKey: string;
     maxCalls?: number;
@@ -469,13 +470,14 @@ export async function syncSmartClassifiedListings(
 ): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; skipped: number }> {
   const maxCalls = options.maxCalls ?? 140;
 
-  // Load last-fetched timestamps
-  const rawFetchTimes = getSyncMeta(db, "skin_fetch_times");
+  // Load last-fetched timestamps (keyed per rarity to avoid cross-contamination)
+  const metaKey = rarity === "Classified" ? "skin_fetch_times" : `skin_fetch_times_${rarity.toLowerCase().replace(/[\s-]/g, "_")}`;
+  const rawFetchTimes = getSyncMeta(db, metaKey);
   const fetchTimes: Record<string, number> = rawFetchTimes ? JSON.parse(rawFetchTimes) : {};
   const now = Date.now();
   const SIX_HOURS = 6 * 60 * 60 * 1000;
 
-  // Get all Classified skins with coverage stats
+  // Get all skins of this rarity with coverage stats
   const skins = db.prepare(`
     SELECT s.id, s.name, s.min_float, s.max_float,
       COUNT(l.id) as listing_count,
@@ -483,9 +485,9 @@ export async function syncSmartClassifiedListings(
       COALESCE(MIN(julianday('now') - julianday(l.created_at)), 999) as newest_age_days
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    WHERE s.rarity = ? AND s.stattrak = 0
     GROUP BY s.id
-  `).all() as { id: string; name: string; min_float: number; max_float: number; listing_count: number; fn_count: number; newest_age_days: number }[];
+  `).all(rarity) as { id: string; name: string; min_float: number; max_float: number; listing_count: number; fn_count: number; newest_age_days: number }[];
 
   // Get high-value collection skin IDs
   const highValueSkinIds = new Set<string>();
@@ -494,9 +496,9 @@ export async function syncSmartClassifiedListings(
     FROM skin_collections sc
     JOIN collections c ON sc.collection_id = c.id
     JOIN skins s ON sc.skin_id = s.id
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    WHERE s.rarity = ? AND s.stattrak = 0
       AND c.name IN (${HIGH_VALUE_COLLECTIONS.map(() => "?").join(",")})
-  `).all(...HIGH_VALUE_COLLECTIONS) as { skin_id: string }[];
+  `).all(rarity, ...HIGH_VALUE_COLLECTIONS) as { skin_id: string }[];
   for (const r of hvRows) highValueSkinIds.add(r.skin_id);
 
   // Build prioritized list
@@ -558,7 +560,7 @@ export async function syncSmartClassifiedListings(
   // Sort by priority descending
   candidates.sort((a, b) => b.priority - a.priority);
 
-  console.log(`  Smart fetch: ${candidates.length} candidates, ${skipped} skipped (recent/well-covered), ${highValueSkinIds.size} high-value`);
+  console.log(`  Smart fetch (${rarity}): ${candidates.length} candidates, ${skipped} skipped (recent/well-covered), ${highValueSkinIds.size} high-value`);
   if (candidates.length > 0) {
     console.log(`  Top 5: ${candidates.slice(0, 5).map(s => `${s.name} (${s.listing_count} listings, p=${s.priority})`).join(", ")}`);
   }
@@ -608,7 +610,7 @@ export async function syncSmartClassifiedListings(
       fetchTimes[skin.id] = now;
 
       if (skinsFetched % 10 === 0) {
-        const msg = `Smart fetch: ${skinsFetched} skins, ${totalApiCalls}/${maxCalls} calls, ${totalInserted} listings`;
+        const msg = `Smart fetch (${rarity}): ${skinsFetched} skins, ${totalApiCalls}/${maxCalls} calls, ${totalInserted} listings`;
         options.onProgress?.(msg);
         console.log(`  ${msg}`);
       }
@@ -622,10 +624,10 @@ export async function syncSmartClassifiedListings(
 
   // Persist fetch times
   try {
-    setSyncMeta(db, "skin_fetch_times", JSON.stringify(fetchTimes));
+    setSyncMeta(db, metaKey, JSON.stringify(fetchTimes));
   } catch { /* metadata persistence is best-effort */ }
 
-  const msg = `Smart fetch done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (${skipped} skipped)`;
+  const msg = `Smart fetch (${rarity}) done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (${skipped} skipped)`;
   options.onProgress?.(msg);
   console.log(`  ${msg}`);
 
@@ -773,27 +775,24 @@ export async function syncCovertOutputListings(
     onProgress?: (msg: string) => void;
   }
 ): Promise<{ apiCalls: number; inserted: number }> {
-  // Priority 1: Output skins from profitable trade-ups
+  // Priority 1: Output skins from profitable trade-ups (extract from outcomes_json)
   const profitableOutputs = db.prepare(`
-    SELECT o.skin_name, COUNT(*) as appearances
-    FROM trade_up_outcomes o
-    JOIN trade_ups t ON o.trade_up_id = t.id
-    WHERE t.profit_cents > 0
-    GROUP BY o.skin_name
+    SELECT json_extract(je.value, '$.skin_name') as skin_name, COUNT(*) as appearances
+    FROM trade_ups t, json_each(t.outcomes_json) je
+    WHERE t.profit_cents > 0 AND t.outcomes_json IS NOT NULL
+    GROUP BY json_extract(je.value, '$.skin_name')
     ORDER BY appearances DESC
     LIMIT 15
   `).all() as { skin_name: string; appearances: number }[];
 
-  // Priority 2: Knife/glove skins with no recent listings (coverage gaps)
+  // Priority 2: Knife/glove skins with fewest listings (coverage gaps — worst first)
   const uncoveredOutputs = db.prepare(`
-    SELECT s.name as skin_name, 0 as appearances
+    SELECT s.name as skin_name, COUNT(l.id) as appearances
     FROM skins s
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
     WHERE s.name LIKE '★%' AND s.stattrak = 0
-    AND s.id NOT IN (
-      SELECT DISTINCT l.skin_id FROM listings l
-      WHERE l.stattrak = 0 AND julianday('now') - julianday(l.created_at) < 7
-    )
-    ORDER BY RANDOM()
+    GROUP BY s.id
+    ORDER BY appearances ASC
     LIMIT 50
   `).all() as { skin_name: string; appearances: number }[];
 

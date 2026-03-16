@@ -69,10 +69,8 @@ export function findStaircaseTradeUps(
   const synthetics: SyntheticCovert[] = [];
 
   for (const s1 of stage1Candidates) {
-    const outcomes = db.prepare(`
-      SELECT skin_name, collection_name, probability, predicted_float, estimated_price_cents
-      FROM trade_up_outcomes WHERE trade_up_id = ?
-    `).all(s1.id) as { skin_name: string; collection_name: string; probability: number; predicted_float: number; estimated_price_cents: number }[];
+    const tuRow = db.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(s1.id) as { outcomes_json: string | null } | undefined;
+    const outcomes = (tuRow?.outcomes_json ? JSON.parse(tuRow.outcomes_json) : []) as { skin_name: string; collection_name: string; probability: number; predicted_float: number; estimated_price_cents: number }[];
 
     if (outcomes.length === 0) continue;
 

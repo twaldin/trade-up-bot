@@ -83,7 +83,7 @@ async function probeEndpoint(url: string, apiKey: string): Promise<{ available: 
 
     if (res.status === 429) return { available: false, rateLimit };
     return { available: res.ok || res.status === 404, rateLimit };
-  } catch {
+  } catch { /* network error — non-critical */
     return { available: false, rateLimit: { limit: null, remaining: null, resetAt: null } };
   }
 }

@@ -938,7 +938,7 @@ export function generatePessimisticKnifeTheories(
     };
   };
 
-  // ── Singles: each collection × dense scan ──
+  // Singles: each collection x dense scan
   options.onProgress?.("Theory: scanning singles...");
   let evaluated = 0;
   let profitable = 0;
@@ -961,7 +961,7 @@ export function generatePessimisticKnifeTheories(
   }
   options.onProgress?.(`Theory: ${evaluated} singles scanned, ${profitable} profitable, ${bestByCombo.size} kept`);
 
-  // ── Pairs: all C(n,2) × 4 splits × medium scan ──
+  // Pairs: all C(n,2) x 4 splits x medium scan
   options.onProgress?.("Theory: scanning pairs...");
   const pairsBefore = bestByCombo.size;
 
@@ -994,7 +994,7 @@ export function generatePessimisticKnifeTheories(
   const pairTheories = bestByCombo.size - pairsBefore;
   options.onProgress?.(`Theory: ${pairTheories} pair combos, ${bestByCombo.size} total kept`);
 
-  // ── Triples: top N collections × split patterns × coarse scan ──
+  // Triples: top N collections x split patterns x coarse scan
   options.onProgress?.("Theory: scanning triples...");
   const triplesBefore = bestByCombo.size;
   const maxTripleCol = Math.min(knifeCollections.length, 20);
@@ -1042,7 +1042,7 @@ export function generatePessimisticKnifeTheories(
   const tripleTheories = bestByCombo.size - triplesBefore;
   options.onProgress?.(`Theory: ${tripleTheories} triple combos, ${bestByCombo.size} total kept`);
 
-  // ── Deep scan: boundary-focused refinement with real listing data ──
+  // Deep scan: boundary-focused refinement with real listing data
   // Enumerates combos INDEPENDENTLY of broad scan (which may be fully cooldown-blocked).
   // Sources: (1) near-miss combos from cooldownMap, (2) all singles, (3) broad scan survivors.
   // Uses real listing prices and boundary-focused scanning. Bypasses cooldowns since
@@ -1062,6 +1062,7 @@ export function generatePessimisticKnifeTheories(
   if (cooldownMap) {
     for (const [comboKey, { gap }] of cooldownMap) {
       if (gap > 10000) continue; // Only combos within $100 of profitability
+      if (deepNearMissCount >= 2000) break; // Cap to prevent 10+ min deep scan
       // Parse combo_key format: "Collection A:3|Collection B:2"
       const parts = comboKey.split("|");
       const collections: string[] = [];
@@ -1313,21 +1314,16 @@ export function saveTheoryTradeUps(db: Database.Database, theories: PessimisticT
   const lookupSkinId = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1");
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, combo_key)
-    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 1, ?)
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, combo_key, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 1, ?, ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   const saveAll = db.transaction(() => {
     // Clear old knife theoretical trade-ups only (scoped to covert_knife type)
-    db.exec("DELETE FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'covert_knife')");
     db.exec("DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 1 AND type = 'covert_knife')");
     db.exec("DELETE FROM trade_ups WHERE is_theoretical = 1 AND type = 'covert_knife'");
 
@@ -1341,10 +1337,27 @@ export function saveTheoryTradeUps(db: Database.Database, theories: PessimisticT
       const worstCase = posOutcomes.length > 0
         ? Math.min(...posOutcomes.map(o => o.estimatedPriceCents)) - theory.totalCostCents : -theory.totalCostCents;
 
+      // Build outcomes JSON — theory outcomes use different field names, normalize to TradeUpOutcome
+      const outcomesForJson = theory.outcomes
+        .filter(o => o.estimatedPriceCents > 0 || o.probability > 0)
+        .map(o => {
+          const skinRow = lookupSkinId.get(o.skinName) as { id: string } | undefined;
+          return {
+            skin_id: skinRow?.id ?? "",
+            skin_name: o.skinName,
+            collection_name: theory.collections[0] ?? "",
+            probability: o.probability,
+            predicted_float: o.predictedFloat,
+            predicted_condition: o.predictedCondition,
+            estimated_price_cents: o.estimatedPriceCents,
+          };
+        });
+
       const comboKey = theoryComboKey(theory.collections, theory.split);
       const result = insertTradeUp.run(
         theory.totalCostCents, theory.expectedValueCents, theory.profitCents,
-        theory.roiPercentage, chanceToProfit, bestCase, worstCase, comboKey
+        theory.roiPercentage, chanceToProfit, bestCase, worstCase, comboKey,
+        JSON.stringify(outcomesForJson)
       );
       const tradeUpId = result.lastInsertRowid;
 
@@ -1354,17 +1367,6 @@ export function saveTheoryTradeUps(db: Database.Database, theories: PessimisticT
         insertInput.run(
           tradeUpId, "theoretical", skinRow?.id ?? "", input.skinName,
           input.collection, input.priceCents, input.floatValue, input.condition
-        );
-      }
-
-      // Insert outcomes
-      for (const outcome of theory.outcomes) {
-        if (outcome.estimatedPriceCents <= 0 && outcome.probability <= 0) continue;
-        const skinRow = lookupSkinId.get(outcome.skinName) as { id: string } | undefined;
-        insertOutcome.run(
-          tradeUpId, skinRow?.id ?? "", outcome.skinName, theory.collections[0] ?? "",
-          outcome.probability, outcome.predictedFloat,
-          outcome.predictedCondition, outcome.estimatedPriceCents
         );
       }
     }

@@ -108,17 +108,16 @@ export function takeSnapshot(db: Database.Database, opts: SnapshotOptions = {}):
     SELECT DISTINCT collection_name, skin_name, condition, price_cents
     FROM trade_up_inputs WHERE trade_up_id = ?
   `);
-  const getOutputs = db.prepare(`
-    SELECT DISTINCT skin_name, predicted_condition, estimated_price_cents, probability
-    FROM trade_up_outcomes WHERE trade_up_id = ?
-    ORDER BY probability DESC
+  const getOutcomesJson = db.prepare(`
+    SELECT outcomes_json FROM trade_ups WHERE id = ?
   `);
 
   const insertMany = db.transaction(() => {
     for (let i = 0; i < topTradeUps.length; i++) {
       const t = topTradeUps[i];
       const inputs = getInputs.all(t.id) as { collection_name: string; skin_name: string; condition: string; price_cents: number }[];
-      const outputs = getOutputs.all(t.id) as { skin_name: string; predicted_condition: string; estimated_price_cents: number; probability: number }[];
+      const outRow = getOutcomesJson.get(t.id) as { outcomes_json: string | null } | undefined;
+      const outputs = (outRow?.outcomes_json ? JSON.parse(outRow.outcomes_json) : []) as { skin_name: string; predicted_condition: string; estimated_price_cents: number; probability: number }[];
 
       const collections = [...new Set(inputs.map(inp => inp.collection_name))].join(" + ");
       const inputSkins = inputs.map(inp =>

@@ -137,6 +137,7 @@ export interface TradeUp {
   tracking?: TheoryTracking; // validation status from materialization attempts
   listing_status?: 'active' | 'partial' | 'stale'; // input listing availability
   missing_inputs?: number; // count of inputs whose listings are gone
+  profit_streak?: number; // consecutive cycles this trade-up has been profitable
   peak_profit_cents?: number; // highest profit ever seen for this trade-up
   preserved_at?: string | null; // when this trade-up was first marked stale
   previous_inputs?: {

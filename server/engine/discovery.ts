@@ -116,7 +116,7 @@ export function findProfitableTradeUps(
 
     console.log(`  ${colIds.length} eligible collections, ${allAdjusted.length} listings`);
 
-    // ── Step 1: Single-collection (baseline + float-targeted) ──
+    // Step 1: Single-collection (baseline + float-targeted)
     options.onProgress?.(`${inputRarity}: single-collection scan...`, 0, 100);
 
     for (const colId of colIds) {
@@ -189,7 +189,7 @@ export function findProfitableTradeUps(
       15, 100
     );
 
-    // ── Step 2: Two-collection combos (baseline + float-targeted) ──
+    // Step 2: Two-collection combos (baseline + float-targeted)
     let pairsProcessed = 0;
     const totalPairs = colIds.length * (colIds.length - 1) / 2;
 
@@ -273,8 +273,10 @@ export function findProfitableTradeUps(
       70, 100
     );
 
-    // ── Step 3: Triple-collection combos ──
-    const maxTriple = Math.min(colIds.length, 27);
+    // Step 3: Triple-collection combos (reduced scope)
+    // Data shows 0% historically profitable for 3+, but keep triples at reduced
+    // limits in case market shifts. Quads+ removed entirely.
+    const maxTriple = Math.min(colIds.length, 20); // was 27
     for (let i = 0; i < maxTriple; i++) {
       for (let j = i + 1; j < maxTriple; j++) {
         for (let k = j + 1; k < maxTriple; k++) {
@@ -283,80 +285,14 @@ export function findProfitableTradeUps(
             .flatMap((c) => byCollection.get(c) ?? [])
             .sort((a, b) => a.price_cents - b.price_cents);
           if (pooled.length < 10) continue;
-
-          const outcomes = outcomesForCols(...cols);
-
-          // Baseline: cheapest 10
+          // Just cheapest-10 pooled — no float targeting for triples
           const inputs = pooled.slice(0, 10);
           const usedCols = [...new Set(inputs.map((l) => l.collection_id))];
-          tryAdd(evaluateTradeUp(db, inputs, allOutcomes.filter((o) => usedCols.includes(o.collection_id))));
-
-          // Float-targeted: try key transitions
-          const transitions = getConditionTransitions(outcomes);
-          // Only try the top 5 most interesting transitions for triples
-          for (const target of transitions.slice(0, 5)) {
-            // Build quotas: cheapest from each, proportional to availability
-            // For triples, just pool them and let greedy handle allocation
-            const quotas = new Map<string, number>();
-            // Try most common ratio patterns
-            const ratioSets = [[8, 1, 1], [5, 3, 2], [4, 3, 3]];
-            for (const ratios of ratioSets) {
-              quotas.clear();
-              const colsSorted = cols
-                .map(c => ({ id: c, count: byColAdj.get(c)?.length ?? 0 }))
-                .sort((a, b) => b.count - a.count);
-              for (let r = 0; r < 3; r++) {
-                quotas.set(colsSorted[r].id, ratios[r]);
-              }
-              const selected = selectForFloatTarget(byColAdj, quotas, target);
-              if (selected) {
-                const selCols = [...new Set(selected.map(s => s.collection_id))];
-                tryAdd(evaluateTradeUp(db, selected, allOutcomes.filter(o => selCols.includes(o.collection_id))));
-              }
-            }
-          }
+          tryAdd(evaluateTradeUp(db, inputs, outcomesForCols(...usedCols)));
         }
       }
     }
-
-    // ── Step 4: N-collection combos (4 through 10) ──
-    // Generalized: pool cheapest 10 from N collections.
-    // Cap collections searched to keep combinatorics manageable:
-    //   4C12=495, 5C12=792, 6C12=924, 7C12=792, 8C10=45, 9C10=10, 10C10=1
-    const tryNCollectionCombo = (cols: string[]) => {
-      const pooled = cols
-        .flatMap((c) => byCollection.get(c) ?? [])
-        .sort((a, b) => a.price_cents - b.price_cents);
-      if (pooled.length < 10) return;
-      const inputs = pooled.slice(0, 10);
-      const usedCols = [...new Set(inputs.map((li) => li.collection_id))];
-      tryAdd(evaluateTradeUp(db, inputs, allOutcomes.filter((o) => usedCols.includes(o.collection_id))));
-    };
-
-    // Recursive combo generator for N collections from a pool
-    const generateCombos = (n: number, maxPool: number) => {
-      const pool = Math.min(colIds.length, maxPool);
-      const indices = new Array(n);
-      const recurse = (depth: number, start: number) => {
-        if (depth === n) {
-          tryNCollectionCombo(indices.map((idx: number) => colIds[idx]));
-          return;
-        }
-        for (let i = start; i < pool; i++) {
-          indices[depth] = i;
-          recurse(depth + 1, i + 1);
-        }
-      };
-      recurse(0, 0);
-    };
-
-    generateCombos(4, 20);  // 4845 combos
-    generateCombos(5, 15);  // 3003 combos
-    generateCombos(6, 13);  // 1716 combos
-    generateCombos(7, 12);  // 792 combos
-    generateCombos(8, 11);  // 165 combos
-    generateCombos(9, 11);  // 55 combos
-    generateCombos(10, 11); // 11 combos
+    // Steps 4+: N>=4 collection combos removed — never profitable historically.
 
     options.onProgress?.(
       `${inputRarity}: done (${store.total} trade-ups, ${store.getSignatureCount()} signatures)`,
@@ -447,16 +383,12 @@ export function randomClassifiedExplore(
   }
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'explore')
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'explore', ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -583,17 +515,12 @@ export function randomClassifiedExplore(
         const info = insertTradeUp.run(
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          tradeUpType, bestCase, worstCase
+          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes)
         );
         const tuId = info.lastInsertRowid;
         for (const input of result.inputs) {
           insertInput.run(tuId, input.listing_id, input.skin_id, input.skin_name,
             input.collection_name, input.price_cents, input.float_value, input.condition);
-        }
-        for (const outcome of result.outcomes) {
-          insertOutcome.run(tuId, outcome.skin_id, outcome.skin_name, outcome.collection_name,
-            outcome.probability, outcome.predicted_float, outcome.predicted_condition,
-            outcome.estimated_price_cents, outcome.sell_marketplace ?? null);
         }
       });
       saveTu();

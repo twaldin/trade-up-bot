@@ -51,7 +51,7 @@ export function statusRouter(db: Database.Database): Router {
             SUM(CASE WHEN listing_status = 'stale' THEN 1 ELSE 0 END) as stale
           FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = 0
         `).get() as { cnt: number; profitable: number; active: number; partial: number; stale: number };
-      } catch { return { cnt: 0, profitable: 0, active: 0, partial: 0, stale: 0 }; }
+      } catch { /* DB may be locked */ return { cnt: 0, profitable: 0, active: 0, partial: 0, stale: 0 }; }
     })();
     const covertTu = tuStats.find(r => r.type === "classified_covert");
     // Theories are stored as type='covert_knife' with is_theoretical=1
@@ -62,7 +62,7 @@ export function statusRouter(db: Database.Database): Router {
             SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
           FROM trade_ups WHERE is_theoretical = 1
         `).get() as { cnt: number; profitable: number };
-      } catch { return { cnt: 0, profitable: 0 }; }
+      } catch { /* DB may be locked */ return { cnt: 0, profitable: 0 }; }
     })();
     const totalTu = tuStats.reduce((s, r) => s + r.cnt, 0) - (theoryRow?.cnt ?? 0);
     const totalProfitable = tuStats.reduce((s, r) => s + r.profitable, 0) - (theoryRow?.profitable ?? 0);
@@ -97,7 +97,7 @@ export function statusRouter(db: Database.Database): Router {
         try {
           const row = db.prepare("SELECT COUNT(*) as cnt FROM trade_ups WHERE is_theoretical = 1").get() as { cnt: number };
           return row.cnt;
-        } catch { return 0; }
+        } catch { /* DB may be locked */ return 0; }
       })(),
       last_calculation: getSyncMeta(db, "last_calculation"),
       daemon_status: (() => {
@@ -112,14 +112,14 @@ export function statusRouter(db: Database.Database): Router {
             return { phase: "idle" as const, detail: "Daemon inactive", timestamp: parsed.timestamp };
           }
           return parsed;
-        } catch { return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
+        } catch { /* malformed JSON */ return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
       })(),
       top_collections: topCollections,
       exploration_stats: (() => {
         try {
           const raw = getSyncMeta(db, "exploration_stats");
           return raw ? JSON.parse(raw) : null;
-        } catch { return null; }
+        } catch { /* malformed JSON */ return null; }
       })(),
       ref_coverage: null,
       total_skins: (() => {
@@ -148,7 +148,7 @@ export function statusRouter(db: Database.Database): Router {
       })(),
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
       theory_tracking: (() => {
-        try { return getTheoryTrackingSummary(db); } catch { return null; }
+        try { return getTheoryTrackingSummary(db); } catch { /* DB may be locked */ return null; }
       })(),
     } satisfies SyncStatus);
   });
@@ -170,17 +170,17 @@ export function statusRouter(db: Database.Database): Router {
       // Parse current phase from log lines (search backwards)
       let currentPhase = "Unknown";
       const phasePatterns: { pattern: RegExp; label: string }[] = [
-        { pattern: /── Phase 1: Housekeeping/i, label: "Housekeeping" },
-        { pattern: /── Phase 2: Theory/i, label: "Theory" },
-        { pattern: /── Phase 3: API Probe/i, label: "API Probe" },
-        { pattern: /── Phase 4: Data Fetch/i, label: "Data Fetch" },
-        { pattern: /── Phase 5c: Staircase/i, label: "Staircase" },
-        { pattern: /── Phase 5b: Classified/i, label: "Classified Calc" },
-        { pattern: /── Phase 5: Knife Calc/i, label: "Knife Calc" },
-        { pattern: /── Phase 2c: Staircase/i, label: "Staircase Theory" },
-        { pattern: /── Phase 2b: Classified/i, label: "Classified Theory" },
-        { pattern: /── Phase 6: Cooldown/i, label: "Cooldown" },
-        { pattern: /── Phase 7: Re-materialization/i, label: "Re-materialize" },
+        { pattern: /Phase 1: Housekeeping/i, label: "Housekeeping" },
+        { pattern: /Phase 2: Theory/i, label: "Theory" },
+        { pattern: /Phase 3: API Probe/i, label: "API Probe" },
+        { pattern: /Phase 4: Data Fetch/i, label: "Data Fetch" },
+        { pattern: /Phase 5c: Staircase/i, label: "Staircase" },
+        { pattern: /Phase 5b: Classified/i, label: "Classified Calc" },
+        { pattern: /Phase 5: Knife Calc/i, label: "Knife Calc" },
+        { pattern: /Phase 2c: Staircase/i, label: "Staircase Theory" },
+        { pattern: /Phase 2b: Classified/i, label: "Classified Theory" },
+        { pattern: /Phase 6: Cooldown/i, label: "Cooldown" },
+        { pattern: /Phase 7: Re-materialization/i, label: "Re-materialize" },
         { pattern: /Knife explore pass/i, label: "Cooldown" },
       ];
 
@@ -200,7 +200,7 @@ export function statusRouter(db: Database.Database): Router {
       try {
         const raw = getSyncMeta(db, "api_rate_limit");
         if (raw) rateLimits = JSON.parse(raw);
-      } catch {}
+      } catch { /* malformed JSON */ }
 
       // CSFloat stats
       let csfloatStats = null;
@@ -216,7 +216,7 @@ export function statusRouter(db: Database.Database): Router {
           totalSales: row.sales,
           saleObservations: row.sale_observations,
         };
-      } catch {}
+      } catch { /* DB may be locked */ }
 
       // DMarket stats
       let dmarketStats = null;
@@ -230,7 +230,7 @@ export function statusRouter(db: Database.Database): Router {
           listingsStored: row.cnt,
           lastFetchAt: lastFetch || null,
         };
-      } catch {}
+      } catch { /* DB may be locked */ }
 
       // Skinport WebSocket stats
       let skinportStats = null;
@@ -238,10 +238,14 @@ export function statusRouter(db: Database.Database): Router {
         const row = db.prepare(
           "SELECT COUNT(*) as cnt FROM listings WHERE source = 'skinport'"
         ).get() as { cnt: number };
+        const obsRow = db.prepare(
+          "SELECT COUNT(*) as cnt FROM price_observations WHERE source = 'skinport_sale'"
+        ).get() as { cnt: number };
         skinportStats = {
           listingsStored: row.cnt,
+          saleObservations: obsRow.cnt,
         };
-      } catch {}
+      } catch { /* DB may be locked */ }
 
       res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, skinportStats });
     } catch (err) {
@@ -316,7 +320,7 @@ export function statusRouter(db: Database.Database): Router {
       try {
         const raw = getSyncMeta(db, "api_rate_limit");
         return raw ? JSON.parse(raw) : null;
-      } catch { return null; }
+      } catch { /* malformed JSON */ return null; }
     })();
 
     res.json({ cycles, summary, rateLimitMeta });

@@ -14,6 +14,31 @@ import { getOutcomesForCollections } from "./data-load.js";
 
 export { theoryComboKey };
 
+/**
+ * Retry a function that may fail with SQLITE_BUSY or SQLITE_BUSY_SNAPSHOT.
+ * Waits briefly between retries to let the other writer finish.
+ */
+function withRetry<T>(fn: () => T, maxRetries = 5, label = "DB operation"): T {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return fn();
+    } catch (err: unknown) {
+      const msg = (err as Error).message ?? "";
+      const code = (err as { code?: string }).code ?? "";
+      if ((code.includes("SQLITE_BUSY") || msg.includes("database is locked")) && attempt < maxRetries) {
+        // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+        const waitMs = 2000 * Math.pow(2, attempt);
+        console.log(`  ${label}: DB busy (${code}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        const start = Date.now();
+        while (Date.now() - start < waitMs) { /* spin wait — better-sqlite3 is sync */ }
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("unreachable");
+}
+
 export interface TheoryTrackingEntry {
   combo_key: string;
   status: 'profitable' | 'near_miss' | 'invalidated' | 'no_listings' | 'pending';
@@ -254,7 +279,11 @@ export function refreshListingStatuses(db: Database.Database): { active: number;
         ELSE COALESCE(preserved_at, datetime('now'))
       END
     WHERE is_theoretical = 0
+      AND type NOT IN ('staircase_rc', 'staircase_rck', 'staircase_mrc')
   `).run();
+
+  // Generic staircases use synthetic input IDs — always mark active
+  db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE type IN ('staircase_rc', 'staircase_rck', 'staircase_mrc') AND is_theoretical = 0").run();
 
   const counts = db.prepare(`
     SELECT listing_status, COUNT(*) as cnt
@@ -275,7 +304,7 @@ export function refreshListingStatuses(db: Database.Database): { active: number;
 /**
  * Purge preserved trade-ups older than maxDays.
  */
-export function purgeExpiredPreserved(db: Database.Database, maxDays = 7): number {
+export function purgeExpiredPreserved(db: Database.Database, maxDays = 2): number {
   // Delete outcomes and inputs first (foreign key cascade should handle it, but be explicit)
   const ids = db.prepare(
     "SELECT id FROM trade_ups WHERE preserved_at IS NOT NULL AND julianday('now') - julianday(preserved_at) > ?"
@@ -284,7 +313,6 @@ export function purgeExpiredPreserved(db: Database.Database, maxDays = 7): numbe
   if (ids.length === 0) return 0;
 
   const idList = ids.map(r => r.id).join(",");
-  db.exec(`DELETE FROM trade_up_outcomes WHERE trade_up_id IN (${idList})`);
   db.exec(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${idList})`);
   db.exec(`DELETE FROM trade_ups WHERE id IN (${idList})`);
   return ids.length;
@@ -332,15 +360,11 @@ export function getProfitableCombosForWantedList(db: Database.Database): {
 
 export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -348,7 +372,6 @@ export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFi
     if (clearFirst) {
       // Preserve materialized results when discovery clears — they're found by a different process
       const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
-      db.prepare(`DELETE FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = ? AND is_theoretical = ?${sourceFilter})`).run(type, isTheoretical ? 1 : 0);
       db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = ? AND is_theoretical = ?${sourceFilter})`).run(type, isTheoretical ? 1 : 0);
       db.prepare(`DELETE FROM trade_ups WHERE type = ? AND is_theoretical = ?${sourceFilter}`).run(type, isTheoretical ? 1 : 0);
     }
@@ -373,7 +396,8 @@ export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFi
         bestCase,
         worstCase,
         isTheoretical ? 1 : 0,
-        source
+        source,
+        JSON.stringify(tu.outcomes)
       );
       const tradeUpId = result.lastInsertRowid;
 
@@ -390,47 +414,31 @@ export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFi
           input.source ?? "csfloat"
         );
       }
-
-      for (const outcome of tu.outcomes) {
-        insertOutcome.run(
-          tradeUpId,
-          outcome.skin_id,
-          outcome.skin_name,
-          outcome.collection_name,
-          outcome.probability,
-          outcome.predicted_float,
-          outcome.predicted_condition,
-          outcome.estimated_price_cents,
-          outcome.sell_marketplace ?? null
-        );
-      }
     }
   });
 
-  saveAll();
+  withRetry(() => saveAll(), 3, "saveTradeUps");
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 }
 
 export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[], type: string = "classified_covert") {
-  // Merge-save pattern: same as saveKnifeTradeUps but for classified_covert type.
+  // Merge-save: update existing trade-ups by signature, mark missing ones as stale.
 
   const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'discovery')
+    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'discovery', ?)
   `);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
   const updateTradeUp = db.prepare(`
     UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?, roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
-      peak_profit_cents = MAX(peak_profit_cents, ?), listing_status = 'active', preserved_at = NULL
+      peak_profit_cents = MAX(peak_profit_cents, ?), listing_status = 'active', preserved_at = NULL, outcomes_json = ?,
+      profit_streak = ?
     WHERE id=?
   `);
+  const getOldProfit = db.prepare(`SELECT profit_cents, profit_streak FROM trade_ups WHERE id = ?`);
 
   const newSigs = new Map<string, number>();
   for (let i = 0; i < tradeUps.length; i++) {
@@ -462,14 +470,16 @@ export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[
           sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
         const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
         const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        updateTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), existId);
+        // Compute profit streak: consecutive cycles profitable
+        const old = getOldProfit.get(existId) as { profit_cents: number; profit_streak: number } | undefined;
+        let streak = 0;
+        if (tu.profit_cents > 0) {
+          streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
+        }
+        updateTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId);
         if (tu.profit_cents > 0) {
           const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
           recordProfitableCombo(db, tu, comboKey);
-        }
-        db.prepare("DELETE FROM trade_up_outcomes WHERE trade_up_id = ?").run(existId);
-        for (const o of tu.outcomes) {
-          insertOutcome.run(existId, o.skin_id, o.skin_name, o.collection_name, o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
         }
         handled.add(sig);
       } else {
@@ -484,7 +494,7 @@ export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[
         sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
       const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
       const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase);
+      const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes));
       const tradeUpId = result.lastInsertRowid;
       if (tu.profit_cents > 0) {
         db.prepare("UPDATE trade_ups SET peak_profit_cents = ? WHERE id = ?").run(tu.profit_cents, tradeUpId);
@@ -494,121 +504,13 @@ export function saveClassifiedTradeUps(db: Database.Database, tradeUps: TradeUp[
       for (const inp of tu.inputs) {
         insertInput.run(tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
       }
-      for (const o of tu.outcomes) {
-        insertOutcome.run(tradeUpId, o.skin_id, o.skin_name, o.collection_name, o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
-      }
     }
   });
 
-  mergeAll();
+  withRetry(() => mergeAll(), 3, "saveClassifiedTradeUps");
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 }
 
-export function saveKnifeTradeUps(db: Database.Database, tradeUps: TradeUp[]) {
-  // Don't clear — merge instead. This keeps the table visible to the frontend at all times.
-  // Discovery results replace previous discovery results atomically via signature matching.
-  // Explore results (source='explore') are never touched here.
-
-  const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source)
-    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 0, 'discovery')
-  `);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?, roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
-      peak_profit_cents = MAX(peak_profit_cents, ?), listing_status = 'active', preserved_at = NULL
-    WHERE id=?
-  `);
-
-  // Build signatures for new trade-ups (sorted listing IDs)
-  const newSigs = new Map<string, number>(); // sig → index in tradeUps
-  for (let i = 0; i < tradeUps.length; i++) {
-    const sig = tradeUps[i].inputs.map(inp => inp.listing_id).sort().join(",");
-    newSigs.set(sig, i);
-  }
-
-  const mergeAll = db.transaction(() => {
-    // Load existing discovery trade-ups and their signatures
-    const existing = db.prepare(`
-      SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
-      FROM trade_ups t
-      JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
-      WHERE t.type = 'covert_knife' AND t.is_theoretical = 0 AND (t.source = 'discovery' OR t.source IS NULL)
-      GROUP BY t.id
-    `).all() as { id: number; ids: string }[];
-
-    const existingSigs = new Map<string, number>(); // sig → trade_up id
-    for (const row of existing) {
-      const sig = row.ids.split(",").sort().join(",");
-      existingSigs.set(sig, row.id);
-    }
-
-    // Update existing, track which are handled
-    const handled = new Set<string>();
-    for (const [sig, existId] of existingSigs) {
-      const newIdx = newSigs.get(sig);
-      if (newIdx !== undefined) {
-        // Same combo exists — update values
-        const tu = tradeUps[newIdx];
-        const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-          sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
-        const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        updateTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), existId);
-        // Record profitable combos for history tracking + wanted list boosting
-        if (tu.profit_cents > 0) {
-          const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-          recordProfitableCombo(db, tu, comboKey);
-        }
-        // Update outcomes (prices may have changed)
-        db.prepare("DELETE FROM trade_up_outcomes WHERE trade_up_id = ?").run(existId);
-        for (const o of tu.outcomes) {
-          insertOutcome.run(existId, o.skin_id, o.skin_name, o.collection_name, o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
-        }
-        handled.add(sig);
-      } else {
-        // Old combo no longer found in discovery — preserve it.
-        // Any existing trade-up could potentially be improved with better listings,
-        // so keep all of them. 7-day TTL via purgeExpiredPreserved handles cleanup.
-        db.prepare("UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, datetime('now')) WHERE id = ?").run(existId);
-      }
-    }
-
-    // Insert new combos that didn't exist before
-    for (const [sig, idx] of newSigs) {
-      if (handled.has(sig)) continue;
-      const tu = tradeUps[idx];
-      const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-        sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
-      const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase);
-      const tradeUpId = result.lastInsertRowid;
-      // Set peak_profit on insert
-      if (tu.profit_cents > 0) {
-        db.prepare("UPDATE trade_ups SET peak_profit_cents = ? WHERE id = ?").run(tu.profit_cents, tradeUpId);
-        const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-        recordProfitableCombo(db, tu, comboKey);
-      }
-      for (const inp of tu.inputs) {
-        insertInput.run(tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
-      }
-      for (const o of tu.outcomes) {
-        insertOutcome.run(tradeUpId, o.skin_id, o.skin_name, o.collection_name, o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
-      }
-    }
-  });
-
-  mergeAll();
-  setSyncMeta(db, "last_calculation", new Date().toISOString());
-}
 
 /**
  * Try to revive stale/partial trade-ups by finding replacement listings in DB.
@@ -679,17 +581,12 @@ export function reviveStaleTradeUps(
       roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
       peak_profit_cents = MAX(peak_profit_cents, ?),
       listing_status = 'active', preserved_at = NULL,
-      previous_inputs = ?
+      previous_inputs = ?, outcomes_json = ?
     WHERE id=?
   `);
   const deleteInputs = db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id = ?`);
-  const deleteOutcomes = db.prepare(`DELETE FROM trade_up_outcomes WHERE trade_up_id = ?`);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -794,7 +691,7 @@ export function reviveStaleTradeUps(
       updateTradeUp.run(
         result.total_cost_cents, result.expected_value_cents, result.profit_cents,
         result.roi_percentage, chanceToProfit, bestCase, worstCase,
-        Math.max(result.profit_cents, 0), previousInputsJson, tu.id
+        Math.max(result.profit_cents, 0), previousInputsJson, JSON.stringify(result.outcomes), tu.id
       );
 
       // Replace inputs
@@ -802,13 +699,6 @@ export function reviveStaleTradeUps(
       for (const inp of result.inputs) {
         insertInput.run(tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
           inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
-      }
-
-      // Replace outcomes
-      deleteOutcomes.run(tu.id);
-      for (const o of result.outcomes) {
-        insertOutcome.run(tu.id, o.skin_id, o.skin_name, o.collection_name,
-          o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
       }
 
       revived++;
@@ -883,17 +773,12 @@ export function reviveStaleClassifiedTradeUps(
       roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
       peak_profit_cents = MAX(peak_profit_cents, ?),
       listing_status = 'active', preserved_at = NULL,
-      previous_inputs = ?
+      previous_inputs = ?, outcomes_json = ?
     WHERE id=?
   `);
   const deleteInputs = db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id = ?`);
-  const deleteOutcomes = db.prepare(`DELETE FROM trade_up_outcomes WHERE trade_up_id = ?`);
   const insertInput = db.prepare(`
     INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertOutcome = db.prepare(`
-    INSERT INTO trade_up_outcomes (trade_up_id, skin_id, skin_name, collection_name, probability, predicted_float, predicted_condition, estimated_price_cents, sell_marketplace)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -988,19 +873,13 @@ export function reviveStaleClassifiedTradeUps(
       updateTradeUp.run(
         result.total_cost_cents, result.expected_value_cents, result.profit_cents,
         result.roi_percentage, chanceToProfit, bestCase, worstCase,
-        Math.max(result.profit_cents, 0), previousInputsJson, tu.id
+        Math.max(result.profit_cents, 0), previousInputsJson, JSON.stringify(result.outcomes), tu.id
       );
 
       deleteInputs.run(tu.id);
       for (const inp of result.inputs) {
         insertInput.run(tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
           inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
-      }
-
-      deleteOutcomes.run(tu.id);
-      for (const o of result.outcomes) {
-        insertOutcome.run(tu.id, o.skin_id, o.skin_name, o.collection_name,
-          o.probability, o.predicted_float, o.predicted_condition, o.estimated_price_cents, o.sell_marketplace ?? null);
       }
 
       revived++;

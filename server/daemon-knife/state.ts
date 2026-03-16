@@ -28,15 +28,13 @@ const INDIVIDUAL_SAFETY_BUFFER = 500; // 50K pool, keep 500 as margin
 /** Target total cycle duration — cooldown fills the gap between work phases and this target.
  *  Listing pool (200/~30min) means ~1.5 cycles per reset at 20-min targets → ~130 calls/cycle.
  *  When rate-limited, idle cooldown stretches to conserve individual pool. */
-export const TARGET_CYCLE_MS = 20 * 60 * 1000;    // 20 min target cycle time
-export const MIN_COOLDOWN_MS = 60 * 1000;          // 1 min minimum (always do some staleness)
-export const MAX_COOLDOWN_MS = 25 * 60 * 1000;     // 25 min cap (don't wait forever)
-export const IDLE_COOLDOWN_MS = 20 * 60 * 1000;    // 20 min when no API budget at all
+export const TARGET_CYCLE_MS = 15 * 60 * 1000;    // 15 min = 2 cycles per 30-min listing window
+export const MIN_COOLDOWN_MS = 30 * 1000;          // 30s minimum
+export const MAX_COOLDOWN_MS = 20 * 60 * 1000;     // 20 min cap
+export const IDLE_COOLDOWN_MS = 15 * 60 * 1000;    // 15 min when no API budget at all
 
-/** Estimated total cycle duration for budget pacing.
- *  Cycles currently average ~15 min work + 5 min cooldown = ~20 min.
- *  Used as the default in cycleListingBudget/cycleSaleBudget/cycleIndividualBudget. */
-export const ESTIMATED_CYCLE_MS = 20 * 60 * 1000; // 20 min
+/** Estimated cycle for budget pacing. 15 min = ~100 listing calls, ~14 sale calls, ~1400 individual. */
+export const ESTIMATED_CYCLE_MS = 15 * 60 * 1000;
 
 export class BudgetTracker {
   /** Sale history calls (500-limit endpoint, ~12h window) */

@@ -77,7 +77,7 @@ export async function checkListingStaleness(
   // 2. Never-checked listings
   // 3. Oldest-checked listings
   const listings = db.prepare(`
-    SELECT l.id, l.skin_id, l.price_cents, l.float_value, l.created_at, s.name as skin_name
+    SELECT l.id, l.skin_id, l.price_cents, l.float_value, l.created_at, s.name as skin_name, l.phase
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
     ORDER BY
@@ -94,7 +94,7 @@ export async function checkListingStaleness(
     LIMIT ?
   `).all(maxChecks) as {
     id: string; skin_id: string; price_cents: number;
-    float_value: number; created_at: string; skin_name: string;
+    float_value: number; created_at: string; skin_name: string; phase: string | null;
   }[];
 
   const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
@@ -154,7 +154,12 @@ export async function checkListingStaleness(
         const saleFloat = data.item?.float_value || listing.float_value;
         const soldAt = data.sold_at || data.created_at || new Date().toISOString();
 
-        insertObservation.run(listing.skin_name, saleFloat, salePrice, soldAt);
+        // Use phase-qualified name for Dopplers (e.g., "★ Bayonet | Doppler Phase 2")
+        // so sale observations are phase-specific, not mixed across P1-P4/Ruby/Sapphire
+        const obsName = listing.phase && listing.skin_name.includes("Doppler")
+          ? `${listing.skin_name} ${listing.phase}`
+          : listing.skin_name;
+        insertObservation.run(obsName, saleFloat, salePrice, soldAt);
         result.salesRecorded++;
         emitEvent(db, "listing_sold", `${listing.skin_name} sold $${(salePrice / 100).toFixed(2)} @ ${saleFloat.toFixed(4)}`);
 
@@ -173,7 +178,7 @@ export async function checkListingStaleness(
         );
         await new Promise(r => setTimeout(r, 100));
       }
-    } catch {
+    } catch { /* network error — non-critical */
       result.errors++;
     }
   }

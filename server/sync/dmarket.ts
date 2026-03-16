@@ -154,45 +154,52 @@ export async function syncDMarketListingsForSkin(
   `);
 
   let count = 0;
-  const insertAll = db.transaction(() => {
-    for (const item of items) {
-      if (!item.extra?.floatValue && item.extra?.floatValue !== 0) continue;
-      const priceCents = parseInt(item.price?.USD ?? "0", 10);
-      if (priceCents <= 0) continue;
+  // No wrapping transaction — each INSERT OR REPLACE is its own implicit transaction.
+  // This avoids holding a write lock that blocks the daemon's large transactions.
+  for (const item of items) {
+    if (!item.extra?.floatValue && item.extra?.floatValue !== 0) continue;
+    const priceCents = parseInt(item.price?.USD ?? "0", 10);
+    if (priceCents <= 0) continue;
 
-      // Skip Souvenir items — can't be used in trade-ups, different pricing
-      const isSouvenir = item.title.includes("Souvenir") || item.extra?.category === "souvenir";
-      if (isSouvenir) continue;
+    // Skip Souvenir items — can't be used in trade-ups, different pricing
+    const isSouvenir = item.title.includes("Souvenir") || item.extra?.category === "souvenir";
+    if (isSouvenir) continue;
 
-      // DMarket indicates StatTrak via title prefix AND extra.category
-      const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
-      if (isStatTrak) {
-        // Store StatTrak item against ST skin ID (if it exists)
-        if (!stSkin) continue;
-        upsert.run(
-          `dmarket:${item.itemId}`,
-          stSkin.id,
-          priceCents,
-          item.extra.floatValue,
-          item.extra.paintSeed ?? null,
-          1,
-          item.extra.phase ?? null
-        );
-      } else {
-        upsert.run(
-          `dmarket:${item.itemId}`,
-          skin.id,
-          priceCents,
-          item.extra.floatValue,
-          item.extra.paintSeed ?? null,
-          0,
-          item.extra.phase ?? null
-        );
-      }
-      count++;
+    // Verify title matches requested skin — DMarket search is fuzzy and returns
+    // partial matches (e.g. searching "Fade" also returns "Amber Fade").
+    // Strip condition suffix like "(Factory New)" and "StatTrak™ " prefix for comparison.
+    const cleanTitle = item.title
+      .replace(/\s*\((?:Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)\s*$/, "")
+      .replace(/^StatTrak™\s+/, "");
+    if (cleanTitle !== skinName) continue;
+
+    // DMarket indicates StatTrak via title prefix AND extra.category
+    const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
+    if (isStatTrak) {
+      // Store StatTrak item against ST skin ID (if it exists)
+      if (!stSkin) continue;
+      upsert.run(
+        `dmarket:${item.itemId}`,
+        stSkin.id,
+        priceCents,
+        item.extra.floatValue,
+        item.extra.paintSeed ?? null,
+        1,
+        item.extra.phase ?? null
+      );
+    } else {
+      upsert.run(
+        `dmarket:${item.itemId}`,
+        skin.id,
+        priceCents,
+        item.extra.floatValue,
+        item.extra.paintSeed ?? null,
+        0,
+        item.extra.phase ?? null
+      );
     }
-  });
-  insertAll();
+    count++;
+  }
 
   return count;
 }
@@ -395,6 +402,7 @@ export async function buyDMarketItem(
     operationId: data.Items?.[0]?.AssetID,
   };
 }
+
 
 /** Check if DMarket API keys are configured */
 export function isDMarketConfigured(): boolean {

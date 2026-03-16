@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { timeAgo, formatResetTime } from "../utils/format.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@shared/components/ui/dialog.js";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@shared/components/ui/tabs.js";
+import { Badge } from "@shared/components/ui/badge.js";
 
 interface RateLimitPool {
   limit: number | null;
@@ -31,6 +39,7 @@ interface DaemonLogData {
   } | null;
   skinportStats: {
     listingsStored: number;
+    saleObservations: number;
   } | null;
 }
 
@@ -77,23 +86,46 @@ function RateLimitBar({ label, pool }: { label: string; pool: RateLimitPool }) {
   const atBuffer = pool.available && remaining > 0 && remaining <= safety;
 
   return (
-    <div className="rl-pool">
-      <div className="rl-pool-header">
-        <span className="rl-pool-label">{label}</span>
-        <span className={`rl-pool-status ${!pool.available ? "rl-limited" : atBuffer ? "rl-buffer" : "rl-ok"}`}>
+    <div className="mb-2.5">
+      <div className="flex justify-between items-center mb-0.5">
+        <span className="text-[0.7rem] text-muted-foreground">{label}</span>
+        <Badge
+          variant={!pool.available ? "destructive" : atBuffer ? "outline" : "secondary"}
+          className={`text-[0.6rem] px-1.5 py-0 h-4 font-semibold ${
+            !pool.available ? "" : atBuffer ? "text-yellow-500 border-yellow-500/30" : "text-green-500"
+          }`}
+        >
           {!pool.available ? "429" : atBuffer ? "BUFFER" : "OK"}
-        </span>
+        </Badge>
       </div>
-      <div className="rl-bar-track">
-        {safety > 0 && <div className="rl-bar-safety" style={{ width: `${safetyPct}%` }} />}
-        <div className="rl-bar-fill" style={{ width: `${pct}%` }} />
+      <div className="h-1 bg-muted rounded-sm overflow-hidden relative">
+        {safety > 0 && (
+          <div
+            className="absolute left-0 top-0 h-full rounded-sm z-[1]"
+            style={{
+              width: `${safetyPct}%`,
+              background: "repeating-linear-gradient(90deg, rgb(245 158 11 / 0.2) 0px, rgb(245 158 11 / 0.2) 2px, transparent 2px, transparent 4px)",
+            }}
+          />
+        )}
+        <div
+          className="h-full rounded-sm transition-[width] duration-500 relative z-[2]"
+          style={{
+            width: `${pct}%`,
+            background: "linear-gradient(90deg, #ef4444 0%, #f59e0b 30%, #22c55e 70%)",
+          }}
+        />
       </div>
-      <div className="rl-pool-detail">
+      <div className="flex justify-between text-[0.62rem] text-muted-foreground/70 mt-0.5">
         <span>{remaining}/{limit}{safety > 0 ? ` (${safety} reserved)` : ""}</span>
         {pool.cycle_budget !== undefined && pool.cycle_budget > 0 && (
-          <span className="rl-pace">pace: {pool.cycle_budget}</span>
+          <span className="text-blue-400">pace: {pool.cycle_budget}</span>
         )}
-        {resetStr && !pool.available && <span className="rl-reset">{resetStr}</span>}
+        {resetStr && (
+          <span className={!pool.available ? "text-yellow-500" : "text-muted-foreground/50"}>
+            {!pool.available ? resetStr : `resets ${resetStr}`}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -143,48 +175,62 @@ function CycleHistory() {
 
   const arrow = (key: CycleSortKey) => sortKey === key ? (sortDir === "desc" ? " \u25BC" : " \u25B2") : "";
 
-  if (cycles.length === 0) return <div className="cycle-empty">No cycle data yet</div>;
+  if (cycles.length === 0) return <div className="text-muted-foreground text-sm p-10 text-center">No cycle data yet</div>;
+
+  const SortTh = ({ k, children }: { k: CycleSortKey; children: React.ReactNode }) => (
+    <th
+      className="px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground bg-background border-b border-border font-semibold whitespace-nowrap cursor-pointer select-none hover:text-blue-400"
+      onClick={() => handleSort(k)}
+    >
+      {children}{arrow(k)}
+    </th>
+  );
 
   return (
-    <div className="cycle-list">
-      <div className="cycle-summary">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="text-[0.7rem] text-muted-foreground/70 mb-2 shrink-0">
         {total} cycles recorded
       </div>
-      <div className="cycle-table-wrap">
-        <table className="cycle-table">
-          <thead>
+      <div className="flex-1 overflow-y-auto border border-border rounded-md bg-muted/20">
+        <table className="w-full border-collapse text-[0.7rem]">
+          <thead className="sticky top-0 z-[1]">
             <tr>
-              <th>#</th>
-              <th className="cycle-sortable" onClick={() => handleSort("time")}>Time{arrow("time")}</th>
-              <th className="cycle-sortable" onClick={() => handleSort("duration")}>Duration{arrow("duration")}</th>
-              <th className="cycle-sortable" onClick={() => handleSort("api")}>API{arrow("api")}</th>
-              <th className="cycle-sortable" onClick={() => handleSort("profitable")}>Knife{arrow("profitable")}</th>
-              <th>Classified</th>
-              <th className="cycle-sortable" onClick={() => handleSort("top_profit")}>Top Profit{arrow("top_profit")}</th>
-              <th className="cycle-sortable" onClick={() => handleSort("theories")}>Theories{arrow("theories")}</th>
-              <th className="cycle-sortable" onClick={() => handleSort("explore")}>Explore{arrow("explore")}</th>
+              <th className="px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground bg-background border-b border-border font-semibold whitespace-nowrap">#</th>
+              <SortTh k="time">Time</SortTh>
+              <SortTh k="duration">Duration</SortTh>
+              <SortTh k="api">API</SortTh>
+              <SortTh k="profitable">Knife</SortTh>
+              <th className="px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground bg-background border-b border-border font-semibold whitespace-nowrap">Classified</th>
+              <SortTh k="top_profit">Top Profit</SortTh>
+              <SortTh k="theories">Theories</SortTh>
+              <SortTh k="explore">Explore</SortTh>
             </tr>
           </thead>
           <tbody>
             {sorted.map((c, i) => (
-              <tr key={i} className={c.knife_profitable > 0 ? "cycle-profitable" : ""}>
-                <td className="cycle-dim">{i + 1}</td>
-                <td className="cycle-time">{new Date(c.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td>
-                <td>{(c.duration_ms / 60000).toFixed(1)}m</td>
-                <td className={c.api_available ? "" : "cycle-dim"}>{c.api_calls_used || "-"}</td>
-                <td className={c.knife_profitable > 0 ? "cycle-highlight" : ""}>{c.knife_profitable || "-"}</td>
-                <td className={c.classified_profitable > 0 ? "cycle-highlight" : ""}>{c.classified_profitable || "-"}</td>
-                <td className={c.top_profit_cents > 0 ? "cycle-highlight" : ""}>
+              <tr
+                key={i}
+                className={`hover:bg-blue-500/5 ${c.knife_profitable > 0 ? "bg-green-500/5" : ""}`}
+              >
+                <td className="px-2 py-1 text-muted-foreground/50 border-b border-border/30">{i + 1}</td>
+                <td className="px-2 py-1 text-muted-foreground/60 border-b border-border/30 tabular-nums">
+                  {new Date(c.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </td>
+                <td className="px-2 py-1 text-muted-foreground border-b border-border/30">{(c.duration_ms / 60000).toFixed(1)}m</td>
+                <td className={`px-2 py-1 border-b border-border/30 ${c.api_available ? "text-muted-foreground" : "text-muted-foreground/50"}`}>{c.api_calls_used || "-"}</td>
+                <td className={`px-2 py-1 border-b border-border/30 ${c.knife_profitable > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}`}>{c.knife_profitable || "-"}</td>
+                <td className={`px-2 py-1 border-b border-border/30 ${c.classified_profitable > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}`}>{c.classified_profitable || "-"}</td>
+                <td className={`px-2 py-1 border-b border-border/30 ${c.top_profit_cents > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}`}>
                   {c.top_profit_cents > 0 ? `$${(c.top_profit_cents / 100).toFixed(0)}` : "-"}
                 </td>
-                <td>
+                <td className="px-2 py-1 border-b border-border/30 text-muted-foreground">
                   {c.theories_generated > 0 ? `${c.theories_generated}` : "-"}
-                  {c.theories_profitable > 0 && <span className="cycle-highlight"> ({c.theories_profitable})</span>}
+                  {c.theories_profitable > 0 && <span className="text-green-500 font-medium"> ({c.theories_profitable})</span>}
                   {c.classified_theories > 0 && (
-                    <span className="cycle-dim"> +{c.classified_theories}{c.classified_theories_profitable > 0 && <span className="cycle-highlight">({c.classified_theories_profitable})</span>}</span>
+                    <span className="text-muted-foreground/50"> +{c.classified_theories}{c.classified_theories_profitable > 0 && <span className="text-green-500 font-medium">({c.classified_theories_profitable})</span>}</span>
                   )}
                 </td>
-                <td>
+                <td className="px-2 py-1 border-b border-border/30 text-muted-foreground">
                   {(c.cooldown_new_found > 0 || c.cooldown_improved > 0)
                     ? `+${c.cooldown_new_found}/${c.cooldown_improved}`
                     : "-"}
@@ -203,7 +249,6 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
   const logEndRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [tab, setTab] = useState<"log" | "cycles">("log");
 
   const fetchLog = useCallback(async () => {
     try {
@@ -232,24 +277,20 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
     setAutoScroll(atBottom);
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   const rl = logData.rateLimits;
 
   return (
-    <div className="daemon-modal-overlay" onClick={handleOverlayClick}>
-      <div className="daemon-modal">
-        <div className="daemon-modal-header">
-          <h2>Daemon Status</h2>
-          <button className="daemon-modal-close" onClick={onClose}>&#10005;</button>
-        </div>
-        <div className="daemon-modal-body">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-[1100px] w-[90vw] h-[80vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-5 py-3.5 border-b border-border shrink-0">
+          <DialogTitle>Daemon Status</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-1 overflow-hidden">
           {/* Left sidebar: phases + rate limits */}
-          <div className="daemon-phases">
-            <h3>Current Phase</h3>
-            <div className="daemon-phase-list">
+          <div className="w-[220px] shrink-0 p-4 border-r border-border overflow-y-auto">
+            <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-3">Current Phase</h3>
+            <div className="flex flex-col gap-0.5">
               {DAEMON_PHASES.map((phase) => {
                 const isCurrent = logData.currentPhase === phase;
                 const currentIdx = DAEMON_PHASES.indexOf(logData.currentPhase);
@@ -258,25 +299,37 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
                 return (
                   <div
                     key={phase}
-                    className={`daemon-phase-item${isCurrent ? " phase-current" : ""}${isPast ? " phase-done" : ""}`}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all ${
+                      isCurrent
+                        ? "text-blue-400 bg-blue-600/10"
+                        : isPast
+                          ? "text-muted-foreground/60"
+                          : "text-muted-foreground/40"
+                    }`}
                   >
-                    <span className="phase-dot" />
-                    <span className="phase-label">{phase}</span>
+                    <span
+                      className={`size-1.5 rounded-full shrink-0 ${
+                        isCurrent
+                          ? "bg-blue-500 shadow-[0_0_6px_rgb(59_130_246_/_0.5)] animate-pulse"
+                          : isPast
+                            ? "bg-green-500/30"
+                            : "bg-muted-foreground/20"
+                      }`}
+                    />
+                    <span>{phase}</span>
                   </div>
                 );
               })}
             </div>
 
             {/* CSFloat API */}
-            <div className="rl-section">
-              <h3>CSFloat API</h3>
+            <div className="mt-5 pt-4 border-t border-border">
+              <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">CSFloat API</h3>
               {logData.csfloatStats && (
-                <div className="ds-source">
-                  <div className="ds-source-detail">
-                    {logData.csfloatStats.listingsStored.toLocaleString()} listings
-                    {" · "}{logData.csfloatStats.totalSales.toLocaleString()} sales
-                    {" · "}{logData.csfloatStats.saleObservations.toLocaleString()} observations
-                  </div>
+                <div className="mb-2 text-[0.68rem] text-muted-foreground/70">
+                  {logData.csfloatStats.listingsStored.toLocaleString()} listings
+                  {" · "}{logData.csfloatStats.totalSales.toLocaleString()} sales
+                  {" · "}{logData.csfloatStats.saleObservations.toLocaleString()} observations
                 </div>
               )}
               {rl && (
@@ -284,41 +337,51 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
                   <RateLimitBar label="Listings" pool={rl.listing_search} />
                   <RateLimitBar label="Sales" pool={rl.sale_history} />
                   <RateLimitBar label="Individual" pool={rl.individual} />
-                  <div className="rl-updated">Updated {timeAgo(rl.detected_at)}</div>
+                  <div className="text-[0.6rem] text-muted-foreground/40 mt-1.5 text-right">
+                    Updated {timeAgo(rl.detected_at)}
+                  </div>
                 </>
               )}
             </div>
 
             {/* DMarket + Skinport */}
             {(logData.dmarketStats || logData.skinportStats) && (
-              <div className="rl-section">
-                <h3>Other Sources</h3>
+              <div className="mt-5 pt-4 border-t border-border">
+                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">Other Sources</h3>
 
                 {logData.dmarketStats && (
-                  <div className="ds-source">
-                    <div className="ds-source-header">
-                      <span className="ds-source-label">DMarket API</span>
-                      <span className={`ds-source-status ${logData.dmarketStats.configured ? "ds-ok" : "ds-off"}`}>
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="text-xs text-muted-foreground">DMarket API</span>
+                      <Badge
+                        variant="secondary"
+                        className={`text-[0.6rem] px-1.5 py-0 h-4 ${logData.dmarketStats.configured ? "text-green-500" : "text-muted-foreground/60"}`}
+                      >
                         {logData.dmarketStats.configured ? "Configured" : "Off"}
-                      </span>
+                      </Badge>
                     </div>
-                    <div className="ds-source-detail">
+                    <div className="text-[0.68rem] text-muted-foreground/60">
                       {logData.dmarketStats.listingsStored.toLocaleString()} listings
                       {logData.dmarketStats.lastFetchAt && (
-                        <span className="ds-source-time"> · {timeAgo(logData.dmarketStats.lastFetchAt)}</span>
+                        <span className="text-muted-foreground/40"> · {timeAgo(logData.dmarketStats.lastFetchAt)}</span>
                       )}
                     </div>
                   </div>
                 )}
 
                 {logData.skinportStats && (
-                  <div className="ds-source">
-                    <div className="ds-source-header">
-                      <span className="ds-source-label">Skinport WS</span>
-                      <span className="ds-source-status ds-ok">Passive</span>
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="text-xs text-muted-foreground">Skinport WS</span>
+                      <Badge variant="secondary" className="text-[0.6rem] px-1.5 py-0 h-4 text-green-500">
+                        Passive
+                      </Badge>
                     </div>
-                    <div className="ds-source-detail">
+                    <div className="text-[0.68rem] text-muted-foreground/60">
                       {logData.skinportStats.listingsStored.toLocaleString()} listings
+                      {logData.skinportStats.saleObservations > 0 && (
+                        <> &middot; {logData.skinportStats.saleObservations.toLocaleString()} sales</>
+                      )}
                     </div>
                   </div>
                 )}
@@ -327,28 +390,31 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Right panel: tabs */}
-          <div className="daemon-log-section">
-            <div className="daemon-tabs">
-              <button className={tab === "log" ? "daemon-tab-active" : ""} onClick={() => setTab("log")}>Live Log</button>
-              <button className={tab === "cycles" ? "daemon-tab-active" : ""} onClick={() => setTab("cycles")}>Cycle History</button>
-            </div>
-            {tab === "log" ? (
-              <div
-                className="daemon-log"
-                ref={logContainerRef}
-                onScroll={handleScroll}
-              >
-                {logData.lines.map((line, i) => (
-                  <div key={i} className="daemon-log-line">{line}</div>
-                ))}
-                <div ref={logEndRef} />
-              </div>
-            ) : (
-              <CycleHistory />
-            )}
+          <div className="flex-1 flex flex-col overflow-hidden p-4">
+            <Tabs defaultValue="log" className="flex-1 flex flex-col overflow-hidden gap-0">
+              <TabsList className="shrink-0 mb-2.5 w-fit">
+                <TabsTrigger value="log">Live Log</TabsTrigger>
+                <TabsTrigger value="cycles">Cycle History</TabsTrigger>
+              </TabsList>
+              <TabsContent value="log" className="flex-1 min-h-0">
+                <div
+                  className="h-full overflow-y-auto bg-muted/20 border border-border rounded-md px-3 py-2.5 font-mono text-[0.72rem] leading-relaxed"
+                  ref={logContainerRef}
+                  onScroll={handleScroll}
+                >
+                  {logData.lines.map((line, i) => (
+                    <div key={i} className="text-muted-foreground whitespace-pre-wrap break-all">{line}</div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
+              </TabsContent>
+              <TabsContent value="cycles" className="flex-1 min-h-0">
+                <CycleHistory />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
