@@ -155,7 +155,8 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
 }
 
 
-function AppShell() {
+function AppShell({ user }: { user?: AuthUser | null }) {
+  const isAdmin = user?.tier === "admin";
   const { status, diffs, newDataHint, refresh } = useStatus();
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -179,7 +180,7 @@ function AppShell() {
             {newDataHint ? "Refresh (new data)" : "Refresh"}
             {newDataHint && <span className="ml-1 inline-block size-2 rounded-full bg-green-400 animate-pulse" />}
           </Button>
-          <Button
+          {isAdmin && <Button
             variant="outline"
             size="sm"
             onClick={() => setShowDaemonModal(true)}
@@ -197,11 +198,16 @@ function AppShell() {
               }
               return `Daemon C${cycle}${uptime ? ` ${uptime}` : ""}`;
             })()}
-          </Button>
+          </Button>}
+          {user && (
+            <span className="text-xs text-muted-foreground self-center px-2">
+              {user.display_name} ({user.tier})
+            </span>
+          )}
         </div>
       </div>
 
-      {showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
+      {isAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
 
       {/* Navigation */}
       <nav className="flex gap-1 mb-4 p-1 rounded-lg bg-muted/50 w-fit">
@@ -271,5 +277,5 @@ export default function App() {
   }
 
   // Logged in: show app
-  return <AppShell />;
+  return <AppShell user={user} />;
 }

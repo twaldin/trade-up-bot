@@ -29,6 +29,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [tierInfo, setTierInfo] = useState<{ delay: number; limit: number; showListingIds: boolean } | null>(null);
 
   // Read initial state from URL search params
   const initialType = (searchParams.get("type") as TradeUpType) || defaultType || types[0]?.value;
@@ -90,10 +91,11 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       }
       if (includeStale) params.set("include_stale", "true");
 
-      const res = await fetch(`/api/trade-ups?${params}`);
-      const data: TradeUpListResponse = await res.json();
+      const res = await fetch(`/api/trade-ups?${params}`, { credentials: "include" });
+      const data = await res.json();
       setTradeUps(data.trade_ups);
       setTotal(data.total);
+      setTierInfo(data.tier_config || null);
     } catch (err) {
       console.error("Failed to fetch trade-ups:", err);
     } finally {
@@ -124,6 +126,20 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   return (
     <>
+      {/* Tier banner */}
+      {tierInfo && tierInfo.delay > 0 && (
+        <div className="mb-3 px-3.5 py-2 bg-yellow-950/30 border border-yellow-500/30 rounded-md text-xs text-yellow-200 flex items-center justify-between">
+          <span>
+            {tierInfo.delay >= 1800 ? "30-minute" : "5-minute"} delay active
+            {!tierInfo.showListingIds && " · Listing links hidden"}
+            {tierInfo.limit > 0 && ` · ${tierInfo.limit} results per type`}
+          </span>
+          <a href="/auth/steam" className="text-yellow-400 hover:text-yellow-300 font-medium">
+            Upgrade →
+          </a>
+        </div>
+      )}
+
       {/* Type selector */}
       {types.length > 1 && (
         <div className="flex gap-0 mb-2 w-fit">
