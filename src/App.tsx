@@ -259,8 +259,8 @@ export default function App() {
     return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
   }
 
-  // Not logged in: show landing page (except /landing which is always landing)
-  if (!user) {
+  // Not logged in: show landing page unless on /demo
+  if (!user && !window.location.pathname.startsWith("/demo")) {
     return <LandingPage />;
   }
 
