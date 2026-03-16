@@ -5,11 +5,34 @@
 
 @custom-variant dark (&:is(.dark *));
 
+:root {
+  /* Landing page tokens */
+  --cta: 217 91% 60%;
+  --cta-foreground: 0 0% 100%;
+  --cta-hover: 217 91% 65%;
+  --profit: 142 71% 45%;
+  --text-primary: 0 0% 98%;
+  --text-secondary: 240 5% 65%;
+  --text-muted: 240 4% 46%;
+  --surface: 240 6% 10%;
+  --surface-hover: 240 5% 15%;
+  --surface-ring: 0 0% 100% / 0.1;
+  --surface-border: 240 4% 16%;
+  --surface-border-hover: 240 4% 26%;
+  --tier-knife: 45 93% 47%;
+  --tier-covert: 0 72% 51%;
+  --tier-classified: 330 81% 60%;
+  --tier-restricted: 270 67% 47%;
+  --tier-milspec: 217 91% 60%;
+  --tier-industrial: 199 89% 48%;
+}
+
 body {
   min-height: 100vh;
 }
 
-#root {
+/* App shell gets constrained; landing page is full-width */
+#root.app-shell {
   max-width: 1400px;
   margin: 0 auto;
   padding: 20px;
