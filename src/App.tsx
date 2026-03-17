@@ -108,7 +108,7 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
   return (
     <TradeUpsPage
       types={TRADE_UP_TYPES}
-      defaultType="covert_knife"
+      defaultType="all"
       status={status}
       refreshKey={refreshKey}
       onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
@@ -357,8 +357,8 @@ export default function App() {
     return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
   }
 
-  // Not logged in: show landing page unless on /demo
-  if (!user && !window.location.pathname.startsWith("/demo")) {
+  // Not logged in: show landing page
+  if (!user) {
     return <LandingPage />;
   }
 

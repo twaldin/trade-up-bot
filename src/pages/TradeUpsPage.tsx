@@ -196,10 +196,11 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       )}
 
-      <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
-
-      <div className="flex items-center justify-end mb-2">
-        <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none" title="Show trade-ups with missing input listings (sold/delisted)">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="flex-1 min-w-0">
+          <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
+        </div>
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none whitespace-nowrap shrink-0" title="Show trade-ups with missing input listings (sold/delisted)">
           <input
             type="checkbox"
             checked={includeStale}

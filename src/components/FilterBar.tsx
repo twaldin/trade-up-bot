@@ -280,7 +280,7 @@ export function FilterBar({ filters, onFiltersChange }: {
   }, [filters, onFiltersChange]);
 
   return (
-    <div className="mb-3.5">
+    <div>
       <FilterChips filters={filters} onUpdate={onFiltersChange} />
 
       <div className="flex gap-2.5 items-start flex-wrap">
