@@ -376,12 +376,14 @@ export async function phase4DataFetch(
       }
     }
 
-    // Coverage: fetch Restricted, Mil-Spec, Industrial (builds sale history + ref prices)
+    // Coverage: fetch Restricted, Mil-Spec, Industrial, Consumer Grade (builds sale history + ref prices)
     const restrictedCalls = (budget as any)._restrictedCalls ?? 0;
     const milspecCalls = (budget as any)._milspecCalls ?? 0;
     const industrialCalls = (budget as any)._industrialCalls ?? 0;
+    // Consumer Grade shares Industrial's budget (both are low-priority DMarket-primary tiers)
+    const consumerCalls = Math.max(2, Math.floor(industrialCalls / 2));
 
-    for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls]] as const) {
+    for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls - consumerCalls], ["Consumer Grade", consumerCalls]] as const) {
       if (!budget.isListingRateLimited() && calls >= 2) {
         setDaemonStatus(db, "fetching", `Phase 4b: ${rarity} coverage`);
         try {
