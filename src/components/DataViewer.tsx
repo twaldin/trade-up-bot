@@ -152,17 +152,6 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
               </Button>
             ))}
             <span className="text-muted-foreground/40 mx-1 select-none">|</span>
-            <Button
-              variant="outline"
-              size="sm"
-              className={stattrak
-                ? "bg-yellow-900 border-yellow-500 text-yellow-300 hover:bg-yellow-800"
-                : "text-yellow-500 hover:text-yellow-400"
-              }
-              onClick={() => { setStattrak(st => !st); setSelectedSkin(null); }}
-            >
-              StatTrak
-            </Button>
           </div>
         )}
         <div className="flex gap-2 items-center flex-wrap">
