@@ -188,7 +188,8 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
         </div>
       </div>
 
-      <div className="grid grid-cols-[360px_1fr] gap-3 min-h-[600px]">
+      {/* Desktop: side-by-side grid */}
+      <div className="hidden md:grid grid-cols-[360px_1fr] gap-3 min-h-[600px]">
         <div className="bg-card border border-border rounded-md overflow-y-auto max-h-[80vh]">
           <SkinList
             skins={sorted}
@@ -198,7 +199,6 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
             onNavigateCollection={onNavigateCollection}
           />
         </div>
-
         <div className="min-h-[400px]">
           {selectedSkin ? (
             <SkinDetailPanel
@@ -216,6 +216,36 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
             </div>
           )}
         </div>
+      </div>
+
+      {/* Mobile: stacked, detail replaces list when selected */}
+      <div className="md:hidden">
+        {selectedSkin ? (
+          <div>
+            <button
+              className="mb-2 px-3 py-1.5 text-xs rounded border border-border text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={() => setSelectedSkin(null)}
+            >
+              ← Back to skins
+            </button>
+            <SkinDetailPanel
+              skinName={selectedSkin}
+              stattrak={stattrak}
+              onClose={() => setSelectedSkin(null)}
+              onNavigateCollection={onNavigateCollection}
+            />
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-md overflow-y-auto max-h-[70vh]">
+            <SkinList
+              skins={sorted}
+              selectedSkin={selectedSkin}
+              onSelectSkin={setSelectedSkin}
+              loading={loading}
+              onNavigateCollection={onNavigateCollection}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

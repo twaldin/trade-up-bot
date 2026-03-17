@@ -3,7 +3,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { initDb } from "./db.js";
+import { initDb, getReadDb } from "./db.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { statusRouter } from "./routes/status.js";
@@ -102,15 +102,16 @@ app.use((req, res, next) => {
 });
 
 const db = initDb();
+const readDb = getReadDb(); // Read-only connection — never blocked by daemon writes
 
-// Auth (Steam OpenID + sessions) — must be before route mounting
+// Auth (Steam OpenID + sessions) — must be before route mounting (needs write access)
 setupAuth(app, db);
 
-// Mount route modules
-app.use(statusRouter(db));
-app.use(tradeUpsRouter(db));
-app.use(dataRouter(db, knifeTypeToCases, collectionKnifePool));
-app.use(collectionsRouter(db, collectionKnifePool));
+// Mount route modules — read-heavy routes use readDb for non-blocking reads
+app.use(statusRouter(readDb));
+app.use(tradeUpsRouter(db));  // keeps write db for claims/verify/auto-correct
+app.use(dataRouter(readDb, knifeTypeToCases, collectionKnifePool));
+app.use(collectionsRouter(readDb, collectionKnifePool));
 app.use(snapshotsRouter(db));
 app.use(calculatorRouter(db));
 app.use(claimsRouter(db));
