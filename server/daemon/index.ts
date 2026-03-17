@@ -212,32 +212,56 @@ export async function main() {
 
     {
       type WorkerTask = { name: string; promise: Promise<TradeUp[]> };
-      const tasks: WorkerTask[] = [];
-      if (shouldRunKnife) {
-        tasks.push({ name: "knife", promise: runCalcWorker("knife", DB_PATH) });
-      }
-      tasks.push({ name: "classified", promise: runCalcWorker("classified", DB_PATH) });
-      tasks.push({ name: "restricted", promise: runCalcWorker("restricted", DB_PATH) });
-      tasks.push({ name: "milspec", promise: runCalcWorker("milspec", DB_PATH) });
-      tasks.push({ name: "industrial", promise: runCalcWorker("industrial", DB_PATH) });
+      // Batch 1: high-priority (knife + classified) — 2 workers max to keep API responsive
+      const batch1: WorkerTask[] = [];
+      if (shouldRunKnife) batch1.push({ name: "knife", promise: runCalcWorker("knife", DB_PATH) });
+      batch1.push({ name: "classified", promise: runCalcWorker("classified", DB_PATH) });
 
-      console.log(`\n[${timestamp()}] Spawning ${tasks.length} worker threads for parallel discovery...`);
-      setDaemonStatus(db, "calculating", `Phase 5: ${tasks.length} parallel discovery workers`);
+      console.log(`\n[${timestamp()}] Batch 1: ${batch1.map(t => t.name).join(" + ")} (parallel)`);
+      setDaemonStatus(db, "calculating", `Phase 5: ${batch1.map(t => t.name).join(" + ")}`);
 
-      const results = await Promise.allSettled(tasks.map(t => t.promise));
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
+      const results1 = await Promise.allSettled(batch1.map(t => t.promise));
+      for (let i = 0; i < results1.length; i++) {
+        const r = results1[i];
         if (r.status === "fulfilled") {
-          if (tasks[i].name === "knife") knifeDiscovery = r.value;
-          else if (tasks[i].name === "classified") classifiedDiscovery = r.value;
-          else if (tasks[i].name === "restricted") restrictedDiscovery = r.value;
-          else if (tasks[i].name === "milspec") milspecDiscovery = r.value;
-          else if (tasks[i].name === "industrial") industrialDiscovery = r.value;
-          console.log(`  Worker ${tasks[i].name}: ${r.value.length} trade-ups`);
+          if (batch1[i].name === "knife") knifeDiscovery = r.value;
+          else if (batch1[i].name === "classified") classifiedDiscovery = r.value;
+          console.log(`  Worker ${batch1[i].name}: ${r.value.length} trade-ups`);
         } else {
-          console.error(`  Worker ${tasks[i].name} failed: ${r.reason?.message} — falling back to main thread`);
+          console.error(`  Worker ${batch1[i].name} failed: ${r.reason?.message}`);
         }
       }
+
+      // Batch 2: lower-priority (restricted + milspec + industrial) — 2 at a time
+      const batch2: WorkerTask[] = [
+        { name: "restricted", promise: runCalcWorker("restricted", DB_PATH) },
+        { name: "milspec", promise: runCalcWorker("milspec", DB_PATH) },
+      ];
+      console.log(`  Batch 2: ${batch2.map(t => t.name).join(" + ")}`);
+      setDaemonStatus(db, "calculating", `Phase 5: ${batch2.map(t => t.name).join(" + ")}`);
+
+      const results2 = await Promise.allSettled(batch2.map(t => t.promise));
+      for (let i = 0; i < results2.length; i++) {
+        const r = results2[i];
+        if (r.status === "fulfilled") {
+          if (batch2[i].name === "restricted") restrictedDiscovery = r.value;
+          else if (batch2[i].name === "milspec") milspecDiscovery = r.value;
+          console.log(`  Worker ${batch2[i].name}: ${r.value.length} trade-ups`);
+        } else {
+          console.error(`  Worker ${batch2[i].name} failed: ${r.reason?.message}`);
+        }
+      }
+
+      // Batch 3: industrial (runs alone)
+      console.log(`  Batch 3: industrial`);
+      setDaemonStatus(db, "calculating", "Phase 5: industrial");
+      try {
+        industrialDiscovery = await runCalcWorker("industrial", DB_PATH);
+        console.log(`  Worker industrial: ${industrialDiscovery.length} trade-ups`);
+      } catch (err: any) {
+        console.error(`  Worker industrial failed: ${err.message}`);
+      }
+
     }
 
     // Phase 5: Knife (saving on main thread)
