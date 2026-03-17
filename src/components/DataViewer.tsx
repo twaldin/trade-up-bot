@@ -18,6 +18,7 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
   const [skins, setSkins] = useState<SkinSummary[]>([]);
   const [search, setSearch] = useState(initialSearch || "");
   const [appliedSearch, setAppliedSearch] = useState(initialSearch || "");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSkin, setSelectedSkin] = useState<string | null>(initialSearch || null);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"listing_count" | "sale_count" | "min_price" | "name">("listing_count");
@@ -135,15 +136,40 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
         </div>
       )}
       <div className="flex gap-2 items-center mb-3 flex-wrap">
-        <Input
-          type="text"
-          placeholder="Search by name, weapon, collection..."
-          className="flex-1 min-w-[200px]"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && applySearch()}
-        />
-        <Button variant="outline" size="default" onClick={applySearch}>Search</Button>
+        <div className="relative flex-1 min-w-[200px]">
+          <Input
+            type="text"
+            placeholder="Search by name, weapon, collection..."
+            className="w-full"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setShowSuggestions(true); }}
+            onKeyDown={e => { if (e.key === "Enter") { applySearch(); setShowSuggestions(false); } }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+          />
+          {showSuggestions && search.length >= 2 && (() => {
+            const q = search.toLowerCase();
+            const matches = skins
+              .filter(s => s.name.toLowerCase().includes(q) || (s.collection_name && s.collection_name.toLowerCase().includes(q)))
+              .slice(0, 8);
+            if (matches.length === 0) return null;
+            return (
+              <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border rounded-b-md max-h-48 overflow-y-auto shadow-lg">
+                {matches.map(s => (
+                  <div
+                    key={s.name}
+                    className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors"
+                    onMouseDown={e => { e.preventDefault(); setSearch(s.name); setAppliedSearch(s.name); setSelectedSkin(s.name); setShowSuggestions(false); }}
+                  >
+                    <span className="text-foreground">{s.name}</span>
+                    {s.collection_name && <span className="text-muted-foreground ml-2 text-[0.65rem]">{s.collection_name}</span>}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+        <Button variant="outline" size="default" onClick={() => { applySearch(); setShowSuggestions(false); }}>Search</Button>
         <div className="flex gap-1 items-center text-[0.8rem] text-muted-foreground">
           <span>Sort:</span>
           {(["listing_count", "sale_count", "min_price", "name"] as const).map(s => (

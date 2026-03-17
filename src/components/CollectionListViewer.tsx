@@ -30,6 +30,7 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [filter, setFilter] = useState<"all" | "knives" | "gloves" | "profitable">("all");
 
   useEffect(() => {
@@ -82,14 +83,35 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
             </button>
           ))}
         </div>
-        <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative min-w-[200px] flex-1">
           <Input
             type="text"
             placeholder="Search collections..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="min-w-[200px] flex-1"
+            onChange={e => { setSearch(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            className="w-full"
           />
+          {showSuggestions && search.length >= 1 && (() => {
+            const q = search.toLowerCase();
+            const matches = collections.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
+            if (matches.length === 0) return null;
+            return (
+              <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border rounded-b-md max-h-48 overflow-y-auto shadow-lg">
+                {matches.map(c => (
+                  <div
+                    key={c.name}
+                    className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors flex justify-between"
+                    onMouseDown={e => { e.preventDefault(); onSelectCollection(c.name); setShowSuggestions(false); }}
+                  >
+                    <span className="text-foreground">{c.name}</span>
+                    <span className="text-muted-foreground">{c.listing_count} listings</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
