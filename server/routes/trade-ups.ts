@@ -5,8 +5,9 @@ import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 
-export function tradeUpsRouter(db: Database.Database): Router {
+export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
   const router = Router();
+  const rdb = readDb ?? db; // Use read-only connection for queries when available
 
   // Cache filter options for 60s
   let filterCache: { data: any; ts: number } | null = null;
@@ -16,13 +17,13 @@ export function tradeUpsRouter(db: Database.Database): Router {
       return res.json(filterCache.data);
     }
     // Get input skin names from trade_up_inputs table
-    const inputSkins = db.prepare(`
+    const inputSkins = rdb.prepare(`
       SELECT DISTINCT skin_name as name
       FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
     `).all() as { name: string }[];
 
     // Get output skin names from outcomes_json column
-    const outputSkinRows = db.prepare(`
+    const outputSkinRows = rdb.prepare(`
       SELECT DISTINCT json_extract(je.value, '$.skin_name') as name
       FROM trade_ups t, json_each(t.outcomes_json) je
       WHERE t.is_theoretical = 0 AND t.outcomes_json IS NOT NULL
@@ -45,7 +46,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }
     }
 
-    const collections = db.prepare(`
+    const collections = rdb.prepare(`
       SELECT DISTINCT collection_name as name, COUNT(*) as count
       FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
       GROUP BY collection_name ORDER BY count DESC
@@ -62,7 +63,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
   const freeCache = new Map<string, { rows: any[]; calcTs: string }>();
 
   function getFreeTierTradeUps(types: string[]): any[] {
-    const calcRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+    const calcRow = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
     const calcTs = calcRow?.value || "";
 
     const results: any[] = [];
@@ -73,7 +74,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
         continue;
       }
       // 10 oldest stale/partial trade-ups that are profitable or have >25% chance to profit
-      const rows = db.prepare(`
+      const rows = rdb.prepare(`
         SELECT t.*, json_array_length(t.outcomes_json) as outcome_count FROM trade_ups t
         WHERE t.is_theoretical = 0 AND t.type = ?
           AND (t.listing_status = 'stale' OR t.listing_status = 'partial')
@@ -96,7 +97,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     if (Date.now() - lastCalcCheckTs < 5000) return true;
     lastCalcCheckTs = Date.now();
     try {
-      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+      const row = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
       const currentCalc = row?.value || "";
       if (currentCalc !== lastKnownCalc) {
         lastKnownCalc = currentCalc;
@@ -157,7 +158,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       const freeInputsByTuId = new Map<number, TradeUpInput[]>();
       if (freeIds.length > 0) {
         const ph = freeIds.map(() => "?").join(",");
-        const allInputs = db.prepare(
+        const allInputs = rdb.prepare(
           `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${ph})`
         ).all(...freeIds) as (TradeUpInput & { trade_up_id: number })[];
         for (const inp of allInputs) {
@@ -194,7 +195,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       });
 
       let myClaimCount = 0;
-      try { myClaimCount = (db.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')").get(userId) as { c: number }).c; } catch {}
+      try { myClaimCount = (rdb.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')").get(userId) as { c: number }).c; } catch {}
 
       const result = {
         trade_ups: tradeUps,
@@ -230,7 +231,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const claimedByOthers = new Set<number>();
     const claimedByMe = new Set<number>();
     try {
-      const claims = db.prepare(
+      const claims = rdb.prepare(
         "SELECT trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
       ).all() as { trade_up_id: number; user_id: string }[];
       for (const c of claims) {
@@ -343,14 +344,14 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
     // Get total count + profitable count (same WHERE, so counts match filters exactly)
-    const counts = db.prepare(
+    const counts = rdb.prepare(
       `SELECT COUNT(*) as c, SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups t ${where}`
     ).get(...params) as { c: number; profitable: number };
     const total = counts.c;
     const totalProfitable = counts.profitable ?? 0;
 
     // Get trade-ups
-    const rows = db
+    const rows = rdb
       .prepare(
         `SELECT t.*, json_array_length(t.outcomes_json) as outcome_count FROM trade_ups t ${where}
          ORDER BY ${sortCol} ${sortOrder}
@@ -378,7 +379,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const inputsByTuId = new Map<number, TradeUpInput[]>();
     if (tuIds.length > 0) {
       const placeholders = tuIds.map(() => "?").join(",");
-      const allInputs = db.prepare(
+      const allInputs = rdb.prepare(
         `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`
       ).all(...tuIds) as (TradeUpInput & { trade_up_id: number })[];
       for (const inp of allInputs) {
@@ -393,7 +394,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const missingByTuId = new Map<number, Set<string>>();
     if (nonActiveIds.length > 0) {
       const placeholders = nonActiveIds.map(() => "?").join(",");
-      const missingRows = db.prepare(`
+      const missingRows = rdb.prepare(`
         SELECT tui.trade_up_id, tui.listing_id FROM trade_up_inputs tui
         LEFT JOIN listings l ON tui.listing_id = l.id
         WHERE tui.trade_up_id IN (${placeholders}) AND l.id IS NULL
@@ -461,7 +462,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     // Count user's active claims for the "Your Claims" button badge
     let myClaimCount = 0;
     try {
-      myClaimCount = (db.prepare(
+      myClaimCount = (rdb.prepare(
         "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
       ).get(userId) as { c: number }).c;
     } catch { /* ignore */ }
@@ -778,7 +779,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
   router.get("/api/trade-up/:id/outcomes", (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-    const row = db.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(id) as { outcomes_json: string | null } | undefined;
+    const row = rdb.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(id) as { outcomes_json: string | null } | undefined;
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ outcomes: JSON.parse(row.outcomes_json || "[]") });
   });
@@ -795,7 +796,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const source = priceSources.get(cacheKey) ?? "unknown";
 
     // All price_data entries
-    const priceDataRows = db.prepare(`
+    const priceDataRows = rdb.prepare(`
       SELECT source, median_price_cents, min_price_cents, volume, updated_at
       FROM price_data WHERE skin_name = ? AND condition = ?
       ORDER BY source
@@ -810,7 +811,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       "Battle-Scarred": { min: 0.45, max: 1.0 },
     };
     const bounds = condBounds[condition];
-    const listings = bounds ? db.prepare(`
+    const listings = bounds ? rdb.prepare(`
       SELECT l.price_cents, l.float_value, l.created_at
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE s.name = ? AND l.float_value >= ? AND l.float_value < ?
@@ -819,8 +820,8 @@ export function tradeUpsRouter(db: Database.Database): Router {
     `).all(skin_name, bounds.min, bounds.max) as { price_cents: number; float_value: number; created_at: string }[] : [];
 
     // Sale history
-    const hasTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sale_history'").get();
-    const sales = hasTable && bounds ? db.prepare(`
+    const hasTable = rdb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sale_history'").get();
+    const sales = hasTable && bounds ? rdb.prepare(`
       SELECT price_cents, float_value, sold_at
       FROM sale_history WHERE skin_name = ? AND float_value >= ? AND float_value < ?
       ORDER BY sold_at DESC LIMIT 10
