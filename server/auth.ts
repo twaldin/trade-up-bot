@@ -39,7 +39,7 @@ class SqliteSessionStore extends session.Store {
       const expired = Math.floor((Date.now() + maxAge) / 1000);
       this.db.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
-    } catch (e) { cb?.(e); }
+    } catch { cb?.(); } // Silently ignore lock errors — touch is non-critical
   }
 }
 
