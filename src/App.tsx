@@ -157,20 +157,8 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
 
 function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
-  const [viewAs, setViewAs] = useState<string | null>(null);
-
-  // Apply view_as to all API calls via URL param
-  useEffect(() => {
-    if (viewAs) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("view_as", viewAs);
-      window.history.replaceState({}, "", url.toString());
-    } else {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("view_as");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, [viewAs]);
+  // Read view_as from URL (survives reload)
+  const viewAs = new URLSearchParams(window.location.search).get("view_as");
 
   const tierColors: Record<string, string> = {
     admin: "text-red-400",
@@ -249,7 +237,12 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
                 <button
                   key={tier ?? "admin"}
                   className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted ${viewAs === tier ? "text-foreground font-medium" : "text-muted-foreground"}`}
-                  onClick={() => { setViewAs(tier); setOpen(false); window.location.reload(); }}
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    if (tier) url.searchParams.set("view_as", tier);
+                    else url.searchParams.delete("view_as");
+                    window.location.href = url.toString();
+                  }}
                 >
                   {tier ? `View as ${tier}` : "View as admin (default)"}
                 </button>
