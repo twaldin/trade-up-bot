@@ -11,6 +11,7 @@ type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_cl
 interface TypeOption {
   value: TradeUpType;
   label: string;
+  color?: string;
 }
 
 interface Props {
@@ -165,29 +166,28 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
       {/* Type selector + Your Claims button */}
       {types.length > 1 && (
-        <div className="flex gap-0 mb-2 w-fit">
-          {types.map((t, i) => (
-            <button
-              key={t.value}
-              className={`px-5 py-2 text-sm border border-border transition-colors cursor-pointer ${
-                i === 0 ? "rounded-l-md" : ""
-              } ${
-                i > 0 ? "border-l-0" : ""
-              } ${
-                !showMyClaims && type === t.value
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              onClick={() => handleTypeChange(t.value)}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {types.map((t) => {
+            const isActive = !showMyClaims && type === t.value;
+            return (
+              <button
+                key={t.value}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                  isActive
+                    ? (t.color || "bg-foreground text-background")
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => handleTypeChange(t.value)}
+              >
+                {t.label}
+              </button>
+            );
+          })}
           <button
-            className={`px-5 py-2 text-sm border border-border border-l-0 rounded-r-md transition-colors cursor-pointer ${
+            className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
               showMyClaims
-                ? "bg-purple-600 text-white border-purple-600"
-                : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-purple-500 text-purple-950"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => { setShowMyClaims(!showMyClaims); setPage(1); }}
           >

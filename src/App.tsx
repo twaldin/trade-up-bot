@@ -50,12 +50,12 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
 }
 
 const TRADE_UP_TYPES = [
-  { value: "all" as const, label: "All" },
-  { value: "covert_knife" as const, label: "Knife/Gloves" },
-  { value: "classified_covert" as const, label: "Classified" },
-  { value: "restricted_classified" as const, label: "Restricted" },
-  { value: "milspec_restricted" as const, label: "Mil-Spec" },
-  { value: "industrial_milspec" as const, label: "Industrial" },
+  { value: "all" as const, label: "All", color: "" },
+  { value: "covert_knife" as const, label: "Knife/Gloves", color: "bg-yellow-500 text-yellow-950" },
+  { value: "classified_covert" as const, label: "Classified", color: "bg-pink-500 text-pink-950" },
+  { value: "restricted_classified" as const, label: "Restricted", color: "bg-purple-500 text-purple-950" },
+  { value: "milspec_restricted" as const, label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
+  { value: "industrial_milspec" as const, label: "Industrial", color: "bg-sky-400 text-sky-950" },
 ];
 
 
@@ -292,7 +292,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       {isAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
 
       {/* Navigation */}
-      <nav className="flex gap-1 mb-4 p-1 rounded-lg bg-muted/50 w-fit">
+      <nav className="flex gap-6 mb-4 border-b border-border">
         {[
           { to: "/", label: "Trade-Ups", end: true },
           { to: "/data", label: "Data" },
@@ -304,10 +304,10 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              `px-1 pb-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
                 isActive
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`
             }
           >
