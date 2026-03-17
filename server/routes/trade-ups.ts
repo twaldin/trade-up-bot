@@ -109,7 +109,11 @@ export function tradeUpsRouter(db: Database.Database): Router {
   }
 
   router.get("/api/trade-ups", (req, res) => {
-    const cacheKey = JSON.stringify(req.query) + (req.user as any)?.tier;
+    // Include user ID + claim count in cache key so claims invalidate correctly
+    const userId = (req.user as any)?.steam_id || "anon";
+    let claimCount = 0;
+    try { claimCount = (db.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')").get() as any).c; } catch {}
+    const cacheKey = JSON.stringify(req.query) + userId + claimCount;
     if (isCacheValid()) {
       const cached = tuCache.get(cacheKey);
       if (cached) return res.json(cached.data);
