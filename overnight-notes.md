@@ -116,3 +116,28 @@
 
 **No code changes this check.** The exploration improvements are working well, especially the milspec breakthrough. Will observe if knife/classified stabilize.
 
+### 2026-03-17 09:17 — Check #3 (10+ cycles with new code)
+
+| Type | Total | Profitable | Max Profit | Avg Profit | Delta vs Check #2 |
+|------|-------|-----------|-----------|-----------|-------------------|
+| covert_knife | 18,200 | 1,097 | $133.07 | $50.62 | +462 profitable! |
+| classified_covert | 39,080 | 1,125 | $3.96 | $0.85 | +918 profitable! |
+| restricted_classified | 28,255 | 367 | $1.07 | $0.19 | -882 (cycle churn) |
+| milspec_restricted | 48,908 | 458 | $0.84 | $0.36 | +17 |
+| industrial_milspec | 12,437 | 0 | -$0.05 | - | -102 (all gone stale) |
+
+**Coverage:** Covert 680/35,252 (+470), Classified 302/17,266 (+269), Restricted 463/19,704 (-46), Mil-Spec 672/30,311 (-1), Industrial 178/11,506 (-57)
+**CSFloat refs:** 5,615 (+5)
+**Staleness:** 77 checked, 48 removed (62%)
+**New max profit:** $133.07 (up from $118.49!)
+
+**Key findings:**
+1. **Knife profitable exploded: 267→1,097!** Merge-save accumulation is working. Max profit up $133 from $118.
+2. **Classified also surged: 61→1,125!** Huge jump — discovery + exploration finding real profits.
+3. **Restricted dropped 1,259→367** — merge-save cycling cleared many, but still finding 367 active profitable.
+4. **Milspec holding at 458** — stable, swap optimization maintaining.
+5. **Industrial went to 0 profitable** — all stale, listings churning faster than discovery.
+6. **Covert coverage +470 listings** in 2 hours — CSFloat fetching healthy.
+
+**Assessment:** System is performing well. Knife and classified profitable counts are climbing steadily via merge-save accumulation. No code changes needed — the exploration improvements from earlier are producing strong results. Will continue observing.
+
