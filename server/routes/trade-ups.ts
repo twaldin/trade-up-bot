@@ -8,9 +8,13 @@ import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.j
 export function tradeUpsRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Lightweight autocomplete data for filter UI
+  // Cache filter options for 60s
+  let filterCache: { data: any; ts: number } | null = null;
 
   router.get("/api/filter-options", (_req, res) => {
+    if (filterCache && Date.now() - filterCache.ts < 60_000) {
+      return res.json(filterCache.data);
+    }
     // Get input skin names from trade_up_inputs table
     const inputSkins = db.prepare(`
       SELECT DISTINCT skin_name as name
@@ -47,7 +51,9 @@ export function tradeUpsRouter(db: Database.Database): Router {
       GROUP BY collection_name ORDER BY count DESC
     `).all() as { name: string; count: number }[];
 
-    res.json({ skins: [...skinMap.values()], collections });
+    const result = { skins: [...skinMap.values()], collections };
+    filterCache = { data: result, ts: Date.now() };
+    res.json(result);
   });
 
   router.get("/api/trade-ups", (req, res) => {

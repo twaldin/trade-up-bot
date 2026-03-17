@@ -8,7 +8,14 @@ import type { SyncStatus } from "../../shared/types.js";
 export function statusRouter(db: Database.Database): Router {
   const router = Router();
 
+  // Cache status response for 30 seconds (heavy aggregate queries, polled every 5s)
+  let statusCache: { data: any; ts: number } | null = null;
+  const STATUS_CACHE_TTL = 30_000;
+
   router.get("/api/status", (_req, res) => {
+    if (statusCache && Date.now() - statusCache.ts < STATUS_CACHE_TTL) {
+      return res.json(statusCache.data);
+    }
     const listingStats = (rarity: string, excludeKnives = false) => {
       const knifeFilter = excludeKnives ? "AND s.name NOT LIKE '★%'" : "";
       const r = db.prepare(`
@@ -62,7 +69,7 @@ export function statusRouter(db: Database.Database): Router {
       FROM collection_scores ORDER BY priority_score DESC LIMIT 5
     `).all() as { collection_name: string; priority_score: number; profitable_count: number; avg_profit_cents: number }[];
 
-    res.json({
+    const result = ({
       classified_listings: classified.listings,
       classified_skins: classified.skins,
       classified_total: classified.total,
@@ -130,6 +137,9 @@ export function statusRouter(db: Database.Database): Router {
       })(),
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
+
+    statusCache = { data: result, ts: Date.now() };
+    res.json(result);
   });
 
   router.get("/api/daemon-log", (_req, res) => {
