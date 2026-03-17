@@ -123,18 +123,18 @@ export function tradeUpsRouter(db: Database.Database): Router {
       where += ` AND t.created_at <= datetime('now', '-${tierConfig.delay} seconds')`;
     }
 
-    // Exclude trade-ups claimed by OTHER users (only check if claims table has active claims)
-    const activeClaims = db.prepare(
-      "SELECT COUNT(*) as c FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
-    ).get() as { c: number };
-    if (activeClaims.c > 0) {
-      where += ` AND t.id NOT IN (
-        SELECT trade_up_id FROM trade_up_claims
-        WHERE released_at IS NULL AND expires_at > datetime('now')
-        AND user_id != ?
-      )`;
-      params.push(userId);
-    }
+    // Load active claims to mark (not exclude) claimed trade-ups
+    const claimedByOthers = new Set<number>();
+    const claimedByMe = new Set<number>();
+    try {
+      const claims = db.prepare(
+        "SELECT trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
+      ).all() as { trade_up_id: number; user_id: string }[];
+      for (const c of claims) {
+        if (c.user_id === userId) claimedByMe.add(c.trade_up_id);
+        else claimedByOthers.add(c.trade_up_id);
+      }
+    } catch { /* ignore lock errors */ }
 
     if (type) {
       where += " AND t.type = ?";
@@ -299,7 +299,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
 
-      return tu;
+      return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
 
     // Redact listing IDs for free users (show skin name + price but not specific listing)

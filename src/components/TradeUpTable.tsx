@@ -322,9 +322,17 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   </span>
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {tu.profit_cents > 0 && (
+                  {(tu as any).claimed_by_other ? (
+                    <span className="px-2 py-1 text-[0.65rem] rounded bg-muted text-muted-foreground border border-border">
+                      Claimed
+                    </span>
+                  ) : (tu as any).claimed_by_me ? (
+                    <span className="px-2 py-1 text-[0.65rem] font-semibold rounded bg-purple-950/50 text-purple-300 border border-purple-900">
+                      Your Claim
+                    </span>
+                  ) : tu.profit_cents > 0 ? (
                     <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
-                  )}
+                  ) : null}
                 </td>
               </tr>
               {expandedId === tu.id && (
