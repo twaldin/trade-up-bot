@@ -130,10 +130,21 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // No Steam/Skinport for output pricing. Both systematically overestimate:
-  // Steam 1.6x CSFloat (15% Valve tax), Skinport 1.2x (12% seller fee).
-  // If CSFloat doesn't have data, the skin is unpriced ($0 = conservative).
-  // CSFloat data builds over time from listing/sale fetches across all rarities.
+  // Step 2b: DMarket listing floor as conservative gap-fill for non-knife gun skins.
+  // DMarket prices are ~1.1x CSFloat for commodity skins (2.5% buyer fee vs 2.8%).
+  // Apply 0.90x discount to be conservative. Only for skins with 3+ DMarket listings.
+  let dmarketGapFillCount = 0;
+  for (const [key, floor] of dmarketFloorCache) {
+    if (priceCache.has(key)) continue;
+    if (key.startsWith("★")) continue; // No DMarket for knife/glove output pricing
+    const discounted = Math.round(floor * 0.90);
+    if (discounted > 0) {
+      priceCache.set(key, discounted);
+      priceSources.set(key, `dmarket floor (×0.90)`);
+      dmarketGapFillCount++;
+    }
+  }
+
   const steamPriceCount = 0;
   const skinportPriceCount = 0;
 
