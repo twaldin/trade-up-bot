@@ -128,8 +128,58 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   const totalPages = Math.ceil(total / perPage);
 
+  // Active claims panel
+  const [claims, setClaims] = useState<any[]>([]);
+  const [showClaims, setShowClaims] = useState(false);
+  useEffect(() => {
+    fetch("/api/claims", { credentials: "include" })
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setClaims(data); })
+      .catch(() => {});
+  }, [refreshKey]);
+
   return (
     <>
+      {/* Active claims panel */}
+      {claims.length > 0 && (
+        <div className="mb-3">
+          <button
+            className="text-[0.75rem] text-purple-400 hover:text-purple-300 cursor-pointer mb-1"
+            onClick={() => setShowClaims(!showClaims)}
+          >
+            {showClaims ? "▼" : "▶"} Your Claims ({claims.length}/5)
+          </button>
+          {showClaims && (
+            <div className="grid gap-1.5">
+              {claims.map((c: any) => {
+                const expiresIn = Math.max(0, Math.round((new Date(c.expires_at).getTime() - Date.now()) / 60000));
+                return (
+                  <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-purple-950/20 border border-purple-900/50 rounded-md text-xs">
+                    <div>
+                      <span className="text-foreground font-medium">{c.type?.replace("_", "→")}</span>
+                      <span className="text-green-500 ml-2">{formatDollars(c.profit_cents)}</span>
+                      <span className="text-muted-foreground ml-2">{(c.chance_to_profit * 100).toFixed(0)}% chance</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-purple-400">{expiresIn}m left</span>
+                      <button
+                        className="px-1.5 py-0.5 text-[0.65rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer"
+                        onClick={async () => {
+                          await fetch(`/api/trade-ups/${c.trade_up_id}/claim`, { method: "DELETE", credentials: "include" });
+                          setClaims(prev => prev.filter(x => x.id !== c.id));
+                        }}
+                      >
+                        Release
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tier banner */}
       {tierInfo && tierInfo.delay > 0 && (
         <div className="mb-3 px-3.5 py-2 bg-yellow-950/30 border border-yellow-500/30 rounded-md text-xs text-yellow-200 flex items-center justify-between">
