@@ -130,9 +130,25 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // Step 2b: Skinport price data (fill gaps — covers items CSFloat ref doesn't have)
-  // Require volume >= 10 to avoid inflated prices from thin Skinport data
-  // (e.g., Galil Stone Cold FN: Skinport $108 at 5 vol vs CSFloat $40 at 272 vol)
+  // Step 2b: Steam price data — highest volume, broadest coverage. Loaded before Skinport
+  // because Steam 255 vol is far more reliable than Skinport 10 vol.
+  let steamPriceCount = 0;
+  const steamRows = db.prepare(`
+    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
+    FROM price_data WHERE source = 'steam' AND volume >= 5
+  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
+  for (const row of steamRows) {
+    const key = `${row.skin_name}:${row.condition}`;
+    if (priceCache.has(key)) continue;
+    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
+    if (price > 0) {
+      priceCache.set(key, price);
+      priceSources.set(key, `steam (${row.volume} vol)`);
+      steamPriceCount++;
+    }
+  }
+
+  // Step 2c: Skinport price data (fill remaining gaps, volume >= 10)
   let skinportPriceCount = 0;
   const skinportRows = db.prepare(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
@@ -146,21 +162,6 @@ export function buildPriceCache(db: Database.Database, force = false) {
       priceCache.set(key, price);
       priceSources.set(key, `skinport (${row.volume} vol)`);
       skinportPriceCount++;
-    }
-  }
-
-  // Step 2c: Steam price data (fill remaining gaps — broadest coverage, 44+ volume typical)
-  const steamRows = db.prepare(`
-    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
-    FROM price_data WHERE source = 'steam' AND volume >= 5
-  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
-  for (const row of steamRows) {
-    const key = `${row.skin_name}:${row.condition}`;
-    if (priceCache.has(key)) continue;
-    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
-    if (price > 0) {
-      priceCache.set(key, price);
-      priceSources.set(key, `steam (${row.volume} vol)`);
     }
   }
 
@@ -246,7 +247,7 @@ export function buildPriceCache(db: Database.Database, force = false) {
   }
 
   buildSourceFloorCaches(db);
-  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, ${skinportPriceCount} skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
+  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, ${steamPriceCount} steam, ${skinportPriceCount} skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
 }

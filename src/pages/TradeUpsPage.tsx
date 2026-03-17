@@ -138,9 +138,14 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             {!tierInfo.showListingIds && " · Listing links hidden"}
             {tierInfo.limit > 0 && ` · ${tierInfo.limit} results per type`}
           </span>
-          <a href="/auth/steam" className="text-yellow-400 hover:text-yellow-300 font-medium">
+          <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer" onClick={async () => {
+            const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
+            const data = await res.json();
+            if (data.url) window.location.href = data.url;
+            else if (data.error) alert(data.error);
+          }}>
             Upgrade →
-          </a>
+          </button>
         </div>
       )}
 
