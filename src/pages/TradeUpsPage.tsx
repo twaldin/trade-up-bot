@@ -45,6 +45,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalProfitable, setTotalProfitable] = useState(0);
   const [loading, setLoading] = useState(false);
   const [tier, setTier] = useState<string>("free");
   const [myClaimCount, setMyClaimCount] = useState(0);
@@ -126,6 +127,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       const data = await res.json();
       setTradeUps(data.trade_ups);
       setTotal(data.total);
+      setTotalProfitable(data.total_profitable ?? 0);
       setTier(data.tier || "free");
       setMyClaimCount(data.my_claim_count ?? 0);
     } catch (err) {
@@ -216,10 +218,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       )}
 
-      {/* Free tier header */}
-      {isFree && !loading && tradeUps.length > 0 && (
-        <div className="text-sm text-muted-foreground mb-2">
-          Showing {tradeUps.length} free sample trade-ups
+      {/* Results summary — always visible when data loaded */}
+      {!loading && total > 0 && (
+        <div className="text-xs text-muted-foreground mb-1.5">
+          {isFree
+            ? `Showing ${tradeUps.length} free sample trade-ups`
+            : <>{total.toLocaleString()} trade-ups found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}</>
+          }
         </div>
       )}
 

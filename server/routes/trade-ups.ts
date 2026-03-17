@@ -342,10 +342,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const sortCol = sortMap[sort] ?? "t.profit_cents";
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
-    // Get total count
-    const total = (
-      db.prepare(`SELECT COUNT(*) as c FROM trade_ups t ${where}`).get(...params) as { c: number }
-    ).c;
+    // Get total count + profitable count (same WHERE, so counts match filters exactly)
+    const counts = db.prepare(
+      `SELECT COUNT(*) as c, SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups t ${where}`
+    ).get(...params) as { c: number; profitable: number };
+    const total = counts.c;
+    const totalProfitable = counts.profitable ?? 0;
 
     // Get trade-ups
     const rows = db
@@ -467,6 +469,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const result = {
       trade_ups: tradeUps,
       total,
+      total_profitable: totalProfitable,
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
