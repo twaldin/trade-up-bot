@@ -176,15 +176,8 @@ export function statusRouter(db: Database.Database): Router {
       // Total data points = listings + sale observations + sale history + ref prices
       const totalDataPoints = listings + saleObs + saleHistory + refs;
 
-      // Uptime from daemon status
-      const daemonRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'daemon_status'").get() as { value: string } | undefined;
-      let uptimeMs = 0;
-      if (daemonRow?.value) {
-        try {
-          const ds = JSON.parse(daemonRow.value);
-          if (ds.startedAt) uptimeMs = Date.now() - new Date(ds.startedAt).getTime();
-        } catch { /* ignore */ }
-      }
+      // Total cycles ever run (from daemon_cycle_stats table)
+      const totalCycles = (db.prepare("SELECT COUNT(*) as c FROM daemon_cycle_stats").get() as { c: number }).c;
 
       const data = {
         total_trade_ups: tradeUps.total,
@@ -194,7 +187,7 @@ export function statusRouter(db: Database.Database): Router {
         sale_observations: saleObs,
         sale_history: saleHistory,
         ref_prices: refs,
-        uptime_ms: uptimeMs,
+        total_cycles: totalCycles,
       };
       globalStatsCache = { data, ts: Date.now() };
       res.json(data);
