@@ -94,32 +94,22 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     });
   }, [detail]);
 
-  if (loading) return <LoadingSkeleton />;
-  if (!detail) {
-    return (
-      <div className="bg-card border border-border rounded-md p-4">
-        <div className="py-10 text-center text-muted-foreground">Failed to load skin data. Try selecting the skin again.</div>
-      </div>
-    );
-  }
+  const allListings = detail?.listings ?? [];
+  const allSaleHistory = detail?.saleHistory ?? [];
 
-  const { skin, listings: allListings, priceSources, saleHistory: allSaleHistory, stats } = detail;
-
-  // Doppler phase detection — normalize phase names
-  const isDoppler = skin.name.includes("Doppler");
+  // Doppler phase detection — must be before any early returns (Rules of Hooks)
+  const isDoppler = detail?.skin?.name?.includes("Doppler") ?? false;
   const phases = useMemo(() => {
-    if (!isDoppler) return [];
+    if (!isDoppler || !allListings.length) return [];
     const phaseSet = new Map<string, number>();
     for (const l of allListings) {
       if (l.phase) {
-        // Normalize: "phase-1" → "Phase 1", "Phase 1" stays, "sapphire" → "Sapphire"
         const norm = l.phase.replace(/^phase-(\d)$/i, "Phase $1").replace(/^(\w)/, c => c.toUpperCase());
         phaseSet.set(norm, (phaseSet.get(norm) || 0) + 1);
       }
     }
     return [...phaseSet.entries()]
       .sort((a, b) => {
-        // Sort: Phase 1-4 first, then gems alphabetically
         const aNum = a[0].match(/Phase (\d)/)?.[1];
         const bNum = b[0].match(/Phase (\d)/)?.[1];
         if (aNum && bNum) return Number(aNum) - Number(bNum);
@@ -130,7 +120,6 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       .map(([name, count]) => ({ name, count }));
   }, [allListings, isDoppler]);
 
-  // Filter listings and sales by selected phase
   const listings = useMemo(() => {
     if (!selectedPhase) return allListings;
     return allListings.filter(l => {
@@ -141,10 +130,20 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   }, [allListings, selectedPhase]);
 
   const saleHistory = useMemo(() => {
-    if (!selectedPhase || !allSaleHistory) return allSaleHistory;
-    // Sale history doesn't have phase — show all when phase filtered (or filter by phase-qualified name)
+    if (!selectedPhase) return allSaleHistory;
     return allSaleHistory;
   }, [allSaleHistory, selectedPhase]);
+
+  if (loading) return <LoadingSkeleton />;
+  if (!detail) {
+    return (
+      <div className="bg-card border border-border rounded-md p-4">
+        <div className="py-10 text-center text-muted-foreground">Failed to load skin data. Try selecting the skin again.</div>
+      </div>
+    );
+  }
+
+  const { skin, priceSources, stats } = detail;
 
   const condDist: Record<string, number> = {};
   for (const l of listings) {
