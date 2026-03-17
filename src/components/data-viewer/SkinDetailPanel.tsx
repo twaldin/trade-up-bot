@@ -70,17 +70,26 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     setSourceFilters(f => ({ ...f, [source]: !f[source] }));
   };
 
+  // Build condition-level ref price lines from CSFloat ref data (replaces bucket floors)
   const bucketFloors = useMemo(() => {
     if (!detail) return [];
-    const { listings: ls, floatBuckets: fb, saleHistory: sh } = detail;
-    if (fb.length === 0 || ls.length === 0) return fb;
-    return fb.map(b => {
-      const inBucket = ls.filter(l => l.float_value >= b.float_min && l.float_value < b.float_max);
-      const sales = (sh || []).filter(s => s.float_value >= b.float_min && s.float_value < b.float_max);
-      const listingFloor = inBucket.length > 0 ? Math.min(...inBucket.map(l => l.price_cents)) : 0;
-      const saleMedian = sales.length >= 2 ? [...sales].sort((a, b) => a.price_cents - b.price_cents)[Math.floor(sales.length / 2)].price_cents : 0;
-      const bestPrice = listingFloor > 0 && saleMedian > 0 ? Math.min(listingFloor, saleMedian) : (listingFloor || saleMedian || b.avg_price_cents);
-      return { ...b, avg_price_cents: bestPrice, listing_count: inBucket.length + sales.length };
+    const condBounds = [
+      { name: "FN", float_min: 0, float_max: 0.07 },
+      { name: "MW", float_min: 0.07, float_max: 0.15 },
+      { name: "FT", float_min: 0.15, float_max: 0.38 },
+      { name: "WW", float_min: 0.38, float_max: 0.45 },
+      { name: "BS", float_min: 0.45, float_max: 1.0 },
+    ];
+    const refs = (detail.priceSources || []).filter((p: any) => p.source === "csfloat_ref" && p.avg_price_cents > 0);
+    const condMap: Record<string, string> = { "Factory New": "FN", "Minimal Wear": "MW", "Field-Tested": "FT", "Well-Worn": "WW", "Battle-Scarred": "BS" };
+    return condBounds.map(b => {
+      const ref = refs.find((r: any) => condMap[r.condition] === b.name);
+      return {
+        ...b,
+        label: b.name,
+        avg_price_cents: ref ? ref.avg_price_cents : 0,
+        listing_count: ref ? ref.volume : 0,
+      };
     });
   }, [detail]);
 
@@ -110,7 +119,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     ...(dmarketCount > 0 ? [{ key: "dmarket" as SeriesKey, label: "DMarket", color: SERIES_COLORS.dmarket, shape: "dot" as const, count: dmarketCount }] : []),
     ...(skinportCount > 0 ? [{ key: "skinport" as SeriesKey, label: "Skinport", color: SERIES_COLORS.skinport, shape: "dot" as const, count: skinportCount }] : []),
     { key: "sales", label: "Sales", color: SERIES_COLORS.sales, shape: "diamond", count: stats.saleCount || (saleHistory || []).length },
-    { key: "buckets", label: "Bucket Floor", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
+    { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
   ];
 
   // Unified listings filtered by source checkboxes
@@ -258,7 +267,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       {/* Float bucket detail */}
       {bucketFloors.length > 0 && (
         <div className="mb-5">
-          <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">Float Buckets (Floor Pricing)</h3>
+          <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">CSFloat Ref Prices</h3>
           <SortableTable<FloatBucket>
             id="buckets"
             data={bucketFloors}
