@@ -30,6 +30,7 @@ const RARITY_TABS = [
   { value: "Mil-Spec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
   { value: "Industrial Grade", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
   { value: "Consumer Grade", label: "Consumer", color: "border-gray-400/40 bg-gray-400/10 text-gray-400" },
+  { value: "knife_glove", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
 ];
 
 export function CollectionViewer({ collectionName, onBack, onNavigateCollection }: Props) {
@@ -202,8 +203,9 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
               <DataViewer
                 key={`${collectionName}-${skinRarity}`}
                 onNavigateCollection={onNavigateCollection}
-                collectionFilter={collectionName}
-                initialRarity={skinRarity === "all" ? "" : skinRarity}
+                collectionFilter={skinRarity === "knife_glove" ? undefined : collectionName}
+                outputCollection={skinRarity === "knife_glove" ? collectionName : undefined}
+                initialRarity={skinRarity === "all" || skinRarity === "knife_glove" ? "" : skinRarity}
               />
             </>
           )}
