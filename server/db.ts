@@ -39,31 +39,23 @@ export function initDb(): Database.Database {
   _db.pragma("mmap_size = 134217728");     // 128MB memory-mapped I/O
   _db.pragma("temp_store = memory");       // temp tables in RAM
 
-  // Read-only connection for API reads — never blocked by write transactions
+  // Read-only connection for API reads
+  // Uses a SEPARATE connection so it's not blocked by write transactions
+  // but still reads from the same WAL file for consistency
   try {
     _readDb = new Database(DB_PATH, { readonly: true });
     _readDb.pragma("cache_size = -64000");
     _readDb.pragma("mmap_size = 134217728");
     _readDb.pragma("temp_store = memory");
+    _readDb.pragma("busy_timeout = 5000"); // Short timeout — prefer fast stale reads over long waits
   } catch {
-    // Non-critical — fall back to main connection
     _readDb = null;
   }
 
   createTables(_db);
 
-  // Run ANALYZE periodically to keep query planner informed
-  // Only run if sqlite_stat1 is empty or stale (no ANALYZE ever run)
-  try {
-    const statRows = _db.prepare("SELECT COUNT(*) as c FROM sqlite_stat1").get() as { c: number };
-    if (statRows.c === 0) {
-      console.log("Running ANALYZE (first time)...");
-      _db.exec("ANALYZE");
-    }
-  } catch {
-    // sqlite_stat1 doesn't exist yet — run ANALYZE
-    _db.exec("ANALYZE");
-  }
+  // ANALYZE runs in daemon housekeeping every 30 cycles (~10h).
+  // Don't run on API startup — takes 15-20s on 2.7GB DB and blocks all requests.
 
   return _db;
 }

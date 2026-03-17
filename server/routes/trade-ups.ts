@@ -98,7 +98,6 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
 
   function isCacheValid(): boolean {
     // Don't hit sync_meta on every request — check at most every 30s
-    // Data only changes when daemon completes a cycle (~20 min)
     if (Date.now() - lastCalcCheckTs < 30000) return true;
     lastCalcCheckTs = Date.now();
     try {
