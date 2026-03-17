@@ -74,15 +74,7 @@ function worstCase(tu: TradeUp): number {
 
 function ClaimButton({ tuId, claimed, setClaimed }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void }) {
   const [loading, setLoading] = useState(false);
-  const isClaimed = claimed.has(tuId);
-
-  if (isClaimed) {
-    return (
-      <span className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950/50 text-purple-300 border border-purple-900">
-        Claimed
-      </span>
-    );
-  }
+  if (claimed.has(tuId)) return null; // Already claimed — bar handles display
 
   return (
     <button
@@ -352,20 +344,23 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 <tr key={`${tu.id}-expanded`}>
                   <td colSpan={11} className="p-0 bg-card">
                     {/* Claim action bar */}
-                    {tu.profit_cents > 0 && (
+                    {tu.profit_cents > 0 && (() => {
+                      const myClaimLocal = claimedIds.has(tu.id) || (tu as any).claimed_by_me;
+                      const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
+                      return (
                       <div className="flex items-center justify-between px-5 py-2 border-b border-border/50 bg-muted/30">
                         <div className="text-[0.75rem] text-muted-foreground">
-                          {(tu as any).claimed_by_me
+                          {myClaimLocal
                             ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
-                            : (tu as any).claimed_by_other
+                            : otherClaim
                               ? <span className="text-muted-foreground">Claimed by a Pro user</span>
                               : <span>Claim to lock listings for 30 min while you buy</span>
                           }
                         </div>
-                        {!(tu as any).claimed_by_me && !(tu as any).claimed_by_other && (
+                        {!myClaimLocal && !otherClaim && (
                           <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
                         )}
-                        {(tu as any).claimed_by_me && (
+                        {myClaimLocal && (
                           <button
                             className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
                             onClick={async (e) => {
@@ -377,8 +372,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                             Release
                           </button>
                         )}
-                      </div>
-                    )}
+                      </div>);
+                    })()}
                     {/* Outcome distribution chart */}
                     <OutcomeChart tu={tu} />
                     {/* Status info bar for stale/partial/revived trade-ups */}
