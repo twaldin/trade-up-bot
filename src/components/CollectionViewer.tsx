@@ -16,10 +16,10 @@ interface Props {
 const TU_TYPE_TABS = [
   { value: "all", label: "All", color: "" },
   { value: "covert_knife", label: "Knife/Gloves", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
-  { value: "classified_covert", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
-  { value: "restricted_classified", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
-  { value: "milspec_restricted", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
-  { value: "industrial_milspec", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
+  { value: "classified_covert", label: "Covert", color: "border-red-500/40 bg-red-500/10 text-red-500" },
+  { value: "restricted_classified", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+  { value: "milspec_restricted", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+  { value: "industrial_milspec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
 ];
 
 const RARITY_TABS = [
