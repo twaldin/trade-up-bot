@@ -178,12 +178,12 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
             <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
               <span>Min</span>
               <Input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
-                placeholder="any" step={step} className="h-7 text-xs" />
+                placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
             </label>
             <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
               <span>Max</span>
               <Input type="number" value={maxVal} onChange={(e) => onMaxChange(e.target.value)}
-                placeholder="any" step={step} className="h-7 text-xs" />
+                placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
             </label>
           </div>
           {hasValue && (
@@ -233,7 +233,7 @@ function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Fi
   if (chips.length === 0) return null;
 
   return (
-    <div className="flex gap-1.5 flex-wrap mb-2 items-center">
+    <div className="flex gap-1.5 flex-wrap mt-2 mb-1 items-center">
       {chips.map((chip, i) => (
         <Badge key={i} variant="secondary" className="gap-1 text-[0.72rem] font-normal">
           {chip.label}
@@ -293,8 +293,6 @@ export function FilterBar({ filters, onFiltersChange }: {
 
   return (
     <div>
-      <FilterChips filters={filters} onUpdate={onFiltersChange} />
-
       <div className="flex gap-2.5 items-start flex-wrap">
         <div className="flex gap-2 shrink-0">
           <AutocompleteInput
@@ -316,30 +314,25 @@ export function FilterBar({ filters, onFiltersChange }: {
         <div className="flex gap-1.5 flex-wrap flex-1">
           <RangeFilter label="Profit" unit="$" step={1}
             minVal={filters.minProfit} maxVal={filters.maxProfit}
-            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })}
-            sliderMin={-500} sliderMax={500} />
-          <RangeFilter label="ROI" unit="" step={1}
+            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })} />
+          <RangeFilter label="ROI" unit="%" step={1}
             minVal={filters.minRoi} maxVal={filters.maxRoi}
-            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })}
-            sliderMin={-100} sliderMax={100} />
+            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })} />
           <RangeFilter label="Cost" unit="$" step={10}
             minVal={filters.minCost} maxVal={filters.maxCost}
-            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })}
-            sliderMin={0} sliderMax={2000} />
-          <RangeFilter label="Chance" unit="" step={5}
+            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })} />
+          <RangeFilter label="Chance" unit="%" step={5}
             minVal={filters.minChance} maxVal={filters.maxChance}
-            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })}
-            sliderMin={0} sliderMax={100} />
+            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })} />
           <RangeFilter label="Max Loss" unit="$" step={10}
             minVal={filters.maxLoss} maxVal=""
-            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}}
-            sliderMin={0} sliderMax={1000} />
+            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}} />
           <RangeFilter label="Best Win" unit="$" step={10}
             minVal={filters.minWin} maxVal=""
-            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}}
-            sliderMin={0} sliderMax={5000} />
+            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}} />
         </div>
       </div>
+      <FilterChips filters={filters} onUpdate={onFiltersChange} />
     </div>
   );
 }
