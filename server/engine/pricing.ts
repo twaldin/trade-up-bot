@@ -46,7 +46,25 @@ export function buildPriceCache(db: Database.Database, force = false) {
   ];
 
   // Step 1: CSFloat sale history median prices
+  // Step 1: CSFloat ref prices FIRST (conservative condition-level averages, high volume).
+  // Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
+  // Ref is the better estimate for "average price at this condition".
   let salesCount = 0;
+  const refRows2 = db.prepare(`
+    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
+    FROM price_data WHERE source = 'csfloat_ref' AND volume >= 3
+  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
+  for (const row of refRows2) {
+    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
+    if (price > 0) {
+      const k = `${row.skin_name}:${row.condition}`;
+      priceCache.set(k, price);
+      priceSources.set(k, `csfloat_ref (${row.volume} vol)`);
+      salesCount++;
+    }
+  }
+
+  // Step 1b: CSFloat sales fill gaps where ref doesn't exist
   const salesRows = db.prepare(`
     SELECT skin_name, condition, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_sales'
@@ -54,9 +72,11 @@ export function buildPriceCache(db: Database.Database, force = false) {
   for (const row of salesRows) {
     if (row.median_price_cents > 0 && row.volume >= 2) {
       const k = `${row.skin_name}:${row.condition}`;
-      priceCache.set(k, row.median_price_cents);
-      priceSources.set(k, `csfloat_sales (${row.volume} sales)`);
-      salesCount++;
+      if (!priceCache.has(k)) {
+        priceCache.set(k, row.median_price_cents);
+        priceSources.set(k, `csfloat_sales (${row.volume} sales)`);
+        salesCount++;
+      }
     }
   }
 
@@ -113,22 +133,8 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // Step 2: CSFloat reference prices (fill gaps only, volume >= 3 to filter outliers)
-  let csfloatRefCount = 0;
-  const csfloatRefRows = db.prepare(`
-    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
-    FROM price_data WHERE source = 'csfloat_ref' AND volume >= 3
-  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
-  for (const row of csfloatRefRows) {
-    const key = `${row.skin_name}:${row.condition}`;
-    if (priceCache.has(key)) continue;
-    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
-    if (price > 0) {
-      priceCache.set(key, price);
-      priceSources.set(key, `csfloat_ref (${row.volume} vol)`);
-      csfloatRefCount++;
-    }
-  }
+  // Step 2: Ref already loaded in Step 1. Count for logging.
+  const csfloatRefCount = refRows2.length;
 
   // CSFloat-only output pricing. No DMarket/Steam/Skinport gap-fill.
   // CSFloat ref + sales + listing floors are the only trusted sources.
