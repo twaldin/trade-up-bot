@@ -667,6 +667,7 @@ export async function syncPrioritizedKnifeInputs(
       AND s.weapon NOT LIKE '%Knife%' AND s.weapon NOT LIKE '%Bayonet%'
       AND s.weapon NOT LIKE '%Gloves%' AND s.weapon NOT LIKE '%Wraps%'
       AND s.weapon != 'Shadow Daggers'
+      AND c.id != 'collection-set-community-37'
     GROUP BY c.id
     ORDER BY total_listings ASC
   `).all() as {
