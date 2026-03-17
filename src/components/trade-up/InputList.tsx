@@ -78,9 +78,11 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
   const isSoldOrDelisted = inputStatus?.status === "sold" || inputStatus?.status === "delisted";
+  const isMissing = (input as any).missing === true;
 
   return (
     <div className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
+      isMissing ? "opacity-50 border-red-800/50 bg-red-950/20" :
       isSoldOrDelisted ? "opacity-50 border-border/30 bg-muted/20" : "border-border/50 bg-muted/50"
     }`}>
       {/* Row 1: Skin name + verify status */}
@@ -89,12 +91,15 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
           href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
           target="_blank"
           rel="noopener noreferrer"
-          className={`text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isSoldOrDelisted ? "line-through" : ""}`}
+          className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : isSoldOrDelisted ? "line-through text-foreground/90" : "text-foreground/90"}`}
           title={input.skin_name}
         >
           {input.skin_name}
         </a>
         <div className="flex items-center gap-0.5 shrink-0">
+          {isMissing && !inputStatus && (
+            <Badge variant="outline" className="text-[0.55rem] bg-red-950 text-red-400 border-red-800 font-semibold py-0 h-3.5" title="Listing no longer available">MISSING</Badge>
+          )}
           {inputStatus && inputStatus.status === "active" && <span className="text-green-500 font-bold text-[0.7rem]" title="Still listed">&#10003;</span>}
           {inputStatus && inputStatus.status === "sold" && (
             <Badge variant="outline" className="text-[0.55rem] bg-red-950 text-red-500 border-red-800 font-semibold py-0 h-3.5" title={`Sold ${inputStatus.sold_at ? timeAgo(inputStatus.sold_at) : ""}`}>SOLD</Badge>
@@ -119,13 +124,13 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
         {isTheory && (
           <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
         )}
-        <span className="text-muted-foreground text-[0.68rem]">
+        <span className={`text-[0.68rem] ${isMissing ? "text-red-400/50 line-through" : "text-muted-foreground"}`}>
           {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
         </span>
       </div>
       {/* Row 3: Price */}
       <div className="flex items-center justify-between">
-        <span className="text-foreground/80 text-[0.72rem] font-medium">
+        <span className={`text-[0.72rem] font-medium ${isMissing ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
           {formatDollars(input.price_cents)}
           {inputStatus && inputStatus.price_changed && inputStatus.current_price && (
             <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatDollars(inputStatus.original_price)}, now ${formatDollars(inputStatus.current_price)}`}>

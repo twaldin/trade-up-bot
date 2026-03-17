@@ -311,9 +311,15 @@ export function tradeUpsRouter(db: Database.Database): Router {
     // Load inputs for each trade-up; outcomes come from outcomes_json column
     const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
 
-    // Always compute missing count for non-active trade-ups
+    // Compute missing inputs for non-active trade-ups
     const countMissing = db.prepare(`
       SELECT COUNT(*) as cnt FROM trade_up_inputs tui
+      LEFT JOIN listings l ON tui.listing_id = l.id
+      WHERE tui.trade_up_id = ? AND l.id IS NULL
+    `);
+    // Get IDs of missing inputs for a trade-up
+    const getMissingIds = db.prepare(`
+      SELECT tui.listing_id FROM trade_up_inputs tui
       LEFT JOIN listings l ON tui.listing_id = l.id
       WHERE tui.trade_up_id = ? AND l.id IS NULL
     `);
@@ -350,8 +356,17 @@ export function tradeUpsRouter(db: Database.Database): Router {
         if (missing === 0) {
           tu.listing_status = 'active';
           tu.preserved_at = null;
-          // Also fix in DB so subsequent requests don't need this correction
           db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(row.id);
+        } else {
+          // Mark which specific inputs are missing
+          const missingIds = new Set(
+            (getMissingIds.all(row.id) as { listing_id: string }[]).map(r => r.listing_id)
+          );
+          for (const inp of tu.inputs) {
+            if (missingIds.has(inp.listing_id)) {
+              (inp as any).missing = true;
+            }
+          }
         }
       }
 
