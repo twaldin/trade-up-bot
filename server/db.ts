@@ -8,6 +8,7 @@ export const DB_PATH = path.join(__dirname, "..", "data", "tradeup.db");
 
 let _db: Database.Database | null = null;
 let _readDb: Database.Database | null = null;
+const API_DB_PATH = path.join(path.dirname(DB_PATH), "tradeup-api.db");
 
 export function getDb(): Database.Database {
   if (!_db) {
@@ -16,10 +17,35 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-/** Read-only DB connection — never blocked by daemon writes.
- *  Falls back to main connection if not initialized. */
+/** Read-only DB for API — uses a SEPARATE snapshot file, completely
+ *  isolated from daemon writes. Never blocked by WAL contention. */
 export function getReadDb(): Database.Database {
   return _readDb ?? getDb();
+}
+
+/** Create/refresh the API snapshot from the main DB.
+ *  Called by the daemon after each cycle completes. */
+export function refreshApiSnapshot(): void {
+  try {
+    const mainDb = new Database(DB_PATH, { readonly: true });
+    mainDb.pragma("busy_timeout = 10000");
+    mainDb.backup(API_DB_PATH).then(() => {
+      mainDb.close();
+      // Reopen the read DB from the fresh snapshot
+      if (_readDb) {
+        try { _readDb.close(); } catch { /* ignore */ }
+      }
+      _readDb = new Database(API_DB_PATH, { readonly: true });
+      _readDb.pragma("cache_size = -64000");
+      _readDb.pragma("mmap_size = 134217728");
+      _readDb.pragma("temp_store = memory");
+      console.log("API snapshot refreshed");
+    }).catch(() => {
+      mainDb.close();
+    });
+  } catch (e) {
+    console.error("Snapshot refresh failed:", (e as Error).message);
+  }
 }
 
 export function initDb(): Database.Database {
@@ -33,21 +59,19 @@ export function initDb(): Database.Database {
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
-  _db.pragma("busy_timeout = 30000"); // Wait up to 30s for concurrent writers
-  _db.pragma("wal_autocheckpoint = 1000"); // checkpoint every ~4MB of WAL writes
-  _db.pragma("cache_size = -64000");       // 64MB page cache (default was 2MB)
-  _db.pragma("mmap_size = 134217728");     // 128MB memory-mapped I/O
-  _db.pragma("temp_store = memory");       // temp tables in RAM
+  _db.pragma("busy_timeout = 30000");
+  _db.pragma("wal_autocheckpoint = 1000");
+  _db.pragma("cache_size = -64000");
+  _db.pragma("mmap_size = 134217728");
+  _db.pragma("temp_store = memory");
 
-  // Read-only connection for API reads
-  // Uses a SEPARATE connection so it's not blocked by write transactions
-  // but still reads from the same WAL file for consistency
+  // API read DB: use snapshot file if it exists, otherwise read from main
   try {
-    _readDb = new Database(DB_PATH, { readonly: true });
+    const readPath = fs.existsSync(API_DB_PATH) ? API_DB_PATH : DB_PATH;
+    _readDb = new Database(readPath, { readonly: true });
     _readDb.pragma("cache_size = -64000");
     _readDb.pragma("mmap_size = 134217728");
     _readDb.pragma("temp_store = memory");
-    _readDb.pragma("busy_timeout = 5000"); // Short timeout — prefer fast stale reads over long waits
   } catch {
     _readDb = null;
   }
