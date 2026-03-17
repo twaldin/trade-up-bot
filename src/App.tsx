@@ -118,16 +118,21 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
 }
 
 
-function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
+function UserMenu({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false);
-  // Read view_as from URL (survives reload)
-  const viewAs = new URLSearchParams(window.location.search).get("view_as");
 
   const tierColors: Record<string, string> = {
-    admin: "text-red-400",
     pro: "text-yellow-400",
     basic: "text-blue-400",
     free: "text-muted-foreground",
+  };
+
+  const setTier = async (newTier: string) => {
+    await fetch("/api/admin/set-tier", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      credentials: "include", body: JSON.stringify({ tier: newTier }),
+    });
+    window.location.reload();
   };
 
   return (
@@ -139,7 +144,7 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
         {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
         <span className="text-foreground font-medium">{user.display_name}</span>
         <span className={tierColors[user.tier] || "text-muted-foreground"}>
-          {viewAs ? `(viewing as ${viewAs})` : `(${user.tier})`}
+          ({user.tier})
         </span>
         <span className="text-muted-foreground">▾</span>
       </button>
@@ -151,70 +156,69 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
             <div className="text-xs text-muted-foreground">Steam ID: {user.steam_id}</div>
             <div className={`text-xs font-medium mt-1 ${tierColors[user.tier]}`}>
               {user.tier.charAt(0).toUpperCase() + user.tier.slice(1)} Plan
+              {user.is_admin && <span className="text-red-400 ml-1">(admin)</span>}
             </div>
           </div>
 
-          {user.tier === "free" && (
+          {/* Upgrade options for non-pro users */}
+          {user.tier === "free" && !user.is_admin && (
             <>
-              <button className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted" onClick={async () => {
+              <button className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer" onClick={async () => {
                 const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
                 const data = await res.json();
-                if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
+                if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
               }}>
                 Upgrade to Basic — $5/mo
               </button>
-              <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
+              <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted cursor-pointer" onClick={async () => {
                 const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
                 const data = await res.json();
-                if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
+                if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
               }}>
                 Upgrade to Pro — $15/mo
               </button>
             </>
           )}
-          {user.tier === "basic" && (
-            <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
+          {user.tier === "basic" && !user.is_admin && (
+            <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted cursor-pointer" onClick={async () => {
               const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
               const data = await res.json();
-              if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
+              if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
             }}>
               Upgrade to Pro — $15/mo
             </button>
           )}
-          {(user.tier === "basic" || user.tier === "pro") && (
-            <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted" onClick={async () => {
+          {(user.tier === "basic" || user.tier === "pro") && !user.is_admin && (
+            <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer" onClick={async () => {
               const res = await fetch("/api/billing-portal", { method: "POST", credentials: "include" });
               const data = await res.json();
-              if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
+              if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
             }}>
               Manage Subscription
             </button>
           )}
 
-          {isAdmin && (
+          {/* Admin: direct plan change buttons */}
+          {user.is_admin && (
             <>
               <div className="px-3 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider border-t border-border mt-1">
-                Admin
+                Change Plan
               </div>
-              {["free", "basic", "pro", null].map(tier => (
+              {(["free", "basic", "pro"] as const).map(t => (
                 <button
-                  key={tier ?? "admin"}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted ${viewAs === tier ? "text-foreground font-medium" : "text-muted-foreground"}`}
-                  onClick={() => {
-                    const url = new URL(window.location.href);
-                    if (tier) url.searchParams.set("view_as", tier);
-                    else url.searchParams.delete("view_as");
-                    window.location.href = url.toString();
-                  }}
+                  key={t}
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted cursor-pointer ${user.tier === t ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                  onClick={() => setTier(t)}
                 >
-                  {tier ? `View as ${tier}` : "View as admin (default)"}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {user.tier === t && " (current)"}
                 </button>
               ))}
             </>
           )}
 
           <div className="border-t border-border mt-1">
-            <a href="/auth/logout" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+            <a href="/auth/logout" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
               Sign Out
             </a>
           </div>
@@ -225,7 +229,7 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
 }
 
 function AppShell({ user }: { user?: AuthUser | null }) {
-  const isAdmin = (user?.real_tier ?? user?.tier) === "admin";
+  const userIsAdmin = user?.is_admin === true;
   const { status, newDataHint, refresh } = useStatus();
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -266,7 +270,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             {newDataHint ? "Refresh (new data)" : "Refresh"}
             {newDataHint && <span className="ml-1 inline-block size-2 rounded-full bg-green-400 animate-pulse" />}
           </Button>
-          {isAdmin && <Button
+          {userIsAdmin && <Button
             variant="outline"
             size="sm"
             onClick={() => setShowDaemonModal(true)}
@@ -285,11 +289,11 @@ function AppShell({ user }: { user?: AuthUser | null }) {
               return `Daemon C${cycle}${uptime ? ` ${uptime}` : ""}`;
             })()}
           </Button>}
-          {user && <UserMenu user={user} isAdmin={isAdmin} />}
+          {user && <UserMenu user={user} />}
         </div>
       </div>
 
-      {isAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
+      {userIsAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
 
       {/* Navigation */}
       <nav className="flex gap-6 mb-4 border-b border-border">
@@ -336,17 +340,14 @@ interface AuthUser {
   display_name: string;
   avatar_url: string;
   tier: string;
-  real_tier?: string; // actual tier (admin uses view_as to override tier)
+  is_admin: boolean;
 }
 
 export default function App() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
-    // Forward view_as from URL to auth check
-    const viewAs = new URLSearchParams(window.location.search).get("view_as");
-    const authUrl = viewAs ? `/api/auth/me?view_as=${viewAs}` : "/api/auth/me";
-    fetch(authUrl, { credentials: "include" })
+    fetch("/api/auth/me", { credentials: "include" })
       .then(r => r.json())
       .then(data => setUser(data))
       .catch(() => setUser(null));

@@ -122,10 +122,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       }
       if (!isFree && includeStale) params.set("include_stale", "true");
 
-      // Forward admin view_as param from browser URL to API
-      const viewAs = new URLSearchParams(window.location.search).get("view_as");
-      if (viewAs) params.set("view_as", viewAs);
-
       const res = await fetch(`/api/trade-ups?${params}`, { credentials: "include" });
       const data = await res.json();
       setTradeUps(data.trade_ups);
