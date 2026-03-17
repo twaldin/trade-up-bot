@@ -203,9 +203,40 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
             </div>
           </div>
 
-          {user.tier !== "pro" && user.tier !== "admin" && (
-            <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={() => { setOpen(false); }}>
-              Upgrade to Pro
+          {user.tier === "free" && (
+            <>
+              <button className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted" onClick={async () => {
+                const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
+                const data = await res.json();
+                if (data.url) window.location.href = data.url;
+              }}>
+                Upgrade to Basic — $5/mo
+              </button>
+              <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
+                const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
+                const data = await res.json();
+                if (data.url) window.location.href = data.url;
+              }}>
+                Upgrade to Pro — $15/mo
+              </button>
+            </>
+          )}
+          {user.tier === "basic" && (
+            <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
+              const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
+              const data = await res.json();
+              if (data.url) window.location.href = data.url;
+            }}>
+              Upgrade to Pro — $15/mo
+            </button>
+          )}
+          {(user.tier === "basic" || user.tier === "pro") && (
+            <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted" onClick={async () => {
+              const res = await fetch("/api/billing-portal", { method: "POST", credentials: "include" });
+              const data = await res.json();
+              if (data.url) window.location.href = data.url;
+            }}>
+              Manage Subscription
             </button>
           )}
 
