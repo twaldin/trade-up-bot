@@ -134,7 +134,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   useEffect(() => {
     fetch("/api/claims", { credentials: "include" })
       .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setClaims(data); })
+      .then(data => { if (Array.isArray(data?.claims)) setClaims(data.claims); })
       .catch(() => {});
   }, [refreshKey]);
 
@@ -153,12 +153,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             <div className="grid gap-1.5">
               {claims.map((c: any) => {
                 const expiresIn = Math.max(0, Math.round((new Date(c.expires_at).getTime() - Date.now()) / 60000));
+                const tu = c.trade_up || {};
                 return (
                   <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-purple-950/20 border border-purple-900/50 rounded-md text-xs">
                     <div>
-                      <span className="text-foreground font-medium">{c.type?.replace("_", "→")}</span>
-                      <span className="text-green-500 ml-2">{formatDollars(c.profit_cents)}</span>
-                      <span className="text-muted-foreground ml-2">{(c.chance_to_profit * 100).toFixed(0)}% chance</span>
+                      <span className="text-foreground font-medium">{(tu.type || "")?.replace("_", "→")}</span>
+                      <span className="text-green-500 ml-2">{formatDollars(tu.profit_cents)}</span>
+                      <span className="text-muted-foreground ml-2">{((tu.chance_to_profit || 0) * 100).toFixed(0)}% chance</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-purple-400">{expiresIn}m left</span>
