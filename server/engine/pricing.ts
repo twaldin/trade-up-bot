@@ -130,8 +130,10 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // Step 2b: Steam price data — highest volume, broadest coverage. Loaded before Skinport
-  // because Steam 255 vol is far more reliable than Skinport 10 vol.
+  // Step 2b: Steam price data — broadest coverage but systematically 1.6x higher than CSFloat.
+  // Apply 0.65x discount to approximate CSFloat sell price (where we'd actually sell).
+  // Steam prices reflect Steam Community Market which has 15% Valve tax built in.
+  const STEAM_DISCOUNT = 0.65;
   let steamPriceCount = 0;
   const steamRows = db.prepare(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
@@ -140,15 +142,18 @@ export function buildPriceCache(db: Database.Database, force = false) {
   for (const row of steamRows) {
     const key = `${row.skin_name}:${row.condition}`;
     if (priceCache.has(key)) continue;
-    const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
+    const rawPrice = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
+    const price = Math.round(rawPrice * STEAM_DISCOUNT);
     if (price > 0) {
       priceCache.set(key, price);
-      priceSources.set(key, `steam (${row.volume} vol)`);
+      priceSources.set(key, `steam (${row.volume} vol, ×${STEAM_DISCOUNT})`);
       steamPriceCount++;
     }
   }
 
-  // Step 2c: Skinport price data (fill remaining gaps, volume >= 10)
+  // Step 2c: Skinport price data — 1.2x higher than CSFloat on average.
+  // Apply 0.85x discount. Skinport has 12% seller fee vs CSFloat's 2%.
+  const SKINPORT_DISCOUNT = 0.85;
   let skinportPriceCount = 0;
   const skinportRows = db.prepare(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
@@ -157,10 +162,11 @@ export function buildPriceCache(db: Database.Database, force = false) {
   for (const row of skinportRows) {
     const key = `${row.skin_name}:${row.condition}`;
     if (priceCache.has(key)) continue;
-    const price = row.min_price_cents > 0 ? row.min_price_cents : row.median_price_cents;
+    const rawPrice = row.min_price_cents > 0 ? row.min_price_cents : row.median_price_cents;
+    const price = Math.round(rawPrice * SKINPORT_DISCOUNT);
     if (price > 0) {
       priceCache.set(key, price);
-      priceSources.set(key, `skinport (${row.volume} vol)`);
+      priceSources.set(key, `skinport (${row.volume} vol, ×${SKINPORT_DISCOUNT})`);
       skinportPriceCount++;
     }
   }
