@@ -56,6 +56,29 @@ export function tradeUpsRouter(db: Database.Database): Router {
     res.json(result);
   });
 
+  // Free tier showcase: 10 random profitable trade-ups per type, refreshed every 30 min.
+  // All free users see the SAME set — prevents gaming by refreshing.
+  const freeShowcase = new Map<string, { ids: Set<number>; ts: number }>();
+  const FREE_SHOWCASE_TTL = 30 * 60_000;
+  const FREE_SHOWCASE_COUNT = 10;
+
+  function getFreeShowcaseIds(tradeUpType: string): Set<number> {
+    const cached = freeShowcase.get(tradeUpType);
+    if (cached && Date.now() - cached.ts < FREE_SHOWCASE_TTL) return cached.ids;
+
+    // Pick 10 random profitable trade-ups that are >30 min old
+    const rows = db.prepare(`
+      SELECT id FROM trade_ups
+      WHERE is_theoretical = 0 AND listing_status = 'active' AND profit_cents > 0
+        AND type = ? AND created_at <= datetime('now', '-30 minutes')
+      ORDER BY RANDOM() LIMIT ?
+    `).all(tradeUpType, FREE_SHOWCASE_COUNT) as { id: number }[];
+
+    const ids = new Set(rows.map(r => r.id));
+    freeShowcase.set(tradeUpType, { ids, ts: Date.now() });
+    return ids;
+  }
+
   // Smart cache: reload from DB only when daemon completes a cycle (checks last_calculation timestamp)
   const tuCache = new Map<string, { data: any; ts: number }>();
   let lastKnownCalc = "";
@@ -302,7 +325,24 @@ export function tradeUpsRouter(db: Database.Database): Router {
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
 
-    // Redact listing IDs for free users (show skin name + price but not specific listing)
+    // Free tier: show only showcase trade-ups, blur the rest
+    const effectiveTier = user?.tier || "free";
+    const isFree = effectiveTier === "free";
+
+    if (isFree && type) {
+      const showcaseIds = getFreeShowcaseIds(type);
+      for (const tu of tradeUps) {
+        const isShowcase = showcaseIds.has(tu.id);
+        if (!isShowcase) {
+          // Blur: keep profit stats visible but redact inputs/outcomes and mark as locked
+          tu.inputs = [];
+          tu.outcomes = [];
+          (tu as any).locked = true;
+        }
+      }
+    }
+
+    // Redact listing IDs for free users
     if (!tierConfig.showListingIds) {
       for (const tu of tradeUps) {
         if (tu.inputs) {
@@ -318,7 +358,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       total,
       page: pageNum,
       per_page: perPage,
-      tier: user?.tier || "free",
+      tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
     };
     tuCache.set(cacheKey, { data: result, ts: Date.now() });
