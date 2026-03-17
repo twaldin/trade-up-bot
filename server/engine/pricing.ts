@@ -268,9 +268,10 @@ export function lookupPrice(
   const cached = priceCache.get(`${skinName}:${condition}`);
   if (cached !== undefined && cached > 0) return cached;
 
-  const prices = getConditionPrices(db, skinName);
-  if (prices.length === 0) return 0;
-  return interpolatePrice(prices, predictedFloat);
+  // No interpolation between conditions — FN premiums make linear interpolation wildly wrong.
+  // If we don't have CSFloat data for this exact condition, return 0 (unpriced).
+  // The price cache already has CSFloat sales + ref + listing floors per condition.
+  return 0;
 }
 
 export interface OutputPriceResult {
