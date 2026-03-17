@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 
-
 const IconSteam = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 0C5.377 0 0 5.377 0 12c0 .937.108 1.848.31 2.723l5.547 2.292c.31-.114.65-.183 1.005-.183.163 0 .32.016.473.045l2.64-3.878V13c0-2.206 1.794-4 4-4s4 1.794 4 4-1.794 4-4 4c-.163 0-.32-.016-.473-.045l-3.878 2.64h-.001c.03.153.045.31.045.473 0 1.381-1.119 2.5-2.5 2.5-.355 0-.695-.07-1.005-.183L.416 16.148C2.158 20.762 6.692 24 12 24c6.623 0 12-5.377 12-12S18.623 0 12 0zm0 15c-1.103 0-2-.897-2-2s.897-2 2-2 2 .897 2 2-.897 2-2 2z" />
@@ -10,6 +9,12 @@ const IconSteam = () => (
 const IconCheck = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const IconX = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
 
@@ -36,7 +41,6 @@ const Button = ({
     outline: "bg-transparent border border-[hsl(var(--surface-border))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--surface-hover))] hover:border-[hsl(var(--surface-border-hover))]",
     ghost: "bg-transparent text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
   };
-
   return (
     <button onClick={onClick} className={`${base} ${variants[variant]} ${className}`}>
       {children}
@@ -55,19 +59,18 @@ const Card = ({ children, className = "", highlighted = false }: { children: Rea
   </div>
 );
 
+interface GlobalStats {
+  total_trade_ups: number;
+  profitable_trade_ups: number;
+  total_data_points: number;
+  uptime_ms: number;
+}
+
 const LandingPage = () => {
-  
-  const [stats, setStats] = useState({ knives: 912, classified: 1044, total: 10231 });
+  const [stats, setStats] = useState<GlobalStats | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStats(prev => ({
-        knives: prev.knives + (Math.random() > 0.8 ? 1 : 0),
-        classified: prev.classified + (Math.random() > 0.8 ? 2 : 0),
-        total: prev.total + (Math.random() > 0.8 ? 5 : 0)
-      }));
-    }, 5000);
-    return () => clearInterval(interval);
+    fetch("/api/global-stats").then(r => r.json()).then(setStats).catch(() => {});
   }, []);
 
   return (
@@ -82,11 +85,10 @@ const LandingPage = () => {
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-[hsl(var(--text-muted))]">
             <a href="#how" className="hover:text-foreground transition-colors">How it Works</a>
-            <a href="#tiers" className="hover:text-foreground transition-colors">Tiers</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
           </div>
           <Button onClick={() => window.location.href = '/auth/steam'} className="h-9 px-4">
-            <IconSteam /> Sign In
+            <IconSteam /> Sign In with Steam
           </Button>
         </div>
       </nav>
@@ -102,7 +104,7 @@ const LandingPage = () => {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[hsl(var(--cta))] opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-[hsl(var(--cta))]"></span>
               </span>
-              Live Market Analysis Active
+              Live — Analyzing {stats ? stats.total_trade_ups.toLocaleString() : "200,000+"} trade-ups
             </div>
 
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight text-foreground mb-6">
@@ -111,69 +113,45 @@ const LandingPage = () => {
             </h1>
 
             <p className="mx-auto max-w-2xl text-lg text-[hsl(var(--text-secondary))] mb-10">
-              Real-time market intelligence across CSFloat, DMarket, and Skinport.
-              Our engine evaluates thousands of combinations every 10 minutes to find the gaps in the market.
+              Real-time market data from CSFloat, DMarket, and Skinport. Our engine evaluates
+              thousands of listing combinations every 12 minutes across all rarity tiers to find
+              profitable trade-ups the market hasn't noticed yet.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20">
               <Button onClick={() => window.location.href = '/auth/steam'} className="w-full sm:w-auto px-8 py-4 text-base">
-                <IconSteam /> Sign in with Steam
-              </Button>
-              <Button variant="outline" onClick={() => window.location.href = '/demo'} className="w-full sm:w-auto px-8 py-4 text-base">
-                View Demo
+                <IconSteam /> Sign in with Steam — Free
               </Button>
             </div>
 
-            {/* Mock Screenshot */}
-            <div className="relative mx-auto max-w-5xl group">
-              <div className="absolute -inset-1 bg-gradient-to-b from-[hsl(var(--cta)/0.2)] to-transparent rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000" />
-              <Card className="p-1 bg-[hsl(var(--surface-hover))]">
-                <div className="rounded-xl bg-[hsl(var(--background))] overflow-hidden border border-[hsl(var(--surface-ring))]">
-                  <div className="flex items-center gap-2 px-4 py-3 border-b border-[hsl(var(--surface-ring))] bg-[hsl(var(--surface))]">
-                    <div className="flex gap-1.5">
-                      <div className="h-3 w-3 rounded-full bg-[hsl(var(--surface-hover))]" />
-                      <div className="h-3 w-3 rounded-full bg-[hsl(var(--surface-hover))]" />
-                      <div className="h-3 w-3 rounded-full bg-[hsl(var(--surface-hover))]" />
-                    </div>
-                    <div className="mx-auto text-[10px] text-[hsl(var(--text-muted))] font-mono tracking-widest uppercase">Live Dashboard — Profitable Leads</div>
+            {/* Live stats from API */}
+            {stats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto mb-16">
+                {[
+                  { label: "Trade-Ups Tracked", value: stats.total_trade_ups.toLocaleString() },
+                  { label: "Profitable Found", value: stats.profitable_trade_ups.toLocaleString(), color: "text-green-500" },
+                  { label: "Price Data Points", value: stats.total_data_points.toLocaleString() },
+                  { label: "Update Cycle", value: "12 min" },
+                ].map((s, i) => (
+                  <div key={i} className="text-center">
+                    <div className="text-[hsl(var(--text-muted))] text-[10px] font-bold uppercase tracking-widest mb-1">{s.label}</div>
+                    <div className={`text-2xl font-bold tabular-nums ${s.color || "text-foreground"}`}>{s.value}</div>
                   </div>
-                  <div className="p-6 space-y-4 opacity-60 grayscale-[0.5] blur-[1px]">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="flex items-center justify-between py-3 border-b border-[hsl(var(--surface-ring))] last:border-0">
-                        <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 rounded bg-[hsl(var(--surface-hover))]" />
-                          <div className="text-left">
-                            <div className="h-3 w-32 bg-[hsl(var(--surface-hover))] rounded mb-2" />
-                            <div className="h-2 w-20 bg-[hsl(var(--surface))] rounded" />
-                          </div>
-                        </div>
-                        <div className="flex gap-8">
-                          <div className="text-right">
-                            <div className="text-[10px] text-[hsl(var(--text-muted))] uppercase mb-1">Cost</div>
-                            <div className="h-3 w-12 bg-[hsl(var(--surface-hover))] rounded ml-auto" />
-                          </div>
-                          <div className="text-right">
-                            <div className="text-[10px] text-[hsl(var(--text-muted))] uppercase mb-1">Profit</div>
-                            <div className="text-[hsl(var(--profit))] font-mono text-sm">+$142.50</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
         {/* How It Works */}
         <section id="how" className="py-24 border-t border-[hsl(var(--surface-ring))]">
           <div className="mx-auto max-w-7xl px-6">
+            <h2 className="text-3xl font-bold mb-12 text-center">How It Works</h2>
             <div className="grid md:grid-cols-3 gap-8">
               {[
-                { title: "Market Scanning", desc: "We pull thousands of listings every minute from CSFloat, DMarket, and Skinport.", icon: "📡" },
-                { title: "Smart Discovery", desc: "Algorithms evaluate every collection combo at 45+ specific float targets.", icon: "🧠" },
-                { title: "Profit Alerts", desc: "Get notified the second high-value opportunities appear before the market adjusts.", icon: "🔔" }
+                { title: "Market Scanning", desc: "We pull listings from CSFloat, DMarket, and Skinport every cycle. DMarket fetcher runs continuously at 2 requests/second for maximum coverage.", icon: "📡" },
+                { title: "Smart Discovery", desc: "Algorithms test thousands of input combinations at 45+ float targets per collection. Swap optimization improves existing profitable trade-ups each cycle.", icon: "🧠" },
+                { title: "Real-Time Results", desc: "Pro users see trade-ups the moment they're discovered. Claim a trade-up to lock listings for 30 minutes while you buy.", icon: "⚡" }
               ].map((item, i) => (
                 <Card key={i} className="p-8 group hover:ring-[hsl(var(--surface-border-hover))] transition-all">
                   <div className="text-3xl mb-4">{item.icon}</div>
@@ -185,48 +163,22 @@ const LandingPage = () => {
           </div>
         </section>
 
-        {/* Live Stats */}
+        {/* Rarity Tiers */}
         <section className="py-24 bg-[hsl(var(--surface)/0.2)]">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              {[
-                { label: "Knife Trade-Ups", value: stats.knives, suffix: "+" },
-                { label: "Classified Leads", value: stats.classified, suffix: "+" },
-                { label: "Price Observations", value: stats.total, suffix: "K" },
-                { label: "Update Frequency", value: 10, suffix: "m" }
-              ].map((stat, i) => (
-                <div key={i} className="text-center">
-                  <div className="text-[hsl(var(--text-muted))] text-xs font-bold uppercase tracking-widest mb-2">{stat.label}</div>
-                  <div className="text-4xl font-bold tabular-nums text-foreground">
-                    {stat.value.toLocaleString()}{stat.suffix}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Trade-Up Types */}
-        <section id="tiers" className="py-24">
           <div className="mx-auto max-w-3xl px-6 text-center">
-            <h2 className="text-3xl font-bold mb-12">The Rarity Ladder</h2>
+            <h2 className="text-3xl font-bold mb-4">All Rarity Tiers Covered</h2>
+            <p className="text-[hsl(var(--text-secondary))] mb-12">From cheap Mil-Spec skins to expensive Knife/Glove contracts — we find profits at every price range.</p>
             <div className="space-y-2">
               {[
-                { name: "Knife / Gloves", color: "bg-[hsl(var(--tier-knife))]", profit: "$200 - $1,500+", width: "w-full" },
-                { name: "Covert", color: "bg-[hsl(var(--tier-covert))]", profit: "$40 - $300", width: "w-[90%]" },
-                { name: "Classified", color: "bg-[hsl(var(--tier-classified))]", profit: "$15 - $80", width: "w-[80%]" },
-                { name: "Restricted", color: "bg-[hsl(var(--tier-restricted))]", profit: "$5 - $25", width: "w-[70%]" },
-                { name: "Mil-Spec", color: "bg-[hsl(var(--tier-milspec))]", profit: "$1 - $10", width: "w-[60%]" },
-                { name: "Industrial", color: "bg-[hsl(var(--tier-industrial))]", profit: "$0.10 - $2", width: "w-[50%]" },
+                { name: "Knife / Gloves", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500", desc: "5 Covert inputs → Knife or Glove" },
+                { name: "Classified → Covert", color: "border-pink-500/40 bg-pink-500/10 text-pink-500", desc: "10 Classified inputs → Covert gun" },
+                { name: "Restricted → Classified", color: "border-purple-500/40 bg-purple-500/10 text-purple-500", desc: "10 Restricted inputs → Classified" },
+                { name: "Mil-Spec → Restricted", color: "border-blue-500/40 bg-blue-500/10 text-blue-500", desc: "10 Mil-Spec inputs → Restricted" },
+                { name: "Industrial → Mil-Spec", color: "border-sky-400/40 bg-sky-400/10 text-sky-400", desc: "10 Industrial inputs → Mil-Spec" },
               ].map((tier, i) => (
-                <div key={i} className="flex justify-center">
-                  <div className={`${tier.width} flex items-center justify-between p-4 rounded-lg bg-[hsl(var(--surface))] ring-1 ring-[hsl(var(--surface-ring))] hover:ring-[hsl(var(--surface-border-hover))] transition-all`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`h-2 w-2 rounded-full ${tier.color}`} />
-                      <span className="font-bold text-sm uppercase tracking-wide">{tier.name}</span>
-                    </div>
-                    <span className="text-[hsl(var(--profit))] font-mono text-sm">{tier.profit}</span>
-                  </div>
+                <div key={i} className={`flex items-center justify-between p-4 rounded-lg border ${tier.color} transition-all`}>
+                  <span className="font-bold text-sm">{tier.name}</span>
+                  <span className="text-sm opacity-70">{tier.desc}</span>
                 </div>
               ))}
             </div>
@@ -237,54 +189,60 @@ const LandingPage = () => {
         <section id="pricing" className="py-24 border-t border-[hsl(var(--surface-ring))]">
           <div className="mx-auto max-w-7xl px-6">
             <div className="text-center mb-16">
-              <h2 className="text-4xl font-bold mb-4">Choose Your Intelligence</h2>
-              <p className="text-[hsl(var(--text-secondary))]">Scale your trading with data that moves at your speed.</p>
+              <h2 className="text-4xl font-bold mb-4">Simple Pricing</h2>
+              <p className="text-[hsl(var(--text-secondary))]">Start free. Upgrade when you're ready to act on the data.</p>
             </div>
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
               <Card className="p-8 flex flex-col">
                 <div className="mb-8">
                   <h3 className="text-lg font-bold text-[hsl(var(--text-secondary))]">Free</h3>
                   <div className="text-4xl font-bold mt-2">$0</div>
-                  <p className="text-[hsl(var(--text-muted))] text-sm mt-2">For curious traders</p>
+                  <p className="text-[hsl(var(--text-muted))] text-sm mt-2">See what's possible</p>
                 </div>
-                <ul className="space-y-4 mb-8 flex-1">
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> 10 results per scan</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> 30-minute delay</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><s>Direct listing links</s></li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><s>Claim system</s></li>
+                <ul className="space-y-3 mb-8 flex-1">
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> 10 sample trade-ups per tier</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Full outcome & input details</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Sort by profit, ROI, chance</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><IconX /> No listing links</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><IconX /> No filters or pagination</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><IconX /> No claim system</li>
                 </ul>
-                <Button variant="outline" className="w-full">Get Started</Button>
+                <Button variant="outline" onClick={() => window.location.href = '/auth/steam'} className="w-full">Get Started</Button>
               </Card>
 
               <Card className="p-8 flex flex-col">
                 <div className="mb-8">
                   <h3 className="text-lg font-bold">Basic</h3>
                   <div className="text-4xl font-bold mt-2">$5<span className="text-sm text-[hsl(var(--text-muted))]">/mo</span></div>
-                  <p className="text-[hsl(var(--text-secondary))] text-sm mt-2">For active hobbyists</p>
+                  <p className="text-[hsl(var(--text-secondary))] text-sm mt-2">For active traders</p>
                 </div>
-                <ul className="space-y-4 mb-8 flex-1">
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Unlimited results</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> 5-minute delay</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Full listing links</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><s>Claim system</s></li>
+                <ul className="space-y-3 mb-8 flex-1">
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Unlimited trade-ups</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> 30-minute delay on new finds</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Full filters, search, pagination</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Direct listing links</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Verify listing availability</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-muted))]"><IconX /> No claim system</li>
                 </ul>
-                <Button variant="outline" className="w-full">Subscribe</Button>
+                <Button variant="outline" onClick={() => window.location.href = '/auth/steam'} className="w-full">Subscribe</Button>
               </Card>
 
               <Card highlighted className="p-8 flex flex-col">
-                <div className="absolute top-0 right-0 bg-[hsl(var(--cta))] text-[hsl(var(--cta-foreground))] text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-widest">Recommended</div>
+                <div className="absolute top-0 right-0 bg-[hsl(var(--cta))] text-[hsl(var(--cta-foreground))] text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-widest">Best Value</div>
                 <div className="mb-8">
                   <h3 className="text-lg font-bold text-[hsl(var(--cta))]">Pro</h3>
                   <div className="text-4xl font-bold mt-2">$15<span className="text-sm text-[hsl(var(--text-muted))]">/mo</span></div>
-                  <p className="text-[hsl(var(--text-secondary))] text-sm mt-2">For professional flippers</p>
+                  <p className="text-[hsl(var(--text-secondary))] text-sm mt-2">For serious flippers</p>
                 </div>
-                <ul className="space-y-4 mb-8 flex-1">
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Real-time data</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Claim System access</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Discord & API Alerts</li>
-                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Priority support</li>
+                <ul className="space-y-3 mb-8 flex-1">
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Everything in Basic</li>
+                  <li className="flex items-center gap-3 text-sm font-medium text-[hsl(var(--text-secondary))]"><IconCheck /> Real-time data (no delay)</li>
+                  <li className="flex items-center gap-3 text-sm font-medium text-[hsl(var(--text-secondary))]"><IconCheck /> Claim system (lock listings 30 min)</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Up to 5 active claims</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Collection browser & data viewer</li>
+                  <li className="flex items-center gap-3 text-sm text-[hsl(var(--text-secondary))]"><IconCheck /> Skin price analytics</li>
                 </ul>
-                <Button className="w-full">Go Pro</Button>
+                <Button onClick={() => window.location.href = '/auth/steam'} className="w-full">Go Pro</Button>
               </Card>
             </div>
           </div>
@@ -296,7 +254,7 @@ const LandingPage = () => {
             <Card className="p-12 text-center overflow-visible">
               <div className="max-w-2xl mx-auto">
                 <h2 className="text-3xl font-bold mb-4">The Claim System</h2>
-                <p className="text-[hsl(var(--text-secondary))] mb-12">Pro users can lock a trade-up for 30 minutes. While claimed, no other user can see the specific listings, giving you time to buy safely.</p>
+                <p className="text-[hsl(var(--text-secondary))] mb-12">Pro users can lock a trade-up for 30 minutes. While claimed, other users see it's taken — giving you time to buy the listings without competition.</p>
 
                 <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative">
                   {[
@@ -335,11 +293,8 @@ const LandingPage = () => {
             TradeUpBot © 2026
           </div>
           <div className="flex items-center gap-8 text-sm text-[hsl(var(--text-muted))]">
-            <a href="https://github.com/twaldin/trade-up-bot" className="hover:text-foreground transition-colors">GitHub</a>
-            <a href="#" className="hover:text-foreground transition-colors">Discord</a>
             <a href="/auth/steam" className="hover:text-foreground transition-colors">Steam Login</a>
           </div>
-          <div className="text-xs text-[hsl(var(--text-muted))] font-mono">v2.4.0-stable</div>
         </div>
       </footer>
     </div>
