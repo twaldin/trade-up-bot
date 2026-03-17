@@ -415,23 +415,37 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       }
     }
 
-    // Auto-correct trade-ups that have 0 missing inputs but stale listing_status
-    const toCorrect: number[] = [];
+    // Auto-correct listing_status based on actual missing count
+    // 0 missing → active, some missing but status=stale → partial
+    const statusFixes = new Map<number, string>(); // id → correct status
     for (const id of nonActiveIds) {
-      if (!missingByTuId.has(id) || missingByTuId.get(id)!.size === 0) {
-        toCorrect.push(id);
+      const missing = missingByTuId.get(id)?.size ?? 0;
+      const row = rows.find(r => r.id === id);
+      if (!row) continue;
+      if (missing === 0 && row.listing_status !== 'active') {
+        statusFixes.set(id, 'active');
+      } else if (missing > 0 && row.listing_status === 'stale') {
+        // Has some inputs but marked stale — should be partial
+        const totalInputs = (inputsByTuId.get(id) ?? []).length;
+        if (missing < totalInputs) statusFixes.set(id, 'partial');
       }
     }
-    if (toCorrect.length > 0) {
-      const placeholders = toCorrect.map(() => "?").join(",");
-      db.prepare(`UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id IN (${placeholders})`).run(...toCorrect);
+    // Apply fixes in batch (uses write db)
+    for (const [id, status] of statusFixes) {
+      try {
+        if (status === 'active') {
+          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(id);
+        } else {
+          db.prepare("UPDATE trade_ups SET listing_status = ? WHERE id = ?").run(status, id);
+        }
+      } catch { /* ignore write lock errors — non-critical */ }
     }
 
     const tradeUps: TradeUp[] = rows.map((row) => {
       const inputs = inputsByTuId.get(row.id) ?? [];
       const missingSet = missingByTuId.get(row.id);
       const missingCount = missingSet?.size ?? 0;
-      const isAutoCorrect = toCorrect.includes(row.id);
+      const correctedStatus = statusFixes.get(row.id);
 
       // Mark which inputs are missing
       if (missingSet && missingSet.size > 0) {
@@ -457,11 +471,11 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         best_case_cents: (row as any).best_case_cents ?? 0,
         worst_case_cents: (row as any).worst_case_cents ?? 0,
         outcome_count: (row as any).outcome_count ?? 0,
-        listing_status: isAutoCorrect ? 'active' : ((row.listing_status as TradeUp['listing_status']) ?? 'active'),
-        missing_inputs: isAutoCorrect ? 0 : missingCount,
+        listing_status: (correctedStatus ?? row.listing_status ?? 'active') as TradeUp['listing_status'],
+        missing_inputs: correctedStatus === 'active' ? 0 : missingCount,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
-        preserved_at: isAutoCorrect ? null : (row.preserved_at ?? null),
+        preserved_at: correctedStatus === 'active' ? null : (row.preserved_at ?? null),
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
 
