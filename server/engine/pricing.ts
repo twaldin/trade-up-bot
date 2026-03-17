@@ -445,15 +445,22 @@ export function buildAnchors(
 
 export function interpolatePrice(anchors: PriceAnchor[], float: number): number {
   if (anchors.length === 0) return 0;
-  // Single anchor: only use if the float is in the same condition range.
-  // Don't extrapolate a $393 FN price to FT — return 0 (unknown) instead.
+  // Single anchor: only use if float is in the SAME condition.
+  // FN ($141) should NOT be used for MW, FT, WW, or BS.
   if (anchors.length === 1) {
-    const dist = Math.abs(float - anchors[0].float);
-    return dist <= 0.10 ? anchors[0].price : 0;
+    const anchorCond = floatToCondition(anchors[0].float);
+    const targetCond = floatToCondition(float);
+    return anchorCond === targetCond ? anchors[0].price : 0;
   }
-  if (float <= anchors[0].float) return anchors[0].price;
-  if (float >= anchors[anchors.length - 1].float)
-    return anchors[anchors.length - 1].price;
+  // Multi-anchor: interpolate within range, don't extrapolate beyond.
+  // If float is outside all anchors, only use nearest if same condition.
+  if (float <= anchors[0].float) {
+    return floatToCondition(float) === floatToCondition(anchors[0].float) ? anchors[0].price : 0;
+  }
+  if (float >= anchors[anchors.length - 1].float) {
+    return floatToCondition(float) === floatToCondition(anchors[anchors.length - 1].float)
+      ? anchors[anchors.length - 1].price : 0;
+  }
   for (let i = 0; i < anchors.length - 1; i++) {
     const lo = anchors[i];
     const hi = anchors[i + 1];
