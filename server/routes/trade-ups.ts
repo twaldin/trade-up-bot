@@ -56,7 +56,29 @@ export function tradeUpsRouter(db: Database.Database): Router {
     res.json(result);
   });
 
+  // Smart cache: reload from DB only when daemon completes a cycle (checks last_calculation timestamp)
+  const tuCache = new Map<string, { data: any; ts: number }>();
+  let lastKnownCalc = "";
+
+  function isCacheValid(): boolean {
+    try {
+      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+      const currentCalc = row?.value || "";
+      if (currentCalc !== lastKnownCalc) {
+        lastKnownCalc = currentCalc;
+        tuCache.clear(); // Daemon ran — invalidate all cached queries
+        return false;
+      }
+      return true;
+    } catch { return false; }
+  }
+
   router.get("/api/trade-ups", (req, res) => {
+    const cacheKey = JSON.stringify(req.query) + (req.user as any)?.tier;
+    if (isCacheValid()) {
+      const cached = tuCache.get(cacheKey);
+      if (cached) return res.json(cached.data);
+    }
     const {
       sort = "profit",
       order = "desc",
@@ -101,13 +123,18 @@ export function tradeUpsRouter(db: Database.Database): Router {
       where += ` AND t.created_at <= datetime('now', '-${tierConfig.delay} seconds')`;
     }
 
-    // Exclude trade-ups claimed by OTHER users
-    where += ` AND t.id NOT IN (
-      SELECT trade_up_id FROM trade_up_claims
-      WHERE released_at IS NULL AND expires_at > datetime('now')
-      AND user_id != ?
-    )`;
-    params.push(userId);
+    // Exclude trade-ups claimed by OTHER users (only check if claims table has active claims)
+    const activeClaims = db.prepare(
+      "SELECT COUNT(*) as c FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
+    ).get() as { c: number };
+    if (activeClaims.c > 0) {
+      where += ` AND t.id NOT IN (
+        SELECT trade_up_id FROM trade_up_claims
+        WHERE released_at IS NULL AND expires_at > datetime('now')
+        AND user_id != ?
+      )`;
+      params.push(userId);
+    }
 
     if (type) {
       where += " AND t.type = ?";
@@ -286,14 +313,16 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }
     }
 
-    res.json({
+    const result = {
       trade_ups: tradeUps,
       total,
       page: pageNum,
       per_page: perPage,
       tier: user?.tier || "free",
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
-    });
+    };
+    tuCache.set(cacheKey, { data: result, ts: Date.now() });
+    res.json(result);
   });
 
   router.get("/api/trade-ups/:id", (req, res) => {
