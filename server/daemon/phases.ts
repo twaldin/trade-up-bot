@@ -18,5 +18,4 @@ export { phase5KnifeCalc, type KnifeCalcResult } from "./phases/knife-calc.js";
 export {
   phase5ClassifiedCalc,
   phase5GenericCalc,
-  phase5cStaircase,
 } from "./phases/classified-calc.js";

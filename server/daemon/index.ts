@@ -34,7 +34,6 @@ import {
   phase4p5VerifyInputs,
   phase5KnifeCalc,
   phase5ClassifiedCalc,
-  phase5cStaircase,
   phase5GenericCalc,
 } from "./phases.js";
 
@@ -256,10 +255,8 @@ export async function main() {
     // Phase 5g: Industrial→Mil-Spec discovery
     phase5GenericCalc(db, "industrial_milspec", industrialDiscovery);
 
-    // Phase 5c: Staircase (every 5 cycles — depends on classified results being saved)
-    if (cycleCount % 5 === 1) {
-      phase5cStaircase(db);
-    }
+    // Staircase removed — single-stage results are non-deterministic (which Coverts
+    // come out of stage 1 is probabilistic, making stage 2 profit estimates unreliable).
 
     // Coverage report
     printCoverageReport(db);

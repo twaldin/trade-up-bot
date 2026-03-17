@@ -388,6 +388,24 @@ export function randomKnifeExplore(
   });
   if (knifeCollections.length === 0) return { found: 0, explored: 0, improved: 0 };
 
+  // Profit-guided: weight random picks toward collections in recent profitable trade-ups
+  const profitWeights = new Map<string, number>();
+  const profitRows = db.prepare(`
+    SELECT tui.collection_name, COUNT(*) as cnt
+    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
+    WHERE t.type = 'covert_knife' AND t.profit_cents > 0
+    GROUP BY tui.collection_name
+  `).all() as { collection_name: string; cnt: number }[];
+  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+
+  // Build weighted pool: profitable collections appear more often
+  const weightedPool: string[] = [];
+  for (const col of knifeCollections) {
+    const weight = Math.max(1, profitWeights.get(col) ?? 0);
+    const repeats = Math.min(10, Math.ceil(Math.sqrt(weight)));
+    for (let i = 0; i < repeats; i++) weightedPool.push(col);
+  }
+
   // Load existing trade-up signatures to avoid duplicates
   const existingSignatures = new Set<string>();
   const existingRows = db.prepare(`
@@ -447,8 +465,8 @@ export function randomKnifeExplore(
       switch (strategy) {
         case 0: {
           // Random pair with random split + random offset
-          const colA = pick(knifeCollections);
-          const colB = pick(knifeCollections.filter(c => c !== colA));
+          const colA = pick(weightedPool);
+          const colB = pick(weightedPool.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
           const listB = byCollection.get(colB) ?? [];
           const countA = 1 + Math.floor(Math.random() * 4); // 1-4
@@ -464,7 +482,7 @@ export function randomKnifeExplore(
 
         case 1: {
           // Single collection with random offset
-          const col = pick(knifeCollections);
+          const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 5) break;
           const maxOff = Math.min(list.length - 5, 30);
@@ -475,8 +493,8 @@ export function randomKnifeExplore(
 
         case 2: {
           // Float-targeted random pair
-          const colA = pick(knifeCollections);
-          const colB = pick(knifeCollections.filter(c => c !== colA));
+          const colA = pick(weightedPool);
+          const colB = pick(weightedPool.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 4);
           const countB = 5 - countA;
           const target = Math.random() * 0.5; // random float target 0-0.5
@@ -530,7 +548,7 @@ export function randomKnifeExplore(
 
         case 4: {
           // Condition-pure from random collection
-          const col = pick(knifeCollections);
+          const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
           const cond = pick(conditions);
@@ -607,7 +625,7 @@ export function randomKnifeExplore(
           // Find a random alternative from same or different collection
           const candidateCol = Math.random() < 0.7
             ? original.collection_name
-            : pick(knifeCollections);
+            : pick(weightedPool);
           const candidates = byCollection.get(candidateCol) ?? [];
           if (candidates.length === 0) break;
 

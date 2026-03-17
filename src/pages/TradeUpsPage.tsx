@@ -7,7 +7,7 @@ import type { Filters } from "../components/FilterBar.js";
 import { formatDollars } from "../utils/format.js";
 import { Button } from "@shared/components/ui/button.js";
 
-type TradeUpType = "all" | "covert_knife" | "classified_covert" | "staircase" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
+type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
 
 interface TypeOption {
   value: TradeUpType;
