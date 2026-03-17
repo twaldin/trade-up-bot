@@ -86,7 +86,6 @@ const TRADE_UP_TYPES = [
   { value: "restricted_classified" as const, label: "Restricted" },
   { value: "milspec_restricted" as const, label: "Mil-Spec" },
   { value: "industrial_milspec" as const, label: "Industrial" },
-  { value: "staircase" as const, label: "Staircases" },
 ];
 
 

@@ -405,6 +405,21 @@ export function randomExplore(
 
   if (eligibleCollections.length === 0) return { found: 0, explored: 0, improved: 0 };
 
+  // Profit-guided: weight toward collections in recent profitable trade-ups
+  const profitWeights = new Map<string, number>();
+  const profitRows = db.prepare(`
+    SELECT tui.collection_name, COUNT(*) as cnt
+    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
+    WHERE t.type = 'classified_covert' AND t.profit_cents > 0
+    GROUP BY tui.collection_name
+  `).all() as { collection_name: string; cnt: number }[];
+  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  const weightedPool: string[] = [];
+  for (const col of eligibleCollections) {
+    const w = Math.max(1, profitWeights.get(col) ?? 0);
+    for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
+  }
+
   // Index outcomes by collection
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
   for (const o of allOutcomes) {
@@ -461,7 +476,7 @@ export function randomExplore(
       switch (strategy) {
         case 0: {
           // Random pair with random split + offset
-          const colA = pick(eligibleCollections);
+          const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
           const listB = byCollection.get(colB) ?? [];
@@ -478,7 +493,7 @@ export function randomExplore(
 
         case 1: {
           // Single collection with random offset
-          const col = pick(eligibleCollections);
+          const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 10) break;
           const maxOff = Math.min(list.length - 10, 30);
@@ -489,7 +504,7 @@ export function randomExplore(
 
         case 2: {
           // Condition-pure from random collection
-          const col = pick(eligibleCollections);
+          const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
           const cond = pick(conditions);
@@ -502,9 +517,9 @@ export function randomExplore(
 
         case 3: {
           // Triple collection pool
-          const cols = [pick(eligibleCollections)];
+          const cols = [pick(weightedPool)];
           while (cols.length < 3) {
-            const c = pick(eligibleCollections);
+            const c = pick(weightedPool);
             if (!cols.includes(c)) cols.push(c);
             if (cols.length >= eligibleCollections.length) break;
           }
@@ -534,7 +549,7 @@ export function randomExplore(
 
         case 5: {
           // Float-targeted random pair
-          const colA = pick(eligibleCollections);
+          const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 9);
           const countB = 10 - countA;
