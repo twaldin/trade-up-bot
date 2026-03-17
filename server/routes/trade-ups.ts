@@ -91,17 +91,21 @@ export function tradeUpsRouter(db: Database.Database): Router {
     return ids;
   }
 
-  // Smart cache: reload from DB only when daemon completes a cycle (checks last_calculation timestamp)
+  // Smart cache: invalidate when daemon completes a cycle, with 5s TTL on the check itself
   const tuCache = new Map<string, { data: any; ts: number }>();
   let lastKnownCalc = "";
+  let lastCalcCheckTs = 0;
 
   function isCacheValid(): boolean {
+    // Don't hit sync_meta on every request — check at most every 5s
+    if (Date.now() - lastCalcCheckTs < 5000) return true;
+    lastCalcCheckTs = Date.now();
     try {
       const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
       const currentCalc = row?.value || "";
       if (currentCalc !== lastKnownCalc) {
         lastKnownCalc = currentCalc;
-        tuCache.clear(); // Daemon ran — invalidate all cached queries
+        tuCache.clear();
         return false;
       }
       return true;
@@ -109,11 +113,9 @@ export function tradeUpsRouter(db: Database.Database): Router {
   }
 
   router.get("/api/trade-ups", (req, res) => {
-    // Include user ID + claim count in cache key so claims invalidate correctly
+    // Cache key: query params + user + tier (claims handled via claimed_by_me/other flags)
     const cacheUserId = (req.user as any)?.steam_id || "anon";
-    let claimCount = 0;
-    try { claimCount = (db.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')").get() as any).c; } catch {}
-    const cacheKey = JSON.stringify(req.query) + cacheUserId + claimCount;
+    const cacheKey = JSON.stringify(req.query) + cacheUserId;
     if (isCacheValid()) {
       const cached = tuCache.get(cacheKey);
       if (cached) return res.json(cached.data);
@@ -308,23 +310,65 @@ export function tradeUpsRouter(db: Database.Database): Router {
       combo_key: string | null;
     }[];
 
-    // Load inputs for each trade-up; outcomes come from outcomes_json column
-    const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
+    // Batch-load all inputs for the page in ONE query (fixes N+1: was 50 queries, now 1)
+    const tuIds = rows.map(r => r.id);
+    const inputsByTuId = new Map<number, TradeUpInput[]>();
+    if (tuIds.length > 0) {
+      const placeholders = tuIds.map(() => "?").join(",");
+      const allInputs = db.prepare(
+        `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`
+      ).all(...tuIds) as (TradeUpInput & { trade_up_id: number })[];
+      for (const inp of allInputs) {
+        const list = inputsByTuId.get(inp.trade_up_id) ?? [];
+        list.push(inp);
+        inputsByTuId.set(inp.trade_up_id, list);
+      }
+    }
 
-    // Compute missing inputs for non-active trade-ups
-    const countMissing = db.prepare(`
-      SELECT COUNT(*) as cnt FROM trade_up_inputs tui
-      LEFT JOIN listings l ON tui.listing_id = l.id
-      WHERE tui.trade_up_id = ? AND l.id IS NULL
-    `);
-    // Get IDs of missing inputs for a trade-up
-    const getMissingIds = db.prepare(`
-      SELECT tui.listing_id FROM trade_up_inputs tui
-      LEFT JOIN listings l ON tui.listing_id = l.id
-      WHERE tui.trade_up_id = ? AND l.id IS NULL
-    `);
+    // Batch-load missing input listing IDs for non-active trade-ups (1 query instead of 50+50)
+    const nonActiveIds = rows.filter(r => r.listing_status !== 'active').map(r => r.id);
+    const missingByTuId = new Map<number, Set<string>>();
+    if (nonActiveIds.length > 0) {
+      const placeholders = nonActiveIds.map(() => "?").join(",");
+      const missingRows = db.prepare(`
+        SELECT tui.trade_up_id, tui.listing_id FROM trade_up_inputs tui
+        LEFT JOIN listings l ON tui.listing_id = l.id
+        WHERE tui.trade_up_id IN (${placeholders}) AND l.id IS NULL
+      `).all(...nonActiveIds) as { trade_up_id: number; listing_id: string }[];
+      for (const r of missingRows) {
+        const set = missingByTuId.get(r.trade_up_id) ?? new Set();
+        set.add(r.listing_id);
+        missingByTuId.set(r.trade_up_id, set);
+      }
+    }
+
+    // Auto-correct trade-ups that have 0 missing inputs but stale listing_status
+    const toCorrect: number[] = [];
+    for (const id of nonActiveIds) {
+      if (!missingByTuId.has(id) || missingByTuId.get(id)!.size === 0) {
+        toCorrect.push(id);
+      }
+    }
+    if (toCorrect.length > 0) {
+      const placeholders = toCorrect.map(() => "?").join(",");
+      db.prepare(`UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id IN (${placeholders})`).run(...toCorrect);
+    }
 
     const tradeUps: TradeUp[] = rows.map((row) => {
+      const inputs = inputsByTuId.get(row.id) ?? [];
+      const missingSet = missingByTuId.get(row.id);
+      const missingCount = missingSet?.size ?? 0;
+      const isAutoCorrect = toCorrect.includes(row.id);
+
+      // Mark which inputs are missing
+      if (missingSet && missingSet.size > 0) {
+        for (const inp of inputs) {
+          if (missingSet.has(inp.listing_id)) {
+            (inp as any).missing = true;
+          }
+        }
+      }
+
       const tu: TradeUp = {
         id: row.id,
         type: row.type,
@@ -334,41 +378,19 @@ export function tradeUpsRouter(db: Database.Database): Router {
         roi_percentage: row.roi_percentage,
         created_at: row.created_at,
         is_theoretical: row.is_theoretical === 1,
-        inputs: getInputs.all(row.id) as TradeUpInput[],
-        outcomes: [], // Outcomes loaded on-demand via /api/trade-up/:id/outcomes
+        inputs,
+        outcomes: [],
         chance_to_profit: (row as any).chance_to_profit ?? 0,
         best_case_cents: (row as any).best_case_cents ?? 0,
         worst_case_cents: (row as any).worst_case_cents ?? 0,
         outcome_count: (row as any).outcome_count ?? 0,
-        listing_status: (row.listing_status as TradeUp['listing_status']) ?? 'active',
-        missing_inputs: 0,
+        listing_status: isAutoCorrect ? 'active' : ((row.listing_status as TradeUp['listing_status']) ?? 'active'),
+        missing_inputs: isAutoCorrect ? 0 : missingCount,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
-        preserved_at: row.preserved_at ?? null,
+        preserved_at: isAutoCorrect ? null : (row.preserved_at ?? null),
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
-
-      // Compute missing inputs and auto-correct stale listing_status
-      // Revival may have replaced all inputs but refreshListingStatuses hasn't run yet
-      if (tu.listing_status !== 'active') {
-        const missing = (countMissing.get(row.id) as { cnt: number }).cnt;
-        tu.missing_inputs = missing;
-        if (missing === 0) {
-          tu.listing_status = 'active';
-          tu.preserved_at = null;
-          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(row.id);
-        } else {
-          // Mark which specific inputs are missing
-          const missingIds = new Set(
-            (getMissingIds.all(row.id) as { listing_id: string }[]).map(r => r.listing_id)
-          );
-          for (const inp of tu.inputs) {
-            if (missingIds.has(inp.listing_id)) {
-              (inp as any).missing = true;
-            }
-          }
-        }
-      }
 
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });

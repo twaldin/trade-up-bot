@@ -384,6 +384,9 @@ function createTables(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_price_data_source ON price_data(source);
     CREATE INDEX IF NOT EXISTS idx_trade_up_outcomes_skin_cond ON trade_up_outcomes(skin_name, predicted_condition);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin ON trade_up_inputs(skin_name);
+    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin_tuid ON trade_up_inputs(skin_name, trade_up_id);
+    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_collection_tuid ON trade_up_inputs(collection_name, trade_up_id);
+    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
     CREATE INDEX IF NOT EXISTS idx_listings_stattrak_type_price ON listings(stattrak, listing_type, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_float_stattrak ON listings(float_value, stattrak);
     CREATE INDEX IF NOT EXISTS idx_float_price_data_listing_count ON float_price_data(listing_count);

@@ -8,19 +8,24 @@ import type { SyncStatus } from "../../shared/types.js";
 export function statusRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Cache status until daemon runs a new cycle (checks last_calculation timestamp)
-  let statusCache: { data: any } | null = null;
+  // Cache status with 10s minimum TTL + invalidate on daemon cycle change
+  let statusCache: { data: any; ts: number } | null = null;
   let statusLastCalc = "";
 
   router.get("/api/status", (_req, res) => {
+    // Serve cache if under 10s old (avoids heavy queries on every 30s poll)
+    if (statusCache && Date.now() - statusCache.ts < 10_000) {
+      return res.json(statusCache.data);
+    }
     try {
       const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
       const currentCalc = row?.value || "";
       if (statusCache && currentCalc === statusLastCalc) {
+        statusCache.ts = Date.now(); // Refresh TTL
         return res.json(statusCache.data);
       }
       statusLastCalc = currentCalc;
-    } catch { /* DB locked — use cache if available */
+    } catch {
       if (statusCache) return res.json(statusCache.data);
     }
     const listingStats = (rarity: string, excludeKnives = false) => {
@@ -145,7 +150,7 @@ export function statusRouter(db: Database.Database): Router {
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
 
-    statusCache = { data: result };
+    statusCache = { data: result, ts: Date.now() };
     res.json(result);
   });
 
