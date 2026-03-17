@@ -130,46 +130,12 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  // Step 2b: Steam price data — broadest coverage but systematically 1.6x higher than CSFloat.
-  // Apply 0.65x discount to approximate CSFloat sell price (where we'd actually sell).
-  // Steam prices reflect Steam Community Market which has 15% Valve tax built in.
-  const STEAM_DISCOUNT = 0.65;
-  let steamPriceCount = 0;
-  const steamRows = db.prepare(`
-    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
-    FROM price_data WHERE source = 'steam' AND volume >= 5
-  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
-  for (const row of steamRows) {
-    const key = `${row.skin_name}:${row.condition}`;
-    if (priceCache.has(key)) continue;
-    const rawPrice = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
-    const price = Math.round(rawPrice * STEAM_DISCOUNT);
-    if (price > 0) {
-      priceCache.set(key, price);
-      priceSources.set(key, `steam (${row.volume} vol, ×${STEAM_DISCOUNT})`);
-      steamPriceCount++;
-    }
-  }
-
-  // Step 2c: Skinport price data — 1.2x higher than CSFloat on average.
-  // Apply 0.85x discount. Skinport has 12% seller fee vs CSFloat's 2%.
-  const SKINPORT_DISCOUNT = 0.85;
-  let skinportPriceCount = 0;
-  const skinportRows = db.prepare(`
-    SELECT skin_name, condition, min_price_cents, median_price_cents, volume
-    FROM price_data WHERE source = 'skinport' AND volume >= 10
-  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
-  for (const row of skinportRows) {
-    const key = `${row.skin_name}:${row.condition}`;
-    if (priceCache.has(key)) continue;
-    const rawPrice = row.min_price_cents > 0 ? row.min_price_cents : row.median_price_cents;
-    const price = Math.round(rawPrice * SKINPORT_DISCOUNT);
-    if (price > 0) {
-      priceCache.set(key, price);
-      priceSources.set(key, `skinport (${row.volume} vol, ×${SKINPORT_DISCOUNT})`);
-      skinportPriceCount++;
-    }
-  }
+  // No Steam/Skinport for output pricing. Both systematically overestimate:
+  // Steam 1.6x CSFloat (15% Valve tax), Skinport 1.2x (12% seller fee).
+  // If CSFloat doesn't have data, the skin is unpriced ($0 = conservative).
+  // CSFloat data builds over time from listing/sale fetches across all rarities.
+  const steamPriceCount = 0;
+  const skinportPriceCount = 0;
 
   // Step 3: Fill remaining gaps from listings (last resort for knives/gloves)
   let listingLastResort = 0;
@@ -386,16 +352,8 @@ export function lookupOutputPrice(
     feePct: MARKETPLACE_FEES.csfloat.sellerFee,
   };
 
-  // Only use DMarket/Skinport when CSFloat has NO price (gap-filling)
-  if (best.priceCents === 0) {
-    if (dmNet > 0) {
-      best = { priceCents: dmNet, marketplace: "dmarket", grossPrice: dmGross, feePct: MARKETPLACE_FEES.dmarket.sellerFee };
-    }
-    if (spNet > best.priceCents) {
-      best = { priceCents: spNet, marketplace: "skinport", grossPrice: spGross, feePct: MARKETPLACE_FEES.skinport.sellerFee };
-    }
-  }
-
+  // CSFloat-only output pricing. No DMarket/Skinport gap-fill — both overestimate.
+  // If CSFloat has no data, price stays 0 (conservative: unpriced outcome = $0).
   return best;
 }
 
@@ -433,21 +391,7 @@ export function getConditionPrices(
       return [];
     }
 
-    // Try Skinport price data (covers non-ST items CSFloat doesn't have)
-    // Use min_price as avg — Skinport avg/median are inflated by overpriced listings
-    rows = db
-      .prepare(
-        `SELECT condition, min_price_cents, min_price_cents as avg_price_cents
-         FROM price_data WHERE skin_name = ? AND source = 'skinport'
-           AND min_price_cents > 0 AND volume >= 2
-         ORDER BY min_price_cents DESC`
-      )
-      .all(skinName) as typeof rows;
-    if (rows.length > 0) {
-      const result = buildAnchors(rows, 1.0, skinInfo);
-      conditionPricesCache.set(skinName, result);
-      return result;
-    }
+    // No Skinport/Steam fallback — CSFloat-only for output pricing accuracy.
     // Doppler phase fallback: "★ Karambit | Doppler Phase 1" → "★ Karambit | Doppler"
     // Covers: "Phase N", "Ruby", "Sapphire", "Black Pearl", "Emerald"
     const phaseMatch = skinName.match(/^(.+\| (?:Doppler|Gamma Doppler))\s+(?:Phase \d|Ruby|Sapphire|Black Pearl|Emerald)$/);
