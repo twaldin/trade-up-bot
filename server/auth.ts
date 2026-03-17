@@ -167,12 +167,14 @@ export function setupAuth(app: Express, db: Database.Database) {
     req.logout(() => res.redirect("/"));
   });
 
-  // Current user API
+  // Current user API — supports admin view_as override
   app.get("/api/auth/me", (req, res) => {
     if (req.user) {
       const u = req.user as User;
-      console.log(`Auth check: ${u.display_name} (${u.tier})`);
-      res.json({ steam_id: u.steam_id, display_name: u.display_name, avatar_url: u.avatar_url, tier: u.tier });
+      const viewAs = req.query.view_as as string | undefined;
+      const effectiveTier = (viewAs && u.tier === "admin" && ["free", "basic", "pro"].includes(viewAs))
+        ? viewAs : u.tier;
+      res.json({ steam_id: u.steam_id, display_name: u.display_name, avatar_url: u.avatar_url, tier: effectiveTier, real_tier: u.tier });
     } else {
       res.json(null);
     }
