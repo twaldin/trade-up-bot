@@ -8,13 +8,20 @@ import type { SyncStatus } from "../../shared/types.js";
 export function statusRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Cache status response for 30 seconds (heavy aggregate queries, polled every 5s)
-  let statusCache: { data: any; ts: number } | null = null;
-  const STATUS_CACHE_TTL = 30_000;
+  // Cache status until daemon runs a new cycle (checks last_calculation timestamp)
+  let statusCache: { data: any } | null = null;
+  let statusLastCalc = "";
 
   router.get("/api/status", (_req, res) => {
-    if (statusCache && Date.now() - statusCache.ts < STATUS_CACHE_TTL) {
-      return res.json(statusCache.data);
+    try {
+      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+      const currentCalc = row?.value || "";
+      if (statusCache && currentCalc === statusLastCalc) {
+        return res.json(statusCache.data);
+      }
+      statusLastCalc = currentCalc;
+    } catch { /* DB locked — use cache if available */
+      if (statusCache) return res.json(statusCache.data);
     }
     const listingStats = (rarity: string, excludeKnives = false) => {
       const knifeFilter = excludeKnives ? "AND s.name NOT LIKE '★%'" : "";
@@ -138,7 +145,7 @@ export function statusRouter(db: Database.Database): Router {
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
 
-    statusCache = { data: result, ts: Date.now() };
+    statusCache = { data: result };
     res.json(result);
   });
 
