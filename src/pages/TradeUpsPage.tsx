@@ -5,10 +5,14 @@ import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
-import { TRADE_UP_TYPES, CLAIMS_PILL, pillClass } from "../utils/rarity.js";
-import type { RarityStyle } from "../utils/rarity.js";
-
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
+
+interface TypeOption {
+  value: TradeUpType;
+  label: string;
+  active?: string;
+  inactive?: string;
+}
 
 interface Props {
   types: TypeOption[];
