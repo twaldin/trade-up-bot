@@ -25,6 +25,7 @@ interface InputListProps {
   verifying: boolean;
   onVerify: (tuId: number) => void;
   onNavigateSkin?: (skinName: string) => void;
+  showListingLinks?: boolean;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -70,10 +71,11 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
   );
 }
 
-function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
+function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLinks = true }: {
   input: TradeUpInput;
   verifyResult?: VerifyResult;
   onNavigateSkin?: (skinName: string) => void;
+  showListingLinks?: boolean;
 }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
@@ -87,15 +89,24 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin }: {
     }`}>
       {/* Row 1: Skin name + verify status */}
       <div className="flex items-start justify-between gap-1 mb-0.5">
-        <a
-          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : isSoldOrDelisted ? "line-through text-foreground/90" : "text-foreground/90"}`}
-          title={input.skin_name}
-        >
-          {input.skin_name}
-        </a>
+        {showListingLinks && input.listing_id !== "hidden" ? (
+          <a
+            href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : isSoldOrDelisted ? "line-through text-foreground/90" : "text-foreground/90"}`}
+            title={input.skin_name}
+          >
+            {input.skin_name}
+          </a>
+        ) : (
+          <span
+            className={`leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : "text-foreground/90"}`}
+            title={input.skin_name}
+          >
+            {input.skin_name}
+          </span>
+        )}
         <div className="flex items-center gap-0.5 shrink-0">
           {isMissing && !inputStatus && (
             <Badge variant="outline" className="text-[0.55rem] bg-red-950 text-red-400 border-red-800 font-semibold py-0 h-3.5" title="Listing no longer available">MISSING</Badge>
@@ -167,7 +178,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -222,6 +233,7 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
             input={input}
             verifyResult={verifyResult}
             onNavigateSkin={onNavigateSkin}
+            showListingLinks={showListingLinks}
           />
         ))}
       </div>

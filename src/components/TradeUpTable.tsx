@@ -116,6 +116,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [verifyResults, setVerifyResults] = useState<Map<number, VerifyResult>>(new Map());
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
   const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
+  const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
   // Lazy-loaded outcomes (not included in list response)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
 
@@ -201,18 +202,14 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             <>
               <tr
                 key={tu.id}
-                className={`${isFree ? 'cursor-default' : 'cursor-pointer hover:bg-muted'} ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
-                onClick={() => isFree ? undefined : handleExpand(tu.id)}
+                className={`cursor-pointer hover:bg-muted ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
+                onClick={() => handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {isFree ? (
-                    <span className="text-muted-foreground/30 text-[0.7rem]"></span>
-                  ) : (
-                    expandedId === tu.id ? "\u25BC" : "\u25B6"
-                  )}
+                  {expandedId === tu.id ? "\u25BC" : "\u25B6"}
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {isFree ? (
+                  {tu.inputs.length === 0 ? (
                     <span className="text-[0.75rem] text-muted-foreground/50 italic">
                       {tu.type?.replace("_", " → ")}
                     </span>
@@ -347,34 +344,50 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     {tu.profit_cents > 0 && (() => {
                       const myClaimLocal = claimedIds.has(tu.id) || (tu as any).claimed_by_me;
                       const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
+                      const [showUpgrade, setShowUpgrade] = [upgradeMsg === tu.id, (show: boolean) => setUpgradeMsg(show ? tu.id : null)];
                       return (
-                      <div className="flex items-center justify-between px-5 py-2 border-b border-border/50 bg-muted/30">
-                        <div className="text-[0.75rem] text-muted-foreground">
-                          {myClaimLocal
-                            ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
-                            : otherClaim
-                              ? <span className="text-muted-foreground">Claimed by a Pro user — <button className="text-yellow-400 hover:text-yellow-300 cursor-pointer" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>upgrade to claim</button></span>
-                              : !isPro
-                                ? <span>Claims are a Pro feature — <button className="text-yellow-400 hover:text-yellow-300 cursor-pointer" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>upgrade to Pro</button></span>
+                      <div className="px-5 py-2 border-b border-border/50 bg-muted/30">
+                        {showUpgrade && (
+                          <div className="flex items-center justify-between mb-1.5 px-3 py-2 bg-yellow-950/40 border border-yellow-500/30 rounded text-[0.75rem] text-yellow-200">
+                            <span>Upgrade to Pro to claim trade-ups and lock listings while you buy</span>
+                            <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
+                              Upgrade →
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <div className="text-[0.75rem] text-muted-foreground">
+                            {myClaimLocal
+                              ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
+                              : otherClaim
+                                ? <span className="text-muted-foreground">Claimed by a Pro user</span>
                                 : <span>Claim to lock listings for 30 min while you buy</span>
-                          }
+                            }
+                          </div>
+                          {!myClaimLocal && !otherClaim && (
+                            isPro
+                              ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
+                              : <button
+                                  className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
+                                  onClick={(e) => { e.stopPropagation(); setShowUpgrade(true); }}
+                                >
+                                  Claim
+                                </button>
+                          )}
+                          {myClaimLocal && (
+                            <button
+                              className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
+                                setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                                onClaimChange?.();
+                              }}
+                            >
+                              Release
+                            </button>
+                          )}
                         </div>
-                        {isPro && !myClaimLocal && !otherClaim && (
-                          <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
-                        )}
-                        {myClaimLocal && (
-                          <button
-                            className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
-                              setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
-                              onClaimChange?.();
-                            }}
-                          >
-                            Release
-                          </button>
-                        )}
                       </div>);
                     })()}
                     {/* Outcome distribution chart */}
@@ -390,6 +403,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         verifying={verifying === tu.id}
                         onVerify={handleVerify}
                         onNavigateSkin={onNavigateSkin}
+                        showListingLinks={isPro}
                       />
                       <OutcomeList
                         tu={tu}

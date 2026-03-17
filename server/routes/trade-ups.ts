@@ -144,37 +144,44 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const effectiveTier = user?.tier || "free";
 
     // === FREE TIER: return fixed 10 oldest stale per type, no filters/pagination ===
+    // Free users see full trade-up data (inputs, outcomes, prices) but no listing links
     if (effectiveTier === "free") {
       const freeTypes = type && type !== "all"
         ? [type]
         : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec"];
       const freeRows = getFreeTierTradeUps(freeTypes);
 
-      const tradeUps: TradeUp[] = freeRows.map((row: any) => ({
-        id: row.id,
-        type: row.type,
-        total_cost_cents: row.total_cost_cents,
-        expected_value_cents: row.expected_value_cents,
-        profit_cents: row.profit_cents,
-        roi_percentage: row.roi_percentage,
-        created_at: row.created_at,
-        is_theoretical: false,
-        inputs: [], // Free users don't see inputs
-        outcomes: [],
-        chance_to_profit: row.chance_to_profit ?? 0,
-        best_case_cents: row.best_case_cents ?? 0,
-        worst_case_cents: row.worst_case_cents ?? 0,
-        outcome_count: row.outcome_count ?? 0,
-        listing_status: 'active' as const, // Don't reveal stale status to free users
-        missing_inputs: 0,
-        profit_streak: 0,
-        peak_profit_cents: 0,
-        preserved_at: null,
-        previous_inputs: null,
-        locked: true, // Signal to frontend: no expand, no inputs
-      }));
+      const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
 
-      // Count user's active claims for the badge
+      const tradeUps: TradeUp[] = freeRows.map((row: any) => {
+        // Load inputs but redact listing IDs (no direct links for free)
+        const inputs = (getInputs.all(row.id) as TradeUpInput[]).map(inp => ({
+          ...inp, listing_id: "hidden",
+        }));
+        return {
+          id: row.id,
+          type: row.type,
+          total_cost_cents: row.total_cost_cents,
+          expected_value_cents: row.expected_value_cents,
+          profit_cents: row.profit_cents,
+          roi_percentage: row.roi_percentage,
+          created_at: row.created_at,
+          is_theoretical: false,
+          inputs,
+          outcomes: [],
+          chance_to_profit: row.chance_to_profit ?? 0,
+          best_case_cents: row.best_case_cents ?? 0,
+          worst_case_cents: row.worst_case_cents ?? 0,
+          outcome_count: row.outcome_count ?? 0,
+          listing_status: 'active' as const, // Don't reveal stale status
+          missing_inputs: 0,
+          profit_streak: 0,
+          peak_profit_cents: 0,
+          preserved_at: null,
+          previous_inputs: null,
+        };
+      });
+
       let myClaimCount = 0;
       try { myClaimCount = (db.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')").get(userId) as { c: number }).c; } catch {}
 
