@@ -75,31 +75,6 @@ export function collectionsRouter(
     try {
       const collectionName = decodeURIComponent(req.params.name);
 
-      // Trade-ups involving this collection
-      const tradeUps = db.prepare(`
-        SELECT DISTINCT t.id, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-          t.roi_percentage, t.is_theoretical, t.created_at
-        FROM trade_ups t
-        JOIN trade_up_inputs i ON t.id = i.trade_up_id
-        WHERE i.collection_name = ? AND t.is_theoretical = 0
-        ORDER BY t.profit_cents DESC
-        LIMIT 50
-      `).all(collectionName) as {
-        id: number; total_cost_cents: number; expected_value_cents: number;
-        profit_cents: number; roi_percentage: number; is_theoretical: number; created_at: string;
-      }[];
-
-      // Theory tracking for this collection
-      const theories = db.prepare(`
-        SELECT combo_key, status, gap_cents, cooldown_until
-        FROM theory_tracking
-        WHERE combo_key LIKE ?
-        ORDER BY gap_cents ASC
-        LIMIT 20
-      `).all(`%${collectionName}%`) as {
-        combo_key: string; status: string; gap_cents: number; cooldown_until: string | null;
-      }[];
-
       // Knife/glove pool from CASE_KNIFE_MAP
       const pool = collectionKnifePool.get(collectionName);
       const knifePool = pool ? {
@@ -108,7 +83,7 @@ export function collectionsRouter(
         finishCount: pool.finishCount,
       } : null;
 
-      res.json({ collection: collectionName, tradeUps, theories, knifePool });
+      res.json({ collection: collectionName, knifePool });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
