@@ -107,9 +107,10 @@ export function tradeUpsRouter(db: Database.Database): Router {
   }
 
   router.get("/api/trade-ups", (req, res) => {
-    // Cache key: query params + user + tier (claims handled via claimed_by_me/other flags)
+    // Include user tier in cache key so tier changes invalidate stale cached responses
     const cacheUserId = (req.user as any)?.steam_id || "anon";
-    const cacheKey = JSON.stringify(req.query) + cacheUserId;
+    const cacheUserTier = (req.user as any)?.tier || "free";
+    const cacheKey = JSON.stringify(req.query) + cacheUserId + cacheUserTier;
     if (isCacheValid()) {
       const cached = tuCache.get(cacheKey);
       if (cached) return res.json(cached.data);
