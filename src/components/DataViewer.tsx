@@ -11,16 +11,17 @@ interface DataViewerProps {
   collectionFilter?: string;
   initialSearch?: string;
   outputCollection?: string;
+  initialRarity?: string;
 }
 
-export function DataViewer({ onNavigateCollection, collectionFilter, initialSearch, outputCollection }: DataViewerProps) {
+export function DataViewer({ onNavigateCollection, collectionFilter, initialSearch, outputCollection, initialRarity }: DataViewerProps) {
   const [skins, setSkins] = useState<SkinSummary[]>([]);
   const [search, setSearch] = useState(initialSearch || "");
   const [appliedSearch, setAppliedSearch] = useState(initialSearch || "");
   const [selectedSkin, setSelectedSkin] = useState<string | null>(initialSearch || null);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"listing_count" | "sale_count" | "min_price" | "name">("listing_count");
-  const [rarity, setRarity] = useState<string>(collectionFilter ? "" : "all");
+  const [rarity, setRarity] = useState<string>(initialRarity ?? (collectionFilter ? "" : "all"));
   const [stattrak, setStattrak] = useState(false);
   const isEmbedded = !!(collectionFilter || outputCollection);
   const [lastViewedAt] = useState<string>(() => localStorage.getItem("dv_lastViewedAt") || new Date().toISOString());
