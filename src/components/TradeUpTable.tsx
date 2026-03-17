@@ -367,7 +367,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 <SortIndicator column={col.key} sort={sort} order={order} />
               </th>
             ))}
-            <th className="px-3.5 py-2.5 text-left font-semibold text-muted-foreground cursor-pointer select-none whitespace-nowrap border-b border-border hover:text-foreground/80">Outcomes</th>
             <th className="px-3.5 py-2.5 text-left font-semibold text-muted-foreground border-b border-border whitespace-nowrap"></th>
           </tr>
         </thead>
@@ -483,11 +482,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     {formatDollars(worst)}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
-                  <span className="text-[0.8rem] text-foreground/60">
-                    {tu.outcome_count || tu.outcomes.length} possible
-                  </span>
-                </td>
                 {/* Claim status shown as small badge inline */}
                 <td className="px-2 py-2.5 border-b border-border/70">
                   {(claimedIds.has(tu.id) || (tu as any).claimed_by_me)
@@ -499,7 +493,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               </tr>
               {expandedId === tu.id && (
                 <tr key={`${tu.id}-expanded`}>
-                  <td colSpan={11} className="p-0">
+                  <td colSpan={10} className="p-0">
                     {renderExpanded(tu)}
                   </td>
                 </tr>

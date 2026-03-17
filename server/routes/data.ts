@@ -191,16 +191,34 @@ export function dataRouter(
       }
     }
 
-    // Sale history: combine CSFloat sales + sold listings (deduplicated)
+    // Sale history: combine CSFloat sales + sold listings + listing observations (deduplicated)
     const saleHistory = db.prepare(`
       SELECT price_cents, float_value, sold_at FROM sale_history
       WHERE skin_name = ? AND price_cents > 0
       UNION
       SELECT price_cents, float_value, observed_at as sold_at FROM price_observations
-      WHERE skin_name = ? AND source = 'sale' AND price_cents > 0
+      WHERE skin_name = ? AND source IN ('sale', 'listing', 'listing_dmarket', 'listing_skinport') AND price_cents > 0
       ORDER BY sold_at DESC
       LIMIT 300
     `).all(skinName, skinName) as { price_cents: number; float_value: number; sold_at: string }[];
+
+    // Doppler: also collect phase-specific observations for per-phase scatter plots
+    let phaseSales: Record<string, typeof saleHistory> | undefined;
+    if (skinName.includes("Doppler")) {
+      phaseSales = {};
+      const phaseObs = db.prepare(`
+        SELECT skin_name, price_cents, float_value, observed_at as sold_at FROM price_observations
+        WHERE skin_name LIKE ? AND skin_name != ? AND price_cents > 0
+        ORDER BY observed_at DESC LIMIT 1000
+      `).all(`${skinName}%`, skinName) as { skin_name: string; price_cents: number; float_value: number; sold_at: string }[];
+      for (const r of phaseObs) {
+        const phase = r.skin_name.replace(skinName, "").trim();
+        if (phase) {
+          if (!phaseSales[phase]) phaseSales[phase] = [];
+          phaseSales[phase].push({ price_cents: r.price_cents, float_value: r.float_value, sold_at: r.sold_at });
+        }
+      }
+    }
 
     // Skin metadata
     const skin = db.prepare(`
@@ -241,6 +259,7 @@ export function dataRouter(
       floatBuckets,
       priceSources: priceSourceRows,
       phasePrices, // Doppler only: per-phase price data
+      phaseSales,  // Doppler only: per-phase sale observations
       saleHistory,
       stats: {
         totalListings: listings.length,

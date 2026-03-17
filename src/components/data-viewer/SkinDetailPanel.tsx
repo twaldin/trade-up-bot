@@ -131,9 +131,10 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
 
   const saleHistory = useMemo(() => {
     if (!selectedPhase) return allSaleHistory;
-    // Sales don't have phase data — hide when phase-filtered to avoid misleading counts
-    return [];
-  }, [allSaleHistory, selectedPhase]);
+    // Use phase-specific observations if available, otherwise empty
+    const phaseSaleData = (detail as any)?.phaseSales?.[selectedPhase];
+    return phaseSaleData ?? [];
+  }, [allSaleHistory, selectedPhase, detail]);
 
   if (loading) return <LoadingSkeleton />;
   if (!detail) {

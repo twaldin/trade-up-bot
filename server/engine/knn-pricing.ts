@@ -408,10 +408,13 @@ export function snapshotListingsToObservations(
 ): number {
   let total = 0;
 
-  // CSFloat listings → source 'listing' (unchanged)
+  // CSFloat listings → source 'listing'
+  // Phase-qualify Doppler skins so observations are per-phase
   const csfloat = db.prepare(`
     INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT s.name, l.float_value, l.price_cents, 'listing', l.created_at
+    SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
+                THEN s.name || ' ' || l.phase ELSE s.name END,
+           l.float_value, l.price_cents, 'listing', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
       AND (l.source = 'csfloat' OR l.source IS NULL)
@@ -422,7 +425,9 @@ export function snapshotListingsToObservations(
   // DMarket listings → source 'listing_dmarket' (price normalized with 2.5% buyer fee)
   const dmarket = db.prepare(`
     INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'listing_dmarket', l.created_at
+    SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
+                THEN s.name || ' ' || l.phase ELSE s.name END,
+           l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'listing_dmarket', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
       AND l.source = 'dmarket'
