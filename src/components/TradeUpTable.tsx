@@ -72,12 +72,52 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
+function ClaimButton({ tuId, claimed, setClaimed }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void }) {
+  const [loading, setLoading] = useState(false);
+  const isClaimed = claimed.has(tuId);
+
+  if (isClaimed) {
+    return (
+      <span className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950/50 text-purple-300 border border-purple-900">
+        Claimed
+      </span>
+    );
+  }
+
+  return (
+    <button
+      disabled={loading}
+      className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors disabled:opacity-50"
+      onClick={async (e) => {
+        e.stopPropagation();
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/trade-ups/${tuId}/claim`, { method: "POST", credentials: "include" });
+          const data = await res.json();
+          if (data.error) {
+            alert(data.error);
+          } else {
+            setClaimed(prev => new Set(prev).add(tuId));
+          }
+        } catch {
+          alert("Failed to claim");
+        } finally {
+          setLoading(false);
+        }
+      }}
+    >
+      {loading ? "..." : "Claim"}
+    </button>
+  );
+}
+
 export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
   const [verifyResults, setVerifyResults] = useState<Map<number, VerifyResult>>(new Map());
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
+  const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
   // Lazy-loaded outcomes (not included in list response)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
 
@@ -283,18 +323,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
                   {tu.profit_cents > 0 && (
-                    <button
-                      className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "POST", credentials: "include" });
-                        const data = await res.json();
-                        if (data.error) alert(data.error);
-                        else alert(`Claimed for 30 min! ${data.listings_verified} listings verified.`);
-                      }}
-                    >
-                      Claim
-                    </button>
+                    <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
                   )}
                 </td>
               </tr>
