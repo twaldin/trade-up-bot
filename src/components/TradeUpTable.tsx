@@ -30,6 +30,7 @@ interface Props {
   onSort: (column: string) => void;
   onNavigateSkin?: (skinName: string) => void;
   onNavigateCollection?: (collectionName: string) => void;
+  onClaimChange?: () => void;
 }
 
 function SortIndicator({ column, sort, order }: { column: string; sort: string; order: string }) {
@@ -72,7 +73,7 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
-function ClaimButton({ tuId, claimed, setClaimed }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void }) {
+function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void; onClaimChange?: () => void }) {
   const [loading, setLoading] = useState(false);
   if (claimed.has(tuId)) return null; // Already claimed — bar handles display
 
@@ -90,6 +91,7 @@ function ClaimButton({ tuId, claimed, setClaimed }: { tuId: number; claimed: Set
             alert(data.error);
           } else {
             setClaimed(prev => new Set(prev).add(tuId));
+            onClaimChange?.();
           }
         } catch {
           alert("Failed to claim");
@@ -103,7 +105,7 @@ function ClaimButton({ tuId, claimed, setClaimed }: { tuId: number; claimed: Set
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
@@ -326,19 +328,13 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   </span>
                 </td>
                 {/* Claim status shown as small badge inline */}
-                {(tu as any).claimed_by_other && (
-                  <td className="px-2 py-2.5 border-b border-border/70">
-                    <span className="text-[0.6rem] text-muted-foreground">🔒</span>
-                  </td>
-                )}
-                {(tu as any).claimed_by_me && (
-                  <td className="px-2 py-2.5 border-b border-border/70">
-                    <span className="text-[0.6rem] text-purple-400">🔒</span>
-                  </td>
-                )}
-                {!(tu as any).claimed_by_other && !(tu as any).claimed_by_me && (
-                  <td className="px-2 py-2.5 border-b border-border/70"></td>
-                )}
+                <td className="px-2 py-2.5 border-b border-border/70">
+                  {(claimedIds.has(tu.id) || (tu as any).claimed_by_me)
+                    ? <span className="text-[0.6rem] text-purple-400" title="You claimed this">🔒</span>
+                    : (tu as any).claimed_by_other
+                      ? <span className="text-[0.6rem] text-muted-foreground" title="Claimed by another user">🔒</span>
+                      : null}
+                </td>
               </tr>
               {expandedId === tu.id && (
                 <tr key={`${tu.id}-expanded`}>
@@ -358,7 +354,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                           }
                         </div>
                         {!myClaimLocal && !otherClaim && (
-                          <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
+                          <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
                         )}
                         {myClaimLocal && (
                           <button
@@ -367,6 +363,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                               e.stopPropagation();
                               await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
                               setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                              onClaimChange?.();
                             }}
                           >
                             Release

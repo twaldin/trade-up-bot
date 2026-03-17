@@ -137,6 +137,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       type,
       max_loss,
       min_win,
+      my_claims,
     } = req.query as Record<string, string>;
 
     // Tier gating: apply delay, result limits, and listing ID visibility per user tier
@@ -175,7 +176,11 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }
     } catch { /* ignore lock errors */ }
 
-    if (type) {
+    // "My Claims" filter: restrict to user's active claims (ignores type filter)
+    if (my_claims === "true") {
+      where += " AND t.id IN (SELECT trade_up_id FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now'))";
+      params.push(userId);
+    } else if (type) {
       where += " AND t.type = ?";
       params.push(type);
     }
@@ -369,6 +374,14 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }
     }
 
+    // Count user's active claims for the "Your Claims" button badge
+    let myClaimCount = 0;
+    try {
+      myClaimCount = (db.prepare(
+        "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
+      ).get(userId) as { c: number }).c;
+    } catch { /* ignore */ }
+
     const result = {
       trade_ups: tradeUps,
       total,
@@ -376,6 +389,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       per_page: perPage,
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
+      my_claim_count: myClaimCount,
     };
     tuCache.set(cacheKey, { data: result, ts: Date.now() });
     res.json(result);
