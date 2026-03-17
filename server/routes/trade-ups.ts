@@ -64,13 +64,25 @@ export function tradeUpsRouter(db: Database.Database): Router {
 
   function getFreeShowcaseIds(tradeUpType: string): Set<number> {
     const cached = freeShowcase.get(tradeUpType);
-    if (cached && Date.now() - cached.ts < FREE_SHOWCASE_TTL) return cached.ids;
+    if (cached && Date.now() - cached.ts < FREE_SHOWCASE_TTL) {
+      // Check if any showcase trade-ups got claimed — if so, refresh
+      try {
+        const claimedIds = db.prepare(
+          "SELECT trade_up_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
+        ).all() as { trade_up_id: number }[];
+        const claimedSet = new Set(claimedIds.map(c => c.trade_up_id));
+        const hasClaimedShowcase = [...cached.ids].some(id => claimedSet.has(id));
+        if (!hasClaimedShowcase) return cached.ids;
+        // Fall through to refresh
+      } catch { return cached.ids; }
+    }
 
-    // Pick 10 random profitable trade-ups that are >30 min old
+    // Pick 10 random profitable trade-ups, excluding claimed ones
     const rows = db.prepare(`
       SELECT id FROM trade_ups
       WHERE is_theoretical = 0 AND listing_status = 'active' AND profit_cents > 0
         AND type = ? AND created_at <= datetime('now', '-30 minutes')
+        AND id NOT IN (SELECT trade_up_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now'))
       ORDER BY RANDOM() LIMIT ?
     `).all(tradeUpType, FREE_SHOWCASE_COUNT) as { id: number }[];
 
