@@ -34,7 +34,7 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
   };
 
   return (
-    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+    <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
       <span>
         <strong className="text-foreground">{stats.total_trade_ups.toLocaleString()}</strong> trade-ups
         {stats.profitable_trade_ups > 0 && (
@@ -42,7 +42,7 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
         )}
       </span>
       <span className="text-border">|</span>
-      <span><strong className="text-foreground">{stats.total_data_points.toLocaleString()}</strong> price data points</span>
+      <span><strong className="text-foreground">{stats.total_data_points.toLocaleString()}</strong> data points</span>
       <span className="text-border">|</span>
       <span>Uptime: <strong className="text-foreground">{formatUptime(stats.uptime_ms)}</strong></span>
     </div>
@@ -257,37 +257,30 @@ function AppShell({ user }: { user?: AuthUser | null }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-foreground whitespace-nowrap">CS2 Trade-Up Bot</h1>
-          <GlobalStatBar stats={globalStats} />
-        </div>
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h1 className="text-lg md:text-xl font-bold text-foreground whitespace-nowrap shrink-0">CS2 Trade-Up Bot</h1>
+        <GlobalStatBar stats={globalStats} />
+        <div className="flex items-center gap-1.5 shrink-0">
           <Button
             variant={newDataHint ? "default" : "outline"}
             size="sm"
+            className="h-8 px-2.5 text-xs"
             onClick={() => { refresh(); setRefreshKey(k => k + 1); }}
           >
-            {newDataHint ? "Refresh (new data)" : "Refresh"}
+            <span className="hidden sm:inline">{newDataHint ? "Refresh" : "Refresh"}</span>
+            <span className="sm:hidden">↻</span>
             {newDataHint && <span className="ml-1 inline-block size-2 rounded-full bg-green-400 animate-pulse" />}
           </Button>
           {userIsAdmin && <Button
             variant="outline"
             size="sm"
+            className="h-8 px-2.5 text-xs hidden sm:inline-flex"
             onClick={() => setShowDaemonModal(true)}
-            className={!status?.daemon_status || status.daemon_status.phase === "idle"
-              ? "border-muted-foreground/30 text-muted-foreground"
-              : "border-green-500/50 text-green-400"}
           >
-            {!status?.daemon_status || status.daemon_status.phase === "idle" ? "Daemon (inactive)" : (() => {
+            {!status?.daemon_status || status.daemon_status.phase === "idle" ? "Daemon" : (() => {
               const ds = status?.daemon_status;
               const cycle = ds?.cycle ?? 0;
-              let uptime = "";
-              if (ds?.startedAt) {
-                const mins = Math.floor((Date.now() - new Date(ds.startedAt).getTime()) / 60000);
-                uptime = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 > 0 ? `${mins % 60}m` : ""}`;
-              }
-              return `Daemon C${cycle}${uptime ? ` ${uptime}` : ""}`;
+              return `C${cycle}`;
             })()}
           </Button>}
           {user && <UserMenu user={user} />}
@@ -297,7 +290,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       {userIsAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
 
       {/* Navigation */}
-      <nav className="flex gap-6 mb-4 border-b border-border">
+      <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
         {[
           { to: "/", label: "Trade-Ups", end: true },
           { to: "/data", label: "Data" },
@@ -309,7 +302,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `px-1 pb-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              `px-1 pb-2 text-xs md:text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 isActive
                   ? "border-foreground text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
