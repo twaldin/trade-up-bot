@@ -108,77 +108,57 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
       {/* Live data feed -- only on main standalone viewer */}
       {!collectionFilter && !outputCollection && <LiveFeed />}
 
-      {/* Collection header */}
-      {collectionFilter && (
-        <div className="flex items-center gap-3 px-3 py-2">
-          <h2 className="text-lg font-medium">{collectionFilter}</h2>
+      {/* Rarity pills + Search + Sort */}
+      {!isEmbedded && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {([
+            { value: "all", label: "All", color: "" },
+            { value: "Covert", label: "Covert", color: "bg-red-500 text-red-950" },
+            { value: "Classified", label: "Classified", color: "bg-pink-500 text-pink-950" },
+            { value: "Restricted", label: "Restricted", color: "bg-purple-500 text-purple-950" },
+            { value: "Mil-Spec", label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
+            { value: "Industrial Grade", label: "Industrial", color: "bg-sky-400 text-sky-950" },
+            { value: "Extraordinary", label: "Knife/Glove", color: "bg-yellow-500 text-yellow-950" },
+          ]).map(t => (
+            <button
+              key={t.value}
+              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                rarity === t.value
+                  ? (t.color || "bg-foreground text-background")
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => { setRarity(t.value); setSelectedSkin(null); }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       )}
-
-      {/* Stats bar */}
-      {!loading && skins.length > 0 && (
-        <div className="flex gap-5 px-3 py-2 bg-card border border-border rounded-md text-sm text-muted-foreground mb-3">
-          <span className="text-foreground/70">{skins.length} skins</span>
-          <span className="text-foreground/70">{skinsWithListings} with listings</span>
-          <span className="text-foreground/70">
-            {totalListings.toLocaleString()} listings
-            {newListings > 0 && <span className="text-green-500 font-semibold"> +{newListings} new!</span>}
-          </span>
-          {(newListings > 0 || newSales > 0) && (
-            <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-green-500" onClick={markSeen}>seen</Button>
-          )}
-        </div>
-      )}
-
-      {/* Rarity tabs + Search + Sort */}
       <div className="flex gap-2 items-center mb-3 flex-wrap">
-        {!isEmbedded && (
-          <div className="flex gap-1 mb-2 items-center">
-            {([
-              ["all", "All"],
-              ["Covert", "Covert"],
-              ["Classified", "Classified"],
-              ["Restricted", "Restricted"],
-              ["Mil-Spec", "Mil-Spec"],
-              ["Extraordinary", "Knives/Gloves"],
-            ] as const).map(([val, label]) => (
-              <Button
-                key={val}
-                variant={rarity === val ? "default" : "outline"}
-                size="sm"
-                className={rarity === val ? "bg-blue-700 border-blue-700 text-white hover:bg-blue-600" : ""}
-                onClick={() => { setRarity(val); setSelectedSkin(null); }}
-              >
-                {label}
-              </Button>
-            ))}
-            <span className="text-muted-foreground/40 mx-1 select-none">|</span>
-          </div>
-        )}
-        <div className="flex gap-2 items-center flex-wrap">
-          <Input
-            type="text"
-            placeholder="Search by name, weapon, collection, or rarity..."
-            className="flex-1 min-w-[200px]"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && applySearch()}
-          />
-          <Button variant="outline" size="default" onClick={applySearch}>Search</Button>
-          <div className="flex gap-1 items-center text-[0.8rem] text-muted-foreground">
-            <span>Sort:</span>
-            {(["listing_count", "sale_count", "min_price", "name"] as const).map(s => (
-              <Button
-                key={s}
-                variant={sortBy === s ? "default" : "outline"}
-                size="xs"
-                className={sortBy === s ? "bg-secondary text-blue-400 border-blue-400 hover:bg-secondary" : "text-muted-foreground"}
-                onClick={() => setSortBy(s)}
-              >
-                {s === "listing_count" ? "Listings" : s === "sale_count" ? "Sales" : s === "min_price" ? "Price" : "Name"}
-              </Button>
-            ))}
-          </div>
+        <Input
+          type="text"
+          placeholder="Search by name, weapon, collection..."
+          className="flex-1 min-w-[200px]"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && applySearch()}
+        />
+        <Button variant="outline" size="default" onClick={applySearch}>Search</Button>
+        <div className="flex gap-1 items-center text-[0.8rem] text-muted-foreground">
+          <span>Sort:</span>
+          {(["listing_count", "sale_count", "min_price", "name"] as const).map(s => (
+            <button
+              key={s}
+              className={`px-2.5 py-1 text-xs rounded-full cursor-pointer transition-colors ${
+                sortBy === s
+                  ? "bg-foreground text-background font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setSortBy(s)}
+            >
+              {s === "listing_count" ? "Listings" : s === "sale_count" ? "Sales" : s === "min_price" ? "Price" : "Name"}
+            </button>
+          ))}
         </div>
       </div>
 

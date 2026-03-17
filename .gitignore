@@ -27,3 +27,7 @@ deployment.md
 # OS
 .DS_Store
 Thumbs.db
+
+# Notes/docs not for repo
+optimizations.md
+overnight-notes.md

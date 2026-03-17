@@ -62,9 +62,10 @@ export function SkinList({ skins, selectedSkin, onSelectSkin, loading, onNavigat
             <CollectionLinks collectionName={skin.collection_name} onNavigate={onNavigateCollection} compact />
             <span className="text-blue-400">
               {skin.listing_count || 0} listings
-              {skin.new_listings > 0 && <span className="text-green-500 text-[0.65rem] font-semibold"> (+{skin.new_listings})</span>}
             </span>
-            {skin.min_price != null && skin.min_price > 0 && <span className="text-green-500 font-medium">{formatDollars(skin.min_price)}</span>}
+            <span className="text-green-500">
+              {skin.sale_count || 0} sales
+            </span>
           </div>
           {skin.prices && Object.keys(skin.prices).length > 0 && (
             <div className="flex gap-1 mt-1 flex-wrap">
