@@ -4,7 +4,6 @@ import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/type
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
-import { formatDollars } from "../utils/format.js";
 import { Button } from "@shared/components/ui/button.js";
 
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
@@ -199,23 +198,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
       <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
 
-      <div className="flex items-center justify-between mb-2">
-        {!loading && total > 0 && (() => {
-          const profitable = tradeUps.filter(t => t.profit_cents > 0).length;
-          const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
-          return (
-            <span className="text-sm text-muted-foreground">
-              {total.toLocaleString()} results
-              <span className="mx-1.5 text-border">·</span>
-              <span className={profitable > 0 ? "text-green-500" : ""}>{profitable} profitable</span>
-              {bestProfit > 0 && <>
-                <span className="mx-1.5 text-border">·</span>
-                Best: <span className="text-green-500 font-medium">{formatDollars(bestProfit)}</span>
-              </>}
-            </span>
-          );
-        })()}
-        {(loading || total === 0) && <span />}
+      <div className="flex items-center justify-end mb-2">
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none" title="Show trade-ups with missing input listings (sold/delisted)">
           <input
             type="checkbox"
