@@ -69,23 +69,32 @@ const stats: FetchStats = {
  * profit margins that need fresh data to capture.
  */
 function getCoverageGaps(db: Database.Database, limit: number = 50): { skinName: string; rarity: string; listingCount: number }[] {
+  // Dynamic priority: rarities with more recent profitable trade-ups get higher priority.
+  // Also boosts rarities with lowest coverage relative to total skins.
+  const profitCounts = db.prepare(`
+    SELECT type, COUNT(*) as cnt FROM trade_ups
+    WHERE is_theoretical=0 AND profit_cents > 0
+    GROUP BY type
+  `).all() as { type: string; cnt: number }[];
+
+  // Map trade-up type → input rarity
+  const rarityProfit: Record<string, number> = {};
+  for (const r of profitCounts) {
+    if (r.type === "covert_knife") rarityProfit["Covert"] = (rarityProfit["Covert"] ?? 0) + r.cnt;
+    if (r.type === "classified_covert") rarityProfit["Classified"] = (rarityProfit["Classified"] ?? 0) + r.cnt;
+    if (r.type === "restricted_classified") rarityProfit["Restricted"] = (rarityProfit["Restricted"] ?? 0) + r.cnt;
+    if (r.type === "milspec_restricted") rarityProfit["Mil-Spec"] = (rarityProfit["Mil-Spec"] ?? 0) + r.cnt;
+    if (r.type === "industrial_milspec") rarityProfit["Industrial Grade"] = (rarityProfit["Industrial Grade"] ?? 0) + r.cnt;
+  }
+
   return db.prepare(`
-    SELECT s.name as skinName, s.rarity, COUNT(l.id) as listingCount,
-      CASE s.rarity
-        WHEN 'Industrial Grade' THEN 0
-        WHEN 'Restricted' THEN 1
-        WHEN 'Mil-Spec' THEN 2
-        WHEN 'Classified' THEN 3
-        WHEN 'Covert' THEN 4
-        WHEN 'Extraordinary' THEN 5
-        ELSE 6
-      END as rarity_priority
+    SELECT s.name as skinName, s.rarity, COUNT(l.id) as listingCount
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
     WHERE s.stattrak = 0
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade')
     GROUP BY s.id
-    ORDER BY listingCount ASC, rarity_priority ASC
+    ORDER BY listingCount ASC
     LIMIT ?
   `).all(limit) as { skinName: string; rarity: string; listingCount: number }[];
 }
