@@ -12,9 +12,22 @@ class SqliteSessionStore extends session.Store {
   constructor(db: Database.Database) {
     super();
     this.db = db;
-    db.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
-    db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
-    db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
+    // Retry schema init — daemon may hold a write lock at startup
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        db.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
+        db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+        db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
+        break;
+      } catch (e: unknown) {
+        if (attempt < 9 && (e as any)?.code === "SQLITE_BUSY") {
+          const delay = (attempt + 1) * 500;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+          continue;
+        }
+        throw e;
+      }
+    }
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
     try {
