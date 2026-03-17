@@ -90,3 +90,29 @@
 
 **Assessment:** No changes needed yet. Restricted improvement is clearly positive. Classified drop is concerning but explained by natural listing churn. Will observe 2+ more cycles to see trends stabilize.
 
+### 2026-03-17 08:17 — Check #2 (5 cycles with new code)
+
+| Type | Total | Profitable | Max Profit | Avg Profit | Delta vs Baseline |
+|------|-------|-----------|-----------|-----------|-------------------|
+| covert_knife | 7,286 | 267 | $118.49 | $51.67 | -336 profitable |
+| classified_covert | 19,648 | 61 | $2.71 | $0.83 | -519 profitable |
+| restricted_classified | 48,611 | 1,259 | $1.17 | $0.16 | +570 |
+| milspec_restricted | 46,175 | 441 | $0.84 | $0.37 | +441 (was 0!) |
+| industrial_milspec | 15,101 | 106 | $0.15 | $0.06 | +13 |
+
+**Coverage:** Covert 677/34,878 (+96), Classified 301/17,225 (+240), Restricted 463/19,650 (+120), Mil-Spec 672/30,312 (+942), Industrial 178/11,518 (+118)
+**CSFloat refs:** 5,610 (+39 since baseline)
+**Cycle time:** 13.7 min
+**Cooldown:** +238 explored, 39 improved (up from 218/36 baseline)
+**Staleness:** 73 checked, 43 removed (59%)
+
+**Key findings:**
+1. **Milspec went from 0 to 441 profitable!** The new exploration + swap optimization broke through. Max profit $0.84.
+2. **Restricted still climbing** — 1,259 profitable (was 689 baseline). Exploration contributing +5 new/3 improved per cycle.
+3. **Knife/Classified profitable counts dropped** — knife 603→267, classified 580→61. This is listing churn + merge-save cycling. The TOTAL stored went up (knife 6,763→7,286) but fewer are currently profitable. Listings go stale fast (59% verified gone).
+4. **Knife max profit dropped** $130→$118 — top profitable trade-up IDs changed (new ones found, old ones went stale).
+5. **Exploration working across all tiers** — classified +18 new/1 improved, restricted +5/3, milspec +4/0, industrial +8/0 per cycle.
+6. **Performance improvements deployed** — N+1 batch queries, status caching, new indexes.
+
+**No code changes this check.** The exploration improvements are working well, especially the milspec breakthrough. Will observe if knife/classified stabilize.
+
