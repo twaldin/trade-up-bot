@@ -49,7 +49,7 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
               <div className="flex items-center gap-1.5 opacity-60 line-through">
                 <span className="inline-block text-[0.6rem] font-bold px-1 py-px rounded-sm w-7 text-center bg-red-950 text-red-300">OLD</span>
                 <a
-                  href={listingUrl(r.old.listing_id, r.old.skin_name, r.old.condition, r.old.float_value)}
+                  href={listingUrl(r.old.listing_id, r.old.skin_name, r.old.condition, r.old.float_value, r.old.price_cents)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-foreground no-underline border-b border-dotted border-muted-foreground/50 transition-colors hover:text-blue-400 hover:border-blue-400"

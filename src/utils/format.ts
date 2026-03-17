@@ -59,24 +59,38 @@ export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinp
   return "csfloat";
 }
 
-/** Source-aware listing URL — routes to the correct marketplace */
-export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number): string {
+/** Source-aware listing URL — routes to the correct marketplace with float/price filters */
+export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number): string {
   const source = listingSource(listingId);
   if (source === "dmarket") {
-    // DMarket: use float range params to narrow results to the target listing
-    // DMarket URL params only support 2 decimal places
     const params = new URLSearchParams({ title: skinName ?? "" });
     if (floatValue !== undefined && floatValue > 0) {
-      const from = Math.floor(floatValue * 100) / 100;       // round down to 2dp
-      const to = Math.ceil(floatValue * 100) / 100 + 0.01;   // round up + 0.01 margin
-      params.set("floatValueFrom", from.toFixed(2));
-      params.set("floatValueTo", Math.min(to, 1).toFixed(2));
+      const margin = 0.005;
+      params.set("floatValueFrom", Math.max(0, floatValue - margin).toFixed(3));
+      params.set("floatValueTo", Math.min(1, floatValue + margin).toFixed(3));
+    }
+    if (priceCents !== undefined && priceCents > 0) {
+      const priceDollars = priceCents / 100;
+      params.set("price-from", Math.max(0, priceDollars - 1).toFixed(2));
+      params.set("price-to", (priceDollars + 1).toFixed(2));
     }
     return `https://dmarket.com/ingame-items/item-list/csgo-skins?${params.toString()}`;
   }
   if (source === "skinport") {
-    const query = condition ? `${skinName} (${condition})` : skinName;
-    return `https://skinport.com/market/730?search=${encodeURIComponent(query ?? "")}`;
+    // Skinport: search with condition + float/price range filters
+    const query = condition ? `${skinName} (${condition})` : (skinName ?? "");
+    const params = new URLSearchParams({ search: query });
+    if (floatValue !== undefined && floatValue > 0) {
+      // Skinport uses wear as integer percentage (0-100)
+      const wearPct = Math.round(floatValue * 100);
+      params.set("weargt", String(Math.max(0, wearPct - 1)));
+      params.set("wearlt", String(Math.min(100, wearPct + 1)));
+    }
+    if (priceCents !== undefined && priceCents > 0) {
+      params.set("pricegt", String(Math.max(0, priceCents - 100)));
+      params.set("pricelt", String(priceCents + 100));
+    }
+    return `https://skinport.com/market?${params.toString()}`;
   }
   return csfloatListingUrl(listingId);
 }

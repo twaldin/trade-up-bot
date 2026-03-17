@@ -36,7 +36,7 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
       {/* Row 1: Skin name */}
       <div className="flex items-start justify-between gap-1 mb-0.5">
         <a
-          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
+          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate"
@@ -92,7 +92,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
       <div className="flex items-start justify-between gap-1 mb-0.5">
         {showListingLinks && input.listing_id !== "hidden" ? (
           <a
-            href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
+            href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents)}
             target="_blank"
             rel="noopener noreferrer"
             className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
