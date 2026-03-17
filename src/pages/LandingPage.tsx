@@ -71,10 +71,13 @@ const LandingPage = () => {
           <div className="mx-auto max-w-6xl px-6">
             <div className="max-w-3xl mb-12">
               <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-5 leading-[1.1]">
-                Find profitable CS2<br />trade-ups in real time
+                CS2 trade-ups built from<br />real, buyable listings
               </h1>
-              <p className="text-lg text-muted-foreground mb-8 max-w-xl">
-                Market data from CSFloat, DMarket, and Skinport. Thousands of combinations evaluated every 12 minutes across all rarity tiers.
+              <p className="text-lg text-muted-foreground mb-4 max-w-xl">
+                Other tools show theoretical trade-ups with idealized floats and average prices. We build contracts from actual marketplace listings you can buy right now.
+              </p>
+              <p className="text-sm text-muted-foreground/70 mb-8 max-w-xl">
+                Every trade-up on TradeUpBot links to specific listings on CSFloat, DMarket, and Skinport — with exact floats, exact prices, and deterministic outcomes. No guesswork.
               </p>
               <div className="flex items-center gap-4">
                 <Btn onClick={login} className="px-6 py-3">
@@ -95,6 +98,34 @@ const LandingPage = () => {
 
             {/* Screenshot */}
             <img src="/tradeuptable.png" alt="Trade-Up Bot" className="rounded-lg border border-border shadow-2xl w-full" />
+          </div>
+        </section>
+
+        {/* Real listings vs theoretical */}
+        <section className="py-20 border-t border-border">
+          <div className="mx-auto max-w-5xl px-6">
+            <div className="grid md:grid-cols-2 gap-12 items-start">
+              <div>
+                <div className="text-xs font-medium text-red-400/80 uppercase tracking-wider mb-3">Other tools</div>
+                <h3 className="text-xl font-bold mb-3 text-muted-foreground">Theoretical trade-ups</h3>
+                <ul className="space-y-2 text-sm text-muted-foreground/70">
+                  <li className="flex gap-2"><span className="text-red-400/50">-</span> "Buy 5x AWP Asiimov at 0.20 float"</li>
+                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Assumes average market price</li>
+                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Listings may not exist at that float</li>
+                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Profit disappears when you actually try to buy</li>
+                </ul>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-green-400/80 uppercase tracking-wider mb-3">TradeUpBot</div>
+                <h3 className="text-xl font-bold mb-3">Real listing contracts</h3>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex gap-2"><span className="text-green-500">+</span> Every input is a real listing you can click and buy</li>
+                  <li className="flex gap-2"><span className="text-green-500">+</span> Exact float values from actual marketplace data</li>
+                  <li className="flex gap-2"><span className="text-green-500">+</span> Output float is deterministic — no guessing</li>
+                  <li className="flex gap-2"><span className="text-green-500">+</span> Profit calculated from what you'll actually pay</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </section>
 
