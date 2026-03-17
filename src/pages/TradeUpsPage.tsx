@@ -167,13 +167,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     <>
       {/* Type selector + Your Claims button */}
       {types.length > 1 && (
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-1.5 md:gap-2 mb-3 flex-wrap">
           {types.map((t) => {
             const isActive = !showMyClaims && type === t.value;
             return (
               <button
                 key={t.value}
-                className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
+                className={`px-3 md:px-4 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                   isActive
                     ? (t.color || "border-foreground/40 bg-foreground/10 text-foreground")
                     : "border-transparent text-muted-foreground hover:text-foreground"
@@ -186,7 +186,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           })}
           {isPro && (
             <button
-              className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
+              className={`px-3 md:px-4 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                 showMyClaims
                   ? "border-purple-500/40 bg-purple-500/10 text-purple-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"

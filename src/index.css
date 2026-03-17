@@ -35,7 +35,11 @@ body {
 #root.app-shell {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 12px;
+  overflow-x: hidden;
+}
+@media (min-width: 768px) {
+  #root.app-shell { padding: 20px; }
 }
 
 @keyframes pulse {
