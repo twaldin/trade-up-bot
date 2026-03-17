@@ -92,7 +92,7 @@ function getCoverageGaps(db: Database.Database, limit: number = 50): { skinName:
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
     WHERE s.stattrak = 0
-      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade')
+      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     GROUP BY s.id
     ORDER BY listingCount ASC
     LIMIT ?
@@ -109,7 +109,7 @@ function getStaleSkins(db: Database.Database, limit: number = 30): string[] {
     FROM skins s
     JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket'
     WHERE s.stattrak = 0
-      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade')
+      AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     GROUP BY s.id
     HAVING newest < datetime('now', '-30 minutes')
     ORDER BY newest ASC

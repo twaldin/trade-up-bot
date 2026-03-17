@@ -53,7 +53,7 @@ if (fs.existsSync(envPath)) {
  * hooks aren't inherited by worker threads in Node.js v24.
  */
 function runCalcWorker(
-  task: "knife" | "classified" | "restricted" | "milspec" | "industrial",
+  task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
   dbPath: string,
   extraTransitionPoints?: number[],
 ): Promise<TradeUp[]> {
@@ -209,6 +209,7 @@ export async function main() {
     let restrictedDiscovery: TradeUp[] | undefined;
     let milspecDiscovery: TradeUp[] | undefined;
     let industrialDiscovery: TradeUp[] | undefined;
+    let consumerDiscovery: TradeUp[] | undefined;
 
     {
       type WorkerTask = { name: string; promise: Promise<TradeUp[]> };
@@ -252,14 +253,23 @@ export async function main() {
         }
       }
 
-      // Batch 3: industrial (runs alone)
-      console.log(`  Batch 3: industrial`);
-      setDaemonStatus(db, "calculating", "Phase 5: industrial");
-      try {
-        industrialDiscovery = await runCalcWorker("industrial", DB_PATH);
-        console.log(`  Worker industrial: ${industrialDiscovery.length} trade-ups`);
-      } catch (err: any) {
-        console.error(`  Worker industrial failed: ${err.message}`);
+      // Batch 3: industrial + consumer (parallel)
+      console.log(`  Batch 3: industrial + consumer`);
+      setDaemonStatus(db, "calculating", "Phase 5: industrial + consumer");
+      const batch3 = [
+        { name: "industrial", promise: runCalcWorker("industrial", DB_PATH) },
+        { name: "consumer", promise: runCalcWorker("consumer", DB_PATH) },
+      ];
+      const batch3Results = await Promise.allSettled(batch3.map(w => w.promise));
+      for (let i = 0; i < batch3.length; i++) {
+        const r = batch3Results[i];
+        if (r.status === "fulfilled") {
+          console.log(`  Worker ${batch3[i].name}: ${r.value.length} trade-ups`);
+          if (batch3[i].name === "industrial") industrialDiscovery = r.value;
+          if (batch3[i].name === "consumer") consumerDiscovery = r.value;
+        } else {
+          console.error(`  Worker ${batch3[i].name} failed: ${r.reason?.message}`);
+        }
       }
 
     }
@@ -278,6 +288,9 @@ export async function main() {
 
     // Phase 5g: Industrial→Mil-Spec discovery
     phase5GenericCalc(db, "industrial_milspec", industrialDiscovery);
+
+    // Phase 5h: Consumer→Industrial discovery
+    phase5GenericCalc(db, "consumer_industrial", consumerDiscovery);
 
     // Staircase removed — single-stage results are non-deterministic (which Coverts
     // come out of stage 1 is probabilistic, making stage 2 profit estimates unreliable).

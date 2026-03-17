@@ -56,6 +56,7 @@ const TRADE_UP_TYPES = [
   { value: "restricted_classified" as const, label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
   { value: "milspec_restricted" as const, label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
   { value: "industrial_milspec" as const, label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+  { value: "consumer_industrial" as const, label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
 ];
 
 

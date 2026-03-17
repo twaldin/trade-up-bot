@@ -415,6 +415,7 @@ export function randomExplore(
     "Restricted": "restricted_classified",
     "Mil-Spec": "milspec_restricted",
     "Industrial Grade": "industrial_milspec",
+    "Consumer Grade": "consumer_industrial",
   };
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
