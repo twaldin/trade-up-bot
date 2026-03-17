@@ -71,9 +71,16 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     setSourceFilters(f => ({ ...f, [source]: !f[source] }));
   };
 
-  // Build condition-level ref price lines from CSFloat ref data (replaces bucket floors)
-  const bucketFloors = useMemo(() => {
+  // Build condition-level ref price lines — uses phase-specific prices when selected
+  const activePriceSources = useMemo(() => {
     if (!detail) return [];
+    if (selectedPhase && detail.phasePrices?.[selectedPhase]) {
+      return detail.phasePrices[selectedPhase];
+    }
+    return detail.priceSources || [];
+  }, [detail, selectedPhase]);
+
+  const bucketFloors = useMemo(() => {
     const condBounds = [
       { name: "FN", float_min: 0, float_max: 0.07 },
       { name: "MW", float_min: 0.07, float_max: 0.15 },
@@ -81,7 +88,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       { name: "WW", float_min: 0.38, float_max: 0.45 },
       { name: "BS", float_min: 0.45, float_max: 1.0 },
     ];
-    const refs = (detail.priceSources || []).filter((p: any) => p.source === "csfloat_ref" && p.avg_price_cents > 0);
+    const refs = activePriceSources.filter((p: any) => (p.source === "csfloat_ref" || p.source === "csfloat_sales") && p.avg_price_cents > 0);
     const condMap: Record<string, string> = { "Factory New": "FN", "Minimal Wear": "MW", "Field-Tested": "FT", "Well-Worn": "WW", "Battle-Scarred": "BS" };
     return condBounds.map(b => {
       const ref = refs.find((r: any) => condMap[r.condition] === b.name);
@@ -92,7 +99,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         listing_count: ref ? ref.volume : 0,
       };
     });
-  }, [detail]);
+  }, [activePriceSources]);
 
   const allListings = detail?.listings ?? [];
   const allSaleHistory = detail?.saleHistory ?? [];
@@ -146,10 +153,8 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   }
 
   const { skin, stats } = detail;
-  // Use phase-specific prices when a Doppler phase is selected
-  const priceSources = selectedPhase && detail.phasePrices?.[selectedPhase]
-    ? detail.phasePrices[selectedPhase]
-    : detail.priceSources;
+  // Price sources for the table — uses phase-specific when available
+  const priceSources = activePriceSources;
 
   const condDist: Record<string, number> = {};
   for (const l of listings) {
@@ -165,7 +170,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     { key: "csfloat", label: "CSFloat", color: SERIES_COLORS.csfloat, shape: "dot", count: csfloatCount },
     ...(dmarketCount > 0 ? [{ key: "dmarket" as SeriesKey, label: "DMarket", color: SERIES_COLORS.dmarket, shape: "dot" as const, count: dmarketCount }] : []),
     ...(skinportCount > 0 ? [{ key: "skinport" as SeriesKey, label: "Skinport", color: SERIES_COLORS.skinport, shape: "dot" as const, count: skinportCount }] : []),
-    { key: "sales", label: "Sales", color: SERIES_COLORS.sales, shape: "diamond", count: stats.saleCount || (saleHistory || []).length },
+    { key: "sales", label: "Sales", color: SERIES_COLORS.sales, shape: "diamond", count: (saleHistory || []).length },
     { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
   ];
 
