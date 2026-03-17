@@ -123,7 +123,7 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
   );
 }
 
-function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, unit, sliderMin, sliderMax }: {
+function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, unit }: {
   label: string;
   minVal: string;
   maxVal: string;
@@ -131,23 +131,34 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
   onMaxChange: (v: string) => void;
   step: number;
   unit: string;
-  sliderMin: number;
-  sliderMax: number;
+  sliderMin?: number;
+  sliderMax?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const hasValue = !!(minVal || maxVal);
+
+  // Click outside to dismiss
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setExpanded(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [expanded]);
 
   const summary = hasValue
     ? `${minVal ? `${unit}${minVal}` : "any"} – ${maxVal ? `${unit}${maxVal}` : "any"}`
     : "any";
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border whitespace-nowrap transition-colors ${
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border whitespace-nowrap transition-colors cursor-pointer ${
           hasValue
-            ? "border-blue-600 text-blue-400"
-            : "border-border bg-muted/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+            ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+            : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
         }`}
         onClick={() => setExpanded(e => !e)}
       >
@@ -156,7 +167,14 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
       </button>
       {expanded && (
         <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[220px] shadow-lg">
-          <div className="flex gap-2 mb-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-foreground">{label}</span>
+            <button
+              className="text-muted-foreground hover:text-foreground text-sm cursor-pointer leading-none px-1"
+              onClick={() => setExpanded(false)}
+            >×</button>
+          </div>
+          <div className="flex gap-2">
             <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
               <span>Min</span>
               <Input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
@@ -168,18 +186,12 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
                 placeholder="any" step={step} className="h-7 text-xs" />
             </label>
           </div>
-          <div className="flex flex-col gap-1">
-            <input type="range" className="rf-slider"
-              min={sliderMin} max={sliderMax} step={step}
-              value={minVal ? parseFloat(minVal) : sliderMin}
-              onChange={(e) => onMinChange(e.target.value === String(sliderMin) ? "" : e.target.value)}
-            />
-            <input type="range" className="rf-slider"
-              min={sliderMin} max={sliderMax} step={step}
-              value={maxVal ? parseFloat(maxVal) : sliderMax}
-              onChange={(e) => onMaxChange(e.target.value === String(sliderMax) ? "" : e.target.value)}
-            />
-          </div>
+          {hasValue && (
+            <button
+              className="mt-2 text-[0.68rem] text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={() => { onMinChange(""); onMaxChange(""); }}
+            >Clear</button>
+          )}
         </div>
       )}
     </div>
