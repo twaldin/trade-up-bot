@@ -28,7 +28,7 @@ const INDIVIDUAL_SAFETY_BUFFER = 500; // 50K pool, keep 500 as margin
 /** Target total cycle duration — cooldown fills the gap between work phases and this target.
  *  Listing pool (200/~30min) means ~1.5 cycles per reset at 20-min targets → ~130 calls/cycle.
  *  When rate-limited, idle cooldown stretches to conserve individual pool. */
-export const TARGET_CYCLE_MS = 10 * 60 * 1000;    // 10 min = 3 cycles per 30-min listing window (faster discovery refresh)
+export const TARGET_CYCLE_MS = 12 * 60 * 1000;    // 12 min — batched workers take ~11 min, leaves cooldown for exploration
 export const MIN_COOLDOWN_MS = 30 * 1000;          // 30s minimum
 export const MAX_COOLDOWN_MS = 20 * 60 * 1000;     // 20 min cap
 export const IDLE_COOLDOWN_MS = 15 * 60 * 1000;    // 15 min when no API budget at all
