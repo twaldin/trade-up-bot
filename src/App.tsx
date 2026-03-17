@@ -15,23 +15,18 @@ interface GlobalStats {
   total_trade_ups: number;
   profitable_trade_ups: number;
   total_data_points: number;
-  uptime_ms: number;
+  total_cycles: number;
 }
 
 function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
   if (!stats) return null;
 
-  const formatUptime = (ms: number) => {
-    if (ms <= 0) return "starting...";
-    const hours = Math.floor(ms / 3600000);
-    const mins = Math.floor((ms % 3600000) / 60000);
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remHours = hours % 24;
-      return `${days}d ${remHours}h`;
-    }
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  };
+  // Total analysis time = cycles * 20min target
+  const totalMinutes = stats.total_cycles * 20;
+  const hours = Math.floor(totalMinutes / 60);
+  const analysisTime = hours >= 24
+    ? `${Math.floor(hours / 24)}d ${hours % 24}h`
+    : `${hours}h`;
 
   return (
     <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
@@ -44,7 +39,7 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
       <span className="text-border">|</span>
       <span><strong className="text-foreground">{stats.total_data_points.toLocaleString()}</strong> data points</span>
       <span className="text-border">|</span>
-      <span>Uptime: <strong className="text-foreground">{formatUptime(stats.uptime_ms)}</strong></span>
+      <span><strong className="text-foreground">{analysisTime}</strong> analyzed</span>
     </div>
   );
 }
