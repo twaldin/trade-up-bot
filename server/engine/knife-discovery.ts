@@ -271,8 +271,7 @@ export function findProfitableKnifeTradeUps(
         const lowestFloat = selectLowestKnifeFloat(quotas);
         if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
 
-        // Condition-targeted pairs: cheapest N at each condition (FN, MW, FT, WW, BS)
-        // More expensive inputs can produce higher-condition outputs worth 10x more.
+        // Condition-targeted pairs: cheapest N at each condition
         for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
           const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
           const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
@@ -281,6 +280,25 @@ export function findProfitableKnifeTradeUps(
               ...condA.slice(0, countA),
               ...condB.slice(0, countB),
             ], knifeFinishCache));
+          }
+        }
+
+        // Cross-condition mixing: FN from A + FT from B, etc.
+        const condPairs: [string, string][] = [
+          ["Factory New", "Field-Tested"],
+          ["Factory New", "Minimal Wear"],
+          ["Minimal Wear", "Field-Tested"],
+        ];
+        for (const [c1, c2] of condPairs) {
+          const poolA = listingsA.filter(l => floatToCondition(l.float_value) === c1);
+          const poolB = listingsB.filter(l => floatToCondition(l.float_value) === c2);
+          if (poolA.length >= countA && poolB.length >= countB) {
+            tryAdd(evaluateKnifeTradeUp(db, [...poolA.slice(0, countA), ...poolB.slice(0, countB)], knifeFinishCache));
+          }
+          const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === c2);
+          const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === c1);
+          if (poolAr.length >= countA && poolBr.length >= countB) {
+            tryAdd(evaluateKnifeTradeUp(db, [...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], knifeFinishCache));
           }
         }
       }

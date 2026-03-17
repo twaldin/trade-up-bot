@@ -288,25 +288,39 @@ export async function phase4DataFetch(
     const listingBudget = budget.cycleListingBudget();
     console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
 
-    // Budget allocation: CSFloat for Covert + Extraordinary ONLY.
-    // DMarket handles Classified/Restricted/Mil-Spec at 2 RPS (29K+ listings).
-    // CSFloat's scarce 200/30min budget is best spent on:
-    //   - Covert gun inputs (knife trade-ups, CSFloat-primary pricing)
-    //   - Extraordinary outputs (knife/glove output pricing, no DMarket data)
-    // Budget: Covert inputs (knife discovery) + Extraordinary outputs (knife pricing)
-    // + Classified inputs (improves classified→covert output pricing via CSFloat ref/sales)
+    // Dynamic budget: allocate based on coverage gaps + recent profitability.
+    // Base: 40% Covert inputs, 35% Extraordinary outputs, 15% Classified, 10% flexible.
+    // Flexible 10% goes to whichever rarity has worst coverage relative to its profitability.
     let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
     if (listingBudget < 20) {
       knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
       wantedCalls = 0;
     } else {
-      knifeInputCalls = Math.floor(listingBudget * 0.45);   // 45% — Covert gun inputs
-      classifiedInputCalls = Math.floor(listingBudget * 0.10); // 10% — Classified for output pricing quality
-      outputCalls = Math.floor(listingBudget * 0.40);        // 40% — knife/glove output pricing
+      // Check recent profitability to weight budget
+      const profitByType = db.prepare(`
+        SELECT type, COUNT(*) as cnt FROM trade_ups
+        WHERE is_theoretical=0 AND profit_cents > 0 AND created_at > datetime('now', '-1 hour')
+        GROUP BY type
+      `).all() as { type: string; cnt: number }[];
+      const knifeProfit = profitByType.find(r => r.type === "covert_knife")?.cnt ?? 0;
+      const classifiedProfit = profitByType.find(r => r.type === "classified_covert")?.cnt ?? 0;
+
+      // Base allocation
+      knifeInputCalls = Math.floor(listingBudget * 0.40);
+      outputCalls = Math.floor(listingBudget * 0.35);
+      classifiedInputCalls = Math.floor(listingBudget * 0.15);
+
+      // Flexible 10% — boost whichever tier is producing more ROI
+      const flex = listingBudget - knifeInputCalls - outputCalls - classifiedInputCalls;
+      if (knifeProfit > classifiedProfit * 2) {
+        knifeInputCalls += flex; // Knife is hot — give it more
+      } else if (classifiedProfit > knifeProfit) {
+        classifiedInputCalls += flex; // Classified is producing — invest more
+      } else {
+        outputCalls += flex; // Default: improve output pricing
+      }
       wantedCalls = 0;
-      const remaining = listingBudget - knifeInputCalls - classifiedInputCalls - outputCalls;
-      if (remaining > 0) knifeInputCalls += remaining;
-      console.log(`    Budget: ${knifeInputCalls} knife in + ${classifiedInputCalls} classified in + ${outputCalls} output = ${listingBudget}`);
+      console.log(`    Budget: ${knifeInputCalls} knife in + ${classifiedInputCalls} classified in + ${outputCalls} output = ${listingBudget} (dynamic: knife ${knifeProfit} / classified ${classifiedProfit} recent profits)`);
     }
 
     // Prioritized knife inputs (Covert gun skins)

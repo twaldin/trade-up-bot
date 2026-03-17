@@ -286,6 +286,29 @@ export function findProfitableTradeUps(
               ], outcomes));
             }
           }
+
+          // Cross-condition mixing: FN from A + FT from B, MW from A + WW from B, etc.
+          // Different condition combos produce different output floats — finds sweet spots
+          // that pure-condition pairs miss. Only try adjacent pairs to limit combo explosion.
+          const condPairs: [string, string][] = [
+            ["Factory New", "Field-Tested"],
+            ["Factory New", "Minimal Wear"],
+            ["Minimal Wear", "Field-Tested"],
+            ["Field-Tested", "Well-Worn"],
+          ];
+          for (const [condA, condB] of condPairs) {
+            const poolA = listingsA.filter(l => floatToCondition(l.float_value) === condA);
+            const poolB = listingsB.filter(l => floatToCondition(l.float_value) === condB);
+            if (poolA.length >= countA && poolB.length >= countB) {
+              tryAdd(evaluateTradeUp(db, [...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes));
+            }
+            // Also try reversed (B cond from A, A cond from B)
+            const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === condB);
+            const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === condA);
+            if (poolAr.length >= countA && poolBr.length >= countB) {
+              tryAdd(evaluateTradeUp(db, [...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes));
+            }
+          }
         }
       }
 

@@ -147,10 +147,10 @@ export async function cooldownLoop(
     // random exploration + revival (no API calls, just computation on existing data)
     const nextBatchAt = Date.now() + batchIntervalMs;
     if (nextBatchAt - Date.now() > 3000) {
-      // Random explore: ~100μs per iteration, fill available time
-      const availMs = nextBatchAt - Date.now() - 1000; // leave 1s buffer
-      const knifeIters = Math.min(500, Math.floor(availMs / 2)); // ~half for knife
-      const classifiedIters = Math.min(500, Math.floor(availMs / 2)); // ~half for classified
+      // Random explore: fill available CPU time with exploration
+      // VPS runs 24/7 — invest idle time in finding new profitable combos
+      const knifeIters = 2000;
+      const classifiedIters = 2000;
 
       const knifeExp = randomKnifeExplore(db, { iterations: knifeIters });
       const classifiedExp = randomExplore(db, { iterations: classifiedIters });
