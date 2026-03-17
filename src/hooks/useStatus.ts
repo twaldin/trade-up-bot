@@ -9,7 +9,7 @@ export interface StatusDiffs {
 }
 
 // Poll /api/status for updates and detect changes.
-export function useStatus(pollInterval = 30_000) {
+export function useStatus(pollInterval = 60_000) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [diffs, setDiffs] = useState<StatusDiffs>({ knife_trade_ups: 0, knife_profitable: 0, covert_trade_ups: 0, covert_profitable: 0 });
   const [newDataHint, setNewDataHint] = useState(false);
