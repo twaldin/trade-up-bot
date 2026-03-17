@@ -56,12 +56,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
     res.json(result);
   });
 
-  // Free tier: 10 oldest stale trade-ups per type, refreshed each daemon cycle.
+  // Free tier: 10 oldest stale profitable (or >25% chance) trade-ups per type.
+  // Same set for ALL free users. Refreshed each daemon cycle.
   const FREE_PER_TYPE = 10;
   const freeCache = new Map<string, { rows: any[]; calcTs: string }>();
 
   function getFreeTierTradeUps(types: string[]): any[] {
-    // Check if cache needs refresh (daemon cycle changed)
     const calcRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
     const calcTs = calcRow?.value || "";
 
@@ -72,11 +72,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
         results.push(...cached.rows);
         continue;
       }
-      // 10 oldest (by created_at) stale/partial trade-ups per type
+      // 10 oldest stale/partial trade-ups that are profitable or have >25% chance to profit
       const rows = db.prepare(`
         SELECT t.*, json_array_length(t.outcomes_json) as outcome_count FROM trade_ups t
         WHERE t.is_theoretical = 0 AND t.type = ?
           AND (t.listing_status = 'stale' OR t.listing_status = 'partial')
+          AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
         ORDER BY t.created_at ASC LIMIT ?
       `).all(t, FREE_PER_TYPE) as any[];
       freeCache.set(t, { rows, calcTs });
