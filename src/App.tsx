@@ -252,9 +252,9 @@ function AppShell({ user }: { user?: AuthUser | null }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">CS2 Trade-Up Bot</h1>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold text-foreground whitespace-nowrap">CS2 Trade-Up Bot</h1>
           <GlobalStatBar stats={globalStats} />
         </div>
         <div className="flex gap-2">
