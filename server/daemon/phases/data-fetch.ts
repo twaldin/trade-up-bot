@@ -288,39 +288,33 @@ export async function phase4DataFetch(
     const listingBudget = budget.cycleListingBudget();
     console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
 
-    // Dynamic budget: allocate based on coverage gaps + recent profitability.
-    // Base: 40% Covert inputs, 35% Extraordinary outputs, 15% Classified, 10% flexible.
-    // Flexible 10% goes to whichever rarity has worst coverage relative to its profitability.
+    // Smart budget: 50% coverage (spread across ALL rarities) + 50% profit-driven
+    // Coverage half: fetch skins with oldest/fewest CSFloat listings across every rarity
+    // Profit half: refresh inputs+outputs of top profitable trade-ups for price accuracy
     let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
-    if (listingBudget < 20) {
+    let coverageCalls = 0;
+    if (listingBudget < 10) {
       knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
       wantedCalls = 0;
     } else {
-      // Check recent profitability to weight budget
-      const profitByType = db.prepare(`
-        SELECT type, COUNT(*) as cnt FROM trade_ups
-        WHERE is_theoretical=0 AND profit_cents > 0 AND created_at > datetime('now', '-1 hour')
-        GROUP BY type
-      `).all() as { type: string; cnt: number }[];
-      const knifeProfit = profitByType.find(r => r.type === "covert_knife")?.cnt ?? 0;
-      const classifiedProfit = profitByType.find(r => r.type === "classified_covert")?.cnt ?? 0;
+      // 50% profit-driven: Covert inputs + Extraordinary outputs (knife trade-ups = highest profit)
+      knifeInputCalls = Math.floor(listingBudget * 0.30);
+      outputCalls = Math.floor(listingBudget * 0.20);
 
-      // Base allocation
-      knifeInputCalls = Math.floor(listingBudget * 0.40);
-      outputCalls = Math.floor(listingBudget * 0.35);
-      classifiedInputCalls = Math.floor(listingBudget * 0.15);
+      // 50% coverage: spread across all rarities to build sale history + ref prices
+      coverageCalls = listingBudget - knifeInputCalls - outputCalls;
+      classifiedInputCalls = Math.floor(coverageCalls * 0.35); // Classified — output pricing for classified→covert
+      const restrictedCalls = Math.floor(coverageCalls * 0.25); // Restricted — output for restricted→classified
+      const milspecCalls = Math.floor(coverageCalls * 0.25);    // Mil-Spec — output for milspec→restricted
+      const industrialCalls = coverageCalls - classifiedInputCalls - restrictedCalls - milspecCalls; // Industrial
 
-      // Flexible 10% — boost whichever tier is producing more ROI
-      const flex = listingBudget - knifeInputCalls - outputCalls - classifiedInputCalls;
-      if (knifeProfit > classifiedProfit * 2) {
-        knifeInputCalls += flex; // Knife is hot — give it more
-      } else if (classifiedProfit > knifeProfit) {
-        classifiedInputCalls += flex; // Classified is producing — invest more
-      } else {
-        outputCalls += flex; // Default: improve output pricing
-      }
       wantedCalls = 0;
-      console.log(`    Budget: ${knifeInputCalls} knife in + ${classifiedInputCalls} classified in + ${outputCalls} output = ${listingBudget} (dynamic: knife ${knifeProfit} / classified ${classifiedProfit} recent profits)`);
+      console.log(`    Budget: ${knifeInputCalls} knife + ${outputCalls} output + ${classifiedInputCalls} classified + ${restrictedCalls} restricted + ${milspecCalls} milspec + ${industrialCalls} industrial = ${listingBudget} (50/50 profit/coverage)`);
+
+      // Store for use in fetch sections below
+      (budget as any)._restrictedCalls = restrictedCalls;
+      (budget as any)._milspecCalls = milspecCalls;
+      (budget as any)._industrialCalls = industrialCalls;
     }
 
     // Prioritized knife inputs (Covert gun skins)
@@ -380,8 +374,28 @@ export async function phase4DataFetch(
       }
     }
 
-    // 4c: Theory-guided wanted list disabled — redirected to broader coverage above.
-    // All profits come from discovery; theory wanted list never produced profitable trade-ups.
+    // Coverage: fetch Restricted, Mil-Spec, Industrial (builds sale history + ref prices)
+    const restrictedCalls = (budget as any)._restrictedCalls ?? 0;
+    const milspecCalls = (budget as any)._milspecCalls ?? 0;
+    const industrialCalls = (budget as any)._industrialCalls ?? 0;
+
+    for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls]] as const) {
+      if (!budget.isListingRateLimited() && calls >= 2) {
+        setDaemonStatus(db, "fetching", `Phase 4b: ${rarity} coverage`);
+        try {
+          const result = await syncSmartListingsForRarity(db, rarity, {
+            apiKey,
+            maxCalls: calls,
+            onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          });
+          budget.useListing(result.apiCalls);
+          if (result.inserted > 0) freshness.markListingsChanged();
+          if (result.inserted > 0) console.log(`    ${rarity}: ${result.apiCalls} calls, ${result.inserted} listings`);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
+        }
+      }
+    }
   } else {
     console.log(`  [${timestamp()}] 4b: Listing search — rate limited, skipping`);
   }
