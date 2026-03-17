@@ -172,10 +172,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             return (
               <button
                 key={t.value}
-                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                   isActive
-                    ? (t.color || "bg-foreground text-background")
-                    : "text-muted-foreground hover:text-foreground"
+                    ? (t.color || "border-foreground/40 bg-foreground/10 text-foreground")
+                    : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
                 onClick={() => handleTypeChange(t.value)}
               >
@@ -185,10 +185,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           })}
           {isPro && (
             <button
-              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+              className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                 showMyClaims
-                  ? "bg-purple-500 text-purple-950"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "border-purple-500/40 bg-purple-500/10 text-purple-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
               onClick={() => { setShowMyClaims(!showMyClaims); setPage(1); }}
             >
