@@ -49,11 +49,11 @@ export function dataRouter(
       }
     }
 
-    // Collection filter
+    // Collection filter — use WHERE subquery instead of JOIN to keep param order correct
     let collectionJoin = "";
-    let collectionFilter = "";
+    let collectionWhere = "";
     if (collection) {
-      collectionJoin = "JOIN skin_collections scf ON s.id = scf.skin_id JOIN collections cf ON scf.collection_id = cf.id AND cf.name = ?";
+      collectionWhere = "AND s.id IN (SELECT scf.skin_id FROM skin_collections scf JOIN collections cf ON scf.collection_id = cf.id WHERE cf.name = ?)";
       queryParams.push(collection);
     }
     if (search) queryParams.push(`%${search}%`);
@@ -83,8 +83,7 @@ export function dataRouter(
       LEFT JOIN skin_collections sc ON s.id = sc.skin_id
       LEFT JOIN collections c ON sc.collection_id = c.id
       LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = ?
-      ${collectionJoin}
-      WHERE s.stattrak = ? ${rarityFilter} ${outputWeaponFilter}
+      WHERE s.stattrak = ? ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
         ${search ? "AND s.name LIKE ?" : ""}
       GROUP BY s.name
       ORDER BY listing_count DESC
