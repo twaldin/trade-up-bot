@@ -196,14 +196,14 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
               <button className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted" onClick={async () => {
                 const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
                 const data = await res.json();
-                if (data.url) window.location.href = data.url;
+                if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
               }}>
                 Upgrade to Basic — $5/mo
               </button>
               <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
                 const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
                 const data = await res.json();
-                if (data.url) window.location.href = data.url;
+                if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
               }}>
                 Upgrade to Pro — $15/mo
               </button>
@@ -213,7 +213,7 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
             <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted" onClick={async () => {
               const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
               const data = await res.json();
-              if (data.url) window.location.href = data.url;
+              if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
             }}>
               Upgrade to Pro — $15/mo
             </button>
@@ -222,7 +222,7 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
             <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted" onClick={async () => {
               const res = await fetch("/api/billing-portal", { method: "POST", credentials: "include" });
               const data = await res.json();
-              if (data.url) window.location.href = data.url;
+              if (data.url) window.location.href = data.url; else alert(data.error || "Failed to create checkout");
             }}>
               Manage Subscription
             </button>
