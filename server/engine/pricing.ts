@@ -494,7 +494,12 @@ export function buildAnchors(
 
 export function interpolatePrice(anchors: PriceAnchor[], float: number): number {
   if (anchors.length === 0) return 0;
-  if (anchors.length === 1) return anchors[0].price;
+  // Single anchor: only use if the float is in the same condition range.
+  // Don't extrapolate a $393 FN price to FT — return 0 (unknown) instead.
+  if (anchors.length === 1) {
+    const dist = Math.abs(float - anchors[0].float);
+    return dist < 0.15 ? anchors[0].price : 0;
+  }
   if (float <= anchors[0].float) return anchors[0].price;
   if (float >= anchors[anchors.length - 1].float)
     return anchors[anchors.length - 1].price;
