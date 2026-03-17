@@ -140,6 +140,12 @@ const LandingPage = () => {
                 ))}
               </div>
             )}
+
+            {/* Hero screenshot */}
+            <div className="relative mx-auto max-w-6xl group">
+              <div className="absolute -inset-1 bg-gradient-to-b from-[hsl(var(--cta)/0.2)] to-transparent rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000" />
+              <img src="/tradeuptable.png" alt="Trade-Up Bot Dashboard" className="rounded-xl border border-[hsl(var(--surface-ring))] shadow-2xl w-full" />
+            </div>
           </div>
         </section>
 
@@ -163,8 +169,35 @@ const LandingPage = () => {
           </div>
         </section>
 
-        {/* Rarity Tiers */}
+        {/* Feature Screenshots */}
         <section className="py-24 bg-[hsl(var(--surface)/0.2)]">
+          <div className="mx-auto max-w-7xl px-6">
+            <h2 className="text-3xl font-bold mb-4 text-center">Everything You Need</h2>
+            <p className="text-[hsl(var(--text-secondary))] text-center mb-16 max-w-2xl mx-auto">Detailed outcome analysis, 89+ collections, and comprehensive price data across every marketplace.</p>
+
+            <div className="grid md:grid-cols-2 gap-8">
+              <div>
+                <h3 className="text-lg font-bold mb-3">Outcome Analysis</h3>
+                <p className="text-sm text-[hsl(var(--text-secondary))] mb-4">See every possible outcome with probabilities, expected value, and the exact inputs needed. Claim to lock listings while you buy.</p>
+                <img src="/expanded.png" alt="Trade-up outcome analysis" className="rounded-xl border border-[hsl(var(--surface-ring))] shadow-lg w-full" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold mb-3">Price Intelligence</h3>
+                <p className="text-sm text-[hsl(var(--text-secondary))] mb-4">Float vs price scatter charts with data from CSFloat, DMarket, Skinport, and sale history. See exactly what skins are worth.</p>
+                <img src="/dataviewer.png" alt="Skin price data viewer" className="rounded-xl border border-[hsl(var(--surface-ring))] shadow-lg w-full" />
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <h3 className="text-lg font-bold mb-3">Collection Browser</h3>
+              <p className="text-sm text-[hsl(var(--text-secondary))] mb-4">Browse all 89 collections with knife/glove pool info, listing counts, and profitable trade-ups per collection.</p>
+              <img src="/collections.png" alt="Collection browser" className="rounded-xl border border-[hsl(var(--surface-ring))] shadow-lg w-full" />
+            </div>
+          </div>
+        </section>
+
+        {/* Rarity Tiers */}
+        <section className="py-24">
           <div className="mx-auto max-w-3xl px-6 text-center">
             <h2 className="text-3xl font-bold mb-4">All Rarity Tiers Covered</h2>
             <p className="text-[hsl(var(--text-secondary))] mb-12">From cheap Mil-Spec skins to expensive Knife/Glove contracts — we find profits at every price range.</p>
