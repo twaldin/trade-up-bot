@@ -113,6 +113,20 @@ export function dataRouter(
       }
     }
 
+    // Batch load sale counts (sale_history + price_observations)
+    const saleCountMap = new Map<string, number>();
+    if (skinNames.length > 0) {
+      const ph = skinNames.map(() => "?").join(",");
+      const saleCounts = db.prepare(`
+        SELECT skin_name, COUNT(*) as cnt FROM (
+          SELECT skin_name FROM sale_history WHERE skin_name IN (${ph})
+          UNION ALL
+          SELECT skin_name FROM price_observations WHERE skin_name IN (${ph}) AND source = 'sale'
+        ) GROUP BY skin_name
+      `).all(...skinNames, ...skinNames) as { skin_name: string; cnt: number }[];
+      for (const r of saleCounts) saleCountMap.set(r.skin_name, r.cnt);
+    }
+
     const result = skins.map((s) => {
       let collectionName = s.collection_names;
       if (!collectionName && s.name.startsWith("★")) {
@@ -120,7 +134,7 @@ export function dataRouter(
         const cases = knifeTypeToCases.get(weapon);
         if (cases && cases.length > 0) collectionName = cases.join(", ");
       }
-      return { ...s, collection_name: collectionName, prices: priceMap.get(s.name) || {} };
+      return { ...s, collection_name: collectionName, prices: priceMap.get(s.name) || {}, sale_count: saleCountMap.get(s.name) ?? 0 };
     });
 
     res.json(result);

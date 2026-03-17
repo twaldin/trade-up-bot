@@ -119,7 +119,7 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
             { value: "Restricted", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
             { value: "Mil-Spec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
             { value: "Industrial Grade", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
-            { value: "Extraordinary", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
+            { value: "knife_glove", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
           ]).map(t => (
             <button
               key={t.value}
