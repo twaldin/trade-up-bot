@@ -10,8 +10,7 @@ type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_cl
 interface TypeOption {
   value: TradeUpType;
   label: string;
-  active?: string;
-  inactive?: string;
+  color?: string;
 }
 
 interface Props {
