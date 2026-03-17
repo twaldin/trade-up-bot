@@ -56,39 +56,33 @@ export function tradeUpsRouter(db: Database.Database): Router {
     res.json(result);
   });
 
-  // Free tier showcase: 10 random profitable trade-ups per type, refreshed every 30 min.
-  // All free users see the SAME set — prevents gaming by refreshing.
-  const freeShowcase = new Map<string, { ids: Set<number>; ts: number }>();
-  const FREE_SHOWCASE_TTL = 30 * 60_000;
-  const FREE_SHOWCASE_COUNT = 10;
+  // Free tier: 10 oldest stale trade-ups per type, refreshed each daemon cycle.
+  const FREE_PER_TYPE = 10;
+  const freeCache = new Map<string, { rows: any[]; calcTs: string }>();
 
-  function getFreeShowcaseIds(tradeUpType: string): Set<number> {
-    const cached = freeShowcase.get(tradeUpType);
-    if (cached && Date.now() - cached.ts < FREE_SHOWCASE_TTL) {
-      // Check if any showcase trade-ups got claimed — if so, refresh
-      try {
-        const claimedIds = db.prepare(
-          "SELECT trade_up_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
-        ).all() as { trade_up_id: number }[];
-        const claimedSet = new Set(claimedIds.map(c => c.trade_up_id));
-        const hasClaimedShowcase = [...cached.ids].some(id => claimedSet.has(id));
-        if (!hasClaimedShowcase) return cached.ids;
-        // Fall through to refresh
-      } catch { return cached.ids; }
+  function getFreeTierTradeUps(types: string[]): any[] {
+    // Check if cache needs refresh (daemon cycle changed)
+    const calcRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+    const calcTs = calcRow?.value || "";
+
+    const results: any[] = [];
+    for (const t of types) {
+      const cached = freeCache.get(t);
+      if (cached && cached.calcTs === calcTs) {
+        results.push(...cached.rows);
+        continue;
+      }
+      // 10 oldest (by created_at) stale/partial trade-ups per type
+      const rows = db.prepare(`
+        SELECT t.*, json_array_length(t.outcomes_json) as outcome_count FROM trade_ups t
+        WHERE t.is_theoretical = 0 AND t.type = ?
+          AND (t.listing_status = 'stale' OR t.listing_status = 'partial')
+        ORDER BY t.created_at ASC LIMIT ?
+      `).all(t, FREE_PER_TYPE) as any[];
+      freeCache.set(t, { rows, calcTs });
+      results.push(...rows);
     }
-
-    // Pick 10 random profitable trade-ups, excluding claimed ones
-    const rows = db.prepare(`
-      SELECT id FROM trade_ups
-      WHERE is_theoretical = 0 AND listing_status = 'active' AND profit_cents > 0
-        AND type = ? AND created_at <= datetime('now', '-30 minutes')
-        AND id NOT IN (SELECT trade_up_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now'))
-      ORDER BY RANDOM() LIMIT ?
-    `).all(tradeUpType, FREE_SHOWCASE_COUNT) as { id: number }[];
-
-    const ids = new Set(rows.map(r => r.id));
-    freeShowcase.set(tradeUpType, { ids, ts: Date.now() });
-    return ids;
+    return results;
   }
 
   // Smart cache: invalidate when daemon completes a cycle, with 5s TTL on the check itself
@@ -142,13 +136,61 @@ export function tradeUpsRouter(db: Database.Database): Router {
       my_claims,
     } = req.query as Record<string, string>;
 
-    // Tier gating: apply delay, result limits, and listing ID visibility per user tier
+    // Tier gating
     const tierConfig = getTierConfig(req);
     const user = req.user as User | undefined;
     const userId = user?.steam_id || "anonymous";
+    const effectiveTier = user?.tier || "free";
+
+    // === FREE TIER: return fixed 10 oldest stale per type, no filters/pagination ===
+    if (effectiveTier === "free") {
+      const freeTypes = type && type !== "all"
+        ? [type]
+        : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec"];
+      const freeRows = getFreeTierTradeUps(freeTypes);
+
+      const tradeUps: TradeUp[] = freeRows.map((row: any) => ({
+        id: row.id,
+        type: row.type,
+        total_cost_cents: row.total_cost_cents,
+        expected_value_cents: row.expected_value_cents,
+        profit_cents: row.profit_cents,
+        roi_percentage: row.roi_percentage,
+        created_at: row.created_at,
+        is_theoretical: false,
+        inputs: [], // Free users don't see inputs
+        outcomes: [],
+        chance_to_profit: row.chance_to_profit ?? 0,
+        best_case_cents: row.best_case_cents ?? 0,
+        worst_case_cents: row.worst_case_cents ?? 0,
+        outcome_count: row.outcome_count ?? 0,
+        listing_status: 'active' as const, // Don't reveal stale status to free users
+        missing_inputs: 0,
+        profit_streak: 0,
+        peak_profit_cents: 0,
+        preserved_at: null,
+        previous_inputs: null,
+        locked: true, // Signal to frontend: no expand, no inputs
+      }));
+
+      // Count user's active claims for the badge
+      let myClaimCount = 0;
+      try { myClaimCount = (db.prepare("SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')").get(userId) as { c: number }).c; } catch {}
+
+      const result = {
+        trade_ups: tradeUps,
+        total: tradeUps.length,
+        page: 1,
+        per_page: tradeUps.length,
+        tier: "free",
+        tier_config: tierConfig,
+        my_claim_count: myClaimCount,
+      };
+      return res.json(result);
+    }
 
     const pageNum = parseInt(page);
-    const perPage = tierConfig.limit > 0 ? Math.min(parseInt(per_page), tierConfig.limit) : Math.min(parseInt(per_page), 500);
+    const perPage = Math.min(parseInt(per_page), 500);
     const offset = (pageNum - 1) * perPage;
 
     const includeStale = req.query.include_stale === "true";
@@ -160,9 +202,9 @@ export function tradeUpsRouter(db: Database.Database): Router {
     }
     const params: (string | number)[] = [];
 
-    // Tier delay: free users see 30-min delayed data, basic 5-min, pro/admin real-time
-    if (tierConfig.delay > 0) {
-      where += ` AND t.created_at <= datetime('now', '-${tierConfig.delay} seconds')`;
+    // Basic tier: 30-min delay — only show trade-ups created 30+ min ago
+    if (effectiveTier === "basic") {
+      where += ` AND t.created_at <= datetime('now', '-1800 seconds')`;
     }
 
     // Load active claims to mark (not exclude) claimed trade-ups
@@ -394,34 +436,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
 
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
-
-    // Free tier: show only showcase trade-ups, blur the rest
-    const effectiveTier = user?.tier || "free";
-    const isFree = effectiveTier === "free";
-
-    if (isFree && type) {
-      const showcaseIds = getFreeShowcaseIds(type);
-      for (const tu of tradeUps) {
-        const isShowcase = showcaseIds.has(tu.id);
-        if (!isShowcase) {
-          // Blur: keep profit stats visible but redact inputs/outcomes and mark as locked
-          tu.inputs = [];
-          tu.outcomes = [];
-          (tu as any).locked = true;
-        }
-      }
-    }
-
-    // Redact listing IDs for free users
-    if (!tierConfig.showListingIds) {
-      for (const tu of tradeUps) {
-        if (tu.inputs) {
-          for (const inp of tu.inputs) {
-            (inp as any).listing_id = "hidden";
-          }
-        }
-      }
-    }
 
     // Count user's active claims for the "Your Claims" button badge
     let myClaimCount = 0;

@@ -286,17 +286,17 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   </span>
                   )}
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatDollars(tu.profit_cents)}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`inline-block px-2 py-0.5 rounded font-semibold text-[0.8rem] ${tu.roi_percentage >= 0 ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500"}`}>
                     {tu.roi_percentage.toFixed(1)}%
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   {(() => {
                     const cls = chance >= 0.5
                       ? "bg-green-500/20 text-green-400"
@@ -310,19 +310,19 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     );
                   })()}
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">{formatDollars(tu.total_cost_cents)}</td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">{formatDollars(tu.expected_value_cents)}</td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatDollars(tu.total_cost_cents)}</td>
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatDollars(tu.expected_value_cents)}</td>
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${best >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatDollars(best)}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${worst >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatDollars(worst)}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className="text-[0.8rem] text-foreground/60">
                     {tu.outcome_count || tu.outcomes.length} possible
                   </span>
