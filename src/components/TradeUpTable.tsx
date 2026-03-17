@@ -31,6 +31,7 @@ interface Props {
   onNavigateSkin?: (skinName: string) => void;
   onNavigateCollection?: (collectionName: string) => void;
   onClaimChange?: () => void;
+  tier?: string;
 }
 
 function SortIndicator({ column, sort, order }: { column: string; sort: string; order: string }) {
@@ -105,7 +106,10 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: numbe
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro" }: Props) {
+  const isFree = tier === "free";
+  const isBasic = tier === "basic";
+  const isPro = tier === "pro" || tier === "admin";
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
@@ -197,20 +201,20 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             <>
               <tr
                 key={tu.id}
-                className={`${(tu as any).locked ? 'opacity-60 cursor-default' : 'cursor-pointer hover:bg-muted'} ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
-                onClick={() => (tu as any).locked ? null : handleExpand(tu.id)}
+                className={`${isFree ? 'cursor-default' : 'cursor-pointer hover:bg-muted'} ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
+                onClick={() => isFree ? undefined : handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {(tu as any).locked ? (
-                    <span className="text-yellow-500 text-[0.7rem]" title="Upgrade to view">🔒</span>
+                  {isFree ? (
+                    <span className="text-muted-foreground/30 text-[0.7rem]"></span>
                   ) : (
                     expandedId === tu.id ? "\u25BC" : "\u25B6"
                   )}
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {(tu as any).locked ? (
-                    <span className="text-[0.75rem] text-yellow-500/80 italic">
-                      Upgrade to view inputs →
+                  {isFree ? (
+                    <span className="text-[0.75rem] text-muted-foreground/50 italic">
+                      {tu.type?.replace("_", " → ")}
                     </span>
                   ) : (
                   <span className="text-[0.8rem] text-foreground/60">
@@ -349,11 +353,13 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                           {myClaimLocal
                             ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
                             : otherClaim
-                              ? <span className="text-muted-foreground">Claimed by a Pro user</span>
-                              : <span>Claim to lock listings for 30 min while you buy</span>
+                              ? <span className="text-muted-foreground">Claimed by a Pro user — <button className="text-yellow-400 hover:text-yellow-300 cursor-pointer" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>upgrade to claim</button></span>
+                              : !isPro
+                                ? <span>Claims are a Pro feature — <button className="text-yellow-400 hover:text-yellow-300 cursor-pointer" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>upgrade to Pro</button></span>
+                                : <span>Claim to lock listings for 30 min while you buy</span>
                           }
                         </div>
-                        {!myClaimLocal && !otherClaim && (
+                        {isPro && !myClaimLocal && !otherClaim && (
                           <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
                         )}
                         {myClaimLocal && (
