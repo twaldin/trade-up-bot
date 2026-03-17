@@ -224,31 +224,49 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
     newSigs.set(sig, i);
   }
 
-  const mergeAll = db.transaction(() => {
-    const existing = db.prepare(`
-      SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
-      FROM trade_ups t
-      JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
-      WHERE t.type = ? AND t.is_theoretical = 0
-      GROUP BY t.id
-    `).all(type) as { id: number; ids: string }[];
+  // Read existing signatures (single query, no transaction needed)
+  const existing = db.prepare(`
+    SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+    FROM trade_ups t
+    JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+    WHERE t.type = ? AND t.is_theoretical = 0
+    GROUP BY t.id
+  `).all(type) as { id: number; ids: string }[];
 
-    const existingSigs = new Map<string, number>();
-    for (const row of existing) {
-      const sig = row.ids.split(",").sort().join(",");
-      existingSigs.set(sig, row.id);
+  const existingSigs = new Map<string, number>();
+  for (const row of existing) {
+    const sig = row.ids.split(",").sort().join(",");
+    existingSigs.set(sig, row.id);
+  }
+
+  // Process updates in small batches (500 per transaction) to avoid long write locks
+  // that block API readers. Each batch commits and releases the lock briefly.
+  const BATCH_SIZE = 500;
+  const handled = new Set<string>();
+
+  // Batch 1: update existing trade-ups
+  const toUpdate: { existId: number; tu: TradeUp }[] = [];
+  const toStale: number[] = [];
+  for (const [sig, existId] of existingSigs) {
+    const newIdx = newSigs.get(sig);
+    if (newIdx !== undefined) {
+      toUpdate.push({ existId, tu: tradeUps[newIdx] });
+      handled.add(sig);
+    } else {
+      toStale.push(existId);
     }
+  }
 
-    const handled = new Set<string>();
-    for (const [sig, existId] of existingSigs) {
-      const newIdx = newSigs.get(sig);
-      if (newIdx !== undefined) {
-        const tu = tradeUps[newIdx];
+  const markStale = db.prepare("UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, datetime('now')) WHERE id = ?");
+
+  for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
+    const batch = toUpdate.slice(i, i + BATCH_SIZE);
+    const batchTx = db.transaction(() => {
+      for (const { existId, tu } of batch) {
         const chanceToProfit = tu.outcomes.reduce((sum, o) =>
           sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
         const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
         const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        // Compute profit streak: consecutive cycles profitable
         const old = getOldProfit.get(existId) as { profit_cents: number; profit_streak: number } | undefined;
         let streak = 0;
         if (tu.profit_cents > 0) {
@@ -259,33 +277,49 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
           const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
           recordProfitableCombo(db, tu, comboKey);
         }
-        handled.add(sig);
-      } else {
-        db.prepare("UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, datetime('now')) WHERE id = ?").run(existId);
       }
-    }
+    });
+    withRetry(() => batchTx(), 3, "mergeTradeUps-update");
+  }
 
-    for (const [sig, idx] of newSigs) {
-      if (handled.has(sig)) continue;
-      const tu = tradeUps[idx];
-      const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-        sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
-      const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes));
-      const tradeUpId = result.lastInsertRowid;
-      if (tu.profit_cents > 0) {
-        db.prepare("UPDATE trade_ups SET peak_profit_cents = ? WHERE id = ?").run(tu.profit_cents, tradeUpId);
-        const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-        recordProfitableCombo(db, tu, comboKey);
-      }
-      for (const inp of tu.inputs) {
-        insertInput.run(tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
-      }
-    }
-  });
+  // Batch 2: mark stale in batches
+  for (let i = 0; i < toStale.length; i += BATCH_SIZE) {
+    const batch = toStale.slice(i, i + BATCH_SIZE);
+    const staleTx = db.transaction(() => {
+      for (const id of batch) markStale.run(id);
+    });
+    withRetry(() => staleTx(), 3, "mergeTradeUps-stale");
+  }
 
-  withRetry(() => mergeAll(), 3, "mergeTradeUps");
+  // Batch 3: insert new trade-ups in batches
+  const toInsert: TradeUp[] = [];
+  for (const [sig, idx] of newSigs) {
+    if (handled.has(sig)) continue;
+    toInsert.push(tradeUps[idx]);
+  }
+
+  for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+    const batch = toInsert.slice(i, i + BATCH_SIZE);
+    const insertTx = db.transaction(() => {
+      for (const tu of batch) {
+        const chanceToProfit = tu.outcomes.reduce((sum, o) =>
+          sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
+        const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+        const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+        const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes));
+        const tradeUpId = result.lastInsertRowid;
+        if (tu.profit_cents > 0) {
+          db.prepare("UPDATE trade_ups SET peak_profit_cents = ? WHERE id = ?").run(tu.profit_cents, tradeUpId);
+          const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
+          recordProfitableCombo(db, tu, comboKey);
+        }
+        for (const inp of tu.inputs) {
+          insertInput.run(tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
+        }
+      }
+    });
+    withRetry(() => insertTx(), 3, "mergeTradeUps-insert");
+  }
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 
   // Trim excess: keep top 50K by composite score (profit + chance-to-profit bonus).
