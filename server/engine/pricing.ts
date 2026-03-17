@@ -131,10 +131,12 @@ export function buildPriceCache(db: Database.Database, force = false) {
   }
 
   // Step 2b: Skinport price data (fill gaps — covers items CSFloat ref doesn't have)
+  // Require volume >= 10 to avoid inflated prices from thin Skinport data
+  // (e.g., Galil Stone Cold FN: Skinport $108 at 5 vol vs CSFloat $40 at 272 vol)
   let skinportPriceCount = 0;
   const skinportRows = db.prepare(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
-    FROM price_data WHERE source = 'skinport' AND volume >= 2
+    FROM price_data WHERE source = 'skinport' AND volume >= 10
   `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
   for (const row of skinportRows) {
     const key = `${row.skin_name}:${row.condition}`;
