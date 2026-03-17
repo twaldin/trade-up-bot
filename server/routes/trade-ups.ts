@@ -335,13 +335,25 @@ export function tradeUpsRouter(db: Database.Database): Router {
         worst_case_cents: (row as any).worst_case_cents ?? 0,
         outcome_count: (row as any).outcome_count ?? 0,
         listing_status: (row.listing_status as TradeUp['listing_status']) ?? 'active',
-        missing_inputs: row.listing_status !== 'active'
-          ? (countMissing.get(row.id) as { cnt: number }).cnt : 0,
+        missing_inputs: 0,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
         preserved_at: row.preserved_at ?? null,
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
+
+      // Compute missing inputs and auto-correct stale listing_status
+      // Revival may have replaced all inputs but refreshListingStatuses hasn't run yet
+      if (tu.listing_status !== 'active') {
+        const missing = (countMissing.get(row.id) as { cnt: number }).cnt;
+        tu.missing_inputs = missing;
+        if (missing === 0) {
+          tu.listing_status = 'active';
+          tu.preserved_at = null;
+          // Also fix in DB so subsequent requests don't need this correction
+          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(row.id);
+        }
+      }
 
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });

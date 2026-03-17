@@ -1,8 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
-import { timeAgo } from "./utils/format.js";
-import { useStatus, type StatusDiffs } from "./hooks/useStatus.js";
+import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
 import { TradeUpsPage } from "./pages/TradeUpsPage.js";
 import { LandingPage } from "./pages/LandingPage.js";
@@ -12,71 +11,42 @@ const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").t
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 
-function Diff({ value, label }: { value: number; label?: string }) {
-  if (value === 0) return null;
-  return (
-    <span className={`text-[0.85em] ${value > 0 ? "text-green-500" : "text-red-500"}`}>
-      {" "}{value > 0 ? "+" : ""}{value.toLocaleString()}{label ? ` ${label}` : ""}
-    </span>
-  );
+interface GlobalStats {
+  total_trade_ups: number;
+  profitable_trade_ups: number;
+  total_data_points: number;
+  uptime_ms: number;
 }
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <span className="text-sm text-muted-foreground">
-      {label}: <strong className="text-foreground">{children}</strong>
-    </span>
-  );
-}
+function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
+  if (!stats) return null;
 
-function StatusBar({ status, diffs, view }: { status: SyncStatus | null; diffs: StatusDiffs; view: string }) {
-  const bar = (children: React.ReactNode) => (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 px-3 mb-3 rounded-lg bg-muted/60 border border-border/50 text-sm">
-      {children}
+  const formatUptime = (ms: number) => {
+    if (ms <= 0) return "starting...";
+    const hours = Math.floor(ms / 3600000);
+    const mins = Math.floor((ms % 3600000) / 60000);
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      return `${days}d ${remHours}h`;
+    }
+    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  };
+
+  return (
+    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <span>
+        <strong className="text-foreground">{stats.total_trade_ups.toLocaleString()}</strong> trade-ups
+        {stats.profitable_trade_ups > 0 && (
+          <span className="text-green-500 ml-1">({stats.profitable_trade_ups.toLocaleString()} profitable)</span>
+        )}
+      </span>
+      <span className="text-border">|</span>
+      <span><strong className="text-foreground">{stats.total_data_points.toLocaleString()}</strong> price data points</span>
+      <span className="text-border">|</span>
+      <span>Uptime: <strong className="text-foreground">{formatUptime(stats.uptime_ms)}</strong></span>
     </div>
   );
-
-  if (view === "data") {
-    return bar(<>
-      <Stat label="Skins">{status?.total_skins?.toLocaleString() ?? "..."}
-        <span className="text-muted-foreground font-normal"> ({status?.covert_skins ?? "?"} covert, {status?.knife_glove_with_listings ?? "?"}/{status?.knife_glove_skins ?? "?"} knives/gloves)</span>
-      </Stat>
-      <Stat label="Listings">{status?.total_listings?.toLocaleString() ?? "..."}</Stat>
-      <Stat label="Sales">{status?.total_sales?.toLocaleString() ?? "..."}</Stat>
-      <Stat label="Output Prices">{status?.covert_sale_prices ?? "..."} sale-based
-        <span className="text-muted-foreground font-normal"> + {status?.covert_ref_prices ?? "?"} ref</span>
-      </Stat>
-    </>);
-  }
-
-  if (view === "collections") {
-    return bar(<>
-      <Stat label="Collections">{status?.collection_count ?? "..."}
-        <span className="text-muted-foreground font-normal"> ({status?.collections_with_knives ?? "?"} with knife/glove pool)</span>
-      </Stat>
-      <Stat label="Trade-Ups">{status?.knife_trade_ups?.toLocaleString() ?? "..."}
-        {status && status.knife_profitable > 0 && <span className="text-green-500"> ({status.knife_profitable} profitable)</span>}
-      </Stat>
-      <Stat label="Output Prices">{status?.covert_sale_prices ?? "..."} sale-based</Stat>
-    </>);
-  }
-
-  if (view === "collection") {
-    return bar(<Stat label="Last Calc">{timeAgo(status?.last_calculation ?? null)}</Stat>);
-  }
-
-  // Default: trade-ups — show key stats
-  return bar(<>
-    <Stat label="Listings">{status?.total_listings?.toLocaleString() ?? "..."}</Stat>
-    <Stat label="Sales">{status?.total_sales?.toLocaleString() ?? "..."}</Stat>
-    <Stat label="Price Cache">{status?.covert_sale_prices ?? "?"} sale + {status?.covert_ref_prices ?? "?"} ref</Stat>
-    <Stat label="Last Calc">{timeAgo(status?.last_calculation ?? null)}</Stat>
-    {status?.daemon_status && (
-      <Stat label="Daemon">{status.daemon_status.phase}
-        {(status.daemon_status?.cycle ?? 0) > 0 && <span className="text-muted-foreground font-normal"> C{status.daemon_status?.cycle}</span>}
-      </Stat>
-    )}
-  </>);
 }
 
 const TRADE_UP_TYPES = [
@@ -89,37 +59,31 @@ const TRADE_UP_TYPES = [
 ];
 
 
-function CollectionPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+function CollectionPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
 
   if (!name) return null;
 
   return (
-    <>
-      <StatusBar status={status} diffs={diffs} view="collection" />
-      <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-        <CollectionViewer
-          collectionName={decodeURIComponent(name)}
-          onBack={() => navigate("/collections")}
-          onNavigateCollection={(n) => navigate(`/collections/${encodeURIComponent(n)}`)}
-        />
-      </Suspense>
-    </>
+    <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+      <CollectionViewer
+        collectionName={decodeURIComponent(name)}
+        onBack={() => navigate("/collections")}
+        onNavigateCollection={(n) => navigate(`/collections/${encodeURIComponent(n)}`)}
+      />
+    </Suspense>
   );
 }
 
-function CollectionListPage({ status, diffs }: { status: SyncStatus | null; diffs: StatusDiffs }) {
+function CollectionListPage() {
   const navigate = useNavigate();
   return (
-    <>
-      <StatusBar status={status} diffs={diffs} view="collections" />
-      <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-        <CollectionListViewer
-          onSelectCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
-        />
-      </Suspense>
-    </>
+    <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+      <CollectionListViewer
+        onSelectCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+      />
+    </Suspense>
   );
 }
 
@@ -262,9 +226,23 @@ function UserMenu({ user, isAdmin }: { user: AuthUser; isAdmin: boolean }) {
 
 function AppShell({ user }: { user?: AuthUser | null }) {
   const isAdmin = (user?.real_tier ?? user?.tier) === "admin";
-  const { status, diffs, newDataHint, refresh } = useStatus();
+  const { status, newDataHint, refresh } = useStatus();
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+
+  // Fetch global stats on mount and every 60s
+  useEffect(() => {
+    const fetchStats = () => {
+      fetch("/api/global-stats", { credentials: "include" })
+        .then(r => r.json())
+        .then(data => setGlobalStats(data))
+        .catch(() => {});
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Apply app-shell constraint (landing page is full-width)
   useEffect(() => {
@@ -274,8 +252,11 @@ function AppShell({ user }: { user?: AuthUser | null }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-foreground">CS2 Trade-Up Bot</h1>
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">CS2 Trade-Up Bot</h1>
+          <GlobalStatBar stats={globalStats} />
+        </div>
         <div className="flex gap-2">
           <Button
             variant={newDataHint ? "default" : "outline"}
@@ -338,8 +319,8 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       <Routes>
         <Route path="/" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
         <Route path="/data" element={<DataPage />} />
-        <Route path="/collections" element={<CollectionListPage status={status} diffs={diffs} />} />
-        <Route path="/collections/:name" element={<CollectionPage status={status} diffs={diffs} />} />
+        <Route path="/collections" element={<CollectionListPage />} />
+        <Route path="/collections/:name" element={<CollectionPage />} />
         <Route path="/calculator" element={
           <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
             <CalculatorPage />
