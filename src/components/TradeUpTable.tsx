@@ -269,21 +269,12 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         was {formatDollars(tu.peak_profit_cents!)}
                       </Badge>
                     )}
-                    {(tu.profit_streak ?? 0) >= 3 && (
-                      <Badge
-                        variant="outline"
-                        className={`ml-1.5 text-[0.65rem] ${
-                          tu.profit_streak! >= 11
-                            ? "bg-green-950 text-green-400 border-green-700 font-semibold"
-                            : tu.profit_streak! >= 6
-                              ? "bg-green-950 text-green-500 border-green-800"
-                              : "bg-secondary text-muted-foreground border-border"
-                        }`}
-                        title={`Profitable for ${tu.profit_streak} consecutive cycles`}
-                      >
-                        {tu.profit_streak}x
-                      </Badge>
-                    )}
+                    {tu.created_at && (() => {
+                      const ms = Date.now() - new Date(tu.created_at + "Z").getTime();
+                      const mins = Math.floor(ms / 60000);
+                      const age = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+                      return <span className="ml-1.5 text-[0.6rem] text-muted-foreground/50">{age}</span>;
+                    })()}
                   </span>
                   )}
                 </td>
