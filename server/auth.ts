@@ -107,17 +107,28 @@ export function setupAuth(app: Express, db: Database.Database) {
     )
   `);
 
-  // Migration: add is_admin column if missing
-  const cols = db.pragma("table_info(users)") as { name: string }[];
-  if (!cols.find(c => c.name === "is_admin")) {
-    db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
-  }
-  // Migrate existing admin tier users to is_admin flag
+  // Migration: add is_admin column if missing + set admin flag
   const adminSteamId = process.env.ADMIN_STEAM_ID;
-  if (adminSteamId) {
-    db.prepare("UPDATE users SET is_admin = 1 WHERE steam_id = ?").run(adminSteamId);
-    // If admin was on 'admin' tier, set to 'pro' so they have full access
-    db.prepare("UPDATE users SET tier = 'pro' WHERE steam_id = ? AND tier = 'admin'").run(adminSteamId);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const cols = db.pragma("table_info(users)") as { name: string }[];
+      if (!cols.find(c => c.name === "is_admin")) {
+        db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+      }
+      if (adminSteamId) {
+        db.prepare("UPDATE users SET is_admin = 1 WHERE steam_id = ?").run(adminSteamId);
+        db.prepare("UPDATE users SET tier = 'pro' WHERE steam_id = ? AND tier = 'admin'").run(adminSteamId);
+      }
+      break;
+    } catch (e: unknown) {
+      if (attempt < 9 && (e as any)?.code === "SQLITE_BUSY") {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, (attempt + 1) * 500);
+        continue;
+      }
+      // Non-critical — admin flag will be set on next login
+      console.error("Admin migration deferred:", (e as Error).message);
+      break;
+    }
   }
 
   const store = new SqliteSessionStore(db);
