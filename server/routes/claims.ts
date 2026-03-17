@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { requireTier, type User } from "../auth.js";
 
 const CLAIM_DURATION_MINUTES = 30;
-const MAX_ACTIVE_CLAIMS = 3;
+const MAX_ACTIVE_CLAIMS = 5;
 
 interface ClaimRow {
   id: number;

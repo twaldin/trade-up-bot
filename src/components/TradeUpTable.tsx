@@ -333,23 +333,52 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     {tu.outcome_count || tu.outcomes.length} possible
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {(tu as any).claimed_by_other ? (
-                    <span className="px-2 py-1 text-[0.65rem] rounded bg-muted text-muted-foreground border border-border">
-                      Claimed
-                    </span>
-                  ) : (tu as any).claimed_by_me ? (
-                    <span className="px-2 py-1 text-[0.65rem] font-semibold rounded bg-purple-950/50 text-purple-300 border border-purple-900">
-                      Your Claim
-                    </span>
-                  ) : tu.profit_cents > 0 ? (
-                    <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
-                  ) : null}
-                </td>
+                {/* Claim status shown as small badge inline */}
+                {(tu as any).claimed_by_other && (
+                  <td className="px-2 py-2.5 border-b border-border/70">
+                    <span className="text-[0.6rem] text-muted-foreground">🔒</span>
+                  </td>
+                )}
+                {(tu as any).claimed_by_me && (
+                  <td className="px-2 py-2.5 border-b border-border/70">
+                    <span className="text-[0.6rem] text-purple-400">🔒</span>
+                  </td>
+                )}
+                {!(tu as any).claimed_by_other && !(tu as any).claimed_by_me && (
+                  <td className="px-2 py-2.5 border-b border-border/70"></td>
+                )}
               </tr>
               {expandedId === tu.id && (
                 <tr key={`${tu.id}-expanded`}>
-                  <td colSpan={10} className="p-0 bg-card">
+                  <td colSpan={11} className="p-0 bg-card">
+                    {/* Claim action bar */}
+                    {tu.profit_cents > 0 && (
+                      <div className="flex items-center justify-between px-5 py-2 border-b border-border/50 bg-muted/30">
+                        <div className="text-[0.75rem] text-muted-foreground">
+                          {(tu as any).claimed_by_me
+                            ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
+                            : (tu as any).claimed_by_other
+                              ? <span className="text-muted-foreground">Claimed by a Pro user</span>
+                              : <span>Claim to lock listings for 30 min while you buy</span>
+                          }
+                        </div>
+                        {!(tu as any).claimed_by_me && !(tu as any).claimed_by_other && (
+                          <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} />
+                        )}
+                        {(tu as any).claimed_by_me && (
+                          <button
+                            className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
+                              setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                            }}
+                          >
+                            Release
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {/* Outcome distribution chart */}
                     <OutcomeChart tu={tu} />
                     {/* Status info bar for stale/partial/revived trade-ups */}
