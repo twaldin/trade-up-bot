@@ -229,7 +229,7 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
       SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
       FROM trade_ups t
       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
-      WHERE t.type = ? AND t.is_theoretical = 0 AND (t.source = 'discovery' OR t.source IS NULL)
+      WHERE t.type = ? AND t.is_theoretical = 0
       GROUP BY t.id
     `).all(type) as { id: number; ids: string }[];
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
-import { FilterBar, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
+import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
 
@@ -218,15 +218,18 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       )}
 
-      {/* Results summary — always visible when data loaded */}
-      {!loading && total > 0 && (
-        <div className="text-xs text-muted-foreground mb-1.5">
-          {isFree
-            ? `Showing ${tradeUps.length} free sample trade-ups`
-            : <>{total.toLocaleString()} trade-ups found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}</>
-          }
-        </div>
-      )}
+      {/* Results summary + active filter chips */}
+      <div className="flex items-center gap-2 flex-wrap mb-1.5 min-h-[20px]">
+        {!loading && total > 0 && (
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {isFree
+              ? `Showing ${tradeUps.length} free sample trade-ups`
+              : <>{total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}</>
+            }
+          </span>
+        )}
+        {!isFree && <FilterChips filters={filters} onUpdate={handleFiltersChange} />}
+      </div>
 
       {loading ? (
         <div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>
