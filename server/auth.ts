@@ -9,9 +9,11 @@ import Database from "better-sqlite3";
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
   private db: Database.Database;
-  constructor(db: Database.Database) {
+  private readDb: Database.Database;
+  constructor(db: Database.Database, readDb?: Database.Database) {
     super();
     this.db = db;
+    this.readDb = readDb ?? db;
     // Retry schema init — daemon may hold a write lock at startup
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
@@ -31,7 +33,8 @@ class SqliteSessionStore extends session.Store {
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
     try {
-      const row = this.db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
+      // Use read-only connection — never blocked by daemon writes
+      const row = this.readDb.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
       cb(null, row ? JSON.parse(row.sess) : null);
     } catch (e) { cb(e); }
   }
@@ -85,7 +88,7 @@ export function isAdmin(user: Express.User | User | undefined): boolean {
   return (user as any).is_admin === 1 || (user as any).is_admin === true;
 }
 
-export function setupAuth(app: Express, db: Database.Database) {
+export function setupAuth(app: Express, db: Database.Database, readDb?: Database.Database) {
   const steamApiKey = process.env.STEAM_API_KEY;
   const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
   const baseUrl = process.env.BASE_URL || "http://localhost:3001";
@@ -131,7 +134,7 @@ export function setupAuth(app: Express, db: Database.Database) {
     }
   }
 
-  const store = new SqliteSessionStore(db);
+  const store = new SqliteSessionStore(db, readDb);
 
   app.use(session({
     store,
