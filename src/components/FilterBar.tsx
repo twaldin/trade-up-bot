@@ -198,7 +198,7 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
   );
 }
 
-function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Filters) => void }) {
+export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Filters) => void }) {
   const chips: { label: string; onRemove: () => void }[] = [];
 
   for (const s of filters.skins) {
@@ -293,7 +293,7 @@ export function FilterBar({ filters, onFiltersChange }: {
 
   return (
     <div>
-      <div className="flex gap-2.5 items-start flex-wrap">
+      <div className="flex gap-2.5 items-center flex-wrap">
         <div className="flex gap-2 shrink-0">
           <AutocompleteInput
             placeholder="Filter by skin..."
@@ -332,7 +332,6 @@ export function FilterBar({ filters, onFiltersChange }: {
             onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}} />
         </div>
       </div>
-      <FilterChips filters={filters} onUpdate={onFiltersChange} />
     </div>
   );
 }
