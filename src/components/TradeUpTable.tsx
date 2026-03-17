@@ -167,8 +167,195 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     { key: "worst", label: "Worst" },
   ];
 
+  // Shared expanded content renderer
+  const renderExpanded = (tu: TradeUp) => (
+    <div className="bg-card">
+      {tu.profit_cents > 0 && (() => {
+        const myClaimLocal = claimedIds.has(tu.id) || (tu as any).claimed_by_me;
+        const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
+        const showUpgradeLocal = upgradeMsg === tu.id;
+        return (
+        <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
+          {showUpgradeLocal && (
+            <div className="flex items-center justify-between mb-1.5 px-3 py-2 bg-yellow-950/40 border border-yellow-500/30 rounded text-[0.75rem] text-yellow-200">
+              <span>Upgrade to Pro to claim trade-ups and lock listings while you buy</span>
+              <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
+                Upgrade →
+              </button>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="text-[0.75rem] text-muted-foreground">
+              {myClaimLocal
+                ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
+                : otherClaim
+                  ? <span className="text-muted-foreground">Claimed by a Pro user</span>
+                  : <span>Claim to lock listings for 30 min while you buy</span>
+              }
+            </div>
+            {!myClaimLocal && !otherClaim && (
+              isPro
+                ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
+                : <button
+                    className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setUpgradeMsg(tu.id); }}
+                  >
+                    Claim
+                  </button>
+            )}
+            {myClaimLocal && (
+              <button
+                className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
+                  setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                  onClaimChange?.();
+                }}
+              >
+                Release
+              </button>
+            )}
+          </div>
+        </div>);
+      })()}
+      <OutcomeChart tu={tu} />
+      {((tu.peak_profit_cents ?? 0) > 0 || tu.listing_status !== 'active') && (
+        <VerifyResults tu={tu} />
+      )}
+      <div className="px-4 sm:px-5 py-4 flex flex-col gap-4">
+        <InputList
+          tu={tu}
+          verifyResult={verifyResults.get(tu.id)}
+          verifying={verifying === tu.id}
+          onVerify={handleVerify}
+          onNavigateSkin={onNavigateSkin}
+          showListingLinks={isPro}
+          showVerify={isPro || isBasic}
+        />
+        <OutcomeList
+          tu={tu}
+          priceDetailKey={priceDetailKey}
+          onTogglePriceDetail={setPriceDetailKey}
+          onNavigateSkin={onNavigateSkin}
+        />
+      </div>
+    </div>
+  );
+
+  // Prepare trade-up data (shared between desktop and mobile)
+  const preparedTradeUps = tradeUps.map((rawTu) => {
+    const override = priceOverrides.get(rawTu.id);
+    const tu = {
+      ...rawTu,
+      outcomes: loadedOutcomes.get(rawTu.id) ?? rawTu.outcomes,
+      ...(override ? { total_cost_cents: override.total_cost_cents, profit_cents: override.profit_cents, roi_percentage: override.roi_percentage } : {}),
+    };
+    return {
+      tu,
+      chance: chanceToProfit(tu),
+      best: bestCase(tu),
+      worst: worstCase(tu),
+      inputSummary: summarizeInputs(tu.inputs),
+      age: tu.created_at ? (() => {
+        const ms = Date.now() - new Date(tu.created_at + "Z").getTime();
+        const mins = Math.floor(ms / 60000);
+        return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+      })() : "",
+    };
+  });
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
+    <>
+    {/* Mobile sort bar */}
+    <div className="md:hidden flex items-center gap-1.5 mb-2 overflow-x-auto pb-1">
+      <span className="text-xs text-muted-foreground shrink-0">Sort:</span>
+      {columns.map(col => (
+        <button
+          key={col.key}
+          className={`px-2.5 py-1 text-xs rounded-full border shrink-0 cursor-pointer transition-colors ${
+            sort === col.key
+              ? "border-foreground/30 bg-foreground/10 text-foreground"
+              : "border-transparent text-muted-foreground"
+          }`}
+          onClick={() => onSort(col.key)}
+        >
+          {col.label}
+          {sort === col.key && <span className="ml-0.5">{order === "desc" ? "↓" : "↑"}</span>}
+        </button>
+      ))}
+    </div>
+
+    {/* Mobile card layout */}
+    <div className="md:hidden flex flex-col gap-2">
+      {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, age }) => (
+        <div key={tu.id}>
+          <div
+            className={`rounded-lg border border-border bg-card cursor-pointer active:bg-muted transition-colors ${
+              tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' :
+              tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''
+            }`}
+            onClick={() => handleExpand(tu.id)}
+          >
+            {/* Top row: inputs summary + claim */}
+            <div className="px-3.5 pt-3 pb-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-[0.78rem] text-foreground/70 leading-snug min-w-0">
+                  {tu.inputs.length === 0 ? (
+                    <span className="italic text-muted-foreground/50">{tu.type?.replace("_", " → ")}</span>
+                  ) : (
+                    inputSummary.map((item, i) => (
+                      <span key={i}>{i > 0 && ", "}{item.count}x {item.name}</span>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {age && <span className="text-[0.6rem] text-muted-foreground/40">{age}</span>}
+                  {(claimedIds.has(tu.id) || (tu as any).claimed_by_me) && <span className="text-[0.6rem] text-purple-400">🔒</span>}
+                  {(tu as any).claimed_by_other && <span className="text-[0.6rem] text-muted-foreground">🔒</span>}
+                  <span className="text-muted-foreground/30 text-xs">{expandedId === tu.id ? "▼" : "▶"}</span>
+                </div>
+              </div>
+              {/* Collection badges */}
+              {tu.inputs.length > 0 && onNavigateCollection && (
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {[...new Set(tu.inputs.map(i => i.collection_name))].map((col, i) => (
+                    <span key={i} className="text-[0.55rem] px-1 py-0 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                      {col.replace(/^The /, "").replace(/ Collection$/, "")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Metrics row */}
+            <div className="px-3.5 pb-3 pt-1.5 flex items-center gap-3 flex-wrap">
+              <span className={`text-base font-bold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {formatDollars(tu.profit_cents)}
+              </span>
+              <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${tu.roi_percentage >= 0 ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500"}`}>
+                {tu.roi_percentage.toFixed(1)}%
+              </span>
+              {(() => {
+                const cls = chance >= 0.5 ? "bg-green-500/20 text-green-400" : chance >= 0.3 ? "bg-amber-400/15 text-amber-400" : "bg-red-500/10 text-muted-foreground";
+                return <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${cls}`}>{(chance * 100).toFixed(0)}%</span>;
+              })()}
+              <span className="text-xs text-muted-foreground ml-auto">{formatDollars(tu.total_cost_cents)} cost</span>
+            </div>
+          </div>
+
+          {/* Expanded content */}
+          {expandedId === tu.id && (
+            <div className="rounded-b-lg border border-t-0 border-border overflow-hidden">
+              {renderExpanded(tu)}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+
+    {/* Desktop table */}
+    <div className="hidden md:block overflow-x-auto rounded-lg border border-border">
       <table className="w-full border-collapse text-[0.85rem]">
         <thead className="bg-muted">
           <tr>
@@ -185,20 +372,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           </tr>
         </thead>
         <tbody>
-          {tradeUps.map((rawTu) => {
-            // Apply verify price overrides if available
-            const override = priceOverrides.get(rawTu.id);
-            // Inject lazy-loaded outcomes + price overrides
-            const tu = {
-              ...rawTu,
-              outcomes: loadedOutcomes.get(rawTu.id) ?? rawTu.outcomes,
-              ...(override ? { total_cost_cents: override.total_cost_cents, profit_cents: override.profit_cents, roi_percentage: override.roi_percentage } : {}),
-            };
-            const chance = chanceToProfit(tu);
-            const best = bestCase(tu);
-            const worst = worstCase(tu);
-            const inputSummary = summarizeInputs(tu.inputs);
-            return (
+          {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, age }) => (
             <>
               <tr
                 key={tu.id}
@@ -269,12 +443,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         was {formatDollars(tu.peak_profit_cents!)}
                       </Badge>
                     )}
-                    {tu.created_at && (() => {
-                      const ms = Date.now() - new Date(tu.created_at + "Z").getTime();
-                      const mins = Math.floor(ms / 60000);
-                      const age = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
-                      return <span className="ml-1.5 text-[0.6rem] text-muted-foreground/50">{age}</span>;
-                    })()}
+                    {age && <span className="ml-1.5 text-[0.6rem] text-muted-foreground/50">{age}</span>}
                   </span>
                   )}
                 </td>
@@ -330,88 +499,16 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               </tr>
               {expandedId === tu.id && (
                 <tr key={`${tu.id}-expanded`}>
-                  <td colSpan={11} className="p-0 bg-card">
-                    {/* Claim action bar */}
-                    {tu.profit_cents > 0 && (() => {
-                      const myClaimLocal = claimedIds.has(tu.id) || (tu as any).claimed_by_me;
-                      const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
-                      const [showUpgrade, setShowUpgrade] = [upgradeMsg === tu.id, (show: boolean) => setUpgradeMsg(show ? tu.id : null)];
-                      return (
-                      <div className="px-5 py-2 border-b border-border/50 bg-muted/30">
-                        {showUpgrade && (
-                          <div className="flex items-center justify-between mb-1.5 px-3 py-2 bg-yellow-950/40 border border-yellow-500/30 rounded text-[0.75rem] text-yellow-200">
-                            <span>Upgrade to Pro to claim trade-ups and lock listings while you buy</span>
-                            <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
-                              Upgrade →
-                            </button>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <div className="text-[0.75rem] text-muted-foreground">
-                            {myClaimLocal
-                              ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
-                              : otherClaim
-                                ? <span className="text-muted-foreground">Claimed by a Pro user</span>
-                                : <span>Claim to lock listings for 30 min while you buy</span>
-                            }
-                          </div>
-                          {!myClaimLocal && !otherClaim && (
-                            isPro
-                              ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
-                              : <button
-                                  className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
-                                  onClick={(e) => { e.stopPropagation(); setShowUpgrade(true); }}
-                                >
-                                  Claim
-                                </button>
-                          )}
-                          {myClaimLocal && (
-                            <button
-                              className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
-                                setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
-                                onClaimChange?.();
-                              }}
-                            >
-                              Release
-                            </button>
-                          )}
-                        </div>
-                      </div>);
-                    })()}
-                    {/* Outcome distribution chart */}
-                    <OutcomeChart tu={tu} />
-                    {/* Status info bar for stale/partial/revived trade-ups */}
-                    {((tu.peak_profit_cents ?? 0) > 0 || tu.listing_status !== 'active') && (
-                      <VerifyResults tu={tu} />
-                    )}
-                    <div className="px-5 py-4 flex flex-col gap-4">
-                      <InputList
-                        tu={tu}
-                        verifyResult={verifyResults.get(tu.id)}
-                        verifying={verifying === tu.id}
-                        onVerify={handleVerify}
-                        onNavigateSkin={onNavigateSkin}
-                        showListingLinks={isPro}
-                        showVerify={isPro || isBasic}
-                      />
-                      <OutcomeList
-                        tu={tu}
-                        priceDetailKey={priceDetailKey}
-                        onTogglePriceDetail={setPriceDetailKey}
-                        onNavigateSkin={onNavigateSkin}
-                      />
-                    </div>
+                  <td colSpan={11} className="p-0">
+                    {renderExpanded(tu)}
                   </td>
                 </tr>
               )}
             </>
-            );
-          })}
+          ))}
         </tbody>
       </table>
     </div>
+    </>
   );
 }
