@@ -75,15 +75,11 @@ app.use(cors({
   ],
   credentials: true,
 }));
-app.use(rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown",
-}));
-app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown" }));
-app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown" }));
+const rlKeyGen = (req: express.Request) => (req.headers["x-real-ip"] as string) || req.ip || "unknown";
+const rlOpts = { validate: { xForwardedForHeader: false } }; // nginx sets x-real-ip, not x-forwarded-for
+app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false, keyGenerator: rlKeyGen, ...rlOpts }));
+app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKeyGen, ...rlOpts }));
+app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKeyGen, ...rlOpts }));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
