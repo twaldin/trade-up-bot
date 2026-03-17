@@ -6,10 +6,12 @@ import Stripe from "stripe";
 import Database from "better-sqlite3";
 import { requireAuth, type User } from "../auth.js";
 
-const PLANS: Record<string, { priceId: string; name: string }> = {
-  basic: { priceId: process.env.STRIPE_BASIC_PRICE_ID || "", name: "Basic" },
-  pro: { priceId: process.env.STRIPE_PRO_PRICE_ID || "", name: "Pro" },
-};
+// Read at request time, not module load (env may not be loaded yet)
+function getPlan(plan: string): { priceId: string; name: string } | null {
+  if (plan === "basic") return { priceId: process.env.STRIPE_BASIC_PRICE_ID || "", name: "Basic" };
+  if (plan === "pro") return { priceId: process.env.STRIPE_PRO_PRICE_ID || "", name: "Pro" };
+  return null;
+}
 
 export function stripeRouter(db: Database.Database): Router {
   const router = Router();
@@ -26,7 +28,7 @@ export function stripeRouter(db: Database.Database): Router {
   router.post("/api/subscribe", requireAuth, async (req: Request, res: Response) => {
     const user = req.user as User;
     const plan = req.body?.plan as string;
-    if (!plan || !PLANS[plan]) {
+    if (!plan || !getPlan(plan)) {
       res.status(400).json({ error: "Invalid plan. Use 'basic' or 'pro'." });
       return;
     }
@@ -45,7 +47,7 @@ export function stripeRouter(db: Database.Database): Router {
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: "subscription",
-        line_items: [{ price: PLANS[plan].priceId, quantity: 1 }],
+        line_items: [{ price: getPlan(plan)!.priceId, quantity: 1 }],
         success_url: `${process.env.BASE_URL}/?upgraded=${plan}`,
         cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
       });
@@ -105,8 +107,8 @@ export function stripeRouter(db: Database.Database): Router {
         // Map price ID → tier
         let tier = "free";
         if (status === "active" || status === "trialing") {
-          if (priceId === PLANS.pro.priceId) tier = "pro";
-          else if (priceId === PLANS.basic.priceId) tier = "basic";
+          if (priceId === getPlan("pro")!.priceId) tier = "pro";
+          else if (priceId === getPlan("basic")!.priceId) tier = "basic";
         }
 
         // Don't downgrade admins

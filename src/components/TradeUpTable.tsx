@@ -142,6 +142,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               </th>
             ))}
             <th className="px-3.5 py-2.5 text-left font-semibold text-muted-foreground cursor-pointer select-none whitespace-nowrap border-b border-border hover:text-foreground/80">Outcomes</th>
+            <th className="px-3.5 py-2.5 text-left font-semibold text-muted-foreground border-b border-border whitespace-nowrap"></th>
           </tr>
         </thead>
         <tbody>
@@ -279,6 +280,22 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   <span className="text-[0.8rem] text-foreground/60">
                     {tu.outcome_count || tu.outcomes.length} possible
                   </span>
+                </td>
+                <td className="px-3.5 py-2.5 border-b border-border/70">
+                  {tu.profit_cents > 0 && (
+                    <button
+                      className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "POST", credentials: "include" });
+                        const data = await res.json();
+                        if (data.error) alert(data.error);
+                        else alert(`Claimed for 30 min! ${data.listings_verified} listings verified.`);
+                      }}
+                    >
+                      Claim
+                    </button>
+                  )}
                 </td>
               </tr>
               {expandedId === tu.id && (
