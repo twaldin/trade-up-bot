@@ -140,7 +140,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   }, [fetchTradeUps]);
 
   const handleSort = (column: string) => {
-    if (isFree) return; // Free tier can't sort
+    // Free tier sorts client-side (no re-fetch needed — fixed 10 results)
     if (sort === column) {
       setOrder(order === "desc" ? "asc" : "desc");
     } else {
