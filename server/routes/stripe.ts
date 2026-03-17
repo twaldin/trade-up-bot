@@ -81,15 +81,24 @@ export function stripeRouter(db: Database.Database): Router {
 
   // Webhook: Stripe notifies us of subscription changes
   router.post("/api/stripe-webhook", async (req: Request, res: Response) => {
-    const sig = req.headers["stripe-signature"] as string;
+    if (!webhookSecret) {
+      console.error("Stripe webhook secret not configured");
+      res.status(500).json({ error: "Webhook not configured" });
+      return;
+    }
+
+    const sig = req.headers["stripe-signature"] as string | undefined;
+    if (!sig) {
+      res.status(400).json({ error: "Missing stripe-signature header" });
+      return;
+    }
+
     let event: Stripe.Event;
 
     try {
       // For webhook verification, need raw body
       const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-      event = webhookSecret
-        ? stripe.webhooks.constructEvent(rawBody, sig, webhookSecret)
-        : req.body as Stripe.Event;
+      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
     } catch (err: any) {
       console.error("Webhook signature verification failed:", err.message);
       res.status(400).send("Webhook Error");

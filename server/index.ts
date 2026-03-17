@@ -59,12 +59,43 @@ if (fs.existsSync(envPath)) {
 }
 
 import compression from "compression";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import type { NextFunction } from "express";
 
 const app = express();
 const PORT = 3001;
 
 app.use(compression());
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({
+  origin: [
+    "https://tradeupbot.app",
+    "https://www.tradeupbot.app",
+    ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://localhost:3001"] : []),
+  ],
+  credentials: true,
+}));
+app.use(rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown",
+}));
+app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown" }));
+app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: (req) => (req.headers["x-real-ip"] as string) || req.ip || "unknown" }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "data:"],
+      connectSrc: ["'self'", "https://checkout.stripe.com"],
+      frameSrc: ["https://checkout.stripe.com"],
+    },
+  },
+}));
 // Stripe webhook needs raw body for signature verification — capture it before JSON parsing
 app.use((req, res, next) => {
   if (req.path === "/api/stripe-webhook") {
@@ -98,6 +129,19 @@ if (fs.existsSync(distPath)) {
   });
 }
 
+// Global error handler
+app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFunction) => {
+  console.error("Unhandled error:", err.message);
+  res.status(500).json({ error: "Internal server error" });
+});
+
 app.listen(PORT, () => {
   console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
 });

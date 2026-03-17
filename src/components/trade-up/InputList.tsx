@@ -26,6 +26,7 @@ interface InputListProps {
   onVerify: (tuId: number) => void;
   onNavigateSkin?: (skinName: string) => void;
   showListingLinks?: boolean;
+  showVerify?: boolean;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -85,7 +86,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
   return (
     <div className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
       isMissing ? "opacity-50 border-red-800/50 bg-red-950/20" :
-      isSoldOrDelisted ? "opacity-50 border-border/30 bg-muted/20" : "border-border/50 bg-muted/50"
+      isSoldOrDelisted ? "opacity-60 border-red-800/50 bg-red-950/20" : "border-border/50 bg-muted/50"
     }`}>
       {/* Row 1: Skin name + verify status */}
       <div className="flex items-start justify-between gap-1 mb-0.5">
@@ -94,7 +95,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
             href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value)}
             target="_blank"
             rel="noopener noreferrer"
-            className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : isSoldOrDelisted ? "line-through text-foreground/90" : "text-foreground/90"}`}
+            className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
             title={input.skin_name}
           >
             {input.skin_name}
@@ -135,13 +136,13 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
         {isTheory && (
           <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
         )}
-        <span className={`text-[0.68rem] ${isMissing ? "text-red-400/50 line-through" : "text-muted-foreground"}`}>
+        <span className={`text-[0.68rem] ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-muted-foreground"}`}>
           {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
         </span>
       </div>
       {/* Row 3: Price */}
       <div className="flex items-center justify-between">
-        <span className={`text-[0.72rem] font-medium ${isMissing ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
+        <span className={`text-[0.72rem] font-medium ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
           {formatDollars(input.price_cents)}
           {inputStatus && inputStatus.price_changed && inputStatus.current_price && (
             <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatDollars(inputStatus.original_price)}, now ${formatDollars(inputStatus.current_price)}`}>
@@ -178,14 +179,14 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
         {tu.type?.startsWith("staircase") && tu.inputs.length > 10
           ? `Inputs (${tu.inputs.length} — ${Math.ceil(tu.inputs.length / 10)} trade-ups)`
           : `Inputs (${tu.inputs.length})`}
-        {!tu.is_theoretical && (
+        {!tu.is_theoretical && showVerify && (
           <button
             className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-blue-400 border border-border cursor-pointer align-middle hover:bg-accent disabled:opacity-50 disabled:cursor-wait"
             onClick={(e) => { e.stopPropagation(); onVerify(tu.id); }}
@@ -194,6 +195,9 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
           >
             {verifying ? "Checking..." : "Verify"}
           </button>
+        )}
+        {!tu.is_theoretical && !showVerify && (
+          <span className="ml-2 text-[0.65rem] text-muted-foreground/60 align-middle">Upgrade to Basic to verify listings</span>
         )}
         {verifyResult && (() => {
           const vr = verifyResult;
