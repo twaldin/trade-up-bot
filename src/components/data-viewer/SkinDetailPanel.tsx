@@ -195,14 +195,21 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
 
       {/* Stats row */}
       <div className="flex gap-2 mb-4 flex-wrap">
-        {[
-          { value: stats.totalListings, label: "Listings" },
-          { value: stats.saleCount || 0, label: "Sales" },
-          { value: stats.minPrice ? formatDollars(stats.minPrice) : "\u2014", label: "Floor" },
-          { value: stats.maxPrice ? formatDollars(stats.maxPrice) : "\u2014", label: "Ceiling" },
-        ].map((s, i) => (
+        {(() => {
+          // Find CSFloat ref price for this skin (avg across conditions with data)
+          const refs = (priceSources || []).filter((p: any) => p.source === "csfloat_ref" && p.avg_price_cents > 0);
+          const refAvg = refs.length > 0 ? Math.round(refs.reduce((s: number, r: any) => s + r.avg_price_cents, 0) / refs.length) : 0;
+          const refTotal = refs.reduce((s: number, r: any) => s + (r.volume || 0), 0);
+          return [
+            { value: stats.totalListings, label: "Listings", color: "text-blue-400" },
+            { value: stats.saleCount || 0, label: "Sales", color: "text-green-400" },
+            { value: stats.minPrice ? formatDollars(stats.minPrice) : "\u2014", label: "Floor", color: "text-blue-400" },
+            { value: stats.maxPrice ? formatDollars(stats.maxPrice) : "\u2014", label: "Ceiling", color: "text-blue-400" },
+            ...(refAvg > 0 ? [{ value: formatDollars(refAvg), label: `Ref (${refTotal})`, color: "text-yellow-400" }] : []),
+          ];
+        })().map((s, i) => (
           <div key={i} className="bg-muted border border-border rounded-md px-3.5 py-2 text-center min-w-[80px]">
-            <div className="text-lg font-semibold text-blue-400">{s.value}</div>
+            <div className={`text-lg font-semibold ${s.color}`}>{s.value}</div>
             <div className="text-[0.7rem] text-muted-foreground uppercase tracking-wide">{s.label}</div>
           </div>
         ))}
