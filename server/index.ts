@@ -62,7 +62,14 @@ const app = express();
 const PORT = 3001;
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+// Stripe webhook needs raw body for signature verification — capture it before JSON parsing
+app.use((req, res, next) => {
+  if (req.path === "/api/stripe-webhook") {
+    express.raw({ type: "application/json" })(req, res, next);
+  } else {
+    express.json()(req, res, next);
+  }
+});
 
 const db = initDb();
 
