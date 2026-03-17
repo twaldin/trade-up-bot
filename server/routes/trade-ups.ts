@@ -97,8 +97,9 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
   let lastCalcCheckTs = 0;
 
   function isCacheValid(): boolean {
-    // Don't hit sync_meta on every request — check at most every 5s
-    if (Date.now() - lastCalcCheckTs < 5000) return true;
+    // Don't hit sync_meta on every request — check at most every 30s
+    // Data only changes when daemon completes a cycle (~20 min)
+    if (Date.now() - lastCalcCheckTs < 30000) return true;
     lastCalcCheckTs = Date.now();
     try {
       const row = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
