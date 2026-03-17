@@ -152,13 +152,23 @@ export function tradeUpsRouter(db: Database.Database): Router {
         : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec"];
       const freeRows = getFreeTierTradeUps(freeTypes);
 
-      const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
+      // Batch-load inputs for all free tier trade-ups (fixes N+1)
+      const freeIds = freeRows.map((r: any) => r.id);
+      const freeInputsByTuId = new Map<number, TradeUpInput[]>();
+      if (freeIds.length > 0) {
+        const ph = freeIds.map(() => "?").join(",");
+        const allInputs = db.prepare(
+          `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${ph})`
+        ).all(...freeIds) as (TradeUpInput & { trade_up_id: number })[];
+        for (const inp of allInputs) {
+          const list = freeInputsByTuId.get(inp.trade_up_id) ?? [];
+          list.push({ ...inp, listing_id: "hidden" } as TradeUpInput);
+          freeInputsByTuId.set(inp.trade_up_id, list);
+        }
+      }
 
       const tradeUps: TradeUp[] = freeRows.map((row: any) => {
-        // Load inputs but redact listing IDs (no direct links for free)
-        const inputs = (getInputs.all(row.id) as TradeUpInput[]).map(inp => ({
-          ...inp, listing_id: "hidden",
-        }));
+        const inputs = freeInputsByTuId.get(row.id) ?? [];
         return {
           id: row.id,
           type: row.type,

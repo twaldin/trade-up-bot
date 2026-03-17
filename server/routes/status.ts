@@ -162,7 +162,7 @@ export function statusRouter(db: Database.Database): Router {
     }
     try {
       const tradeUps = db.prepare(
-        "SELECT COUNT(*) as total, SUM(CASE WHEN profit_cents > 0 AND listing_status = 'active' THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0"
+        "SELECT COUNT(*) as total, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0"
       ).get() as { total: number; profitable: number };
 
       const listings = (db.prepare("SELECT COUNT(*) as c FROM listings").get() as { c: number }).c;

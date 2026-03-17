@@ -27,8 +27,26 @@ export function initDb(): Database.Database {
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   _db.pragma("busy_timeout = 30000"); // Wait up to 30s for concurrent writers
+  _db.pragma("wal_autocheckpoint = 1000"); // checkpoint every ~4MB of WAL writes
+  _db.pragma("cache_size = -64000");       // 64MB page cache (default was 2MB)
+  _db.pragma("mmap_size = 134217728");     // 128MB memory-mapped I/O
+  _db.pragma("temp_store = memory");       // temp tables in RAM
 
   createTables(_db);
+
+  // Run ANALYZE periodically to keep query planner informed
+  // Only run if sqlite_stat1 is empty or stale (no ANALYZE ever run)
+  try {
+    const statRows = _db.prepare("SELECT COUNT(*) as c FROM sqlite_stat1").get() as { c: number };
+    if (statRows.c === 0) {
+      console.log("Running ANALYZE (first time)...");
+      _db.exec("ANALYZE");
+    }
+  } catch {
+    // sqlite_stat1 doesn't exist yet — run ANALYZE
+    _db.exec("ANALYZE");
+  }
+
   return _db;
 }
 
@@ -388,6 +406,7 @@ function createTables(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_collection_tuid ON trade_up_inputs(collection_name, trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
     CREATE INDEX IF NOT EXISTS idx_listings_stattrak_type_price ON listings(stattrak, listing_type, price_cents);
+    CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak_price ON listings(skin_id, stattrak, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_float_stattrak ON listings(float_value, stattrak);
     CREATE INDEX IF NOT EXISTS idx_float_price_data_listing_count ON float_price_data(listing_count);
 

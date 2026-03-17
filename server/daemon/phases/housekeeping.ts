@@ -81,4 +81,21 @@ export async function phase1Housekeeping(db: ReturnType<typeof initDb>, cycleCou
   if (purgedPreserved > 0) {
     console.log(`  Purged ${purgedPreserved} expired preserved trade-ups (>7 days)`);
   }
+
+  // WAL checkpoint — keep WAL file small (prevents I/O bloat)
+  // PASSIVE won't block writers, safe to run every cycle
+  try {
+    const ckpt = db.pragma("wal_checkpoint(PASSIVE)") as { busy: number; log: number; checkpointed: number }[];
+    if (ckpt[0]?.checkpointed > 0) {
+      console.log(`  WAL checkpoint: ${ckpt[0].checkpointed}/${ckpt[0].log} pages`);
+    }
+  } catch { /* ignore */ }
+
+  // Re-run ANALYZE every 6 hours (every ~30 cycles) to keep query planner current
+  if (cycleCount > 0 && cycleCount % 30 === 0) {
+    try {
+      db.exec("ANALYZE");
+      console.log("  Refreshed ANALYZE statistics");
+    } catch { /* ignore */ }
+  }
 }

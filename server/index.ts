@@ -58,9 +58,12 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+import compression from "compression";
+
 const app = express();
 const PORT = 3001;
 
+app.use(compression());
 app.use(cors({ origin: true, credentials: true }));
 // Stripe webhook needs raw body for signature verification — capture it before JSON parsing
 app.use((req, res, next) => {
