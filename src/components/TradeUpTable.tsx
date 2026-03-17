@@ -404,6 +404,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         onVerify={handleVerify}
                         onNavigateSkin={onNavigateSkin}
                         showListingLinks={isPro}
+                        showVerify={isPro || isBasic}
                       />
                       <OutcomeList
                         tu={tu}
