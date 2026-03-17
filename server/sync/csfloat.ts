@@ -475,7 +475,7 @@ export async function syncSmartListingsForRarity(
   const rawFetchTimes = getSyncMeta(db, metaKey);
   const fetchTimes: Record<string, number> = rawFetchTimes ? JSON.parse(rawFetchTimes) : {};
   const now = Date.now();
-  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  const SKIP_WINDOW = 2 * 60 * 60 * 1000; // 2h — cycle through skins faster for coverage
 
   // Get all skins of this rarity with coverage stats
   const skins = db.prepare(`
@@ -506,8 +506,8 @@ export async function syncSmartListingsForRarity(
   let skipped = 0;
 
   for (const skin of skins) {
-    // Skip if fetched <6h ago
-    if (fetchTimes[skin.id] && (now - fetchTimes[skin.id]) < SIX_HOURS) {
+    // Skip if fetched recently
+    if (fetchTimes[skin.id] && (now - fetchTimes[skin.id]) < SKIP_WINDOW) {
       skipped++;
       continue;
     }

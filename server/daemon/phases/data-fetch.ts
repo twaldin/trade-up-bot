@@ -297,16 +297,18 @@ export async function phase4DataFetch(
       knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
       wantedCalls = 0;
     } else {
-      // 50% profit-driven: Covert inputs + Extraordinary outputs (knife trade-ups = highest profit)
-      knifeInputCalls = Math.floor(listingBudget * 0.30);
-      outputCalls = Math.floor(listingBudget * 0.20);
+      // 30% profit-driven: Covert inputs + Extraordinary outputs
+      knifeInputCalls = Math.floor(listingBudget * 0.20);
+      outputCalls = Math.floor(listingBudget * 0.15);
 
-      // 50% coverage: spread across all rarities to build sale history + ref prices
+      // 65% coverage: spread across all rarities — worst coverage first.
+      // Each listing fetch returns ref prices as side effect, building output pricing.
       coverageCalls = listingBudget - knifeInputCalls - outputCalls;
-      classifiedInputCalls = Math.floor(coverageCalls * 0.35); // Classified — output pricing for classified→covert
-      const restrictedCalls = Math.floor(coverageCalls * 0.25); // Restricted — output for restricted→classified
-      const milspecCalls = Math.floor(coverageCalls * 0.25);    // Mil-Spec — output for milspec→restricted
-      const industrialCalls = coverageCalls - classifiedInputCalls - restrictedCalls - milspecCalls; // Industrial
+      // Weight by number of skins needing coverage (Mil-Spec has most gaps)
+      classifiedInputCalls = Math.floor(coverageCalls * 0.20);
+      const restrictedCalls = Math.floor(coverageCalls * 0.25);
+      const milspecCalls = Math.floor(coverageCalls * 0.30); // Most skins, worst coverage
+      const industrialCalls = coverageCalls - classifiedInputCalls - restrictedCalls - milspecCalls;
 
       wantedCalls = 0;
       console.log(`    Budget: ${knifeInputCalls} knife + ${outputCalls} output + ${classifiedInputCalls} classified + ${restrictedCalls} restricted + ${milspecCalls} milspec + ${industrialCalls} industrial = ${listingBudget} (50/50 profit/coverage)`);
