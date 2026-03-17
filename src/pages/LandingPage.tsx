@@ -101,29 +101,25 @@ const LandingPage = () => {
           </div>
         </section>
 
-        {/* Real listings vs theoretical */}
+        {/* Value prop */}
         <section className="py-20 border-t border-border">
-          <div className="mx-auto max-w-5xl px-6">
-            <div className="grid md:grid-cols-2 gap-12 items-start">
-              <div>
-                <div className="text-xs font-medium text-red-400/80 uppercase tracking-wider mb-3">Other tools</div>
-                <h3 className="text-xl font-bold mb-3 text-muted-foreground">Theoretical trade-ups</h3>
-                <ul className="space-y-2 text-sm text-muted-foreground/70">
-                  <li className="flex gap-2"><span className="text-red-400/50">-</span> "Buy 5x AWP Asiimov at 0.20 float"</li>
-                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Assumes average market price</li>
-                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Listings may not exist at that float</li>
-                  <li className="flex gap-2"><span className="text-red-400/50">-</span> Profit disappears when you actually try to buy</li>
-                </ul>
+          <div className="mx-auto max-w-4xl px-6 text-center">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">What you see is what you pay</h2>
+            <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+              Every trade-up on TradeUpBot is built from real marketplace listings — not theoretical calculations with idealized floats. Click any input to buy it directly.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-6 text-left">
+              <div className="border border-border rounded-lg p-5">
+                <div className="text-green-500 text-sm font-semibold mb-2">Real listings</div>
+                <p className="text-sm text-muted-foreground">Every input links to an actual listing on CSFloat, DMarket, or Skinport that you can purchase right now.</p>
               </div>
-              <div>
-                <div className="text-xs font-medium text-green-400/80 uppercase tracking-wider mb-3">TradeUpBot</div>
-                <h3 className="text-xl font-bold mb-3">Real listing contracts</h3>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex gap-2"><span className="text-green-500">+</span> Every input is a real listing you can click and buy</li>
-                  <li className="flex gap-2"><span className="text-green-500">+</span> Exact float values from actual marketplace data</li>
-                  <li className="flex gap-2"><span className="text-green-500">+</span> Output float is deterministic — no guessing</li>
-                  <li className="flex gap-2"><span className="text-green-500">+</span> Profit calculated from what you'll actually pay</li>
-                </ul>
+              <div className="border border-border rounded-lg p-5">
+                <div className="text-green-500 text-sm font-semibold mb-2">Verify before buying</div>
+                <p className="text-sm text-muted-foreground">One-click verification checks if all inputs are still listed and at what price. No surprises at checkout.</p>
+              </div>
+              <div className="border border-border rounded-lg p-5">
+                <div className="text-green-500 text-sm font-semibold mb-2">Claim to lock</div>
+                <p className="text-sm text-muted-foreground">Pro users can claim a trade-up for 30 minutes, hiding the listings from other users while you buy.</p>
               </div>
             </div>
           </div>
