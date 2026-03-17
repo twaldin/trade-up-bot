@@ -149,6 +149,55 @@ export function statusRouter(db: Database.Database): Router {
     res.json(result);
   });
 
+  // Global stats — lightweight, cached 60s, shown in header on every page
+  let globalStatsCache: { data: any; ts: number } | null = null;
+  router.get("/api/global-stats", (_req, res) => {
+    if (globalStatsCache && Date.now() - globalStatsCache.ts < 60_000) {
+      return res.json(globalStatsCache.data);
+    }
+    try {
+      const tradeUps = db.prepare(
+        "SELECT COUNT(*) as total, SUM(CASE WHEN profit_cents > 0 AND listing_status = 'active' THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0"
+      ).get() as { total: number; profitable: number };
+
+      const listings = (db.prepare("SELECT COUNT(*) as c FROM listings").get() as { c: number }).c;
+
+      const saleObs = (db.prepare("SELECT COUNT(*) as c FROM price_observations").get() as { c: number }).c;
+
+      const refs = (db.prepare("SELECT COUNT(*) as c FROM price_data WHERE source = 'csfloat_ref'").get() as { c: number }).c;
+
+      const saleHistory = (db.prepare("SELECT COUNT(*) as c FROM sale_history").get() as { c: number }).c;
+
+      // Total data points = listings + sale observations + sale history + ref prices
+      const totalDataPoints = listings + saleObs + saleHistory + refs;
+
+      // Uptime from daemon status
+      const daemonRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'daemon_status'").get() as { value: string } | undefined;
+      let uptimeMs = 0;
+      if (daemonRow?.value) {
+        try {
+          const ds = JSON.parse(daemonRow.value);
+          if (ds.startedAt) uptimeMs = Date.now() - new Date(ds.startedAt).getTime();
+        } catch { /* ignore */ }
+      }
+
+      const data = {
+        total_trade_ups: tradeUps.total,
+        profitable_trade_ups: tradeUps.profitable,
+        total_data_points: totalDataPoints,
+        listings,
+        sale_observations: saleObs,
+        sale_history: saleHistory,
+        ref_prices: refs,
+        uptime_ms: uptimeMs,
+      };
+      globalStatsCache = { data, ts: Date.now() };
+      res.json(data);
+    } catch {
+      res.json(globalStatsCache?.data ?? {});
+    }
+  });
+
   router.get("/api/daemon-log", (_req, res) => {
     const logPath = "/tmp/daemon.log";
     const MAX_LINES = 500;

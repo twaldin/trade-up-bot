@@ -200,7 +200,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
 
       <div className="flex items-center justify-between mb-2">
-        {/* Tab-specific stats */}
         {!loading && total > 0 && (() => {
           const profitable = tradeUps.filter(t => t.profit_cents > 0).length;
           const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
@@ -212,12 +211,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
               {bestProfit > 0 && <>
                 <span className="mx-1.5 text-border">·</span>
                 Best: <span className="text-green-500 font-medium">{formatDollars(bestProfit)}</span>
-              </>}
-              {status && <>
-                <span className="mx-1.5 text-border">·</span>
-                <span>{status.total_listings?.toLocaleString()} listings</span>
-                <span className="mx-1.5 text-border">·</span>
-                <span>{status.total_sales?.toLocaleString()} sales</span>
               </>}
             </span>
           );
