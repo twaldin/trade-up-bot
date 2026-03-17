@@ -23,6 +23,18 @@ export interface RarityTierConfig {
 
 export const RARITY_TIERS: RarityTierConfig[] = [
   {
+    id: "consumer_industrial",
+    inputRarity: "Consumer Grade",
+    outputRarity: "Industrial Grade",
+    inputCount: 10,
+    tradeUpType: "consumer_industrial",
+    comboKeyPrefix: "consumer:",
+    excludeKnifeOutputs: false,
+    listingBudgetFraction: 0,    // DMarket-only
+    saleBudgetFraction: 0,
+    isKnifeTier: false,
+  },
+  {
     id: "industrial_milspec",
     inputRarity: "Industrial Grade",
     outputRarity: "Mil-Spec",

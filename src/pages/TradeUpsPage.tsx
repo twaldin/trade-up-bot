@@ -5,7 +5,7 @@ import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
-type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec";
+type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec" | "consumer_industrial";
 
 interface TypeOption {
   value: TradeUpType;
