@@ -299,6 +299,15 @@ export async function main() {
     printCoverageReport(db);
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
+    // Refresh API read snapshot — creates a clean copy for the API to serve from
+    // This isolates API reads from daemon WAL contention
+    try {
+      const { refreshApiSnapshot } = await import("../db.js");
+      refreshApiSnapshot();
+    } catch (e) {
+      console.error("  Snapshot refresh failed:", (e as Error).message);
+    }
+
     // Phase 6: Cooldown — dynamic duration targeting fixed cycle time
     // Runs LAST so all work phases are included in timing calculation
     const workPhaseMs = Date.now() - cycleStarted;
