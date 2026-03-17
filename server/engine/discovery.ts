@@ -372,14 +372,18 @@ export function randomExplore(
   options: {
     iterations?: number;
     stattrak?: boolean;
+    inputRarity?: string;
     onProgress?: (msg: string) => void;
   } = {}
 ): { found: number; explored: number; improved: number } {
   const iterations = options.iterations ?? 300;
   const stattrak = options.stattrak ?? false;
+  const inputRarity = options.inputRarity ?? "Classified";
+  const outputRarity = getNextRarity(inputRarity);
+  if (!outputRarity) return { found: 0, explored: 0, improved: 0 };
   buildPriceCache(db);
 
-  const allListings = getListingsForRarity(db, "Classified", undefined, stattrak);
+  const allListings = getListingsForRarity(db, inputRarity, undefined, stattrak);
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
 
   const allAdjusted = addAdjustedFloat(allListings);
@@ -397,22 +401,31 @@ export function randomExplore(
   for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
   for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
-  // Collections that have Covert outputs (excluding non-tradeable collections)
+  // Collections that have outputs at the next rarity (excluding non-tradeable collections)
   const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
-  const allOutcomes = getOutcomesForCollections(db, allCollectionIds, "Covert", stattrak);
+  const allOutcomes = getOutcomesForCollections(db, allCollectionIds, outputRarity, stattrak);
   const collectionsWithOutcomes = new Set(allOutcomes.map(o => o.collection_id));
   const eligibleCollections = [...collectionsWithOutcomes].filter(id => (byCollection.get(id)?.length ?? 0) >= 1);
 
   if (eligibleCollections.length === 0) return { found: 0, explored: 0, improved: 0 };
+
+  // Derive trade-up type from rarity pair
+  const typeMap: Record<string, string> = {
+    "Classified": "classified_covert",
+    "Restricted": "restricted_classified",
+    "Mil-Spec": "milspec_restricted",
+    "Industrial Grade": "industrial_milspec",
+  };
+  const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
   // Profit-guided: weight toward collections in recent profitable trade-ups
   const profitWeights = new Map<string, number>();
   const profitRows = db.prepare(`
     SELECT tui.collection_name, COUNT(*) as cnt
     FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = 'classified_covert' AND t.profit_cents > 0
+    WHERE t.type = ? AND t.profit_cents > 0
     GROUP BY tui.collection_name
-  `).all() as { collection_name: string; cnt: number }[];
+  `).all(tradeUpType) as { collection_name: string; cnt: number }[];
   for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
   const weightedPool: string[] = [];
   for (const col of eligibleCollections) {
@@ -436,8 +449,6 @@ export function randomExplore(
     return result;
   };
 
-  const tradeUpType = stattrak ? 'classified_covert_st' : 'classified_covert';
-
   // Load existing signatures
   const existingSignatures = new Set<string>();
   const existingRows = db.prepare(`
@@ -459,18 +470,42 @@ export function randomExplore(
   `);
 
   const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+  const shuffle = <T>(arr: T[]): T[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
 
   let found = 0;
   let explored = 0;
   let improved = 0;
 
+  // Load existing profitable trade-ups for swap optimization
+  const existingTradeUps = db.prepare(`
+    SELECT id, profit_cents, total_cost_cents FROM trade_ups WHERE type = ? AND profit_cents > 0
+    ORDER BY profit_cents DESC LIMIT 200
+  `).all(tradeUpType) as { id: number; profit_cents: number; total_cost_cents: number }[];
+  const getInputsStmt = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
+  const updateTradeUp = db.prepare(`
+    UPDATE trade_ups SET total_cost_cents = ?, expected_value_cents = ?, profit_cents = ?, roi_percentage = ?, chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?, outcomes_json = ?
+    WHERE id = ?
+  `);
+  const deleteInputs = db.prepare("DELETE FROM trade_up_inputs WHERE trade_up_id = ?");
+
+  // Build listing lookup for swap optimization
+  const listingById = new Map<string, ListingWithCollection>();
+  for (const l of allListings) listingById.set(l.id, l);
+
   for (let iter = 0; iter < iterations; iter++) {
     if (iter % 100 === 0) {
-      options.onProgress?.(`Classified explore: ${iter}/${iterations} (${found} new)`);
+      options.onProgress?.(`${inputRarity} explore: ${iter}/${iterations} (${found} new, ${improved} improved)`);
     }
 
     try {
-      const strategy = Math.floor(Math.random() * 6);
+      const strategy = Math.floor(Math.random() * 8);
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -557,6 +592,100 @@ export function randomExplore(
           const quotas = new Map([[colA, countA], [colB, countB]]);
           const selected = selectForFloatTarget(byColAdj, quotas, target);
           if (selected && selected.length === 10) inputs = selected;
+          break;
+        }
+
+        case 6: {
+          // Swap optimization — take an existing profitable trade-up and try improving one slot
+          if (existingTradeUps.length === 0) break;
+          const existing = pick(existingTradeUps);
+          const existInputs = getInputsStmt.all(existing.id) as { listing_id: string; skin_id: string; skin_name: string; collection_name: string; price_cents: number; float_value: number; condition: string }[];
+          if (existInputs.length !== 10) break;
+
+          const currentInputs = existInputs.map(i => listingById.get(i.listing_id)).filter(Boolean) as ListingWithCollection[];
+          if (currentInputs.length !== 10) break;
+
+          // Pick a random slot to swap
+          const slot = Math.floor(Math.random() * 10);
+          const original = currentInputs[slot];
+
+          // Find alternatives from same collection (70%) or random profitable collection (30%)
+          const candidateCol = Math.random() < 0.7
+            ? original.collection_id
+            : pick(weightedPool);
+          const candidates = byCollection.get(candidateCol) ?? [];
+          if (candidates.length === 0) break;
+
+          const usedIds = new Set(currentInputs.map(l => l.id));
+          const validCandidates = candidates.filter(c => !usedIds.has(c.id));
+          if (validCandidates.length === 0) break;
+
+          // Try up to 15 random candidates for this slot
+          const toTry = shuffle(validCandidates).slice(0, 15);
+          const usedCols = [...new Set(currentInputs.map(l => l.collection_id))];
+          // If swapping to a different collection, include its outcomes too
+          if (!usedCols.includes(candidateCol)) usedCols.push(candidateCol);
+          const swapOutcomes = outcomesForCols(...usedCols);
+
+          let bestSwapResult: TradeUp | null = null;
+          for (const candidate of toTry) {
+            const newInputs = [...currentInputs];
+            newInputs[slot] = candidate;
+            const result = evaluateTradeUp(db, newInputs, swapOutcomes);
+            if (result && result.profit_cents > existing.profit_cents) {
+              if (!bestSwapResult || result.profit_cents > bestSwapResult.profit_cents) {
+                bestSwapResult = result;
+              }
+            }
+          }
+
+          if (bestSwapResult) {
+            const swapChance = bestSwapResult.outcomes.reduce((sum, o) =>
+              sum + (o.estimated_price_cents > bestSwapResult!.total_cost_cents ? o.probability : 0), 0);
+            const swapBest = Math.max(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
+            const swapWorst = Math.min(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
+            const applySwap = db.transaction(() => {
+              updateTradeUp.run(
+                bestSwapResult!.total_cost_cents, bestSwapResult!.expected_value_cents,
+                bestSwapResult!.profit_cents, bestSwapResult!.roi_percentage, swapChance,
+                swapBest, swapWorst, JSON.stringify(bestSwapResult!.outcomes), existing.id
+              );
+              deleteInputs.run(existing.id);
+              for (const input of bestSwapResult!.inputs) {
+                insertInput.run(existing.id, input.listing_id, input.skin_id, input.skin_name,
+                  input.collection_name, input.price_cents, input.float_value, input.condition);
+              }
+            });
+            applySwap();
+            improved++;
+            existing.profit_cents = bestSwapResult.profit_cents;
+          }
+          explored++;
+          continue; // Don't fall through to new trade-up insertion
+        }
+
+        case 7: {
+          // Cross-condition random: mix FN/MW from one collection with FT/WW from another
+          const colA = pick(weightedPool);
+          const colB = pick(eligibleCollections.filter(c => c !== colA));
+          const listA = byCollection.get(colA) ?? [];
+          const listB = byCollection.get(colB) ?? [];
+          const condPairs: [string, string][] = [
+            ["Factory New", "Field-Tested"],
+            ["Minimal Wear", "Field-Tested"],
+            ["Factory New", "Minimal Wear"],
+            ["Field-Tested", "Well-Worn"],
+          ];
+          const [condA, condB] = pick(condPairs);
+          const poolA = listA.filter(l => floatToCondition(l.float_value) === condA);
+          const poolB = listB.filter(l => floatToCondition(l.float_value) === condB);
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          if (poolA.length >= countA && poolB.length >= countB) {
+            const offA = Math.floor(Math.random() * Math.min(poolA.length - countA + 1, 10));
+            const offB = Math.floor(Math.random() * Math.min(poolB.length - countB + 1, 10));
+            inputs = [...poolA.slice(offA, offA + countA), ...poolB.slice(offB, offB + countB)];
+          }
           break;
         }
       }
