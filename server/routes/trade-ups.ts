@@ -75,7 +75,11 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       }
       // 10 oldest stale/partial trade-ups that are profitable or have >25% chance to profit
       const rows = rdb.prepare(`
-        SELECT t.*, 0 as outcome_count FROM trade_ups t
+        SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+               t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+               0 as outcome_count
+        FROM trade_ups t
         WHERE t.is_theoretical = 0 AND t.type = ?
           AND (t.listing_status = 'stale' OR t.listing_status = 'partial')
           AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
@@ -350,10 +354,15 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     const total = counts.c;
     const totalProfitable = counts.profitable ?? 0;
 
-    // Get trade-ups
+    // Get trade-ups — exclude outcomes_json from list query (large TEXT blobs kill sort performance)
     const rows = rdb
       .prepare(
-        `SELECT t.*, 0 as outcome_count FROM trade_ups t ${where}
+        `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+                t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+                t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
+                t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+                0 as outcome_count
+         FROM trade_ups t ${where}
          ORDER BY ${sortCol} ${sortOrder}
          LIMIT ? OFFSET ?`
       )
