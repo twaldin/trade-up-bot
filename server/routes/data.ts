@@ -171,6 +171,26 @@ export function dataRouter(
       ORDER BY CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'listing' THEN 2 WHEN 'csfloat_ref' THEN 3 WHEN 'skinport' THEN 4 ELSE 5 END
     `).all(skinName) as { source: string; condition: string; avg_price_cents: number; volume: number }[];
 
+    // Doppler phase-specific prices (Phase 1-4 + gems)
+    let phasePrices: Record<string, typeof priceSourceRows> | undefined;
+    if (skinName.includes("Doppler")) {
+      phasePrices = {};
+      const phaseRows = db.prepare(`
+        SELECT skin_name, source, condition, avg_price_cents, volume
+        FROM price_data
+        WHERE skin_name LIKE ? AND skin_name != ? AND avg_price_cents > 0
+        ORDER BY skin_name, CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'csfloat_ref' THEN 2 ELSE 3 END
+      `).all(`${skinName}%`, skinName) as { skin_name: string; source: string; condition: string; avg_price_cents: number; volume: number }[];
+      for (const r of phaseRows) {
+        // Extract phase from name: "★ Bayonet | Doppler Phase 2" → "Phase 2"
+        const phase = r.skin_name.replace(skinName, "").trim();
+        if (phase) {
+          if (!phasePrices[phase]) phasePrices[phase] = [];
+          phasePrices[phase].push({ source: r.source, condition: r.condition, avg_price_cents: r.avg_price_cents, volume: r.volume });
+        }
+      }
+    }
+
     // Sale history: combine CSFloat sales + sold listings (deduplicated)
     const saleHistory = db.prepare(`
       SELECT price_cents, float_value, sold_at FROM sale_history
@@ -220,6 +240,7 @@ export function dataRouter(
       listings,
       floatBuckets,
       priceSources: priceSourceRows,
+      phasePrices, // Doppler only: per-phase price data
       saleHistory,
       stats: {
         totalListings: listings.length,

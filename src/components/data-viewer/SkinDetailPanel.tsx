@@ -144,7 +144,11 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     );
   }
 
-  const { skin, priceSources, stats } = detail;
+  const { skin, stats } = detail;
+  // Use phase-specific prices when a Doppler phase is selected
+  const priceSources = selectedPhase && detail.phasePrices?.[selectedPhase]
+    ? detail.phasePrices[selectedPhase]
+    : detail.priceSources;
 
   const condDist: Record<string, number> = {};
   for (const l of listings) {
