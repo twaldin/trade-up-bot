@@ -51,6 +51,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const [sourceFilters, setSourceFilters] = useState<Record<string, boolean>>({
     csfloat: true, dmarket: true, skinport: true,
   });
+  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -102,7 +103,48 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     );
   }
 
-  const { skin, listings, priceSources, saleHistory, stats } = detail;
+  const { skin, listings: allListings, priceSources, saleHistory: allSaleHistory, stats } = detail;
+
+  // Doppler phase detection — normalize phase names
+  const isDoppler = skin.name.includes("Doppler");
+  const phases = useMemo(() => {
+    if (!isDoppler) return [];
+    const phaseSet = new Map<string, number>();
+    for (const l of allListings) {
+      if (l.phase) {
+        // Normalize: "phase-1" → "Phase 1", "Phase 1" stays, "sapphire" → "Sapphire"
+        const norm = l.phase.replace(/^phase-(\d)$/i, "Phase $1").replace(/^(\w)/, c => c.toUpperCase());
+        phaseSet.set(norm, (phaseSet.get(norm) || 0) + 1);
+      }
+    }
+    return [...phaseSet.entries()]
+      .sort((a, b) => {
+        // Sort: Phase 1-4 first, then gems alphabetically
+        const aNum = a[0].match(/Phase (\d)/)?.[1];
+        const bNum = b[0].match(/Phase (\d)/)?.[1];
+        if (aNum && bNum) return Number(aNum) - Number(bNum);
+        if (aNum) return -1;
+        if (bNum) return 1;
+        return a[0].localeCompare(b[0]);
+      })
+      .map(([name, count]) => ({ name, count }));
+  }, [allListings, isDoppler]);
+
+  // Filter listings and sales by selected phase
+  const listings = useMemo(() => {
+    if (!selectedPhase) return allListings;
+    return allListings.filter(l => {
+      if (!l.phase) return false;
+      const norm = l.phase.replace(/^phase-(\d)$/i, "Phase $1").replace(/^(\w)/, c => c.toUpperCase());
+      return norm === selectedPhase;
+    });
+  }, [allListings, selectedPhase]);
+
+  const saleHistory = useMemo(() => {
+    if (!selectedPhase || !allSaleHistory) return allSaleHistory;
+    // Sale history doesn't have phase — show all when phase filtered (or filter by phase-qualified name)
+    return allSaleHistory;
+  }, [allSaleHistory, selectedPhase]);
 
   const condDist: Record<string, number> = {};
   for (const l of listings) {
@@ -201,6 +243,45 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         </div>
         <Button variant="outline" size="icon-xs" onClick={onClose}>&times;</Button>
       </div>
+
+      {/* Doppler phase tabs */}
+      {isDoppler && phases.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <button
+            className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
+              !selectedPhase ? "border-foreground/40 bg-foreground/10 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setSelectedPhase(null)}
+          >
+            All ({allListings.length})
+          </button>
+          {phases.map(p => {
+            const isGem = ["Sapphire", "Ruby", "Emerald", "Black Pearl"].includes(p.name);
+            const phaseColors: Record<string, string> = {
+              "Phase 1": "border-blue-400/40 bg-blue-400/10 text-blue-400",
+              "Phase 2": "border-green-400/40 bg-green-400/10 text-green-400",
+              "Phase 3": "border-cyan-400/40 bg-cyan-400/10 text-cyan-400",
+              "Phase 4": "border-purple-400/40 bg-purple-400/10 text-purple-400",
+              "Sapphire": "border-blue-500/40 bg-blue-500/10 text-blue-500",
+              "Ruby": "border-red-500/40 bg-red-500/10 text-red-500",
+              "Emerald": "border-emerald-500/40 bg-emerald-500/10 text-emerald-500",
+              "Black Pearl": "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-500",
+            };
+            const cls = phaseColors[p.name] || "border-foreground/40 bg-foreground/10 text-foreground";
+            return (
+              <button
+                key={p.name}
+                className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
+                  selectedPhase === p.name ? cls : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setSelectedPhase(selectedPhase === p.name ? null : p.name)}
+              >
+                {isGem ? p.name : p.name.replace("Phase ", "P")} ({p.count})
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Condition distribution */}
       <div className="flex gap-3 mb-4 flex-wrap">
