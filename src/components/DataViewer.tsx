@@ -113,19 +113,19 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           {([
             { value: "all", label: "All", color: "" },
-            { value: "Covert", label: "Covert", color: "bg-red-500 text-red-950" },
-            { value: "Classified", label: "Classified", color: "bg-pink-500 text-pink-950" },
-            { value: "Restricted", label: "Restricted", color: "bg-purple-500 text-purple-950" },
-            { value: "Mil-Spec", label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
-            { value: "Industrial Grade", label: "Industrial", color: "bg-sky-400 text-sky-950" },
-            { value: "Extraordinary", label: "Knife/Glove", color: "bg-yellow-500 text-yellow-950" },
+            { value: "Covert", label: "Covert", color: "border-red-500/40 bg-red-500/10 text-red-500" },
+            { value: "Classified", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+            { value: "Restricted", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+            { value: "Mil-Spec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+            { value: "Industrial Grade", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
+            { value: "Extraordinary", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
           ]).map(t => (
             <button
               key={t.value}
-              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+              className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                 rarity === t.value
-                  ? (t.color || "bg-foreground text-background")
-                  : "text-muted-foreground hover:text-foreground"
+                  ? (t.color || "border-foreground/40 bg-foreground/10 text-foreground")
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
               onClick={() => { setRarity(t.value); setSelectedSkin(null); }}
             >

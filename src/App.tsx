@@ -51,11 +51,11 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
 
 const TRADE_UP_TYPES = [
   { value: "all" as const, label: "All", color: "" },
-  { value: "covert_knife" as const, label: "Knife/Gloves", color: "bg-yellow-500 text-yellow-950" },
-  { value: "classified_covert" as const, label: "Classified", color: "bg-pink-500 text-pink-950" },
-  { value: "restricted_classified" as const, label: "Restricted", color: "bg-purple-500 text-purple-950" },
-  { value: "milspec_restricted" as const, label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
-  { value: "industrial_milspec" as const, label: "Industrial", color: "bg-sky-400 text-sky-950" },
+  { value: "covert_knife" as const, label: "Knife/Gloves", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
+  { value: "classified_covert" as const, label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+  { value: "restricted_classified" as const, label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+  { value: "milspec_restricted" as const, label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+  { value: "industrial_milspec" as const, label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
 ];
 
 

@@ -15,22 +15,21 @@ interface Props {
 
 const TU_TYPE_TABS = [
   { value: "all", label: "All", color: "" },
-  { value: "covert_knife", label: "Knife/Gloves", color: "bg-yellow-500 text-yellow-950" },
-  { value: "classified_covert", label: "Classified", color: "bg-pink-500 text-pink-950" },
-  { value: "restricted_classified", label: "Restricted", color: "bg-purple-500 text-purple-950" },
-  { value: "milspec_restricted", label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
-  { value: "industrial_milspec", label: "Industrial", color: "bg-sky-400 text-sky-950" },
+  { value: "covert_knife", label: "Knife/Gloves", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
+  { value: "classified_covert", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+  { value: "restricted_classified", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+  { value: "milspec_restricted", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+  { value: "industrial_milspec", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
 ];
 
 const RARITY_TABS = [
   { value: "all", label: "All Skins", color: "" },
-  { value: "Covert", label: "Covert", color: "bg-red-500 text-red-950" },
-  { value: "Classified", label: "Classified", color: "bg-pink-500 text-pink-950" },
-  { value: "Restricted", label: "Restricted", color: "bg-purple-500 text-purple-950" },
-  { value: "Mil-Spec", label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
-  { value: "Industrial Grade", label: "Industrial", color: "bg-sky-400 text-sky-950" },
-  { value: "Consumer Grade", label: "Consumer", color: "bg-gray-400 text-gray-950" },
-  { value: "knife_glove", label: "Knife/Glove", color: "bg-yellow-500 text-yellow-950" },
+  { value: "Covert", label: "Covert", color: "border-red-500/40 bg-red-500/10 text-red-500" },
+  { value: "Classified", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+  { value: "Restricted", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+  { value: "Mil-Spec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+  { value: "Industrial Grade", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
+  { value: "Consumer Grade", label: "Consumer", color: "border-gray-400/40 bg-gray-400/10 text-gray-400" },
 ];
 
 export function CollectionViewer({ collectionName, onBack, onNavigateCollection }: Props) {
@@ -140,10 +139,10 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
                 {TU_TYPE_TABS.map(t => (
                   <button
                     key={t.value}
-                    className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                    className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                       tuType === t.value
-                        ? (t.color || "bg-foreground text-background")
-                        : "text-muted-foreground hover:text-foreground"
+                        ? (t.color || "border-foreground/40 bg-foreground/10 text-foreground")
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                     }`}
                     onClick={() => { setTuType(t.value); setTuPage(1); }}
                   >
@@ -189,10 +188,10 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
                 {RARITY_TABS.map(t => (
                   <button
                     key={t.value}
-                    className={`px-3 py-1 text-xs font-medium rounded-full transition-colors cursor-pointer ${
+                    className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
                       skinRarity === t.value
-                        ? (t.color || "bg-foreground text-background")
-                        : "text-muted-foreground hover:text-foreground"
+                        ? (t.color || "border-foreground/40 bg-foreground/10 text-foreground")
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                     }`}
                     onClick={() => setSkinRarity(t.value)}
                   >
