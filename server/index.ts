@@ -109,7 +109,7 @@ setupAuth(app, db);
 
 // Mount route modules — read-heavy routes use readDb for non-blocking reads
 app.use(statusRouter(readDb));
-app.use(tradeUpsRouter(db));  // keeps write db for claims/verify/auto-correct
+app.use(tradeUpsRouter(db, readDb));  // readDb for queries, db for writes
 app.use(dataRouter(readDb, knifeTypeToCases, collectionKnifePool));
 app.use(collectionsRouter(readDb, collectionKnifePool));
 app.use(snapshotsRouter(db));
