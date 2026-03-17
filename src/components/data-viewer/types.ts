@@ -26,6 +26,7 @@ export interface SkinDetail {
   floatBuckets: FloatBucket[];
   priceSources: PriceSourceRow[];
   phasePrices?: Record<string, PriceSourceRow[]>;
+  phaseSales?: Record<string, SaleRow[]>;
   saleHistory: SaleRow[];
   stats: { totalListings: number; checkedListings: number; minPrice: number | null; maxPrice: number | null; saleCount: number };
 }
