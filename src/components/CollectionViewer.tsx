@@ -1,16 +1,26 @@
-import { useState, useEffect } from "react";
-import { formatDollars } from "../utils/format.js";
+import { useState, useEffect, useCallback } from "react";
 import { DataViewer } from "./DataViewer.js";
 import { TradeUpTable } from "./TradeUpTable.js";
+import { FilterBar, EMPTY_FILTERS, filtersToParams } from "./FilterBar.js";
+import type { Filters } from "./FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
 import { Badge } from "@shared/components/ui/badge.js";
-import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
+import type { TradeUp } from "../../shared/types.js";
 
 interface Props {
   collectionName: string;
   onBack: () => void;
   onNavigateCollection: (name: string) => void;
 }
+
+const TU_TYPE_TABS = [
+  { value: "all", label: "All", color: "" },
+  { value: "covert_knife", label: "Knife/Gloves", color: "bg-yellow-500 text-yellow-950" },
+  { value: "classified_covert", label: "Classified", color: "bg-pink-500 text-pink-950" },
+  { value: "restricted_classified", label: "Restricted", color: "bg-purple-500 text-purple-950" },
+  { value: "milspec_restricted", label: "Mil-Spec", color: "bg-blue-500 text-blue-950" },
+  { value: "industrial_milspec", label: "Industrial", color: "bg-sky-400 text-sky-950" },
+];
 
 const RARITY_TABS = [
   { value: "all", label: "All Skins", color: "" },
@@ -32,29 +42,32 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
   const [skinRarity, setSkinRarity] = useState("all");
   const [tuSort, setTuSort] = useState("profit");
   const [tuOrder, setTuOrder] = useState<"asc" | "desc">("desc");
+  const [tuType, setTuType] = useState("all");
+  const [tuPage, setTuPage] = useState(1);
   const [section, setSection] = useState<"tradeups" | "skins">("tradeups");
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
 
-  // Fetch collection metadata
   useEffect(() => {
     setLoading(true);
     fetch(`/api/collection/${encodeURIComponent(collectionName)}`)
       .then(r => r.json())
-      .then(data => {
-        setKnifePool(data.knifePool || null);
-      })
+      .then(data => setKnifePool(data.knifePool || null))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [collectionName]);
 
-  // Fetch trade-ups for this collection via the main trade-ups API (with collection filter)
+  // Fetch trade-ups with collection filter + type + filters
   useEffect(() => {
     setTradeUpsLoading(true);
-    const params = new URLSearchParams({
-      collection: collectionName,
-      sort: tuSort,
-      order: tuOrder,
-      per_page: "50",
-    });
+    const params = filtersToParams(filters);
+    params.set("collection", collectionName);
+    params.set("sort", tuSort);
+    params.set("order", tuOrder);
+    params.set("page", String(tuPage));
+    params.set("per_page", "50");
+    params.set("include_stale", "true");
+    if (tuType !== "all") params.set("type", tuType);
+
     fetch(`/api/trade-ups?${params}`, { credentials: "include" })
       .then(r => r.json())
       .then(data => {
@@ -63,54 +76,43 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
       })
       .catch(() => {})
       .finally(() => setTradeUpsLoading(false));
-  }, [collectionName, tuSort, tuOrder]);
+  }, [collectionName, tuSort, tuOrder, tuType, tuPage, filters]);
 
   const handleTuSort = (column: string) => {
-    if (tuSort === column) {
-      setTuOrder(tuOrder === "desc" ? "asc" : "desc");
-    } else {
-      setTuSort(column);
-      setTuOrder("desc");
-    }
+    if (tuSort === column) setTuOrder(tuOrder === "desc" ? "asc" : "desc");
+    else { setTuSort(column); setTuOrder("desc"); }
+    setTuPage(1);
   };
 
-  const profitable = tradeUps.filter(t => t.profit_cents > 0);
+  const handleFiltersChange = useCallback((f: Filters) => {
+    setFilters(f);
+    setTuPage(1);
+  }, []);
+
+  const totalPages = Math.ceil(tradeUpTotal / 50);
 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <Button variant="outline" size="sm" onClick={onBack}>
-          ← Back
-        </Button>
+      <div className="flex items-center gap-3 mb-3">
+        <Button variant="outline" size="sm" onClick={onBack}>← Back</Button>
         <h2 className="text-lg font-semibold text-foreground">{collectionName}</h2>
+        {knifePool && (
+          <span className="flex items-center gap-1.5">
+            {knifePool.knifeTypes.map(k => (
+              <Badge key={k} variant="outline" className="text-[0.65rem] bg-blue-400/10 text-blue-400 border-blue-400/20 py-0">{k}</Badge>
+            ))}
+            {knifePool.gloveTypes.map(g => (
+              <Badge key={g} variant="outline" className="text-[0.65rem] bg-fuchsia-400/10 text-fuchsia-400 border-fuchsia-400/20 py-0">{g}</Badge>
+            ))}
+          </span>
+        )}
       </div>
 
       {loading ? (
         <div className="py-10 text-center text-muted-foreground animate-pulse">Loading...</div>
       ) : (
         <>
-          {/* Summary bar */}
-          <div className="flex items-center gap-4 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-muted-foreground mb-4">
-            <span>{tradeUpTotal} trade-ups</span>
-            {profitable.length > 0 && (
-              <>
-                <span className="text-green-500">{profitable.length} profitable</span>
-                <span>Best: <span className="text-green-500 font-medium">{formatDollars(Math.max(...profitable.map(t => t.profit_cents)))}</span></span>
-              </>
-            )}
-            {knifePool && (knifePool.knifeTypes.length > 0 || knifePool.gloveTypes.length > 0) && (
-              <span className="flex items-center gap-1.5">
-                {knifePool.knifeTypes.map(k => (
-                  <Badge key={k} variant="outline" className="text-[0.65rem] bg-blue-400/10 text-blue-400 border-blue-400/20 py-0">{k}</Badge>
-                ))}
-                {knifePool.gloveTypes.map(g => (
-                  <Badge key={g} variant="outline" className="text-[0.65rem] bg-fuchsia-400/10 text-fuchsia-400 border-fuchsia-400/20 py-0">{g}</Badge>
-                ))}
-              </span>
-            )}
-          </div>
-
           {/* Section tabs */}
           <div className="flex items-center gap-6 border-b border-border mb-4">
             <button
@@ -133,26 +135,56 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
 
           {section === "tradeups" && (
             <>
+              {/* Type tabs */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                {TU_TYPE_TABS.map(t => (
+                  <button
+                    key={t.value}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                      tuType === t.value
+                        ? (t.color || "bg-foreground text-background")
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => { setTuType(t.value); setTuPage(1); }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filters */}
+              <div className="mb-2">
+                <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
+              </div>
+
               {tradeUpsLoading ? (
                 <div className="py-8 text-center text-muted-foreground animate-pulse">Loading trade-ups...</div>
               ) : tradeUps.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">No trade-ups found involving this collection.</div>
               ) : (
-                <TradeUpTable
-                  tradeUps={tradeUps}
-                  sort={tuSort}
-                  order={tuOrder}
-                  onSort={handleTuSort}
-                  onNavigateCollection={onNavigateCollection}
-                  tier="pro"
-                />
+                <>
+                  <TradeUpTable
+                    tradeUps={tradeUps}
+                    sort={tuSort}
+                    order={tuOrder}
+                    onSort={handleTuSort}
+                    onNavigateCollection={onNavigateCollection}
+                    tier="pro"
+                  />
+                  {totalPages > 1 && (
+                    <div className="flex gap-2 justify-center items-center mt-4 text-sm text-muted-foreground">
+                      <Button variant="outline" size="sm" disabled={tuPage <= 1} onClick={() => setTuPage(tuPage - 1)}>Prev</Button>
+                      <span>Page {tuPage} of {totalPages} ({tradeUpTotal.toLocaleString()} results)</span>
+                      <Button variant="outline" size="sm" disabled={tuPage >= totalPages} onClick={() => setTuPage(tuPage + 1)}>Next</Button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
 
           {section === "skins" && (
             <>
-              {/* Rarity tabs */}
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 {RARITY_TABS.map(t => (
                   <button
@@ -168,7 +200,6 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
                   </button>
                 ))}
               </div>
-
               <DataViewer
                 key={`${collectionName}-${skinRarity}`}
                 onNavigateCollection={onNavigateCollection}
