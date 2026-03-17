@@ -149,13 +149,22 @@ export async function cooldownLoop(
     if (nextBatchAt - Date.now() > 3000) {
       // Random explore: fill available CPU time with exploration
       // VPS runs 24/7 — invest idle time in finding new profitable combos
-      const knifeIters = 2000;
-      const classifiedIters = 2000;
-
-      const knifeExp = randomKnifeExplore(db, { iterations: knifeIters });
-      const classifiedExp = randomExplore(db, { iterations: classifiedIters });
+      // Rotate through tiers each batch to spread exploration
+      const knifeExp = randomKnifeExplore(db, { iterations: 2000 });
+      const classifiedExp = randomExplore(db, { iterations: 2000 });
       cooldownExploreFound += knifeExp.found + classifiedExp.found;
       cooldownExploreImproved += knifeExp.improved + classifiedExp.improved;
+
+      // Also explore lower rarities (rotate by batch to spread CPU)
+      if (batchCount % 2 === 0) {
+        const restrictedExp = randomExplore(db, { iterations: 500, inputRarity: "Restricted" });
+        cooldownExploreFound += restrictedExp.found;
+        cooldownExploreImproved += restrictedExp.improved;
+      } else {
+        const milspecExp = randomExplore(db, { iterations: 500, inputRarity: "Mil-Spec" });
+        cooldownExploreFound += milspecExp.found;
+        cooldownExploreImproved += milspecExp.improved;
+      }
 
       // Revival: check a batch of stale/partial trade-ups (CPU-only DB queries)
       if (batchCount % 3 === 0) {

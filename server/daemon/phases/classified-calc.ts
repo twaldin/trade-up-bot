@@ -127,6 +127,17 @@ export function phase5GenericCalc(
     const highChance = tradeUps.filter(t => t.profit_cents <= 0 && (t.chance_to_profit ?? 0) >= 0.25);
     console.log(`  Found ${tradeUps.length} ${label} trade-ups (${profitable.length} profitable, ${highChance.length} high-chance)`);
 
+    // Random exploration for this tier — finds combos the deterministic scan misses
+    setDaemonStatus(db, "calculating", `Phase 5: ${label} exploration`);
+    const exploreResult = randomExplore(db, {
+      iterations: 200,
+      inputRarity: tierConfig.inputRarity,
+      onProgress: (msg) => setDaemonStatus(db, "calculating", msg),
+    });
+    if (exploreResult.found > 0 || exploreResult.improved > 0) {
+      console.log(`  ${label} explore: ${exploreResult.explored} iterations, +${exploreResult.found} new, ${exploreResult.improved} improved`);
+    }
+
     if (tradeUps.length > 0) {
       // Merge-save: preserves profitable trade-ups from prior cycles.
       // Cap at 30K to prevent OOM — keep profitable + high-chance first, then top by profit.
