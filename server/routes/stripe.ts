@@ -111,8 +111,7 @@ export function stripeRouter(db: Database.Database): Router {
           else if (priceId === getPlan("basic")!.priceId) tier = "basic";
         }
 
-        // Don't downgrade admins
-        db.prepare("UPDATE users SET tier = ? WHERE stripe_customer_id = ? AND tier != 'admin'").run(tier, customerId);
+        db.prepare("UPDATE users SET tier = ? WHERE stripe_customer_id = ?").run(tier, customerId);
         console.log(`Stripe: customer ${customerId} → ${tier}`);
         break;
       }
@@ -120,7 +119,7 @@ export function stripeRouter(db: Database.Database): Router {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
-        db.prepare("UPDATE users SET tier = 'free' WHERE stripe_customer_id = ? AND tier != 'admin'").run(customerId);
+        db.prepare("UPDATE users SET tier = 'free' WHERE stripe_customer_id = ?").run(customerId);
         console.log(`Stripe: customer ${customerId} → free (cancelled)`);
         break;
       }

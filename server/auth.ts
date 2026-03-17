@@ -60,7 +60,8 @@ export interface User {
   steam_id: string;
   display_name: string;
   avatar_url: string;
-  tier: "free" | "basic" | "pro" | "admin";
+  tier: "free" | "basic" | "pro";
+  is_admin: boolean;
   stripe_customer_id: string | null;
   created_at: string;
   last_login_at: string;
@@ -74,8 +75,14 @@ declare global {
       display_name: string;
       avatar_url: string;
       tier: string;
+      is_admin: boolean;
     }
   }
+}
+
+export function isAdmin(user: Express.User | User | undefined): boolean {
+  if (!user) return false;
+  return (user as any).is_admin === 1 || (user as any).is_admin === true;
 }
 
 export function setupAuth(app: Express, db: Database.Database) {
@@ -93,11 +100,25 @@ export function setupAuth(app: Express, db: Database.Database) {
       display_name TEXT,
       avatar_url TEXT,
       tier TEXT NOT NULL DEFAULT 'free',
+      is_admin INTEGER NOT NULL DEFAULT 0,
       stripe_customer_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       last_login_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // Migration: add is_admin column if missing
+  const cols = db.pragma("table_info(users)") as { name: string }[];
+  if (!cols.find(c => c.name === "is_admin")) {
+    db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+  }
+  // Migrate existing admin tier users to is_admin flag
+  const adminSteamId = process.env.ADMIN_STEAM_ID;
+  if (adminSteamId) {
+    db.prepare("UPDATE users SET is_admin = 1 WHERE steam_id = ?").run(adminSteamId);
+    // If admin was on 'admin' tier, set to 'pro' so they have full access
+    db.prepare("UPDATE users SET tier = 'pro' WHERE steam_id = ? AND tier = 'admin'").run(adminSteamId);
+  }
 
   const store = new SqliteSessionStore(db);
 
@@ -135,19 +156,18 @@ export function setupAuth(app: Express, db: Database.Database) {
       const displayName = profile.displayName || `User ${steamId}`;
       const avatar = profile.photos?.[2]?.value || profile.photos?.[0]?.value || "";
 
-      // Upsert user — auto-promote admin if ADMIN_STEAM_ID matches
-      const adminSteamId = process.env.ADMIN_STEAM_ID;
-      const tier = steamId === adminSteamId ? "admin" : "free";
+      // Upsert user — set is_admin flag if ADMIN_STEAM_ID matches
+      const isAdminUser = steamId === adminSteamId ? 1 : 0;
 
       db.prepare(`
-        INSERT INTO users (steam_id, display_name, avatar_url, tier, last_login_at)
+        INSERT INTO users (steam_id, display_name, avatar_url, is_admin, last_login_at)
         VALUES (?, ?, ?, ?, datetime('now'))
         ON CONFLICT(steam_id) DO UPDATE SET
           display_name = excluded.display_name,
           avatar_url = excluded.avatar_url,
-          tier = CASE WHEN excluded.tier = 'admin' THEN 'admin' ELSE users.tier END,
+          is_admin = MAX(users.is_admin, excluded.is_admin),
           last_login_at = datetime('now')
-      `).run(steamId, displayName, avatar, tier);
+      `).run(steamId, displayName, avatar, isAdminUser);
 
       const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User;
       done(null, user);
@@ -180,17 +200,38 @@ export function setupAuth(app: Express, db: Database.Database) {
     req.logout(() => res.redirect("/"));
   });
 
-  // Current user API — supports admin view_as override
+  // Current user API
   app.get("/api/auth/me", (req, res) => {
     if (req.user) {
       const u = req.user as User;
-      const viewAs = req.query.view_as as string | undefined;
-      const effectiveTier = (viewAs && u.tier === "admin" && ["free", "basic", "pro"].includes(viewAs))
-        ? viewAs : u.tier;
-      res.json({ steam_id: u.steam_id, display_name: u.display_name, avatar_url: u.avatar_url, tier: effectiveTier, real_tier: u.tier });
+      console.log(`Auth check: ${u.display_name} (${u.tier}${isAdmin(u) ? ", admin" : ""})`);
+      res.json({
+        steam_id: u.steam_id,
+        display_name: u.display_name,
+        avatar_url: u.avatar_url,
+        tier: u.tier,
+        is_admin: isAdmin(u),
+      });
     } else {
       res.json(null);
     }
+  });
+
+  // Admin: set any user's tier (protected by ADMIN_STEAM_ID)
+  app.post("/api/admin/set-tier", (req, res) => {
+    if (!req.user || !isAdmin(req.user as User)) {
+      res.status(403).json({ error: "Admin only" });
+      return;
+    }
+    const { steam_id, tier } = req.body as { steam_id?: string; tier?: string };
+    if (!tier || !["free", "basic", "pro"].includes(tier)) {
+      res.status(400).json({ error: "Invalid tier. Use 'free', 'basic', or 'pro'." });
+      return;
+    }
+    const targetId = steam_id || (req.user as User).steam_id;
+    db.prepare("UPDATE users SET tier = ? WHERE steam_id = ?").run(tier, targetId);
+    console.log(`Admin set tier: ${targetId} → ${tier}`);
+    res.json({ success: true, steam_id: targetId, tier });
   });
 }
 
@@ -200,35 +241,27 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Login required" });
 }
 
-// Middleware: require specific tier
+// Middleware: require specific tier (admin flag does NOT auto-pass — admin uses their real tier)
 export function requireTier(...tiers: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) return res.status(401).json({ error: "Login required" });
     const user = req.user as User;
-    if (tiers.includes(user.tier) || user.tier === "admin") return next();
+    if (tiers.includes(user.tier)) return next();
     res.status(403).json({ error: `Requires ${tiers.join(" or ")} tier` });
   };
 }
 
-// Middleware: apply tier-based filtering to trade-up queries.
-// Admins can pass ?view_as=free|basic|pro to preview other tiers.
+// Get tier config for the current user's actual tier (no view_as override)
 export function getTierConfig(req: Request): { delay: number; limit: number; showListingIds: boolean } {
   const user = req.user as User | undefined;
-  let tier = user?.tier || "free";
-
-  // Admin "view as" override
-  const viewAs = req.query.view_as as string | undefined;
-  if (viewAs && user?.tier === "admin" && ["free", "basic", "pro"].includes(viewAs)) {
-    tier = viewAs as typeof tier;
-  }
+  const tier = user?.tier || "free";
 
   switch (tier) {
-    case "admin":
     case "pro":
-      return { delay: 0, limit: 0, showListingIds: true };      // real-time, unlimited
+      return { delay: 0, limit: 0, showListingIds: true };
     case "basic":
-      return { delay: 5 * 60, limit: 0, showListingIds: true }; // 5-min delay, unlimited
+      return { delay: 30 * 60, limit: 0, showListingIds: true };
     default:
-      return { delay: 30 * 60, limit: 10, showListingIds: false }; // 30-min delay, 10 per type
+      return { delay: 30 * 60, limit: 10, showListingIds: false };
   }
 }
