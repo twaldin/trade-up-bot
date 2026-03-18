@@ -246,18 +246,17 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
 
   // Batch 1: update existing trade-ups
   const toUpdate: { existId: number; tu: TradeUp }[] = [];
-  const toStale: number[] = [];
   for (const [sig, existId] of existingSigs) {
     const newIdx = newSigs.get(sig);
     if (newIdx !== undefined) {
       toUpdate.push({ existId, tu: tradeUps[newIdx] });
       handled.add(sig);
-    } else {
-      toStale.push(existId);
     }
+    // NOTE: We no longer mark missing trade-ups as stale here.
+    // With sig-skipping, workers intentionally don't rediscover known combos,
+    // so "not in this batch" doesn't mean "listings are gone."
+    // refreshListingStatuses() in housekeeping handles actual staleness.
   }
-
-  const markStale = db.prepare("UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, datetime('now')) WHERE id = ?");
 
   for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
     const batch = toUpdate.slice(i, i + BATCH_SIZE);
@@ -282,16 +281,7 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
     withRetry(() => batchTx(), 3, "mergeTradeUps-update");
   }
 
-  // Batch 2: mark stale in batches
-  for (let i = 0; i < toStale.length; i += BATCH_SIZE) {
-    const batch = toStale.slice(i, i + BATCH_SIZE);
-    const staleTx = db.transaction(() => {
-      for (const id of batch) markStale.run(id);
-    });
-    withRetry(() => staleTx(), 3, "mergeTradeUps-stale");
-  }
-
-  // Batch 3: insert new trade-ups in batches
+  // Batch 2: insert new trade-ups in batches
   const toInsert: TradeUp[] = [];
   for (const [sig, idx] of newSigs) {
     if (handled.has(sig)) continue;
