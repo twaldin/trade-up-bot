@@ -13,8 +13,7 @@ class SqliteSessionStore extends session.Store {
   constructor(dbPath: string) {
     super();
     // Separate DB file for sessions — never contends with daemon writes
-    const dir = require("path").dirname(dbPath);
-    const sessionPath = require("path").join(dir, "sessions.db");
+    const sessionPath = dbPath.replace(/[^/\\]+$/, "sessions.db");
     this.sessionDb = new Database(sessionPath);
     this.sessionDb.pragma("journal_mode = WAL");
     this.sessionDb.pragma("busy_timeout = 2000");
