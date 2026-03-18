@@ -54,8 +54,11 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-/** Worker time limit in ms. Workers do structured discovery + deep exploration within this budget. */
-const WORKER_TIME_LIMIT = 120_000; // 2 min
+/** Minimum worker time limit in ms. Workers do structured + exploration within this budget. */
+const MIN_WORKER_TIME = 120_000; // 2 min minimum
+
+/** Maximum worker time limit in ms. First super-batch on fresh starts needs more. */
+const MAX_WORKER_TIME = 300_000; // 5 min maximum
 
 /** Kill timeout buffer — SIGTERM workers that exceed their time limit by this margin. */
 const WORKER_KILL_BUFFER = 30_000; // 30s grace period
@@ -192,7 +195,7 @@ export async function main() {
   console.log(`  Rate limits (3 separate pools):`);
   console.log(`    Listing search: 200/~30min | Sale history: 500/~12h | Individual: 50K/~12h`);
   console.log(`  Data sources: CSFloat API${isDMarketConfigured() ? " + DMarket API" : ""} + Skinport WebSocket`);
-  console.log(`  Worker time limit: ${WORKER_TIME_LIMIT / 1000}s per worker, 2 workers per round`);
+  console.log(`  Worker time limit: ${MIN_WORKER_TIME / 1000}s-${MAX_WORKER_TIME / 1000}s per worker (dynamic), 2 workers per round`);
 
   // Start Skinport WebSocket listener (passive listing accumulation — no auth, no rate limits)
   const stopSkinport = await startSkinportListener(db);
@@ -313,11 +316,22 @@ export async function main() {
         if (Date.now() >= engineEnd - 30_000) break;
 
         const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
-        setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB}`);
+
+        // Dynamic worker time: fraction of remaining budget.
+        // First super-batch on cycle 1 needs more time (structured discovery from scratch).
+        // Later super-batches: structured is instant, so MIN_WORKER_TIME suffices.
+        const remainingMs = engineEnd - Date.now();
+        const roundsRemaining = WORKER_ROUNDS.length - roundIdx;
+        const workerTimeLimit = Math.min(
+          MAX_WORKER_TIME,
+          Math.max(MIN_WORKER_TIME, Math.floor(remainingMs / (roundsRemaining * 2 + 2)))
+        );
+
+        setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
 
         const results = await Promise.allSettled([
-          runCalcWorker(taskA as "knife", DB_PATH, WORKER_TIME_LIMIT),
-          runCalcWorker(taskB as "classified", DB_PATH, WORKER_TIME_LIMIT),
+          runCalcWorker(taskA as "knife", DB_PATH, workerTimeLimit),
+          runCalcWorker(taskB as "classified", DB_PATH, workerTimeLimit),
         ]);
 
         // Merge results for each worker
