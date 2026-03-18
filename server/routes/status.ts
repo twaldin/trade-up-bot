@@ -135,7 +135,7 @@ export function statusRouter(db: Database.Database): Router {
     res.json(result);
   }));
 
-  router.get("/api/global-stats", cachedRoute("global_stats", 600, (_req, res) => {
+  router.get("/api/global-stats", cachedRoute("global_stats", 60, (_req, res) => {
     try {
       // Single query instead of 6 separate COUNT queries — much faster on cold cache
       const stats = db.prepare(`
