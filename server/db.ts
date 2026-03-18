@@ -9,6 +9,9 @@ export const DB_PATH = path.join(__dirname, "..", "data", "tradeup.db");
 let _db: Database.Database | null = null;
 let _readDb: Database.Database | null = null;
 const API_DB_PATH = path.join(path.dirname(DB_PATH), "tradeup-api.db");
+let _readDbMtime = 0;
+let _lastSnapshotCheck = 0;
+const SNAPSHOT_CHECK_INTERVAL = 5000; // check file mtime at most every 5s
 
 export function getDb(): Database.Database {
   if (!_db) {
@@ -18,34 +21,38 @@ export function getDb(): Database.Database {
 }
 
 /** Read-only DB for API — uses a SEPARATE snapshot file, completely
- *  isolated from daemon writes. Never blocked by WAL contention. */
+ *  isolated from daemon writes. Auto-detects when daemon refreshes the
+ *  snapshot and reopens the connection. */
 export function getReadDb(): Database.Database {
+  // Periodically check if daemon has refreshed the snapshot file
+  const now = Date.now();
+  if (now - _lastSnapshotCheck > SNAPSHOT_CHECK_INTERVAL) {
+    _lastSnapshotCheck = now;
+    try {
+      if (fs.existsSync(API_DB_PATH)) {
+        const mtime = fs.statSync(API_DB_PATH).mtimeMs;
+        if (mtime !== _readDbMtime) {
+          // Snapshot has been updated — reopen connection
+          if (_readDb) {
+            try { _readDb.close(); } catch { /* ignore close errors */ }
+          }
+          _readDb = openReadDb(API_DB_PATH);
+          _readDbMtime = mtime;
+          console.log("API snapshot reopened (file updated by daemon)");
+        }
+      }
+    } catch { /* stat/open failure — keep existing connection */ }
+  }
   return _readDb ?? getDb();
 }
 
-/** Create/refresh the API snapshot from the main DB.
- *  Called by the daemon after each cycle completes. */
-export function refreshApiSnapshot(): void {
-  try {
-    const mainDb = new Database(DB_PATH, { readonly: true });
-    mainDb.pragma("busy_timeout = 10000");
-    mainDb.backup(API_DB_PATH).then(() => {
-      mainDb.close();
-      // Reopen the read DB from the fresh snapshot
-      if (_readDb) {
-        try { _readDb.close(); } catch { /* ignore */ }
-      }
-      _readDb = new Database(API_DB_PATH, { readonly: true });
-      _readDb.pragma("cache_size = -64000");
-      _readDb.pragma("mmap_size = 134217728");
-      _readDb.pragma("temp_store = memory");
-      console.log("API snapshot refreshed");
-    }).catch(() => {
-      mainDb.close();
-    });
-  } catch (e) {
-    console.error("Snapshot refresh failed:", (e as Error).message);
-  }
+function openReadDb(dbPath: string): Database.Database {
+  const db = new Database(dbPath, { readonly: true });
+  db.pragma("busy_timeout = 5000");
+  db.pragma("cache_size = -64000");
+  db.pragma("mmap_size = 134217728");
+  db.pragma("temp_store = memory");
+  return db;
 }
 
 export function initDb(): Database.Database {
@@ -65,14 +72,22 @@ export function initDb(): Database.Database {
   _db.pragma("mmap_size = 134217728");
   _db.pragma("temp_store = memory");
 
-  // API read DB: use snapshot file if it exists, otherwise read from main
+  // API read DB: use snapshot file if it exists. If not, use main DB until
+  // the daemon creates a snapshot on its first cycle. getReadDb() auto-detects
+  // when the snapshot file appears/updates and switches to it.
   try {
-    const readPath = fs.existsSync(API_DB_PATH) ? API_DB_PATH : DB_PATH;
-    _readDb = new Database(readPath, { readonly: true });
-    _readDb.pragma("cache_size = -64000");
-    _readDb.pragma("mmap_size = 134217728");
-    _readDb.pragma("temp_store = memory");
-  } catch {
+    if (fs.existsSync(API_DB_PATH)) {
+      _readDb = openReadDb(API_DB_PATH);
+      _readDbMtime = fs.statSync(API_DB_PATH).mtimeMs;
+      console.log("API read DB: using snapshot (tradeup-api.db)");
+    } else {
+      // No snapshot yet — use main DB with busy_timeout for reads.
+      // Daemon will create tradeup-api.db on its next cycle completion.
+      _readDb = openReadDb(DB_PATH);
+      console.log("API read DB: no snapshot yet, using main DB (daemon will create snapshot)");
+    }
+  } catch (e) {
+    console.error("Read DB init failed:", (e as Error).message);
     _readDb = null;
   }
 
