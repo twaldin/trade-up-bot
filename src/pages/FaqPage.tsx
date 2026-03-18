@@ -1,6 +1,15 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
+
+function BlogLink({ slug, title }: { slug: string; title: string }) {
+  return (
+    <Link to={`/blog/${slug}`} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors mt-2">
+      Read more: {title} &rarr;
+    </Link>
+  );
+}
 
 function FaqItem({ question, children }: { question: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -64,6 +73,7 @@ export function FaqPage() {
                 Every trade-up you see on the platform links to actual listings you can purchase
                 right now, with exact floats, exact prices, and deterministic outcomes.
               </p>
+              <BlogLink slug="profitable-trade-ups-theory-vs-reality" title="Theory vs Reality" />
             </FaqItem>
 
             <FaqItem question='What does "chance to profit" mean?'>
@@ -80,6 +90,7 @@ export function FaqPage() {
                 TradeUpBot keeps trade-ups with over 25% chance to profit, even if the
                 overall expected value is slightly negative.
               </p>
+              <BlogLink slug="cs2-trade-up-probability-expected-value" title="Probability and Expected Value Guide" />
             </FaqItem>
 
             <FaqItem question="How accurate are the prices?">
@@ -95,6 +106,7 @@ export function FaqPage() {
                 listings. Always verify a trade-up before buying to check current availability
                 and pricing.
               </p>
+              <BlogLink slug="cs2-trade-up-marketplace-fees" title="How Marketplace Fees Affect Profits" />
             </FaqItem>
 
             <FaqItem question='What does "Verify" do?'>
@@ -181,6 +193,7 @@ export function FaqPage() {
                 TradeUpBot is an analysis tool, not financial advice. Never invest more than
                 you can afford to lose.
               </p>
+              <BlogLink slug="profitable-trade-ups-theory-vs-reality" title="Understanding Trade-Up Risks" />
             </FaqItem>
 
             <FaqItem question="What are the rate limits?">
