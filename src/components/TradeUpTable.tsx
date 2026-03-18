@@ -147,6 +147,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     return ids;
   });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
+  // Confirm mode: which trade-up is in confirm mode, and which listings are selected
+  const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
+  const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
 
   // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
@@ -261,22 +264,17 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                       Claim
                     </button>
               )}
-              {myClaimLocal && (
+              {myClaimLocal && confirmModeId !== tu.id && (
                 <>
                   <button
                     className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 hover:border-green-400 cursor-pointer transition-colors"
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      if (!confirm("Confirm purchase? This marks the listings as bought and removes them from the system.")) return;
-                      const res = await fetch(`/api/trade-ups/${tu.id}/confirm`, { method: "POST", credentials: "include" });
-                      if (res.ok) {
-                        if (expandedId === tu.id) setExpandedId(null);
-                        setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
-                        onClaimChange?.(-1);
-                      } else {
-                        const data = await res.json();
-                        alert(data.error || "Failed to confirm");
-                      }
+                      // Enter confirm mode: pre-select all real listings
+                      const realIds = new Set(tu.inputs.map(inp => inp.listing_id).filter(id => !id.startsWith("theor")));
+                      setConfirmSelected(realIds);
+                      setConfirmModeId(tu.id);
+                      if (expandedId !== tu.id) setExpandedId(tu.id);
                     }}
                   >
                     Confirm Purchase
@@ -298,6 +296,47 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   </button>
                 </>
               )}
+              {myClaimLocal && confirmModeId === tu.id && (
+                <>
+                  <span className="text-[0.7rem] text-muted-foreground">{confirmSelected.size} of {tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length} selected</span>
+                  <button
+                    className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 hover:border-green-400 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={confirmSelected.size === 0}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const count = confirmSelected.size;
+                      const total = tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length;
+                      const msg = count === total
+                        ? "Confirm all inputs purchased? This removes them from the system."
+                        : `Confirm ${count} of ${total} purchased? Unselected inputs will be released.`;
+                      if (!confirm(msg)) return;
+                      const res = await fetch(`/api/trade-ups/${tu.id}/confirm`, {
+                        method: "POST", credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ listing_ids: [...confirmSelected] }),
+                      });
+                      if (res.ok) {
+                        setConfirmModeId(null);
+                        setConfirmSelected(new Set());
+                        if (expandedId === tu.id) setExpandedId(null);
+                        setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                        onClaimChange?.(-1);
+                      } else {
+                        const data = await res.json();
+                        alert(data.error || "Failed to confirm");
+                      }
+                    }}
+                  >
+                    {confirmSelected.size === tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length ? "Confirm All" : `Confirm ${confirmSelected.size}`}
+                  </button>
+                  <button
+                    className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setConfirmModeId(null); setConfirmSelected(new Set()); }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>);
@@ -316,6 +355,16 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           showListingLinks={isPro}
           showVerify={isPro || isBasic}
           verifyLimit={verifyLimit}
+          confirmMode={confirmModeId === tu.id}
+          confirmSelected={confirmSelected}
+          onConfirmToggle={(listingId) => {
+            setConfirmSelected(prev => {
+              const next = new Set(prev);
+              if (next.has(listingId)) next.delete(listingId);
+              else next.add(listingId);
+              return next;
+            });
+          }}
         />
         <OutcomeList
           tu={tu}
