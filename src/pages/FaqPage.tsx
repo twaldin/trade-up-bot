@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { SiteFooter } from "../components/SiteFooter.js";
 
 function FaqItem({ question, children }: { question: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -34,6 +35,7 @@ export function FaqPage() {
             TradeUpBot
           </Link>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
+            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
             <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             <Link to="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
           </div>
@@ -209,14 +211,7 @@ export function FaqPage() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="py-8 border-t border-border">
-        <div className="mx-auto max-w-6xl px-6 flex items-center justify-center gap-6 text-sm text-muted-foreground">
-          <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
-          <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-          <Link to="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

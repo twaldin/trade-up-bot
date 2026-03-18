@@ -60,6 +60,7 @@ const LandingPage = () => {
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
             <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
+            <a href="/blog" className="hover:text-foreground transition-colors">Blog</a>
           </div>
           <Btn onClick={login} className="h-8 px-3 text-xs">
             <IconSteam /> Sign In
@@ -302,6 +303,7 @@ const LandingPage = () => {
                 <a href="#features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</a>
                 <a href="#pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
                 <a href="#faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
+                <a href="/blog" className="block text-muted-foreground hover:text-foreground transition-colors">Blog</a>
               </div>
             </div>
             <div>

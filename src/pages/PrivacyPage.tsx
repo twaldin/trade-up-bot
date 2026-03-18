@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { SiteFooter } from "../components/SiteFooter.js";
 
 export function PrivacyPage() {
   return (
@@ -10,6 +11,7 @@ export function PrivacyPage() {
             TradeUpBot
           </Link>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
+            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
             <Link to="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
             <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
           </div>
@@ -142,13 +144,7 @@ export function PrivacyPage() {
       </main>
 
       {/* Footer */}
-      <footer className="py-8 border-t border-border">
-        <div className="mx-auto max-w-6xl px-6 flex items-center justify-center gap-6 text-sm text-muted-foreground">
-          <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
-          <Link to="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
-          <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
