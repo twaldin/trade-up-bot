@@ -31,6 +31,21 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://tradeupbot.app/blog/how-to-use-tradeupbot</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tradeupbot.app/features</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tradeupbot.app/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://tradeupbot.app/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>

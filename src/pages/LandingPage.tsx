@@ -154,6 +154,11 @@ const LandingPage = () => {
               <p className="text-muted-foreground mb-6">Browse every collection with knife/glove pool info, listing counts, and profitable trade-ups. Filter by knives, gloves, or profitability.</p>
               <img src="/collections.png" alt="Collections" className="rounded-lg border border-border w-full" />
             </div>
+            <div className="text-center mt-10">
+              <a href="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                See all features &rarr;
+              </a>
+            </div>
           </div>
         </section>
 
@@ -256,6 +261,11 @@ const LandingPage = () => {
                 </ul>
                 <Btn onClick={login} className="w-full">Go Pro</Btn>
               </div>
+            </div>
+            <div className="text-center mt-8">
+              <a href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Compare all plans &rarr;
+              </a>
             </div>
           </div>
         </section>
