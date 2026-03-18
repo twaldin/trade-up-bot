@@ -8,10 +8,11 @@ const NAV_LINKS = [
   { to: "/blog", label: "Blog" },
 ];
 
+// Match main app UserMenu colors exactly
 const tierColors: Record<string, string> = {
-  free: "text-muted-foreground",
+  pro: "text-yellow-400",
   basic: "text-blue-400",
-  pro: "text-green-500",
+  free: "text-muted-foreground",
   admin: "text-red-400",
 };
 
@@ -23,16 +24,42 @@ interface NavUser {
   is_admin?: boolean;
 }
 
+const STORAGE_KEY = "site_nav_user";
+
+function loadCachedUser(): NavUser | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+function cacheUser(user: NavUser | null) {
+  try {
+    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
+
 export function SiteNav() {
   const location = useLocation();
-  const [user, setUser] = useState<NavUser | null>(null);
+  // Initialize from localStorage to prevent flicker on navigation
+  const [user, setUser] = useState<NavUser | null>(loadCachedUser);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.steam_id) setUser(data); })
+      .then(data => {
+        if (data?.steam_id) {
+          setUser(data);
+          cacheUser(data);
+        } else {
+          setUser(null);
+          cacheUser(null);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -64,7 +91,7 @@ export function SiteNav() {
             </Link>
           ))}
         </div>
-        {/* Fixed-width right section prevents center nav from shifting when user loads */}
+        {/* Fixed-width right section prevents center nav from shifting */}
         <div className="flex items-center gap-3 min-w-[200px] justify-end">
           {user ? (
             <>
@@ -90,7 +117,7 @@ export function SiteNav() {
                   <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-xl z-50 py-1">
                     <div className="px-3 py-2 border-b border-border">
                       <div className="text-sm font-medium">{user.display_name}</div>
-                      <div className={`text-xs ${tierColors[user.tier]}`}>
+                      <div className={`text-xs ${tierColors[user.tier] || "text-muted-foreground"}`}>
                         {user.tier.charAt(0).toUpperCase() + user.tier.slice(1)} Plan
                       </div>
                     </div>
