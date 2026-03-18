@@ -92,6 +92,28 @@ export function tradeUpsRouter(db: Database.Database): Router {
         prevMax = bucket.max === Infinity ? prevMax : bucket.max;
       }
 
+      // Backfill if buckets didn't fill to 10 — grab best remaining
+      if (rows.length < FREE_PER_TYPE) {
+        const existingIds = new Set(rows.map((r: any) => r.id));
+        const backfill = rdb.prepare(`
+          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+                 0 as outcome_count
+          FROM trade_ups t
+          WHERE t.is_theoretical = 0 AND t.type = ?
+            AND t.listing_status = 'active'
+            AND t.created_at <= datetime('now', '-10800 seconds')
+            AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
+          ORDER BY t.chance_to_profit DESC, t.profit_cents DESC
+          LIMIT ?
+        `).all(t, FREE_PER_TYPE * 2) as any[];
+        for (const r of backfill) {
+          if (rows.length >= FREE_PER_TYPE) break;
+          if (!existingIds.has(r.id)) rows.push(r);
+        }
+      }
+
       freeCache.set(t, { rows, calcTs });
       results.push(...rows);
     }
@@ -102,7 +124,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
     return "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free");
-  }, 600, async (req, res) => {
+  }, 120, async (req, res) => {
     const {
       sort = "profit",
       order = "desc",
