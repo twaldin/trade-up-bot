@@ -527,7 +527,7 @@ export async function main() {
         sale_history: stats.sale_hist,
         ref_prices: stats.refs,
         total_cycles: stats.cycles,
-      }, 600);
+      }, 60);
 
       const inputSkins = db.prepare("SELECT DISTINCT skin_name as name FROM trade_up_inputs").all() as { name: string }[];
       const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
