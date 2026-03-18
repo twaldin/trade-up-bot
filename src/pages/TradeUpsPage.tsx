@@ -205,16 +205,16 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
               </button>
             );
           })}
-          {isPro && (
+          {isPro && myClaimCount > 0 && (
             <button
               className={`px-3 md:px-4 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                 showMyClaims
                   ? "border-purple-500/40 bg-purple-500/10 text-purple-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
-              onClick={() => { setShowMyClaims(!showMyClaims); setPage(1); }}
+              onClick={() => { setShowMyClaims(!showMyClaims); setPage(1); setLoading(true); }}
             >
-              Your Claims{myClaimCount > 0 ? ` (${myClaimCount})` : ""}
+              Your Claims ({myClaimCount})
             </button>
           )}
         </div>
@@ -293,13 +293,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             tier={tier}
           />
 
-          {/* Free tier: upgrade banner instead of pagination */}
-          {isFree && (
+          {/* Free tier: upgrade banner instead of pagination (hide during loading to prevent flash) */}
+          {isFree && !loading && (
             <UpgradeBanner message="Upgrade to see all trade-ups, real-time data, filters, and inputs" plan="basic" />
           )}
 
           {/* Basic tier: upgrade banner for real-time + claims */}
-          {isBasic && (
+          {isBasic && !loading && (
             <UpgradeBanner message="Viewing trade-ups with 30-minute delay. Upgrade to Pro for real-time data and claims." plan="pro" />
           )}
 
