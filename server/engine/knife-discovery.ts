@@ -24,6 +24,7 @@ export function findProfitableKnifeTradeUps(
   options: {
     onProgress?: (msg: string) => void;
     extraTransitionPoints?: number[];
+    existingSignatures?: Set<string>;
   } = {}
 ): TradeUp[] {
   options.onProgress?.("Building price cache for knife trade-ups...");
@@ -73,14 +74,18 @@ export function findProfitableKnifeTradeUps(
   }
 
   const results: TradeUp[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>(options.existingSignatures);
+  let skippedExisting = 0;
 
   const tryAdd = (tu: TradeUp | null) => {
     if (!tu || tu.expected_value_cents === 0) return;
     // Keep profitable OR high chance-to-profit trade-ups
     if (tu.profit_cents <= 0 && (tu.chance_to_profit ?? 0) < 0.25) return;
     const key = tu.inputs.map(i => i.listing_id).sort().join(",");
-    if (seen.has(key)) return;
+    if (seen.has(key)) {
+      if (options.existingSignatures?.has(key)) skippedExisting++;
+      return;
+    }
     seen.add(key);
     results.push(tu);
   };
@@ -327,6 +332,10 @@ export function findProfitableKnifeTradeUps(
   }
   options.onProgress?.(`Knife: triples done (${results.length} trade-ups)`);
   // Steps 4-5: Quads/quints removed — never profitable historically.
+
+  if (skippedExisting > 0) {
+    console.log(`  Knife discovery: skipped ${skippedExisting} combos already in DB`);
+  }
 
   // Sort by profit
   results.sort((a, b) => b.profit_cents - a.profit_cents);

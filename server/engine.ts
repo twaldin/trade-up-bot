@@ -21,7 +21,7 @@ export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFl
 export type { OutputPriceResult } from "./engine/pricing.js";
 
 // DB operations
-export { saveTradeUps, mergeTradeUps, updateCollectionScores } from "./engine/db-ops.js";
+export { saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts } from "./engine/db-ops.js";
 
 // Listing status & preservation
 export {

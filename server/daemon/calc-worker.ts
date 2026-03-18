@@ -56,6 +56,30 @@ function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: string })
   });
 }
 
+// Map worker task name to trade_ups.type for signature loading
+const typeMap: Record<string, string> = {
+  knife: "covert_knife",
+  classified: "classified_covert",
+  restricted: "restricted_classified",
+  milspec: "milspec_restricted",
+  industrial: "industrial_milspec",
+  consumer: "consumer_industrial",
+};
+
+// Load existing listing signatures so discovery skips combos already in DB
+const tradeUpType = typeMap[task] ?? "classified_covert";
+const existingSigs = new Set<string>();
+const sigRows = db.prepare(`
+  SELECT trade_up_id, GROUP_CONCAT(listing_id) as ids
+  FROM trade_up_inputs WHERE trade_up_id IN (
+    SELECT id FROM trade_ups WHERE type = ? AND is_theoretical = 0
+  ) GROUP BY trade_up_id
+`).all(tradeUpType) as { trade_up_id: number; ids: string }[];
+for (const row of sigRows) {
+  existingSigs.add(row.ids.split(",").sort().join(","));
+}
+console.log(`  Loaded ${existingSigs.size} existing signatures for ${task}`);
+
 try {
   let tradeUps;
 
@@ -63,27 +87,28 @@ try {
     case "knife":
       tradeUps = findProfitableKnifeTradeUps(db, {
         extraTransitionPoints,
+        existingSignatures: existingSigs,
       });
       break;
 
     case "classified":
-      tradeUps = findProfitableTradeUps(db);
+      tradeUps = findProfitableTradeUps(db, { existingSignatures: existingSigs });
       break;
 
     case "restricted":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Restricted"], limit: 50000 });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs });
       break;
 
     case "milspec":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Mil-Spec"], limit: 50000 });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs });
       break;
 
     case "industrial":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Industrial Grade"], limit: 50000 });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs });
       break;
 
     case "consumer":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Consumer Grade"], limit: 50000 });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs });
       break;
   }
 

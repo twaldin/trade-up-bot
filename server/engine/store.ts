@@ -28,8 +28,11 @@ export class TradeUpStore {
   private maxPerSignature: number;
   total = 0;
 
-  constructor(maxPerSignature: number = 20) {
+  constructor(maxPerSignature: number = 20, existingSignatures?: Set<string>) {
     this.maxPerSignature = maxPerSignature;
+    if (existingSignatures) {
+      this.seen = new Set(existingSignatures);
+    }
   }
 
   private getSignature(tu: TradeUp): string {

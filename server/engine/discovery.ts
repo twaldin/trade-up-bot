@@ -38,12 +38,13 @@ export function findProfitableTradeUps(
     stattrak?: boolean;
     onProgress?: ProgressCallback;
     onFlush?: (tradeUps: TradeUp[], isFirst: boolean) => void;
+    existingSignatures?: Set<string>;
   } = {}
 ): TradeUp[] {
   const targetRarities = options.rarities ?? ["Classified"];
   const stattrak = options.stattrak ?? false;
   const limit = options.limit ?? 200000;
-  const store = new TradeUpStore(options.maxPerSignature ?? 50);
+  const store = new TradeUpStore(options.maxPerSignature ?? 50, options.existingSignatures);
   let isFirstFlush = true;
 
   options.onProgress?.("Building price cache...", 0, 100);

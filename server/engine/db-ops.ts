@@ -213,7 +213,7 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
   const updateTradeUp = db.prepare(`
     UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?, roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
       peak_profit_cents = MAX(peak_profit_cents, ?), listing_status = 'active', preserved_at = NULL, outcomes_json = ?,
-      profit_streak = ?
+      profit_streak = ?, previous_inputs = NULL
     WHERE id=?
   `);
   const getOldProfit = db.prepare(`SELECT profit_cents, profit_streak FROM trade_ups WHERE id = ?`);
@@ -832,4 +832,77 @@ export function updateCollectionScores(db: Database.Database) {
 
   updateAll();
   console.log(`  Updated ${scores.length} collection scores`);
+}
+
+/**
+ * Batch recalc trade-up stats when input listing prices have changed.
+ * Finds trade-ups where trade_up_inputs.price_cents differs from the current
+ * listings.price_cents, updates the input prices, and recalculates
+ * profit/roi/chance/best/worst from the stored outcomes_json.
+ * Lightweight — no float calculations or outcome re-evaluation needed.
+ */
+export function recalcTradeUpCosts(db: Database.Database): { updated: number } {
+  // Find trade-ups with at least one input whose price differs from the listing
+  const staleInputs = db.prepare(`
+    SELECT DISTINCT tui.trade_up_id
+    FROM trade_up_inputs tui
+    JOIN listings l ON tui.listing_id = l.id
+    WHERE tui.price_cents != l.price_cents
+  `).all() as { trade_up_id: number }[];
+
+  if (staleInputs.length === 0) return { updated: 0 };
+
+  const tuIds = staleInputs.map(r => r.trade_up_id);
+
+  // Update input prices to match current listing prices
+  const updateInputPrice = db.prepare(`
+    UPDATE trade_up_inputs SET price_cents = (
+      SELECT l.price_cents FROM listings l WHERE l.id = trade_up_inputs.listing_id
+    ) WHERE trade_up_id = ? AND listing_id IN (
+      SELECT l.id FROM listings l
+      JOIN trade_up_inputs tui2 ON tui2.listing_id = l.id
+      WHERE tui2.trade_up_id = ? AND tui2.price_cents != l.price_cents
+    )
+  `);
+
+  // Recalc trade-up stats from updated inputs + stored outcomes
+  const getInputCost = db.prepare("SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = ?");
+  const getTradeUp = db.prepare("SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = ?");
+  const updateStats = db.prepare(`
+    UPDATE trade_ups SET total_cost_cents = ?, profit_cents = ?, roi_percentage = ?,
+      chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?
+    WHERE id = ?
+  `);
+
+  let updated = 0;
+  const BATCH = 500;
+  for (let i = 0; i < tuIds.length; i += BATCH) {
+    const batch = tuIds.slice(i, i + BATCH);
+    const tx = db.transaction(() => {
+      for (const tuId of batch) {
+        // Update input prices
+        updateInputPrice.run(tuId, tuId);
+
+        // Recalculate stats
+        const cost = (getInputCost.get(tuId) as { total: number }).total;
+        const tu = getTradeUp.get(tuId) as { expected_value_cents: number; outcomes_json: string | null } | undefined;
+        if (!tu) continue;
+
+        const ev = tu.expected_value_cents;
+        const profit = ev - cost;
+        const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
+
+        const outcomes = JSON.parse(tu.outcomes_json || "[]") as { estimated_price_cents: number; probability: number }[];
+        const chance = outcomes.reduce((sum, o) => sum + (o.estimated_price_cents > cost ? o.probability : 0), 0);
+        const best = outcomes.length > 0 ? Math.max(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
+        const worst = outcomes.length > 0 ? Math.min(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
+
+        updateStats.run(cost, profit, roi, chance, best, worst, tuId);
+        updated++;
+      }
+    });
+    withRetry(() => tx(), 3, "recalcTradeUpCosts");
+  }
+
+  return { updated };
 }
