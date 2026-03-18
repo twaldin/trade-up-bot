@@ -51,14 +51,14 @@ export async function phase1Housekeeping(db: ReturnType<typeof initDb>, cycleCou
     console.log(`  Purged ${dmPurged.changes} DMarket listings (>24h old)`);
   }
 
-  // Purge Skinport listings older than 24h (passive WS feed, no staleness verification.
-  // Short TTL because items sell fast and we can't verify individually.)
+  // Purge Skinport listings older than 12h (passive WS feed, can't verify individually.
+  // Aggressive TTL because we can only do price-proximity checks, not exact verification.)
   const spPurged = db.prepare(`
     DELETE FROM listings WHERE source = 'skinport'
-      AND julianday('now') - julianday(created_at) > 1
+      AND julianday('now') - julianday(created_at) > 0.5
   `).run();
   if (spPurged.changes > 0) {
-    console.log(`  Purged ${spPurged.changes} Skinport listings (>24h old)`);
+    console.log(`  Purged ${spPurged.changes} Skinport listings (>12h old)`);
   }
 
   // Prune observations every 10 cycles
