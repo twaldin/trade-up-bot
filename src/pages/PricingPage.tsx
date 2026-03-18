@@ -37,7 +37,7 @@ function PricingFaqItem({ question, children }: { question: string; children: Re
   );
 }
 
-const login = () => { window.location.href = '/auth/steam'; };
+const login = () => { window.location.href = `/auth/steam?return=${encodeURIComponent(window.location.pathname)}`; };
 
 const subscribe = async (plan: string) => {
   const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan }) });
@@ -62,7 +62,7 @@ const Btn = ({ children, variant = 'primary', className = '', onClick }: {
 export function PricingPage() {
   const [user, setUser] = useState<{ tier: string } | null>(null);
   useEffect(() => {
-    fetch("/api/me", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(setUser).catch(() => {});
+    fetch("/api/auth/me", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(setUser).catch(() => {});
   }, []);
 
   return (
