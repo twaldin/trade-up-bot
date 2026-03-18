@@ -69,7 +69,11 @@ export function tradeUpsRouter(db: Database.Database): Router {
     return results;
   }
 
-  router.get("/api/trade-ups", cachedRoute((req) => "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free"), 600, async (req, res) => {
+  router.get("/api/trade-ups", cachedRoute((req) => {
+    // Don't cache my_claims responses — they change on every claim/release and must be real-time
+    if (req.query.my_claims === "true") return null;
+    return "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free");
+  }, 600, async (req, res) => {
     const {
       sort = "profit",
       order = "desc",
@@ -213,11 +217,12 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }
     }
 
-    // "My Claims" filter: use Redis active_claims (main DB may differ from snapshot)
+    // "My Claims" filter: use Redis active_claims
+    const myClaimCount = activeClaims.filter(c => c.user_id === userId).length;
     if (my_claims === "true") {
       const myClaimIds = activeClaims.filter(c => c.user_id === userId).map(c => c.trade_up_id);
       if (myClaimIds.length === 0) {
-        res.json({ trade_ups: [], total: 0, my_claim_count: 0 });
+        res.json({ trade_ups: [], total: 0, my_claim_count: myClaimCount });
         return;
       }
       where += ` AND t.id IN (${myClaimIds.map(() => "?").join(",")})`;
@@ -456,9 +461,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
 
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
-
-    // Count user's active claims from Redis (not snapshot DB which may be stale)
-    const myClaimCount = activeClaims.filter(c => c.user_id === userId).length;
 
     const result = {
       trade_ups: tradeUps,
