@@ -32,6 +32,7 @@ interface Props {
   onNavigateCollection?: (collectionName: string) => void;
   onClaimChange?: (delta: number) => void;
   tier?: string;
+  showMyClaims?: boolean;
 }
 
 function SortIndicator({ column, sort, order }: { column: string; sort: string; order: string }) {
@@ -106,7 +107,7 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: numbe
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro" }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false }: Props) {
   const isFree = tier === "free";
   const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
@@ -241,6 +242,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   e.stopPropagation();
                   const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
                   if (res.ok) {
+                    if (expandedId === tu.id) setExpandedId(null);
                     setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
                     onClaimChange?.(-1);
                   }
@@ -301,7 +303,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
         return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
       })() : "",
     };
-  });
+  })
+  // On "Your Claims" page, hide released trade-ups immediately
+  .filter(({ tu }) => !showMyClaims || claimedIds.has(tu.id));
 
   return (
     <>
