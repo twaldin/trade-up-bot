@@ -8,13 +8,14 @@ import type { SyncStatus } from "../../shared/types.js";
 export function statusRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Cache status with 10s minimum TTL + invalidate on daemon cycle change
+  // Cache status with 60s minimum TTL + invalidate on daemon cycle change.
+  // Status route runs ~10 aggregate queries — expensive on cold cache.
   let statusCache: { data: any; ts: number } | null = null;
   let statusLastCalc = "";
 
   router.get("/api/status", (_req, res) => {
-    // Serve cache if under 10s old (avoids heavy queries on every 30s poll)
-    if (statusCache && Date.now() - statusCache.ts < 10_000) {
+    // Serve cache if under 60s old (avoids heavy queries blocking event loop)
+    if (statusCache && Date.now() - statusCache.ts < 60_000) {
       return res.json(statusCache.data);
     }
     try {
@@ -154,42 +155,45 @@ export function statusRouter(db: Database.Database): Router {
     res.json(result);
   });
 
-  // Global stats — lightweight, cached 60s, shown in header on every page
-  let globalStatsCache: { data: any; ts: number } | null = null;
+  // Global stats — cached 10 minutes, invalidated on daemon cycle change.
+  // These COUNT queries are expensive on cold cache (2.8GB DB, 260K+ rows).
+  let globalStatsCache: { data: any; ts: number; calcTs: string } | null = null;
   router.get("/api/global-stats", (_req, res) => {
-    if (globalStatsCache && Date.now() - globalStatsCache.ts < 60_000) {
+    let currentCalc = "";
+    try {
+      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+      currentCalc = row?.value || "";
+    } catch { /* ignore */ }
+
+    // Return cached if same daemon cycle and under 10 min old
+    if (globalStatsCache && globalStatsCache.calcTs === currentCalc && Date.now() - globalStatsCache.ts < 600_000) {
       return res.json(globalStatsCache.data);
     }
+
     try {
-      const tradeUps = db.prepare(
-        "SELECT COUNT(*) as total, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0"
-      ).get() as { total: number; profitable: number };
-
-      const listings = (db.prepare("SELECT COUNT(*) as c FROM listings").get() as { c: number }).c;
-
-      const saleObs = (db.prepare("SELECT COUNT(*) as c FROM price_observations").get() as { c: number }).c;
-
-      const refs = (db.prepare("SELECT COUNT(*) as c FROM price_data WHERE source = 'csfloat_ref'").get() as { c: number }).c;
-
-      const saleHistory = (db.prepare("SELECT COUNT(*) as c FROM sale_history").get() as { c: number }).c;
-
-      // Total data points = listings + sale observations + sale history + ref prices
-      const totalDataPoints = listings + saleObs + saleHistory + refs;
-
-      // Total cycles ever run (from daemon_cycle_stats table)
-      const totalCycles = (db.prepare("SELECT COUNT(*) as c FROM daemon_cycle_stats").get() as { c: number }).c;
+      // Single query instead of 6 separate COUNT queries — much faster on cold cache
+      const stats = db.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
+          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
+          (SELECT COUNT(*) FROM listings) as listings,
+          (SELECT COUNT(*) FROM price_observations) as sale_obs,
+          (SELECT COUNT(*) FROM sale_history) as sale_hist,
+          (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
+          (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
+      `).get() as { total_tu: number; profitable_tu: number; listings: number; sale_obs: number; sale_hist: number; refs: number; cycles: number };
 
       const data = {
-        total_trade_ups: tradeUps.total,
-        profitable_trade_ups: tradeUps.profitable,
-        total_data_points: totalDataPoints,
-        listings,
-        sale_observations: saleObs,
-        sale_history: saleHistory,
-        ref_prices: refs,
-        total_cycles: totalCycles,
+        total_trade_ups: stats.total_tu,
+        profitable_trade_ups: stats.profitable_tu ?? 0,
+        total_data_points: stats.listings + stats.sale_obs + stats.sale_hist + stats.refs,
+        listings: stats.listings,
+        sale_observations: stats.sale_obs,
+        sale_history: stats.sale_hist,
+        ref_prices: stats.refs,
+        total_cycles: stats.cycles,
       };
-      globalStatsCache = { data, ts: Date.now() };
+      globalStatsCache = { data, ts: Date.now(), calcTs: currentCalc };
       res.json(data);
     } catch {
       res.json(globalStatsCache?.data ?? {});
