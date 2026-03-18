@@ -38,13 +38,13 @@ export { getListingsForRarity, getOutcomesForCollections, getNextRarity } from "
 export { getKnifeFinishesWithPrices, evaluateKnifeTradeUp } from "./engine/knife-evaluation.js";
 
 // Discovery (classified→covert)
-export { findProfitableTradeUps, randomExplore } from "./engine/discovery.js";
+export { findProfitableTradeUps, randomExplore, exploreWithBudget } from "./engine/discovery.js";
 
 // Classified→Covert evaluation
 export { evaluateTradeUp } from "./engine/evaluation.js";
 
 // Knife/Glove discovery
-export { findProfitableKnifeTradeUps, randomKnifeExplore } from "./engine/knife-discovery.js";
+export { findProfitableKnifeTradeUps, randomKnifeExplore, exploreKnifeWithBudget } from "./engine/knife-discovery.js";
 
 // KNN pricing + observation management (float-precise output pricing for knife/glove skins)
 export {
