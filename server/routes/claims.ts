@@ -377,27 +377,21 @@ export function claimsRouter(db: Database.Database): Router {
       "UPDATE trade_up_claims SET confirmed_at = datetime('now'), released_at = datetime('now') WHERE id = ?"
     ).run(claim.id);
 
-    // Queue listing IDs for daemon to delete + cascade
+    // Delete listings immediately (5-10 rows, <1ms, no lock contention)
+    // Cascade (marking affected trade-ups as partial) happens in next housekeeping
     const listingRows = db.prepare(
       "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
     ).all(tradeUpId) as { listing_id: string }[];
     const listingIds = listingRows.map(r => r.listing_id).filter(id => !id.startsWith("theor"));
 
-    // Push to Redis queue for daemon processing
-    const redis = getRedis();
-    if (redis && listingIds.length > 0) {
-      for (const lid of listingIds) await redis.lpush("confirmed_listings", lid);
-      console.log(`Confirm: queued ${listingIds.length} listings for deletion (trade-up ${tradeUpId}, user ${userId})`);
-    }
+    const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
+    for (const id of listingIds) deleteListing.run(id);
+    console.log(`Confirm: deleted ${listingIds.length} listings immediately (trade-up ${tradeUpId}, user ${userId})`);
 
-    // Mark the trade-up as stale immediately (listings are bought, trade-up is done)
+    // Mark the trade-up as stale (listings are bought, trade-up is done)
     db.prepare(
       "UPDATE trade_ups SET listing_status = 'stale', preserved_at = datetime('now') WHERE id = ?"
     ).run(tradeUpId);
-
-    // Clear claimed_by (listings being bought, claim lock no longer needed)
-    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ?");
-    for (const id of listingIds) clearClaimed.run(id);
 
     // Refresh caches
     await refreshClaimsCache(db);
