@@ -406,12 +406,49 @@ export async function main() {
         console.log(`    Revival: ${gunRevival.revived} gun + ${knifeRevival.revived} knife revived`);
       }
 
+      // Handle expired claims: clear claimed_by, check if listings were actually purchased
+      {
+        const expired = db.prepare(`
+          SELECT id, trade_up_id, user_id FROM trade_up_claims
+          WHERE released_at IS NULL AND expires_at <= datetime('now')
+        `).all() as { id: number; trade_up_id: number; user_id: string }[];
+        if (expired.length > 0) {
+          const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
+          const releaseClaim = db.prepare("UPDATE trade_up_claims SET released_at = datetime('now') WHERE id = ?");
+          db.transaction(() => {
+            for (const claim of expired) {
+              const listings = db.prepare(
+                "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+              ).all(claim.trade_up_id) as { listing_id: string }[];
+              for (const { listing_id } of listings) clearClaimed.run(listing_id, claim.user_id);
+              releaseClaim.run(claim.id);
+            }
+          })();
+          console.log(`    Expired claims: ${expired.length} released`);
+          // Expired listings will be checked by the staleness batch below
+        }
+      }
+
+      // Adjust staleness budget based on verify API calls from users
+      let stalenessMaxChecks = 75;
+      try {
+        const { getRedis } = await import("../redis.js");
+        const redis = getRedis();
+        if (redis) {
+          const verifyCalls = parseInt(await redis.getset("verify_api_calls", "0") || "0");
+          if (verifyCalls > 0) {
+            stalenessMaxChecks = Math.max(25, 75 - verifyCalls);
+            console.log(`    Staleness budget adjusted: 75 - ${verifyCalls} verify calls = ${stalenessMaxChecks}`);
+          }
+        }
+      } catch { /* Redis unavailable */ }
+
       // Staleness checks between super-batches (uses individual API pool)
       setDaemonStatus(db, "fetching", `Phase 5: Staleness (batch ${superBatchCount})`);
       try {
         const stalenessResult = await checkListingStaleness(db, {
           apiKey,
-          maxChecks: 75,
+          maxChecks: stalenessMaxChecks,
           onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
         });
         totalStalenessChecked += stalenessResult.checked;

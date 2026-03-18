@@ -91,6 +91,16 @@ export function findProfitableKnifeTradeUps(
     results.push(tu);
   };
 
+  /** Compute listing-combo signature for pre-evaluation sig-skipping. */
+  const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
+
+  /** Evaluate only if this listing combo is new (skip evaluation for known combos). */
+  const tryEvalKnife = (inputs: ListingWithCollection[]) => {
+    const sig = sigOf(inputs);
+    if (seen.has(sig)) { skippedExisting++; return; }
+    tryEvalKnife(inputs);
+  };
+
   // Collections that have knife or glove mappings
   const knifeCollections = [...byCollection.keys()].filter(name => {
     const m = CASE_KNIFE_MAP[name];
@@ -140,7 +150,7 @@ export function findProfitableKnifeTradeUps(
 
     // Sliding windows (cheapest) — cap at 15
     for (let offset = 0; offset + 5 <= listings.length && offset < 15; offset++) {
-      tryAdd(evaluateKnifeTradeUp(db, listings.slice(offset, offset + 5), knifeFinishCache));
+      tryEvalKnife(listings.slice(offset, offset + 5));
     }
 
     // Value-sorted: sort by lowest adjusted float (best output condition), then cheapest.
@@ -153,19 +163,19 @@ export function findProfitableKnifeTradeUps(
       }
     );
     for (let offset = 0; offset + 5 <= valueSorted.length && offset < 15; offset += 5) {
-      tryAdd(evaluateKnifeTradeUp(db, valueSorted.slice(offset, offset + 5), knifeFinishCache));
+      tryEvalKnife(valueSorted.slice(offset, offset + 5));
     }
 
     // Float-targeted: for each transition point
     const quotas = new Map([[colName, 5]]);
     for (const target of knifeTransitionPoints) {
       const selected = selectForKnifeFloat(quotas, target);
-      if (selected) tryAdd(evaluateKnifeTradeUp(db, selected, knifeFinishCache));
+      if (selected) tryEvalKnife(selected);
     }
 
     // Lowest-float selection
     const lowestFloat = selectLowestKnifeFloat(quotas);
-    if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
+    if (lowestFloat) tryEvalKnife(lowestFloat);
 
     // Condition-pure groups — deeper windows to find combos systematic cheapest misses.
     // Random explore proved $100 trade-ups hide in non-cheapest condition groups.
@@ -181,7 +191,7 @@ export function findProfitableKnifeTradeUps(
       for (let window = 0; window < 3; window++) {
         const off = window * 5;
         if (condListings.length >= off + 5) {
-          tryAdd(evaluateKnifeTradeUp(db, condListings.slice(off, off + 5), knifeFinishCache));
+          tryEvalKnife(condListings.slice(off, off + 5));
         }
       }
     }
@@ -197,7 +207,7 @@ export function findProfitableKnifeTradeUps(
     // Try each skin individually (if enough listings)
     for (const [, skinListings] of bySkin) {
       if (skinListings.length >= 5) {
-        tryAdd(evaluateKnifeTradeUp(db, skinListings.slice(0, 5), knifeFinishCache));
+        tryEvalKnife(skinListings.slice(0, 5));
         // Also try per-condition within the skin
         const skinByCondition = new Map<string, ListingWithCollection[]>();
         for (const l of skinListings) {
@@ -208,7 +218,7 @@ export function findProfitableKnifeTradeUps(
         }
         for (const [, condSkinListings] of skinByCondition) {
           if (condSkinListings.length >= 5) {
-            tryAdd(evaluateKnifeTradeUp(db, condSkinListings.slice(0, 5), knifeFinishCache));
+            tryEvalKnife(condSkinListings.slice(0, 5));
           }
         }
       }
@@ -219,7 +229,7 @@ export function findProfitableKnifeTradeUps(
       const pooled = skinGroups.flatMap(g => g.slice(0, 3)).sort((a, b) => a.price_cents - b.price_cents);
       if (pooled.length >= 5) {
         for (let off = 0; off + 5 <= pooled.length && off < 15; off += 3) {
-          tryAdd(evaluateKnifeTradeUp(db, pooled.slice(off, off + 5), knifeFinishCache));
+          tryEvalKnife(pooled.slice(off, off + 5));
         }
       }
     }
@@ -243,53 +253,53 @@ export function findProfitableKnifeTradeUps(
         if (listingsA.length < countA || listingsB.length < countB) continue;
 
         // Baseline: cheapest combo
-        tryAdd(evaluateKnifeTradeUp(db, [
+        tryEvalKnife([
           ...listingsA.slice(0, countA),
           ...listingsB.slice(0, countB),
-        ], knifeFinishCache));
+        ]);
 
         // Offset combos
         if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
-          tryAdd(evaluateKnifeTradeUp(db, [
+          tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(5, 5 + countB),
-          ], knifeFinishCache));
+          ]);
         }
 
         // Mixed: cheap A + offset B
         if (listingsB.length >= countB + 5) {
-          tryAdd(evaluateKnifeTradeUp(db, [
+          tryEvalKnife([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(5, 5 + countB),
-          ], knifeFinishCache));
+          ]);
         }
         if (listingsA.length >= countA + 5) {
-          tryAdd(evaluateKnifeTradeUp(db, [
+          tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(0, countB),
-          ], knifeFinishCache));
+          ]);
         }
 
         // Float-targeted
         const quotas = new Map([[colA, countA], [colB, countB]]);
         for (const target of knifeTransitionPoints) {
           const selected = selectForKnifeFloat(quotas, target);
-          if (selected) tryAdd(evaluateKnifeTradeUp(db, selected, knifeFinishCache));
+          if (selected) tryEvalKnife(selected);
         }
 
         // Lowest-float
         const lowestFloat = selectLowestKnifeFloat(quotas);
-        if (lowestFloat) tryAdd(evaluateKnifeTradeUp(db, lowestFloat, knifeFinishCache));
+        if (lowestFloat) tryEvalKnife(lowestFloat);
 
         // Condition-targeted pairs: cheapest N at each condition
         for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
           const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
           const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
           if (condA.length >= countA && condB.length >= countB) {
-            tryAdd(evaluateKnifeTradeUp(db, [
+            tryEvalKnife([
               ...condA.slice(0, countA),
               ...condB.slice(0, countB),
-            ], knifeFinishCache));
+            ]);
           }
         }
 
@@ -303,12 +313,12 @@ export function findProfitableKnifeTradeUps(
           const poolA = listingsA.filter(l => floatToCondition(l.float_value) === c1);
           const poolB = listingsB.filter(l => floatToCondition(l.float_value) === c2);
           if (poolA.length >= countA && poolB.length >= countB) {
-            tryAdd(evaluateKnifeTradeUp(db, [...poolA.slice(0, countA), ...poolB.slice(0, countB)], knifeFinishCache));
+            tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)]);
           }
           const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === c2);
           const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === c1);
           if (poolAr.length >= countA && poolBr.length >= countB) {
-            tryAdd(evaluateKnifeTradeUp(db, [...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], knifeFinishCache));
+            tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)]);
           }
         }
       }
@@ -337,7 +347,7 @@ export function findProfitableKnifeTradeUps(
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length < 5) continue;
         // Just cheapest-5 pooled — no float targeting for triples (saves ~80% of triple eval time)
-        tryAdd(evaluateKnifeTradeUp(db, pooled.slice(0, 5), knifeFinishCache));
+        tryEvalKnife(pooled.slice(0, 5));
       }
     }
   }

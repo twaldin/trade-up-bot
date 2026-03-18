@@ -63,6 +63,15 @@ export function findProfitableTradeUps(
     store.add(tu);
   };
 
+  /** Compute listing-combo signature. Used to skip evaluation for known combos. */
+  const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
+
+  /** Evaluate only if this listing combo is new (not in existing signatures). */
+  const tryEval = (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
+    if (store.hasSig(sigOf(inputs))) return;
+    tryAdd(evaluateTradeUp(db, inputs, outcomes));
+  };
+
   const pastDeadline = () => options.deadlineMs !== undefined && Date.now() >= options.deadlineMs;
 
   for (const inputRarity of targetRarities) {
@@ -137,7 +146,7 @@ export function findProfitableTradeUps(
 
       // Baseline: sliding windows of cheapest
       for (let offset = 0; offset + 10 <= colListings.length && offset < 50; offset += 5) {
-        tryAdd(evaluateTradeUp(db, colListings.slice(offset, offset + 10), outcomes));
+        tryEval(colListings.slice(offset, offset + 10), outcomes);
       }
 
       // Value-sorted: lowest adjusted float first (best output condition, may cost more)
@@ -149,7 +158,7 @@ export function findProfitableTradeUps(
         }
       );
       for (let offset = 0; offset + 10 <= valueSorted.length && offset < 30; offset += 10) {
-        tryAdd(evaluateTradeUp(db, valueSorted.slice(offset, offset + 10), outcomes));
+        tryEval(valueSorted.slice(offset, offset + 10), outcomes);
       }
 
       // Float-targeted: for each transition point, select optimal listings
@@ -157,14 +166,14 @@ export function findProfitableTradeUps(
       for (const target of transitions) {
         const selected = selectForFloatTarget(byColAdj, quotas, target);
         if (selected) {
-          tryAdd(evaluateTradeUp(db, selected, outcomes));
+          tryEval(selected, outcomes);
         }
       }
 
       // Lowest-float selection (best possible output condition)
       const lowestFloat = selectLowestFloat(byColAdj, quotas);
       if (lowestFloat) {
-        tryAdd(evaluateTradeUp(db, lowestFloat, outcomes));
+        tryEval(lowestFloat, outcomes);
       }
 
       // Condition-pure groups — deeper windows catch non-cheapest profitable combos
@@ -179,7 +188,7 @@ export function findProfitableTradeUps(
         for (let window = 0; window < 3; window++) {
           const off = window * 10;
           if (condListings.length >= off + 10) {
-            tryAdd(evaluateTradeUp(db, condListings.slice(off, off + 10), outcomes));
+            tryEval(condListings.slice(off, off + 10), outcomes);
           }
         }
       }
@@ -199,7 +208,7 @@ export function findProfitableTradeUps(
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length >= 10) {
           for (let offset = 0; offset + 10 <= pooled.length && offset < 30; offset += 5) {
-            tryAdd(evaluateTradeUp(db, pooled.slice(offset, offset + 10), outcomes));
+            tryEval(pooled.slice(offset, offset + 10), outcomes);
           }
         }
       }
@@ -233,37 +242,37 @@ export function findProfitableTradeUps(
           if (listingsA.length < countA || listingsB.length < countB) continue;
 
           // Baseline: cheapest combo
-          tryAdd(evaluateTradeUp(db, [
+          tryEval([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(0, countB),
-          ], outcomes));
+          ], outcomes);
 
           // Baseline: offset combos
           if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
-            tryAdd(evaluateTradeUp(db, [
+            tryEval([
               ...listingsA.slice(5, 5 + countA),
               ...listingsB.slice(5, 5 + countB),
-            ], outcomes));
+            ], outcomes);
           }
           if (listingsA.length >= countA + 10 && listingsB.length >= countB + 10) {
-            tryAdd(evaluateTradeUp(db, [
+            tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(10, 10 + countB),
-            ], outcomes));
+            ], outcomes);
           }
 
           // Mixed: cheap A + offset B, and vice versa
           if (listingsB.length >= countB + 10) {
-            tryAdd(evaluateTradeUp(db, [
+            tryEval([
               ...listingsA.slice(0, countA),
               ...listingsB.slice(10, 10 + countB),
-            ], outcomes));
+            ], outcomes);
           }
           if (listingsA.length >= countA + 10) {
-            tryAdd(evaluateTradeUp(db, [
+            tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(0, countB),
-            ], outcomes));
+            ], outcomes);
           }
 
           // Float-targeted: for each transition, find cheapest listings within budget
@@ -271,14 +280,14 @@ export function findProfitableTradeUps(
           for (const target of transitions) {
             const selected = selectForFloatTarget(byColAdj, quotas, target);
             if (selected) {
-              tryAdd(evaluateTradeUp(db, selected, outcomes));
+              tryEval(selected, outcomes);
             }
           }
 
           // Lowest-float selection
           const lowestFloat = selectLowestFloat(byColAdj, quotas);
           if (lowestFloat) {
-            tryAdd(evaluateTradeUp(db, lowestFloat, outcomes));
+            tryEval(lowestFloat, outcomes);
           }
 
           // Condition-targeted pairs: cheapest N at each condition
@@ -286,10 +295,10 @@ export function findProfitableTradeUps(
             const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
             const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
             if (condA.length >= countA && condB.length >= countB) {
-              tryAdd(evaluateTradeUp(db, [
+              tryEval([
                 ...condA.slice(0, countA),
                 ...condB.slice(0, countB),
-              ], outcomes));
+              ], outcomes);
             }
           }
 
@@ -306,13 +315,13 @@ export function findProfitableTradeUps(
             const poolA = listingsA.filter(l => floatToCondition(l.float_value) === condA);
             const poolB = listingsB.filter(l => floatToCondition(l.float_value) === condB);
             if (poolA.length >= countA && poolB.length >= countB) {
-              tryAdd(evaluateTradeUp(db, [...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes));
+              tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes);
             }
             // Also try reversed (B cond from A, A cond from B)
             const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === condB);
             const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === condA);
             if (poolAr.length >= countA && poolBr.length >= countB) {
-              tryAdd(evaluateTradeUp(db, [...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes));
+              tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes);
             }
           }
         }
@@ -354,7 +363,7 @@ export function findProfitableTradeUps(
           // Just cheapest-10 pooled — no float targeting for triples
           const inputs = pooled.slice(0, 10);
           const usedCols = [...new Set(inputs.map((l) => l.collection_id))];
-          tryAdd(evaluateTradeUp(db, inputs, outcomesForCols(...usedCols)));
+          tryEval(inputs, outcomesForCols(...usedCols));
         }
       }
     }

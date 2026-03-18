@@ -89,4 +89,9 @@ export class TradeUpStore {
   getSignatureCount(): number {
     return this.bySignature.size;
   }
+
+  /** Check if a listing-ID combo is already known (for pre-evaluation sig-skipping). */
+  hasSig(sig: string): boolean {
+    return this.seen.has(sig);
+  }
 }

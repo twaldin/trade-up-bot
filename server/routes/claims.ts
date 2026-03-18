@@ -86,11 +86,28 @@ type VerificationStatus = "all_active" | "partial" | "stale";
 export function claimsRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Auto-expire: release claims past their expires_at
+  // Auto-expire: release claims past their expires_at and clear claimed_by on listings
   function releaseExpiredClaims() {
-    db.prepare(
-      "UPDATE trade_up_claims SET released_at = datetime('now') WHERE released_at IS NULL AND expires_at <= datetime('now')"
-    ).run();
+    const expired = db.prepare(
+      "SELECT id, trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at <= datetime('now')"
+    ).all() as { id: number; trade_up_id: number; user_id: string }[];
+
+    if (expired.length === 0) return;
+
+    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
+    const releaseClaim = db.prepare("UPDATE trade_up_claims SET released_at = datetime('now') WHERE id = ?");
+
+    db.transaction(() => {
+      for (const claim of expired) {
+        const listings = db.prepare(
+          "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+        ).all(claim.trade_up_id) as { listing_id: string }[];
+        for (const { listing_id } of listings) {
+          clearClaimed.run(listing_id, claim.user_id);
+        }
+        releaseClaim.run(claim.id);
+      }
+    })();
   }
 
   // Check if a listing still exists in the DB
@@ -200,17 +217,56 @@ export function claimsRouter(db: Database.Database): Router {
     // Verify input listings still exist in DB (fast, no API calls)
     const verification = verifyInputs(tradeUpId);
 
-    // Insert claim
+    // Load listing IDs for this trade-up
+    const listingRows = db.prepare(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+    ).all(tradeUpId) as { listing_id: string }[];
+    const listingIds = listingRows.map(r => r.listing_id).filter(id => !id.startsWith("theor"));
+
+    // Listing-level conflict check: reject if any listing is already claimed by another user
+    if (listingIds.length > 0) {
+      const placeholders = listingIds.map(() => "?").join(",");
+      const conflicts = db.prepare(
+        `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) AND claimed_by IS NOT NULL AND claimed_by != ?`
+      ).all(...listingIds, userId) as { id: string; claimed_by: string }[];
+      if (conflicts.length > 0) {
+        res.status(409).json({ error: "Some listings are already claimed by another user" });
+        return;
+      }
+    }
+
+    // Insert claim + mark listings as claimed (atomic transaction)
     const expiresAt = new Date(Date.now() + CLAIM_DURATION_MINUTES * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
-    const result = db.prepare(
-      "INSERT OR REPLACE INTO trade_up_claims (trade_up_id, user_id, claimed_at, expires_at, released_at) VALUES (?, ?, datetime('now'), ?, NULL)"
-    ).run(tradeUpId, userId, expiresAt);
+    const markClaimed = db.prepare("UPDATE listings SET claimed_by = ?, claimed_at = datetime('now') WHERE id = ?");
+
+    const claimTx = db.transaction(() => {
+      db.prepare(
+        "INSERT OR REPLACE INTO trade_up_claims (trade_up_id, user_id, claimed_at, expires_at, released_at) VALUES (?, ?, datetime('now'), ?, NULL)"
+      ).run(tradeUpId, userId, expiresAt);
+      for (const id of listingIds) markClaimed.run(userId, id);
+    });
+    claimTx();
 
     const claim = db.prepare(
-      "SELECT * FROM trade_up_claims WHERE id = ?"
-    ).get(result.lastInsertRowid) as ClaimRow;
+      "SELECT * FROM trade_up_claims WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL ORDER BY id DESC LIMIT 1"
+    ).get(tradeUpId, userId) as ClaimRow;
 
-    // Refresh Redis claims cache + invalidate trade-ups cache (claimed listings change visibility)
+    // Propagate: mark other trade-ups containing these listings as partial
+    if (listingIds.length > 0) {
+      const placeholders = listingIds.map(() => "?").join(",");
+      const affected = db.prepare(
+        `SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id IN (${placeholders}) AND trade_up_id != ?`
+      ).all(...listingIds, tradeUpId) as { trade_up_id: number }[];
+      if (affected.length > 0) {
+        const tuIds = affected.map(r => r.trade_up_id);
+        db.prepare(
+          `UPDATE trade_ups SET listing_status = 'partial', preserved_at = COALESCE(preserved_at, datetime('now'))
+           WHERE id IN (${tuIds.map(() => "?").join(",")}) AND listing_status = 'active'`
+        ).run(...tuIds);
+      }
+    }
+
+    // Refresh Redis claims cache + invalidate trade-ups cache
     refreshClaimsCache(db).catch(() => {});
     cacheInvalidatePrefix("tu:").catch(() => {});
 
@@ -243,6 +299,15 @@ export function claimsRouter(db: Database.Database): Router {
     if (result.changes === 0) {
       res.status(404).json({ error: "No active claim found for this trade-up" });
       return;
+    }
+
+    // Clear claimed_by on all listings for this trade-up
+    const listingRows = db.prepare(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+    ).all(tradeUpId) as { listing_id: string }[];
+    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
+    for (const { listing_id } of listingRows) {
+      clearClaimed.run(listing_id, userId);
     }
 
     // Refresh Redis claims cache + invalidate trade-ups cache

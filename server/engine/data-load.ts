@@ -23,6 +23,7 @@ export function getListingsForRarity(
     JOIN collections c ON sc.collection_id = c.id
     WHERE s.rarity = ? AND l.stattrak = ?
       AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
+      AND l.claimed_by IS NULL
   `;
   const params: (string | number)[] = [rarity, stattrak ? 1 : 0];
   if (maxPriceCents) {

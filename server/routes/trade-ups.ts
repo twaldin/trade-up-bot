@@ -524,6 +524,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
     const updateListingPrice = db.prepare("UPDATE listings SET price_cents = ?, created_at = ? WHERE id = ?");
     const markChecked = db.prepare("UPDATE listings SET staleness_checked_at = datetime('now') WHERE id = ?");
+    const deletedListingIds: string[] = []; // Track for cross-trade-up propagation
     const insertObservation = db.prepare(`
       INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
       VALUES (?, ?, ?, 'sale', ?)
@@ -603,6 +604,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
           });
         } else {
           deleteListing.run(input.listing_id);
+          deletedListingIds.push(input.listing_id);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -632,6 +634,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         if (!apiRes.ok) {
           // 404 or other — listing gone
           deleteListing.run(input.listing_id);
+          deletedListingIds.push(input.listing_id);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -674,6 +677,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
             : input.skin_name;
           insertObservation.run(obsName, saleFloat, salePrice, soldAt);
           deleteListing.run(input.listing_id);
+          deletedListingIds.push(input.listing_id);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -685,6 +689,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         } else {
           // delisted, refunded, etc.
           deleteListing.run(input.listing_id);
+          deletedListingIds.push(input.listing_id);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -755,6 +760,30 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
 
         updatedTradeUp = { total_cost_cents: newTotalCost, expected_value_cents: ev, profit_cents: profit, roi_percentage: roi };
       }
+    }
+
+    // Propagate sold/delisted status to ALL other trade-ups sharing deleted listings
+    if (deletedListingIds.length > 0) {
+      for (const lid of deletedListingIds) {
+        const affected = db.prepare(
+          "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = ? AND trade_up_id != ?"
+        ).all(lid, tradeUpId) as { trade_up_id: number }[];
+        if (affected.length > 0) {
+          const ids = affected.map(r => r.trade_up_id);
+          db.prepare(
+            `UPDATE trade_ups SET listing_status = 'partial', preserved_at = COALESCE(preserved_at, datetime('now'))
+             WHERE id IN (${ids.map(() => "?").join(",")}) AND listing_status = 'active'`
+          ).run(...ids);
+        }
+      }
+    }
+
+    // Track verify API calls in Redis so daemon can adjust staleness budget
+    const csfloatCallCount = results.filter(r => r.status !== "theoretical" && !r.listing_id.startsWith("dmarket:")).length;
+    if (csfloatCallCount > 0) {
+      import("../redis.js").then(({ getRedis }) => {
+        getRedis()?.incrby("verify_api_calls", csfloatCallCount).catch(() => {});
+      }).catch(() => {});
     }
 
     // Invalidate Redis caches for this trade-up and the list
