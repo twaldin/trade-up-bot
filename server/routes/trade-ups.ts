@@ -11,29 +11,40 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
   const router = Router();
   const rdb = readDb ?? db;
 
-  router.get("/api/filter-options", cachedRoute("filter_opts", 600, (_req, res) => {
-    // All trade-ups are non-theoretical (theory removed), so skip the expensive
-    // subquery filter. Direct DISTINCT on 2.35M-row trade_up_inputs is fast with index.
-    const inputSkins = rdb.prepare(
-      `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
-    ).all() as { name: string }[];
+  // Filter options: Redis-first (daemon pre-populates every cycle).
+  // The DISTINCT + GROUP BY queries on 10M+ trade_up_inputs rows block the
+  // event loop for 20-50s (better-sqlite3 is synchronous). MUST come from cache.
+  router.get("/api/filter-options", async (_req, res) => {
+    try {
+      const { cacheGet } = await import("../redis.js");
+      const cached = await cacheGet<Record<string, unknown>>("filter_opts");
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.json(cached);
+        return;
+      }
+    } catch { /* Redis unavailable */ }
 
-    const skinMap = new Map<string, { name: string; input: boolean; output: boolean }>();
-    for (const s of inputSkins) {
-      skinMap.set(s.name, { name: s.name, input: true, output: false });
+    // Redis miss: fall back to DB (will block event loop — unavoidable on cold cache)
+    try {
+      const inputSkins = rdb.prepare(
+        `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
+      ).all() as { name: string }[];
+      const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
+      const collections = rdb.prepare(
+        `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
+      ).all() as { name: string; count: number }[];
+      const result = { skins: skinMap, collections };
+
+      const { cacheSet } = await import("../redis.js");
+      await cacheSet("filter_opts", result, 600).catch(() => {});
+
+      res.setHeader("X-Cache", "MISS");
+      res.json(result);
+    } catch {
+      res.json({ skins: [], collections: [] });
     }
-    // Output skins: trade_up_outcomes table is empty (data in outcomes_json).
-    // Extracting from JSON is too expensive (260K rows). Input skins cover
-    // the primary filter use case; output skin search still works via the
-    // trade-ups query's outcomes_json LIKE filter.
-
-    const collections = rdb.prepare(
-      `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
-    ).all() as { name: string; count: number }[];
-
-    const result = { skins: [...skinMap.values()], collections };
-    res.json(result);
-  }));
+  });
 
   // Free tier: 10 diverse active trade-ups per type across price buckets.
   // Same set for ALL free users. Refreshed each daemon cycle.
