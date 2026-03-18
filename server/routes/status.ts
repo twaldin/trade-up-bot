@@ -183,17 +183,13 @@ export function statusRouter(db: Database.Database): Router {
       let currentPhase = "Unknown";
       const phasePatterns: { pattern: RegExp; label: string }[] = [
         { pattern: /Phase 1: Housekeeping/i, label: "Housekeeping" },
-        { pattern: /Phase 2: Theory/i, label: "Theory" },
         { pattern: /Phase 3: API Probe/i, label: "API Probe" },
         { pattern: /Phase 4: Data Fetch/i, label: "Data Fetch" },
-        { pattern: /Phase 5c: Staircase/i, label: "Staircase" },
-        { pattern: /Phase 5b: Classified/i, label: "Classified Calc" },
-        { pattern: /Phase 5: Knife Calc/i, label: "Knife Calc" },
-        { pattern: /Phase 2c: Staircase/i, label: "Staircase Theory" },
-        { pattern: /Phase 2b: Classified/i, label: "Classified Theory" },
-        { pattern: /Phase 6: Cooldown/i, label: "Cooldown" },
-        { pattern: /Phase 7: Re-materialization/i, label: "Re-materialize" },
-        { pattern: /Knife explore pass/i, label: "Cooldown" },
+        { pattern: /Phase 5: Time-Bounded Engine/i, label: "Engine" },
+        { pattern: /Super-batch \d+/i, label: "Engine" },
+        { pattern: /Phase 5:/i, label: "Engine" },
+        { pattern: /Engine done/i, label: "Engine" },
+        { pattern: /Starting next cycle/i, label: "Idle" },
       ];
 
       for (let i = allLines.length - 1; i >= Math.max(0, allLines.length - 100); i--) {

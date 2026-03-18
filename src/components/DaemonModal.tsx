@@ -62,10 +62,7 @@ const DAEMON_PHASES = [
   "Housekeeping",
   "API Probe",
   "Data Fetch",
-  "Knife Calc",
-  "Classified Calc",
-  "Staircase",
-  "Cooldown",
+  "Engine",
 ];
 
 function RateLimitBar({ label, pool }: { label: string; pool: RateLimitPool }) {
@@ -123,7 +120,7 @@ function RateLimitBar({ label, pool }: { label: string; pool: RateLimitPool }) {
   );
 }
 
-type CycleSortKey = "time" | "duration" | "api" | "profitable" | "top_profit" | "explore";
+type CycleSortKey = "time" | "duration" | "api" | "profitable" | "top_profit" | "batches";
 
 function cycleSortValue(c: CycleRow, key: CycleSortKey): number {
   switch (key) {
@@ -132,7 +129,7 @@ function cycleSortValue(c: CycleRow, key: CycleSortKey): number {
     case "api": return c.api_calls_used;
     case "profitable": return c.knife_profitable;
     case "top_profit": return c.top_profit_cents;
-    case "explore": return c.cooldown_new_found + c.cooldown_improved;
+    case "batches": return c.cooldown_new_found;
   }
 }
 
@@ -193,7 +190,7 @@ function CycleHistory() {
               <SortTh k="profitable">Knife</SortTh>
               <th className="px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground bg-background border-b border-border font-semibold whitespace-nowrap">Classified</th>
               <SortTh k="top_profit">Top Profit</SortTh>
-              <SortTh k="explore">Explore</SortTh>
+              <SortTh k="batches">Batches</SortTh>
             </tr>
           </thead>
           <tbody>
@@ -214,9 +211,7 @@ function CycleHistory() {
                   {c.top_profit_cents > 0 ? `$${(c.top_profit_cents / 100).toFixed(0)}` : "-"}
                 </td>
                 <td className="px-2 py-1 border-b border-border/30 text-muted-foreground">
-                  {(c.cooldown_new_found > 0 || c.cooldown_improved > 0)
-                    ? `+${c.cooldown_new_found}/${c.cooldown_improved}`
-                    : "-"}
+                  {c.cooldown_new_found > 0 ? c.cooldown_new_found : "-"}
                 </td>
               </tr>
             ))}
