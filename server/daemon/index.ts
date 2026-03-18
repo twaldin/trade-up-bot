@@ -410,7 +410,7 @@ export async function main() {
       {
         const expired = db.prepare(`
           SELECT id, trade_up_id, user_id FROM trade_up_claims
-          WHERE released_at IS NULL AND expires_at <= datetime('now')
+          WHERE released_at IS NULL AND confirmed_at IS NULL AND expires_at <= datetime('now')
         `).all() as { id: number; trade_up_id: number; user_id: string }[];
         if (expired.length > 0) {
           const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
@@ -426,6 +426,27 @@ export async function main() {
           })();
           console.log(`    Expired claims: ${expired.length} released`);
           // Expired listings will be checked by the staleness batch below
+        }
+      }
+
+      // Process confirmed purchases: delete listings queued by confirm endpoint
+      {
+        const { getRedis: getR } = await import("../redis.js");
+        const redis = getR();
+        if (redis) {
+          const confirmedIds: string[] = [];
+          let id: string | null;
+          while ((id = await redis.rpop("confirmed_listings")) !== null) {
+            confirmedIds.push(id);
+          }
+          if (confirmedIds.length > 0) {
+            const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
+            db.transaction(() => {
+              for (const lid of confirmedIds) deleteListing.run(lid);
+            })();
+            // refreshListingStatuses in next housekeeping will cascade partial status
+            console.log(`    Confirmed purchases: deleted ${confirmedIds.length} listings`);
+          }
         }
       }
 

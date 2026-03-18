@@ -266,6 +266,12 @@ function createTables(db: Database.Database) {
     db.exec("ALTER TABLE listings ADD COLUMN claimed_at TEXT");
   }
 
+  // Claim confirmed_at column (user reports they bought the listings)
+  const claimCols = db.pragma("table_info(trade_up_claims)") as { name: string }[];
+  if (!claimCols.some((c) => c.name === "confirmed_at")) {
+    db.exec("ALTER TABLE trade_up_claims ADD COLUMN confirmed_at TEXT");
+  }
+
   // Add trade-up type column (classified_covert vs covert_knife)
   if (!tuCols.some((c) => c.name === "type")) {
     db.exec("ALTER TABLE trade_ups ADD COLUMN type TEXT NOT NULL DEFAULT 'classified_covert'");
