@@ -441,12 +441,8 @@ export async function phase4p5VerifyInputs(
     return;
   }
 
-  const { rows: [countRow] } = await pool.query(`
-    SELECT COUNT(DISTINCT ti.listing_id) as cnt
-    FROM trade_up_inputs ti
-    JOIN trade_ups tu ON tu.id = ti.trade_up_id
-    WHERE tu.is_theoretical = 0 AND tu.profit_cents > 0
-  `);
+  // Use listing count from listings table as proxy (fast, avoids 12M row scan on trade_up_inputs)
+  const { rows: [countRow] } = await pool.query("SELECT COUNT(*) as cnt FROM listings");
   const profitableInputCount = Number(countRow.cnt);
 
   if (profitableInputCount === 0) return;
