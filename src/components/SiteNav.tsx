@@ -80,8 +80,8 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity shrink-0">
+      <div className="mx-auto grid h-14 max-w-6xl grid-cols-[1fr_auto_1fr] items-center px-6">
+        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity shrink-0 justify-self-start">
           <img src="/favicon.svg" alt="" className="w-5 h-5" />
           <span className="hidden sm:inline">TradeUpBot</span>
         </Link>
@@ -102,7 +102,7 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
             ))
           )}
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-end">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-self-end">
           {user ? (
             <>
               <Link
