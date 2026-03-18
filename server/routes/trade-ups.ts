@@ -507,14 +507,16 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       // Batch in chunks of 500 to avoid param limit issues
       for (let i = 0; i < allIds.length; i += 500) {
         const chunk = allIds.slice(i, i + 500);
+        const userParam = chunk.length + 1;
         const placeholders = chunk.map((_: any, j: number) => `$${j + 1}`).join(",");
         const { rows: missingRows } = await pool.query(`
           SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
           LEFT JOIN listings l ON tui.listing_id = l.id
           WHERE tui.trade_up_id IN (${placeholders})
-            AND l.id IS NULL AND tui.listing_id NOT LIKE 'theor%'
+            AND (l.id IS NULL OR (l.claimed_by IS NOT NULL AND l.claimed_by != $${userParam}))
+            AND tui.listing_id NOT LIKE 'theor%'
           GROUP BY tui.trade_up_id
-        `, chunk);
+        `, [...chunk, userId]);
         for (const r of missingRows) {
           missingCountByTuId.set(r.trade_up_id, parseInt(r.cnt));
         }
@@ -533,6 +535,20 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       } else if (missing > 0 && row.listing_status === 'stale' && missing < totalInputs) {
         statusFixes.set(row.id, 'partial');
       }
+    }
+
+    // Persist auto-corrected statuses to DB (fire-and-forget, non-blocking)
+    if (statusFixes.size > 0) {
+      (async () => {
+        for (const [tuId, newStatus] of statusFixes) {
+          await pool.query(
+            `UPDATE trade_ups SET listing_status = $1,
+              preserved_at = CASE WHEN $1 = 'active' THEN NULL ELSE COALESCE(preserved_at, NOW()) END
+             WHERE id = $2 AND listing_status IS DISTINCT FROM $1`,
+            [newStatus, tuId]
+          );
+        }
+      })().catch(() => {});
     }
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
@@ -1055,26 +1071,38 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // Load inputs on-demand (not included in list response to save bandwidth)
-  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
+  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => {
+    const uid = (req.user as any)?.steam_id || "anon";
+    return "tu_inputs:" + req.params.id + ":" + uid;
+  }, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+    const currentUserId = (req.user as User | undefined)?.steam_id || "anonymous";
     const { rows: inputs } = await pool.query("SELECT * FROM trade_up_inputs WHERE trade_up_id = $1", [id]);
     if (inputs.length === 0) {
       // Check if trade-up exists
       const { rows: [exists] } = await pool.query("SELECT id FROM trade_ups WHERE id = $1", [id]);
       if (!exists) { res.status(404).json({ error: "Not found" }); return; }
     }
-    // Check for missing listings
+    // Check for missing/claimed listings (claimed by others treated as unavailable)
     const missingIds = new Set<string>();
+    const claimedIds = new Set<string>();
     if (inputs.length > 0) {
-      const { rows: missing } = await pool.query(
-        `SELECT tui.listing_id FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = $1 AND l.id IS NULL`,
-        [id]
+      const { rows: unavailable } = await pool.query(
+        `SELECT tui.listing_id, l.id as lid, l.claimed_by FROM trade_up_inputs tui
+         LEFT JOIN listings l ON tui.listing_id = l.id
+         WHERE tui.trade_up_id = $1
+           AND (l.id IS NULL OR (l.claimed_by IS NOT NULL AND l.claimed_by != $2))`,
+        [id, currentUserId]
       );
-      for (const m of missing) missingIds.add(m.listing_id);
+      for (const r of unavailable) {
+        if (r.lid === null) missingIds.add(r.listing_id);
+        else claimedIds.add(r.listing_id);
+      }
     }
     for (const inp of inputs) {
       if (missingIds.has(inp.listing_id)) (inp as any).missing = true;
+      if (claimedIds.has(inp.listing_id)) (inp as any).claimed_by_other = true;
     }
     res.json({ inputs });
   }));

@@ -395,8 +395,10 @@ export function claimsRouter(pool: pg.Pool): Router {
     res.json({ released: true, trade_up_id: tradeUpId });
   });
 
-  // POST /api/trade-ups/:id/confirm - confirm purchase (listings bought)
-  // Queues listing deletion for daemon to process (avoids 50K+ cascade blocking API)
+  // POST /api/trade-ups/:id/confirm - confirm purchase (per-listing)
+  // Body: { listing_ids: string[] } — which listings user actually bought
+  // Confirmed listings are deleted (triggers auto-correct cascade on next read)
+  // Unchecked listings are released (claimed_by cleared)
   router.post("/api/trade-ups/:id/confirm", requireTier("pro"), async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
@@ -417,40 +419,73 @@ export function claimsRouter(pool: pg.Pool): Router {
       return;
     }
 
-    // Mark claim as confirmed + released (purchase complete, claim is done)
-    await pool.query(
-      "UPDATE trade_up_claims SET confirmed_at = NOW(), released_at = NOW() WHERE id = $1",
-      [claim.id]
-    );
-
-    // Delete listings immediately (5-10 rows, <1ms, no lock contention)
-    // Cascade (marking affected trade-ups as partial) happens in next housekeeping
-    const { rows: listingRows3 } = await pool.query(
+    // Load all real listing IDs for this trade-up
+    const { rows: inputRows } = await pool.query(
       "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
       [tradeUpId]
     );
-    const listingIds = listingRows3.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+    const allListingIds = inputRows.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+    const validIds = new Set(allListingIds);
 
-    for (const id of listingIds) {
-      await pool.query("DELETE FROM listings WHERE id = $1", [id]);
+    // Per-listing confirm: listing_ids = which ones user bought
+    // Backward compat: if listing_ids missing/empty, confirm all
+    const requestedIds = (req.body?.listing_ids as string[] | undefined);
+    const confirmed = requestedIds?.length
+      ? requestedIds.filter(id => validIds.has(id))
+      : allListingIds;
+    const confirmedSet = new Set(confirmed);
+    const released = allListingIds.filter(id => !confirmedSet.has(id));
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Delete confirmed listings (auto-correct treats as missing on next read)
+      for (const id of confirmed) {
+        await client.query("DELETE FROM listings WHERE id = $1", [id]);
+      }
+
+      // Release unchecked listings (clear claimed_by)
+      for (const id of released) {
+        await client.query(
+          "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
+          [id, userId]
+        );
+      }
+
+      // Mark claim as confirmed + released
+      await client.query(
+        "UPDATE trade_up_claims SET confirmed_at = NOW(), released_at = NOW() WHERE id = $1",
+        [claim.id]
+      );
+
+      // If all listings confirmed, mark trade-up stale immediately
+      if (confirmed.length === allListingIds.length) {
+        await client.query(
+          "UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW()) WHERE id = $1",
+          [tradeUpId]
+        );
+      }
+      // Partial confirm: auto-correct handles status on next read
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    console.log(`Confirm: deleted ${listingIds.length} listings immediately (trade-up ${tradeUpId}, user ${userId})`);
 
-    // Mark the trade-up as stale (listings are bought, trade-up is done)
-    await pool.query(
-      "UPDATE trade_ups SET listing_status = 'stale', preserved_at = NOW() WHERE id = $1",
-      [tradeUpId]
-    );
+    console.log(`Confirm: ${confirmed.length} bought, ${released.length} released (trade-up ${tradeUpId}, user ${userId})`);
 
-    // Refresh caches
     await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
 
     res.json({
       confirmed: true,
       trade_up_id: tradeUpId,
-      listings_queued: listingIds.length,
-      message: "Purchase confirmed! Listings will be removed from the system within 1-2 minutes.",
+      listings_confirmed: confirmed.length,
+      listings_released: released.length,
     });
   });
 

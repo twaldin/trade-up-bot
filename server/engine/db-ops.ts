@@ -275,6 +275,9 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
           if (tu.profit_cents > 0) {
             streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
           }
+          // listing_status = 'active' is safe here: workers filter claimed_by IS NULL when loading
+          // listings, so if a listing is claimed this signature won't be re-discovered. If a race
+          // condition causes a claimed listing to sneak in, API auto-correct fixes it on next read.
           await client.query(`
             UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3, roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
               peak_profit_cents = GREATEST(peak_profit_cents, $8), listing_status = 'active', preserved_at = NULL, outcomes_json = $9,

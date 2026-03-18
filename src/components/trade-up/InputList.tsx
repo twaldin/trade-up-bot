@@ -28,6 +28,9 @@ interface InputListProps {
   showListingLinks?: boolean;
   showVerify?: boolean;
   verifyLimit?: { remaining: number; total: number; resetIn: number | null } | null;
+  confirmMode?: boolean;
+  confirmSelected?: Set<string>;
+  onConfirmToggle?: (listingId: string) => void;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -73,22 +76,37 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
   );
 }
 
-function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLinks = true }: {
+function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLinks = true, confirmMode = false, confirmChecked = false, onConfirmToggle }: {
   input: TradeUpInput;
   verifyResult?: VerifyResult;
   onNavigateSkin?: (skinName: string) => void;
   showListingLinks?: boolean;
+  confirmMode?: boolean;
+  confirmChecked?: boolean;
+  onConfirmToggle?: () => void;
 }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
   const isSoldOrDelisted = inputStatus?.status === "sold" || inputStatus?.status === "delisted";
   const isMissing = (input as any).missing === true;
+  const isClaimedByOther = (input as any).claimed_by_other === true;
 
   return (
-    <div className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
-      isMissing ? "opacity-50 border-red-800/50 bg-red-950/20" :
-      isSoldOrDelisted ? "opacity-60 border-red-800/50 bg-red-950/20" : "border-border/50 bg-muted/50"
-    }`}>
+    <div
+      className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
+        confirmMode ? (confirmChecked ? "border-green-600/50 bg-green-950/20" : "opacity-50 border-border/30 bg-muted/30") :
+        isMissing || isClaimedByOther ? "opacity-50 border-red-800/50 bg-red-950/20" :
+        isSoldOrDelisted ? "opacity-60 border-red-800/50 bg-red-950/20" : "border-border/50 bg-muted/50"
+      } ${confirmMode && !isTheory ? "cursor-pointer" : ""}`}
+      onClick={confirmMode && !isTheory && onConfirmToggle ? (e) => { e.stopPropagation(); onConfirmToggle(); } : undefined}
+    >
+      {/* Confirm mode checkbox */}
+      {confirmMode && !isTheory && (
+        <div className="flex items-center gap-1.5 mb-1">
+          <input type="checkbox" checked={confirmChecked} onChange={onConfirmToggle} onClick={e => e.stopPropagation()} className="accent-green-500 cursor-pointer" />
+          <span className="text-[0.65rem] text-muted-foreground">{confirmChecked ? "Purchased" : "Not purchased"}</span>
+        </div>
+      )}
       {/* Row 1: Skin name + verify status */}
       <div className="flex items-start justify-between gap-1 mb-0.5">
         {showListingLinks && input.listing_id !== "hidden" ? (
@@ -112,6 +130,9 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
         <div className="flex items-center gap-0.5 shrink-0">
           {isMissing && !inputStatus && (
             <Badge variant="outline" className="text-[0.55rem] bg-red-950 text-red-400 border-red-800 font-semibold py-0 h-3.5" title="Listing no longer available">MISSING</Badge>
+          )}
+          {isClaimedByOther && !isMissing && (
+            <Badge variant="outline" className="text-[0.55rem] bg-yellow-950 text-amber-400 border-yellow-800 font-semibold py-0 h-3.5" title="Claimed by another user">CLAIMED</Badge>
           )}
           {inputStatus && inputStatus.status === "active" && <span className="text-green-500 font-bold text-[0.7rem]" title="Still listed">&#10003;</span>}
           {inputStatus && inputStatus.status === "sold" && (
@@ -180,7 +201,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -243,6 +264,9 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
             verifyResult={verifyResult}
             onNavigateSkin={onNavigateSkin}
             showListingLinks={showListingLinks}
+            confirmMode={confirmMode}
+            confirmChecked={confirmSelected?.has(input.listing_id) ?? false}
+            onConfirmToggle={onConfirmToggle ? () => onConfirmToggle(input.listing_id) : undefined}
           />
         ))}
       </div>
