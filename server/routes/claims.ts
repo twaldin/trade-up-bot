@@ -159,7 +159,7 @@ export function claimsRouter(db: Database.Database): Router {
   }
 
   // POST /api/trade-ups/:id/claim - claim a trade-up (Pro only)
-  router.post("/api/trade-ups/:id/claim", requireTier("pro"), (req, res) => {
+  router.post("/api/trade-ups/:id/claim", requireTier("pro"), async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
@@ -269,9 +269,10 @@ export function claimsRouter(db: Database.Database): Router {
       }
     }
 
-    // Refresh Redis claims cache + invalidate trade-ups cache
-    refreshClaimsCache(db).catch(() => {});
-    cacheInvalidatePrefix("tu:").catch(() => {});
+    // Refresh Redis claims cache + invalidate trade-ups cache (AWAIT before responding
+    // so the next request sees fresh data — fire-and-forget caused claims to not show up)
+    await refreshClaimsCache(db);
+    await cacheInvalidatePrefix("tu:");
 
     res.json({
       claim: {
@@ -286,7 +287,7 @@ export function claimsRouter(db: Database.Database): Router {
   });
 
   // DELETE /api/trade-ups/:id/claim - release a claim early
-  router.delete("/api/trade-ups/:id/claim", (req, res) => {
+  router.delete("/api/trade-ups/:id/claim", async (req, res) => {
     const tradeUpId = parseInt(req.params.id);
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
@@ -313,9 +314,9 @@ export function claimsRouter(db: Database.Database): Router {
       clearClaimed.run(listing_id, userId);
     }
 
-    // Refresh Redis claims cache + invalidate trade-ups cache
-    refreshClaimsCache(db).catch(() => {});
-    cacheInvalidatePrefix("tu:").catch(() => {});
+    // Await Redis updates before responding
+    await refreshClaimsCache(db);
+    await cacheInvalidatePrefix("tu:");
 
     res.json({ released: true, trade_up_id: tradeUpId });
   });
