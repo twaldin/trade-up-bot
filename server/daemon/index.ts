@@ -205,6 +205,15 @@ export async function main() {
     db.prepare("DELETE FROM trade_up_inputs").run();
     const purged = db.prepare("DELETE FROM trade_ups").run();
     console.log(`  --fresh: purged ${purged.changes} trade-ups for clean start`);
+    // Flush Redis cache — old trade-up data is invalid
+    try {
+      const { getRedis } = await import("../redis.js");
+      const redis = getRedis();
+      if (redis) {
+        await redis.flushdb();
+        console.log(`  --fresh: Redis cache flushed`);
+      }
+    } catch { /* Redis not available */ }
   } else {
     const existing = db.prepare("SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0").get() as { cnt: number; profitable: number };
     console.log(`  Resuming with ${existing.cnt} existing trade-ups (${existing.profitable} profitable)`);
@@ -317,15 +326,13 @@ export async function main() {
 
         const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
 
-        // Dynamic worker time: fraction of remaining budget.
-        // First super-batch on cycle 1 needs more time (structured discovery from scratch).
-        // Later super-batches: structured is instant, so MIN_WORKER_TIME suffices.
-        const remainingMs = engineEnd - Date.now();
-        const roundsRemaining = WORKER_ROUNDS.length - roundIdx;
-        const workerTimeLimit = Math.min(
-          MAX_WORKER_TIME,
-          Math.max(MIN_WORKER_TIME, Math.floor(remainingMs / (roundsRemaining * 2 + 2)))
-        );
+        // Dynamic worker time: first round of first super-batch gets more time
+        // for full structured discovery (no existing sigs on fresh start).
+        // All other rounds use minimum — structured is instant once sigs exist.
+        const isFirstRound = superBatchCount === 1 && roundIdx === 0;
+        const workerTimeLimit = isFirstRound
+          ? Math.min(MAX_WORKER_TIME, Math.floor((engineEnd - Date.now()) / 4))
+          : MIN_WORKER_TIME;
 
         setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
 
