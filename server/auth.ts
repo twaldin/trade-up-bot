@@ -33,10 +33,10 @@ class SqliteSessionStore extends session.Store {
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
     try {
-      // Use read-only connection — never blocked by daemon writes
-      const row = this.readDb.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
+      // Must use write DB — sessions are written here and may not be in the read snapshot yet
+      const row = this.db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
       cb(null, row ? JSON.parse(row.sess) : null);
-    } catch (e) { cb(e); }
+    } catch { cb(null, null); } // Return null on lock error — better than hanging
   }
   set(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
     try {
