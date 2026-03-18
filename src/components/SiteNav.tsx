@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 const NAV_LINKS = [
@@ -8,16 +8,26 @@ const NAV_LINKS = [
   { to: "/blog", label: "Blog" },
 ];
 
+const tierColors: Record<string, string> = {
+  free: "text-muted-foreground",
+  basic: "text-blue-400",
+  pro: "text-green-500",
+  admin: "text-red-400",
+};
+
 interface NavUser {
   steam_id: string;
   display_name: string;
   avatar_url: string;
   tier: string;
+  is_admin?: boolean;
 }
 
 export function SiteNav() {
   const location = useLocation();
   const [user, setUser] = useState<NavUser | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -25,6 +35,16 @@ export function SiteNav() {
       .then(data => { if (data?.steam_id) setUser(data); })
       .catch(() => {});
   }, []);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
@@ -53,9 +73,58 @@ export function SiteNav() {
               >
                 Dashboard
               </Link>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
-                <span className="hidden md:inline">{user.display_name}</span>
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer rounded-md px-2 py-1.5 hover:bg-muted"
+                >
+                  {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
+                  <span className="hidden md:inline">{user.display_name}</span>
+                  <span className={`hidden md:inline ${tierColors[user.tier] || "text-muted-foreground"}`}>
+                    ({user.tier})
+                  </span>
+                  <span className="text-muted-foreground/50">&#9662;</span>
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-xl z-50 py-1">
+                    <div className="px-3 py-2 border-b border-border">
+                      <div className="text-sm font-medium">{user.display_name}</div>
+                      <div className={`text-xs ${tierColors[user.tier]}`}>
+                        {user.tier.charAt(0).toUpperCase() + user.tier.slice(1)} Plan
+                      </div>
+                    </div>
+                    {user.tier !== "free" && (
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+                        onClick={async () => {
+                          const res = await fetch("/api/billing-portal", { method: "POST", credentials: "include" });
+                          const data = await res.json();
+                          if (data.url) window.location.href = data.url;
+                        }}
+                      >
+                        Manage Subscription
+                      </button>
+                    )}
+                    {user.tier === "free" && (
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer"
+                        onClick={async () => {
+                          const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
+                          const data = await res.json();
+                          if (data.url) window.location.href = data.url;
+                        }}
+                      >
+                        Upgrade to Basic — $5/mo
+                      </button>
+                    )}
+                    <a
+                      href="/auth/logout"
+                      className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-red-400 cursor-pointer"
+                    >
+                      Sign Out
+                    </a>
+                  </div>
+                )}
               </div>
             </>
           ) : (
