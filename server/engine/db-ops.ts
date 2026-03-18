@@ -312,15 +312,9 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
   }
   setSyncMeta(db, "last_calculation", new Date().toISOString());
 
-  // Trim excess: keep top 50K by composite score (profit + chance-to-profit bonus).
-  // Merge-save accumulates forever — classified hit 400K+, knife 220K+. Purge the rest.
-  // Lower caps — sig-skipping means fewer new trade-ups per cycle, so accumulation is slower.
-  // 20K per type saves memory during merge-save on 2.8GB DB.
-  const typeCaps: Record<string, number> = {
-    covert_knife: 20000,
-    classified_covert: 20000,
-  };
-  trimExcessTradeUps(db, type, typeCaps[type] ?? 15000);
+  // No per-type caps — keep all trade-ups. Global 1M cap applied separately.
+  // Natural staleness (listings sell → refreshListingStatuses → purgeExpiredPreserved)
+  // handles cleanup. We want to show as many trade-ups as possible to users.
 }
 
 /**
@@ -361,6 +355,44 @@ function trimExcessTradeUps(db: Database.Database, type: string, maxKeep: number
   }
 }
 
+
+/**
+ * Global trade-up cap: trim the worst trade-ups across ALL types when total exceeds maxTotal.
+ * Deletes by worst ROI (most negative first). Keeps profitable + high-chance ones.
+ */
+export function trimGlobalExcess(db: Database.Database, maxTotal: number = 1_000_000): number {
+  const count = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM trade_ups WHERE is_theoretical = 0"
+  ).get() as { cnt: number }).cnt;
+
+  if (count <= maxTotal) return 0;
+
+  const toDelete = count - maxTotal;
+  // Delete worst by ROI across all types
+  db.prepare(`
+    DELETE FROM trade_up_inputs WHERE trade_up_id IN (
+      SELECT id FROM trade_ups
+      WHERE is_theoretical = 0
+      ORDER BY roi_percentage ASC
+      LIMIT ?
+    )
+  `).run(toDelete);
+
+  const deleted = db.prepare(`
+    DELETE FROM trade_ups WHERE is_theoretical = 0
+      AND id NOT IN (
+        SELECT id FROM trade_ups
+        WHERE is_theoretical = 0
+        ORDER BY roi_percentage DESC
+        LIMIT ?
+      )
+  `).run(maxTotal);
+
+  if (deleted.changes > 0) {
+    console.log(`  Global trim: removed ${deleted.changes} worst-ROI trade-ups (cap ${maxTotal.toLocaleString()})`);
+  }
+  return deleted.changes;
+}
 
 // Replace missing inputs with alternative listings from same skin/collection.
 export function reviveStaleTradeUps(
