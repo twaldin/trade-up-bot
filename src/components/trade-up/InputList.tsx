@@ -46,10 +46,10 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
         </a>
         {onNavigateSkin && (
           <button
-            className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.6rem] cursor-pointer px-[3px] py-0 shrink-0 leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
+            className="text-muted-foreground/50 text-[0.6rem] cursor-pointer shrink-0 hover:text-blue-400 transition-colors"
             title={`View ${input.skin_name} data`}
             onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
-          >&#x1F4CA;</button>
+          >View data</button>
         )}
       </div>
       {/* Row 2: Source + condition + float */}
@@ -124,7 +124,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
               className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.6rem] cursor-pointer px-[3px] py-0 leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
               title={`View ${input.skin_name} data`}
               onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
-            >&#x1F4CA;</button>
+            >View data</button>
           )}
         </div>
       </div>

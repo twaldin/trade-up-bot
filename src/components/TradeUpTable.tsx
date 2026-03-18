@@ -403,10 +403,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         </a>
                         {onNavigateSkin && (
                           <button
-                            className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.65rem] cursor-pointer px-[3px] py-0 ml-[3px] align-middle leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
-                            title={`View ${item.name} data`}
+                            className="text-muted-foreground/50 text-[0.6rem] cursor-pointer ml-1 align-middle hover:text-blue-400 transition-colors"
                             onClick={(e) => { e.stopPropagation(); onNavigateSkin(item.name); }}
-                          >&#x1F4CA;</button>
+                          >View data</button>
                         )}
                       </span>
                     ))}
