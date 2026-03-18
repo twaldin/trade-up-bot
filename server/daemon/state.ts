@@ -25,12 +25,12 @@ const LISTING_SAFETY_BUFFER = 15;
 const SALE_SAFETY_BUFFER = 30;
 const INDIVIDUAL_SAFETY_BUFFER = 500; // 50K pool, keep 500 as margin
 
-/** Target total cycle duration — cooldown fills the gap between work phases and this target.
- *  Listing pool (200/~30min) means ~1.5 cycles per reset at 20-min targets → ~130 calls/cycle.
- *  When rate-limited, idle cooldown stretches to conserve individual pool. */
-export const TARGET_CYCLE_MS = 20 * 60 * 1000;    // 20 min — 7 worker tiers + exploration on 3 vCPU
+/** Target total cycle duration — at 1M trade-ups, Phase 4b recalc takes ~10 min.
+ *  30 min syncs with Basic tier delay (users see "one cycle ago" data).
+ *  Listing pool (200/~30min) means ~1 cycle per reset → ~185 calls/cycle. */
+export const TARGET_CYCLE_MS = 30 * 60 * 1000;    // 30 min — matches Basic tier delay
 export const MIN_COOLDOWN_MS = 30 * 1000;          // 30s minimum
-export const MAX_COOLDOWN_MS = 20 * 60 * 1000;     // 20 min cap
+export const MAX_COOLDOWN_MS = 30 * 60 * 1000;     // 30 min cap
 export const IDLE_COOLDOWN_MS = 15 * 60 * 1000;    // 15 min when no API budget at all
 
 /** Estimated cycle for budget pacing. 15 min = ~100 listing calls, ~14 sale calls, ~1400 individual. */
