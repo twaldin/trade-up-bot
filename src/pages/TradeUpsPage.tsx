@@ -26,15 +26,9 @@ function UpgradeBanner({ message, plan }: { message: string; plan: "basic" | "pr
   return (
     <div className="flex items-center justify-between px-4 py-3 my-2 bg-yellow-950/30 border border-yellow-500/30 rounded-md text-sm text-yellow-200">
       <span>{message}</span>
-      <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-4" onClick={async () => {
-        const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan }) });
-        if (res.status === 401) { window.location.href = "/auth/steam"; return; }
-        const data = await res.json();
-        if (data.url) window.location.href = data.url;
-        else if (data.error) alert(data.error);
-      }}>
-        Upgrade to {plan === "pro" ? "Pro" : "Basic"} →
-      </button>
+      <a href="/pricing" className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-4">
+        View Plans →
+      </a>
     </div>
   );
 }
