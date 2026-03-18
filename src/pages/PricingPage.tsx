@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
 const IconCheck = () => (
@@ -56,19 +56,7 @@ const Btn = ({ children, variant = 'primary', className = '', onClick }: {
 export function PricingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      {/* Nav */}
-      <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <Link to="/" className="font-bold tracking-tight hover:opacity-80 transition-opacity">
-            TradeUpBot
-          </Link>
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <Link to="/features" className="hover:text-foreground transition-colors">Features</Link>
-            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-            <Link to="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
-          </div>
-        </div>
-      </nav>
+      <SiteNav />
 
       <main className="pt-24 pb-16">
         <div className="mx-auto max-w-4xl px-6">
@@ -246,6 +234,32 @@ export function PricingPage() {
                 after claiming it and before purchasing inputs.
               </p>
             </PricingFaqItem>
+          </div>
+
+          {/* See it in action */}
+          <div className="mt-20 pt-10 border-t border-border">
+            <h2 className="text-xl font-bold mb-2 text-center">See it in action</h2>
+            <p className="text-muted-foreground text-center mb-10 text-sm">
+              Product screenshots from the TradeUpBot dashboard.
+            </p>
+            <div className="space-y-8">
+              <div>
+                <img src="/tradeuptable.png" alt="Trade-up table" className="rounded-lg border border-border shadow-lg w-full" />
+                <p className="text-xs text-muted-foreground text-center mt-3">Trade-up table with profit, EV, chance to profit, and direct listing links</p>
+              </div>
+              <div>
+                <img src="/expanded.png" alt="Expanded trade-up with outcomes" className="rounded-lg border border-border shadow-lg w-full" />
+                <p className="text-xs text-muted-foreground text-center mt-3">Expanded trade-up showing every possible outcome with probabilities and values</p>
+              </div>
+              <div>
+                <img src="/dataviewer.png" alt="Price data viewer" className="rounded-lg border border-border shadow-lg w-full" />
+                <p className="text-xs text-muted-foreground text-center mt-3">Price data viewer with float vs price scatter chart across all marketplaces</p>
+              </div>
+              <div>
+                <img src="/collections.png" alt="Collection browser" className="rounded-lg border border-border shadow-lg w-full" />
+                <p className="text-xs text-muted-foreground text-center mt-3">Collection browser with knife/glove pool info, listing counts, and profitability filters</p>
+              </div>
+            </div>
           </div>
         </div>
       </main>

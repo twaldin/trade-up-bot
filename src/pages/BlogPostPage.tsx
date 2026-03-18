@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { getPostBySlug, blogPosts } from "../data/blog-posts.js";
+import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
 export function BlogPostPage() {
@@ -23,20 +24,7 @@ export function BlogPostPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      {/* Nav */}
-      <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <Link to="/" className="font-bold tracking-tight hover:opacity-80 transition-opacity">
-            TradeUpBot
-          </Link>
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-            <Link to="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
-            <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-            <Link to="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
-          </div>
-        </div>
-      </nav>
+      <SiteNav />
 
       <main className="pt-24 pb-16">
         <div className="mx-auto max-w-3xl px-6">
