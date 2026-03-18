@@ -140,6 +140,27 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFu
   res.status(500).json({ error: "Internal server error" });
 });
 
+// Pre-warm SQLite page cache BEFORE accepting connections.
+// Cold-cache aggregate queries on a 2.8GB DB take 20-30s — run them at
+// startup so no user request ever hits a cold cache.
+console.log("Warming up page cache...");
+const warmupStart = Date.now();
+try {
+  const rdb = getReadDb();
+  // Touch the key tables/indexes that API routes query
+  rdb.prepare("SELECT COUNT(*) FROM trade_ups").get();
+  rdb.prepare("SELECT COUNT(*) FROM listings").get();
+  rdb.prepare("SELECT COUNT(*) FROM trade_up_inputs LIMIT 1").get();
+  rdb.prepare("SELECT COUNT(*) FROM price_observations").get();
+  rdb.prepare("SELECT COUNT(*) FROM sale_history").get();
+  rdb.prepare("SELECT COUNT(*) FROM price_data").get();
+  rdb.prepare("SELECT COUNT(*) FROM daemon_cycle_stats").get();
+  rdb.prepare("SELECT COUNT(*) FROM skins").get();
+  console.log(`Page cache warm (${((Date.now() - warmupStart) / 1000).toFixed(1)}s)`);
+} catch (e) {
+  console.error("Warmup failed:", (e as Error).message);
+}
+
 app.listen(PORT, () => {
   console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
 });
