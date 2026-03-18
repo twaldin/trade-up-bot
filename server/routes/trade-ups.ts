@@ -135,7 +135,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
     return "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free");
-  }, 120, async (req, res) => {
+  }, 1800, async (req, res) => { // 30 min TTL — matches cycle time, daemon invalidates after each cycle
     const {
       sort = "profit",
       order = "desc",
