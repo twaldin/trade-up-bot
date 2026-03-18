@@ -4,7 +4,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import Stripe from "stripe";
 import pg from "pg";
-import { requireAuth, type User } from "../auth.js";
+import { requireAuth, invalidateAllUserCache, type User } from "../auth.js";
 
 // Read at request time, not module load (env may not be loaded yet)
 function getPlan(plan: string): { priceId: string; name: string } | null {
@@ -121,6 +121,8 @@ export function stripeRouter(pool: pg.Pool): Router {
         }
 
         await pool.query("UPDATE users SET tier = $1 WHERE stripe_customer_id = $2", [tier, customerId]);
+        // Invalidate user cache so tier change is immediate (no 60s stale window)
+        invalidateAllUserCache();
         console.log(`Stripe: customer ${customerId} -> ${tier}`);
         break;
       }
@@ -129,6 +131,7 @@ export function stripeRouter(pool: pg.Pool): Router {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
         await pool.query("UPDATE users SET tier = 'free' WHERE stripe_customer_id = $1", [customerId]);
+        invalidateAllUserCache();
         console.log(`Stripe: customer ${customerId} -> free (cancelled)`);
         break;
       }
