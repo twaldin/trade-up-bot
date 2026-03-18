@@ -113,10 +113,17 @@ export interface TradeUpInput {
   source: string;
 }
 
+export interface InputSummary {
+  skins: { name: string; count: number; condition: string }[];
+  collections: string[];
+  input_count: number;
+}
+
 export interface TradeUp {
   id: number;
   type?: string; // "classified_covert" | "covert_knife" | "staircase" | "classified_covert_fn"
   inputs: TradeUpInput[];
+  input_summary?: InputSummary; // compact summary for list view (inputs may be empty)
   outcomes: TradeUpOutcome[];
   total_cost_cents: number;
   expected_value_cents: number;

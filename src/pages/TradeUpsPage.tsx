@@ -230,22 +230,22 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       )}
 
-      {/* Results summary + active filter chips */}
+      {/* Results summary + active filter chips — always visible */}
       <div className="flex items-center gap-2 flex-wrap mb-1.5 min-h-[20px]">
-        {!loading && total > 0 && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
+        {total > 0 && (
+          <span className={`text-xs text-muted-foreground whitespace-nowrap ${loading ? "opacity-50" : ""}`}>
             {isFree
               ? `Showing ${tradeUps.length} free sample trade-ups`
               : <>{total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}</>
             }
           </span>
         )}
+        {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
         {!isFree && <FilterChips filters={filters} onUpdate={handleFiltersChange} />}
       </div>
 
-      {loading ? (
-        <div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>
-      ) : tradeUps.length === 0 ? (
+      {/* Empty state — only when not loading AND no data */}
+      {!loading && tradeUps.length === 0 ? (
         <div className="text-center py-16 px-5 text-muted-foreground">
           {showMyClaims ? (
             <>
@@ -273,7 +273,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           )}
         </div>
       ) : (
-        <>
+        <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
           <TradeUpTable
             tradeUps={tradeUps}
             sort={sort}
@@ -324,7 +324,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
               </Button>
             </div>
           )}
-        </>
+        </div>
       )}
     </>
   );
