@@ -176,10 +176,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     setLoading(true);
   };
 
-  const handleClaimChange = useCallback(() => {
+  const handleClaimChange = useCallback((delta: number) => {
     // Update claim count locally — no full re-fetch needed
     // Lock icon + release button handled by TradeUpTable's local claimedIds state
-    setMyClaimCount(c => c + 1);
+    setMyClaimCount(c => Math.max(0, c + delta));
   }, []);
 
   const totalPages = Math.ceil(total / perPage);

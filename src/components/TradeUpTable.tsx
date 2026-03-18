@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { TradeUp, TradeUpInput } from "../../shared/types.js";
 import { formatDollars, condAbbr, csfloatSearchUrl } from "../utils/format.js";
 import { Badge } from "../../shared/components/ui/badge.js";
@@ -30,7 +30,7 @@ interface Props {
   onSort: (column: string) => void;
   onNavigateSkin?: (skinName: string) => void;
   onNavigateCollection?: (collectionName: string) => void;
-  onClaimChange?: () => void;
+  onClaimChange?: (delta: number) => void;
   tier?: string;
 }
 
@@ -74,7 +74,7 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
-function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void; onClaimChange?: () => void }) {
+function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void; onClaimChange?: (delta: number) => void }) {
   const [loading, setLoading] = useState(false);
   if (claimed.has(tuId)) return null; // Already claimed — bar handles display
 
@@ -92,7 +92,7 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: numbe
             alert(data.error);
           } else {
             setClaimed(prev => new Set(prev).add(tuId));
-            onClaimChange?.();
+            onClaimChange?.(1);
           }
         } catch {
           alert("Failed to claim");
@@ -115,8 +115,26 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [verifying, setVerifying] = useState<number | null>(null);
   const [verifyResults, setVerifyResults] = useState<Map<number, VerifyResult>>(new Map());
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
-  const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
+  // Initialize from API's claimed_by_me flags so claims persist across tab switches
+  const [claimedIds, setClaimedIds] = useState<Set<number>>(() => {
+    const ids = new Set<number>();
+    for (const tu of tradeUps) {
+      if ((tu as any).claimed_by_me) ids.add(tu.id);
+    }
+    return ids;
+  });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
+
+  // Sync claimedIds from API response when trade-ups data changes
+  useEffect(() => {
+    setClaimedIds(prev => {
+      const next = new Set(prev);
+      for (const tu of tradeUps) {
+        if ((tu as any).claimed_by_me) next.add(tu.id);
+      }
+      return next;
+    });
+  }, [tradeUps]);
   // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
   const [loadedInputs, setLoadedInputs] = useState<Map<number, TradeUp["inputs"]>>(new Map());
@@ -222,9 +240,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
                 onClick={async (e) => {
                   e.stopPropagation();
-                  await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
-                  setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
-                  onClaimChange?.();
+                  const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
+                  if (res.ok) {
+                    setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                    onClaimChange?.(-1);
+                  }
                 }}
               >
                 Release
