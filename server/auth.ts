@@ -143,9 +143,20 @@ export function setupAuth(app: Express, db: Database.Database) {
 
   // Serialize: store steam_id in session
   passport.serializeUser((user: Express.User, done) => done(null, user.steam_id));
+  // Separate read-only connection for user deserialization — never blocked by daemon writes.
+  // The main db connection can be locked for 20+ seconds during large transactions (Phase 4b recalc).
+  const authReadDb = new Database(DB_PATH, { readonly: true });
+  authReadDb.pragma("busy_timeout = 1000"); // 1s timeout, fail fast instead of hanging 30s
+
   passport.deserializeUser((steamId: string, done) => {
-    const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
-    done(null, user ?? null);
+    try {
+      const user = authReadDb.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
+      done(null, user ?? null);
+    } catch {
+      // If read-only connection fails (rare), fall back to main db
+      const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
+      done(null, user ?? null);
+    }
   });
 
   // Steam strategy (only if API key configured)
