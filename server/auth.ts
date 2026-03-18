@@ -148,13 +148,25 @@ export function setupAuth(app: Express, db: Database.Database) {
   const authReadDb = new Database(DB_PATH, { readonly: true });
   authReadDb.pragma("busy_timeout = 1000"); // 1s timeout, fail fast instead of hanging 30s
 
+  // User cache: avoid DB hits on every request during daemon heavy writes
+  const userCache = new Map<string, { user: User | null; cachedAt: number }>();
+  const USER_CACHE_TTL = 60_000; // 1 min
+
   passport.deserializeUser((steamId: string, done) => {
+    // Check in-memory cache first
+    const cached = userCache.get(steamId);
+    if (cached && Date.now() - cached.cachedAt < USER_CACHE_TTL) {
+      done(null, cached.user);
+      return;
+    }
+
     try {
       const user = authReadDb.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
+      userCache.set(steamId, { user: user ?? null, cachedAt: Date.now() });
       done(null, user ?? null);
     } catch {
-      // If read-only connection fails (rare), fall back to main db
       const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
+      userCache.set(steamId, { user: user ?? null, cachedAt: Date.now() });
       done(null, user ?? null);
     }
   });
