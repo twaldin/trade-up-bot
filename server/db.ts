@@ -11,7 +11,8 @@ let _readDb: Database.Database | null = null;
 const API_DB_PATH = path.join(path.dirname(DB_PATH), "tradeup-api.db");
 let _readDbMtime = 0;
 let _lastSnapshotCheck = 0;
-const SNAPSHOT_CHECK_INTERVAL = 5000; // check file mtime at most every 5s
+const SNAPSHOT_CHECK_INTERVAL = 10000; // check file mtime at most every 10s
+let _snapshotReopenScheduled = false;
 
 export function getDb(): Database.Database {
   if (!_db) {
@@ -22,7 +23,8 @@ export function getDb(): Database.Database {
 
 /** Read-only DB for API — uses a SEPARATE snapshot file, completely
  *  isolated from daemon writes. Auto-detects when daemon refreshes the
- *  snapshot and reopens the connection. */
+ *  snapshot and reopens the connection in the background (not during
+ *  request handling) to avoid cold-cache queries blocking the event loop. */
 export function getReadDb(): Database.Database {
   // Periodically check if daemon has refreshed the snapshot file
   const now = Date.now();
@@ -31,14 +33,26 @@ export function getReadDb(): Database.Database {
     try {
       if (fs.existsSync(API_DB_PATH)) {
         const mtime = fs.statSync(API_DB_PATH).mtimeMs;
-        if (mtime !== _readDbMtime) {
-          // Snapshot has been updated — reopen connection
-          if (_readDb) {
-            try { _readDb.close(); } catch { /* ignore close errors */ }
-          }
-          _readDb = openReadDb(API_DB_PATH);
+        if (mtime !== _readDbMtime && !_snapshotReopenScheduled) {
+          // Snapshot updated — schedule reopen for next idle tick.
+          // Don't reopen synchronously during request handling:
+          // opening a 2.8GB DB with cold cache causes 20-30s event loop block.
+          _snapshotReopenScheduled = true;
           _readDbMtime = mtime;
-          console.log("API snapshot reopened (file updated by daemon)");
+          setTimeout(() => {
+            try {
+              const oldDb = _readDb;
+              _readDb = openReadDb(API_DB_PATH);
+              console.log("API snapshot reopened (file updated by daemon)");
+              // Close old connection after new one is ready
+              if (oldDb) {
+                try { oldDb.close(); } catch { /* ignore */ }
+              }
+            } catch (e) {
+              console.error("Snapshot reopen failed:", (e as Error).message);
+            }
+            _snapshotReopenScheduled = false;
+          }, 100);
         }
       }
     } catch { /* stat/open failure — keep existing connection */ }
