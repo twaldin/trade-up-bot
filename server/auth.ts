@@ -79,6 +79,21 @@ export function isAdmin(user: Express.User | User | undefined): boolean {
   return (user as any).is_admin === 1 || (user as any).is_admin === true;
 }
 
+// Module-level ref to the user cache inside setupAuth (set during init)
+let _userCacheRef: Map<string, { user: User | null; cachedAt: number }> | null = null;
+
+/** Invalidate the in-memory user cache for a specific user.
+ *  Call after tier changes (admin set-tier, Stripe webhook) so the next
+ *  request reads the fresh tier from PG instead of stale cache. */
+export function invalidateUserCache(steamId: string): void {
+  _userCacheRef?.delete(steamId);
+}
+
+/** Invalidate all cached users (e.g., after bulk tier changes). */
+export function invalidateAllUserCache(): void {
+  _userCacheRef?.clear();
+}
+
 export async function setupAuth(app: Express, pool: pg.Pool) {
   const steamApiKey = process.env.STEAM_API_KEY;
   const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
@@ -140,9 +155,11 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   // Serialize: store steam_id in session
   passport.serializeUser((user: Express.User, done) => done(null, user.steam_id));
 
-  // User cache: avoid DB hits on every request
+  // User cache: avoid DB hits on every request.
+  // Exported via invalidateUserCache() so set-tier and Stripe webhooks can clear it.
   const userCache = new Map<string, { user: User | null; cachedAt: number }>();
   const USER_CACHE_TTL = 60_000; // 1 min
+  _userCacheRef = userCache;
 
   passport.deserializeUser((steamId: string, done) => {
     // Check in-memory cache first
@@ -257,6 +274,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     }
     const targetId = steam_id || (req.user as User).steam_id;
     await pool.query("UPDATE users SET tier = $1 WHERE steam_id = $2", [tier, targetId]);
+    // Invalidate user cache so next request reads fresh tier from DB
+    invalidateUserCache(targetId);
     console.log(`Admin set tier: ${targetId} → ${tier}`);
     res.json({ success: true, steam_id: targetId, tier });
   });
