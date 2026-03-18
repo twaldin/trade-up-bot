@@ -20,8 +20,8 @@ export async function getActiveClaims(db: Database.Database): Promise<ActiveClai
   // Try Redis first
   const cached = await cacheGet<ActiveClaim[]>("active_claims");
   if (cached) {
-    // Filter out expired claims
-    const now = new Date().toISOString();
+    // Filter out expired claims (normalize format: SQLite uses space, JS uses T)
+    const now = new Date().toISOString().replace("T", " ").replace("Z", "");
     return cached.filter(c => c.expires_at > now);
   }
 
