@@ -1,10 +1,11 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
+import { cachedRoute } from "../redis.js";
 
 export function snapshotsRouter(db: Database.Database): Router {
   const router = Router();
 
-  router.get("/api/snapshots", (req, res) => {
+  router.get("/api/snapshots", cachedRoute((req) => `snapshots:${req.query.since || ""}:${req.query.until || ""}:${req.query.type || ""}`, 86400, (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
     const hours = parseInt(req.query.hours as string) || 24;
 
@@ -16,10 +17,10 @@ export function snapshotsRouter(db: Database.Database): Router {
     `).all(hours, limit);
 
     res.json(snapshots);
-  });
+  }));
 
-  router.get("/api/snapshots/:id/tradeups", (req, res) => {
-    const snapshotId = parseInt(req.params.id);
+  router.get("/api/snapshots/:id/tradeups", cachedRoute((req) => `snapshot_tu:${req.params.id}`, 86400, (req, res) => {
+    const snapshotId = parseInt(req.params.id as string);
     const tradeups = db.prepare(`
       SELECT * FROM snapshot_tradeups
       WHERE snapshot_id = ?
@@ -27,9 +28,9 @@ export function snapshotsRouter(db: Database.Database): Router {
     `).all(snapshotId);
 
     res.json(tradeups);
-  });
+  }));
 
-  router.get("/api/snapshots/combo/:comboKey", (req, res) => {
+  router.get("/api/snapshots/combo/:comboKey", cachedRoute((req) => `snapshot_combo:${req.params.comboKey}`, 43200, (req, res) => {
     const comboKey = req.params.comboKey;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
@@ -43,7 +44,7 @@ export function snapshotsRouter(db: Database.Database): Router {
     `).all(comboKey, limit);
 
     res.json(history);
-  });
+  }));
 
   return router;
 }

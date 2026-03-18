@@ -3,27 +3,14 @@ import type Database from "better-sqlite3";
 import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
+import { cachedRoute } from "../redis.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
   const router = Router();
   const rdb = readDb ?? db; // Use read-only connection for queries when available
 
-  // Cache filter options — invalidated on daemon cycle change, 5-minute TTL
-  let filterCache: { data: any; ts: number; calcTs: string } | null = null;
-
-  router.get("/api/filter-options", (_req, res) => {
-    // Check if daemon has completed a new cycle (invalidates cache)
-    let currentCalc = "";
-    try {
-      const row = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
-      currentCalc = row?.value || "";
-    } catch { /* ignore */ }
-
-    if (filterCache && filterCache.calcTs === currentCalc && Date.now() - filterCache.ts < 300_000) {
-      return res.json(filterCache.data);
-    }
-
+  router.get("/api/filter-options", cachedRoute("filter_opts", 600, (_req, res) => {
     // All trade-ups are non-theoretical (theory removed), so skip the expensive
     // subquery filter. Direct DISTINCT on 2.35M-row trade_up_inputs is fast with index.
     const inputSkins = rdb.prepare(
@@ -44,9 +31,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     ).all() as { name: string; count: number }[];
 
     const result = { skins: [...skinMap.values()], collections };
-    filterCache = { data: result, ts: Date.now(), calcTs: currentCalc };
     res.json(result);
-  });
+  }));
 
   // Free tier: 10 oldest stale profitable (or >25% chance) trade-ups per type.
   // Same set for ALL free users. Refreshed each daemon cycle.
@@ -82,36 +68,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     return results;
   }
 
-  // Smart cache: invalidate when daemon completes a cycle, with 5s TTL on the check itself
-  const tuCache = new Map<string, { data: any; ts: number }>();
-  let lastKnownCalc = "";
-  let lastCalcCheckTs = 0;
-
-  function isCacheValid(): boolean {
-    // Don't hit sync_meta on every request — check at most every 30s
-    if (Date.now() - lastCalcCheckTs < 30000) return true;
-    lastCalcCheckTs = Date.now();
-    try {
-      const row = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
-      const currentCalc = row?.value || "";
-      if (currentCalc !== lastKnownCalc) {
-        lastKnownCalc = currentCalc;
-        tuCache.clear();
-        return false;
-      }
-      return true;
-    } catch { return false; }
-  }
-
-  router.get("/api/trade-ups", (req, res) => {
-    // Include user tier in cache key so tier changes invalidate stale cached responses
-    const cacheUserId = (req.user as any)?.steam_id || "anon";
-    const cacheUserTier = (req.user as any)?.tier || "free";
-    const cacheKey = JSON.stringify(req.query) + cacheUserId + cacheUserTier;
-    if (isCacheValid()) {
-      const cached = tuCache.get(cacheKey);
-      if (cached) return res.json(cached.data);
-    }
+  router.get("/api/trade-ups", cachedRoute((req) => "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free"), 600, (req, res) => {
     const {
       sort = "profit",
       order = "desc",
@@ -218,7 +175,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         tier_config: tierConfig,
         my_claim_count: myClaimCount,
       };
-      return res.json(result);
+      res.json(result);
+      return;
     }
 
     const pageNum = parseInt(page);
@@ -509,9 +467,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
     };
-    tuCache.set(cacheKey, { data: result, ts: Date.now() });
     res.json(result);
-  });
+  }));
 
   router.get("/api/trade-ups/:id", (req, res) => {
     const row = rdb
@@ -808,8 +765,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
   });
 
   // Load inputs on-demand (not included in list response to save bandwidth)
-  router.get("/api/trade-up/:id/inputs", (req, res) => {
-    const id = parseInt(req.params.id);
+  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => "tu_inputs:" + req.params.id, 120, (req, res) => {
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
     const inputs = rdb.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?").all(id) as TradeUpInput[];
     if (inputs.length === 0) {
@@ -830,18 +787,18 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       if (missingIds.has(inp.listing_id)) (inp as any).missing = true;
     }
     res.json({ inputs });
-  });
+  }));
 
   // Load outcomes on-demand (not included in list response to save bandwidth)
-  router.get("/api/trade-up/:id/outcomes", (req, res) => {
-    const id = parseInt(req.params.id);
+  router.get("/api/trade-up/:id/outcomes", cachedRoute((req) => "tu_outcomes:" + req.params.id, 120, (req, res) => {
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
     const row = rdb.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(id) as { outcomes_json: string | null } | undefined;
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ outcomes: JSON.parse(row.outcomes_json || "[]") });
-  });
+  }));
 
-  router.get("/api/price-details", (req, res) => {
+  router.get("/api/price-details", cachedRoute((req) => "price:" + req.query.skin_name + ":" + req.query.condition, 60, (req, res) => {
     const { skin_name, condition } = req.query as Record<string, string>;
     if (!skin_name || !condition) {
       res.status(400).json({ error: "skin_name and condition required" });
@@ -892,10 +849,10 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       listings,
       recent_sales: sales,
     });
-  });
+  }));
 
   // Outcome skin stats — listings, sales, price data sources per skin
-  router.get("/api/outcome-stats", (req, res) => {
+  router.get("/api/outcome-stats", cachedRoute((req) => "outcome_stats:" + req.query.skins, 120, (req, res) => {
     const skins = ((req.query.skins as string) || "").split("||").filter(Boolean);
     if (skins.length === 0) { res.json({ stats: {} }); return; }
 
@@ -913,7 +870,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       stats[name] = { listings, sales, sources };
     }
     res.json({ stats });
-  });
+  }));
 
   return router;
 }

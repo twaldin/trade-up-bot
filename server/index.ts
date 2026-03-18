@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initDb, getReadDb } from "./db.js";
+import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { statusRouter } from "./routes/status.js";
@@ -102,6 +103,7 @@ app.use((req, res, next) => {
 });
 
 const db = initDb();
+initRedis();
 // Proxy delegates to getReadDb() on every access, so when the daemon refreshes
 // the snapshot file, routes automatically pick up the new connection.
 const readDb = new Proxy({} as ReturnType<typeof getReadDb>, {
