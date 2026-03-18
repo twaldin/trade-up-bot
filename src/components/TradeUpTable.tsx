@@ -115,7 +115,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [verifying, setVerifying] = useState<number | null>(null);
   const [verifyResults, setVerifyResults] = useState<Map<number, VerifyResult>>(new Map());
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
-  // Initialize from API's claimed_by_me flags so claims persist across tab switches
+  // claimedIds: local overrides for claim state (both claims and releases)
+  // This is the SOLE source of truth for claim display — not claimed_by_me from API
   const [claimedIds, setClaimedIds] = useState<Set<number>>(() => {
     const ids = new Set<number>();
     for (const tu of tradeUps) {
@@ -125,15 +126,13 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
 
-  // Sync claimedIds from API response when trade-ups data changes
+  // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
-    setClaimedIds(prev => {
-      const next = new Set(prev);
-      for (const tu of tradeUps) {
-        if ((tu as any).claimed_by_me) next.add(tu.id);
-      }
-      return next;
-    });
+    const ids = new Set<number>();
+    for (const tu of tradeUps) {
+      if ((tu as any).claimed_by_me) ids.add(tu.id);
+    }
+    setClaimedIds(ids);
   }, [tradeUps]);
   // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
@@ -203,7 +202,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const renderExpanded = (tu: TradeUp) => (
     <div className="bg-card">
       {tu.profit_cents > 0 && (() => {
-        const myClaimLocal = claimedIds.has(tu.id) || (tu as any).claimed_by_me;
+        const myClaimLocal = claimedIds.has(tu.id);
         const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
         const showUpgradeLocal = upgradeMsg === tu.id;
         return (
@@ -350,7 +349,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {age && <span className="text-[0.6rem] text-muted-foreground/40">{age}</span>}
-                  {(claimedIds.has(tu.id) || (tu as any).claimed_by_me) && <span className="text-[0.6rem] text-purple-400">🔒</span>}
+                  {(claimedIds.has(tu.id)) && <span className="text-[0.6rem] text-purple-400">🔒</span>}
                   {(tu as any).claimed_by_other && <span className="text-[0.6rem] text-muted-foreground">🔒</span>}
                   <span className="text-muted-foreground/30 text-xs">{expandedId === tu.id ? "▼" : "▶"}</span>
                 </div>
@@ -515,7 +514,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
                 {/* Claim status shown as small badge inline */}
                 <td className="px-2 py-2.5 border-b border-border/70">
-                  {(claimedIds.has(tu.id) || (tu as any).claimed_by_me)
+                  {(claimedIds.has(tu.id))
                     ? <span className="text-[0.6rem] text-purple-400" title="You claimed this">🔒</span>
                     : (tu as any).claimed_by_other
                       ? <span className="text-[0.6rem] text-muted-foreground" title="Claimed by another user">🔒</span>
