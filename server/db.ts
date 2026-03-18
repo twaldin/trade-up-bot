@@ -261,6 +261,10 @@ function createTables(db: Database.Database) {
   if (!listingCols.some((c) => c.name === "phase")) {
     db.exec("ALTER TABLE listings ADD COLUMN phase TEXT");
   }
+  if (!listingCols.some((c) => c.name === "claimed_by")) {
+    db.exec("ALTER TABLE listings ADD COLUMN claimed_by TEXT");
+    db.exec("ALTER TABLE listings ADD COLUMN claimed_at TEXT");
+  }
 
   // Add trade-up type column (classified_covert vs covert_knife)
   if (!tuCols.some((c) => c.name === "type")) {
