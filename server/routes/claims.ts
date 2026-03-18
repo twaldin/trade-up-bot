@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
 import { requireTier, type User } from "../auth.js";
-import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit } from "../redis.js";
+import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
@@ -289,20 +289,9 @@ export function claimsRouter(db: Database.Database): Router {
       "SELECT * FROM trade_up_claims WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL ORDER BY id DESC LIMIT 1"
     ).get(tradeUpId, userId) as ClaimRow;
 
-    // Propagate: mark other trade-ups containing these listings as partial
-    if (listingIds.length > 0) {
-      const placeholders = listingIds.map(() => "?").join(",");
-      const affected = db.prepare(
-        `SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id IN (${placeholders}) AND trade_up_id != ?`
-      ).all(...listingIds, tradeUpId) as { trade_up_id: number }[];
-      if (affected.length > 0) {
-        const tuIds = affected.map(r => r.trade_up_id);
-        db.prepare(
-          `UPDATE trade_ups SET listing_status = 'partial', preserved_at = COALESCE(preserved_at, datetime('now'))
-           WHERE id IN (${tuIds.map(() => "?").join(",")}) AND listing_status = 'active'`
-        ).run(...tuIds);
-      }
-    }
+    // No cascade on claim — with 207 avg listing overlap, cascading would update
+    // thousands of trade-ups per claim. Instead, claimed listings are filtered via
+    // Redis active_claims in the list endpoint. Trade-up statuses stay as-is.
 
     // Refresh Redis claims cache + invalidate trade-ups cache (AWAIT before responding
     // so the next request sees fresh data — fire-and-forget caused claims to not show up)
@@ -341,7 +330,7 @@ export function claimsRouter(db: Database.Database): Router {
       return;
     }
 
-    // Clear claimed_by on all listings for this trade-up
+    // Clear claimed_by on listings (no cascade — refreshListingStatuses handles in housekeeping)
     const listingRows = db.prepare(
       "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
     ).all(tradeUpId) as { listing_id: string }[];
@@ -350,37 +339,66 @@ export function claimsRouter(db: Database.Database): Router {
       clearClaimed.run(listing_id, userId);
     }
 
-    // Restore listing_status for trade-ups that were marked partial by this claim.
-    // Check all trade-ups whose listings are now fully available (no missing, no claimed).
-    const releasedIds = listingRows.map(r => r.listing_id);
-    if (releasedIds.length > 0) {
-      const placeholders = releasedIds.map(() => "?").join(",");
-      // Find trade-ups that share these listings and are currently partial/stale
-      const affectedTus = db.prepare(
-        `SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id IN (${placeholders})`
-      ).all(...releasedIds) as { trade_up_id: number }[];
-
-      // For each affected trade-up, check if ALL its listings exist and are unclaimed
-      for (const { trade_up_id } of affectedTus) {
-        const missingCount = (db.prepare(`
-          SELECT COUNT(*) as cnt FROM trade_up_inputs tui
-          WHERE tui.trade_up_id = ?
-            AND tui.listing_id NOT LIKE 'theor%'
-            AND (NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id)
-                 OR EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NOT NULL))
-        `).get(trade_up_id) as { cnt: number }).cnt;
-
-        if (missingCount === 0) {
-          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(trade_up_id);
-        }
-      }
-    }
-
     // Await Redis updates before responding
     await refreshClaimsCache(db);
     await cacheInvalidatePrefix("tu:");
 
     res.json({ released: true, trade_up_id: tradeUpId });
+  });
+
+  // POST /api/trade-ups/:id/confirm - confirm purchase (listings bought)
+  // Queues listing deletion for daemon to process (avoids 50K+ cascade blocking API)
+  router.post("/api/trade-ups/:id/confirm", requireTier("pro"), async (req, res) => {
+    const tradeUpId = parseInt(String(req.params.id));
+    if (isNaN(tradeUpId)) {
+      res.status(400).json({ error: "Invalid trade-up ID" });
+      return;
+    }
+
+    const userId = (req.user as User)?.steam_id || "anonymous";
+
+    // Must have an active claim on this trade-up
+    const claim = db.prepare(
+      "SELECT id FROM trade_up_claims WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > datetime('now')"
+    ).get(tradeUpId, userId) as { id: number } | undefined;
+
+    if (!claim) {
+      res.status(404).json({ error: "No active claim found. Claim first, then confirm after purchasing." });
+      return;
+    }
+
+    // Mark claim as confirmed
+    db.prepare(
+      "UPDATE trade_up_claims SET confirmed_at = datetime('now') WHERE id = ?"
+    ).run(claim.id);
+
+    // Queue listing IDs for daemon to delete + cascade
+    const listingRows = db.prepare(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+    ).all(tradeUpId) as { listing_id: string }[];
+    const listingIds = listingRows.map(r => r.listing_id).filter(id => !id.startsWith("theor"));
+
+    // Push to Redis queue for daemon processing
+    const redis = getRedis();
+    if (redis && listingIds.length > 0) {
+      for (const lid of listingIds) await redis.lpush("confirmed_listings", lid);
+      console.log(`Confirm: queued ${listingIds.length} listings for deletion (trade-up ${tradeUpId}, user ${userId})`);
+    }
+
+    // Clear claimed_by immediately (listings are being bought, no longer need claim lock)
+    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ?");
+    for (const id of listingIds) clearClaimed.run(id);
+
+    // Refresh caches
+    await refreshClaimsCache(db);
+    await cacheInvalidatePrefix("tu:");
+
+    res.json({
+      confirmed: true,
+      trade_up_id: tradeUpId,
+      listings_queued: listingIds.length,
+      message: "Purchase confirmed! Listings will be removed from the system within 1-2 minutes.",
+    });
   });
 
   // GET /api/claims - list user's active claims
