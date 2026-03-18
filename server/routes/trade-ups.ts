@@ -24,41 +24,24 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       return res.json(filterCache.data);
     }
 
-    // Get input skin names — simple indexed query on trade_up_inputs
-    const inputSkins = rdb.prepare(`
-      SELECT DISTINCT skin_name as name
-      FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
-    `).all() as { name: string }[];
-
-    // Get output skin names — use trade_up_outcomes table (indexed) instead of
-    // expensive json_each(outcomes_json) which parses JSON for every row
-    let outputSkinRows: { name: string }[];
-    try {
-      outputSkinRows = rdb.prepare(`
-        SELECT DISTINCT skin_name as name
-        FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
-      `).all() as { name: string }[];
-    } catch {
-      // Fallback: outcomes table may be empty if all data is in outcomes_json
-      outputSkinRows = [];
-    }
+    // All trade-ups are non-theoretical (theory removed), so skip the expensive
+    // subquery filter. Direct DISTINCT on 2.35M-row trade_up_inputs is fast with index.
+    const inputSkins = rdb.prepare(
+      `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
+    ).all() as { name: string }[];
 
     const skinMap = new Map<string, { name: string; input: boolean; output: boolean }>();
     for (const s of inputSkins) {
       skinMap.set(s.name, { name: s.name, input: true, output: false });
     }
-    for (const s of outputSkinRows) {
-      if (!s.name) continue;
-      const existing = skinMap.get(s.name);
-      if (existing) existing.output = true;
-      else skinMap.set(s.name, { name: s.name, input: false, output: true });
-    }
+    // Output skins: trade_up_outcomes table is empty (data in outcomes_json).
+    // Extracting from JSON is too expensive (260K rows). Input skins cover
+    // the primary filter use case; output skin search still works via the
+    // trade-ups query's outcomes_json LIKE filter.
 
-    const collections = rdb.prepare(`
-      SELECT DISTINCT collection_name as name, COUNT(*) as count
-      FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
-      GROUP BY collection_name ORDER BY count DESC
-    `).all() as { name: string; count: number }[];
+    const collections = rdb.prepare(
+      `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
+    ).all() as { name: string; count: number }[];
 
     const result = { skins: [...skinMap.values()], collections };
     filterCache = { data: result, ts: Date.now(), calcTs: currentCalc };
