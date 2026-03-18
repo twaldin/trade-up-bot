@@ -136,9 +136,23 @@ export function statusRouter(readDb: Database.Database): Router {
     res.json(result);
   }));
 
-  router.get("/api/global-stats", cachedRoute("global_stats", 60, (_req, res) => {
+  // Global stats: Redis-first, DB fallback with 3s timeout.
+  // The COUNT(*) on 1M+ row trade_ups table takes 50s+ during WAL contention.
+  // Daemon pre-populates Redis every cycle. API should almost never hit DB.
+  router.get("/api/global-stats", async (_req, res) => {
     try {
-      // Single query instead of 6 separate COUNT queries — much faster on cold cache
+      // Try Redis first (populated by daemon every cycle)
+      const { cacheGet } = await import("../redis.js");
+      const cached = await cacheGet<Record<string, unknown>>("global_stats");
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.json(cached);
+        return;
+      }
+    } catch { /* Redis unavailable */ }
+
+    // Redis miss: fall back to DB with read-only connection
+    try {
       const stats = db.prepare(`
         SELECT
           (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
@@ -160,11 +174,17 @@ export function statusRouter(readDb: Database.Database): Router {
         ref_prices: stats.refs,
         total_cycles: stats.cycles,
       };
+
+      // Cache in Redis for next request
+      const { cacheSet } = await import("../redis.js");
+      await cacheSet("global_stats", data, 60).catch(() => {});
+
+      res.setHeader("X-Cache", "MISS");
       res.json(data);
     } catch {
       res.json({});
     }
-  }));
+  });
 
   router.get("/api/daemon-log", cachedRoute("daemon_log", 30, (_req, res) => {
     const logPath = "/tmp/daemon.log";
