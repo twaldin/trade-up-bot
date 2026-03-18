@@ -41,25 +41,29 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, label = "DB op
  * input listings still exist in the DB. Fast — single SQL pass.
  */
 export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: number; partial: number; stale: number; preserved: number }> {
-  // Count missing inputs per trade-up
+  // JOIN-based approach: pre-compute missing/present counts per trade-up in one pass,
+  // then UPDATE using the aggregated results. Avoids correlated subqueries on 1.25M rows.
   await pool.query(`
-    UPDATE trade_ups SET
-      listing_status = CASE
-        WHEN (SELECT COUNT(*) FROM trade_up_inputs tui
-              LEFT JOIN listings l ON tui.listing_id = l.id
-              WHERE tui.trade_up_id = trade_ups.id AND l.id IS NULL) = 0 THEN 'active'
-        WHEN (SELECT COUNT(*) FROM trade_up_inputs tui
-              LEFT JOIN listings l ON tui.listing_id = l.id
-              WHERE tui.trade_up_id = trade_ups.id AND l.id IS NOT NULL) > 0 THEN 'partial'
-        ELSE 'stale'
-      END,
+    UPDATE trade_ups t SET
+      listing_status = s.new_status,
       preserved_at = CASE
-        WHEN (SELECT COUNT(*) FROM trade_up_inputs tui
-              LEFT JOIN listings l ON tui.listing_id = l.id
-              WHERE tui.trade_up_id = trade_ups.id AND l.id IS NULL) = 0 THEN NULL
-        ELSE COALESCE(preserved_at, NOW())
+        WHEN s.new_status = 'active' THEN NULL
+        ELSE COALESCE(t.preserved_at, NOW())
       END
-    WHERE is_theoretical = 0
+    FROM (
+      SELECT tui.trade_up_id,
+        CASE
+          WHEN COUNT(*) FILTER (WHERE l.id IS NULL) = 0 THEN 'active'
+          WHEN COUNT(*) FILTER (WHERE l.id IS NOT NULL) > 0 THEN 'partial'
+          ELSE 'stale'
+        END as new_status
+      FROM trade_up_inputs tui
+      LEFT JOIN listings l ON tui.listing_id = l.id
+      GROUP BY tui.trade_up_id
+    ) s
+    WHERE t.id = s.trade_up_id
+      AND t.is_theoretical = 0
+      AND (t.listing_status IS DISTINCT FROM s.new_status)
   `);
 
   const { rows: counts } = await pool.query(`
