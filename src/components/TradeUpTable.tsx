@@ -347,9 +347,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
       inputCount: summary?.input_count ?? tu.inputs.length,
       collections: summary?.collections ?? [...new Set(tu.inputs.map(i => i.collection_name))],
       age: tu.created_at ? (() => {
-        const ms = Date.now() - new Date(tu.created_at + "Z").getTime();
+        const ts = tu.created_at.endsWith("Z") || tu.created_at.includes("+") ? tu.created_at : tu.created_at + "Z";
+        const ms = Date.now() - new Date(ts).getTime();
+        if (isNaN(ms) || ms < 0) return "";
         const mins = Math.floor(ms / 60000);
-        return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+        return mins < 60 ? `(${mins}m old)` : mins < 1440 ? `(${Math.floor(mins / 60)}h old)` : `(${Math.floor(mins / 1440)}d old)`;
       })() : "",
     };
   })
