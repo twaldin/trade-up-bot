@@ -59,6 +59,7 @@ const LandingPage = () => {
           <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
           </div>
           <Btn onClick={login} className="h-8 px-3 text-xs">
             <IconSteam /> Sign In
@@ -257,14 +258,69 @@ const LandingPage = () => {
             </div>
           </div>
         </section>
+        {/* FAQ */}
+        <section id="faq" className="py-20 border-t border-border">
+          <div className="mx-auto max-w-3xl px-6">
+            <h2 className="text-2xl font-bold mb-10 text-center">Frequently Asked Questions</h2>
+            <div className="space-y-4">
+              {[
+                { q: "How does TradeUpBot find profitable trade-ups?", a: "We continuously scan CSFloat, DMarket, and Skinport for real listings, then test thousands of input combinations across 45+ float targets. Every trade-up is built from actual buyable listings — not theoretical calculations." },
+                { q: "How accurate are the prices?", a: "Prices come from real marketplace data: CSFloat sale history (primary), DMarket listing floors, and Skinport prices. All prices are estimates — actual prices may differ at time of purchase, especially after trade lock periods." },
+                { q: "Can I lose money on a trade-up?", a: "Yes. All prices are estimates based on current market data. Items purchased from marketplaces have trade lock periods during which prices can change. \"Profitable\" means profitable at current estimated prices, not guaranteed profit." },
+                { q: "What does Verify do?", a: "Verify checks if all input listings still exist on the marketplace and at what price. It updates the trade-up stats in real time so you know exactly what you're buying before you commit." },
+                { q: "What does Claim do?", a: "Pro users can claim a trade-up to lock its listings for 30 minutes. While claimed, those listings are hidden from other users so no one can buy them while you're purchasing." },
+              ].map((item, i) => (
+                <details key={i} className="group border border-border rounded-lg">
+                  <summary className="flex items-center justify-between cursor-pointer px-5 py-4 text-sm font-medium select-none">
+                    {item.q}
+                    <span className="text-muted-foreground group-open:rotate-45 transition-transform text-lg">+</span>
+                  </summary>
+                  <p className="px-5 pb-4 text-sm text-muted-foreground leading-relaxed">{item.a}</p>
+                </details>
+              ))}
+            </div>
+            <div className="text-center mt-6">
+              <a href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                See full FAQ &rarr;
+              </a>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Footer */}
-      <footer className="py-8 border-t border-border">
-        <div className="mx-auto max-w-6xl px-6 text-center">
-          <a href="https://github.com/twaldin/trade-up-bot" target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            GitHub
-          </a>
+      <footer className="py-10 border-t border-border">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="font-bold text-sm mb-3">TradeUpBot</div>
+              <p className="text-xs text-muted-foreground leading-relaxed">CS2 trade-up contract analyzer built from real marketplace listings.</p>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Product</div>
+              <div className="space-y-2 text-sm">
+                <a href="#features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</a>
+                <a href="#pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+                <a href="#faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Legal</div>
+              <div className="space-y-2 text-sm">
+                <a href="/terms" className="block text-muted-foreground hover:text-foreground transition-colors">Terms of Service</a>
+                <a href="/privacy" className="block text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Contact</div>
+              <div className="space-y-2 text-sm">
+                <a href="https://discord.gg/tradeupbot" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-border pt-6 text-center text-xs text-muted-foreground/50">
+            TradeUpBot is not affiliated with Valve Corporation. CS2 and Counter-Strike are trademarks of Valve Corporation.
+          </div>
         </div>
       </footer>
     </div>
