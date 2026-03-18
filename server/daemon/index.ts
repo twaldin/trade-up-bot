@@ -299,11 +299,15 @@ export async function main() {
     printCoverageReport(db);
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
-    // Refresh API read snapshot — creates a clean copy for the API to serve from
+    // Refresh API read snapshot — backup to temp file, then atomic rename.
+    // Direct backup to tradeup-api.db would lock it for 20-30s (2.8GB copy),
+    // blocking all API reads. Rename is instant and never locks the live file.
     try {
       const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
+      const tmpPath = snapshotPath + ".tmp";
       console.log(`  Creating API snapshot...`);
-      await db.backup(snapshotPath);
+      await db.backup(tmpPath);
+      fs.renameSync(tmpPath, snapshotPath);
       console.log(`  API snapshot created`);
     } catch (e) {
       console.error(`  Snapshot failed: ${(e as Error).message}`);
