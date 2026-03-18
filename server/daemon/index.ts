@@ -303,13 +303,10 @@ export async function main() {
     try {
       const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
       console.log(`  Creating API snapshot...`);
-      db.backup(snapshotPath).then(() => {
-        console.log(`  API snapshot created`);
-      }).catch((e: Error) => {
-        console.error(`  Snapshot failed: ${e.message}`);
-      });
+      await db.backup(snapshotPath);
+      console.log(`  API snapshot created`);
     } catch (e) {
-      console.error("  Snapshot error:", (e as Error).message);
+      console.error(`  Snapshot failed: ${(e as Error).message}`);
     }
 
     // Phase 6: Cooldown — dynamic duration targeting fixed cycle time

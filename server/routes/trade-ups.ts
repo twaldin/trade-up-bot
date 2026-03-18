@@ -9,41 +9,49 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
   const router = Router();
   const rdb = readDb ?? db; // Use read-only connection for queries when available
 
-  // Cache filter options for 60s
-  let filterCache: { data: any; ts: number } | null = null;
+  // Cache filter options — invalidated on daemon cycle change, 5-minute TTL
+  let filterCache: { data: any; ts: number; calcTs: string } | null = null;
 
   router.get("/api/filter-options", (_req, res) => {
-    if (filterCache && Date.now() - filterCache.ts < 60_000) {
+    // Check if daemon has completed a new cycle (invalidates cache)
+    let currentCalc = "";
+    try {
+      const row = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
+      currentCalc = row?.value || "";
+    } catch { /* ignore */ }
+
+    if (filterCache && filterCache.calcTs === currentCalc && Date.now() - filterCache.ts < 300_000) {
       return res.json(filterCache.data);
     }
-    // Get input skin names from trade_up_inputs table
+
+    // Get input skin names — simple indexed query on trade_up_inputs
     const inputSkins = rdb.prepare(`
       SELECT DISTINCT skin_name as name
       FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
     `).all() as { name: string }[];
 
-    // Get output skin names from outcomes_json column
-    const outputSkinRows = rdb.prepare(`
-      SELECT DISTINCT json_extract(je.value, '$.skin_name') as name
-      FROM trade_ups t, json_each(t.outcomes_json) je
-      WHERE t.is_theoretical = 0 AND t.outcomes_json IS NOT NULL
-    `).all() as { name: string }[];
+    // Get output skin names — use trade_up_outcomes table (indexed) instead of
+    // expensive json_each(outcomes_json) which parses JSON for every row
+    let outputSkinRows: { name: string }[];
+    try {
+      outputSkinRows = rdb.prepare(`
+        SELECT DISTINCT skin_name as name
+        FROM trade_up_outcomes WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE is_theoretical = 0)
+      `).all() as { name: string }[];
+    } catch {
+      // Fallback: outcomes table may be empty if all data is in outcomes_json
+      outputSkinRows = [];
+    }
 
-    const skins: { name: string; role: string }[] = [
-      ...inputSkins.map(s => ({ name: s.name, role: 'input' })),
-      ...outputSkinRows.filter(s => s.name).map(s => ({ name: s.name, role: 'output' })),
-    ];
-
-    // Dedupe and tag roles
     const skinMap = new Map<string, { name: string; input: boolean; output: boolean }>();
-    for (const s of skins) {
+    for (const s of inputSkins) {
+      skinMap.set(s.name, { name: s.name, input: true, output: false });
+    }
+    for (const s of outputSkinRows) {
+      if (!s.name) continue;
       const existing = skinMap.get(s.name);
-      if (existing) {
-        if (s.role === "input") existing.input = true;
-        else existing.output = true;
-      } else {
-        skinMap.set(s.name, { name: s.name, input: s.role === "input", output: s.role === "output" });
-      }
+      if (existing) existing.output = true;
+      else skinMap.set(s.name, { name: s.name, input: false, output: true });
     }
 
     const collections = rdb.prepare(`
@@ -53,7 +61,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     `).all() as { name: string; count: number }[];
 
     const result = { skins: [...skinMap.values()], collections };
-    filterCache = { data: result, ts: Date.now() };
+    filterCache = { data: result, ts: Date.now(), calcTs: currentCalc };
     res.json(result);
   });
 
@@ -430,21 +438,10 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         if (missing < totalInputs) statusFixes.set(id, 'partial');
       }
     }
-    // Status fixes are non-critical — apply asynchronously to avoid blocking reads
-    // The display uses correctedStatus from statusFixes map, not the DB value
-    if (statusFixes.size > 0) {
-      setImmediate(() => {
-        for (const [id, status] of statusFixes) {
-          try {
-            if (status === 'active') {
-              db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(id);
-            } else {
-              db.prepare("UPDATE trade_ups SET listing_status = ? WHERE id = ?").run(status, id);
-            }
-          } catch { /* ignore */ }
-        }
-      });
-    }
+    // Status fixes are non-critical — display already uses correctedStatus from
+    // statusFixes map. DB persistence happens during daemon housekeeping phase
+    // (refreshListingStatuses). Removed setImmediate writes that blocked the
+    // event loop for up to 30s when daemon held a write lock.
 
     const tradeUps: TradeUp[] = rows.map((row) => {
       const inputs = inputsByTuId.get(row.id) ?? [];

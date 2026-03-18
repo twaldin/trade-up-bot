@@ -105,7 +105,15 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   // Bump to trigger re-fetch after claim/release
   const [claimVersion, setClaimVersion] = useState(0);
 
+  // Cancel in-flight requests when sort/filter/type changes
+  const abortRef = useRef<AbortController | null>(null);
+
   const fetchTradeUps = useCallback(async (silent = false) => {
+    // Cancel any previous in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     if (!silent) setLoading(true);
     try {
       const params = isFree ? new URLSearchParams() : filtersToParams(filters);
@@ -122,7 +130,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       }
       if (!isFree && includeStale) params.set("include_stale", "true");
 
-      const res = await fetch(`/api/trade-ups?${params}`, { credentials: "include" });
+      const res = await fetch(`/api/trade-ups?${params}`, {
+        credentials: "include",
+        signal: controller.signal,
+      });
       const data = await res.json();
       setTradeUps(data.trade_ups);
       setTotal(data.total);
@@ -130,14 +141,16 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       setTier(data.tier || "free");
       setMyClaimCount(data.my_claim_count ?? 0);
     } catch (err) {
+      if ((err as Error).name === "AbortError") return; // cancelled — ignore
       console.error("Failed to fetch trade-ups:", err);
     } finally {
-      if (!silent) setLoading(false);
+      if (!controller.signal.aborted && !silent) setLoading(false);
     }
   }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims, claimVersion, isFree]);
 
   useEffect(() => {
     fetchTradeUps();
+    return () => { if (abortRef.current) abortRef.current.abort(); };
   }, [fetchTradeUps]);
 
   const handleSort = (column: string) => {

@@ -102,7 +102,15 @@ app.use((req, res, next) => {
 });
 
 const db = initDb();
-const readDb = getReadDb(); // Read-only connection — never blocked by daemon writes
+// Proxy delegates to getReadDb() on every access, so when the daemon refreshes
+// the snapshot file, routes automatically pick up the new connection.
+const readDb = new Proxy({} as ReturnType<typeof getReadDb>, {
+  get(_, prop) {
+    const target = getReadDb();
+    const val = (target as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof val === "function" ? (val as Function).bind(target) : val;
+  },
+});
 
 // Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
 setupAuth(app, db);
