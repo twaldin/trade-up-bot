@@ -150,9 +150,8 @@ export function statusRouter(readDb: Database.Database): Router {
           (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
       `).get() as { total_tu: number; profitable_tu: number; listings: number; sale_obs: number; sale_hist: number; refs: number; cycles: number };
 
-      const DISPLAY_CAP = 1_000_000;
       const data = {
-        total_trade_ups: Math.min(stats.total_tu, DISPLAY_CAP),
+        total_trade_ups: stats.total_tu,
         profitable_trade_ups: stats.profitable_tu ?? 0,
         total_data_points: stats.listings + stats.sale_obs + stats.sale_hist + stats.refs,
         listings: stats.listings,

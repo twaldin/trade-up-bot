@@ -511,7 +511,7 @@ export async function main() {
 
     // Post-engine: update collection scores + global trim
     updateCollectionScores(db);
-    trimGlobalExcess(db, 1_000_000); // 1M cap across all types
+    trimGlobalExcess(db, 5_000_000); // 5M cap — will lower if cycle time exceeds 30 min
     freshness.markCalcDone();
 
     const engineMs = Date.now() - cycleStarted - (Date.now() - (cycleStarted + engineBudgetMs - (engineEnd - Date.now())));
