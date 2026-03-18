@@ -52,6 +52,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     return "free";
   });
   const [myClaimCount, setMyClaimCount] = useState(0);
+  const [claimLimit, setClaimLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
+  const [verifyLimit, setVerifyLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
 
   // Read initial state from URL search params
   const initialType = (searchParams.get("type") as TradeUpType) || defaultType || types[0]?.value;
@@ -143,6 +145,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       setTier(newTier);
       try { localStorage.setItem("user_tier", newTier); } catch {}
       setMyClaimCount(data.my_claim_count ?? 0);
+      if (data.claim_limit) setClaimLimit(data.claim_limit);
+      if (data.verify_limit) setVerifyLimit(data.verify_limit);
     } catch (err) {
       if ((err as Error).name === "AbortError") return; // cancelled — ignore
       console.error("Failed to fetch trade-ups:", err);
@@ -177,9 +181,12 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   };
 
   const handleClaimChange = useCallback((delta: number) => {
-    // Update claim count locally — no full re-fetch needed
-    // Lock icon + release button handled by TradeUpTable's local claimedIds state
-    setMyClaimCount(c => Math.max(0, c + delta));
+    setMyClaimCount(c => {
+      const next = Math.max(0, c + delta);
+      // Auto-navigate back to "all" when last claim released
+      if (next === 0) setShowMyClaims(false);
+      return next;
+    });
   }, []);
 
   const totalPages = Math.ceil(total / perPage);
@@ -292,6 +299,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onClaimChange={isPro ? handleClaimChange : undefined}
             tier={tier}
             showMyClaims={showMyClaims}
+            claimLimit={claimLimit}
+            verifyLimit={verifyLimit}
+            onClaimLimitUpdate={setClaimLimit}
+            onVerifyLimitUpdate={setVerifyLimit}
           />
 
           {/* Free tier: upgrade banner instead of pagination (hide during loading to prevent flash) */}

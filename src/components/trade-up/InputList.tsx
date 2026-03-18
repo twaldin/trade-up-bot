@@ -27,6 +27,7 @@ interface InputListProps {
   onNavigateSkin?: (skinName: string) => void;
   showListingLinks?: boolean;
   showVerify?: boolean;
+  verifyLimit?: { remaining: number; total: number; resetIn: number | null } | null;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -179,23 +180,27 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
         {tu.type?.startsWith("staircase") && tu.inputs.length > 10
           ? `Inputs (${tu.inputs.length} — ${Math.ceil(tu.inputs.length / 10)} trade-ups)`
           : `Inputs (${tu.inputs.length})`}
-        {!tu.is_theoretical && showVerify && (
-          <button
-            className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-blue-400 border border-border cursor-pointer align-middle hover:bg-accent disabled:opacity-50 disabled:cursor-wait"
-            onClick={(e) => { e.stopPropagation(); onVerify(tu.id); }}
-            disabled={verifying}
-            title="Check if all inputs are still listed"
-          >
-            {verifying ? "Checking..." : "Verify"}
-          </button>
-        )}
+        {!tu.is_theoretical && showVerify && (() => {
+          const atLimit = verifyLimit && verifyLimit.remaining <= 0;
+          const resetMin = verifyLimit?.resetIn ? Math.ceil(verifyLimit.resetIn / 60) : null;
+          return (
+            <button
+              className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-blue-400 border border-border cursor-pointer align-middle hover:bg-accent disabled:opacity-50 disabled:cursor-wait"
+              onClick={(e) => { e.stopPropagation(); onVerify(tu.id); }}
+              disabled={verifying || !!atLimit}
+              title="Check if all inputs are still listed"
+            >
+              {verifying ? "Checking..." : atLimit ? `Limit (${resetMin}m)` : `Verify${verifyLimit ? ` (${verifyLimit.remaining}/${verifyLimit.total})` : ""}`}
+            </button>
+          );
+        })()}
         {!tu.is_theoretical && !showVerify && (
           <span className="ml-2 text-[0.65rem] text-muted-foreground/60 align-middle">Upgrade to Basic to verify listings</span>
         )}
