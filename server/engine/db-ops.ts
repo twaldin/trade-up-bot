@@ -901,19 +901,22 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   // If no sinceTimestamp, skip entirely — full scan is too expensive on 12M rows.
   if (!sinceTimestamp) return { updated: 0 };
 
-  // Quick check: any listings with price changes since last recalc?
-  const { rows: [check] } = await pool.query(
-    "SELECT COUNT(*) as cnt FROM listings WHERE price_updated_at > $1 LIMIT 1",
+  // Step 1: Find listing IDs with price changes (fast — uses partial index on price_updated_at)
+  const { rows: changedListings } = await pool.query(
+    "SELECT id FROM listings WHERE price_updated_at > $1",
     [sinceTimestamp]
   );
-  if (parseInt(check.cnt) === 0) return { updated: 0 };
+  if (changedListings.length === 0) return { updated: 0 };
 
+  // Step 2: Find trade-ups using those specific listings (small IN clause, not full 12M scan)
+  const changedIds = changedListings.map(r => r.id);
+  const ph = changedIds.map((_, i) => `$${i + 1}`).join(",");
   const { rows: staleInputRows } = await pool.query(`
     SELECT DISTINCT tui.trade_up_id
     FROM trade_up_inputs tui
     JOIN listings l ON tui.listing_id = l.id
-    WHERE l.price_updated_at > $1 AND tui.price_cents != l.price_cents
-  `, [sinceTimestamp]);
+    WHERE tui.listing_id IN (${ph}) AND tui.price_cents != l.price_cents
+  `, changedIds);
   const staleInputs = staleInputRows;
 
   if (staleInputs.length === 0) {
