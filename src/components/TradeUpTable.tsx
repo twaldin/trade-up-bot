@@ -241,41 +241,64 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               </button>
             </div>
           )}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="text-[0.75rem] text-muted-foreground">
               {myClaimLocal
-                ? <span className="text-purple-400 font-medium">You claimed this trade-up — listings locked for 30 min</span>
+                ? <span className="text-purple-400 font-medium">You claimed this trade-up — please confirm or release to help keep data fresh for everyone</span>
                 : otherClaim
                   ? <span className="text-muted-foreground">Claimed by a Pro user</span>
                   : <span>Claim to lock listings for 30 min while you buy</span>
               }
             </div>
-            {!myClaimLocal && !otherClaim && (
-              isPro
-                ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} />
-                : <button
-                    className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setUpgradeMsg(tu.id); }}
+            <div className="flex items-center gap-2 shrink-0">
+              {!myClaimLocal && !otherClaim && (
+                isPro
+                  ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} />
+                  : <button
+                      className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setUpgradeMsg(tu.id); }}
+                    >
+                      Claim
+                    </button>
+              )}
+              {myClaimLocal && (
+                <>
+                  <button
+                    className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 hover:border-green-400 cursor-pointer transition-colors"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm("Confirm purchase? This marks the listings as bought and removes them from the system.")) return;
+                      const res = await fetch(`/api/trade-ups/${tu.id}/confirm`, { method: "POST", credentials: "include" });
+                      if (res.ok) {
+                        if (expandedId === tu.id) setExpandedId(null);
+                        setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                        onClaimChange?.(-1);
+                      } else {
+                        const data = await res.json();
+                        alert(data.error || "Failed to confirm");
+                      }
+                    }}
                   >
-                    Claim
+                    Confirm Purchase
                   </button>
-            )}
-            {myClaimLocal && (
-              <button
-                className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
-                  if (res.ok) {
-                    if (expandedId === tu.id) setExpandedId(null);
-                    setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
-                    onClaimChange?.(-1);
-                  }
-                }}
-              >
-                Release
-              </button>
-            )}
+                  <button
+                    className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400 cursor-pointer transition-colors"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm("Release this claim? The listings will become available to other users again.")) return;
+                      const res = await fetch(`/api/trade-ups/${tu.id}/claim`, { method: "DELETE", credentials: "include" });
+                      if (res.ok) {
+                        if (expandedId === tu.id) setExpandedId(null);
+                        setClaimedIds(prev => { const next = new Set(prev); next.delete(tu.id); return next; });
+                        onClaimChange?.(-1);
+                      }
+                    }}
+                  >
+                    Release
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>);
       })()}
