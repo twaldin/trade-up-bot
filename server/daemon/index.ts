@@ -499,18 +499,8 @@ export async function main() {
     printCoverageReport(db);
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
-    // Refresh API read snapshot — backup to temp file, then atomic rename.
-    try {
-      const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
-      const tmpPath = snapshotPath + ".tmp";
-      console.log(`  Creating API snapshot...`);
-      db.pragma("wal_checkpoint(PASSIVE)");
-      await db.backup(tmpPath);
-      fs.renameSync(tmpPath, snapshotPath);
-      console.log(`  API snapshot created`);
-    } catch (e) {
-      console.error(`  Snapshot failed: ${(e as Error).message}`);
-    }
+    // WAL checkpoint — keeps WAL file size manageable
+    db.pragma("wal_checkpoint(PASSIVE)");
 
     // Pre-populate Redis cache so API never hits cold SQLite
     try {
