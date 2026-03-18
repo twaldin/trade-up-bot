@@ -41,8 +41,14 @@ export function initDb(): pg.Pool {
   return _pool;
 }
 
-/** Create all tables if they don't exist. Run once at startup. */
+/** Create all tables if they don't exist. Run once at startup.
+ *  Skips if tables already exist (fast path for normal restarts). */
 export async function createTables(pool: pg.Pool): Promise<void> {
+  // Fast check: if trade_ups table exists, schema is already set up
+  const { rows } = await pool.query(
+    "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' LIMIT 1"
+  );
+  if (rows.length > 0) return;
   await pool.query(`
     -- Static skin/collection data (from ByMykel/CSGO-API)
     CREATE TABLE IF NOT EXISTS collections (
