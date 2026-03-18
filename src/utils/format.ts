@@ -59,7 +59,9 @@ export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinp
   return "csfloat";
 }
 
-/** Source-aware listing URL — routes to the correct marketplace with float/price filters */
+/** Source-aware listing URL — routes to the correct marketplace with float/price filters.
+ *  priceCents is the EFFECTIVE cost (with buyer fees). The URL uses the ORIGINAL listing
+ *  price (without fees) so price filters target the exact listing on the marketplace. */
 export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number): string {
   const source = listingSource(listingId);
   if (source === "dmarket") {
@@ -70,14 +72,17 @@ export function listingUrl(listingId: string, skinName?: string, condition?: str
       params.set("floatValueTo", Math.min(1, floatValue + margin).toFixed(3));
     }
     if (priceCents !== undefined && priceCents > 0) {
-      const priceDollars = priceCents / 100;
-      params.set("price-from", Math.max(0, priceDollars - 1).toFixed(2));
-      params.set("price-to", (priceDollars + 1).toFixed(2));
+      // Reverse DMarket 2.5% buyer fee to get original listing price
+      const originalCents = Math.round(priceCents / 1.025);
+      const priceDollars = originalCents / 100;
+      params.set("price-from", Math.floor(priceDollars).toString());
+      params.set("price-to", Math.ceil(priceDollars).toString());
     }
     return `https://dmarket.com/ingame-items/item-list/csgo-skins?${params.toString()}`;
   }
   if (source === "skinport") {
     // Skinport: search with condition + float/price range filters
+    // Skinport has 0% buyer fee — priceCents IS the listing price
     const query = condition ? `${skinName} (${condition})` : (skinName ?? "");
     const params = new URLSearchParams({ search: query });
     if (floatValue !== undefined && floatValue > 0) {
