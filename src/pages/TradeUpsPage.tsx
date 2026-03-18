@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
@@ -155,15 +155,29 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   }, [fetchTradeUps]);
 
   const handleSort = (column: string) => {
-    // Free tier sorts client-side (no re-fetch needed — fixed 10 results)
     if (sort === column) {
       setOrder(order === "desc" ? "asc" : "desc");
     } else {
       setSort(column);
       setOrder("desc");
     }
-    setPage(1);
+    if (!isFree) setPage(1);
   };
+
+  // Free tier: client-side sorting (fixed set of ~60 trade-ups, server ignores sort params)
+  const SORT_KEYS: Record<string, keyof TradeUp> = {
+    profit: "profit_cents", ev: "expected_value_cents", roi: "roi_percentage",
+    chance: "chance_to_profit", cost: "total_cost_cents", best: "best_case_cents",
+    worst: "worst_case_cents", age: "created_at",
+  };
+  const sortedTradeUps = useMemo(() => {
+    if (!isFree) return tradeUps;
+    const key = SORT_KEYS[sort] || "profit_cents";
+    return [...tradeUps].sort((a, b) => {
+      const av = a[key] as number, bv = b[key] as number;
+      return order === "desc" ? bv - av : av - bv;
+    });
+  }, [tradeUps, sort, order, isFree]);
 
   const handleTypeChange = (newType: TradeUpType) => {
     // Batch state updates: set loading with type change so old data
@@ -284,7 +298,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       ) : (
         <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
           <TradeUpTable
-            tradeUps={tradeUps}
+            tradeUps={sortedTradeUps}
             sort={sort}
             order={order}
             onSort={handleSort}

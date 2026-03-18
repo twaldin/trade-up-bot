@@ -169,7 +169,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     if (effectiveTier === "free") {
       const freeTypes = type && type !== "all"
         ? [type]
-        : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec"];
+        : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
       const freeRows = await getFreeTierTradeUps(freeTypes);
 
       // Batch-load inputs for all free tier trade-ups (fixes N+1)
@@ -567,10 +567,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
 
+    // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
+    const unclaimed = tradeUps.filter((tu: any) => !tu.claimed_by_other);
+
     // Filter out trade-ups that auto-corrected to partial/stale when "Show stale" is off
     const filteredTradeUps = includeStale
-      ? tradeUps
-      : tradeUps.filter(tu => tu.listing_status === 'active');
+      ? unclaimed
+      : unclaimed.filter(tu => tu.listing_status === 'active');
 
     // Adjust counts for filtered results
     const filteredTotal = includeStale ? total : total - (tradeUps.length - filteredTradeUps.length);
