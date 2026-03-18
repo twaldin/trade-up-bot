@@ -5,6 +5,9 @@ import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
 import { TradeUpsPage } from "./pages/TradeUpsPage.js";
 import { LandingPage } from "./pages/LandingPage.js";
+import { FaqPage } from "./pages/FaqPage.js";
+import { TermsPage } from "./pages/TermsPage.js";
+import { PrivacyPage } from "./pages/PrivacyPage.js";
 import { Button } from "../shared/components/ui/button.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
@@ -332,7 +335,7 @@ interface AuthUser {
   is_admin: boolean;
 }
 
-export default function App() {
+function AuthGatedApp() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
@@ -354,4 +357,15 @@ export default function App() {
 
   // Logged in: show app
   return <AppShell user={user} />;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/faq" element={<FaqPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="*" element={<AuthGatedApp />} />
+    </Routes>
+  );
 }
