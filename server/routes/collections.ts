@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
+import { cachedRoute } from "../redis.js";
 
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>;
 
@@ -9,22 +10,7 @@ export function collectionsRouter(
 ): Router {
   const router = Router();
 
-  // Cache collections response — invalidates on daemon cycle change
-  let collectionsCache: { data: any; calcTs: string; ts: number } | null = null;
-
-  router.get("/api/collections", (_req, res) => {
-    // Serve cache if fresh (< 60s and same daemon cycle)
-    try {
-      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
-      const calcTs = row?.value || "";
-      if (collectionsCache && collectionsCache.calcTs === calcTs && Date.now() - collectionsCache.ts < 60_000) {
-        res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-        return res.json(collectionsCache.data);
-      }
-    } catch {
-      if (collectionsCache) return res.json(collectionsCache.data);
-    }
-
+  router.get("/api/collections", cachedRoute("collections", 300, (_req, res) => {
     try {
       // Batch query 1: base collection info (single GROUP BY, no correlated subqueries)
       const base = db.prepare(`
@@ -82,14 +68,11 @@ export function collectionsRouter(
 
       collections.sort((a, b) => b.listing_count - a.listing_count);
 
-      const calcTs = (db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined)?.value || "";
-      collectionsCache = { data: collections, calcTs, ts: Date.now() };
-      res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
       res.json(collections);
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
-  });
+  }));
 
   // Collection detail
   router.get("/api/collection/:name", (req, res) => {

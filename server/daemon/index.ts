@@ -17,6 +17,7 @@ import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "node:child_process";
 import { initDb, DB_PATH, setSyncMeta } from "../db.js";
 import { takeSnapshot, purgeOldSnapshots } from "../snapshot.js";
+import { initRedis, setCycleVersion, cacheSet } from "../redis.js";
 import type { TradeUp } from "../../shared/types.js";
 
 import { startSkinportListener, getSkinportStats, isDMarketConfigured } from "../sync.js";
@@ -128,6 +129,7 @@ export async function main() {
   }
 
   const db = initDb();
+  initRedis();
   const freshness = new FreshnessTracker();
   const daemonStartedAt = new Date().toISOString();
 
@@ -311,6 +313,46 @@ export async function main() {
       console.log(`  API snapshot created`);
     } catch (e) {
       console.error(`  Snapshot failed: ${(e as Error).message}`);
+    }
+
+    // Pre-populate Redis cache so API never hits cold SQLite
+    try {
+      const cycleTs = new Date().toISOString();
+      await setCycleVersion(cycleTs);
+
+      // Pre-compute global-stats (avoids 6 COUNT queries on cold cache)
+      const stats = db.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
+          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
+          (SELECT COUNT(*) FROM listings) as listings,
+          (SELECT COUNT(*) FROM price_observations) as sale_obs,
+          (SELECT COUNT(*) FROM sale_history) as sale_hist,
+          (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
+          (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
+      `).get() as { total_tu: number; profitable_tu: number; listings: number; sale_obs: number; sale_hist: number; refs: number; cycles: number };
+      await cacheSet("global_stats", {
+        total_trade_ups: stats.total_tu,
+        profitable_trade_ups: stats.profitable_tu ?? 0,
+        total_data_points: stats.listings + stats.sale_obs + stats.sale_hist + stats.refs,
+        listings: stats.listings,
+        sale_observations: stats.sale_obs,
+        sale_history: stats.sale_hist,
+        ref_prices: stats.refs,
+        total_cycles: stats.cycles,
+      }, 600);
+
+      // Pre-compute filter-options (avoids DISTINCT on 2.35M rows)
+      const inputSkins = db.prepare("SELECT DISTINCT skin_name as name FROM trade_up_inputs").all() as { name: string }[];
+      const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
+      const collections = db.prepare("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC").all() as { name: string; count: number }[];
+      await cacheSet("filter_opts", { skins: skinMap, collections }, 600);
+
+      // Invalidate stale trade-ups cache (new cycle = new data)
+      // Old tu: keys expire via TTL; new cycle_version means new keys
+      console.log(`  Redis cache pre-populated`);
+    } catch (e) {
+      console.error(`  Redis pre-populate failed: ${(e as Error).message}`);
     }
 
     // Phase 6: Cooldown — dynamic duration targeting fixed cycle time

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
+import { cachedRoute } from "../redis.js";
 import {
   buildPriceCache,
   evaluateTradeUp,
@@ -34,7 +35,7 @@ export function calculatorRouter(db: Database.Database): Router {
   const router = Router();
 
   // --- Skin search autocomplete ---
-  router.get("/api/calculator/search", (req, res) => {
+  router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, (req, res) => {
     const q = (req.query.q as string || "").trim();
     if (q.length < 2) {
       res.json({ results: [] });
@@ -79,7 +80,7 @@ export function calculatorRouter(db: Database.Database): Router {
     });
 
     res.json({ results: withFloor });
-  });
+  }));
 
   // --- Calculator evaluation ---
   router.post("/api/calculator", (req, res) => {

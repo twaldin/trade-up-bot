@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
+import { cachedRoute } from "../redis.js";
 
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>;
 type KnifeTypeToCases = Map<string, string[]>;
@@ -13,7 +14,7 @@ export function dataRouter(
 
   // Skin browser: list all Covert skins with listing stats and pricing
 
-  router.get("/api/skin-data", (req, res) => {
+  router.get("/api/skin-data", cachedRoute((req) => `skins:${req.query.rarity}:${req.query.collection || ""}:${req.query.outputCollection || ""}:${req.query.page || 1}:${req.query.stattrak || 0}`, 120, (req, res) => {
     const search = (req.query.search as string) || "";
     const rarity = (req.query.rarity as string) || "all";
     const collection = (req.query.collection as string) || "";
@@ -138,12 +139,12 @@ export function dataRouter(
     });
 
     res.json(result);
-  });
+  }));
 
   // Detailed skin data: listings, float price buckets, price observations
 
-  router.get("/api/skin-data/:name", (req, res) => {
-    const skinName = decodeURIComponent(req.params.name);
+  router.get("/api/skin-data/:name", cachedRoute((req) => `skin_detail:${req.params.name}`, 60, (req, res) => {
+    const skinName = decodeURIComponent(req.params.name as string);
     const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1 ? 1 : 0;
 
     // Listings (individual data points for scatter plot)
@@ -269,9 +270,9 @@ export function dataRouter(
         saleCount: totalSaleCount,
       },
     });
-  });
+  }));
 
-  router.get("/api/data-freshness", (req, res) => {
+  router.get("/api/data-freshness", cachedRoute((req) => `freshness:${req.query.since || ""}:${req.query.rarity || ""}:${req.query.stattrak || 0}`, 15, (req, res) => {
     try {
       const since = req.query.since as string | undefined;
       const tab = req.query.tab as string || "Covert";
@@ -305,7 +306,7 @@ export function dataRouter(
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
-  });
+  }));
 
   return router;
 }

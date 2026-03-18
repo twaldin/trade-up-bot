@@ -3,32 +3,13 @@ import fs from "fs";
 import type Database from "better-sqlite3";
 import { getSyncMeta } from "../db.js";
 import { CASE_KNIFE_MAP } from "../engine.js";
+import { cachedRoute } from "../redis.js";
 import type { SyncStatus } from "../../shared/types.js";
 
 export function statusRouter(db: Database.Database): Router {
   const router = Router();
 
-  // Cache status with 60s minimum TTL + invalidate on daemon cycle change.
-  // Status route runs ~10 aggregate queries — expensive on cold cache.
-  let statusCache: { data: any; ts: number } | null = null;
-  let statusLastCalc = "";
-
-  router.get("/api/status", (_req, res) => {
-    // Serve cache if under 60s old (avoids heavy queries blocking event loop)
-    if (statusCache && Date.now() - statusCache.ts < 60_000) {
-      return res.json(statusCache.data);
-    }
-    try {
-      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
-      const currentCalc = row?.value || "";
-      if (statusCache && currentCalc === statusLastCalc) {
-        statusCache.ts = Date.now(); // Refresh TTL
-        return res.json(statusCache.data);
-      }
-      statusLastCalc = currentCalc;
-    } catch {
-      if (statusCache) return res.json(statusCache.data);
-    }
+  router.get("/api/status", cachedRoute("status", 60, (_req, res) => {
     const listingStats = (rarity: string, excludeKnives = false) => {
       const knifeFilter = excludeKnives ? "AND s.name NOT LIKE '★%'" : "";
       const r = db.prepare(`
@@ -151,25 +132,10 @@ export function statusRouter(db: Database.Database): Router {
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
 
-    statusCache = { data: result, ts: Date.now() };
     res.json(result);
-  });
+  }));
 
-  // Global stats — cached 10 minutes, invalidated on daemon cycle change.
-  // These COUNT queries are expensive on cold cache (2.8GB DB, 260K+ rows).
-  let globalStatsCache: { data: any; ts: number; calcTs: string } | null = null;
-  router.get("/api/global-stats", (_req, res) => {
-    let currentCalc = "";
-    try {
-      const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
-      currentCalc = row?.value || "";
-    } catch { /* ignore */ }
-
-    // Return cached if same daemon cycle and under 10 min old
-    if (globalStatsCache && globalStatsCache.calcTs === currentCalc && Date.now() - globalStatsCache.ts < 600_000) {
-      return res.json(globalStatsCache.data);
-    }
-
+  router.get("/api/global-stats", cachedRoute("global_stats", 600, (_req, res) => {
     try {
       // Single query instead of 6 separate COUNT queries — much faster on cold cache
       const stats = db.prepare(`
@@ -193,14 +159,13 @@ export function statusRouter(db: Database.Database): Router {
         ref_prices: stats.refs,
         total_cycles: stats.cycles,
       };
-      globalStatsCache = { data, ts: Date.now(), calcTs: currentCalc };
       res.json(data);
     } catch {
-      res.json(globalStatsCache?.data ?? {});
+      res.json({});
     }
-  });
+  }));
 
-  router.get("/api/daemon-log", (_req, res) => {
+  router.get("/api/daemon-log", cachedRoute("daemon_log", 30, (_req, res) => {
     const logPath = "/tmp/daemon.log";
     const MAX_LINES = 500;
 
@@ -298,9 +263,12 @@ export function statusRouter(db: Database.Database): Router {
     } catch (err) {
       res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, skinportStats: null });
     }
-  });
+  }));
 
-  router.get("/api/daemon-cycles", (req, res) => {
+  router.get("/api/daemon-cycles", cachedRoute(
+    (req) => `daemon_cycles:${req.query.limit || 50}:${req.query.offset || 0}`,
+    300,
+    (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const offset = parseInt(req.query.offset as string) || 0;
 
@@ -327,9 +295,9 @@ export function statusRouter(db: Database.Database): Router {
     } catch (err) {
       res.json({ cycles: [], total: 0 });
     }
-  });
+  }));
 
-  router.get("/api/daemon-stats", (_req, res) => {
+  router.get("/api/daemon-stats", cachedRoute("daemon_stats", 300, (_req, res) => {
     // Check if table exists
     const hasTable = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='daemon_cycle_stats'"
@@ -371,9 +339,12 @@ export function statusRouter(db: Database.Database): Router {
     })();
 
     res.json({ cycles, summary, rateLimitMeta });
-  });
+  }));
 
-  router.get("/api/daemon-events", (req, res) => {
+  router.get("/api/daemon-events", cachedRoute(
+    (req) => `daemon_events:${req.query.since || "all"}:${req.query.limit || 100}`,
+    30,
+    (req, res) => {
     try {
       const since = req.query.since as string | undefined;
       const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
@@ -394,7 +365,7 @@ export function statusRouter(db: Database.Database): Router {
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
-  });
+  }));
 
   return router;
 }
