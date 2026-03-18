@@ -146,14 +146,14 @@ export function setupAuth(app: Express, db: Database.Database) {
   // Separate read-only connection for user deserialization — never blocked by daemon writes.
   // The main db connection can be locked for 20+ seconds during large transactions (Phase 4b recalc).
   const authReadDb = new Database(DB_PATH, { readonly: true });
-  authReadDb.pragma("busy_timeout = 500"); // 500ms max — fail fast, never block event loop
+  authReadDb.pragma("busy_timeout = 1000"); // 1s timeout, fail fast instead of hanging 30s
 
-  // User cache: avoid DB hits entirely during daemon heavy writes
+  // User cache: avoid DB hits on every request during daemon heavy writes
   const userCache = new Map<string, { user: User | null; cachedAt: number }>();
-  const USER_CACHE_TTL = 300_000; // 5 min cache — user tier rarely changes
+  const USER_CACHE_TTL = 60_000; // 1 min
 
   passport.deserializeUser((steamId: string, done) => {
-    // In-memory cache first — no DB hit, no blocking, instant
+    // Check in-memory cache first
     const cached = userCache.get(steamId);
     if (cached && Date.now() - cached.cachedAt < USER_CACHE_TTL) {
       done(null, cached.user);
@@ -165,9 +165,13 @@ export function setupAuth(app: Express, db: Database.Database) {
       userCache.set(steamId, { user: user ?? null, cachedAt: Date.now() });
       done(null, user ?? null);
     } catch {
-      // DB busy — NEVER fall back to main db (blocks event loop 30s+)
-      // Return null = user appears logged out briefly, cache refreshes next request
-      done(null, null);
+      // Read-only DB failed — return stale cache or null.
+      // NEVER fall back to main db — synchronous query blocks event loop 30s+ during daemon writes.
+      if (cached) {
+        done(null, cached.user);
+      } else {
+        done(null, null);
+      }
     }
   });
 
