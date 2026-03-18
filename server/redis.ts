@@ -74,16 +74,15 @@ export async function cacheSet(key: string, data: unknown, ttlSeconds: number): 
 /** Delete keys matching a prefix pattern. Uses SCAN to avoid blocking. */
 export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
   if (!_available || !_redis) return 0;
-  let deleted = 0;
   try {
-    const stream = _redis.scanStream({ match: `${prefix}*`, count: 100 });
-    for await (const keys of stream) {
-      if ((keys as string[]).length > 0) {
-        deleted += await _redis.del(...(keys as string[]));
-      }
+    const keys = await _redis.keys(`${prefix}*`);
+    if (keys.length > 0) {
+      return await _redis.del(...keys);
     }
-  } catch { /* ignore */ }
-  return deleted;
+  } catch (e) {
+    console.error("Cache invalidation failed:", e instanceof Error ? e.message : e);
+  }
+  return 0;
 }
 
 /** Get the daemon cycle version (timestamp of last_calculation). */
