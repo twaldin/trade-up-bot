@@ -108,7 +108,7 @@ export function OutcomeList({ tu, priceDetailKey, onTogglePriceDetail, onNavigat
                   className="mt-1 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
                   onClick={(e) => { e.stopPropagation(); onNavigateSkin(outcome.skin_name); }}
                 >
-                  View in Data Browser &rarr;
+                  View data →
                 </button>
               )}
 
