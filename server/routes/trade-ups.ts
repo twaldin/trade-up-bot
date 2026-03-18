@@ -35,10 +35,23 @@ export function tradeUpsRouter(db: Database.Database): Router {
     res.json(result);
   }));
 
-  // Free tier: 10 oldest stale profitable (or >25% chance) trade-ups per type.
+  // Free tier: 10 diverse active trade-ups per type across price buckets.
   // Same set for ALL free users. Refreshed each daemon cycle.
+  // 3-hour delay: only shows trade-ups created 3+ hours ago.
   const FREE_PER_TYPE = 10;
   const freeCache = new Map<string, { rows: any[]; calcTs: string }>();
+
+  // Price bucket configs per trade-up type
+  const KNIFE_BUCKETS = [
+    { max: 50000, count: 3 },    // cheap: $0-500
+    { max: 150000, count: 4 },   // mid: $500-1500
+    { max: Infinity, count: 3 }, // expensive: $1500+
+  ];
+  const GUN_BUCKETS = [
+    { max: 2000, count: 3 },     // cheap: $0-20
+    { max: 10000, count: 4 },    // mid: $20-100
+    { max: Infinity, count: 3 }, // expensive: $100+
+  ];
 
   function getFreeTierTradeUps(types: string[]): any[] {
     const calcRow = rdb.prepare("SELECT value FROM sync_meta WHERE key = 'last_calculation'").get() as { value: string } | undefined;
@@ -51,18 +64,34 @@ export function tradeUpsRouter(db: Database.Database): Router {
         results.push(...cached.rows);
         continue;
       }
-      // 10 oldest stale/partial trade-ups that are profitable or have >25% chance to profit
-      const rows = rdb.prepare(`
-        SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
-               t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-               0 as outcome_count
-        FROM trade_ups t
-        WHERE t.is_theoretical = 0 AND t.type = ?
-          AND (t.listing_status = 'stale' OR t.listing_status = 'partial')
-          AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
-        ORDER BY t.created_at ASC LIMIT ?
-      `).all(t, FREE_PER_TYPE) as any[];
+
+      const buckets = t === "covert_knife" ? KNIFE_BUCKETS : GUN_BUCKETS;
+      const rows: any[] = [];
+      let prevMax = 0;
+
+      for (const bucket of buckets) {
+        const costFilter = bucket.max === Infinity
+          ? `AND t.total_cost_cents >= ${prevMax}`
+          : `AND t.total_cost_cents >= ${prevMax} AND t.total_cost_cents < ${bucket.max}`;
+
+        const bucketRows = rdb.prepare(`
+          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+                 0 as outcome_count
+          FROM trade_ups t
+          WHERE t.is_theoretical = 0 AND t.type = ?
+            AND t.listing_status = 'active'
+            AND t.created_at <= datetime('now', '-10800 seconds')
+            AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
+            ${costFilter}
+          ORDER BY t.chance_to_profit DESC, t.profit_cents DESC
+          LIMIT ?
+        `).all(t, bucket.count) as any[];
+        rows.push(...bucketRows);
+        prevMax = bucket.max === Infinity ? prevMax : bucket.max;
+      }
+
       freeCache.set(t, { rows, calcTs });
       results.push(...rows);
     }

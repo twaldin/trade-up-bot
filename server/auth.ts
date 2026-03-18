@@ -265,6 +265,6 @@ export function getTierConfig(req: Request): { delay: number; limit: number; sho
     case "basic":
       return { delay: 30 * 60, limit: 0, showListingIds: true };
     default:
-      return { delay: 30 * 60, limit: 10, showListingIds: false };
+      return { delay: 3 * 60 * 60, limit: 10, showListingIds: false };
   }
 }
