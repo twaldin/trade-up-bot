@@ -107,10 +107,18 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                 Every trade-up on TradeUpBot links to specific listings on CSFloat, DMarket, and Skinport — with exact floats, exact prices, and deterministic outcomes. No guesswork.
               </p>
               <div className="flex items-center gap-4">
-                <Btn onClick={login} className="px-6 py-3">
-                  <IconSteam /> Sign in with Steam
-                </Btn>
-                <span className="text-xs text-muted-foreground">Free to start</span>
+                {user ? (
+                  <Btn onClick={goToDashboard} className="px-6 py-3">
+                    Go to Dashboard
+                  </Btn>
+                ) : (
+                  <>
+                    <Btn onClick={login} className="px-6 py-3">
+                      <IconSteam /> Sign in with Steam
+                    </Btn>
+                    <span className="text-xs text-muted-foreground">Free to start</span>
+                  </>
+                )}
               </div>
             </div>
 
