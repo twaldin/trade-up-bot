@@ -174,6 +174,23 @@ app.use((req, res, next) => {
           await cacheSet("global_stats", data, 600);
           console.log(`Cache warmed: global-stats (${((Date.now() - t) / 1000).toFixed(1)}s)`);
         }
+
+        // Pre-compute type counts (avoids 4s COUNT on 326K-664K rows on first type switch)
+        if (!(await cacheGet("type_counts"))) {
+          console.log("Warming cache: type-counts...");
+          const t2 = Date.now();
+          const { rows: countRows } = await pool.query(`
+            SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
+            FROM trade_ups WHERE is_theoretical = 0 AND listing_status = 'active'
+            GROUP BY type
+          `);
+          const counts: Record<string, { total: number; profitable: number }> = {};
+          for (const r of countRows) {
+            counts[r.type] = { total: parseInt(r.c), profitable: parseInt(r.profitable) || 0 };
+          }
+          await cacheSet("type_counts", counts, 1800);
+          console.log(`Cache warmed: type-counts (${((Date.now() - t2) / 1000).toFixed(1)}s)`);
+        }
       } catch (e) {
         console.error("Cache warming failed:", (e as Error).message);
       }
