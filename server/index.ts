@@ -3,7 +3,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { initDb, getReadDb } from "./db.js";
+import { initDb } from "./db.js";
 import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
@@ -104,24 +104,16 @@ app.use((req, res, next) => {
 
 const db = initDb();
 initRedis();
-// Proxy delegates to getReadDb() on every access, so when the daemon refreshes
-// the snapshot file, routes automatically pick up the new connection.
-const readDb = new Proxy({} as ReturnType<typeof getReadDb>, {
-  get(_, prop) {
-    const target = getReadDb();
-    const val = (target as unknown as Record<string | symbol, unknown>)[prop];
-    return typeof val === "function" ? (val as Function).bind(target) : val;
-  },
-});
 
 // Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
 setupAuth(app, db);
 
-// Mount route modules — read-heavy routes use readDb for non-blocking reads
-app.use(statusRouter(readDb));
-app.use(tradeUpsRouter(db, readDb));  // readDb for queries, db for writes
-app.use(dataRouter(readDb, knifeTypeToCases, collectionKnifePool));
-app.use(collectionsRouter(readDb, collectionKnifePool));
+// Mount route modules — all use main DB (WAL mode handles concurrency,
+// Redis cache absorbs 95% of reads, no need for snapshot DB)
+app.use(statusRouter(db));
+app.use(tradeUpsRouter(db));
+app.use(dataRouter(db, knifeTypeToCases, collectionKnifePool));
+app.use(collectionsRouter(db, collectionKnifePool));
 app.use(snapshotsRouter(db));
 app.use(calculatorRouter(db));
 app.use(claimsRouter(db));
@@ -148,16 +140,15 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFu
 console.log("Warming up page cache...");
 const warmupStart = Date.now();
 try {
-  const rdb = getReadDb();
   // Touch the key tables/indexes that API routes query
-  rdb.prepare("SELECT COUNT(*) FROM trade_ups").get();
-  rdb.prepare("SELECT COUNT(*) FROM listings").get();
-  rdb.prepare("SELECT COUNT(*) FROM trade_up_inputs LIMIT 1").get();
-  rdb.prepare("SELECT COUNT(*) FROM price_observations").get();
-  rdb.prepare("SELECT COUNT(*) FROM sale_history").get();
-  rdb.prepare("SELECT COUNT(*) FROM price_data").get();
-  rdb.prepare("SELECT COUNT(*) FROM daemon_cycle_stats").get();
-  rdb.prepare("SELECT COUNT(*) FROM skins").get();
+  db.prepare("SELECT COUNT(*) FROM trade_ups").get();
+  db.prepare("SELECT COUNT(*) FROM listings").get();
+  db.prepare("SELECT COUNT(*) FROM trade_up_inputs LIMIT 1").get();
+  db.prepare("SELECT COUNT(*) FROM price_observations").get();
+  db.prepare("SELECT COUNT(*) FROM sale_history").get();
+  db.prepare("SELECT COUNT(*) FROM price_data").get();
+  db.prepare("SELECT COUNT(*) FROM daemon_cycle_stats").get();
+  db.prepare("SELECT COUNT(*) FROM skins").get();
   console.log(`Page cache warm (${((Date.now() - warmupStart) / 1000).toFixed(1)}s)`);
 } catch (e) {
   console.error("Warmup failed:", (e as Error).message);

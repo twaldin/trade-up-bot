@@ -7,9 +7,9 @@ import { cachedRoute } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
-export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
+export function tradeUpsRouter(db: Database.Database): Router {
   const router = Router();
-  const rdb = readDb ?? db; // Use read-only connection for queries when available
+  const rdb = db; // All reads from main DB (WAL mode + Redis cache handles concurrency)
 
   router.get("/api/filter-options", cachedRoute("filter_opts", 600, (_req, res) => {
     // All trade-ups are non-theoretical (theory removed), so skip the expensive
