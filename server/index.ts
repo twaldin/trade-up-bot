@@ -104,8 +104,8 @@ app.use((req, res, next) => {
 const db = initDb();
 const readDb = getReadDb(); // Read-only connection — never blocked by daemon writes
 
-// Auth (Steam OpenID + sessions) — session reads use readDb to avoid daemon lock blocking
-setupAuth(app, db, readDb);
+// Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
+setupAuth(app, db);
 
 // Mount route modules — read-heavy routes use readDb for non-blocking reads
 app.use(statusRouter(readDb));
