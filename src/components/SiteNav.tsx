@@ -41,7 +41,12 @@ function cacheUser(user: NavUser | null) {
   } catch {}
 }
 
-export function SiteNav() {
+/** Optional center links override (landing page uses #anchor links instead of routes) */
+interface SiteNavProps {
+  centerLinks?: { href: string; label: string }[];
+}
+
+export function SiteNav({ centerLinks }: SiteNavProps = {}) {
   const location = useLocation();
   // Initialize from localStorage to prevent flicker on navigation
   const [user, setUser] = useState<NavUser | null>(loadCachedUser);
@@ -81,15 +86,21 @@ export function SiteNav() {
           TradeUpBot
         </Link>
         <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
-          {NAV_LINKS.map(({ to, label }) => (
-            <Link
-              key={to}
-              to={to}
-              className={location.pathname.startsWith(to) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
-            >
-              {label}
-            </Link>
-          ))}
+          {centerLinks ? (
+            centerLinks.map(({ href, label }) => (
+              <a key={href} href={href} className="hover:text-foreground transition-colors">{label}</a>
+            ))
+          ) : (
+            NAV_LINKS.map(({ to, label }) => (
+              <Link
+                key={to}
+                to={to}
+                className={location.pathname.startsWith(to) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
+              >
+                {label}
+              </Link>
+            ))
+          )}
         </div>
         {/* Fixed-width right section prevents center nav from shifting */}
         <div className="flex items-center gap-3 min-w-[200px] justify-end">

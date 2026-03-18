@@ -499,10 +499,21 @@ export function tradeUpsRouter(db: Database.Database): Router {
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
 
+    // Filter out trade-ups that auto-corrected to partial/stale when "Show stale" is off
+    const filteredTradeUps = includeStale
+      ? tradeUps
+      : tradeUps.filter(tu => tu.listing_status === 'active');
+
+    // Adjust counts for filtered results
+    const filteredTotal = includeStale ? total : total - (tradeUps.length - filteredTradeUps.length);
+    const filteredProfitable = includeStale
+      ? totalProfitable
+      : totalProfitable - tradeUps.filter(tu => tu.listing_status !== 'active' && tu.profit_cents > 0).length;
+
     const result = {
-      trade_ups: tradeUps,
-      total,
-      total_profitable: totalProfitable,
+      trade_ups: filteredTradeUps,
+      total: filteredTotal,
+      total_profitable: filteredProfitable,
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
