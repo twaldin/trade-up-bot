@@ -757,6 +757,14 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       }
     }
 
+    // Invalidate Redis caches for this trade-up and the list
+    if (anyUnavailable || anyPriceChanged) {
+      import("../redis.js").then(({ cacheInvalidatePrefix }) => {
+        cacheInvalidatePrefix("tu:").catch(() => {});
+        cacheInvalidatePrefix("tu_inputs:" + tradeUpId).catch(() => {});
+      }).catch(() => {});
+    }
+
     res.json({
       trade_up_id: tradeUpId,
       inputs: results,

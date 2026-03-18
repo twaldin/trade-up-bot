@@ -200,6 +200,15 @@ export async function main() {
     // Phase 4.5: Verify profitable trade-up inputs still exist
     await phase4p5VerifyInputs(db, freshness, apiKey, probe, budget);
 
+    // Phase 4b: Recalc trade-up stats where input prices changed (DMarket/Skinport updates)
+    {
+      const { recalcTradeUpCosts } = await import("../engine.js");
+      const recalcResult = recalcTradeUpCosts(db);
+      if (recalcResult.updated > 0) {
+        console.log(`  Phase 4b: Recalculated ${recalcResult.updated} trade-ups with changed input prices`);
+      }
+    }
+
     // Phase 5: Parallel discovery via worker threads
     // Knife, Classified, and ST discovery run concurrently in separate threads.
     // Each worker opens a read-only DB connection and builds its own price cache.
