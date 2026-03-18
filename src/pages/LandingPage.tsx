@@ -36,6 +36,7 @@ interface GlobalStats {
   total_trade_ups: number;
   profitable_trade_ups: number;
   total_data_points: number;
+  total_cycles: number;
   uptime_ms: number;
 }
 
@@ -93,6 +94,12 @@ const LandingPage = () => {
                 <div><span className="text-foreground font-semibold tabular-nums">{stats.total_trade_ups.toLocaleString()}</span> <span className="text-muted-foreground">trade-ups</span></div>
                 <div><span className="text-green-500 font-semibold tabular-nums">{stats.profitable_trade_ups.toLocaleString()}</span> <span className="text-muted-foreground">profitable</span></div>
                 <div><span className="text-foreground font-semibold tabular-nums">{stats.total_data_points.toLocaleString()}</span> <span className="text-muted-foreground">data points</span></div>
+                {stats.total_cycles > 0 && (() => {
+                  const totalMinutes = stats.total_cycles * 20;
+                  const hours = Math.floor(totalMinutes / 60);
+                  const time = hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`;
+                  return <div><span className="text-foreground font-semibold tabular-nums">{time}</span> <span className="text-muted-foreground">analyzed</span></div>;
+                })()}
               </div>
             )}
 
