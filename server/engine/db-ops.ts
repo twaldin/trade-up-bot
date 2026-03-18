@@ -439,6 +439,18 @@ export function reviveStaleTradeUps(
 
   let checked = 0, revived = 0, improved = 0;
 
+  // Build set of existing listing signatures to prevent revival from creating duplicates.
+  const knifeExistingSigs = new Set<string>();
+  const knifeExisting = db.prepare(`
+    SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+    FROM trade_ups t JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+    WHERE t.type = 'covert_knife' AND t.is_theoretical = 0
+    GROUP BY t.id
+  `).all() as { id: number; ids: string }[];
+  for (const row of knifeExisting) {
+    knifeExistingSigs.add(row.ids.split(",").sort().join(","));
+  }
+
   const reviveAll = db.transaction(() => {
     for (const tu of stale) {
       checked++;
@@ -510,6 +522,11 @@ export function reviveStaleTradeUps(
 
       if (newInputs.length !== 5) continue;
       if (!anyMissing) continue; // All inputs still exist, shouldn't happen but just in case
+
+      // Dedup: check if the new listing combination already exists in another trade-up.
+      // Revival can create duplicates when a replacement listing matches an active trade-up's set.
+      const newSig = newInputs.map(i => i.id).sort().join(",");
+      if (knifeExistingSigs.has(newSig)) continue; // Would create duplicate — skip
 
       // Re-evaluate with the new inputs
       const result = evaluateKnifeTradeUp(db, newInputs, knifeFinishCache);
@@ -631,6 +648,21 @@ export function reviveStaleGunTradeUps(
 
   let checked = 0, revived = 0, improved = 0;
 
+  // Build existing listing signatures to prevent revival duplicates (same as knife revival)
+  const gunExistingSigs = new Set<string>();
+  const gunTypes = ["classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
+  for (const gType of gunTypes) {
+    const rows = db.prepare(`
+      SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+      FROM trade_ups t JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+      WHERE t.type = ? AND t.is_theoretical = 0
+      GROUP BY t.id
+    `).all(gType) as { id: number; ids: string }[];
+    for (const row of rows) {
+      gunExistingSigs.add(row.ids.split(",").sort().join(","));
+    }
+  }
+
   const reviveAll = db.transaction(() => {
     for (const tu of stale) {
       checked++;
@@ -690,6 +722,10 @@ export function reviveStaleGunTradeUps(
       }
 
       if (newInputs.length !== 10 || !anyMissing) continue;
+
+      // Dedup: skip if new listing combo already exists in another trade-up
+      const gunNewSig = newInputs.map(i => i.id).sort().join(",");
+      if (gunExistingSigs.has(gunNewSig)) continue;
 
       // Get Covert outcomes for the collections in this trade-up
       const collectionIds = [...new Set(newInputs.map(i => i.collection_id))];
