@@ -45,8 +45,12 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [total, setTotal] = useState(0);
   const [totalProfitable, setTotalProfitable] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [tier, setTier] = useState<string>("free");
+  const [loading, setLoading] = useState(true); // Start loading to prevent empty state flash
+  const [tier, setTier] = useState<string>(() => {
+    // Persist tier to avoid "free tier" upgrade banner flash on mount
+    if (typeof window !== "undefined") return localStorage.getItem("user_tier") || "free";
+    return "free";
+  });
   const [myClaimCount, setMyClaimCount] = useState(0);
 
   // Read initial state from URL search params
@@ -102,9 +106,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     debounceRef.current = setTimeout(() => setPage(1), 300);
   }, []);
 
-  // Bump to trigger re-fetch after claim/release
-  const [claimVersion, setClaimVersion] = useState(0);
-
   // Cancel in-flight requests when sort/filter/type changes
   const abortRef = useRef<AbortController | null>(null);
 
@@ -138,7 +139,9 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       setTradeUps(data.trade_ups);
       setTotal(data.total);
       setTotalProfitable(data.total_profitable ?? 0);
-      setTier(data.tier || "free");
+      const newTier = data.tier || "free";
+      setTier(newTier);
+      try { localStorage.setItem("user_tier", newTier); } catch {}
       setMyClaimCount(data.my_claim_count ?? 0);
     } catch (err) {
       if ((err as Error).name === "AbortError") return; // cancelled — ignore
@@ -146,7 +149,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     } finally {
       if (!controller.signal.aborted && !silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims, claimVersion, isFree]);
+  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims, isFree]);
 
   useEffect(() => {
     fetchTradeUps();
@@ -165,13 +168,18 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   };
 
   const handleTypeChange = (newType: TradeUpType) => {
+    // Batch state updates: set loading with type change so old data
+    // stays dimmed (no flash of empty state between renders)
     setShowMyClaims(false);
     setType(newType);
     setPage(1);
+    setLoading(true);
   };
 
   const handleClaimChange = useCallback(() => {
-    setClaimVersion(v => v + 1);
+    // Update claim count locally — no full re-fetch needed
+    // Lock icon + release button handled by TradeUpTable's local claimedIds state
+    setMyClaimCount(c => c + 1);
   }, []);
 
   const totalPages = Math.ceil(total / perPage);
