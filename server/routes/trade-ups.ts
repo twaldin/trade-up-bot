@@ -786,12 +786,11 @@ export function tradeUpsRouter(db: Database.Database): Router {
       }).catch(() => {});
     }
 
-    // Invalidate Redis caches for this trade-up and the list
+    // Await Redis invalidation before responding so next request sees fresh data
     if (anyUnavailable || anyPriceChanged) {
-      import("../redis.js").then(({ cacheInvalidatePrefix }) => {
-        cacheInvalidatePrefix("tu:").catch(() => {});
-        cacheInvalidatePrefix("tu_inputs:" + tradeUpId).catch(() => {});
-      }).catch(() => {});
+      const { cacheInvalidatePrefix } = await import("../redis.js");
+      await cacheInvalidatePrefix("tu:");
+      await cacheInvalidatePrefix("tu_inputs:" + tradeUpId);
     }
 
     res.json({
