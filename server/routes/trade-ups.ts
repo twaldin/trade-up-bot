@@ -213,10 +213,15 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       }
     }
 
-    // "My Claims" filter: restrict to user's active claims (ignores type filter)
+    // "My Claims" filter: use Redis active_claims (main DB may differ from snapshot)
     if (my_claims === "true") {
-      where += " AND t.id IN (SELECT trade_up_id FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now'))";
-      params.push(userId);
+      const myClaimIds = activeClaims.filter(c => c.user_id === userId).map(c => c.trade_up_id);
+      if (myClaimIds.length === 0) {
+        res.json({ trade_ups: [], total: 0, my_claim_count: 0 });
+        return;
+      }
+      where += ` AND t.id IN (${myClaimIds.map(() => "?").join(",")})`;
+      params.push(...myClaimIds);
     } else if (type) {
       where += " AND t.type = ?";
       params.push(type);
@@ -452,13 +457,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
     });
 
-    // Count user's active claims for the "Your Claims" button badge
-    let myClaimCount = 0;
-    try {
-      myClaimCount = (rdb.prepare(
-        "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
-      ).get(userId) as { c: number }).c;
-    } catch { /* ignore */ }
+    // Count user's active claims from Redis (not snapshot DB which may be stale)
+    const myClaimCount = activeClaims.filter(c => c.user_id === userId).length;
 
     const result = {
       trade_ups: tradeUps,
