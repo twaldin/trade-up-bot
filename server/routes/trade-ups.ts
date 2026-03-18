@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { cachedRoute } from "../redis.js";
+import { cachedRoute, getRateLimit } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
@@ -471,6 +471,8 @@ export function tradeUpsRouter(db: Database.Database): Router {
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
+      claim_limit: (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? await getRateLimit(userId, "claim", 10) : null,
+      verify_limit: await getRateLimit(userId, "verify", (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? 20 : 10),
     };
     res.json(result);
   }));
@@ -510,6 +512,20 @@ export function tradeUpsRouter(db: Database.Database): Router {
     const tradeUpId = parseInt(req.params.id);
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
+      return;
+    }
+
+    // Rate limit: basic 10/hr, pro 20/hr
+    const userId = (req.user as any)?.steam_id || "anonymous";
+    const userTier = (req.user as any)?.tier || "free";
+    const verifyMax = userTier === "pro" || userTier === "admin" ? 20 : 10;
+    const { checkRateLimit: checkRL } = await import("../redis.js");
+    const verifyRateLimit = await checkRL(userId, "verify", verifyMax, 3600);
+    if (!verifyRateLimit.allowed) {
+      res.status(429).json({
+        error: `Verify limit reached (${verifyMax}/hour). Resets in ${Math.ceil(verifyRateLimit.resetIn! / 60)} min.`,
+        rate_limit: verifyRateLimit,
+      });
       return;
     }
 
@@ -802,6 +818,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
       any_unavailable: anyUnavailable,
       any_price_changed: anyPriceChanged,
       updated_trade_up: updatedTradeUp,
+      rate_limit: verifyRateLimit,
     });
   });
 

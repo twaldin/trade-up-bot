@@ -85,6 +85,42 @@ export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
   return 0;
 }
 
+/** Rate limit check: increment counter, reject if over limit. Returns usage info. */
+export async function checkRateLimit(
+  userId: string, action: string, maxCount: number, windowSeconds: number = 3600
+): Promise<{ allowed: boolean; remaining: number; total: number; resetIn: number | null }> {
+  if (!_available || !_redis) return { allowed: true, remaining: maxCount, total: maxCount, resetIn: null };
+  try {
+    const key = `rate:${action}:${userId}`;
+    const count = await _redis.incr(key);
+    if (count === 1) await _redis.expire(key, windowSeconds);
+    const ttl = await _redis.ttl(key);
+
+    if (count > maxCount) {
+      await _redis.decr(key); // undo — we're rejecting
+      return { allowed: false, remaining: 0, total: maxCount, resetIn: ttl > 0 ? ttl : windowSeconds };
+    }
+    return { allowed: true, remaining: maxCount - count, total: maxCount, resetIn: ttl > 0 ? ttl : null };
+  } catch {
+    return { allowed: true, remaining: maxCount, total: maxCount, resetIn: null };
+  }
+}
+
+/** Get current rate limit usage without incrementing. */
+export async function getRateLimit(
+  userId: string, action: string, maxCount: number
+): Promise<{ remaining: number; total: number; resetIn: number | null }> {
+  if (!_available || !_redis) return { remaining: maxCount, total: maxCount, resetIn: null };
+  try {
+    const key = `rate:${action}:${userId}`;
+    const count = parseInt(await _redis.get(key) || "0");
+    const ttl = await _redis.ttl(key);
+    return { remaining: Math.max(0, maxCount - count), total: maxCount, resetIn: ttl > 0 ? ttl : null };
+  } catch {
+    return { remaining: maxCount, total: maxCount, resetIn: null };
+  }
+}
+
 /** Get the daemon cycle version (timestamp of last_calculation). */
 export async function getCycleVersion(): Promise<string> {
   if (!_available || !_redis) return "";

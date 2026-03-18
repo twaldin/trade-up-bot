@@ -23,6 +23,12 @@ interface VerifyResult {
   any_price_changed: boolean;
 }
 
+interface RateLimitInfo {
+  remaining: number;
+  total: number;
+  resetIn: number | null;
+}
+
 interface Props {
   tradeUps: TradeUp[];
   sort: string;
@@ -33,6 +39,10 @@ interface Props {
   onClaimChange?: (delta: number) => void;
   tier?: string;
   showMyClaims?: boolean;
+  claimLimit?: RateLimitInfo | null;
+  verifyLimit?: RateLimitInfo | null;
+  onClaimLimitUpdate?: (limit: RateLimitInfo) => void;
+  onVerifyLimitUpdate?: (limit: RateLimitInfo) => void;
 }
 
 function SortIndicator({ column, sort, order }: { column: string; sort: string; order: string }) {
@@ -75,13 +85,23 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
-function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: number; claimed: Set<number>; setClaimed: (fn: (prev: Set<number>) => Set<number>) => void; onClaimChange?: (delta: number) => void }) {
+function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitUpdate }: {
+  tuId: number;
+  claimed: Set<number>;
+  setClaimed: (fn: (prev: Set<number>) => Set<number>) => void;
+  onClaimChange?: (delta: number) => void;
+  limit?: RateLimitInfo | null;
+  onLimitUpdate?: (limit: RateLimitInfo) => void;
+}) {
   const [loading, setLoading] = useState(false);
-  if (claimed.has(tuId)) return null; // Already claimed — bar handles display
+  if (claimed.has(tuId)) return null;
+
+  const atLimit = limit && limit.remaining <= 0;
+  const resetMin = limit?.resetIn ? Math.ceil(limit.resetIn / 60) : null;
 
   return (
     <button
-      disabled={loading}
+      disabled={loading || !!atLimit}
       className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors disabled:opacity-50"
       onClick={async (e) => {
         e.stopPropagation();
@@ -89,6 +109,7 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: numbe
         try {
           const res = await fetch(`/api/trade-ups/${tuId}/claim`, { method: "POST", credentials: "include" });
           const data = await res.json();
+          if (data.rate_limit) onLimitUpdate?.(data.rate_limit);
           if (data.error) {
             alert(data.error);
           } else {
@@ -102,12 +123,12 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange }: { tuId: numbe
         }
       }}
     >
-      {loading ? "..." : "Claim"}
+      {loading ? "..." : atLimit ? `Limit (${resetMin}m)` : `Claim${limit ? ` (${limit.remaining}/${limit.total})` : ""}`}
     </button>
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate }: Props) {
   const isFree = tier === "free";
   const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
@@ -170,11 +191,15 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const handleVerify = useCallback(async (tuId: number) => {
     setVerifying(tuId);
     try {
-      const res = await fetch(`/api/verify-trade-up/${tuId}`, { method: "POST" });
+      const res = await fetch(`/api/verify-trade-up/${tuId}`, { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (data.rate_limit) onVerifyLimitUpdate?.(data.rate_limit);
+      if (res.status === 429) {
+        alert(data.error);
+        return;
+      }
       if (res.ok) {
-        const data = await res.json();
         setVerifyResults(prev => new Map(prev).set(tuId, data));
-        // If prices changed, update the displayed trade-up numbers
         if (data.updated_trade_up) {
           setPriceOverrides(prev => new Map(prev).set(tuId, {
             total_cost_cents: data.updated_trade_up.total_cost_cents,
@@ -185,7 +210,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
       }
     } catch { /* network error */ }
     finally { setVerifying(null); }
-  }, []);
+  }, [onVerifyLimitUpdate]);
 
 
 
@@ -227,7 +252,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             </div>
             {!myClaimLocal && !otherClaim && (
               isPro
-                ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} />
+                ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} />
                 : <button
                     className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
                     onClick={(e) => { e.stopPropagation(); setUpgradeMsg(tu.id); }}
@@ -267,6 +292,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onNavigateSkin={onNavigateSkin}
           showListingLinks={isPro}
           showVerify={isPro || isBasic}
+          verifyLimit={verifyLimit}
         />
         <OutcomeList
           tu={tu}

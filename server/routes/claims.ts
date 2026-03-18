@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
 import { requireTier, type User } from "../auth.js";
-import { cacheGet, cacheSet, cacheInvalidatePrefix } from "../redis.js";
+import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit } from "../redis.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
@@ -170,6 +170,16 @@ export function claimsRouter(db: Database.Database): Router {
 
     releaseExpiredClaims();
 
+    // Rate limit: 10 claims per hour (Pro only)
+    const rateLimit = await checkRateLimit(userId, "claim", 10, 3600);
+    if (!rateLimit.allowed) {
+      res.status(429).json({
+        error: `Claim limit reached (10/hour). Resets in ${Math.ceil(rateLimit.resetIn! / 60)} min.`,
+        rate_limit: rateLimit,
+      });
+      return;
+    }
+
     // Check trade-up exists and is profitable
     const tradeUp = db.prepare(
       "SELECT id, profit_cents, is_theoretical, listing_status FROM trade_ups WHERE id = ?"
@@ -283,6 +293,7 @@ export function claimsRouter(db: Database.Database): Router {
         expires_at: claim.expires_at,
       },
       verification,
+      rate_limit: rateLimit,
     });
   });
 
