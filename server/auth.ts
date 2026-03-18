@@ -219,7 +219,11 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     }));
 
     // Auth routes
-    app.get("/auth/steam", passport.authenticate("steam"));
+    app.get("/auth/steam", (req, res, next) => {
+      // Save return URL so we can redirect back after auth
+      if (req.query.return) (req.session as any).returnTo = req.query.return as string;
+      passport.authenticate("steam")(req, res, next);
+    });
     app.get("/auth/steam/callback", (req, res, next) => {
       // Fix for nginx proxy stripping query params from req.url
       req.url = req.originalUrl;
@@ -234,7 +238,9 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             return res.redirect("/?auth=failed");
           }
           console.log(`Steam login: ${user.display_name} (${user.steam_id})`);
-          res.redirect("/");
+          const returnTo = (req.session as any).returnTo || "/";
+          delete (req.session as any).returnTo;
+          res.redirect(returnTo);
         });
       })(req, res, next);
     });
