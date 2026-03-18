@@ -212,18 +212,20 @@ export async function printPerformanceComparison(pool: pg.Pool) {
       ORDER BY id DESC LIMIT 20
     ) sub
   `);
-  const recent = rows[0] as {
-    cycles: string;
-    avg_duration: number;
-    avg_api_calls: number;
-    avg_profitable: number;
-    avg_top_profit: number;
-    avg_new_found: number;
-    avg_improved: number;
-    max_api_limit: number | null;
-  };
+  const raw = rows[0];
+  if (!raw || Number(raw.cycles) < 2) return;
 
-  if (Number(recent.cycles) < 2) return;
+  // PG returns AVG() as string (numeric type) — parse to float
+  const recent = {
+    cycles: Number(raw.cycles),
+    avg_duration: parseFloat(raw.avg_duration) || 0,
+    avg_api_calls: parseFloat(raw.avg_api_calls) || 0,
+    avg_profitable: parseFloat(raw.avg_profitable) || 0,
+    avg_top_profit: parseFloat(raw.avg_top_profit) || 0,
+    avg_new_found: parseFloat(raw.avg_new_found) || 0,
+    avg_improved: parseFloat(raw.avg_improved) || 0,
+    max_api_limit: raw.max_api_limit ? Number(raw.max_api_limit) : null,
+  };
 
   console.log(`\n[${timestamp()}] === Performance (last ${recent.cycles} cycles) ===`);
   console.log(`  Avg cycle: ${(recent.avg_duration / 60000).toFixed(1)} min`);
