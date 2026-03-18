@@ -5,57 +5,47 @@ import { Strategy as SteamStrategy } from "passport-steam";
 import session from "express-session";
 import type { Express, Request, Response, NextFunction } from "express";
 import Database from "better-sqlite3";
+import { DB_PATH } from "./db.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
-  private db: Database.Database;
-  private readDb: Database.Database;
-  constructor(db: Database.Database, readDb?: Database.Database) {
+  private sessionDb: Database.Database;
+  constructor(dbPath: string) {
     super();
-    this.db = db;
-    this.readDb = readDb ?? db;
-    // Retry schema init — daemon may hold a write lock at startup
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        db.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
-        db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
-        db.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000));
-        break;
-      } catch (e: unknown) {
-        if (attempt < 9 && (e as any)?.code === "SQLITE_BUSY") {
-          const delay = (attempt + 1) * 500;
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
-          continue;
-        }
-        throw e;
-      }
-    }
+    // Separate DB file for sessions — never contends with daemon writes
+    const dir = require("path").dirname(dbPath);
+    const sessionPath = require("path").join(dir, "sessions.db");
+    this.sessionDb = new Database(sessionPath);
+    this.sessionDb.pragma("journal_mode = WAL");
+    this.sessionDb.pragma("busy_timeout = 2000");
+    this.sessionDb.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
+    this.sessionDb.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+    try { this.sessionDb.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000)); } catch { /* ignore */ }
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
     try {
-      // Must use write DB — sessions are written here and may not be in the read snapshot yet
-      const row = this.db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
+      const row = this.sessionDb.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Math.floor(Date.now() / 1000)) as { sess: string } | undefined;
       cb(null, row ? JSON.parse(row.sess) : null);
-    } catch { cb(null, null); } // Return null on lock error — better than hanging
+    } catch { cb(null, null); }
   }
   set(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
     try {
       const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
-      this.db.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
+      this.sessionDb.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
       cb?.();
     } catch (e) { cb?.(e); }
   }
   destroy(sid: string, cb?: (err?: any) => void) {
-    try { this.db.prepare("DELETE FROM sessions WHERE sid = ?").run(sid); cb?.(); } catch (e) { cb?.(e); }
+    try { this.sessionDb.prepare("DELETE FROM sessions WHERE sid = ?").run(sid); cb?.(); } catch (e) { cb?.(e); }
   }
   touch(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
     try {
       const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
-      this.db.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
+      this.sessionDb.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
-    } catch { cb?.(); } // Silently ignore lock errors — touch is non-critical
+    } catch { cb?.(); }
   }
 }
 
@@ -88,7 +78,7 @@ export function isAdmin(user: Express.User | User | undefined): boolean {
   return (user as any).is_admin === 1 || (user as any).is_admin === true;
 }
 
-export function setupAuth(app: Express, db: Database.Database, readDb?: Database.Database) {
+export function setupAuth(app: Express, db: Database.Database) {
   const steamApiKey = process.env.STEAM_API_KEY;
   const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
   const baseUrl = process.env.BASE_URL || "http://localhost:3001";
@@ -134,7 +124,7 @@ export function setupAuth(app: Express, db: Database.Database, readDb?: Database
     }
   }
 
-  const store = new SqliteSessionStore(db, readDb);
+  const store = new SqliteSessionStore(DB_PATH);
 
   app.use(session({
     store,
