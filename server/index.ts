@@ -77,11 +77,11 @@ app.use(cors({
   ],
   credentials: true,
 }));
-const rlKeyGen = (req: express.Request) => (req.headers["x-real-ip"] as string) || req.ip || "unknown";
-const rlOpts = { validate: false as any }; // disable all validation — nginx sets x-real-ip, not standard headers
-app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false, keyGenerator: rlKeyGen, ...rlOpts }));
-app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKeyGen, ...rlOpts }));
-app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKeyGen, ...rlOpts }));
+// Rate limiting: use x-real-ip from nginx (never req.ip — triggers ERR_ERL_KEY_GEN_IPV6)
+const rlKey = (req: express.Request) => (req.headers["x-real-ip"] as string) || "unknown";
+app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false, keyGenerator: rlKey }));
+app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));
+app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKey }));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
