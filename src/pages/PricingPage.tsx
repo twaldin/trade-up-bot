@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
@@ -39,6 +39,12 @@ function PricingFaqItem({ question, children }: { question: string; children: Re
 
 const login = () => { window.location.href = '/auth/steam'; };
 
+const subscribe = async (plan: string) => {
+  const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan }) });
+  const data = await res.json();
+  if (data.url) window.location.href = data.url;
+};
+
 const Btn = ({ children, variant = 'primary', className = '', onClick }: {
   children: React.ReactNode; variant?: 'primary' | 'outline'; className?: string; onClick?: () => void;
 }) => {
@@ -54,6 +60,11 @@ const Btn = ({ children, variant = 'primary', className = '', onClick }: {
 };
 
 export function PricingPage() {
+  const [user, setUser] = useState<{ tier: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/me", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(setUser).catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <SiteNav />
@@ -104,7 +115,9 @@ export function PricingPage() {
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No real-time data</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
               </ul>
-              <Btn variant="outline" onClick={login} className="w-full">Subscribe</Btn>
+              <Btn variant="outline" onClick={() => user ? subscribe("basic") : login()} className="w-full">
+                {user?.tier === "basic" ? "Current plan" : "Subscribe"}
+              </Btn>
             </div>
 
             {/* Pro */}
@@ -124,7 +137,9 @@ export function PricingPage() {
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
               </ul>
-              <Btn onClick={login} className="w-full">Go Pro</Btn>
+              <Btn onClick={() => user ? subscribe("pro") : login()} className="w-full">
+                {user?.tier === "pro" ? "Current plan" : "Go Pro"}
+              </Btn>
             </div>
           </div>
 

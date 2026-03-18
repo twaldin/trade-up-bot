@@ -97,9 +97,8 @@ export function stripeRouter(pool: pg.Pool): Router {
     let event: Stripe.Event;
 
     try {
-      // For webhook verification, need raw body
-      const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+      // req.body is a raw Buffer from express.raw() middleware
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } catch (err: any) {
       console.error("Webhook signature verification failed:", err.message);
       res.status(400).send("Webhook Error");
