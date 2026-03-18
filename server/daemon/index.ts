@@ -57,7 +57,7 @@ if (fs.existsSync(envPath)) {
 /** Minimum worker time limit in ms. Workers do structured + exploration within this budget. */
 const MIN_WORKER_TIME = 120_000; // 2 min minimum
 
-/** Maximum worker time limit in ms. First super-batch on fresh starts needs more. */
+/** Maximum worker time limit in ms. First super-batch gets more time. */
 const MAX_WORKER_TIME = 300_000; // 5 min maximum
 
 /** Kill timeout buffer — SIGTERM workers that exceed their time limit by this margin. */
@@ -326,12 +326,13 @@ export async function main() {
 
         const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
 
-        // Dynamic worker time: first round of first super-batch gets more time
-        // for full structured discovery (no existing sigs on fresh start).
-        // All other rounds use minimum — structured is instant once sigs exist.
-        const isFirstRound = superBatchCount === 1 && roundIdx === 0;
-        const workerTimeLimit = isFirstRound
-          ? Math.min(MAX_WORKER_TIME, Math.floor((engineEnd - Date.now()) / 4))
+        // Dynamic worker time: first super-batch gets generous time for full
+        // structured discovery (no existing sigs on fresh/cycle 1).
+        // Subsequent super-batches: structured is instant, use minimum for exploration.
+        const isFirstBatch = superBatchCount === 1;
+        const remainingMs = engineEnd - Date.now();
+        const workerTimeLimit = isFirstBatch
+          ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / WORKER_ROUNDS.length))
           : MIN_WORKER_TIME;
 
         setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);

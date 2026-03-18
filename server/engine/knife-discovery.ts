@@ -25,6 +25,7 @@ export function findProfitableKnifeTradeUps(
     onProgress?: (msg: string) => void;
     extraTransitionPoints?: number[];
     existingSignatures?: Set<string>;
+    deadlineMs?: number;
   } = {}
 ): TradeUp[] {
   options.onProgress?.("Building price cache for knife trade-ups...");
@@ -128,9 +129,12 @@ export function findProfitableKnifeTradeUps(
   const selectLowestKnifeFloat = (quotas: Map<string, number>) =>
     selectLowestFloat(byColAdj, quotas, 5);
 
+  const pastDeadline = () => options.deadlineMs !== undefined && Date.now() >= options.deadlineMs;
+
   // Step 1: Single-collection knife trade-ups
   options.onProgress?.("Knife: single-collection combos...");
   for (const colName of knifeCollections) {
+    if (pastDeadline()) break;
     const listings = byCollection.get(colName)!;
     if (listings.length < 5) continue;
 
@@ -226,6 +230,7 @@ export function findProfitableKnifeTradeUps(
   // Step 2: Two-collection knife trade-ups
   options.onProgress?.("Knife: two-collection combos...");
   for (let i = 0; i < knifeCollections.length; i++) {
+    if (pastDeadline()) break;
     for (let j = i + 1; j < knifeCollections.length; j++) {
       const colA = knifeCollections[i];
       const colB = knifeCollections[j];
@@ -315,6 +320,12 @@ export function findProfitableKnifeTradeUps(
   // Step 3: Three-collection knife trade-ups (reduced scope)
   // Data shows 0% historically profitable for 3+ collections, but keep triples
   // with reduced limits in case the market shifts.
+  if (pastDeadline()) {
+    options.onProgress?.(`Knife: stopped at deadline (${results.length} trade-ups)`);
+    if (skippedExisting > 0) console.log(`  Knife discovery: skipped ${skippedExisting} combos already in DB`);
+    results.sort((a, b) => b.profit_cents - a.profit_cents);
+    return results;
+  }
   options.onProgress?.("Knife: three-collection combos...");
   const maxTripleKnife = Math.min(knifeCollections.length, 20); // was 35
   for (let i = 0; i < maxTripleKnife; i++) {

@@ -101,31 +101,35 @@ try {
   const structuredStart = Date.now();
   let tradeUps;
 
+  // Give structured discovery 60% of the time budget, leave 40% for exploration
+  const structuredDeadline = deadline ? Date.now() + Math.floor((deadline - Date.now()) * 0.6) : undefined;
+
   switch (task) {
     case "knife":
       tradeUps = findProfitableKnifeTradeUps(db, {
         existingSignatures: existingSigs,
+        deadlineMs: structuredDeadline,
       });
       break;
 
     case "classified":
-      tradeUps = findProfitableTradeUps(db, { existingSignatures: existingSigs });
+      tradeUps = findProfitableTradeUps(db, { existingSignatures: existingSigs, deadlineMs: structuredDeadline });
       break;
 
     case "restricted":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
       break;
 
     case "milspec":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
       break;
 
     case "industrial":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
       break;
 
     case "consumer":
-      tradeUps = findProfitableTradeUps(db, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs });
+      tradeUps = findProfitableTradeUps(db, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
       break;
   }
 
