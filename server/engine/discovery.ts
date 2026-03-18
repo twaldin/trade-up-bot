@@ -39,6 +39,7 @@ export function findProfitableTradeUps(
     onProgress?: ProgressCallback;
     onFlush?: (tradeUps: TradeUp[], isFirst: boolean) => void;
     existingSignatures?: Set<string>;
+    deadlineMs?: number;
   } = {}
 ): TradeUp[] {
   const targetRarities = options.rarities ?? ["Classified"];
@@ -62,7 +63,10 @@ export function findProfitableTradeUps(
     store.add(tu);
   };
 
+  const pastDeadline = () => options.deadlineMs !== undefined && Date.now() >= options.deadlineMs;
+
   for (const inputRarity of targetRarities) {
+    if (pastDeadline()) break;
     const outputRarity = getNextRarity(inputRarity);
     if (!outputRarity) continue;
 
@@ -211,6 +215,7 @@ export function findProfitableTradeUps(
     const totalPairs = colIds.length * (colIds.length - 1) / 2;
 
     for (let i = 0; i < colIds.length; i++) {
+      if (pastDeadline()) break;
       for (let j = i + 1; j < colIds.length; j++) {
         pairsProcessed++;
         const colA = colIds[i];
@@ -329,6 +334,14 @@ export function findProfitableTradeUps(
     // Step 3: Triple-collection combos (reduced scope)
     // Data shows 0% historically profitable for 3+, but keep triples at reduced
     // limits in case market shifts. Quads+ removed entirely.
+    if (pastDeadline()) {
+      options.onProgress?.(`${inputRarity}: stopped at deadline (${store.total} trade-ups)`, 90, 100);
+      if (options.onFlush) {
+        options.onFlush(store.getAll(limit), isFirstFlush);
+        isFirstFlush = false;
+      }
+      continue;
+    }
     const maxTriple = Math.min(colIds.length, 20); // was 27
     for (let i = 0; i < maxTriple; i++) {
       for (let j = i + 1; j < maxTriple; j++) {
