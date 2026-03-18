@@ -291,6 +291,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onNavigateCollection={isPro ? onNavigateCollection : undefined}
             onClaimChange={isPro ? handleClaimChange : undefined}
             tier={tier}
+            showMyClaims={showMyClaims}
           />
 
           {/* Free tier: upgrade banner instead of pagination (hide during loading to prevent flash) */}
