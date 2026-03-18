@@ -300,12 +300,16 @@ export async function main() {
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
     // Refresh API read snapshot — creates a clean copy for the API to serve from
-    // This isolates API reads from daemon WAL contention
     try {
-      const { refreshApiSnapshot } = await import("../db.js");
-      refreshApiSnapshot();
+      const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
+      console.log(`  Creating API snapshot...`);
+      db.backup(snapshotPath).then(() => {
+        console.log(`  API snapshot created`);
+      }).catch((e: Error) => {
+        console.error(`  Snapshot failed: ${e.message}`);
+      });
     } catch (e) {
-      console.error("  Snapshot refresh failed:", (e as Error).message);
+      console.error("  Snapshot error:", (e as Error).message);
     }
 
     // Phase 6: Cooldown — dynamic duration targeting fixed cycle time

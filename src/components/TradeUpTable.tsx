@@ -401,12 +401,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         >
                           {item.name}
                         </a>
-                        {onNavigateSkin && (
-                          <button
-                            className="text-muted-foreground/50 text-[0.6rem] cursor-pointer ml-1 align-middle hover:text-blue-400 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); onNavigateSkin(item.name); }}
-                          >View data</button>
-                        )}
                       </span>
                     ))}
                     {onNavigateCollection && (() => {
