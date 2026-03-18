@@ -196,7 +196,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
         <section className="py-20 border-t border-border">
           <div className="mx-auto max-w-3xl px-6">
             <h2 className="text-2xl font-bold mb-3 text-center">All rarity tiers</h2>
-            <p className="text-muted-foreground text-center mb-10">From cheap Mil-Spec skins to Knife/Glove contracts.</p>
+            <p className="text-muted-foreground text-center mb-10">From cheap Consumer skins to Knife/Glove contracts.</p>
             <div className="space-y-2">
               {[
                 { name: "Knife / Gloves", cls: "border-yellow-500/30 text-yellow-500", desc: "5 Covert → Knife or Glove" },
@@ -204,6 +204,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                 { name: "Classified", cls: "border-pink-500/30 text-pink-500", desc: "10 Restricted → Classified" },
                 { name: "Restricted", cls: "border-purple-500/30 text-purple-500", desc: "10 Mil-Spec → Restricted" },
                 { name: "Mil-Spec", cls: "border-blue-500/30 text-blue-500", desc: "10 Industrial → Mil-Spec" },
+                { name: "Industrial", cls: "border-sky-400/30 text-sky-400", desc: "10 Consumer → Industrial" },
               ].map((t, i) => (
                 <div key={i} className={`flex items-center justify-between py-3 px-4 rounded-lg border ${t.cls}`}>
                   <span className="text-sm font-medium">{t.name}</span>

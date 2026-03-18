@@ -901,22 +901,38 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   // If no sinceTimestamp, skip entirely — full scan is too expensive on 12M rows.
   if (!sinceTimestamp) return { updated: 0 };
 
-  // Step 1: Find listing IDs with price changes (fast — uses partial index on price_updated_at)
+  // Check how many listings have price changes — if too many, skip (JOIN on 12M rows too expensive)
+  const { rows: [countCheck] } = await pool.query(
+    "SELECT COUNT(*) as cnt FROM listings WHERE price_updated_at > $1",
+    [sinceTimestamp]
+  );
+  const changedCount = parseInt(countCheck.cnt);
+  if (changedCount === 0) return { updated: 0 };
+  if (changedCount > 500) {
+    // Too many changed listings — the JOIN through 12M trade_up_inputs would take minutes.
+    // Clear the flag and let next cycle handle smaller batches.
+    console.log(`  Phase 4b: ${changedCount} listings changed — too many, deferring recalc`);
+    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
+    return { updated: 0 };
+  }
+
+  // Small batch: find affected trade-ups via listing IDs
   const { rows: changedListings } = await pool.query(
     "SELECT id FROM listings WHERE price_updated_at > $1",
     [sinceTimestamp]
   );
-  if (changedListings.length === 0) return { updated: 0 };
-
-  // Step 2: Find trade-ups using those specific listings (small IN clause, not full 12M scan)
-  const changedIds = changedListings.map(r => r.id);
-  const ph = changedIds.map((_, i) => `$${i + 1}`).join(",");
+  const changedIds = changedListings.map((r: any) => r.id);
+  const ph = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
   const { rows: staleInputRows } = await pool.query(`
     SELECT DISTINCT tui.trade_up_id
     FROM trade_up_inputs tui
     JOIN listings l ON tui.listing_id = l.id
     WHERE tui.listing_id IN (${ph}) AND tui.price_cents != l.price_cents
   `, changedIds);
+  if (staleInputRows.length === 0) {
+    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
+    return { updated: 0 };
+  }
   const staleInputs = staleInputRows;
 
   if (staleInputs.length === 0) {
