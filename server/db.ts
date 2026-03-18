@@ -75,20 +75,29 @@ export function initDb(): Database.Database {
   // API read DB: use snapshot file if it exists. If not, use main DB until
   // the daemon creates a snapshot on its first cycle. getReadDb() auto-detects
   // when the snapshot file appears/updates and switches to it.
-  try {
-    if (fs.existsSync(API_DB_PATH)) {
-      _readDb = openReadDb(API_DB_PATH);
-      _readDbMtime = fs.statSync(API_DB_PATH).mtimeMs;
-      console.log("API read DB: using snapshot (tradeup-api.db)");
-    } else {
-      // No snapshot yet — use main DB with busy_timeout for reads.
-      // Daemon will create tradeup-api.db on its next cycle completion.
-      _readDb = openReadDb(DB_PATH);
-      console.log("API read DB: no snapshot yet, using main DB (daemon will create snapshot)");
+  // Retry once after 2s if locked (daemon backup may be in progress at restart).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (fs.existsSync(API_DB_PATH)) {
+        _readDb = openReadDb(API_DB_PATH);
+        _readDbMtime = fs.statSync(API_DB_PATH).mtimeMs;
+        console.log("API read DB: using snapshot (tradeup-api.db)");
+      } else {
+        _readDb = openReadDb(DB_PATH);
+        console.log("API read DB: no snapshot yet, using main DB (daemon will create snapshot)");
+      }
+      break; // success
+    } catch (e) {
+      if (attempt === 0) {
+        console.log("Read DB locked at startup, retrying in 2s...");
+        const start = Date.now();
+        while (Date.now() - start < 2000) { /* busy wait — initDb is sync */ }
+      } else {
+        console.error("Read DB init failed:", (e as Error).message);
+        // getReadDb() will auto-recover when it detects the snapshot file
+        _readDb = null;
+      }
     }
-  } catch (e) {
-    console.error("Read DB init failed:", (e as Error).message);
-    _readDb = null;
   }
 
   createTables(_db);
