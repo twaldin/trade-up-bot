@@ -8,6 +8,8 @@ import { LandingPage } from "./pages/LandingPage.js";
 import { FaqPage } from "./pages/FaqPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
 import { PrivacyPage } from "./pages/PrivacyPage.js";
+import { FeaturesPage } from "./pages/FeaturesPage.js";
+import { PricingPage } from "./pages/PricingPage.js";
 import { BlogPage } from "./pages/BlogPage.js";
 import { BlogPostPage } from "./pages/BlogPostPage.js";
 import { SiteFooter } from "./components/SiteFooter.js";
@@ -367,6 +369,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/faq" element={<FaqPage />} />
+      <Route path="/features" element={<FeaturesPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/blog" element={<BlogPage />} />

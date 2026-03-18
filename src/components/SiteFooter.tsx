@@ -13,6 +13,8 @@ export function SiteFooter() {
             <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Product</div>
             <div className="space-y-2 text-sm">
               <Link to="/" className="block text-muted-foreground hover:text-foreground transition-colors">Home</Link>
+              <Link to="/features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</Link>
+              <Link to="/pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
               <Link to="/faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</Link>
               <Link to="/blog" className="block text-muted-foreground hover:text-foreground transition-colors">Blog</Link>
             </div>

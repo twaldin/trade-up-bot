@@ -248,6 +248,86 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p><strong>Check input float ranges before buying.</strong> A "cheap" input that looks like a great deal might have a narrow float range that gives it a high adjusted float, dragging your output toward a worse condition. Always calculate the adjusted float, not just the raw float.</p>
 `,
   },
+  {
+    slug: "how-to-use-tradeupbot",
+    title: "How to Find Profitable CS2 Trade-Ups with TradeUpBot",
+    excerpt: "A practical walkthrough of TradeUpBot: browsing trade-ups, reading the table, using Verify and Claim, and getting the most out of each subscription tier.",
+    publishedAt: "2026-03-18",
+    readTime: "5 min read",
+    author: "TradeUpBot Team",
+    content: `
+<p>TradeUpBot finds profitable CS2 trade-up contracts by scanning real marketplace listings across CSFloat, DMarket, and Skinport. This guide walks through the platform from sign-up to executing your first trade-up.</p>
+
+<h2>Getting Started</h2>
+
+<p>Head to <a href="https://tradeupbot.app">tradeupbot.app</a> and sign in with your Steam account. There's no registration form — Steam authentication is the only login method. Once signed in, you're on the Free tier with access to 10 sample trade-ups per rarity tier. No credit card required.</p>
+
+<p>The main interface is the trade-up table. Across the top, you'll see tier tabs: All, Knife/Gloves, Covert, Classified, Restricted, and Mil-Spec. Each tab shows trade-ups for that rarity tier. Click a tab to filter.</p>
+
+<h2>Reading the Trade-Up Table</h2>
+
+<p>Each row in the table represents a complete, executable trade-up contract built from real listings. Here's what each column tells you:</p>
+
+<ul>
+<li><strong>Profit</strong> — Expected profit in dollars, accounting for marketplace fees on both buying inputs and selling the output. Green means positive expected value.</li>
+<li><strong>ROI</strong> — Return on investment as a percentage. A 25% ROI on a $40 cost means $10 expected profit.</li>
+<li><strong>Chance</strong> — The probability that the trade-up produces a profitable outcome. A trade-up can have positive expected value but only 30% chance to profit if the profitable outcome is rare but very valuable.</li>
+<li><strong>Cost</strong> — Total cost to buy all input listings, including marketplace buyer fees.</li>
+<li><strong>EV</strong> — Expected value of the output, weighted across all possible outcomes by probability.</li>
+<li><strong>Best / Worst</strong> — The highest-value and lowest-value possible outcomes with their probabilities. This gives you the range of what could happen.</li>
+</ul>
+
+<p>The default sort is by profit, but sorting by chance-to-profit is often more practical. A trade-up with 90% chance to profit and $5 expected profit is a safer bet than one with 15% chance and $40 expected profit — unless you're willing to absorb losses on the misses.</p>
+
+<h2>Expanding a Trade-Up</h2>
+
+<p>Click any row to expand it. The expanded view shows three things:</p>
+
+<p><strong>Outcome distribution chart.</strong> A horizontal bar chart showing every possible output skin, its probability, its estimated value, and whether it's profitable (green) or not (red). This is the core of the trade-up — you can see exactly what you're betting on.</p>
+
+<p><strong>Input listings.</strong> The specific marketplace listings that make up this trade-up. Each input shows the skin name, float value, condition, price, and which marketplace it's listed on. On Basic and Pro tiers, each input links directly to the marketplace listing so you can buy it.</p>
+
+<p><strong>Trade-up metadata.</strong> Collection breakdown, output float calculation, and the mathematical details behind the contract.</p>
+
+<h2>Subscription Tiers</h2>
+
+<p><strong>Free tier</strong> gives you 10 sample trade-ups per rarity tier. You can see full outcome details and sort columns, but there are no listing links, no filters, and data has a 3-hour delay. It's enough to explore the platform and understand how trade-ups work, but not enough to act on opportunities before they disappear.</p>
+
+<p><strong>Basic ($5/mo)</strong> unlocks unlimited trade-ups with a 30-minute delay on new discoveries. You get filters (search by collection, skin name, price range), pagination, direct listing links to buy inputs, and the Verify feature at 10 checks per hour. This is the tier for people who want to do trade-ups regularly but don't need to be first.</p>
+
+<p><strong>Pro ($15/mo)</strong> adds real-time data with no delay — you see trade-ups the moment they're discovered. The Claim system lets you lock a trade-up's listings for 30 minutes so no other TradeUpBot user can see them while you're purchasing. You get 20 verifications per hour, 10 claims per hour, up to 5 active claims at once, the collection browser with knife/glove pool info, and price analytics.</p>
+
+<h2>Using Verify</h2>
+
+<p>Before buying anything, hit the Verify button on a trade-up. Verify calls each marketplace's API to check whether the input listings still exist and at what price. The trade-up's profit, cost, and EV update in real time based on current data.</p>
+
+<p>This matters because marketplace listings are live inventory. A listing that existed 20 minutes ago when the discovery engine found it might already be sold. Verification catches this before you commit money. If a listing is gone, the trade-up is flagged so you know it's no longer executable as shown.</p>
+
+<p>Basic users get 10 verifications per hour. Pro users get 20. Use them on trade-ups you're seriously considering, not as a browsing tool.</p>
+
+<h2>Using Claim</h2>
+
+<p>Claim is Pro-only. When you claim a trade-up, its input listings are hidden from all other TradeUpBot users for 30 minutes. This gives you an uncontested window to purchase each input from the marketplace.</p>
+
+<p>Claims are limited: 10 per hour, with up to 5 active at once. They expire automatically after 30 minutes. The claim doesn't reserve the listing on the marketplace itself — other buyers outside TradeUpBot can still purchase them. But it eliminates competition from other TradeUpBot users, which is the primary threat for high-profit trade-ups.</p>
+
+<p>The workflow: find a promising trade-up, verify it to confirm availability, claim it, then go buy each input from the linked marketplace listings.</p>
+
+<h2>Tips for Finding the Best Trade-Ups</h2>
+
+<p><strong>Sort by chance-to-profit for consistent returns.</strong> Trade-ups with 80%+ chance to profit will win most of the time. The profit per trade-up is usually modest ($5-20), but the consistency adds up. This is the lower-variance strategy.</p>
+
+<p><strong>Sort by profit for highest upside.</strong> The top-profit trade-ups often have lower chance-to-profit — maybe 30-50%. But when they hit, the payout is significant. This works if you're doing enough volume that the expected value plays out over many attempts.</p>
+
+<p><strong>Check the Best/Worst columns together.</strong> A trade-up where the worst outcome still breaks even is fundamentally different from one where the worst outcome loses 80% of your cost. The chance-to-profit number alone doesn't capture this — look at the actual downside.</p>
+
+<p><strong>Verify before every purchase.</strong> Prices move. Listings sell. A trade-up that was +$15 profit when discovered might be +$3 by the time you verify it. Verification takes seconds and saves you from buying into a trade-up that's no longer worth it.</p>
+
+<p><strong>Use filters to focus.</strong> If you have a budget of $50, filter by cost range. If you only want knife trade-ups, use the tier tab. If you're interested in a specific collection, search for it. The less noise in your view, the faster you find actionable opportunities.</p>
+
+<p>For more detailed answers to common questions, check the <a href="/faq">FAQ page</a>.</p>
+`,
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | undefined {
