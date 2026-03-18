@@ -367,9 +367,9 @@ export function claimsRouter(db: Database.Database): Router {
       return;
     }
 
-    // Mark claim as confirmed
+    // Mark claim as confirmed + released (purchase complete, claim is done)
     db.prepare(
-      "UPDATE trade_up_claims SET confirmed_at = datetime('now') WHERE id = ?"
+      "UPDATE trade_up_claims SET confirmed_at = datetime('now'), released_at = datetime('now') WHERE id = ?"
     ).run(claim.id);
 
     // Queue listing IDs for daemon to delete + cascade
