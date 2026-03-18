@@ -98,7 +98,7 @@ export function findProfitableKnifeTradeUps(
   const tryEvalKnife = (inputs: ListingWithCollection[]) => {
     const sig = sigOf(inputs);
     if (seen.has(sig)) { skippedExisting++; return; }
-    tryEvalKnife(inputs);
+    tryAdd(evaluateKnifeTradeUp(db, inputs, knifeFinishCache));
   };
 
   // Collections that have knife or glove mappings
