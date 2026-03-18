@@ -48,6 +48,7 @@ export function stripeRouter(pool: pg.Pool): Router {
         customer: customerId,
         mode: "subscription",
         line_items: [{ price: getPlan(plan)!.priceId, quantity: 1 }],
+        allow_promotion_codes: true,
         success_url: `${process.env.BASE_URL}/?upgraded=${plan}`,
         cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
       });
