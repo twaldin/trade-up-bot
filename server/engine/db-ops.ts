@@ -868,17 +868,38 @@ export function updateCollectionScores(db: Database.Database) {
  * listings.price_cents, updates the input prices, and recalculates
  * profit/roi/chance/best/worst from the stored outcomes_json.
  * Lightweight — no float calculations or outcome re-evaluation needed.
+ *
+ * Optimization: when `sinceTimestamp` is provided, only checks listings whose
+ * price_updated_at is after that timestamp (avoids scanning all 10M+ input rows).
+ * Falls back to full scan if no timestamp is provided.
  */
-export function recalcTradeUpCosts(db: Database.Database): { updated: number } {
-  // Find trade-ups with at least one input whose price differs from the listing
-  const staleInputs = db.prepare(`
-    SELECT DISTINCT tui.trade_up_id
-    FROM trade_up_inputs tui
-    JOIN listings l ON tui.listing_id = l.id
-    WHERE tui.price_cents != l.price_cents
-  `).all() as { trade_up_id: number }[];
+export function recalcTradeUpCosts(db: Database.Database, sinceTimestamp?: string): { updated: number } {
+  // Find trade-ups with at least one input whose price differs from the listing.
+  // When sinceTimestamp is available, only check recently-updated listings.
+  let staleInputs: { trade_up_id: number }[];
+  if (sinceTimestamp) {
+    staleInputs = db.prepare(`
+      SELECT DISTINCT tui.trade_up_id
+      FROM trade_up_inputs tui
+      JOIN listings l ON tui.listing_id = l.id
+      WHERE l.price_updated_at > ? AND tui.price_cents != l.price_cents
+    `).all(sinceTimestamp) as { trade_up_id: number }[];
+  } else {
+    staleInputs = db.prepare(`
+      SELECT DISTINCT tui.trade_up_id
+      FROM trade_up_inputs tui
+      JOIN listings l ON tui.listing_id = l.id
+      WHERE tui.price_cents != l.price_cents
+    `).all() as { trade_up_id: number }[];
+  }
 
-  if (staleInputs.length === 0) return { updated: 0 };
+  if (staleInputs.length === 0) {
+    // Clear price_updated_at on processed listings so they aren't re-scanned
+    if (sinceTimestamp) {
+      db.prepare("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > ?").run(sinceTimestamp);
+    }
+    return { updated: 0 };
+  }
 
   const tuIds = staleInputs.map(r => r.trade_up_id);
 
@@ -930,6 +951,11 @@ export function recalcTradeUpCosts(db: Database.Database): { updated: number } {
       }
     });
     withRetry(() => tx(), 3, "recalcTradeUpCosts");
+  }
+
+  // Clear price_updated_at on processed listings so they aren't re-scanned next cycle
+  if (sinceTimestamp) {
+    db.prepare("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > ?").run(sinceTimestamp);
   }
 
   return { updated };

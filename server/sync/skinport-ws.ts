@@ -101,8 +101,8 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
     "SELECT id, rarity FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1"
   );
   const upsertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'skinport', 'buy_now')
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'skinport', 'buy_now', datetime('now'))
   `);
   const insertSaleObservation = db.prepare(`
     INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)

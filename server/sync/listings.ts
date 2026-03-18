@@ -98,7 +98,7 @@ export async function checkListingStaleness(
   }[];
 
   const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
-  const updateListingPrice = db.prepare("UPDATE listings SET price_cents = ?, created_at = ? WHERE id = ?");
+  const updateListingPrice = db.prepare("UPDATE listings SET price_cents = ?, created_at = ?, price_updated_at = datetime('now') WHERE id = ?");
   const markChecked = db.prepare("UPDATE listings SET staleness_checked_at = datetime('now') WHERE id = ?");
   const insertObservation = db.prepare(`
     INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)

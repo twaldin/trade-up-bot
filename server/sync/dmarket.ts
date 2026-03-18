@@ -149,8 +149,8 @@ export async function syncDMarketListingsForSkin(
   ).get(`StatTrak™ ${skinName}`) as { id: string } | undefined;
 
   const upsert = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?)
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'))
   `);
 
   let count = 0;
@@ -311,8 +311,8 @@ export async function checkDMarketStaleness(
       const stSkinRow = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1").get(`StatTrak™ ${skin.name}`) as { id: string } | undefined;
       if (skinRow || stSkinRow) {
         const upsert = db.prepare(`
-          INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'))
+          INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at, price_updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'), datetime('now'))
         `);
         for (const item of items) {
           if (!item.extra?.floatValue && item.extra?.floatValue !== 0) continue;

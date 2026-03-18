@@ -7,9 +7,9 @@ import { cachedRoute, getRateLimit } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
-export function tradeUpsRouter(db: Database.Database): Router {
+export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
   const router = Router();
-  const rdb = db; // All reads from main DB (WAL mode + Redis cache handles concurrency)
+  const rdb = readDb ?? db;
 
   router.get("/api/filter-options", cachedRoute("filter_opts", 600, (_req, res) => {
     // All trade-ups are non-theoretical (theory removed), so skip the expensive
@@ -616,7 +616,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
     }
 
     const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
-    const updateListingPrice = db.prepare("UPDATE listings SET price_cents = ?, created_at = ? WHERE id = ?");
+    const updateListingPrice = db.prepare("UPDATE listings SET price_cents = ?, created_at = ?, price_updated_at = datetime('now') WHERE id = ?");
     const markChecked = db.prepare("UPDATE listings SET staleness_checked_at = datetime('now') WHERE id = ?");
     const deletedListingIds: string[] = []; // Track for cross-trade-up propagation
     const insertObservation = db.prepare(`

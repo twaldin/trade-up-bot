@@ -6,8 +6,9 @@ import { CASE_KNIFE_MAP } from "../engine.js";
 import { cachedRoute } from "../redis.js";
 import type { SyncStatus } from "../../shared/types.js";
 
-export function statusRouter(db: Database.Database): Router {
+export function statusRouter(readDb: Database.Database): Router {
   const router = Router();
+  const db = readDb;
 
   router.get("/api/status", cachedRoute("status", 60, (_req, res) => {
     const listingStats = (rarity: string, excludeKnives = false) => {

@@ -88,8 +88,8 @@ export async function syncListingsForRarity(
   console.log(`Fetching CSFloat listings for ${rarity}...`);
 
   const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?)
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
   `);
 
   let totalInserted = 0;
@@ -216,8 +216,8 @@ export async function syncListingsForSkin(
   const conditions = options.conditions ?? getValidConditions(skin.min_float, skin.max_float);
 
   const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?)
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
   `);
 
   let totalApiCalls = 0;
@@ -360,8 +360,8 @@ export async function syncLowFloatClassifiedListings(
   console.log(`  ${fnSkins.length} Classified skins can have FN, fetching low-float listings`);
 
   const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?)
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
   `);
 
   let totalApiCalls = 0;
@@ -810,8 +810,8 @@ export async function syncCovertOutputListings(
   if (topOutputs.length === 0) return { apiCalls: 0, inserted: 0 };
 
   const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?)
+    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
   `);
 
   let totalApiCalls = 0;
