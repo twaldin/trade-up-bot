@@ -164,33 +164,11 @@ function UserMenu({ user }: { user: AuthUser }) {
             </div>
           </div>
 
-          {/* Upgrade options for non-pro users */}
+          {/* Subscription actions */}
           {user.tier === "free" && !user.is_admin && (
-            <>
-              <button className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer" onClick={async () => {
-                const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
-                const data = await res.json();
-                if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
-              }}>
-                Upgrade to Basic — $5/mo
-              </button>
-              <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted cursor-pointer" onClick={async () => {
-                const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
-                const data = await res.json();
-                if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
-              }}>
-                Upgrade to Pro — $15/mo
-              </button>
-            </>
-          )}
-          {user.tier === "basic" && !user.is_admin && (
-            <button className="w-full text-left px-3 py-2 text-xs text-yellow-400 hover:bg-muted cursor-pointer" onClick={async () => {
-              const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) });
-              const data = await res.json();
-              if (data.url) window.location.href = data.url; else alert(data.error || "Failed");
-            }}>
-              Upgrade to Pro — $15/mo
-            </button>
+            <a href="/pricing" className="block w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer">
+              View Plans
+            </a>
           )}
           {(user.tier === "basic" || user.tier === "pro") && !user.is_admin && (
             <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer" onClick={async () => {
