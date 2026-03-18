@@ -897,25 +897,24 @@ export async function updateCollectionScores(pool: pg.Pool) {
  */
 export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string): Promise<{ updated: number }> {
   // Find trade-ups with at least one input whose price differs from the listing.
-  // When sinceTimestamp is available, only check recently-updated listings.
-  let staleInputs: { trade_up_id: number }[];
-  if (sinceTimestamp) {
-    const { rows } = await pool.query(`
-      SELECT DISTINCT tui.trade_up_id
-      FROM trade_up_inputs tui
-      JOIN listings l ON tui.listing_id = l.id
-      WHERE l.price_updated_at > $1 AND tui.price_cents != l.price_cents
-    `, [sinceTimestamp]);
-    staleInputs = rows;
-  } else {
-    const { rows } = await pool.query(`
-      SELECT DISTINCT tui.trade_up_id
-      FROM trade_up_inputs tui
-      JOIN listings l ON tui.listing_id = l.id
-      WHERE tui.price_cents != l.price_cents
-    `);
-    staleInputs = rows;
-  }
+  // Only check listings with price_updated_at set (avoids full 12M row scan).
+  // If no sinceTimestamp, skip entirely — full scan is too expensive on 12M rows.
+  if (!sinceTimestamp) return { updated: 0 };
+
+  // Quick check: any listings with price changes since last recalc?
+  const { rows: [check] } = await pool.query(
+    "SELECT COUNT(*) as cnt FROM listings WHERE price_updated_at > $1 LIMIT 1",
+    [sinceTimestamp]
+  );
+  if (parseInt(check.cnt) === 0) return { updated: 0 };
+
+  const { rows: staleInputRows } = await pool.query(`
+    SELECT DISTINCT tui.trade_up_id
+    FROM trade_up_inputs tui
+    JOIN listings l ON tui.listing_id = l.id
+    WHERE l.price_updated_at > $1 AND tui.price_cents != l.price_cents
+  `, [sinceTimestamp]);
+  const staleInputs = staleInputRows;
 
   if (staleInputs.length === 0) {
     // Clear price_updated_at on processed listings so they aren't re-scanned
