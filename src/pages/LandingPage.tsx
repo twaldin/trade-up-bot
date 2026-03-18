@@ -40,7 +40,14 @@ interface GlobalStats {
   uptime_ms: number;
 }
 
-const LandingPage = () => {
+interface LandingUser {
+  steam_id: string;
+  display_name: string;
+  avatar_url: string;
+  tier: string;
+}
+
+const LandingPage = ({ user }: { user?: LandingUser | null }) => {
   const [stats, setStats] = useState<GlobalStats | null>(null);
 
   useEffect(() => {
@@ -48,6 +55,8 @@ const LandingPage = () => {
   }, []);
 
   const login = () => { window.location.href = '/auth/steam'; };
+  const goToDashboard = () => { window.location.href = '/dashboard'; };
+  const logout = () => { window.location.href = '/auth/logout'; };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
@@ -55,16 +64,31 @@ const LandingPage = () => {
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <span className="font-bold tracking-tight">TradeUpBot</span>
+          <a href="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity">
+            <img src="/favicon.svg" alt="" className="w-5 h-5" />
+            TradeUpBot
+          </a>
           <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
             <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
             <a href="/blog" className="hover:text-foreground transition-colors">Blog</a>
           </div>
-          <Btn onClick={login} className="h-8 px-3 text-xs">
-            <IconSteam /> Sign In
-          </Btn>
+          {user ? (
+            <div className="flex items-center gap-3">
+              <Btn onClick={goToDashboard} className="h-8 px-3 text-xs">
+                Dashboard
+              </Btn>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
+                <span className="hidden sm:inline">{user.display_name}</span>
+              </div>
+            </div>
+          ) : (
+            <Btn onClick={login} className="h-8 px-3 text-xs">
+              <IconSteam /> Sign In
+            </Btn>
+          )}
         </div>
       </nav>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
 import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
@@ -261,7 +261,10 @@ function AppShell({ user }: { user?: AuthUser | null }) {
   return (
     <>
       <div className="flex items-center justify-between gap-2 mb-3">
-        <h1 className="text-lg md:text-xl font-bold text-foreground whitespace-nowrap shrink-0">CS2 Trade-Up Bot</h1>
+        <a href="/" className="flex items-center gap-2 text-lg md:text-xl font-bold text-foreground whitespace-nowrap shrink-0 hover:opacity-80 transition-opacity">
+          <img src="/favicon.svg" alt="" className="w-5 h-5 md:w-6 md:h-6" />
+          CS2 Trade-Up Bot
+        </a>
         <GlobalStatBar stats={globalStats} />
         <div className="flex items-center gap-1.5 shrink-0">
           <Button
@@ -295,7 +298,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       {/* Navigation */}
       <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
         {[
-          { to: "/", label: "Trade-Ups", end: true },
+          { to: "/dashboard", label: "Trade-Ups", end: true },
           { to: "/data", label: "Data" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
@@ -318,7 +321,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       </nav>
 
       <Routes>
-        <Route path="/" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
+        <Route path="/dashboard" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
         <Route path="/data" element={<DataPage />} />
         <Route path="/collections" element={<CollectionListPage />} />
         <Route path="/collections/:name" element={<CollectionPage />} />
@@ -342,7 +345,8 @@ interface AuthUser {
 }
 
 function AuthGatedApp() {
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined); // undefined = loading
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const location = useLocation();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -351,17 +355,22 @@ function AuthGatedApp() {
       .catch(() => setUser(null));
   }, []);
 
-  // Loading
   if (user === undefined) {
     return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
   }
 
-  // Not logged in: show landing page
+  // Landing page: always accessible (logged in or not)
+  // Logged-in users who navigate to / see landing page with "Dashboard" button
+  if (location.pathname === "/" || location.pathname === "") {
+    if (!user) return <LandingPage />;
+    return <LandingPage user={user} />;
+  }
+
+  // All other app routes require login
   if (!user) {
     return <LandingPage />;
   }
 
-  // Logged in: show app
   return <AppShell user={user} />;
 }
 
