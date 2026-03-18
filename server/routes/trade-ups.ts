@@ -430,15 +430,20 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         if (missing < totalInputs) statusFixes.set(id, 'partial');
       }
     }
-    // Apply fixes in batch (uses write db)
-    for (const [id, status] of statusFixes) {
-      try {
-        if (status === 'active') {
-          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(id);
-        } else {
-          db.prepare("UPDATE trade_ups SET listing_status = ? WHERE id = ?").run(status, id);
+    // Status fixes are non-critical — apply asynchronously to avoid blocking reads
+    // The display uses correctedStatus from statusFixes map, not the DB value
+    if (statusFixes.size > 0) {
+      setImmediate(() => {
+        for (const [id, status] of statusFixes) {
+          try {
+            if (status === 'active') {
+              db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(id);
+            } else {
+              db.prepare("UPDATE trade_ups SET listing_status = ? WHERE id = ?").run(status, id);
+            }
+          } catch { /* ignore */ }
         }
-      } catch { /* ignore write lock errors — non-critical */ }
+      });
     }
 
     const tradeUps: TradeUp[] = rows.map((row) => {
@@ -505,7 +510,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
   });
 
   router.get("/api/trade-ups/:id", (req, res) => {
-    const row = db
+    const row = rdb
       .prepare("SELECT * FROM trade_ups WHERE id = ?")
       .get(req.params.id) as {
       id: number;
@@ -521,7 +526,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       return;
     }
 
-    const inputs = db
+    const inputs = rdb
       .prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?")
       .all(row.id) as TradeUpInput[];
     const outcomes = JSON.parse((row as { outcomes_json?: string }).outcomes_json || '[]') as TradeUpOutcome[];
@@ -867,13 +872,13 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
 
     const stats: Record<string, { listings: number; sales: number; sources: string[] }> = {};
     for (const name of skins.slice(0, 100)) {
-      const listings = (db.prepare(
+      const listings = (rdb.prepare(
         "SELECT COUNT(*) as c FROM listings WHERE skin_id IN (SELECT id FROM skins WHERE name = ?) AND stattrak = 0"
       ).get(name) as { c: number }).c;
-      const sales = (db.prepare(
+      const sales = (rdb.prepare(
         "SELECT COUNT(*) as c FROM price_observations WHERE skin_name = ? AND source = 'sale'"
       ).get(name) as { c: number }).c;
-      const sources = db.prepare(
+      const sources = rdb.prepare(
         "SELECT DISTINCT source FROM price_data WHERE skin_name = ?"
       ).all(name).map((r: any) => r.source as string);
       stats[name] = { listings, sales, sources };
