@@ -1,6 +1,6 @@
 // All external consumers import from ./sync.js — never from submodules directly.
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { initDb } from "./db.js";
 import { syncSkinData as _syncSkinData } from "./sync/skin-data.js";
 import { syncSkinportPrices as _syncSkinportPrices } from "./sync/skinport.js";
@@ -63,16 +63,16 @@ export {
 export { startSkinportListener, getSkinportStats } from "./sync/skinport-ws.js";
 
 // Full sync: skins + prices
-export async function fullSync(db: Database.Database) {
-  await _syncSkinData(db);
-  await _syncSkinportPrices(db);
+export async function fullSync(pool: pg.Pool) {
+  await _syncSkinData(pool);
+  await _syncSkinportPrices(pool);
   console.log("\nSync complete!");
 }
 
 // Run standalone
 if (process.argv[1]?.endsWith("sync.ts") || process.argv[1]?.endsWith("sync.js")) {
-  const db = initDb();
-  fullSync(db)
+  const pool = initDb();
+  fullSync(pool)
     .then(() => {
       console.log("Done!");
       process.exit(0);

@@ -3,7 +3,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import Stripe from "stripe";
-import Database from "better-sqlite3";
+import pg from "pg";
 import { requireAuth, type User } from "../auth.js";
 
 // Read at request time, not module load (env may not be loaded yet)
@@ -13,7 +13,7 @@ function getPlan(plan: string): { priceId: string; name: string } | null {
   return null;
 }
 
-export function stripeRouter(db: Database.Database): Router {
+export function stripeRouter(pool: pg.Pool): Router {
   const router = Router();
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) {
@@ -41,7 +41,7 @@ export function stripeRouter(db: Database.Database): Router {
           metadata: { steam_id: user.steam_id, display_name: user.display_name },
         });
         customerId = customer.id;
-        db.prepare("UPDATE users SET stripe_customer_id = ? WHERE steam_id = ?").run(customerId, user.steam_id);
+        await pool.query("UPDATE users SET stripe_customer_id = $1 WHERE steam_id = $2", [customerId, user.steam_id]);
       }
 
       const session = await stripe.checkout.sessions.create({
@@ -113,23 +113,23 @@ export function stripeRouter(db: Database.Database): Router {
         const status = sub.status;
         const priceId = sub.items.data[0]?.price?.id;
 
-        // Map price ID → tier
+        // Map price ID -> tier
         let tier = "free";
         if (status === "active" || status === "trialing") {
           if (priceId === getPlan("pro")!.priceId) tier = "pro";
           else if (priceId === getPlan("basic")!.priceId) tier = "basic";
         }
 
-        db.prepare("UPDATE users SET tier = ? WHERE stripe_customer_id = ?").run(tier, customerId);
-        console.log(`Stripe: customer ${customerId} → ${tier}`);
+        await pool.query("UPDATE users SET tier = $1 WHERE stripe_customer_id = $2", [tier, customerId]);
+        console.log(`Stripe: customer ${customerId} -> ${tier}`);
         break;
       }
 
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
-        db.prepare("UPDATE users SET tier = 'free' WHERE stripe_customer_id = ?").run(customerId);
-        console.log(`Stripe: customer ${customerId} → free (cancelled)`);
+        await pool.query("UPDATE users SET tier = 'free' WHERE stripe_customer_id = $1", [customerId]);
+        console.log(`Stripe: customer ${customerId} -> free (cancelled)`);
         break;
       }
     }

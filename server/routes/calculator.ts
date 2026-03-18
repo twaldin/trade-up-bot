@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import pg from "pg";
 import { cachedRoute } from "../redis.js";
 import {
   buildPriceCache,
@@ -31,12 +31,11 @@ interface SkinRow {
   collection_name: string;
 }
 
-export function calculatorRouter(readDb: Database.Database): Router {
+export function calculatorRouter(pool: pg.Pool): Router {
   const router = Router();
-  const db = readDb;
 
   // --- Skin search autocomplete ---
-  router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, (req, res) => {
+  router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, async (req, res) => {
     const q = (req.query.q as string || "").trim();
     if (q.length < 2) {
       res.json({ results: [] });
@@ -44,47 +43,41 @@ export function calculatorRouter(readDb: Database.Database): Router {
     }
 
     const pattern = `%${q}%`;
-    const results = db.prepare(`
+    const { rows: results } = await pool.query(`
       SELECT DISTINCT s.name, s.weapon, s.rarity, s.min_float, s.max_float, c.name as collection_name
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
       JOIN collections c ON sc.collection_id = c.id
-      WHERE s.name LIKE ? AND s.stattrak = 0
+      WHERE s.name LIKE $1 AND s.stattrak = 0
       ORDER BY
-        CASE WHEN s.name LIKE ? THEN 0 ELSE 1 END,
+        CASE WHEN s.name LIKE $2 THEN 0 ELSE 1 END,
         s.rarity DESC,
         s.name ASC
       LIMIT 20
-    `).all(pattern, `${q}%`) as {
-      name: string;
-      weapon: string;
-      rarity: string;
-      min_float: number;
-      max_float: number;
-      collection_name: string;
-    }[];
+    `, [pattern, `${q}%`]);
 
     // Also fetch listing floor for each result
-    const withFloor = results.map(r => {
-      const floor = db.prepare(`
+    const withFloor = [];
+    for (const r of results) {
+      const { rows: [floor] } = await pool.query(`
         SELECT MIN(l.price_cents) as floor_price
         FROM listings l
         JOIN skins s ON l.skin_id = s.id
-        WHERE s.name = ? AND s.stattrak = 0
+        WHERE s.name = $1 AND s.stattrak = 0
           AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
-      `).get(r.name) as { floor_price: number | null } | undefined;
+      `, [r.name]);
 
-      return {
+      withFloor.push({
         ...r,
         floor_price_cents: floor?.floor_price ?? null,
-      };
-    });
+      });
+    }
 
     res.json({ results: withFloor });
   }));
 
   // --- Calculator evaluation ---
-  router.post("/api/calculator", (req, res) => {
+  router.post("/api/calculator", async (req, res) => {
     const { inputs } = req.body as { inputs: CalculatorInput[] };
 
     if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
@@ -98,16 +91,6 @@ export function calculatorRouter(readDb: Database.Database): Router {
     }
 
     // Look up each skin in the DB
-    const skinLookup = db.prepare(`
-      SELECT s.id, s.name, s.weapon, s.min_float, s.max_float, s.rarity,
-             sc.collection_id, c.name as collection_name
-      FROM skins s
-      JOIN skin_collections sc ON s.id = sc.skin_id
-      JOIN collections c ON sc.collection_id = c.id
-      WHERE s.name = ? AND s.stattrak = 0
-      LIMIT 1
-    `);
-
     const resolvedInputs: (ListingWithCollection & { _inputIndex: number })[] = [];
     const errors: string[] = [];
 
@@ -118,7 +101,16 @@ export function calculatorRouter(readDb: Database.Database): Router {
         continue;
       }
 
-      const skin = skinLookup.get(inp.skinName) as SkinRow | undefined;
+      const { rows: [skin] } = await pool.query(`
+        SELECT s.id, s.name, s.weapon, s.min_float, s.max_float, s.rarity,
+               sc.collection_id, c.name as collection_name
+        FROM skins s
+        JOIN skin_collections sc ON s.id = sc.skin_id
+        JOIN collections c ON sc.collection_id = c.id
+        WHERE s.name = $1 AND s.stattrak = 0
+        LIMIT 1
+      `, [inp.skinName]);
+
       if (!skin) {
         errors.push(`Input ${i + 1}: skin "${inp.skinName}" not found`);
         continue;
@@ -178,7 +170,7 @@ export function calculatorRouter(readDb: Database.Database): Router {
     }
 
     // Build price cache for output pricing
-    buildPriceCache(db);
+    await buildPriceCache(pool);
 
     // Strip the helper field before passing to engine
     const engineInputs: ListingWithCollection[] = resolvedInputs.map(({ _inputIndex, ...rest }) => rest);
@@ -199,11 +191,11 @@ export function calculatorRouter(readDb: Database.Database): Router {
         }
       }
       for (const itemType of allItemTypes) {
-        const finishes = getKnifeFinishesWithPrices(db, itemType);
+        const finishes = await getKnifeFinishesWithPrices(pool, itemType);
         if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
       }
 
-      result = evaluateKnifeTradeUp(db, engineInputs, knifeFinishCache);
+      result = await evaluateKnifeTradeUp(pool, engineInputs, knifeFinishCache);
       if (result) result.type = "covert_knife";
     } else {
       // Gun trade-up: determine output rarity
@@ -217,13 +209,13 @@ export function calculatorRouter(readDb: Database.Database): Router {
       const collectionIds = [...new Set(engineInputs.map(i => i.collection_id))];
 
       // Get possible outcomes
-      const outcomes: DbSkinOutcome[] = getOutcomesForCollections(db, collectionIds, outputRarity);
+      const outcomes: DbSkinOutcome[] = await getOutcomesForCollections(pool, collectionIds, outputRarity);
       if (outcomes.length === 0) {
         res.status(400).json({ error: `No ${outputRarity} outcomes found for the input collections` });
         return;
       }
 
-      result = evaluateTradeUp(db, engineInputs, outcomes);
+      result = await evaluateTradeUp(pool, engineInputs, outcomes);
 
       if (result) {
         // Determine type from rarity
@@ -241,14 +233,14 @@ export function calculatorRouter(readDb: Database.Database): Router {
 
     // Compute additional stats
     const chanceToProfit = result.outcomes.reduce(
-      (sum, o) => sum + (o.estimated_price_cents > result!.total_cost_cents ? o.probability : 0),
+      (sum: number, o: any) => sum + (o.estimated_price_cents > result!.total_cost_cents ? o.probability : 0),
       0
     );
     const bestCase = result.outcomes.length > 0
-      ? Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents
+      ? Math.max(...result.outcomes.map((o: any) => o.estimated_price_cents)) - result.total_cost_cents
       : -result.total_cost_cents;
     const worstCase = result.outcomes.length > 0
-      ? Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents
+      ? Math.min(...result.outcomes.map((o: any) => o.estimated_price_cents)) - result.total_cost_cents
       : -result.total_cost_cents;
 
     res.json({

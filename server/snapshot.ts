@@ -2,7 +2,7 @@
  * Market snapshot system: captures periodic state of trade-ups for historical analysis.
  * Called by the daemon at the end of each cycle.
  */
-import type Database from "better-sqlite3";
+import pg from "pg";
 
 interface SnapshotOptions {
   cycle?: number;
@@ -11,12 +11,12 @@ interface SnapshotOptions {
   apiRemaining?: { listing?: number; sale?: number; individual?: number };
 }
 
-export function takeSnapshot(db: Database.Database, opts: SnapshotOptions = {}): number {
+export async function takeSnapshot(pool: pg.Pool, opts: SnapshotOptions = {}): Promise<number> {
   const type = opts.type ?? "covert_knife";
   const topN = opts.topN ?? 25;
 
   // Aggregate stats
-  const stats = db.prepare(`
+  const { rows: [stats] } = await pool.query(`
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN profit_cents > 0 AND is_theoretical = 0 THEN 1 ELSE 0 END) as profitable,
@@ -27,27 +27,23 @@ export function takeSnapshot(db: Database.Database, opts: SnapshotOptions = {}):
       AVG(chance_to_profit) as avg_chance,
       SUM(CASE WHEN is_theoretical = 1 THEN 1 ELSE 0 END) as theories,
       SUM(CASE WHEN is_theoretical = 1 AND profit_cents > 0 THEN 1 ELSE 0 END) as theory_profitable
-    FROM trade_ups WHERE type = ?
-  `).get(type) as {
-    total: number; profitable: number; best_profit: number | null;
-    avg_profit: number | null; best_roi: number | null; avg_cost: number | null;
-    avg_chance: number | null; theories: number; theory_profitable: number;
-  };
+    FROM trade_ups WHERE type = $1
+  `, [type]);
 
   // Coverage
-  const coverage = db.prepare(`
+  const { rows: [coverage] } = await pool.query(`
     SELECT COUNT(DISTINCT s.name) as skins, COUNT(*) as listings
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
     WHERE s.rarity = 'Covert' AND l.stattrak = 0
-  `).get() as { skins: number; listings: number };
+  `);
 
   // Near-misses & cooldowns
-  const nearMiss = db.prepare("SELECT COUNT(*) as cnt, MIN(gap_cents) as closest FROM near_misses").get() as { cnt: number; closest: number | null };
-  const cooldowns = db.prepare("SELECT COUNT(*) as cnt FROM theory_tracking WHERE cooldown_until > datetime('now')").get() as { cnt: number };
+  const { rows: [nearMiss] } = await pool.query("SELECT COUNT(*) as cnt, MIN(gap_cents) as closest FROM near_misses");
+  const { rows: [cooldowns] } = await pool.query("SELECT COUNT(*) as cnt FROM theory_tracking WHERE cooldown_until > NOW()");
 
   // Insert snapshot
-  const result = db.prepare(`
+  const { rows: [insertedRow] } = await pool.query(`
     INSERT INTO market_snapshots (
       cycle, type, total_tradeups, profitable_count,
       best_profit_cents, avg_profit_cents, best_roi,
@@ -56,68 +52,56 @@ export function takeSnapshot(db: Database.Database, opts: SnapshotOptions = {}):
       theory_count, theory_profitable,
       near_miss_count, closest_gap_cents, cooldowns_active,
       api_listing_remaining, api_sale_remaining, api_individual_remaining
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    RETURNING id
+  `, [
     opts.cycle ?? null,
     type,
-    stats.total ?? 0,
-    stats.profitable ?? 0,
-    stats.best_profit ?? 0,
-    Math.round(stats.avg_profit ?? 0),
-    stats.best_roi ?? 0,
-    Math.round(stats.avg_cost ?? 0),
-    stats.avg_chance ?? 0,
-    coverage.skins ?? 0,
-    coverage.listings ?? 0,
-    stats.theories ?? 0,
-    stats.theory_profitable ?? 0,
-    nearMiss.cnt ?? 0,
+    Number(stats.total) ?? 0,
+    Number(stats.profitable) ?? 0,
+    Number(stats.best_profit) ?? 0,
+    Math.round(Number(stats.avg_profit) ?? 0),
+    Number(stats.best_roi) ?? 0,
+    Math.round(Number(stats.avg_cost) ?? 0),
+    Number(stats.avg_chance) ?? 0,
+    Number(coverage.skins) ?? 0,
+    Number(coverage.listings) ?? 0,
+    Number(stats.theories) ?? 0,
+    Number(stats.theory_profitable) ?? 0,
+    Number(nearMiss.cnt) ?? 0,
     nearMiss.closest ?? null,
-    cooldowns.cnt ?? 0,
+    Number(cooldowns.cnt) ?? 0,
     opts.apiRemaining?.listing ?? null,
     opts.apiRemaining?.sale ?? null,
     opts.apiRemaining?.individual ?? null,
-  );
+  ]);
 
-  const snapshotId = Number(result.lastInsertRowid);
+  const snapshotId = insertedRow.id;
 
   // Capture top N trade-ups (by profit, real first, then theoretical)
-  const topTradeUps = db.prepare(`
+  const { rows: topTradeUps } = await pool.query(`
     SELECT id, profit_cents, roi_percentage, total_cost_cents,
            chance_to_profit, best_case_cents, worst_case_cents,
            is_theoretical, source, combo_key
     FROM trade_ups
-    WHERE type = ?
+    WHERE type = $1
     ORDER BY is_theoretical ASC, profit_cents DESC
-    LIMIT ?
-  `).all(type, topN) as {
-    id: number; profit_cents: number; roi_percentage: number; total_cost_cents: number;
-    chance_to_profit: number; best_case_cents: number; worst_case_cents: number;
-    is_theoretical: number; source: string | null; combo_key: string | null;
-  }[];
+    LIMIT $2
+  `, [type, topN]);
 
-  const insertTop = db.prepare(`
-    INSERT INTO snapshot_tradeups (
-      snapshot_id, rank, trade_up_id, profit_cents, roi_percentage,
-      total_cost_cents, chance_to_profit, best_case_cents, worst_case_cents,
-      is_theoretical, source, combo_key, collections, input_skins, output_skins
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const getInputs = db.prepare(`
-    SELECT DISTINCT collection_name, skin_name, condition, price_cents
-    FROM trade_up_inputs WHERE trade_up_id = ?
-  `);
-  const getOutcomesJson = db.prepare(`
-    SELECT outcomes_json FROM trade_ups WHERE id = ?
-  `);
-
-  const insertMany = db.transaction(() => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
     for (let i = 0; i < topTradeUps.length; i++) {
       const t = topTradeUps[i];
-      const inputs = getInputs.all(t.id) as { collection_name: string; skin_name: string; condition: string; price_cents: number }[];
-      const outRow = getOutcomesJson.get(t.id) as { outcomes_json: string | null } | undefined;
-      const outputs = (outRow?.outcomes_json ? JSON.parse(outRow.outcomes_json) : []) as { skin_name: string; predicted_condition: string; estimated_price_cents: number; probability: number }[];
+      const { rows: inputs } = await client.query(`
+        SELECT DISTINCT collection_name, skin_name, condition, price_cents
+        FROM trade_up_inputs WHERE trade_up_id = $1
+      `, [t.id]);
+      const { rows: outRows } = await client.query(`
+        SELECT outcomes_json FROM trade_ups WHERE id = $1
+      `, [t.id]);
+      const outputs = (outRows[0]?.outcomes_json ? JSON.parse(outRows[0].outcomes_json) : []) as { skin_name: string; predicted_condition: string; estimated_price_cents: number; probability: number }[];
 
       const collections = [...new Set(inputs.map(inp => inp.collection_name))].join(" + ");
       const inputSkins = inputs.map(inp =>
@@ -127,26 +111,40 @@ export function takeSnapshot(db: Database.Database, opts: SnapshotOptions = {}):
         `${out.skin_name} ${out.predicted_condition} $${(out.estimated_price_cents / 100).toFixed(2)} (${(out.probability * 100).toFixed(1)}%)`
       ).join("; ");
 
-      insertTop.run(
+      await client.query(`
+        INSERT INTO snapshot_tradeups (
+          snapshot_id, rank, trade_up_id, profit_cents, roi_percentage,
+          total_cost_cents, chance_to_profit, best_case_cents, worst_case_cents,
+          is_theoretical, source, combo_key, collections, input_skins, output_skins
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `, [
         snapshotId, i + 1, t.id, t.profit_cents, t.roi_percentage,
         t.total_cost_cents, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
         t.is_theoretical, t.source ?? null, t.combo_key ?? null,
         collections, inputSkins, outputSkins,
-      );
+      ]);
     }
-  });
+    await client.query('COMMIT');
+  } catch (txErr) {
+    await client.query('ROLLBACK');
+    throw txErr;
+  } finally {
+    client.release();
+  }
 
-  insertMany();
   return snapshotId;
 }
 
 /** Purge snapshots older than maxDays (default 30) */
-export function purgeOldSnapshots(db: Database.Database, maxDays = 30) {
-  db.prepare(`
+export async function purgeOldSnapshots(pool: pg.Pool, maxDays = 30) {
+  await pool.query(`
     DELETE FROM snapshot_tradeups WHERE snapshot_id IN (
       SELECT id FROM market_snapshots
-      WHERE julianday('now') - julianday(snapshot_at) > ?
+      WHERE EXTRACT(EPOCH FROM NOW() - snapshot_at) / 86400.0 > $1
     )
-  `).run(maxDays);
-  db.prepare("DELETE FROM market_snapshots WHERE julianday('now') - julianday(snapshot_at) > ?").run(maxDays);
+  `, [maxDays]);
+  await pool.query(
+    "DELETE FROM market_snapshots WHERE EXTRACT(EPOCH FROM NOW() - snapshot_at) / 86400.0 > $1",
+    [maxDays]
+  );
 }

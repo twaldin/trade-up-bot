@@ -6,7 +6,7 @@
  * knife trade-up. This is correct in expectation and avoids O(k^5) blowup.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition, type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 import type { FinishData } from "./knife-data.js";
@@ -39,26 +39,26 @@ export interface StaircaseResult {
 /**
  * Find staircase trade-ups from existing classified→covert and knife trade-up data.
  */
-export function findStaircaseTradeUps(
-  db: Database.Database,
+export async function findStaircaseTradeUps(
+  pool: pg.Pool,
   options: {
     onProgress?: (msg: string) => void;
     minStage1Roi?: number; // minimum stage 1 ROI to consider (default: -20%)
   } = {}
-): StaircaseResult {
+): Promise<StaircaseResult> {
   const minStage1Roi = options.minStage1Roi ?? -20;
 
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
   // Load classified→covert trade-ups with their outcomes
-  const stage1Candidates = db.prepare(`
+  const { rows: stage1Candidates } = await pool.query(`
     SELECT t.id, t.total_cost_cents, t.expected_value_cents, t.profit_cents, t.roi_percentage
     FROM trade_ups t
     WHERE t.type = 'classified_covert' AND t.is_theoretical = 0
-      AND t.roi_percentage >= ?
+      AND t.roi_percentage >= $1
     ORDER BY t.roi_percentage DESC
     LIMIT 5000
-  `).all(minStage1Roi) as { id: number; total_cost_cents: number; expected_value_cents: number; profit_cents: number; roi_percentage: number }[];
+  `, [minStage1Roi]);
 
   if (stage1Candidates.length === 0) {
     options.onProgress?.("Staircase: no stage 1 candidates");
@@ -69,7 +69,8 @@ export function findStaircaseTradeUps(
   const synthetics: SyntheticCovert[] = [];
 
   for (const s1 of stage1Candidates) {
-    const tuRow = db.prepare("SELECT outcomes_json FROM trade_ups WHERE id = ?").get(s1.id) as { outcomes_json: string | null } | undefined;
+    const { rows: tuRows } = await pool.query("SELECT outcomes_json FROM trade_ups WHERE id = $1", [s1.id]);
+    const tuRow = tuRows[0] as { outcomes_json: string | null } | undefined;
     const outcomes = (tuRow?.outcomes_json ? JSON.parse(tuRow.outcomes_json) : []) as { skin_name: string; collection_name: string; probability: number; predicted_float: number; estimated_price_cents: number }[];
 
     if (outcomes.length === 0) continue;
@@ -95,7 +96,8 @@ export function findStaircaseTradeUps(
     if (!bestCol || !CASE_KNIFE_MAP[bestCol]) continue;
 
     // Get collection ID
-    const colRow = db.prepare("SELECT id FROM collections WHERE name = ?").get(bestCol) as { id: string } | undefined;
+    const { rows: colRows } = await pool.query("SELECT id FROM collections WHERE name = $1", [bestCol]);
+    const colRow = colRows[0] as { id: string } | undefined;
     if (!colRow) continue;
 
     synthetics.push({
@@ -133,7 +135,7 @@ export function findStaircaseTradeUps(
     }
   }
   for (const itemType of allItemTypes) {
-    const finishes = getKnifeFinishesWithPrices(db, itemType);
+    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
     if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
   }
 
@@ -141,11 +143,11 @@ export function findStaircaseTradeUps(
   const seen = new Set<string>();
   const results: StaircaseTradeUp[] = [];
 
-  function tryCombo(combo: SyntheticCovert[]) {
+  async function tryCombo(combo: SyntheticCovert[]) {
     const key = combo.map(c => c.stage1TradeUpId).sort((a, b) => a - b).join(",");
     if (seen.has(key)) return;
     seen.add(key);
-    const result = evaluateStaircase(db, combo, knifeFinishCache);
+    const result = await evaluateStaircase(pool, combo, knifeFinishCache);
     if (result) results.push(result);
   }
 
@@ -159,7 +161,7 @@ export function findStaircaseTradeUps(
     // Try sliding windows over cheapest-sorted list (stride 1)
     const maxWindows = Math.min(coverts.length - 4, 20);
     for (let w = 0; w < maxWindows; w++) {
-      tryCombo(coverts.slice(w, w + 5));
+      await tryCombo(coverts.slice(w, w + 5));
     }
 
     // Try combinations with best ROI
@@ -171,7 +173,7 @@ export function findStaircaseTradeUps(
       });
       const maxRoiWindows = Math.min(byRoi.length - 4, 20);
       for (let w = 0; w < maxRoiWindows; w++) {
-        tryCombo(byRoi.slice(w, w + 5));
+        await tryCombo(byRoi.slice(w, w + 5));
       }
     }
   }
@@ -184,7 +186,7 @@ export function findStaircaseTradeUps(
       const poolB = byCollection.get(colNames[j])!;
       const pooled = [...poolA, ...poolB].sort((a, b) => a.manufacturedCostCents - b.manufacturedCostCents);
       if (pooled.length < 5) continue;
-      tryCombo(pooled.slice(0, 5));
+      await tryCombo(pooled.slice(0, 5));
     }
   }
 
@@ -197,8 +199,8 @@ export function findStaircaseTradeUps(
         const poolC = byCollection.get(colNames[k])!;
         const pooled = [...poolA, ...poolB, ...poolC].sort((a, b) => a.manufacturedCostCents - b.manufacturedCostCents);
         if (pooled.length < 5) continue;
-        tryCombo(pooled.slice(0, 5));
-        if (pooled.length >= 7) tryCombo(pooled.slice(1, 6));
+        await tryCombo(pooled.slice(0, 5));
+        if (pooled.length >= 7) await tryCombo(pooled.slice(1, 6));
       }
     }
   }
@@ -211,26 +213,27 @@ export function findStaircaseTradeUps(
   return { total: results.length, profitable, tradeUps: results };
 }
 
-function evaluateStaircase(
-  db: Database.Database,
+async function evaluateStaircase(
+  pool: pg.Pool,
   inputs: SyntheticCovert[],
   knifeFinishCache: Map<string, FinishData[]>
-): StaircaseTradeUp | null {
+): Promise<StaircaseTradeUp | null> {
   if (inputs.length !== 5) return null;
 
   // Build synthetic ListingWithCollection entries
   const syntheticInputs: ListingWithCollection[] = [];
   for (const inp of inputs) {
     // Find a real Covert skin from this collection to get float range
-    const covertSkin = db.prepare(`
+    const { rows: covertRows } = await pool.query(`
       SELECT s.id, s.name, s.weapon, s.min_float, s.max_float, s.rarity,
         sc.collection_id, c.name as collection_name
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
       JOIN collections c ON sc.collection_id = c.id
-      WHERE c.name = ? AND s.rarity = 'Covert' AND s.stattrak = 0 AND s.name NOT LIKE '★%'
+      WHERE c.name = $1 AND s.rarity = 'Covert' AND s.stattrak = 0 AND s.name NOT LIKE '★%'
       LIMIT 1
-    `).get(inp.collection) as {
+    `, [inp.collection]);
+    const covertSkin = covertRows[0] as {
       id: string; name: string; weapon: string; min_float: number; max_float: number;
       rarity: string; collection_id: string; collection_name: string;
     } | undefined;
@@ -258,7 +261,7 @@ function evaluateStaircase(
   if (syntheticInputs.length !== 5) return null;
 
   // Evaluate as knife trade-up — this returns a full TradeUp with outcomes
-  const tradeUp = evaluateKnifeTradeUp(db, syntheticInputs, knifeFinishCache);
+  const tradeUp = await evaluateKnifeTradeUp(pool, syntheticInputs, knifeFinishCache);
   if (!tradeUp || tradeUp.expected_value_cents <= 0) return null;
 
   // Override cost with total manufactured cost (sum of 5 stage-1 costs)

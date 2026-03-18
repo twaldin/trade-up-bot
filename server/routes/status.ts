@@ -1,68 +1,75 @@
 import { Router } from "express";
+import pg from "pg";
 import fs from "fs";
-import type Database from "better-sqlite3";
 import { getSyncMeta } from "../db.js";
 import { CASE_KNIFE_MAP } from "../engine.js";
 import { cachedRoute } from "../redis.js";
 import type { SyncStatus } from "../../shared/types.js";
 
-export function statusRouter(readDb: Database.Database): Router {
+export function statusRouter(pool: pg.Pool): Router {
   const router = Router();
-  const db = readDb;
 
-  router.get("/api/status", cachedRoute("status", 60, (_req, res) => {
-    const listingStats = (rarity: string, excludeKnives = false) => {
+  router.get("/api/status", cachedRoute("status", 60, async (_req, res) => {
+    const listingStats = async (rarity: string, excludeKnives = false) => {
       const knifeFilter = excludeKnives ? "AND s.name NOT LIKE '★%'" : "";
-      const r = db.prepare(`
+      const { rows: [r] } = await pool.query(`
         SELECT COUNT(l.id) as total_listings, COUNT(DISTINCT s.name) as skins_with_listings
         FROM listings l JOIN skins s ON l.skin_id = s.id
-        WHERE s.rarity = ? AND s.stattrak = 0 ${knifeFilter}
-      `).get(rarity) as { total_listings: number; skins_with_listings: number };
+        WHERE s.rarity = $1 AND s.stattrak = 0 ${knifeFilter}
+      `, [rarity]);
       const knifeFilterNoAlias = excludeKnives ? "AND name NOT LIKE '★%'" : "";
-      const total = (db.prepare(
-        `SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = ? AND stattrak = 0 ${knifeFilterNoAlias}`
-      ).get(rarity) as { c: number }).c;
-      return { listings: r.total_listings, skins: r.skins_with_listings, total };
+      const { rows: [totalRow] } = await pool.query(
+        `SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = $1 AND stattrak = 0 ${knifeFilterNoAlias}`,
+        [rarity]
+      );
+      return { listings: parseInt(r.total_listings), skins: parseInt(r.skins_with_listings), total: parseInt(totalRow.c) };
     };
 
-    const classified = listingStats("Classified");
-    const covert = listingStats("Covert", true);
+    const classified = await listingStats("Classified");
+    const covert = await listingStats("Covert", true);
 
-    const covertPrices = db.prepare(`
+    const { rows: [covertPrices] } = await pool.query(`
       SELECT
         (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_sales') as sale_prices,
         (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as ref_prices,
         (SELECT COUNT(*) FROM sale_history) as total_sales
-    `).get() as { sale_prices: number; ref_prices: number; total_sales: number };
+    `);
 
-    const tuStats = db.prepare(`
+    const { rows: tuStats } = await pool.query(`
       SELECT type,
         COUNT(*) as cnt,
         SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
       FROM trade_ups GROUP BY type
-    `).all() as { type: string; cnt: number; profitable: number }[];
+    `);
 
     // Real knife trade-ups (exclude theories which share type='covert_knife')
-    const knifeTu = (() => {
+    const knifeTu = await (async () => {
       try {
-        return db.prepare(`
+        const { rows: [row] } = await pool.query(`
           SELECT COUNT(*) as cnt,
             SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable,
             SUM(CASE WHEN listing_status = 'active' THEN 1 ELSE 0 END) as active,
             SUM(CASE WHEN listing_status = 'partial' THEN 1 ELSE 0 END) as partial,
             SUM(CASE WHEN listing_status = 'stale' THEN 1 ELSE 0 END) as stale
           FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = 0
-        `).get() as { cnt: number; profitable: number; active: number; partial: number; stale: number };
+        `);
+        return {
+          cnt: parseInt(row.cnt) || 0,
+          profitable: parseInt(row.profitable) || 0,
+          active: parseInt(row.active) || 0,
+          partial: parseInt(row.partial) || 0,
+          stale: parseInt(row.stale) || 0,
+        };
       } catch { /* DB may be locked */ return { cnt: 0, profitable: 0, active: 0, partial: 0, stale: 0 }; }
     })();
-    const covertTu = tuStats.find(r => r.type === "classified_covert");
-    const totalTu = tuStats.reduce((s, r) => s + r.cnt, 0);
-    const totalProfitable = tuStats.reduce((s, r) => s + r.profitable, 0);
+    const covertTu = tuStats.find((r: any) => r.type === "classified_covert");
+    const totalTu = tuStats.reduce((s: number, r: any) => s + parseInt(r.cnt), 0);
+    const totalProfitable = tuStats.reduce((s: number, r: any) => s + parseInt(r.profitable), 0);
 
-    const topCollections = db.prepare(`
+    const { rows: topCollections } = await pool.query(`
       SELECT collection_name, priority_score, profitable_count, avg_profit_cents
       FROM collection_scores ORDER BY priority_score DESC LIMIT 5
-    `).all() as { collection_name: string; priority_score: number; profitable_count: number; avg_profit_cents: number }[];
+    `);
 
     const result = ({
       classified_listings: classified.listings,
@@ -71,22 +78,22 @@ export function statusRouter(readDb: Database.Database): Router {
       covert_listings: covert.listings,
       covert_skins: covert.skins,
       covert_total: covert.total,
-      covert_sale_prices: covertPrices.sale_prices,
-      covert_ref_prices: covertPrices.ref_prices,
-      total_sales: covertPrices.total_sales,
+      covert_sale_prices: parseInt(covertPrices.sale_prices),
+      covert_ref_prices: parseInt(covertPrices.ref_prices),
+      total_sales: parseInt(covertPrices.total_sales),
       knife_trade_ups: knifeTu?.cnt ?? 0,
       knife_profitable: knifeTu?.profitable ?? 0,
       knife_active: knifeTu?.active ?? 0,
       knife_partial: knifeTu?.partial ?? 0,
       knife_stale: knifeTu?.stale ?? 0,
-      covert_trade_ups: covertTu?.cnt ?? 0,
-      covert_profitable: covertTu?.profitable ?? 0,
+      covert_trade_ups: covertTu ? parseInt(covertTu.cnt) : 0,
+      covert_profitable: covertTu ? parseInt(covertTu.profitable) : 0,
       trade_ups_count: totalTu,
       profitable_count: totalProfitable,
-      last_calculation: getSyncMeta(db, "last_calculation"),
-      daemon_status: (() => {
+      last_calculation: await getSyncMeta(pool, "last_calculation"),
+      daemon_status: await (async () => {
         try {
-          const raw = getSyncMeta(db, "daemon_status");
+          const raw = await getSyncMeta(pool, "daemon_status");
           if (!raw) return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() };
           const parsed = JSON.parse(raw);
           // Check if daemon status is stale (>25 min old = likely crashed/stopped)
@@ -99,36 +106,36 @@ export function statusRouter(readDb: Database.Database): Router {
         } catch { /* malformed JSON */ return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
       })(),
       top_collections: topCollections,
-      exploration_stats: (() => {
+      exploration_stats: await (async () => {
         try {
-          const raw = getSyncMeta(db, "exploration_stats");
+          const raw = await getSyncMeta(pool, "exploration_stats");
           return raw ? JSON.parse(raw) : null;
         } catch { /* malformed JSON */ return null; }
       })(),
       ref_coverage: null,
-      total_skins: (() => {
-        const r = db.prepare("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = 0").get() as { c: number };
-        return r.c;
+      total_skins: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = 0");
+        return parseInt(r.c);
       })(),
-      total_listings: (() => {
-        const r = db.prepare("SELECT COUNT(*) as c FROM listings").get() as { c: number };
-        return r.c;
+      total_listings: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings");
+        return parseInt(r.c);
       })(),
-      knife_glove_skins: (() => {
-        const r = db.prepare("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = 0").get() as { c: number };
-        return r.c;
+      knife_glove_skins: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = 0");
+        return parseInt(r.c);
       })(),
-      knife_glove_with_listings: (() => {
-        const r = db.prepare("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = 0").get() as { c: number };
-        return r.c;
+      knife_glove_with_listings: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = 0");
+        return parseInt(r.c);
       })(),
-      knife_glove_listings: (() => {
-        const r = db.prepare("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = 0").get() as { c: number };
-        return r.c;
+      knife_glove_listings: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = 0");
+        return parseInt(r.c);
       })(),
-      collection_count: (() => {
-        const r = db.prepare("SELECT COUNT(DISTINCT c.id) as c FROM collections c JOIN skin_collections sc ON c.id = sc.collection_id").get() as { c: number };
-        return r.c;
+      collection_count: await (async () => {
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT c.id) as c FROM collections c JOIN skin_collections sc ON c.id = sc.collection_id");
+        return parseInt(r.c);
       })(),
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
@@ -151,9 +158,9 @@ export function statusRouter(readDb: Database.Database): Router {
       }
     } catch { /* Redis unavailable */ }
 
-    // Redis miss: fall back to DB with read-only connection
+    // Redis miss: fall back to DB
     try {
-      const stats = db.prepare(`
+      const { rows: [stats] } = await pool.query(`
         SELECT
           (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
           (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
@@ -162,17 +169,17 @@ export function statusRouter(readDb: Database.Database): Router {
           (SELECT COUNT(*) FROM sale_history) as sale_hist,
           (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
           (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
-      `).get() as { total_tu: number; profitable_tu: number; listings: number; sale_obs: number; sale_hist: number; refs: number; cycles: number };
+      `);
 
       const data = {
-        total_trade_ups: stats.total_tu,
-        profitable_trade_ups: stats.profitable_tu ?? 0,
-        total_data_points: stats.listings + stats.sale_obs + stats.sale_hist + stats.refs,
-        listings: stats.listings,
-        sale_observations: stats.sale_obs,
-        sale_history: stats.sale_hist,
-        ref_prices: stats.refs,
-        total_cycles: stats.cycles,
+        total_trade_ups: parseInt(stats.total_tu),
+        profitable_trade_ups: parseInt(stats.profitable_tu) ?? 0,
+        total_data_points: parseInt(stats.listings) + parseInt(stats.sale_obs) + parseInt(stats.sale_hist) + parseInt(stats.refs),
+        listings: parseInt(stats.listings),
+        sale_observations: parseInt(stats.sale_obs),
+        sale_history: parseInt(stats.sale_hist),
+        ref_prices: parseInt(stats.refs),
+        total_cycles: parseInt(stats.cycles),
       };
 
       // Cache in Redis for next request
@@ -186,7 +193,7 @@ export function statusRouter(readDb: Database.Database): Router {
     }
   });
 
-  router.get("/api/daemon-log", cachedRoute("daemon_log", 30, (_req, res) => {
+  router.get("/api/daemon-log", cachedRoute("daemon_log", 30, async (_req, res) => {
     const logPath = "/tmp/daemon.log";
     const MAX_LINES = 500;
 
@@ -227,36 +234,36 @@ export function statusRouter(readDb: Database.Database): Router {
       // Include rate limit data from daemon
       let rateLimits = null;
       try {
-        const raw = getSyncMeta(db, "api_rate_limit");
+        const raw = await getSyncMeta(pool, "api_rate_limit");
         if (raw) rateLimits = JSON.parse(raw);
       } catch { /* malformed JSON */ }
 
       // CSFloat stats
       let csfloatStats = null;
       try {
-        const row = db.prepare(`
+        const { rows: [row] } = await pool.query(`
           SELECT
             (SELECT COUNT(*) FROM listings WHERE source IS NULL OR source = 'csfloat') as listings,
             (SELECT COUNT(*) FROM sale_history) as sales,
             (SELECT COUNT(*) FROM price_observations WHERE source = 'sale') as sale_observations
-        `).get() as { listings: number; sales: number; sale_observations: number };
+        `);
         csfloatStats = {
-          listingsStored: row.listings,
-          totalSales: row.sales,
-          saleObservations: row.sale_observations,
+          listingsStored: parseInt(row.listings),
+          totalSales: parseInt(row.sales),
+          saleObservations: parseInt(row.sale_observations),
         };
       } catch { /* DB may be locked */ }
 
       // DMarket stats
       let dmarketStats = null;
       try {
-        const row = db.prepare(
+        const { rows: [row] } = await pool.query(
           "SELECT COUNT(*) as cnt FROM listings WHERE source = 'dmarket'"
-        ).get() as { cnt: number };
-        const lastFetch = getSyncMeta(db, "last_dmarket_fetch");
+        );
+        const lastFetch = await getSyncMeta(pool, "last_dmarket_fetch");
         dmarketStats = {
           configured: !!(process.env.DMARKET_PUBLIC_KEY && process.env.DMARKET_SECRET_KEY),
-          listingsStored: row.cnt,
+          listingsStored: parseInt(row.cnt),
           lastFetchAt: lastFetch || null,
         };
       } catch { /* DB may be locked */ }
@@ -264,15 +271,15 @@ export function statusRouter(readDb: Database.Database): Router {
       // Skinport WebSocket stats
       let skinportStats = null;
       try {
-        const row = db.prepare(
+        const { rows: [row] } = await pool.query(
           "SELECT COUNT(*) as cnt FROM listings WHERE source = 'skinport'"
-        ).get() as { cnt: number };
-        const obsRow = db.prepare(
+        );
+        const { rows: [obsRow] } = await pool.query(
           "SELECT COUNT(*) as cnt FROM price_observations WHERE source = 'skinport_sale'"
-        ).get() as { cnt: number };
+        );
         skinportStats = {
-          listingsStored: row.cnt,
-          saleObservations: obsRow.cnt,
+          listingsStored: parseInt(row.cnt),
+          saleObservations: parseInt(obsRow.cnt),
         };
       } catch { /* DB may be locked */ }
 
@@ -285,12 +292,12 @@ export function statusRouter(readDb: Database.Database): Router {
   router.get("/api/daemon-cycles", cachedRoute(
     (req) => `daemon_cycles:${req.query.limit || 50}:${req.query.offset || 0}`,
     300,
-    (req, res) => {
+    async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const offset = parseInt(req.query.offset as string) || 0;
 
     try {
-      const rows = db.prepare(`
+      const { rows } = await pool.query(`
         SELECT cycle, started_at, duration_ms, api_calls_used, api_limit_detected,
                api_available, knife_tradeups_total, knife_profitable,
                theories_generated, theories_profitable, gaps_filled,
@@ -301,35 +308,35 @@ export function statusRouter(readDb: Database.Database): Router {
         FROM daemon_cycle_stats
         WHERE daemon_version = 'knife-v2'
         ORDER BY id DESC
-        LIMIT ? OFFSET ?
-      `).all(limit, offset);
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]);
 
-      const total = (db.prepare(
+      const { rows: [totalRow] } = await pool.query(
         "SELECT COUNT(*) as cnt FROM daemon_cycle_stats WHERE daemon_version = 'knife-v2'"
-      ).get() as { cnt: number }).cnt;
+      );
 
-      res.json({ cycles: rows, total });
+      res.json({ cycles: rows, total: parseInt(totalRow.cnt) });
     } catch (err) {
       res.json({ cycles: [], total: 0 });
     }
   }));
 
-  router.get("/api/daemon-stats", cachedRoute("daemon_stats", 300, (_req, res) => {
+  router.get("/api/daemon-stats", cachedRoute("daemon_stats", 300, async (_req, res) => {
     // Check if table exists
-    const hasTable = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='daemon_cycle_stats'"
-    ).get();
-    if (!hasTable) {
+    const { rows: tableCheck } = await pool.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'daemon_cycle_stats'"
+    );
+    if (tableCheck.length === 0) {
       res.json({ cycles: [], summary: null });
       return;
     }
 
-    const cycles = db.prepare(`
+    const { rows: cycles } = await pool.query(`
       SELECT * FROM daemon_cycle_stats
       ORDER BY id DESC LIMIT 50
-    `).all();
+    `);
 
-    const summary = db.prepare(`
+    const { rows: [summary] } = await pool.query(`
       SELECT
         COUNT(*) as total_cycles,
         AVG(duration_ms) as avg_duration_ms,
@@ -345,12 +352,12 @@ export function statusRouter(readDb: Database.Database): Router {
         MAX(started_at) as last_cycle
       FROM daemon_cycle_stats
       WHERE daemon_version = 'knife-v2'
-    `).get();
+    `);
 
     // Detected rate limit info
-    const rateLimitMeta = (() => {
+    const rateLimitMeta = await (async () => {
       try {
-        const raw = getSyncMeta(db, "api_rate_limit");
+        const raw = await getSyncMeta(pool, "api_rate_limit");
         return raw ? JSON.parse(raw) : null;
       } catch { /* malformed JSON */ return null; }
     })();
@@ -361,22 +368,24 @@ export function statusRouter(readDb: Database.Database): Router {
   router.get("/api/daemon-events", cachedRoute(
     (req) => `daemon_events:${req.query.since || "all"}:${req.query.limit || 100}`,
     30,
-    (req, res) => {
+    async (req, res) => {
     try {
       const since = req.query.since as string | undefined;
       const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
       let events;
       if (since) {
-        events = db.prepare(`
+        const { rows } = await pool.query(`
           SELECT id, event_type, summary, detail, created_at
-          FROM daemon_events WHERE created_at > ? ORDER BY id DESC LIMIT ?
-        `).all(since, limit);
+          FROM daemon_events WHERE created_at > $1 ORDER BY id DESC LIMIT $2
+        `, [since, limit]);
+        events = rows;
       } else {
-        events = db.prepare(`
+        const { rows } = await pool.query(`
           SELECT id, event_type, summary, detail, created_at
-          FROM daemon_events ORDER BY id DESC LIMIT ?
-        `).all(limit);
+          FROM daemon_events ORDER BY id DESC LIMIT $1
+        `, [limit]);
+        events = rows;
       }
       res.json({ events: (events as { id: number; event_type: string; summary: string; detail: string; created_at: string }[]).reverse() });
     } catch (err) {

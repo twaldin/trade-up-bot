@@ -2,7 +2,7 @@
  * Daemon utilities: logging, status, coverage reporting, rate limit detection, cycle stats.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { setSyncMeta } from "../db.js";
 
 export function timestamp() {
@@ -18,7 +18,7 @@ export function setDaemonMeta(cycle: number, startedAt: string) {
   _daemonStartedAt = startedAt;
 }
 
-export function setDaemonStatus(db: Database.Database, phase: string, detail: string = "") {
+export async function setDaemonStatus(pool: pg.Pool, phase: string, detail: string = "") {
   const status = JSON.stringify({
     phase,
     detail,
@@ -26,24 +26,23 @@ export function setDaemonStatus(db: Database.Database, phase: string, detail: st
     cycle: _daemonCycle,
     startedAt: _daemonStartedAt,
   });
-  try { setSyncMeta(db, "daemon_status", status); } catch { /* non-critical metadata */ }
+  try { await setSyncMeta(pool, "daemon_status", status); } catch { /* non-critical metadata */ }
 }
 
-export function updateExplorationStats(
-  db: Database.Database,
+export async function updateExplorationStats(
+  pool: pg.Pool,
   stats: Record<string, string | number>
 ) {
   try {
-    const existing = getSyncMeta(db, "exploration_stats");
+    const existing = await _getSyncMeta(pool, "exploration_stats");
     const merged = existing ? { ...JSON.parse(existing), ...stats } : stats;
-    setSyncMeta(db, "exploration_stats", JSON.stringify(merged));
+    await setSyncMeta(pool, "exploration_stats", JSON.stringify(merged));
   } catch { /* JSON parse of existing stats can fail */ }
 }
 
-function getSyncMeta(db: Database.Database, key: string): string | null {
-  const row = db.prepare("SELECT value FROM sync_meta WHERE key = ?").get(key) as
-    | { value: string } | undefined;
-  return row?.value ?? null;
+async function _getSyncMeta(pool: pg.Pool, key: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT value FROM sync_meta WHERE key = $1", [key]);
+  return rows[0]?.value ?? null;
 }
 
 export interface RateLimitInfo {
@@ -90,9 +89,6 @@ async function probeEndpoint(url: string, apiKey: string): Promise<{ available: 
 
 /**
  * Probe all 3 CSFloat rate limit pools independently.
- * Uses minimal calls: listing search (1 call from 200 pool),
- * sale history (1 call from 500 pool). Individual listing pool
- * is checked via a dummy ID that returns 404 but still shows headers.
  */
 export async function probeApiRateLimits(apiKey: string): Promise<ApiProbeResult> {
   const [listingSearch, saleHistory] = await Promise.all([
@@ -106,8 +102,6 @@ export async function probeApiRateLimits(apiKey: string): Promise<ApiProbeResult
     ),
   ]);
 
-  // Individual listing pool is checked cheaply with a non-existent ID
-  // (returns 404 but still includes rate limit headers)
   const individualListing = await probeEndpoint(
     "https://csfloat.com/api/v1/listings/00000000-0000-0000-0000-000000000000",
     apiKey
@@ -148,51 +142,30 @@ export interface CycleStats {
   cooldownImproved: number;
   topProfit: number; // best trade-up profit in cents
   avgProfit: number; // average profitable trade-up profit in cents
-  // Classified→Covert stats
+  // Classified->Covert stats
   classifiedTotal: number;
   classifiedProfitable: number;
   classifiedTheories: number;
   classifiedTheoriesProfitable: number;
 }
 
-export function ensureStatsTable(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS daemon_cycle_stats (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cycle INTEGER NOT NULL,
-      daemon_version TEXT NOT NULL DEFAULT 'knife-v2',
-      started_at TEXT NOT NULL,
-      duration_ms INTEGER NOT NULL DEFAULT 0,
-      api_calls_used INTEGER NOT NULL DEFAULT 0,
-      api_limit_detected INTEGER,
-      api_available INTEGER NOT NULL DEFAULT 1,
-      knife_tradeups_total INTEGER NOT NULL DEFAULT 0,
-      knife_profitable INTEGER NOT NULL DEFAULT 0,
-      theories_generated INTEGER NOT NULL DEFAULT 0,
-      theories_profitable INTEGER NOT NULL DEFAULT 0,
-      gaps_filled INTEGER NOT NULL DEFAULT 0,
-      cooldown_passes INTEGER NOT NULL DEFAULT 0,
-      cooldown_new_found INTEGER NOT NULL DEFAULT 0,
-      cooldown_improved INTEGER NOT NULL DEFAULT 0,
-      top_profit_cents INTEGER NOT NULL DEFAULT 0,
-      avg_profit_cents INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_daemon_stats_cycle ON daemon_cycle_stats(cycle);
-    CREATE INDEX IF NOT EXISTS idx_daemon_stats_version ON daemon_cycle_stats(daemon_version);
+export async function ensureStatsTable(pool: pg.Pool) {
+  // Table already created by createTables() in db.ts — just check for missing columns
+  const { rows: statCols } = await pool.query(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'daemon_cycle_stats'
   `);
-
-  // Add classified columns if missing
-  const statCols = db.pragma("table_info(daemon_cycle_stats)") as { name: string }[];
-  if (!statCols.some(c => c.name === "classified_total")) {
-    db.exec("ALTER TABLE daemon_cycle_stats ADD COLUMN classified_total INTEGER NOT NULL DEFAULT 0");
-    db.exec("ALTER TABLE daemon_cycle_stats ADD COLUMN classified_profitable INTEGER NOT NULL DEFAULT 0");
-    db.exec("ALTER TABLE daemon_cycle_stats ADD COLUMN classified_theories INTEGER NOT NULL DEFAULT 0");
-    db.exec("ALTER TABLE daemon_cycle_stats ADD COLUMN classified_theories_profitable INTEGER NOT NULL DEFAULT 0");
+  const colNames = statCols.map(c => c.column_name);
+  if (colNames.length > 0 && !colNames.includes("classified_total")) {
+    await pool.query("ALTER TABLE daemon_cycle_stats ADD COLUMN IF NOT EXISTS classified_total INTEGER NOT NULL DEFAULT 0");
+    await pool.query("ALTER TABLE daemon_cycle_stats ADD COLUMN IF NOT EXISTS classified_profitable INTEGER NOT NULL DEFAULT 0");
+    await pool.query("ALTER TABLE daemon_cycle_stats ADD COLUMN IF NOT EXISTS classified_theories INTEGER NOT NULL DEFAULT 0");
+    await pool.query("ALTER TABLE daemon_cycle_stats ADD COLUMN IF NOT EXISTS classified_theories_profitable INTEGER NOT NULL DEFAULT 0");
   }
 }
 
-export function saveCycleStats(db: Database.Database, stats: CycleStats) {
-  db.prepare(`
+export async function saveCycleStats(pool: pg.Pool, stats: CycleStats) {
+  await pool.query(`
     INSERT INTO daemon_cycle_stats (
       cycle, daemon_version, started_at, duration_ms,
       api_calls_used, api_limit_detected, api_available,
@@ -201,8 +174,8 @@ export function saveCycleStats(db: Database.Database, stats: CycleStats) {
       cooldown_passes, cooldown_new_found, cooldown_improved,
       top_profit_cents, avg_profit_cents,
       classified_total, classified_profitable, classified_theories, classified_theories_profitable
-    ) VALUES (?, 'knife-v2', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    ) VALUES ($1, 'knife-v2', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+  `, [
     stats.cycle, stats.startedAt, stats.durationMs,
     stats.apiCallsUsed, stats.apiLimitDetected, stats.apiAvailable ? 1 : 0,
     stats.knifeTradeUpsTotal, stats.knifeProfitable,
@@ -210,20 +183,20 @@ export function saveCycleStats(db: Database.Database, stats: CycleStats) {
     stats.cooldownPasses, stats.cooldownNewFound, stats.cooldownImproved,
     stats.topProfit, stats.avgProfit,
     stats.classifiedTotal ?? 0, stats.classifiedProfitable ?? 0,
-    stats.classifiedTheories ?? 0, stats.classifiedTheoriesProfitable ?? 0
-  );
+    stats.classifiedTheories ?? 0, stats.classifiedTheoriesProfitable ?? 0,
+  ]);
 }
 
 /**
  * Print comparison of current daemon performance vs historical averages.
  */
-export function printPerformanceComparison(db: Database.Database) {
-  const hasTable = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='daemon_cycle_stats'"
-  ).get();
-  if (!hasTable) return;
+export async function printPerformanceComparison(pool: pg.Pool) {
+  const { rows: tableCheck } = await pool.query(
+    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'daemon_cycle_stats') as exists"
+  );
+  if (!tableCheck[0]?.exists) return;
 
-  const recent = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       COUNT(*) as cycles,
       AVG(duration_ms) as avg_duration,
@@ -233,11 +206,14 @@ export function printPerformanceComparison(db: Database.Database) {
       AVG(cooldown_new_found) as avg_new_found,
       AVG(cooldown_improved) as avg_improved,
       MAX(api_limit_detected) as max_api_limit
-    FROM daemon_cycle_stats
-    WHERE daemon_version = 'knife-v2'
-    ORDER BY id DESC LIMIT 20
-  `).get() as {
-    cycles: number;
+    FROM (
+      SELECT * FROM daemon_cycle_stats
+      WHERE daemon_version = 'knife-v2'
+      ORDER BY id DESC LIMIT 20
+    ) sub
+  `);
+  const recent = rows[0] as {
+    cycles: string;
     avg_duration: number;
     avg_api_calls: number;
     avg_profitable: number;
@@ -247,7 +223,7 @@ export function printPerformanceComparison(db: Database.Database) {
     max_api_limit: number | null;
   };
 
-  if (recent.cycles < 2) return;
+  if (Number(recent.cycles) < 2) return;
 
   console.log(`\n[${timestamp()}] === Performance (last ${recent.cycles} cycles) ===`);
   console.log(`  Avg cycle: ${(recent.avg_duration / 60000).toFixed(1)} min`);
@@ -257,8 +233,8 @@ export function printPerformanceComparison(db: Database.Database) {
   console.log(`  Avg cooldown: +${recent.avg_new_found.toFixed(1)} new, ${recent.avg_improved.toFixed(1)} improved`);
 }
 
-export function printCoverageReport(db: Database.Database) {
-  const covertCoverage = db.prepare(`
+export async function printCoverageReport(pool: pg.Pool) {
+  const { rows: [covertCoverage] } = await pool.query(`
     SELECT
       COUNT(DISTINCT s.id) as total_skins,
       COUNT(DISTINCT CASE WHEN l.id IS NOT NULL THEN s.id END) as with_listings,
@@ -266,9 +242,9 @@ export function printCoverageReport(db: Database.Database) {
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id
     WHERE s.rarity = 'Covert' AND s.stattrak = 0
-  `).get() as { total_skins: number; with_listings: number; total_listings: number };
+  `);
 
-  const classifiedCoverage = db.prepare(`
+  const { rows: [classifiedCoverage] } = await pool.query(`
     SELECT
       COUNT(DISTINCT s.id) as total_skins,
       COUNT(DISTINCT CASE WHEN l.id IS NOT NULL THEN s.id END) as with_listings,
@@ -276,21 +252,21 @@ export function printCoverageReport(db: Database.Database) {
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id
     WHERE s.rarity = 'Classified' AND s.stattrak = 0
-  `).get() as { total_skins: number; with_listings: number; total_listings: number };
+  `);
 
-  const salePrices = db.prepare(
+  const { rows: [salePrices] } = await pool.query(
     "SELECT COUNT(*) as cnt FROM price_data WHERE source = 'csfloat_sales'"
-  ).get() as { cnt: number };
+  );
 
-  const refPrices = db.prepare(
+  const { rows: [refPrices] } = await pool.query(
     "SELECT COUNT(*) as cnt FROM price_data WHERE source = 'csfloat_ref'"
-  ).get() as { cnt: number };
+  );
 
-  const tradeUpCounts = db.prepare(`
+  const { rows: tradeUpCounts } = await pool.query(`
     SELECT COALESCE(type, 'unknown') as type, COUNT(*) as cnt,
            SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
     FROM trade_ups WHERE is_theoretical = 0 GROUP BY type
-  `).all() as { type: string; cnt: number; profitable: number }[];
+  `);
 
   console.log(`\n[${timestamp()}] === Coverage Report ===`);
   console.log(`  Covert inputs: ${covertCoverage.with_listings}/${covertCoverage.total_skins} skins (${covertCoverage.total_listings} listings)`);

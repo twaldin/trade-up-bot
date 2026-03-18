@@ -10,7 +10,7 @@
  *   - Individual listing: 50,000/~12h (staleness checks)
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import {
   checkListingStaleness,
   checkDMarketStaleness,
@@ -48,7 +48,7 @@ export interface CooldownResult {
  * When pool is high (>30K), minimizes pacing to check fast.
  */
 export async function cooldownLoop(
-  db: Database.Database,
+  pool: pg.Pool,
   durationMs: number,
   options: {
     freshness: FreshnessTracker;
@@ -88,14 +88,14 @@ export async function cooldownLoop(
   while (Date.now() < endTime && !rateLimited && batchCount < totalBatches) {
     batchCount++;
     const timeLeft = Math.round((endTime - Date.now()) / 60000);
-    setDaemonStatus(db, "fetching", `Staleness ${totalListingsChecked} checked, ${totalListingsSold} sold (${timeLeft} min left)`);
+    await setDaemonStatus(pool, "fetching", `Staleness ${totalListingsChecked} checked, ${totalListingsSold} sold (${timeLeft} min left)`);
 
     // Every 5th batch, do DMarket staleness check instead (uses DMarket API, not CSFloat)
     if (dmarketEnabled && batchCount % 5 === 0) {
       try {
-        const dmResult = await checkDMarketStaleness(db, {
+        const dmResult = await checkDMarketStaleness(pool, {
           maxChecks: 5, // 5 skin groups per check (2 RPS limit)
-          onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket: ${msg}`),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
         });
         dmarketChecked += dmResult.checked;
         dmarketRemoved += dmResult.removed;
@@ -107,10 +107,10 @@ export async function cooldownLoop(
     }
 
     try {
-      const checkResult = await checkListingStaleness(db, {
+      const checkResult = await checkListingStaleness(pool, {
         apiKey: options.apiKey,
         maxChecks: BATCH_SIZE,
-        onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
       });
 
       totalListingsChecked += checkResult.checked;
@@ -150,27 +150,27 @@ export async function cooldownLoop(
       // Random explore: fill available CPU time with exploration (3x iterations).
       // Discovery with sig-skipping finishes faster — invest freed time in exploration.
       // VPS runs 24/7 — exploration finds combos structured discovery misses.
-      const knifeExp = randomKnifeExplore(db, { iterations: 6000 });
-      const classifiedExp = randomExplore(db, { iterations: 6000 });
+      const knifeExp = await randomKnifeExplore(pool, { iterations: 6000 });
+      const classifiedExp = await randomExplore(pool, { iterations: 6000 });
       cooldownExploreFound += knifeExp.found + classifiedExp.found;
       cooldownExploreImproved += knifeExp.improved + classifiedExp.improved;
 
       // Explore lower rarities — rotate through all tiers each batch
       const tierRotation = batchCount % 4;
       if (tierRotation === 0) {
-        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Restricted" });
+        const exp = await randomExplore(pool, { iterations: 1500, inputRarity: "Restricted" });
         cooldownExploreFound += exp.found;
         cooldownExploreImproved += exp.improved;
       } else if (tierRotation === 1) {
-        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Mil-Spec" });
+        const exp = await randomExplore(pool, { iterations: 1500, inputRarity: "Mil-Spec" });
         cooldownExploreFound += exp.found;
         cooldownExploreImproved += exp.improved;
       } else if (tierRotation === 2) {
-        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Industrial Grade" });
+        const exp = await randomExplore(pool, { iterations: 1500, inputRarity: "Industrial Grade" });
         cooldownExploreFound += exp.found;
         cooldownExploreImproved += exp.improved;
       } else {
-        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Consumer Grade" });
+        const exp = await randomExplore(pool, { iterations: 1500, inputRarity: "Consumer Grade" });
         cooldownExploreFound += exp.found;
         cooldownExploreImproved += exp.improved;
       }
@@ -178,11 +178,11 @@ export async function cooldownLoop(
       // Revival: check stale/partial trade-ups EVERY batch (not just every 3rd).
       // Stale trade-ups accumulate fast as listings sell — revival is cheap (CPU-only)
       // and keeping trade-ups alive is more valuable than discovering new low-value ones.
-      const gunRevival = reviveStaleGunTradeUps(db, 200);
+      const gunRevival = await reviveStaleGunTradeUps(pool, 200);
       cooldownRevived += gunRevival.revived;
       if (batchCount % 2 === 0) {
         // Knife revival: pass empty finish cache (revive uses it for re-evaluation)
-        const knifeRevival = reviveStaleTradeUps(db, new Map(), 200);
+        const knifeRevival = await reviveStaleTradeUps(pool, new Map(), 200);
         cooldownRevived += knifeRevival.revived;
       }
     }
@@ -202,7 +202,7 @@ export async function cooldownLoop(
     console.log(`  Cooldown work: +${cooldownExploreFound} explored, ${cooldownExploreImproved} improved, ${cooldownRevived} revived`);
   }
 
-  setDaemonStatus(db, "waiting", "Starting next cycle");
+  await setDaemonStatus(pool, "waiting", "Starting next cycle");
   console.log(`\n[${timestamp()}] Cooldown done (${elapsed} min, ${totalListingsChecked} staleness checks)`);
 
   return {

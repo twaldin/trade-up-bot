@@ -2,7 +2,7 @@
  * Continuous DMarket listing fetcher — runs as a separate process.
  *
  * Fetches DMarket listings at a steady 2 RPS, completely independent of the
- * main daemon process. Writes listings directly to SQLite (WAL mode).
+ * main daemon process. Writes listings directly to PostgreSQL.
  *
  * Strategy (coverage-first):
  *   1. Coverage gaps (skins with fewest DMarket listings — Restricted priority)
@@ -12,7 +12,7 @@
  *   npx tsx server/dmarket-fetcher.ts
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -20,6 +20,8 @@ import {
   fetchDMarketListings,
   isDMarketConfigured,
 } from "./sync/dmarket.js";
+
+const { Pool } = pg;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, "..", ".env");
@@ -31,7 +33,6 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const DB_PATH = path.join(__dirname, "..", "data", "tradeup.db");
 const LOG_PATH = "/tmp/dmarket-fetcher.log";
 
 function log(msg: string) {
@@ -63,70 +64,47 @@ const stats: FetchStats = {
 
 /**
  * Get skins with lowest DMarket coverage, across all rarities.
- * Returns skins ordered by fewest listings first.
- * Priority weighting: Restricted > Mil-Spec > Classified > Covert > Extraordinary.
- * Restricted skins have the biggest coverage gap (19K vs 29K Mil-Spec) and thin
- * profit margins that need fresh data to capture.
  */
-function getCoverageGaps(db: Database.Database, limit: number = 50): { skinName: string; rarity: string; listingCount: number }[] {
-  // Dynamic priority: rarities with more recent profitable trade-ups get higher priority.
-  // Also boosts rarities with lowest coverage relative to total skins.
-  const profitCounts = db.prepare(`
-    SELECT type, COUNT(*) as cnt FROM trade_ups
-    WHERE is_theoretical=0 AND profit_cents > 0
-    GROUP BY type
-  `).all() as { type: string; cnt: number }[];
-
-  // Map trade-up type → input rarity
-  const rarityProfit: Record<string, number> = {};
-  for (const r of profitCounts) {
-    if (r.type === "covert_knife") rarityProfit["Covert"] = (rarityProfit["Covert"] ?? 0) + r.cnt;
-    if (r.type === "classified_covert") rarityProfit["Classified"] = (rarityProfit["Classified"] ?? 0) + r.cnt;
-    if (r.type === "restricted_classified") rarityProfit["Restricted"] = (rarityProfit["Restricted"] ?? 0) + r.cnt;
-    if (r.type === "milspec_restricted") rarityProfit["Mil-Spec"] = (rarityProfit["Mil-Spec"] ?? 0) + r.cnt;
-    if (r.type === "industrial_milspec") rarityProfit["Industrial Grade"] = (rarityProfit["Industrial Grade"] ?? 0) + r.cnt;
-  }
-
-  return db.prepare(`
-    SELECT s.name as skinName, s.rarity, COUNT(l.id) as listingCount
+async function getCoverageGaps(pool: pg.Pool, limit: number = 50): Promise<{ skinName: string; rarity: string; listingCount: number }[]> {
+  const { rows } = await pool.query(`
+    SELECT s.name as "skinName", s.rarity, COUNT(l.id) as "listingCount"
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
     WHERE s.stattrak = 0
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
-    GROUP BY s.id
-    ORDER BY listingCount ASC
-    LIMIT ?
-  `).all(limit) as { skinName: string; rarity: string; listingCount: number }[];
+    GROUP BY s.id, s.name, s.rarity
+    ORDER BY COUNT(l.id) ASC
+    LIMIT $1
+  `, [limit]);
+  return rows.map(r => ({ skinName: r.skinName, rarity: r.rarity, listingCount: Number(r.listingCount) }));
 }
 
 /**
  * Get skins whose DMarket listings are stale (oldest fetch first).
  */
-function getStaleSkins(db: Database.Database, limit: number = 30): string[] {
-  // Skins with DMarket listings that haven't been refreshed in 30+ minutes
-  const rows = db.prepare(`
+async function getStaleSkins(pool: pg.Pool, limit: number = 30): Promise<string[]> {
+  const { rows } = await pool.query(`
     SELECT s.name, MAX(l.created_at) as newest
     FROM skins s
     JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket'
     WHERE s.stattrak = 0
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
-    GROUP BY s.id
-    HAVING newest < datetime('now', '-30 minutes')
-    ORDER BY newest ASC
-    LIMIT ?
-  `).all(limit) as { name: string; newest: string }[];
+    GROUP BY s.id, s.name
+    HAVING MAX(l.created_at) < NOW() - INTERVAL '30 minutes'
+    ORDER BY MAX(l.created_at) ASC
+    LIMIT $1
+  `, [limit]);
   return rows.map(r => r.name);
 }
 
 /**
  * Build a prioritized fetch queue: coverage gaps first, then stale refresh.
  */
-function buildFetchQueue(db: Database.Database): string[] {
+async function buildFetchQueue(pool: pg.Pool): Promise<string[]> {
   const queue: string[] = [];
   const seen = new Set<string>();
 
-  // 1. Coverage gaps (skins with fewest/no DMarket listings — Restricted priority)
-  const gaps = getCoverageGaps(db, 200);
+  const gaps = await getCoverageGaps(pool, 200);
   for (const g of gaps) {
     if (!seen.has(g.skinName)) {
       queue.push(g.skinName);
@@ -134,8 +112,7 @@ function buildFetchQueue(db: Database.Database): string[] {
     }
   }
 
-  // 2. Stale skins (refresh old data)
-  const stale = getStaleSkins(db, 100);
+  const stale = await getStaleSkins(pool, 100);
   for (const s of stale) {
     if (!seen.has(s)) {
       queue.push(s);
@@ -149,18 +126,18 @@ function buildFetchQueue(db: Database.Database): string[] {
 /**
  * Write fetcher status to sync_meta for the daemon/frontend to read.
  */
-function writeStatus(db: Database.Database) {
-  db.prepare(
-    "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('dmarket_fetcher_status', ?)"
-  ).run(JSON.stringify({
-    ...stats,
-    updatedAt: new Date().toISOString(),
-  }));
+async function writeStatus(pool: pg.Pool) {
+  await pool.query(
+    "INSERT INTO sync_meta (key, value) VALUES ('dmarket_fetcher_status', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+    [JSON.stringify({
+      ...stats,
+      updatedAt: new Date().toISOString(),
+    })]
+  );
 }
 
 /**
  * Main continuous fetch loop.
- * Builds a queue, fetches each skin at ~2 RPS, then rebuilds when exhausted.
  */
 async function main() {
   if (!isDMarketConfigured()) {
@@ -168,13 +145,16 @@ async function main() {
     process.exit(1);
   }
 
-  const db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 10000"); // Wait up to 10s for DB lock
+  const connectionString = process.env.DATABASE_URL
+    || "postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot";
+  const pool = new Pool({
+    connectionString,
+    max: 5,
+    idleTimeoutMillis: 30_000,
+  });
 
   log("DMarket continuous fetcher started");
-  log(`  DB: ${DB_PATH}`);
+  log(`  DB: PostgreSQL (${connectionString.replace(/:[^@]*@/, ':***@')})`);
   log(`  Log: ${LOG_PATH}`);
   log(`  Rate limit: 2 RPS (550ms interval)`);
 
@@ -187,15 +167,14 @@ async function main() {
     stats.cycleCount++;
     let queue: string[];
     try {
-      queue = buildFetchQueue(db);
+      queue = await buildFetchQueue(pool);
     } catch {
-      // DB locked during queue build — wait and retry
-      log("  DB locked during queue build — waiting 10s");
+      log("  DB error during queue build — waiting 10s");
       await new Promise(r => setTimeout(r, 10_000));
       continue;
     }
     log(`\nCycle ${stats.cycleCount}: ${queue.length} skins to fetch`);
-    try { writeStatus(db); } catch { /* non-critical */ }
+    try { await writeStatus(pool); } catch { /* non-critical */ }
 
     let cycleInserted = 0;
     let cycleCalls = 0;
@@ -204,12 +183,11 @@ async function main() {
     for (const skinName of queue) {
       if (!running) break;
 
-      // Pause when daemon is in heavy DB write phases to avoid SQLITE_BUSY_SNAPSHOT.
-      // The daemon sets phase="calculating" during Phase 5-7 (discovery+save).
+      // Pause when daemon is in heavy DB write phases
       try {
-        const status = db.prepare("SELECT value FROM sync_meta WHERE key = 'daemon_status'").get() as { value: string } | undefined;
-        if (status) {
-          const parsed = JSON.parse(status.value);
+        const { rows } = await pool.query("SELECT value FROM sync_meta WHERE key = 'daemon_status'");
+        if (rows[0]) {
+          const parsed = JSON.parse(rows[0].value);
           if (parsed.phase === "calculating") {
             await new Promise(r => setTimeout(r, 5000));
             continue;
@@ -218,16 +196,14 @@ async function main() {
       } catch { /* ignore parse errors */ }
 
       try {
-        // Fetch listings from DMarket API (single call — used for both upsert and staleness)
         const { items } = await fetchDMarketListings(skinName, { limit: 100 });
         const activeIds = new Set<string>();
 
-        // Upsert active listings (same logic as syncDMarketListingsForSkin but inline)
-        const skin = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1").get(skinName) as { id: string } | undefined;
-        const stSkin = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1").get(`StatTrak™ ${skinName}`) as { id: string } | undefined;
-        const upsert = db.prepare(
-          "INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'))"
-        );
+        // Upsert active listings
+        const { rows: skinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1", [skinName]);
+        const { rows: stSkinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1", [`StatTrak™ ${skinName}`]);
+        const skin = skinRows[0] as { id: string } | undefined;
+        const stSkin = stSkinRows[0] as { id: string } | undefined;
 
         let inserted = 0;
         if (skin || stSkin) {
@@ -247,19 +223,27 @@ async function main() {
             const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
             const targetSkin = isStatTrak ? stSkin : skin;
             if (!targetSkin) continue;
-            upsert.run(dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak ? 1 : 0, item.extra.phase ?? null);
+            await pool.query(`
+              INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW())
+              ON CONFLICT (id) DO UPDATE SET
+                skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7, price_updated_at = NOW()
+            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak ? 1 : 0, item.extra.phase ?? null]);
             inserted++;
           }
         }
 
-        // Staleness: remove DB listings not in the API response (gone from DMarket)
-        const stored = db.prepare(
-          "SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = ? AND l.source = 'dmarket'"
-        ).all(skinName) as { id: string }[];
-        const del = db.prepare("DELETE FROM listings WHERE id = ?");
+        // Staleness: remove DB listings not in the API response
+        const { rows: stored } = await pool.query(
+          "SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = $1 AND l.source = 'dmarket'",
+          [skinName]
+        );
         let removed = 0;
         for (const s of stored) {
-          if (!activeIds.has(s.id)) { del.run(s.id); removed++; }
+          if (!activeIds.has(s.id)) {
+            await pool.query("DELETE FROM listings WHERE id = $1", [s.id]);
+            removed++;
+          }
         }
 
         stats.totalCalls++;
@@ -270,23 +254,17 @@ async function main() {
 
         stats.coverageFetched++;
 
-        // Log progress every 50 skins
         if (cycleCalls % 50 === 0) {
           log(`  Progress: ${cycleCalls}/${queue.length} skins, ${cycleInserted} listings inserted`);
-          try { writeStatus(db); } catch { /* non-critical */ }
+          try { await writeStatus(pool); } catch { /* non-critical */ }
         }
       } catch (err) {
         const msg = (err as Error).message;
         if (msg.includes("429")) {
-          // Rate limited — back off for 30 seconds
           log(`  Rate limited — backing off 30s`);
           stats.errorsThisHour++;
           await new Promise(r => setTimeout(r, 30_000));
-        } else if (msg.includes("database is locked") || msg.includes("SQLITE_BUSY")) {
-          // DB locked by daemon — pause and retry
-          await new Promise(r => setTimeout(r, 5000));
         } else {
-          // Other error — skip this skin
           cycleErrors++;
           stats.errorsThisHour++;
           if (cycleErrors <= 5) {
@@ -297,28 +275,20 @@ async function main() {
     }
 
     log(`Cycle ${stats.cycleCount} complete: ${cycleCalls} API calls, ${cycleInserted} listings, ${cycleErrors} errors`);
-    try { writeStatus(db); } catch { /* DB may be locked — non-critical */ }
+    try { await writeStatus(pool); } catch { /* non-critical */ }
 
-    // Brief pause before rebuilding queue (let daemon update wanted list)
     if (running) {
       log("  Waiting 30s before next cycle...");
       await new Promise(r => setTimeout(r, 30_000));
     }
   }
 
-  try { writeStatus(db); } catch { /* DB may be locked */ }
-  db.close();
+  try { await writeStatus(pool); } catch { /* non-critical */ }
+  await pool.end();
   log("DMarket fetcher stopped");
 }
 
 main().catch(err => {
-  const msg = (err as Error).message ?? "";
-  if (msg.includes("database is locked") || msg.includes("SQLITE_BUSY")) {
-    // DB contention — not a real crash, just restart the loop
-    console.error("DMarket fetcher: DB locked, will restart");
-    setTimeout(() => main(), 10_000);
-  } else {
-    log(`FATAL: ${msg}`);
-    process.exit(1);
-  }
+  log(`FATAL: ${(err as Error).message ?? ""}`);
+  process.exit(1);
 });

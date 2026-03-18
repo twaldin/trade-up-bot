@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type Database from "better-sqlite3";
+import pg from "pg";
 import { requireTier, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
 
@@ -15,28 +15,29 @@ interface ActiveClaim {
   listing_ids: string[];
 }
 
-/** Get all active claims from Redis (fast) or fall back to SQLite */
-export async function getActiveClaims(db: Database.Database): Promise<ActiveClaim[]> {
+/** Get all active claims from Redis (fast) or fall back to PostgreSQL */
+export async function getActiveClaims(pool: pg.Pool): Promise<ActiveClaim[]> {
   // Try Redis first
   const cached = await cacheGet<ActiveClaim[]>("active_claims");
   if (cached) {
-    // Filter out expired claims (normalize format: SQLite uses space, JS uses T)
+    // Filter out expired claims (normalize format)
     const now = new Date().toISOString().replace("T", " ").replace("Z", "");
     return cached.filter(c => c.expires_at > now);
   }
 
-  // Fallback: load from SQLite and populate Redis
+  // Fallback: load from PostgreSQL and populate Redis
   try {
-    const claims = db.prepare(
-      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
-    ).all() as { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }[];
+    const { rows: claims } = await pool.query(
+      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
+    );
 
     const result: ActiveClaim[] = [];
     for (const c of claims) {
-      const inputs = db.prepare(
-        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-      ).all(c.trade_up_id) as { listing_id: string }[];
-      result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
+      const { rows: inputs } = await pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [c.trade_up_id]
+      );
+      result.push({ ...c, listing_ids: inputs.map((i: any) => i.listing_id) });
     }
 
     await cacheSet("active_claims", result, 300); // 5-min TTL, refreshed on claim/release
@@ -47,18 +48,19 @@ export async function getActiveClaims(db: Database.Database): Promise<ActiveClai
 }
 
 /** Refresh the Redis claims cache after a claim/release */
-async function refreshClaimsCache(db: Database.Database): Promise<void> {
+async function refreshClaimsCache(pool: pg.Pool): Promise<void> {
   try {
-    const claims = db.prepare(
-      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
-    ).all() as { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }[];
+    const { rows: claims } = await pool.query(
+      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
+    );
 
     const result: ActiveClaim[] = [];
     for (const c of claims) {
-      const inputs = db.prepare(
-        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-      ).all(c.trade_up_id) as { listing_id: string }[];
-      result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
+      const { rows: inputs } = await pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [c.trade_up_id]
+      );
+      result.push({ ...c, listing_ids: inputs.map((i: any) => i.listing_id) });
     }
 
     await cacheSet("active_claims", result, 300); // 5-min TTL
@@ -80,74 +82,92 @@ interface ClaimRow {
 interface TradeUpRow {
   id: number;
   profit_cents: number;
-  is_theoretical: number;
+  is_theoretical: boolean;
   listing_status: string;
 }
 
 type VerificationStatus = "all_active" | "partial" | "stale";
 
-export function claimsRouter(db: Database.Database): Router {
+export function claimsRouter(pool: pg.Pool): Router {
   const router = Router();
 
   // Auto-expire: release claims past their expires_at and clear claimed_by on listings
-  function releaseExpiredClaims() {
-    const expired = db.prepare(
-      "SELECT id, trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at <= datetime('now')"
-    ).all() as { id: number; trade_up_id: number; user_id: string }[];
+  async function releaseExpiredClaims() {
+    const { rows: expired } = await pool.query(
+      "SELECT id, trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at <= NOW()"
+    );
 
     if (expired.length === 0) return;
 
-    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
-    const releaseClaim = db.prepare("UPDATE trade_up_claims SET released_at = datetime('now') WHERE id = ?");
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const affectedTuIds = new Set<number>();
+      const affectedTuIds = new Set<number>();
 
-    db.transaction(() => {
       for (const claim of expired) {
-        const listings = db.prepare(
-          "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-        ).all(claim.trade_up_id) as { listing_id: string }[];
+        const { rows: listings } = await client.query(
+          "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+          [claim.trade_up_id]
+        );
         for (const { listing_id } of listings) {
-          clearClaimed.run(listing_id, claim.user_id);
+          await client.query(
+            "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
+            [listing_id, claim.user_id]
+          );
         }
-        releaseClaim.run(claim.id);
+        await client.query(
+          "UPDATE trade_up_claims SET released_at = NOW() WHERE id = $1",
+          [claim.id]
+        );
         affectedTuIds.add(claim.trade_up_id);
         // Also find other trade-ups sharing these listings
         for (const { listing_id } of listings) {
-          const others = db.prepare(
-            "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = ?"
-          ).all(listing_id) as { trade_up_id: number }[];
+          const { rows: others } = await client.query(
+            "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = $1",
+            [listing_id]
+          );
           for (const { trade_up_id } of others) affectedTuIds.add(trade_up_id);
         }
       }
-    })();
 
-    // Restore listing_status for trade-ups whose listings are all back
-    if (affectedTuIds.size > 0) {
-      const checkMissing = db.prepare(`
-        SELECT COUNT(*) as cnt FROM trade_up_inputs tui
-        WHERE tui.trade_up_id = ? AND tui.listing_id NOT LIKE 'theor%'
-          AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NULL)
-      `);
-      for (const tuId of affectedTuIds) {
-        const { cnt } = checkMissing.get(tuId) as { cnt: number };
-        if (cnt === 0) {
-          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ? AND listing_status <> 'active'").run(tuId);
+      await client.query('COMMIT');
+
+      // Restore listing_status for trade-ups whose listings are all back
+      if (affectedTuIds.size > 0) {
+        for (const tuId of affectedTuIds) {
+          const { rows: [checkRow] } = await pool.query(`
+            SELECT COUNT(*) as cnt FROM trade_up_inputs tui
+            WHERE tui.trade_up_id = $1 AND tui.listing_id NOT LIKE 'theor%'
+              AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NULL)
+          `, [tuId]);
+          if (parseInt(checkRow.cnt) === 0) {
+            await pool.query(
+              "UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = $1 AND listing_status <> 'active'",
+              [tuId]
+            );
+          }
         }
       }
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 
   // Check if a listing still exists in the DB
-  function verifyInputs(tradeUpId: number): {
+  async function verifyInputs(tradeUpId: number): Promise<{
     status: VerificationStatus;
     total: number;
     active: number;
     missing: string[];
-  } {
-    const inputs = db.prepare(
-      "SELECT listing_id, skin_name FROM trade_up_inputs WHERE trade_up_id = ?"
-    ).all(tradeUpId) as { listing_id: string; skin_name: string }[];
+  }> {
+    const { rows: inputs } = await pool.query(
+      "SELECT listing_id, skin_name FROM trade_up_inputs WHERE trade_up_id = $1",
+      [tradeUpId]
+    );
 
     const missing: string[] = [];
     let active = 0;
@@ -159,11 +179,12 @@ export function claimsRouter(db: Database.Database): Router {
         continue;
       }
 
-      const exists = db.prepare(
-        "SELECT 1 FROM listings WHERE id = ?"
-      ).get(input.listing_id);
+      const { rows } = await pool.query(
+        "SELECT 1 FROM listings WHERE id = $1",
+        [input.listing_id]
+      );
 
-      if (exists) {
+      if (rows.length > 0) {
         active++;
       } else {
         missing.push(input.listing_id);
@@ -193,7 +214,7 @@ export function claimsRouter(db: Database.Database): Router {
 
     const userId = (req.user as User)?.steam_id || "anonymous";
 
-    releaseExpiredClaims();
+    await releaseExpiredClaims();
 
     // Rate limit: 10 claims per hour (Pro only)
     const rateLimit = await checkRateLimit(userId, "claim", 10, 3600);
@@ -206,16 +227,17 @@ export function claimsRouter(db: Database.Database): Router {
     }
 
     // Check trade-up exists and is profitable
-    const tradeUp = db.prepare(
-      "SELECT id, profit_cents, is_theoretical, listing_status FROM trade_ups WHERE id = ?"
-    ).get(tradeUpId) as TradeUpRow | undefined;
+    const { rows: [tradeUp] } = await pool.query(
+      "SELECT id, profit_cents, is_theoretical, listing_status FROM trade_ups WHERE id = $1",
+      [tradeUpId]
+    );
 
     if (!tradeUp) {
       res.status(404).json({ error: "Trade-up not found" });
       return;
     }
 
-    if (tradeUp.is_theoretical === 1) {
+    if (tradeUp.is_theoretical) {
       res.status(400).json({ error: "Cannot claim theoretical trade-ups" });
       return;
     }
@@ -231,9 +253,10 @@ export function claimsRouter(db: Database.Database): Router {
     }
 
     // Check no active claim on this trade-up
-    const existingClaim = db.prepare(
-      "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
-    ).get(tradeUpId) as { id: number; user_id: string } | undefined;
+    const { rows: [existingClaim] } = await pool.query(
+      "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+      [tradeUpId]
+    );
 
     if (existingClaim) {
       if (existingClaim.user_id === userId) {
@@ -245,33 +268,36 @@ export function claimsRouter(db: Database.Database): Router {
     }
 
     // Check user has < MAX_ACTIVE_CLAIMS active claims
-    const activeCount = (db.prepare(
-      "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
-    ).get(userId) as { c: number }).c;
+    const { rows: [activeCountRow] } = await pool.query(
+      "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+      [userId]
+    );
 
-    if (activeCount >= MAX_ACTIVE_CLAIMS) {
+    if (parseInt(activeCountRow.c) >= MAX_ACTIVE_CLAIMS) {
       res.status(429).json({
         error: `Maximum ${MAX_ACTIVE_CLAIMS} active claims allowed`,
-        active_claims: activeCount,
+        active_claims: parseInt(activeCountRow.c),
       });
       return;
     }
 
     // Verify input listings still exist in DB (fast, no API calls)
-    const verification = verifyInputs(tradeUpId);
+    const verification = await verifyInputs(tradeUpId);
 
     // Load listing IDs for this trade-up
-    const listingRows = db.prepare(
-      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-    ).all(tradeUpId) as { listing_id: string }[];
-    const listingIds = listingRows.map(r => r.listing_id).filter(id => !id.startsWith("theor"));
+    const { rows: listingRows } = await pool.query(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+      [tradeUpId]
+    );
+    const listingIds = listingRows.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
 
     // Listing-level conflict check: reject if any listing is already claimed by another user
     if (listingIds.length > 0) {
-      const placeholders = listingIds.map(() => "?").join(",");
-      const conflicts = db.prepare(
-        `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) AND claimed_by IS NOT NULL AND claimed_by != ?`
-      ).all(...listingIds, userId) as { id: string; claimed_by: string }[];
+      const placeholders = listingIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+      const { rows: conflicts } = await pool.query(
+        `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) AND claimed_by IS NOT NULL AND claimed_by != $${listingIds.length + 1}`,
+        [...listingIds, userId]
+      );
       if (conflicts.length > 0) {
         res.status(409).json({ error: "Some listings are already claimed by another user" });
         return;
@@ -280,19 +306,33 @@ export function claimsRouter(db: Database.Database): Router {
 
     // Insert claim + mark listings as claimed (atomic transaction)
     const expiresAt = new Date(Date.now() + CLAIM_DURATION_MINUTES * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
-    const markClaimed = db.prepare("UPDATE listings SET claimed_by = ?, claimed_at = datetime('now') WHERE id = ?");
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO trade_up_claims (trade_up_id, user_id, claimed_at, expires_at, released_at)
+         VALUES ($1, $2, NOW(), $3, NULL)
+         ON CONFLICT (trade_up_id, user_id) DO UPDATE SET claimed_at = NOW(), expires_at = $3, released_at = NULL`,
+        [tradeUpId, userId, expiresAt]
+      );
+      for (const id of listingIds) {
+        await client.query(
+          "UPDATE listings SET claimed_by = $1, claimed_at = NOW() WHERE id = $2",
+          [userId, id]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
-    const claimTx = db.transaction(() => {
-      db.prepare(
-        "INSERT OR REPLACE INTO trade_up_claims (trade_up_id, user_id, claimed_at, expires_at, released_at) VALUES (?, ?, datetime('now'), ?, NULL)"
-      ).run(tradeUpId, userId, expiresAt);
-      for (const id of listingIds) markClaimed.run(userId, id);
-    });
-    claimTx();
-
-    const claim = db.prepare(
-      "SELECT * FROM trade_up_claims WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL ORDER BY id DESC LIMIT 1"
-    ).get(tradeUpId, userId) as ClaimRow;
+    const { rows: [claim] } = await pool.query(
+      "SELECT * FROM trade_up_claims WHERE trade_up_id = $1 AND user_id = $2 AND released_at IS NULL ORDER BY id DESC LIMIT 1",
+      [tradeUpId, userId]
+    );
 
     // No cascade on claim — with 207 avg listing overlap, cascading would update
     // thousands of trade-ups per claim. Instead, claimed listings are filtered via
@@ -300,7 +340,7 @@ export function claimsRouter(db: Database.Database): Router {
 
     // Refresh Redis claims cache + invalidate trade-ups cache (AWAIT before responding
     // so the next request sees fresh data — fire-and-forget caused claims to not show up)
-    await refreshClaimsCache(db);
+    await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
 
     res.json({
@@ -326,26 +366,30 @@ export function claimsRouter(db: Database.Database): Router {
 
     const userId = (req.user as User)?.steam_id || "anonymous";
 
-    const result = db.prepare(
-      "UPDATE trade_up_claims SET released_at = datetime('now') WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
-    ).run(tradeUpId, userId);
+    const result = await pool.query(
+      "UPDATE trade_up_claims SET released_at = NOW() WHERE trade_up_id = $1 AND user_id = $2 AND released_at IS NULL AND expires_at > NOW()",
+      [tradeUpId, userId]
+    );
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       res.status(404).json({ error: "No active claim found for this trade-up" });
       return;
     }
 
     // Clear claimed_by on listings (no cascade — refreshListingStatuses handles in housekeeping)
-    const listingRows = db.prepare(
-      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-    ).all(tradeUpId) as { listing_id: string }[];
-    const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
-    for (const { listing_id } of listingRows) {
-      clearClaimed.run(listing_id, userId);
+    const { rows: listingRows2 } = await pool.query(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+      [tradeUpId]
+    );
+    for (const { listing_id } of listingRows2) {
+      await pool.query(
+        "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
+        [listing_id, userId]
+      );
     }
 
     // Await Redis updates before responding
-    await refreshClaimsCache(db);
+    await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
 
     res.json({ released: true, trade_up_id: tradeUpId });
@@ -363,9 +407,10 @@ export function claimsRouter(db: Database.Database): Router {
     const userId = (req.user as User)?.steam_id || "anonymous";
 
     // Must have an active claim on this trade-up
-    const claim = db.prepare(
-      "SELECT id FROM trade_up_claims WHERE trade_up_id = ? AND user_id = ? AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > datetime('now')"
-    ).get(tradeUpId, userId) as { id: number } | undefined;
+    const { rows: [claim] } = await pool.query(
+      "SELECT id FROM trade_up_claims WHERE trade_up_id = $1 AND user_id = $2 AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > NOW()",
+      [tradeUpId, userId]
+    );
 
     if (!claim) {
       res.status(404).json({ error: "No active claim found. Claim first, then confirm after purchasing." });
@@ -373,28 +418,32 @@ export function claimsRouter(db: Database.Database): Router {
     }
 
     // Mark claim as confirmed + released (purchase complete, claim is done)
-    db.prepare(
-      "UPDATE trade_up_claims SET confirmed_at = datetime('now'), released_at = datetime('now') WHERE id = ?"
-    ).run(claim.id);
+    await pool.query(
+      "UPDATE trade_up_claims SET confirmed_at = NOW(), released_at = NOW() WHERE id = $1",
+      [claim.id]
+    );
 
     // Delete listings immediately (5-10 rows, <1ms, no lock contention)
     // Cascade (marking affected trade-ups as partial) happens in next housekeeping
-    const listingRows = db.prepare(
-      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-    ).all(tradeUpId) as { listing_id: string }[];
-    const listingIds = listingRows.map(r => r.listing_id).filter(id => !id.startsWith("theor"));
+    const { rows: listingRows3 } = await pool.query(
+      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+      [tradeUpId]
+    );
+    const listingIds = listingRows3.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
 
-    const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
-    for (const id of listingIds) deleteListing.run(id);
+    for (const id of listingIds) {
+      await pool.query("DELETE FROM listings WHERE id = $1", [id]);
+    }
     console.log(`Confirm: deleted ${listingIds.length} listings immediately (trade-up ${tradeUpId}, user ${userId})`);
 
     // Mark the trade-up as stale (listings are bought, trade-up is done)
-    db.prepare(
-      "UPDATE trade_ups SET listing_status = 'stale', preserved_at = datetime('now') WHERE id = ?"
-    ).run(tradeUpId);
+    await pool.query(
+      "UPDATE trade_ups SET listing_status = 'stale', preserved_at = NOW() WHERE id = $1",
+      [tradeUpId]
+    );
 
     // Refresh caches
-    await refreshClaimsCache(db);
+    await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
 
     res.json({
@@ -406,32 +455,22 @@ export function claimsRouter(db: Database.Database): Router {
   });
 
   // GET /api/claims - list user's active claims
-  router.get("/api/claims", (req, res) => {
+  router.get("/api/claims", async (req, res) => {
     const userId = (req.user as User)?.steam_id || "anonymous";
 
-    releaseExpiredClaims();
+    await releaseExpiredClaims();
 
-    const claims = db.prepare(`
+    const { rows: claims } = await pool.query(`
       SELECT c.*, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
              t.roi_percentage, t.type, t.chance_to_profit, t.best_case_cents,
              t.worst_case_cents, t.listing_status
       FROM trade_up_claims c
       JOIN trade_ups t ON c.trade_up_id = t.id
-      WHERE c.user_id = ? AND c.released_at IS NULL AND c.expires_at > datetime('now')
+      WHERE c.user_id = $1 AND c.released_at IS NULL AND c.expires_at > NOW()
       ORDER BY c.claimed_at DESC
-    `).all(userId) as (ClaimRow & {
-      total_cost_cents: number;
-      expected_value_cents: number;
-      profit_cents: number;
-      roi_percentage: number;
-      type: string;
-      chance_to_profit: number;
-      best_case_cents: number;
-      worst_case_cents: number;
-      listing_status: string;
-    })[];
+    `, [userId]);
 
-    const result = claims.map(c => ({
+    const result = claims.map((c: any) => ({
       id: c.id,
       trade_up_id: c.trade_up_id,
       user_id: c.user_id,

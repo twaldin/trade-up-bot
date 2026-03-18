@@ -4,6 +4,8 @@ import passport from "passport";
 import { Strategy as SteamStrategy } from "passport-steam";
 import session from "express-session";
 import type { Express, Request, Response, NextFunction } from "express";
+import pg from "pg";
+// SQLite only for session store — sessions stay in SQLite for simplicity
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 
@@ -77,7 +79,7 @@ export function isAdmin(user: Express.User | User | undefined): boolean {
   return (user as any).is_admin === 1 || (user as any).is_admin === true;
 }
 
-export function setupAuth(app: Express, db: Database.Database) {
+export async function setupAuth(app: Express, pool: pg.Pool) {
   const steamApiKey = process.env.STEAM_API_KEY;
   const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
   const baseUrl = process.env.BASE_URL || "http://localhost:3001";
@@ -85,8 +87,8 @@ export function setupAuth(app: Express, db: Database.Database) {
   // Trust nginx proxy (needed for secure cookies behind reverse proxy)
   app.set("trust proxy", 1);
 
-  // Create users table
-  db.exec(`
+  // Create users table (also created in createTables, but safe as IF NOT EXISTS)
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       steam_id TEXT PRIMARY KEY,
       display_name TEXT,
@@ -94,33 +96,27 @@ export function setupAuth(app: Express, db: Database.Database) {
       tier TEXT NOT NULL DEFAULT 'free',
       is_admin INTEGER NOT NULL DEFAULT 0,
       stripe_customer_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_login_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   // Migration: add is_admin column if missing + set admin flag
   const adminSteamId = process.env.ADMIN_STEAM_ID;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      const cols = db.pragma("table_info(users)") as { name: string }[];
-      if (!cols.find(c => c.name === "is_admin")) {
-        db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
-      }
-      if (adminSteamId) {
-        db.prepare("UPDATE users SET is_admin = 1 WHERE steam_id = ?").run(adminSteamId);
-        db.prepare("UPDATE users SET tier = 'pro' WHERE steam_id = ? AND tier = 'admin'").run(adminSteamId);
-      }
-      break;
-    } catch (e: unknown) {
-      if (attempt < 9 && (e as any)?.code === "SQLITE_BUSY") {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, (attempt + 1) * 500);
-        continue;
-      }
-      // Non-critical — admin flag will be set on next login
-      console.error("Admin migration deferred:", (e as Error).message);
-      break;
+  try {
+    const { rows: cols } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
+    );
+    if (!cols.find((c: { column_name: string }) => c.column_name === "is_admin")) {
+      await pool.query("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
     }
+    if (adminSteamId) {
+      await pool.query("UPDATE users SET is_admin = 1 WHERE steam_id = $1", [adminSteamId]);
+      await pool.query("UPDATE users SET tier = 'pro' WHERE steam_id = $1 AND tier = 'admin'", [adminSteamId]);
+    }
+  } catch (e: unknown) {
+    // Non-critical — admin flag will be set on next login
+    console.error("Admin migration deferred:", (e as Error).message);
   }
 
   const store = new SqliteSessionStore(DB_PATH);
@@ -143,12 +139,8 @@ export function setupAuth(app: Express, db: Database.Database) {
 
   // Serialize: store steam_id in session
   passport.serializeUser((user: Express.User, done) => done(null, user.steam_id));
-  // Separate read-only connection for user deserialization — never blocked by daemon writes.
-  // The main db connection can be locked for 20+ seconds during large transactions (Phase 4b recalc).
-  const authReadDb = new Database(DB_PATH, { readonly: true });
-  authReadDb.pragma("busy_timeout = 1000"); // 1s timeout, fail fast instead of hanging 30s
 
-  // User cache: avoid DB hits on every request during daemon heavy writes
+  // User cache: avoid DB hits on every request
   const userCache = new Map<string, { user: User | null; cachedAt: number }>();
   const USER_CACHE_TTL = 60_000; // 1 min
 
@@ -160,19 +152,20 @@ export function setupAuth(app: Express, db: Database.Database) {
       return;
     }
 
-    try {
-      const user = authReadDb.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User | undefined;
-      userCache.set(steamId, { user: user ?? null, cachedAt: Date.now() });
-      done(null, user ?? null);
-    } catch {
-      // Read-only DB failed — return stale cache or null.
-      // NEVER fall back to main db — synchronous query blocks event loop 30s+ during daemon writes.
-      if (cached) {
-        done(null, cached.user);
-      } else {
-        done(null, null);
-      }
-    }
+    pool.query("SELECT * FROM users WHERE steam_id = $1", [steamId])
+      .then(({ rows }) => {
+        const user = rows[0] as User | undefined;
+        userCache.set(steamId, { user: user ?? null, cachedAt: Date.now() });
+        done(null, user ?? null);
+      })
+      .catch(() => {
+        // DB query failed — return stale cache or null
+        if (cached) {
+          done(null, cached.user);
+        } else {
+          done(null, null);
+        }
+      });
   });
 
   // Steam strategy (only if API key configured)
@@ -189,18 +182,23 @@ export function setupAuth(app: Express, db: Database.Database) {
       // Upsert user — set is_admin flag if ADMIN_STEAM_ID matches
       const isAdminUser = steamId === adminSteamId ? 1 : 0;
 
-      db.prepare(`
+      pool.query(`
         INSERT INTO users (steam_id, display_name, avatar_url, is_admin, last_login_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
+        VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT(steam_id) DO UPDATE SET
-          display_name = excluded.display_name,
-          avatar_url = excluded.avatar_url,
-          is_admin = MAX(users.is_admin, excluded.is_admin),
-          last_login_at = datetime('now')
-      `).run(steamId, displayName, avatar, isAdminUser);
-
-      const user = db.prepare("SELECT * FROM users WHERE steam_id = ?").get(steamId) as User;
-      done(null, user);
+          display_name = EXCLUDED.display_name,
+          avatar_url = EXCLUDED.avatar_url,
+          is_admin = GREATEST(users.is_admin, EXCLUDED.is_admin),
+          last_login_at = NOW()
+      `, [steamId, displayName, avatar, isAdminUser])
+        .then(() => pool.query("SELECT * FROM users WHERE steam_id = $1", [steamId]))
+        .then(({ rows }) => {
+          done(null, rows[0] as User);
+        })
+        .catch((err: Error) => {
+          console.error("User upsert failed:", err.message);
+          done(err);
+        });
     }));
 
     // Auth routes
@@ -247,7 +245,7 @@ export function setupAuth(app: Express, db: Database.Database) {
   });
 
   // Admin: set any user's tier (protected by ADMIN_STEAM_ID)
-  app.post("/api/admin/set-tier", (req, res) => {
+  app.post("/api/admin/set-tier", async (req, res) => {
     if (!req.user || !isAdmin(req.user as User)) {
       res.status(403).json({ error: "Admin only" });
       return;
@@ -258,7 +256,7 @@ export function setupAuth(app: Express, db: Database.Database) {
       return;
     }
     const targetId = steam_id || (req.user as User).steam_id;
-    db.prepare("UPDATE users SET tier = ? WHERE steam_id = ?").run(tier, targetId);
+    await pool.query("UPDATE users SET tier = $1 WHERE steam_id = $2", [tier, targetId]);
     console.log(`Admin set tier: ${targetId} → ${tier}`);
     res.json({ success: true, steam_id: targetId, tier });
   });

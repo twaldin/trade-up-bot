@@ -1,6 +1,6 @@
 // Condition-level output pricing with multi-source cache.
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
@@ -27,7 +27,7 @@ let priceCacheBuiltAt = 0;
 const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /** Rebuild price cache. Skips if already built within TTL unless force=true. */
-export function buildPriceCache(db: Database.Database, force = false) {
+export async function buildPriceCache(pool: pg.Pool, force = false) {
   if (!force && priceCacheBuilt && Date.now() - priceCacheBuiltAt < PRICE_CACHE_TTL_MS) {
     return; // Cache is fresh, skip rebuild
   }
@@ -50,10 +50,10 @@ export function buildPriceCache(db: Database.Database, force = false) {
   // Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
   // Ref is the better estimate for "average price at this condition".
   let salesCount = 0;
-  const refRows2 = db.prepare(`
+  const { rows: refRows2 } = await pool.query(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_ref' AND volume >= 3
-  `).all() as { skin_name: string; condition: string; min_price_cents: number; median_price_cents: number; volume: number }[];
+  `);
   for (const row of refRows2) {
     const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
     if (price > 0) {
@@ -65,10 +65,10 @@ export function buildPriceCache(db: Database.Database, force = false) {
   }
 
   // Step 1b: CSFloat sales fill gaps where ref doesn't exist
-  const salesRows = db.prepare(`
+  const { rows: salesRows } = await pool.query(`
     SELECT skin_name, condition, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_sales'
-  `).all() as { skin_name: string; condition: string; median_price_cents: number; volume: number }[];
+  `);
   for (const row of salesRows) {
     if (row.median_price_cents > 0 && row.volume >= 2) {
       const k = `${row.skin_name}:${row.condition}`;
@@ -88,23 +88,23 @@ export function buildPriceCache(db: Database.Database, force = false) {
   // Build per-condition reference price from price_data to detect outlier listings
   // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150)
   const refPrice = new Map<string, number>();
-  const refRows = db.prepare(`
+  const { rows: refRows } = await pool.query(`
     SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE median_price_cents END) as ref
     FROM price_data WHERE (min_price_cents > 0 OR median_price_cents > 0)
       AND source IN ('csfloat_sales', 'csfloat_ref')
     GROUP BY skin_name, condition
-  `).all() as { skin_name: string; condition: string; ref: number }[];
+  `);
   for (const r of refRows) if (r.ref > 0) refPrice.set(`${r.skin_name}:${r.condition}`, r.ref);
 
   for (const cond of condBounds) {
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT s.name, s.rarity, MIN(l.price_cents) as lowest_price, COUNT(*) as cnt
       FROM listings l JOIN skins s ON l.skin_id = s.id
-      WHERE l.float_value >= ? AND l.float_value < ?
+      WHERE l.float_value >= $1 AND l.float_value < $2
         AND l.source = 'csfloat'
         AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
       GROUP BY s.name, s.rarity
-    `).all(cond.min, cond.max) as { name: string; rarity: string; lowest_price: number; cnt: number }[];
+    `, [cond.min, cond.max]);
 
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
@@ -122,7 +122,7 @@ export function buildPriceCache(db: Database.Database, force = false) {
           priceSources.set(key, `listing floor (${row.cnt} listings, lower than ${priceSources.get(key)})`);
           listingOverrides++;
         }
-      } else if (row.rarity === "Covert" && row.cnt >= 3) {
+      } else if (row.rarity === "Covert" && parseInt(row.cnt, 10) >= 3) {
         // For Covert inputs with decent listing depth: fill from listings
         priceCache.set(key, row.lowest_price);
         priceSources.set(key, `listing floor (${row.cnt} listings)`);
@@ -145,15 +145,15 @@ export function buildPriceCache(db: Database.Database, force = false) {
   // Step 3: Fill remaining gaps from listings (last resort for knives/gloves)
   let listingLastResort = 0;
   for (const cond of condBounds) {
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT s.name, MIN(l.price_cents) as lowest_price
       FROM listings l JOIN skins s ON l.skin_id = s.id
-      WHERE l.float_value >= ? AND l.float_value < ?
+      WHERE l.float_value >= $1 AND l.float_value < $2
         AND l.source = 'csfloat'
         AND s.rarity = 'Extraordinary'
         AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
       GROUP BY s.name
-    `).all(cond.min, cond.max) as { name: string; lowest_price: number }[];
+    `, [cond.min, cond.max]);
 
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
@@ -223,13 +223,13 @@ export function buildPriceCache(db: Database.Database, force = false) {
     }
   }
 
-  buildSourceFloorCaches(db);
+  await buildSourceFloorCaches(pool);
   console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, ${steamPriceCount} steam, ${skinportPriceCount} skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
 }
 
-function buildSourceFloorCaches(db: Database.Database) {
+async function buildSourceFloorCaches(pool: pg.Pool) {
   dmarketFloorCache.clear();
   skinportFloorCache.clear();
 
@@ -246,15 +246,15 @@ function buildSourceFloorCaches(db: Database.Database) {
     for (const cond of condBounds) {
       // Require 2+ listings for floor price — single listings are unreliable
       // (collector prices, mispriced items, etc.)
-      const rows = db.prepare(`
+      const { rows } = await pool.query(`
         SELECT s.name, MIN(l.price_cents) as lowest_price, COUNT(*) as cnt
         FROM listings l JOIN skins s ON l.skin_id = s.id
-        WHERE l.float_value >= ? AND l.float_value < ?
-          AND l.source = ?
+        WHERE l.float_value >= $1 AND l.float_value < $2
+          AND l.source = $3
           AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
         GROUP BY s.name
-        HAVING cnt >= 2
-      `).all(cond.min, cond.max, source) as { name: string; lowest_price: number; cnt: number }[];
+        HAVING COUNT(*) >= 2
+      `, [cond.min, cond.max, source]);
 
       for (const row of rows) {
         if (row.lowest_price <= 0) continue;
@@ -265,7 +265,7 @@ function buildSourceFloorCaches(db: Database.Database) {
 }
 
 export function lookupPrice(
-  db: Database.Database,
+  pool: pg.Pool,
   skinName: string,
   predictedFloat: number
 ): number {
@@ -290,17 +290,17 @@ export interface OutputPriceResult {
  * Look up best output price across all marketplaces.
  * Returns the marketplace with highest net proceeds after seller fees.
  */
-export function lookupOutputPrice(
-  db: Database.Database,
+export async function lookupOutputPrice(
+  pool: pg.Pool,
   skinName: string,
   predictedFloat: number
-): OutputPriceResult {
+): Promise<OutputPriceResult> {
   const condition = floatToCondition(predictedFloat);
 
   // Float-precise KNN for knife/glove skins only (they have rich sale observation data).
   // Non-knife skins lack observations — KNN returns null, falling through to condition-level.
   if (skinName.startsWith("★")) {
-    const knn = knnOutputPriceAtFloat(db, skinName, predictedFloat);
+    const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
     if (knn && knn.confidence >= 0.5) {
       // Find the best marketplace net proceeds for the KNN price
       // DMarket excluded from output pricing — unreliable floor prices
@@ -333,7 +333,7 @@ export function lookupOutputPrice(
   }
 
   // CSFloat: use the full price cache (sales + ref + extrapolation)
-  const csfloatGross = lookupPrice(db, skinName, predictedFloat);
+  const csfloatGross = lookupPrice(pool, skinName, predictedFloat);
   const csfloatNet = csfloatGross > 0 ? effectiveSellProceeds(csfloatGross, "csfloat") : 0;
 
   // DMarket: use listing floor for NON-knife skins only.
@@ -363,30 +363,27 @@ export function lookupOutputPrice(
   return best;
 }
 
-export function getConditionPrices(
-  db: Database.Database,
+export async function getConditionPrices(
+  pool: pg.Pool,
   skinName: string
-): PriceAnchor[] {
+): Promise<PriceAnchor[]> {
   const cached = conditionPricesCache.get(skinName);
   if (cached !== undefined) return cached;
 
-  const skinInfo = db.prepare(
-    `SELECT min_float, max_float FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1`
-  ).get(skinName) as { min_float: number; max_float: number } | undefined;
+  const { rows: skinInfoRows } = await pool.query(
+    `SELECT min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1`,
+    [skinName]
+  );
+  const skinInfo = skinInfoRows[0] as { min_float: number; max_float: number } | undefined;
 
   // Prefer CSFloat data; fall back to Skinport min_price if no CSFloat data at all
-  let rows = db
-    .prepare(
-      `SELECT condition, min_price_cents, avg_price_cents
-       FROM price_data WHERE skin_name = ? AND source IN ('csfloat_sales', 'csfloat_ref')
-         AND (min_price_cents > 0 OR avg_price_cents > 0)
-       ORDER BY min_price_cents DESC`
-    )
-    .all(skinName) as {
-    condition: string;
-    min_price_cents: number;
-    avg_price_cents: number;
-  }[];
+  const { rows } = await pool.query(
+    `SELECT condition, min_price_cents, avg_price_cents
+     FROM price_data WHERE skin_name = $1 AND source IN ('csfloat_sales', 'csfloat_ref')
+       AND (min_price_cents > 0 OR avg_price_cents > 0)
+     ORDER BY min_price_cents DESC`,
+    [skinName]
+  );
 
   if (rows.length === 0) {
     // StatTrak: don't use Skinport-only pricing for outputs — too unreliable
@@ -403,9 +400,10 @@ export function getConditionPrices(
     const phaseMatch = skinName.match(/^(.+\| (?:Doppler|Gamma Doppler))\s+(?:Phase \d|Ruby|Sapphire|Black Pearl|Emerald)$/);
     if (phaseMatch) {
       const baseName = phaseMatch[1];
-      const baseRows = db
-        .prepare(`SELECT condition, min_price_cents, avg_price_cents FROM price_data WHERE skin_name = ?`)
-        .all(baseName) as typeof rows;
+      const { rows: baseRows } = await pool.query(
+        `SELECT condition, min_price_cents, avg_price_cents FROM price_data WHERE skin_name = $1`,
+        [baseName]
+      );
       const result = buildAnchors(baseRows, 1.0, skinInfo);
       conditionPricesCache.set(skinName, result);
       return result;

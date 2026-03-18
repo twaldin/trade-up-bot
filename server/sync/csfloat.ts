@@ -1,5 +1,5 @@
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { getSyncMeta, setSyncMeta } from "../db.js";
 import { CSFLOAT_BASE, HIGH_VALUE_COLLECTIONS } from "./types.js";
 import type { CSFloatListing, CSFloatResponse, SmartFetchSkin } from "./types.js";
@@ -59,7 +59,7 @@ export async function fetchCSFloatListings(
 }
 
 export async function syncListingsForRarity(
-  db: Database.Database,
+  pool: pg.Pool,
   rarity: string,
   options: {
     minPrice?: number;
@@ -86,11 +86,6 @@ export async function syncListingsForRarity(
   }
 
   console.log(`Fetching CSFloat listings for ${rarity}...`);
-
-  const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
-  `);
 
   let totalInserted = 0;
   const pages = options.pages ?? 1;
@@ -131,8 +126,11 @@ export async function syncListingsForRarity(
       // Get max price from ALL items in response (for pagination)
       const maxPriceInBatch = Math.max(...listings.map((l) => l.price));
 
-      const insertBatch = db.transaction((batch: CSFloatListing[]) => {
-        for (const listing of batch) {
+      // Insert listings in a transaction
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const listing of listings) {
           if (seenIds.has(listing.id)) continue;
           seenIds.add(listing.id);
 
@@ -141,13 +139,18 @@ export async function syncListingsForRarity(
           // Skip very old listings (seller listed months/years ago)
           if (isListingTooOld(listing.created_at)) continue;
 
-          const skinId = findSkinId(db, listing.item.market_hash_name);
+          const skinId = await findSkinId(pool, listing.item.market_hash_name);
           if (!skinId) continue;
 
           const isStattrak = listing.item.market_hash_name
             .toLowerCase()
             .includes("stattrak");
-          insertListing.run(
+          await client.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'csfloat', $8, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = $7, source = 'csfloat', listing_type = $8, price_updated_at = NOW()
+          `, [
             listing.id,
             skinId,
             listing.price,
@@ -155,14 +158,19 @@ export async function syncListingsForRarity(
             listing.item.paint_seed ?? null,
             isStattrak ? 1 : 0,
             listing.created_at,
-            listing.type
-          );
+            listing.type,
+          ]);
           totalInserted++;
         }
-      });
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
 
-      insertBatch(listings);
-      saveReferencePrices(db, listings);
+      await saveReferencePrices(pool, listings);
 
       // Advance the price window for next page
       if (maxPriceInBatch > minPrice) {
@@ -192,11 +200,11 @@ export async function syncListingsForRarity(
  * This uses most_recent to get a random cross-section of skins.
  */
 export async function syncListingsDiversified(
-  db: Database.Database,
+  pool: pg.Pool,
   rarity: string,
   options: { apiKey?: string; pages?: number } = {}
 ) {
-  return syncListingsForRarity(db, rarity, {
+  return syncListingsForRarity(pool, rarity, {
     ...options,
     sortBy: "most_recent",
     pages: options.pages ?? 10,
@@ -209,16 +217,11 @@ export async function syncListingsDiversified(
  * Returns number of API calls used and listings inserted.
  */
 export async function syncListingsForSkin(
-  db: Database.Database,
+  pool: pg.Pool,
   skin: { id: string; name: string; min_float: number; max_float: number },
   options: { apiKey?: string; conditions?: string[]; maxFloat?: number } = {}
 ): Promise<{ apiCalls: number; inserted: number }> {
   const conditions = options.conditions ?? getValidConditions(skin.min_float, skin.max_float);
-
-  const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
-  `);
 
   let totalApiCalls = 0;
   let totalInserted = 0;
@@ -256,12 +259,19 @@ export async function syncListingsForSkin(
 
       if (listings.length === 0) continue;
 
-      const insertBatch = db.transaction((batch: CSFloatListing[]) => {
-        for (const listing of batch) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const listing of listings) {
           if (listing.type !== "buy_now") continue;
           if (isListingTooOld(listing.created_at)) continue;
           const isStattrak = listing.item.market_hash_name.toLowerCase().includes("stattrak");
-          insertListing.run(
+          await client.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'csfloat', $8, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = $7, source = 'csfloat', listing_type = $8, price_updated_at = NOW()
+          `, [
             listing.id,
             skin.id,
             listing.price,
@@ -269,13 +279,18 @@ export async function syncListingsForSkin(
             listing.item.paint_seed ?? null,
             isStattrak ? 1 : 0,
             listing.created_at,
-            listing.type
-          );
+            listing.type,
+          ]);
           totalInserted++;
         }
-      });
-      insertBatch(listings);
-      saveReferencePrices(db, listings);
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
+      await saveReferencePrices(pool, listings);
 
       // Rate limit pause between conditions
       await new Promise((r) => setTimeout(r, 1500));
@@ -292,7 +307,7 @@ export async function syncListingsForSkin(
  * Covers different price brackets to get skins we'd miss with just lowest_price sort.
  */
 export async function syncListingsByPriceRanges(
-  db: Database.Database,
+  pool: pg.Pool,
   rarity: string,
   options: { apiKey?: string; pagesPerRange?: number } = {}
 ): Promise<{ apiCalls: number; inserted: number }> {
@@ -312,7 +327,7 @@ export async function syncListingsByPriceRanges(
 
   for (const range of ranges) {
     try {
-      const count = await syncListingsForRarity(db, rarity, {
+      const count = await syncListingsForRarity(pool, rarity, {
         apiKey: options.apiKey,
         pages: pagesPerRange,
         sortBy: "lowest_price",
@@ -336,7 +351,7 @@ export async function syncListingsByPriceRanges(
  * Also fetches by most_recent to catch new low-float listings.
  */
 export async function syncLowFloatClassifiedListings(
-  db: Database.Database,
+  pool: pg.Pool,
   options: {
     apiKey: string;
     maxCalls?: number;
@@ -346,23 +361,18 @@ export async function syncLowFloatClassifiedListings(
   const maxCalls = options.maxCalls ?? 30;
 
   // Get Classified skins that CAN have FN (min_float < 0.07)
-  const fnSkins = db.prepare(`
+  const { rows: fnSkins } = await pool.query(`
     SELECT s.id, s.name, s.min_float, s.max_float,
            COUNT(CASE WHEN l.float_value < 0.07 THEN 1 END) as fn_listings
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
     WHERE s.rarity = 'Classified' AND s.stattrak = 0
       AND s.min_float < 0.07
-    GROUP BY s.id
+    GROUP BY s.id, s.name, s.min_float, s.max_float
     ORDER BY fn_listings ASC, s.name
-  `).all() as { id: string; name: string; min_float: number; max_float: number; fn_listings: number }[];
+  `) as { rows: { id: string; name: string; min_float: number; max_float: number; fn_listings: string }[] };
 
   console.log(`  ${fnSkins.length} Classified skins can have FN, fetching low-float listings`);
-
-  const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
-  `);
 
   let totalApiCalls = 0;
   let totalInserted = 0;
@@ -411,22 +421,34 @@ export async function syncLowFloatClassifiedListings(
         continue;
       }
 
-      const insertBatch = db.transaction((batch: CSFloatListing[]) => {
-        for (const listing of batch) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const listing of listings) {
           if (listing.type !== "buy_now") continue;
           if (isListingTooOld(listing.created_at)) continue;
           const isStattrak = listing.item.market_hash_name.toLowerCase().includes("stattrak");
           if (isStattrak) continue; // Only non-StatTrak for trade-ups
-          insertListing.run(
+          await client.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+            VALUES ($1, $2, $3, $4, $5, 0, $6, 'csfloat', $7, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = $6, source = 'csfloat', listing_type = $7, price_updated_at = NOW()
+          `, [
             listing.id, skin.id, listing.price,
             listing.item.float_value, listing.item.paint_seed ?? null,
-            0, listing.created_at, listing.type
-          );
+            listing.created_at, listing.type,
+          ]);
           totalInserted++;
         }
-      });
-      insertBatch(listings);
-      saveReferencePrices(db, listings);
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
+      await saveReferencePrices(pool, listings);
 
       if (totalApiCalls % 10 === 0) {
         const msg = `Low-float classified: ${totalApiCalls}/${maxCalls} calls, ${totalInserted} FN listings`;
@@ -460,7 +482,7 @@ export async function syncLowFloatClassifiedListings(
  * Uses per-skin name fetches (syncListingsForSkin) instead of bulk sweeps.
  */
 export async function syncSmartListingsForRarity(
-  db: Database.Database,
+  pool: pg.Pool,
   rarity: string,
   options: {
     apiKey: string;
@@ -472,33 +494,34 @@ export async function syncSmartListingsForRarity(
 
   // Load last-fetched timestamps (keyed per rarity to avoid cross-contamination)
   const metaKey = rarity === "Classified" ? "skin_fetch_times" : `skin_fetch_times_${rarity.toLowerCase().replace(/[\s-]/g, "_")}`;
-  const rawFetchTimes = getSyncMeta(db, metaKey);
+  const rawFetchTimes = await getSyncMeta(pool, metaKey);
   const fetchTimes: Record<string, number> = rawFetchTimes ? JSON.parse(rawFetchTimes) : {};
   const now = Date.now();
   const SKIP_WINDOW = 2 * 60 * 60 * 1000; // 2h — cycle through skins faster for coverage
 
   // Get all skins of this rarity with coverage stats
-  const skins = db.prepare(`
+  const { rows: skins } = await pool.query(`
     SELECT s.id, s.name, s.min_float, s.max_float,
       COUNT(l.id) as listing_count,
       COUNT(CASE WHEN l.float_value < 0.07 THEN 1 END) as fn_count,
-      COALESCE(MIN(julianday('now') - julianday(l.created_at)), 999) as newest_age_days
+      COALESCE(MIN(EXTRACT(EPOCH FROM NOW() - l.created_at) / 86400.0), 999) as newest_age_days
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.rarity = ? AND s.stattrak = 0
-    GROUP BY s.id
-  `).all(rarity) as { id: string; name: string; min_float: number; max_float: number; listing_count: number; fn_count: number; newest_age_days: number }[];
+    WHERE s.rarity = $1 AND s.stattrak = 0
+    GROUP BY s.id, s.name, s.min_float, s.max_float
+  `, [rarity]) as { rows: { id: string; name: string; min_float: number; max_float: number; listing_count: string; fn_count: string; newest_age_days: number }[] };
 
   // Get high-value collection skin IDs
   const highValueSkinIds = new Set<string>();
-  const hvRows = db.prepare(`
+  const hvPh = HIGH_VALUE_COLLECTIONS.map((_, i) => `$${i + 2}`).join(",");
+  const { rows: hvRows } = await pool.query(`
     SELECT DISTINCT sc.skin_id
     FROM skin_collections sc
     JOIN collections c ON sc.collection_id = c.id
     JOIN skins s ON sc.skin_id = s.id
-    WHERE s.rarity = ? AND s.stattrak = 0
-      AND c.name IN (${HIGH_VALUE_COLLECTIONS.map(() => "?").join(",")})
-  `).all(rarity, ...HIGH_VALUE_COLLECTIONS) as { skin_id: string }[];
+    WHERE s.rarity = $1 AND s.stattrak = 0
+      AND c.name IN (${hvPh})
+  `, [rarity, ...HIGH_VALUE_COLLECTIONS]) as { rows: { skin_id: string }[] };
   for (const r of hvRows) highValueSkinIds.add(r.skin_id);
 
   // Build prioritized list
@@ -506,6 +529,9 @@ export async function syncSmartListingsForRarity(
   let skipped = 0;
 
   for (const skin of skins) {
+    const listingCount = Number(skin.listing_count);
+    const fnCount = Number(skin.fn_count);
+
     // Skip if fetched recently
     if (fetchTimes[skin.id] && (now - fetchTimes[skin.id]) < SKIP_WINDOW) {
       skipped++;
@@ -522,25 +548,25 @@ export async function syncSmartListingsForRarity(
       priority += 1000; // Always fetch high-value collection skins
     }
 
-    if (skin.listing_count < 3) {
+    if (listingCount < 3) {
       priority += 500; // Critical: almost no data
-    } else if (skin.listing_count < 10) {
+    } else if (listingCount < 10) {
       priority += 300; // Under-covered
-    } else if (skin.listing_count < 20) {
+    } else if (listingCount < 20) {
       priority += 100; // Moderate
     }
 
-    if (canFN && skin.fn_count < 5) {
+    if (canFN && fnCount < 5) {
       priority += 200; // FN-capable but few FN listings
     }
 
     // Stale refresh: lots of listings but all old
-    if (skin.listing_count >= 50 && skin.newest_age_days > 7) {
+    if (listingCount >= 50 && skin.newest_age_days > 7) {
       priority += 50; // Low priority — just needs a refresh
     }
 
     // Skip well-covered skins that aren't high-value and aren't stale
-    if (priority === 0 && skin.listing_count >= 20) {
+    if (priority === 0 && listingCount >= 20) {
       skipped++;
       continue;
     }
@@ -551,7 +577,13 @@ export async function syncSmartListingsForRarity(
     }
 
     candidates.push({
-      ...skin,
+      id: skin.id,
+      name: skin.name,
+      min_float: skin.min_float,
+      max_float: skin.max_float,
+      listing_count: listingCount,
+      fn_count: fnCount,
+      newest_age_days: skin.newest_age_days,
       is_high_value: isHighValue,
       priority,
     });
@@ -597,7 +629,7 @@ export async function syncSmartListingsForRarity(
     }
 
     try {
-      const result = await syncListingsForSkin(db, skin, {
+      const result = await syncListingsForSkin(pool, skin, {
         apiKey: options.apiKey,
         conditions: conditions ?? (callsNeeded > remainingBudget && skin.min_float < 0.07 ? ["Factory New"] : undefined),
       });
@@ -624,7 +656,7 @@ export async function syncSmartListingsForRarity(
 
   // Persist fetch times
   try {
-    setSyncMeta(db, metaKey, JSON.stringify(fetchTimes));
+    await setSyncMeta(pool, metaKey, JSON.stringify(fetchTimes));
   } catch { /* metadata persistence is best-effort */ }
 
   const msg = `Smart fetch (${rarity}) done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (${skipped} skipped)`;
@@ -644,7 +676,7 @@ export async function syncSmartListingsForRarity(
  * This ensures collections with expensive outputs AND sparse listings get fetched first.
  */
 export async function syncPrioritizedKnifeInputs(
-  db: Database.Database,
+  pool: pg.Pool,
   options: {
     apiKey: string;
     maxCalls?: number;
@@ -654,8 +686,7 @@ export async function syncPrioritizedKnifeInputs(
   const maxCalls = options.maxCalls ?? 100;
 
   // Step 1: Get all collections with Covert gun skins and their listing counts.
-  // We exclude knives/gloves/etc since those are outputs, not inputs.
-  const collectionStats = db.prepare(`
+  const { rows: collectionStats } = await pool.query(`
     SELECT c.id as collection_id, c.name as collection_name,
            COUNT(DISTINCT s.id) as covert_skins,
            COUNT(l.id) as total_listings
@@ -668,35 +699,28 @@ export async function syncPrioritizedKnifeInputs(
       AND s.weapon NOT LIKE '%Gloves%' AND s.weapon NOT LIKE '%Wraps%'
       AND s.weapon != 'Shadow Daggers'
       AND c.id != 'collection-set-community-37'
-    GROUP BY c.id
+    GROUP BY c.id, c.name
     ORDER BY total_listings ASC
-  `).all() as {
-    collection_id: string;
-    collection_name: string;
-    covert_skins: number;
-    total_listings: number;
-  }[];
+  `) as { rows: { collection_id: string; collection_name: string; covert_skins: string; total_listings: string }[] };
 
   // Step 2: Get output value estimates per collection from collection_scores
   const scoreMap = new Map<string, number>();
-  const scores = db.prepare(`
-    SELECT collection_id, max_profit_cents FROM collection_scores
-  `).all() as { collection_id: string; max_profit_cents: number }[];
+  const { rows: scores } = await pool.query(
+    "SELECT collection_id, max_profit_cents FROM collection_scores"
+  ) as { rows: { collection_id: string; max_profit_cents: number }[] };
   for (const s of scores) scoreMap.set(s.collection_id, s.max_profit_cents);
 
   // Step 3: Compute priority scores.
-  // Collections with fewer listings get higher priority.
-  // Collections with higher profit potential get higher priority.
-  // New collections (no score yet) get a baseline priority to encourage exploration.
   const prioritized = collectionStats.map(c => ({
     ...c,
-    priority: (1 / (1 + c.total_listings)) * (1 + Math.max(0, scoreMap.get(c.collection_id) ?? 500) / 100),
+    total_listings_num: Number(c.total_listings),
+    priority: (1 / (1 + Number(c.total_listings))) * (1 + Math.max(0, scoreMap.get(c.collection_id) ?? 500) / 100),
   }));
   prioritized.sort((a, b) => b.priority - a.priority);
 
   console.log(`  Prioritized ${prioritized.length} collections for knife input fetch`);
   if (prioritized.length > 0) {
-    console.log(`  Top 5: ${prioritized.slice(0, 5).map(c => `${c.collection_name} (${c.total_listings} listings, priority ${c.priority.toFixed(2)})`).join(", ")}`);
+    console.log(`  Top 5: ${prioritized.slice(0, 5).map(c => `${c.collection_name} (${c.total_listings_num} listings, priority ${c.priority.toFixed(2)})`).join(", ")}`);
   }
 
   // Step 4: Fetch listings for each collection's Covert skins, highest priority first
@@ -713,25 +737,25 @@ export async function syncPrioritizedKnifeInputs(
     }
 
     // Get individual Covert skins in this collection
-    const skins = db.prepare(`
+    const { rows: colSkins } = await pool.query(`
       SELECT s.id, s.name, s.min_float, s.max_float
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
-      WHERE sc.collection_id = ? AND s.rarity = 'Covert' AND s.stattrak = 0
+      WHERE sc.collection_id = $1 AND s.rarity = 'Covert' AND s.stattrak = 0
         AND s.weapon NOT LIKE '%Knife%' AND s.weapon NOT LIKE '%Bayonet%'
         AND s.weapon NOT LIKE '%Gloves%' AND s.weapon NOT LIKE '%Wraps%'
         AND s.weapon != 'Shadow Daggers'
-    `).all(col.collection_id) as { id: string; name: string; min_float: number; max_float: number }[];
+    `, [col.collection_id]) as { rows: { id: string; name: string; min_float: number; max_float: number }[] };
 
-    if (skins.length === 0) continue;
+    if (colSkins.length === 0) continue;
 
     let colInserted = 0;
-    for (const skin of skins) {
+    for (const skin of colSkins) {
       if (totalApiCalls >= maxCalls) break;
       if (consecutiveRateLimits >= 2) break;
 
       try {
-        const result = await syncListingsForSkin(db, skin, {
+        const result = await syncListingsForSkin(pool, skin, {
           apiKey: options.apiKey,
         });
         totalApiCalls += result.apiCalls;
@@ -769,7 +793,7 @@ export async function syncPrioritizedKnifeInputs(
  * This gives us better output pricing data (lowest listing) for the skins that matter most.
  */
 export async function syncCovertOutputListings(
-  db: Database.Database,
+  pool: pg.Pool,
   options: {
     apiKey: string;
     maxCalls?: number;
@@ -777,42 +801,37 @@ export async function syncCovertOutputListings(
   }
 ): Promise<{ apiCalls: number; inserted: number }> {
   // Priority 1: Output skins from profitable trade-ups (extract from outcomes_json)
-  const profitableOutputs = db.prepare(`
-    SELECT json_extract(je.value, '$.skin_name') as skin_name, COUNT(*) as appearances
-    FROM trade_ups t, json_each(t.outcomes_json) je
+  const { rows: profitableOutputs } = await pool.query(`
+    SELECT je->>'skin_name' as skin_name, COUNT(*) as appearances
+    FROM trade_ups t, json_array_elements(t.outcomes_json::json) je
     WHERE t.profit_cents > 0 AND t.outcomes_json IS NOT NULL
-    GROUP BY json_extract(je.value, '$.skin_name')
+    GROUP BY je->>'skin_name'
     ORDER BY appearances DESC
     LIMIT 15
-  `).all() as { skin_name: string; appearances: number }[];
+  `) as { rows: { skin_name: string; appearances: string }[] };
 
   // Priority 2: Knife/glove skins with fewest listings (coverage gaps — worst first)
-  const uncoveredOutputs = db.prepare(`
+  const { rows: uncoveredOutputs } = await pool.query(`
     SELECT s.name as skin_name, COUNT(l.id) as appearances
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
     WHERE s.name LIKE '★%' AND s.stattrak = 0
-    GROUP BY s.id
+    GROUP BY s.id, s.name
     ORDER BY appearances ASC
     LIMIT 50
-  `).all() as { skin_name: string; appearances: number }[];
+  `) as { rows: { skin_name: string; appearances: string }[] };
 
   // Merge: profitable outputs first, then uncovered
   const seen = new Set<string>();
   const topOutputs: { skin_name: string; appearances: number }[] = [];
   for (const o of profitableOutputs) {
-    if (!seen.has(o.skin_name)) { seen.add(o.skin_name); topOutputs.push(o); }
+    if (!seen.has(o.skin_name)) { seen.add(o.skin_name); topOutputs.push({ skin_name: o.skin_name, appearances: Number(o.appearances) }); }
   }
   for (const o of uncoveredOutputs) {
-    if (!seen.has(o.skin_name)) { seen.add(o.skin_name); topOutputs.push(o); }
+    if (!seen.has(o.skin_name)) { seen.add(o.skin_name); topOutputs.push({ skin_name: o.skin_name, appearances: Number(o.appearances) }); }
   }
 
   if (topOutputs.length === 0) return { apiCalls: 0, inserted: 0 };
-
-  const insertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?, datetime('now'))
-  `);
 
   let totalApiCalls = 0;
   let totalInserted = 0;
@@ -827,19 +846,19 @@ export async function syncCovertOutputListings(
     }
 
     // Find the skin ID for this output (Covert knives or Extraordinary gloves)
-    const skin = db.prepare(`
-      SELECT id, name, min_float, max_float FROM skins
-      WHERE name = ? AND stattrak = 0
-      LIMIT 1
-    `).get(output.skin_name) as { id: string; name: string; min_float: number; max_float: number } | undefined;
+    const { rows: skinRows } = await pool.query(
+      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+      [output.skin_name]
+    );
+    const skin = skinRows[0] as { id: string; name: string; min_float: number; max_float: number } | undefined;
     if (!skin) continue;
 
     // Check how many recent listings we already have
-    const recentCount = (db.prepare(`
-      SELECT COUNT(*) as c FROM listings
-      WHERE skin_id = ? AND julianday('now') - julianday(created_at) < 3
-    `).get(skin.id) as { c: number }).c;
-    if (recentCount >= 10) continue; // Already have fresh data
+    const { rows: recentRows } = await pool.query(
+      "SELECT COUNT(*) as c FROM listings WHERE skin_id = $1 AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 < 3",
+      [skin.id]
+    );
+    if (Number(recentRows[0].c) >= 10) continue; // Already have fresh data
 
     // Fetch by market_hash_name for each valid condition
     const conditions = getValidConditions(skin.min_float, skin.max_float);
@@ -885,12 +904,19 @@ export async function syncCovertOutputListings(
         }
 
         if (listings.length > 0) {
-          const insertBatch = db.transaction((batch: CSFloatListing[]) => {
-            for (const listing of batch) {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            for (const listing of listings) {
               if (listing.type !== "buy_now") continue;
               if (isListingTooOld(listing.created_at)) continue;
               const isStattrak = listing.item.market_hash_name.toLowerCase().includes("stattrak");
-              insertListing.run(
+              await client.query(`
+                INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'csfloat', $8, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                  skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = $7, source = 'csfloat', listing_type = $8, price_updated_at = NOW()
+              `, [
                 listing.id,
                 skin.id,
                 listing.price,
@@ -898,13 +924,18 @@ export async function syncCovertOutputListings(
                 listing.item.paint_seed ?? null,
                 isStattrak ? 1 : 0,
                 listing.created_at,
-                listing.type
-              );
+                listing.type,
+              ]);
               totalInserted++;
             }
-          });
-          insertBatch(listings);
-          saveReferencePrices(db, listings);
+            await client.query('COMMIT');
+          } catch (txErr) {
+            await client.query('ROLLBACK');
+            throw txErr;
+          } finally {
+            client.release();
+          }
+          await saveReferencePrices(pool, listings);
         }
 
         await new Promise((r) => setTimeout(r, 2000));
@@ -931,7 +962,7 @@ export async function syncCovertOutputListings(
  * Each skin+condition = 1 API call. We batch by skin to check all conditions at once.
  */
 export async function verifyTopTradeUpListings(
-  db: Database.Database,
+  pool: pg.Pool,
   options: {
     apiKey: string;
     topN?: number;
@@ -943,15 +974,15 @@ export async function verifyTopTradeUpListings(
   const maxCalls = options.maxCalls ?? 80;
 
   // Get unique listing IDs from top profitable trade-ups
-  const inputListings = db.prepare(`
+  const { rows: inputListings } = await pool.query(`
     SELECT DISTINCT i.listing_id, i.skin_name, l.skin_id, l.float_value
     FROM trade_up_inputs i
     JOIN trade_ups t ON i.trade_up_id = t.id
     JOIN listings l ON i.listing_id = l.id
     WHERE t.profit_cents > 0
     ORDER BY t.profit_cents DESC
-    LIMIT ?
-  `).all(topN * 10) as { listing_id: string; skin_name: string; skin_id: string; float_value: number }[];
+    LIMIT $1
+  `, [topN * 10]) as { rows: { listing_id: string; skin_name: string; skin_id: string; float_value: number }[] };
 
   // Group by skin_name to batch API calls
   const bySkin = new Map<string, { skin_id: string; listing_ids: Set<string> }>();
@@ -984,18 +1015,21 @@ export async function verifyTopTradeUpListings(
       const currentIds = new Set(currentListings.map(l => l.id));
 
       // Also update/insert current listings while we're at it
-      const insertListing = db.prepare(`
-        INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'csfloat', ?)
-      `);
-      const insertBatch = db.transaction(() => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
         for (const listing of currentListings) {
           if (listing.type !== "buy_now") continue;
           if (isListingTooOld(listing.created_at)) continue;
-          const resolvedSkinId = findSkinId(db, listing.item.market_hash_name);
+          const resolvedSkinId = await findSkinId(pool, listing.item.market_hash_name);
           if (!resolvedSkinId) continue;
           const isStattrak = listing.item.market_hash_name.toLowerCase().includes("stattrak");
-          insertListing.run(
+          await client.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'csfloat', $8)
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = $7, source = 'csfloat', listing_type = $8
+          `, [
             listing.id,
             resolvedSkinId,
             listing.price,
@@ -1003,18 +1037,23 @@ export async function verifyTopTradeUpListings(
             listing.item.paint_seed ?? null,
             isStattrak ? 1 : 0,
             listing.created_at,
-            listing.type
-          );
+            listing.type,
+          ]);
         }
-      });
-      insertBatch();
-      saveReferencePrices(db, currentListings);
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
+      await saveReferencePrices(pool, currentListings);
 
       // Remove our stored listings that didn't appear in the fresh fetch
       let skinRemoved = 0;
       for (const listingId of listing_ids) {
         if (!currentIds.has(listingId)) {
-          db.prepare("DELETE FROM listings WHERE id = ?").run(listingId);
+          await pool.query("DELETE FROM listings WHERE id = $1", [listingId]);
           skinRemoved++;
         }
       }

@@ -1,6 +1,6 @@
 // Knife/glove trade-up evaluation: EV calculation for 5-input → knife/glove pool.
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition, type TradeUp, type TradeUpInput, type TradeUpOutcome } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 import type { FinishData } from "./knife-data.js";
@@ -10,15 +10,15 @@ import { lookupOutputPrice } from "./pricing.js";
 import { effectiveBuyCost } from "./fees.js";
 
 // Get all knife/glove finish skins with prices for a weapon type.
-export function getKnifeFinishesWithPrices(
-  db: Database.Database,
+export async function getKnifeFinishesWithPrices(
+  pool: pg.Pool,
   knifeType: string
-): FinishData[] {
-  const skins = db.prepare(`
+): Promise<FinishData[]> {
+  const { rows: skins } = await pool.query(`
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
-    WHERE s.weapon = ? AND s.stattrak = 0
-  `).all(knifeType) as { name: string; min_float: number; max_float: number }[];
+    WHERE s.weapon = $1 AND s.stattrak = 0
+  `, [knifeType]);
 
   const results: FinishData[] = [];
 
@@ -34,14 +34,14 @@ export function getKnifeFinishesWithPrices(
 
       for (const { phase, weight } of dopplerPhases) {
         const phaseName = `${skin.name} ${phase}`;
-        const phasePrices = db.prepare(`
+        const { rows: phasePrices } = await pool.query(`
           SELECT condition, median_price_cents FROM price_data
-          WHERE skin_name = ? AND median_price_cents > 0
+          WHERE skin_name = $1 AND median_price_cents > 0
           ORDER BY median_price_cents ASC
-        `).all(phaseName) as { condition: string; median_price_cents: number }[];
+        `, [phaseName]);
 
         if (phasePrices.length > 0) {
-          const phaseAvg = phasePrices.reduce((s, p) => s + p.median_price_cents, 0) / phasePrices.length;
+          const phaseAvg = phasePrices.reduce((s: number, p: { median_price_cents: number }) => s + p.median_price_cents, 0) / phasePrices.length;
           totalWeightedPrice += phaseAvg * weight;
           totalWeight += weight;
           hasAnyPrice = true;
@@ -50,12 +50,12 @@ export function getKnifeFinishesWithPrices(
 
       if (!hasAnyPrice) {
         // Fall back to base name
-        const basePrices = db.prepare(`
+        const { rows: basePrices } = await pool.query(`
           SELECT condition, median_price_cents FROM price_data
-          WHERE skin_name = ? AND median_price_cents > 0
-        `).all(skin.name) as { condition: string; median_price_cents: number }[];
+          WHERE skin_name = $1 AND median_price_cents > 0
+        `, [skin.name]);
         if (basePrices.length === 0) continue;
-        totalWeightedPrice = basePrices.reduce((s, p) => s + p.median_price_cents, 0) / basePrices.length;
+        totalWeightedPrice = basePrices.reduce((s: number, p: { median_price_cents: number }) => s + p.median_price_cents, 0) / basePrices.length;
         totalWeight = 1;
       }
 
@@ -67,20 +67,20 @@ export function getKnifeFinishesWithPrices(
         conditions: 1, skinMinFloat: skin.min_float, skinMaxFloat: skin.max_float,
       });
     } else {
-      const prices = db.prepare(`
+      const { rows: prices } = await pool.query(`
         SELECT condition,
           COALESCE(NULLIF(median_price_cents, 0), avg_price_cents) as median_price_cents,
           min_price_cents
         FROM price_data
-        WHERE skin_name = ? AND (median_price_cents > 0 OR avg_price_cents > 0)
+        WHERE skin_name = $1 AND (median_price_cents > 0 OR avg_price_cents > 0)
         ORDER BY median_price_cents ASC
-      `).all(skin.name) as { condition: string; median_price_cents: number; min_price_cents: number }[];
+      `, [skin.name]);
 
       if (prices.length === 0) continue;
 
-      const avgPrice = prices.reduce((s, p) => s + p.median_price_cents, 0) / prices.length;
-      const minPrice = Math.min(...prices.map(p => p.median_price_cents));
-      const maxPrice = Math.max(...prices.map(p => p.median_price_cents));
+      const avgPrice = prices.reduce((s: number, p: { median_price_cents: number }) => s + p.median_price_cents, 0) / prices.length;
+      const minPrice = Math.min(...prices.map((p: { median_price_cents: number }) => p.median_price_cents));
+      const maxPrice = Math.max(...prices.map((p: { median_price_cents: number }) => p.median_price_cents));
 
       results.push({
         name: skin.name, avgPrice, minPrice, maxPrice, conditions: prices.length,
@@ -93,11 +93,11 @@ export function getKnifeFinishesWithPrices(
 }
 
 // Evaluate a knife trade-up: 5 Covert inputs → EV from knife/glove pool.
-export function evaluateKnifeTradeUp(
-  db: Database.Database,
+export async function evaluateKnifeTradeUp(
+  pool: pg.Pool,
   inputs: ListingWithCollection[],
   knifeFinishCache: Map<string, FinishData[]>
-): TradeUp | null {
+): Promise<TradeUp | null> {
   if (inputs.length !== 5) return null;
 
   const totalCost = inputs.reduce((sum, i) => sum + effectiveBuyCost(i), 0);
@@ -173,7 +173,7 @@ export function evaluateKnifeTradeUp(
         for (const { phase, weight } of dopplerPhases) {
           const phaseName = `${finish.name} ${phase}`;
           const phaseProb = perFinishProb * weight;
-          const output = lookupOutputPrice(db, phaseName, predFloat);
+          const output = await lookupOutputPrice(pool, phaseName, predFloat);
           if (output.priceCents <= 0) continue;
 
           totalEv += phaseProb * output.priceCents;
@@ -189,7 +189,7 @@ export function evaluateKnifeTradeUp(
           });
         }
       } else {
-        const output = lookupOutputPrice(db, finish.name, predFloat);
+        const output = await lookupOutputPrice(pool, finish.name, predFloat);
         if (output.priceCents <= 0) continue;
 
         totalEv += perFinishProb * output.priceCents;

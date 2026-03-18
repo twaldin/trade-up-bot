@@ -1,5 +1,5 @@
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { MAX_LISTING_AGE_DAYS, CONDITIONS_LIST } from "./types.js";
 import type { CSFloatListing } from "./types.js";
 
@@ -26,26 +26,28 @@ export function normalizeRarity(raw: string): string {
 }
 
 // Resolve a CSFloat listing's skin to our DB skin ID
-export function findSkinId(
-  db: Database.Database,
+export async function findSkinId(
+  pool: pg.Pool,
   marketHashName: string
-): string | null {
+): Promise<string | null> {
   // market_hash_name is like "AK-47 | Redline (Field-Tested)" or "StatTrak™ AK-47 | Redline (Field-Tested)"
   // Our skin name is like "AK-47 | Redline" or "StatTrak™ AK-47 | Redline"
   const baseName = marketHashName.replace(/\s*\([^)]+\)\s*$/, "").trim();
-  const row = db
-    .prepare("SELECT id FROM skins WHERE name = ? LIMIT 1")
-    .get(baseName) as { id: string } | undefined;
+  const { rows } = await pool.query(
+    "SELECT id FROM skins WHERE name = $1 LIMIT 1",
+    [baseName]
+  );
 
-  if (row) return row.id;
+  if (rows[0]) return rows[0].id;
 
   // Try stripping the star prefix for knives/gloves
   const noStar = baseName.replace(/^★\s*/, "").trim();
   if (noStar !== baseName) {
-    const row2 = db
-      .prepare("SELECT id FROM skins WHERE name = ? LIMIT 1")
-      .get(noStar) as { id: string } | undefined;
-    return row2?.id ?? null;
+    const { rows: rows2 } = await pool.query(
+      "SELECT id FROM skins WHERE name = $1 LIMIT 1",
+      [noStar]
+    );
+    return rows2[0]?.id ?? null;
   }
 
   return null;
@@ -53,7 +55,7 @@ export function findSkinId(
 
 // Extract and save CSFloat reference prices from listing responses
 // These come free with every listing API call — CSFloat's own market estimates
-export function saveReferencePrice(db: Database.Database, listing: CSFloatListing) {
+export async function saveReferencePrice(pool: pg.Pool, listing: CSFloatListing) {
   if (!listing.reference?.base_price || listing.reference.base_price <= 0) return;
 
   const condMatch = listing.item.market_hash_name.match(
@@ -66,13 +68,15 @@ export function saveReferencePrice(db: Database.Database, listing: CSFloatListin
   const priceCents = listing.reference.base_price;
   const qty = listing.reference.quantity ?? 0;
 
-  db.prepare(`
-    INSERT OR REPLACE INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'csfloat_ref', datetime('now'))
-  `).run(skinName, condition, priceCents, priceCents, priceCents, qty);
+  await pool.query(`
+    INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_ref', NOW())
+    ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+      avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
+  `, [skinName, condition, priceCents, priceCents, priceCents, qty]);
 }
 
-export function saveReferencePrices(db: Database.Database, listings: CSFloatListing[]) {
+export async function saveReferencePrices(pool: pg.Pool, listings: CSFloatListing[]) {
   // Only save one reference per skin+condition (they're all the same within a condition)
   const seen = new Set<string>();
   for (const listing of listings) {
@@ -80,7 +84,7 @@ export function saveReferencePrices(db: Database.Database, listings: CSFloatList
     const key = listing.item.market_hash_name;
     if (seen.has(key)) continue;
     seen.add(key);
-    saveReferencePrice(db, listing);
+    await saveReferencePrice(pool, listing);
   }
 }
 

@@ -3,8 +3,8 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import Database from "better-sqlite3";
-import { initDb, DB_PATH } from "./db.js";
+import pg from "pg";
+import { initDb, createTables } from "./db.js";
 import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
@@ -38,16 +38,16 @@ for (const [caseName, mapping] of Object.entries(CASE_KNIFE_MAP)) {
 // Build forward map: collection name → knife/glove pool
 const collectionKnifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>();
 for (const [collectionName, mapping] of Object.entries(CASE_KNIFE_MAP)) {
-  const pool: { knifeTypes: string[]; gloveTypes: string[]; finishCount: number } = {
+  const knPool: { knifeTypes: string[]; gloveTypes: string[]; finishCount: number } = {
     knifeTypes: [...mapping.knifeTypes],
     gloveTypes: [],
     finishCount: mapping.knifeFinishes?.length ?? 0,
   };
   if (mapping.gloveGen) {
     const genSkins = GLOVE_GEN_SKINS[mapping.gloveGen];
-    if (genSkins) pool.gloveTypes = Object.keys(genSkins);
+    if (genSkins) knPool.gloveTypes = Object.keys(genSkins);
   }
-  collectionKnifePool.set(collectionName, pool);
+  collectionKnifePool.set(collectionName, knPool);
 }
 
 // Load .env
@@ -103,78 +103,45 @@ app.use((req, res, next) => {
   }
 });
 
-const db = initDb();
-initRedis();
+// Async startup: initialize PostgreSQL pool and create tables
+(async () => {
+  const pool: pg.Pool = initDb();
+  await createTables(pool);
+  initRedis();
 
-// Read-only connection for API queries — never contends with daemon writes in WAL mode
-const readDb = new Database(DB_PATH, { readonly: true });
-readDb.pragma("busy_timeout = 5000");
+  // Auth (Steam OpenID + sessions)
+  await setupAuth(app, pool);
 
-// Slow request logger: log any API request that takes >3 seconds
-app.use("/api", (req, _res, next) => {
-  const start = Date.now();
-  const originalEnd = _res.end.bind(_res);
-  _res.end = function (...args: Parameters<typeof originalEnd>) {
-    const ms = Date.now() - start;
-    if (ms > 3000) {
-      console.error(`SLOW REQUEST: ${req.method} ${req.originalUrl} took ${ms}ms (status ${_res.statusCode})`);
-    }
-    return originalEnd(...args);
-  } as typeof _res.end;
-  next();
-});
+  // Mount route modules — all routes receive the pg pool
+  app.use(statusRouter(pool));
+  app.use(tradeUpsRouter(pool));
+  app.use(dataRouter(pool, knifeTypeToCases, collectionKnifePool));
+  app.use(collectionsRouter(pool, collectionKnifePool));
+  app.use(snapshotsRouter(pool));
+  app.use(calculatorRouter(pool));
+  app.use(claimsRouter(pool));
+  app.use(stripeRouter(pool));
 
-// Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
-setupAuth(app, db);
+  // Serve built frontend in production (Vite handles this in dev via proxy)
+  const distPath = path.join(__dirname, "..", "dist");
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
-// Mount route modules — read-only routes use readDb, write routes use db
-app.use(statusRouter(readDb));
-app.use(tradeUpsRouter(db, readDb));
-app.use(dataRouter(readDb, knifeTypeToCases, collectionKnifePool));
-app.use(collectionsRouter(readDb, collectionKnifePool));
-app.use(snapshotsRouter(readDb));
-app.use(calculatorRouter(readDb));
-app.use(claimsRouter(db));
-app.use(stripeRouter(db));
-
-// Serve built frontend in production (Vite handles this in dev via proxy)
-const distPath = path.join(__dirname, "..", "dist");
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
+  // Global error handler
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFunction) => {
+    console.error("Unhandled error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   });
-}
 
-// Global error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFunction) => {
-  console.error("Unhandled error:", err.message);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-// Start listening IMMEDIATELY — don't block on warmup.
-// Warmup runs in background after server starts accepting connections.
-app.listen(PORT, () => {
-  console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
-
-  // Background warmup: touch key tables to prime SQLite page cache.
-  // Uses a separate read-only connection so it doesn't block on daemon writes.
-  setTimeout(() => {
-    try {
-      const warmDb = new Database(DB_PATH, { readonly: true });
-      warmDb.pragma("busy_timeout = 5000");
-      console.log("Warming up page cache...");
-      const t = Date.now();
-      warmDb.prepare("SELECT COUNT(*) FROM trade_ups").get();
-      warmDb.prepare("SELECT COUNT(*) FROM listings").get();
-      warmDb.prepare("SELECT COUNT(*) FROM skins").get();
-      warmDb.close();
-      console.log(`Page cache warm (${((Date.now() - t) / 1000).toFixed(1)}s)`);
-    } catch (e) {
-      console.error("Warmup failed:", (e as Error).message);
-    }
-  }, 100);
-});
+  // Start listening
+  app.listen(PORT, () => {
+    console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+  });
+})();
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught exception:", err);

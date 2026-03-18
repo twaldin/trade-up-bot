@@ -9,7 +9,7 @@
  * Listing IDs stored as "dmarket:<itemId>" to avoid collision with CSFloat UUIDs.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import nacl from "tweetnacl";
 
 const DMARKET_API = "https://api.dmarket.com";
@@ -128,33 +128,32 @@ export async function fetchDMarketListings(
  * Returns number of listings inserted/updated.
  */
 export async function syncDMarketListingsForSkin(
-  db: Database.Database,
+  pool: pg.Pool,
   skinName: string,
   options: { maxListings?: number } = {}
 ): Promise<number> {
   const maxListings = options.maxListings ?? 100;
 
   // Resolve skin_id from name
-  const skin = db.prepare(
-    "SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1"
-  ).get(skinName) as { id: string } | undefined;
+  const { rows: skinRows } = await pool.query(
+    "SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+    [skinName]
+  );
+  const skin = skinRows[0] as { id: string } | undefined;
   if (!skin) return 0;
 
   const { items } = await fetchDMarketListings(skinName, { limit: maxListings });
   if (items.length === 0) return 0;
 
   // Also look up the StatTrak variant for this skin
-  const stSkin = db.prepare(
-    "SELECT id FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1"
-  ).get(`StatTrak™ ${skinName}`) as { id: string } | undefined;
-
-  const upsert = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'))
-  `);
+  const { rows: stRows } = await pool.query(
+    "SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1",
+    [`StatTrak™ ${skinName}`]
+  );
+  const stSkin = stRows[0] as { id: string } | undefined;
 
   let count = 0;
-  // No wrapping transaction — each INSERT OR REPLACE is its own implicit transaction.
+  // No wrapping transaction — each INSERT is its own implicit transaction.
   // This avoids holding a write lock that blocks the daemon's large transactions.
   for (const item of items) {
     if (!item.extra?.floatValue && item.extra?.floatValue !== 0) continue;
@@ -167,7 +166,6 @@ export async function syncDMarketListingsForSkin(
 
     // Verify title matches requested skin — DMarket search is fuzzy and returns
     // partial matches (e.g. searching "Fade" also returns "Amber Fade").
-    // Strip condition suffix like "(Factory New)" and "StatTrak™ " prefix for comparison.
     const cleanTitle = item.title
       .replace(/\s*\((?:Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)\s*$/, "")
       .replace(/^StatTrak™\s+/, "");
@@ -178,25 +176,33 @@ export async function syncDMarketListingsForSkin(
     if (isStatTrak) {
       // Store StatTrak item against ST skin ID (if it exists)
       if (!stSkin) continue;
-      upsert.run(
+      await pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
+        VALUES ($1, $2, $3, $4, $5, 1, NOW(), 'dmarket', 'buy_now', $6, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 1, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW()
+      `, [
         `dmarket:${item.itemId}`,
         stSkin.id,
         priceCents,
         item.extra.floatValue,
         item.extra.paintSeed ?? null,
-        1,
-        item.extra.phase ?? null
-      );
+        item.extra.phase ?? null,
+      ]);
     } else {
-      upsert.run(
+      await pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
+        VALUES ($1, $2, $3, $4, $5, 0, NOW(), 'dmarket', 'buy_now', $6, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW()
+      `, [
         `dmarket:${item.itemId}`,
         skin.id,
         priceCents,
         item.extra.floatValue,
         item.extra.paintSeed ?? null,
-        0,
-        item.extra.phase ?? null
-      );
+        item.extra.phase ?? null,
+      ]);
     }
     count++;
   }
@@ -209,7 +215,7 @@ export async function syncDMarketListingsForSkin(
  * Iterates through skins, fetching listings for each.
  */
 export async function syncDMarketListingsForRarity(
-  db: Database.Database,
+  pool: pg.Pool,
   rarity: string,
   options: {
     maxSkinsPerCall?: number;
@@ -222,15 +228,15 @@ export async function syncDMarketListingsForRarity(
   const maxListings = options.maxListingsPerSkin ?? 100;
 
   // Get skins to fetch — priority skins first, then by least coverage
-  const allSkins = db.prepare(`
+  const { rows: allSkins } = await pool.query(`
     SELECT s.name, COUNT(l.id) as listing_count
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
-    WHERE s.rarity = ? AND s.stattrak = 0
-    GROUP BY s.id
+    WHERE s.rarity = $1 AND s.stattrak = 0
+    GROUP BY s.id, s.name
     ORDER BY listing_count ASC
-    LIMIT ?
-  `).all(rarity, maxSkins * 2) as { name: string; listing_count: number }[];
+    LIMIT $2
+  `, [rarity, maxSkins * 2]) as { rows: { name: string; listing_count: string }[] };
 
   // Put priority skins first
   const prioritySet = new Set(options.prioritySkins ?? []);
@@ -244,10 +250,10 @@ export async function syncDMarketListingsForRarity(
 
   for (const skin of sorted) {
     try {
-      const count = await syncDMarketListingsForSkin(db, skin.name, { maxListings });
+      const count = await syncDMarketListingsForSkin(pool, skin.name, { maxListings });
       listingsInserted += count;
       skinsChecked++;
-      options.onProgress?.(`DMarket: ${skin.name} → ${count} listings (${skinsChecked}/${sorted.length})`);
+      options.onProgress?.(`DMarket: ${skin.name} -> ${count} listings (${skinsChecked}/${sorted.length})`);
     } catch (err) {
       if (err instanceof Error && err.message.includes("429")) {
         options.onProgress?.(`DMarket: rate limited after ${skinsChecked} skins`);
@@ -265,7 +271,7 @@ export async function syncDMarketListingsForRarity(
  * Removes listings that no longer appear in search results.
  */
 export async function checkDMarketStaleness(
-  db: Database.Database,
+  pool: pg.Pool,
   options: {
     maxChecks?: number;
     onProgress?: (msg: string) => void;
@@ -274,46 +280,45 @@ export async function checkDMarketStaleness(
   const maxChecks = options.maxChecks ?? 20;
 
   // Get skin names that have DMarket listings, oldest-checked first
-  const skins = db.prepare(`
-    SELECT DISTINCT s.name, MIN(COALESCE(l.staleness_checked_at, '2000-01-01')) as oldest_check
+  const { rows: skinRows } = await pool.query(`
+    SELECT DISTINCT s.name, MIN(COALESCE(l.staleness_checked_at, '2000-01-01'::timestamptz)) as oldest_check
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
     WHERE l.source = 'dmarket'
     GROUP BY s.name
     ORDER BY oldest_check ASC
-    LIMIT ?
-  `).all(maxChecks) as { name: string }[];
+    LIMIT $1
+  `, [maxChecks]) as { rows: { name: string }[] };
 
   let checked = 0;
   let removed = 0;
 
-  for (const skin of skins) {
+  for (const skinRow of skinRows) {
     try {
-      const { items } = await fetchDMarketListings(skin.name, { limit: 100 });
+      const { items } = await fetchDMarketListings(skinRow.name, { limit: 100 });
       const activeIds = new Set(items.map(i => `dmarket:${i.itemId}`));
 
       // Get our stored DMarket listings for this skin
-      const stored = db.prepare(`
+      const { rows: stored } = await pool.query(`
         SELECT l.id FROM listings l
         JOIN skins s ON l.skin_id = s.id
-        WHERE s.name = ? AND l.source = 'dmarket'
-      `).all(skin.name) as { id: string }[];
+        WHERE s.name = $1 AND l.source = 'dmarket'
+      `, [skinRow.name]) as { rows: { id: string }[] };
 
       const toRemove = stored.filter(s => !activeIds.has(s.id));
       if (toRemove.length > 0) {
-        const del = db.prepare("DELETE FROM listings WHERE id = ?");
-        for (const r of toRemove) del.run(r.id);
+        const ph = toRemove.map((_, i) => `$${i + 1}`).join(",");
+        await pool.query(`DELETE FROM listings WHERE id IN (${ph})`, toRemove.map(r => r.id));
         removed += toRemove.length;
       }
 
       // Also insert any new listings we didn't have
-      const skinRow = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1").get(skin.name) as { id: string } | undefined;
-      const stSkinRow = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1").get(`StatTrak™ ${skin.name}`) as { id: string } | undefined;
-      if (skinRow || stSkinRow) {
-        const upsert = db.prepare(`
-          INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at, price_updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'), datetime('now'))
-        `);
+      const { rows: skinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1", [skinRow.name]);
+      const { rows: stSkinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1", [`StatTrak™ ${skinRow.name}`]);
+      const skinId = skinIdRows[0] as { id: string } | undefined;
+      const stSkinId = stSkinIdRows[0] as { id: string } | undefined;
+
+      if (skinId || stSkinId) {
         for (const item of items) {
           if (!item.extra?.floatValue && item.extra?.floatValue !== 0) continue;
           const priceCents = parseInt(item.price?.USD ?? "0", 10);
@@ -321,25 +326,30 @@ export async function checkDMarketStaleness(
           const isSouvenir = item.title.includes("Souvenir") || item.extra?.category === "souvenir";
           if (isSouvenir) continue;
           const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
-          const targetSkin = isStatTrak ? stSkinRow : skinRow;
+          const targetSkin = isStatTrak ? stSkinId : skinId;
           if (!targetSkin) continue;
-          upsert.run(
+          await pool.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at, price_updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7, staleness_checked_at = NOW(), price_updated_at = NOW()
+          `, [
             `dmarket:${item.itemId}`,
             targetSkin.id,
             priceCents,
             item.extra.floatValue,
             item.extra.paintSeed ?? null,
             isStatTrak ? 1 : 0,
-            item.extra.phase ?? null
-          );
+            item.extra.phase ?? null,
+          ]);
         }
       }
 
       // Mark all this skin's DMarket listings as checked
-      db.prepare(`
-        UPDATE listings SET staleness_checked_at = datetime('now')
-        WHERE id IN (SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = ? AND l.source = 'dmarket')
-      `).run(skin.name);
+      await pool.query(`
+        UPDATE listings SET staleness_checked_at = NOW()
+        WHERE id IN (SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = $1 AND l.source = 'dmarket')
+      `, [skinRow.name]);
 
       checked++;
     } catch (err) {

@@ -4,7 +4,8 @@
  * Phase 4.5: Verify profitable inputs via individual lookup pool.
  */
 
-import { initDb, setSyncMeta, emitEvent } from "../../db.js";
+import pg from "pg";
+import { setSyncMeta, emitEvent } from "../../db.js";
 import {
   syncKnifeGloveSaleHistory,
   syncSaleHistory,
@@ -25,12 +26,12 @@ import {
 } from "../utils.js";
 
 export async function phase3ApiProbe(
-  db: ReturnType<typeof initDb>,
+  pool: pg.Pool,
   budget: BudgetTracker,
   apiKey: string
 ): Promise<ApiProbeResult> {
   console.log(`\n[${timestamp()}] Phase 3: API Probe`);
-  setDaemonStatus(db, "fetching", "Phase 3: API probe (3 endpoints)");
+  await setDaemonStatus(pool, "fetching", "Phase 3: API probe (3 endpoints)");
 
   const probe = await probeApiRateLimits(apiKey);
 
@@ -106,19 +107,14 @@ export async function phase3ApiProbe(
     budget.markSaleRateLimited();
   }
 
-  // Store for status endpoint (includes reset timestamps + pacing for frontend)
-  // Known pool limits and windows (429 responses return generic headers across all pools)
+  // Store for status endpoint
   const KNOWN_LISTING_LIMIT = 200;
   const KNOWN_SALE_LIMIT = 500;
   const KNOWN_INDIVIDUAL_LIMIT = 50000;
-  // When 429'd, all pools share the same ~12h reset (verified 2026-03-12).
-  // The 200/30min listing window is rolling replenishment, not the 429 recovery window.
-  const KNOWN_LISTING_WINDOW_S = 12 * 3600;   // ~12h (same as others when 429'd)
-  const KNOWN_SALE_WINDOW_S = 12 * 3600;      // ~12h
-  const KNOWN_INDIVIDUAL_WINDOW_S = 12 * 3600; // ~12h
+  const KNOWN_LISTING_WINDOW_S = 12 * 3600;
+  const KNOWN_SALE_WINDOW_S = 12 * 3600;
+  const KNOWN_INDIVIDUAL_WINDOW_S = 12 * 3600;
 
-  // When 429'd, CSFloat returns the same generic reset timestamp for all pools.
-  // Cap each pool's reset_at to its known window so the frontend shows accurate countdowns.
   const nowS = Date.now() / 1000;
   const capResetAt = (raw: number | null, windowS: number): number | null => {
     if (!raw) return null;
@@ -129,7 +125,7 @@ export async function phase3ApiProbe(
   const cycleLB = budget.cycleListingBudget();
   const cycleSB2 = budget.cycleSaleBudget();
   const cycleIB = budget.cycleIndividualBudget();
-  setSyncMeta(db, "api_rate_limit", JSON.stringify({
+  await setSyncMeta(pool, "api_rate_limit", JSON.stringify({
     listing_search: {
       limit: KNOWN_LISTING_LIMIT,
       remaining: probe.listingSearch.available ? (lrl.remaining ?? null) : 0,
@@ -161,7 +157,7 @@ export async function phase3ApiProbe(
 }
 
 export async function phase4DataFetch(
-  db: ReturnType<typeof initDb>,
+  pool: pg.Pool,
   budget: BudgetTracker,
   freshness: FreshnessTracker,
   apiKey: string,
@@ -169,8 +165,8 @@ export async function phase4DataFetch(
   probe: ApiProbeResult
 ) {
   console.log(`\n[${timestamp()}] Phase 4: Data Fetch`);
-  setDaemonStatus(db, "fetching", "Phase 4: Data Fetch");
-  emitEvent(db, "phase", "Phase 4: Data Fetch");
+  await setDaemonStatus(pool, "fetching", "Phase 4: Data Fetch");
+  await emitEvent(pool, "phase", "Phase 4: Data Fetch");
 
   const listingsAvailable = probe.listingSearch.available && !budget.isListingRateLimited();
   const salesAvailable = probe.saleHistory.available && !budget.isSaleRateLimited();
@@ -181,79 +177,71 @@ export async function phase4DataFetch(
   }
 
   // 4a: Sale history (500/~12h window — independent from listing search)
-  // Budget: paced across cycles. Each cycle gets a proportional slice.
   if (salesAvailable) {
     const cycleSaleBudget = budget.cycleSaleBudget();
     console.log(`  [${timestamp()}] 4a: Sale history (${budget.saleRemaining} remaining, ${cycleSaleBudget} this cycle)`);
 
-    // Split cycle budget: 40% knife/gloves, 20% covert guns, 20% classified, 20% ST coverts
-    // Sale pool is 500/12h — at ~3 cycles/hr we have 14/cycle. Use it all.
-    // Minimum 3 per category ensures we actually make progress on each.
-    setDaemonStatus(db, "fetching", "Phase 4a: Knife/Glove sale history");
-    // Sale budget: 30% knife, 15% covert, 15% ST covert, 15% classified, 15% restricted, 10% milspec
+    await setDaemonStatus(pool, "fetching", "Phase 4a: Knife/Glove sale history");
     const knifeSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.30)));
     if (knifeSaleBudget >= 2) {
       try {
-        const result = await syncKnifeGloveSaleHistory(db, {
+        const result = await syncKnifeGloveSaleHistory(pool, {
           apiKey,
           maxCalls: knifeSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useSale(result.fetched);
         console.log(`    Knife sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) emitEvent(db, "sale_history", `Knife/glove: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
+        if (result.sales > 0) await emitEvent(pool, "sale_history", `Knife/glove: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) console.log(`    Knife sales: rate limited, moving on`);
         else console.error(`    Knife sales error: ${(err as Error).message}`);
       }
     }
 
-    // Covert gun sale history
-    setDaemonStatus(db, "fetching", "Phase 4a: Covert gun sale history");
+    await setDaemonStatus(pool, "fetching", "Phase 4a: Covert gun sale history");
     const covertSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
     if (covertSaleBudget >= 1) {
       try {
-        const result = await syncSaleHistory(db, {
+        const result = await syncSaleHistory(pool, {
           apiKey,
           maxCalls: covertSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useSale(result.fetched);
         console.log(`    Covert sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) emitEvent(db, "sale_history", `Covert guns: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
+        if (result.sales > 0) await emitEvent(pool, "sale_history", `Covert guns: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) console.log(`    Covert sales: rate limited, moving on`);
         else console.error(`    Covert sales error: ${(err as Error).message}`);
       }
     }
 
-    // Classified skin sale history (needed for KNN pricing of classified inputs)
-    setDaemonStatus(db, "fetching", "Phase 4a: Classified sale history");
+    await setDaemonStatus(pool, "fetching", "Phase 4a: Classified sale history");
     const classifiedSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
     if (classifiedSaleBudget >= 1) {
       try {
-        const result = await syncSaleHistoryForRarity(db, "Classified", {
+        const result = await syncSaleHistoryForRarity(pool, "Classified", {
           apiKey,
           maxCalls: classifiedSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useSale(result.fetched);
         console.log(`    Classified sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) emitEvent(db, "sale_history", `Classified: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
+        if (result.sales > 0) await emitEvent(pool, "sale_history", `Classified: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) console.log(`    Classified sales: rate limited, moving on`);
         else console.error(`    Classified sales error: ${(err as Error).message}`);
       }
     }
 
-    // Restricted sale history (biggest data gap — only 123/305 skins have sale obs)
     const restrictedSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
     if (restrictedSaleBudget >= 1) {
       try {
-        const result = await syncSaleHistoryForRarity(db, "Restricted", {
+        const result = await syncSaleHistoryForRarity(pool, "Restricted", {
           apiKey,
           maxCalls: restrictedSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useSale(result.fetched);
         console.log(`    Restricted sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
@@ -263,14 +251,13 @@ export async function phase4DataFetch(
       }
     }
 
-    // Mil-Spec sale history (4/438 skins with sale obs — start building)
     const milspecSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
     if (milspecSaleBudget >= 1) {
       try {
-        const result = await syncSaleHistoryForRarity(db, "Mil-Spec", {
+        const result = await syncSaleHistoryForRarity(pool, "Mil-Spec", {
           apiKey,
           maxCalls: milspecSaleBudget,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useSale(result.fetched);
         console.log(`    Mil-Spec sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
@@ -288,109 +275,95 @@ export async function phase4DataFetch(
     const listingBudget = budget.cycleListingBudget();
     console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
 
-    // Smart budget: 50% coverage (spread across ALL rarities) + 50% profit-driven
-    // Coverage half: fetch skins with oldest/fewest CSFloat listings across every rarity
-    // Profit half: refresh inputs+outputs of top profitable trade-ups for price accuracy
     let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
     let coverageCalls = 0;
     if (listingBudget < 10) {
       knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
       wantedCalls = 0;
     } else {
-      // 30% profit-driven: Covert inputs + Extraordinary outputs
       knifeInputCalls = Math.floor(listingBudget * 0.20);
       outputCalls = Math.floor(listingBudget * 0.15);
-
-      // 65% coverage: spread across all rarities — worst coverage first.
-      // Each listing fetch returns ref prices as side effect, building output pricing.
       coverageCalls = listingBudget - knifeInputCalls - outputCalls;
-      // Weight by number of skins needing coverage (Mil-Spec has most gaps)
       classifiedInputCalls = Math.floor(coverageCalls * 0.20);
       const restrictedCalls = Math.floor(coverageCalls * 0.25);
-      const milspecCalls = Math.floor(coverageCalls * 0.30); // Most skins, worst coverage
+      const milspecCalls = Math.floor(coverageCalls * 0.30);
       const industrialCalls = coverageCalls - classifiedInputCalls - restrictedCalls - milspecCalls;
 
       wantedCalls = 0;
       console.log(`    Budget: ${knifeInputCalls} knife + ${outputCalls} output + ${classifiedInputCalls} classified + ${restrictedCalls} restricted + ${milspecCalls} milspec + ${industrialCalls} industrial = ${listingBudget} (50/50 profit/coverage)`);
 
-      // Store for use in fetch sections below
       (budget as any)._restrictedCalls = restrictedCalls;
       (budget as any)._milspecCalls = milspecCalls;
       (budget as any)._industrialCalls = industrialCalls;
     }
 
-    // Prioritized knife inputs (Covert gun skins)
-    setDaemonStatus(db, "fetching", "Phase 4b: Prioritized knife inputs");
+    await setDaemonStatus(pool, "fetching", "Phase 4b: Prioritized knife inputs");
     if (knifeInputCalls >= 5) {
       try {
-        const result = await syncPrioritizedKnifeInputs(db, {
+        const result = await syncPrioritizedKnifeInputs(pool, {
           apiKey,
           maxCalls: knifeInputCalls,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useListing(result.apiCalls);
         if (result.inserted > 0) freshness.markListingsChanged();
         console.log(`    Knife inputs: ${result.apiCalls} calls, ${result.inserted} listings, ${result.collectionsServed} collections`);
-        if (result.inserted > 0) emitEvent(db, "listings_fetched", `Knife inputs: +${result.inserted} listings from ${result.collectionsServed} collections`);
+        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Knife inputs: +${result.inserted} listings from ${result.collectionsServed} collections`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
         else console.error(`    Knife input fetch error: ${(err as Error).message}`);
       }
     }
 
-    // Classified inputs (for classified→covert trade-ups)
     if (!budget.isListingRateLimited() && classifiedInputCalls >= 3) {
-      setDaemonStatus(db, "fetching", "Phase 4b: Classified inputs");
+      await setDaemonStatus(pool, "fetching", "Phase 4b: Classified inputs");
       try {
-        const result = await syncSmartListingsForRarity(db, "Classified", {
+        const result = await syncSmartListingsForRarity(pool, "Classified", {
           apiKey,
           maxCalls: classifiedInputCalls,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useListing(result.apiCalls);
         if (result.inserted > 0) freshness.markListingsChanged();
         console.log(`    Classified inputs: ${result.apiCalls} calls, ${result.inserted} listings`);
-        if (result.inserted > 0) emitEvent(db, "listings_fetched", `Classified: +${result.inserted} listings`);
+        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Classified: +${result.inserted} listings`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
         else console.error(`    Classified input fetch error: ${(err as Error).message}`);
       }
     }
 
-    // Covert output listings (knife/glove + Covert gun skins — both need pricing)
     if (!budget.isListingRateLimited() && outputCalls >= 5) {
-      setDaemonStatus(db, "fetching", "Phase 4b: Output listings");
+      await setDaemonStatus(pool, "fetching", "Phase 4b: Output listings");
       try {
-        const result = await syncCovertOutputListings(db, {
+        const result = await syncCovertOutputListings(pool, {
           apiKey,
           maxCalls: outputCalls,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         budget.useListing(result.apiCalls);
         if (result.inserted > 0) freshness.markListingsChanged();
         console.log(`    Outputs: ${result.apiCalls} calls, ${result.inserted} listings`);
-        if (result.inserted > 0) emitEvent(db, "listings_fetched", `Outputs: +${result.inserted} knife/glove listings`);
+        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Outputs: +${result.inserted} knife/glove listings`);
       } catch (err) {
         if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
         else console.error(`    Output fetch error: ${(err as Error).message}`);
       }
     }
 
-    // Coverage: fetch Restricted, Mil-Spec, Industrial, Consumer Grade (builds sale history + ref prices)
     const restrictedCalls = (budget as any)._restrictedCalls ?? 0;
     const milspecCalls = (budget as any)._milspecCalls ?? 0;
     const industrialCalls = (budget as any)._industrialCalls ?? 0;
-    // Consumer Grade shares Industrial's budget (both are low-priority DMarket-primary tiers)
     const consumerCalls = Math.max(2, Math.floor(industrialCalls / 2));
 
     for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls - consumerCalls], ["Consumer Grade", consumerCalls]] as const) {
       if (!budget.isListingRateLimited() && calls >= 2) {
-        setDaemonStatus(db, "fetching", `Phase 4b: ${rarity} coverage`);
+        await setDaemonStatus(pool, "fetching", `Phase 4b: ${rarity} coverage`);
         try {
-          const result = await syncSmartListingsForRarity(db, rarity, {
+          const result = await syncSmartListingsForRarity(pool, rarity, {
             apiKey,
             maxCalls: calls,
-            onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
           });
           budget.useListing(result.apiCalls);
           if (result.inserted > 0) freshness.markListingsChanged();
@@ -407,38 +380,36 @@ export async function phase4DataFetch(
   // 4d: DMarket listings (independent API — 2 RPS, doesn't use CSFloat budget)
   if (isDMarketConfigured()) {
     console.log(`  [${timestamp()}] 4d: DMarket listing fetch`);
-    setDaemonStatus(db, "fetching", "Phase 4d: DMarket listings");
+    await setDaemonStatus(pool, "fetching", "Phase 4d: DMarket listings");
     let dmCoverageInserted = 0;
 
     try {
-      // Coverage — Covert + Classified skins with fewest DMarket listings
-      setDaemonStatus(db, "fetching", "Phase 4d: DMarket coverage");
-      const covertResult = await syncDMarketListingsForRarity(db, "Covert", {
+      await setDaemonStatus(pool, "fetching", "Phase 4d: DMarket coverage");
+      const covertResult = await syncDMarketListingsForRarity(pool, "Covert", {
         maxSkinsPerCall: 8,
         maxListingsPerSkin: 50,
-        onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket: ${msg}`),
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
       });
       dmCoverageInserted += covertResult.listingsInserted;
 
-      const classifiedResult = await syncDMarketListingsForRarity(db, "Classified", {
+      const classifiedResult = await syncDMarketListingsForRarity(pool, "Classified", {
         maxSkinsPerCall: 8,
         maxListingsPerSkin: 50,
-        onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket: ${msg}`),
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
       });
       dmCoverageInserted += classifiedResult.listingsInserted;
 
-      // Lower-rarity coverage — DMarket is the PRIMARY source for these
-      const restrictedResult = await syncDMarketListingsForRarity(db, "Restricted", {
+      const restrictedResult = await syncDMarketListingsForRarity(pool, "Restricted", {
         maxSkinsPerCall: 12,
         maxListingsPerSkin: 30,
-        onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket Restricted: ${msg}`),
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket Restricted: ${msg}`),
       });
       dmCoverageInserted += restrictedResult.listingsInserted;
 
-      const milspecResult = await syncDMarketListingsForRarity(db, "Mil-Spec", {
+      const milspecResult = await syncDMarketListingsForRarity(pool, "Mil-Spec", {
         maxSkinsPerCall: 12,
         maxListingsPerSkin: 30,
-        onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket Mil-Spec: ${msg}`),
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket Mil-Spec: ${msg}`),
       });
       dmCoverageInserted += milspecResult.listingsInserted;
 
@@ -447,7 +418,7 @@ export async function phase4DataFetch(
       console.log(`    DMarket coverage: ${totalSkinsChecked} skins, ${dmCoverageInserted} listings (R:${restrictedResult.listingsInserted} MS:${milspecResult.listingsInserted})`);
 
       if (dmCoverageInserted > 0) {
-        emitEvent(db, "listings_fetched", `DMarket: +${dmCoverageInserted} listings`);
+        await emitEvent(pool, "listings_fetched", `DMarket: +${dmCoverageInserted} listings`);
       }
     } catch (err) {
       console.error(`    DMarket fetch error: ${(err as Error).message}`);
@@ -458,7 +429,7 @@ export async function phase4DataFetch(
 }
 
 export async function phase4p5VerifyInputs(
-  db: ReturnType<typeof initDb>,
+  pool: pg.Pool,
   freshness: FreshnessTracker,
   apiKey: string,
   probe: ApiProbeResult,
@@ -470,32 +441,32 @@ export async function phase4p5VerifyInputs(
     return;
   }
 
-  const profitableInputCount = (db.prepare(`
+  const { rows: [countRow] } = await pool.query(`
     SELECT COUNT(DISTINCT ti.listing_id) as cnt
     FROM trade_up_inputs ti
     JOIN trade_ups tu ON tu.id = ti.trade_up_id
     WHERE tu.is_theoretical = 0 AND tu.profit_cents > 0
-  `).get() as { cnt: number }).cnt;
+  `);
+  const profitableInputCount = Number(countRow.cnt);
 
   if (profitableInputCount === 0) return;
 
-  // Cap verification to 10% of cycle's individual budget (reserve rest for staleness)
   const maxVerify = Math.min(profitableInputCount + 10, 100, Math.floor(budget.cycleIndividualBudget() * 0.10));
   if (maxVerify <= 0) return;
 
   console.log(`\n[${timestamp()}] Phase 4.5: Verify profitable inputs (${profitableInputCount} listings, checking ${maxVerify})`);
-  setDaemonStatus(db, "fetching", `Phase 4.5: Verifying ${maxVerify} profitable inputs`);
+  await setDaemonStatus(pool, "fetching", `Phase 4.5: Verifying ${maxVerify} profitable inputs`);
 
   try {
-    const verifyResult = await checkListingStaleness(db, {
+    const verifyResult = await checkListingStaleness(pool, {
       apiKey,
       maxChecks: maxVerify,
-      onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+      onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
     });
     console.log(`  Verified: ${verifyResult.checked} checked, ${verifyResult.stillListed} active, ${verifyResult.sold} sold, ${verifyResult.delisted} removed`);
     if (verifyResult.sold > 0 || verifyResult.delisted > 0) {
       freshness.markListingsChanged();
-      emitEvent(db, "staleness_check", `Verified ${verifyResult.checked} inputs: ${verifyResult.sold} sold, ${verifyResult.delisted} removed`);
+      await emitEvent(pool, "staleness_check", `Verified ${verifyResult.checked} inputs: ${verifyResult.sold} sold, ${verifyResult.delisted} removed`);
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes("429")) {

@@ -1,5 +1,5 @@
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { getSyncMeta, setSyncMeta } from "../db.js";
 import { syncListingsForSkin } from "./csfloat.js";
 
@@ -9,7 +9,7 @@ import { syncListingsForSkin } from "./csfloat.js";
  * trade-up is real. Deduplicates by skin, respects 2-hour cache per skin.
  */
 export async function syncWantedListings(
-  db: Database.Database,
+  pool: pg.Pool,
   wanted: { skin_name: string; target_float: number; max_float: number; priority_score: number }[],
   options: {
     apiKey: string;
@@ -18,7 +18,7 @@ export async function syncWantedListings(
   }
 ): Promise<{ apiCalls: number; inserted: number; skinsFetched: number }> {
   const maxCalls = options.maxCalls ?? 50;
-  const rawFetchTimes = getSyncMeta(db, "wanted_fetch_times");
+  const rawFetchTimes = await getSyncMeta(pool, "wanted_fetch_times");
   const fetchTimes: Record<string, number> = rawFetchTimes ? JSON.parse(rawFetchTimes) : {};
   const now = Date.now();
   const SKIP_WINDOW = 30 * 60 * 1000; // 30 min — matches listing pool reset
@@ -46,9 +46,11 @@ export async function syncWantedListings(
     if (fetchTimes[key] && (now - fetchTimes[key]) < SKIP_WINDOW) continue;
     const skinName = info.skin_name;
 
-    const skin = db.prepare(
-      "SELECT id, name, min_float, max_float FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1"
-    ).get(skinName) as { id: string; name: string; min_float: number; max_float: number } | undefined;
+    const { rows } = await pool.query(
+      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+      [skinName]
+    );
+    const skin = rows[0] as { id: string; name: string; min_float: number; max_float: number } | undefined;
     if (!skin) continue;
 
     // Determine which conditions to fetch based on target float
@@ -68,7 +70,7 @@ export async function syncWantedListings(
     options.onProgress?.(`Wanted: ${skinName} [${targetCondition}${filterStr}] (score ${info.priority_score.toFixed(0)})`);
 
     try {
-      const result = await syncListingsForSkin(db, skin, {
+      const result = await syncListingsForSkin(pool, skin, {
         apiKey: options.apiKey,
         conditions,
         maxFloat: useFloatFilter ? info.max_float : undefined,
@@ -87,6 +89,6 @@ export async function syncWantedListings(
     }
   }
 
-  try { setSyncMeta(db, "wanted_fetch_times", JSON.stringify(fetchTimes)); } catch { /* metadata persistence is best-effort */ }
+  try { await setSyncMeta(pool, "wanted_fetch_times", JSON.stringify(fetchTimes)); } catch { /* metadata persistence is best-effort */ }
   return { apiCalls: totalApiCalls, inserted: totalInserted, skinsFetched };
 }
