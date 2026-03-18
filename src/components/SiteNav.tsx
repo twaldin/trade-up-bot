@@ -49,7 +49,7 @@ export function SiteNav() {
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity">
+        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity min-w-[200px]">
           <img src="/favicon.svg" alt="" className="w-5 h-5" />
           TradeUpBot
         </Link>
@@ -64,7 +64,8 @@ export function SiteNav() {
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-3">
+        {/* Fixed-width right section prevents center nav from shifting when user loads */}
+        <div className="flex items-center gap-3 min-w-[200px] justify-end">
           {user ? (
             <>
               <Link

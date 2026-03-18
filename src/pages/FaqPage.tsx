@@ -59,6 +59,9 @@ export function FaqPage() {
                 For Knife/Glove trade-ups, you exchange 5 Covert-rarity skins for 1 Knife or Glove
                 from the matching case collections.
               </p>
+              <BlogLink slug="how-cs2-trade-ups-work" title="How Trade-Up Contracts Work" />
+              <br />
+              <BlogLink slug="cs2-trade-up-float-values-guide" title="Float Values Guide" />
             </FaqItem>
 
             <FaqItem question="How does TradeUpBot find profitable trade-ups?">
@@ -149,6 +152,7 @@ export function FaqPage() {
                 Each marketplace has different buyer fees which are factored into the total
                 input cost calculations.
               </p>
+              <BlogLink slug="cs2-trade-up-marketplace-fees" title="Marketplace Fees Breakdown" />
             </FaqItem>
 
             <FaqItem question="Why are some trade-ups marked as stale or partial?">
@@ -176,6 +180,7 @@ export function FaqPage() {
                 the claim system (lock listings for 30 minutes), up to 5 active claims,
                 collection browser, and price analytics.
               </p>
+              <BlogLink slug="how-to-use-tradeupbot" title="How to Use TradeUpBot" />
             </FaqItem>
 
             <FaqItem question="Can I lose money on a trade-up?">

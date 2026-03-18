@@ -26,7 +26,7 @@ import {
   checkListingStaleness, checkDMarketStaleness,
 } from "../sync.js";
 import {
-  mergeTradeUps, updateCollectionScores, buildPriceCache,
+  mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
   type FinishData,
@@ -486,8 +486,9 @@ export async function main() {
       console.log(`    Super-batch ${superBatchCount} done (${(batchMs / 1000).toFixed(1)}s)`);
     }
 
-    // Post-engine: update collection scores once
+    // Post-engine: update collection scores + global trim
     updateCollectionScores(db);
+    trimGlobalExcess(db, 1_000_000); // 1M cap across all types
     freshness.markCalcDone();
 
     const engineMs = Date.now() - cycleStarted - (Date.now() - (cycleStarted + engineBudgetMs - (engineEnd - Date.now())));
@@ -532,6 +533,10 @@ export async function main() {
       const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
       const collections = db.prepare("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC").all() as { name: string; count: number }[];
       await cacheSet("filter_opts", { skins: skinMap, collections }, 600);
+
+      // Invalidate stale trade-up list cache so API shows fresh counts
+      const { cacheInvalidatePrefix } = await import("../redis.js");
+      await cacheInvalidatePrefix("tu:");
 
       console.log(`  Redis cache pre-populated`);
     } catch (e) {
