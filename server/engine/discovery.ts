@@ -732,3 +732,237 @@ export function randomExplore(
 
   return { found, explored, improved };
 }
+
+/**
+ * Time-bounded random exploration for worker processes.
+ * Read-only: returns TradeUp[] instead of writing to DB.
+ * No swap optimization (requires writable DB).
+ * Runs until deadlineMs timestamp.
+ */
+export function exploreWithBudget(
+  db: Database.Database,
+  deadlineMs: number,
+  existingSignatures: Set<string>,
+  options: {
+    inputRarity?: string;
+    stattrak?: boolean;
+    onProgress?: (msg: string) => void;
+  } = {}
+): TradeUp[] {
+  const inputRarity = options.inputRarity ?? "Classified";
+  const stattrak = options.stattrak ?? false;
+  const outputRarity = getNextRarity(inputRarity);
+  if (!outputRarity) return [];
+  buildPriceCache(db);
+
+  const allListings = getListingsForRarity(db, inputRarity, undefined, stattrak);
+  if (allListings.length === 0) return [];
+
+  const allAdjusted = addAdjustedFloat(allListings);
+  const byCollection = new Map<string, ListingWithCollection[]>();
+  const byColAdj = new Map<string, AdjustedListing[]>();
+  for (const l of allAdjusted) {
+    const list = byCollection.get(l.collection_id) ?? [];
+    list.push(l);
+    byCollection.set(l.collection_id, list);
+    const adjList = byColAdj.get(l.collection_id) ?? [];
+    adjList.push(l);
+    byColAdj.set(l.collection_id, adjList);
+  }
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+
+  const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
+  const allOutcomes = getOutcomesForCollections(db, allCollectionIds, outputRarity, stattrak);
+  const collectionsWithOutcomes = new Set(allOutcomes.map(o => o.collection_id));
+  const eligibleCollections = [...collectionsWithOutcomes].filter(id => (byCollection.get(id)?.length ?? 0) >= 1);
+  if (eligibleCollections.length === 0) return [];
+
+  const typeMap: Record<string, string> = {
+    "Classified": "classified_covert",
+    "Restricted": "restricted_classified",
+    "Mil-Spec": "milspec_restricted",
+    "Industrial Grade": "industrial_milspec",
+    "Consumer Grade": "consumer_industrial",
+  };
+  const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
+
+  const profitWeights = new Map<string, number>();
+  const profitRows = db.prepare(`
+    SELECT tui.collection_name, COUNT(*) as cnt
+    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
+    WHERE t.type = ? AND t.profit_cents > 0
+    GROUP BY tui.collection_name
+  `).all(tradeUpType) as { collection_name: string; cnt: number }[];
+  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  const weightedPool: string[] = [];
+  for (const col of eligibleCollections) {
+    const w = Math.max(1, profitWeights.get(col) ?? 0);
+    for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
+  }
+
+  const outcomesByCol = new Map<string, DbSkinOutcome[]>();
+  for (const o of allOutcomes) {
+    const list = outcomesByCol.get(o.collection_id) ?? [];
+    list.push(o);
+    outcomesByCol.set(o.collection_id, list);
+  }
+  const outcomesForCols = (...ids: string[]) => {
+    const result: DbSkinOutcome[] = [];
+    for (const id of ids) {
+      const col = outcomesByCol.get(id);
+      if (col) result.push(...col);
+    }
+    return result;
+  };
+
+  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+  const results: TradeUp[] = [];
+  let explored = 0;
+
+  while (Date.now() < deadlineMs - 1000) {
+    explored++;
+    if (explored % 1000 === 0) {
+      const remaining = Math.round((deadlineMs - Date.now()) / 1000);
+      options.onProgress?.(`${inputRarity} explore: ${explored} iters, ${results.length} found (${remaining}s left)`);
+    }
+
+    try {
+      const strategy = Math.floor(Math.random() * 7);
+      let inputs: ListingWithCollection[] | null = null;
+
+      switch (strategy) {
+        case 0: {
+          // Random pair with random split + offset
+          const colA = pick(weightedPool);
+          const colB = pick(eligibleCollections.filter(c => c !== colA));
+          const listA = byCollection.get(colA) ?? [];
+          const listB = byCollection.get(colB) ?? [];
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          if (listA.length < countA || listB.length < countB) break;
+          const maxOffA = Math.min(listA.length - countA, 20);
+          const maxOffB = Math.min(listB.length - countB, 20);
+          const offA = Math.floor(Math.random() * (maxOffA + 1));
+          const offB = Math.floor(Math.random() * (maxOffB + 1));
+          inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
+          break;
+        }
+
+        case 1: {
+          // Single collection with random offset
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 10) break;
+          const maxOff = Math.min(list.length - 10, 30);
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = list.slice(off, off + 10);
+          break;
+        }
+
+        case 2: {
+          // Condition-pure from random collection
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const cond = pick(conditions);
+          const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
+          if (condListings.length < 10) break;
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 10));
+          inputs = condListings.slice(off, off + 10);
+          break;
+        }
+
+        case 3: {
+          // Triple collection pool
+          const cols = [pick(weightedPool)];
+          while (cols.length < 3) {
+            const c = pick(weightedPool);
+            if (!cols.includes(c)) cols.push(c);
+            if (cols.length >= eligibleCollections.length) break;
+          }
+          if (cols.length < 2) break;
+          const pooled = cols
+            .flatMap(c => {
+              const list = byCollection.get(c) ?? [];
+              const off = Math.floor(Math.random() * Math.min(list.length, 10));
+              return list.slice(off, off + 8);
+            })
+            .sort((a, b) => a.price_cents - b.price_cents);
+          if (pooled.length < 10) break;
+          inputs = pooled.slice(0, 10);
+          break;
+        }
+
+        case 4: {
+          // Global cheapest pool
+          const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
+          const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
+          const maxOff = Math.min(sorted.length - 10, 100);
+          if (maxOff < 0) break;
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = sorted.slice(off, off + 10);
+          break;
+        }
+
+        case 5: {
+          // Float-targeted random pair
+          const colA = pick(weightedPool);
+          const colB = pick(eligibleCollections.filter(c => c !== colA));
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          const target = Math.random() * 0.5;
+          const quotas = new Map([[colA, countA], [colB, countB]]);
+          const selected = selectForFloatTarget(byColAdj, quotas, target);
+          if (selected && selected.length === 10) inputs = selected;
+          break;
+        }
+
+        case 6: {
+          // Cross-condition random
+          const colA = pick(weightedPool);
+          const colB = pick(eligibleCollections.filter(c => c !== colA));
+          const listA = byCollection.get(colA) ?? [];
+          const listB = byCollection.get(colB) ?? [];
+          const condPairs: [string, string][] = [
+            ["Factory New", "Field-Tested"],
+            ["Minimal Wear", "Field-Tested"],
+            ["Factory New", "Minimal Wear"],
+            ["Field-Tested", "Well-Worn"],
+          ];
+          const [condA, condB] = pick(condPairs);
+          const poolA = listA.filter(l => floatToCondition(l.float_value) === condA);
+          const poolB = listB.filter(l => floatToCondition(l.float_value) === condB);
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          if (poolA.length >= countA && poolB.length >= countB) {
+            const offA = Math.floor(Math.random() * Math.min(poolA.length - countA + 1, 10));
+            const offB = Math.floor(Math.random() * Math.min(poolB.length - countB + 1, 10));
+            inputs = [...poolA.slice(offA, offA + countA), ...poolB.slice(offB, offB + countB)];
+          }
+          break;
+        }
+      }
+
+      if (!inputs || inputs.length !== 10) continue;
+
+      const sig = inputs.map(i => i.id).sort().join(",");
+      if (existingSignatures.has(sig)) continue;
+
+      const usedCols = [...new Set(inputs.map(l => l.collection_id))];
+      const outcomes = outcomesForCols(...usedCols);
+      const result = evaluateTradeUp(db, inputs, outcomes);
+      if (!result) continue;
+      if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
+
+      existingSignatures.add(sig);
+      results.push(result);
+    } catch {
+      // Ignore individual iteration errors
+    }
+  }
+
+  options.onProgress?.(`${inputRarity} explore done: ${explored} iters, ${results.length} found`);
+  return results;
+}

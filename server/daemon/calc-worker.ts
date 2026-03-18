@@ -5,23 +5,32 @@
  * Opens its own read-only DB connection — discovery only reads.
  * Receives task config via env var, sends results via IPC or temp file.
  *
+ * Time-bounded: runs structured discovery first (fast with sig-skipping),
+ * then switches to deep random exploration until timeLimitMs expires.
+ *
  * Using child_process.fork() instead of worker_threads because tsx's
  * ESM loader hooks aren't inherited by worker threads in Node.js v24.
  */
 import Database from "better-sqlite3";
-import { writeFileSync, createWriteStream } from "fs";
+import { createWriteStream } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { findProfitableKnifeTradeUps, findProfitableTradeUps } from "../engine.js";
+import {
+  findProfitableKnifeTradeUps,
+  findProfitableTradeUps,
+  exploreWithBudget,
+  exploreKnifeWithBudget,
+} from "../engine.js";
 
 interface WorkerInput {
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer";
   dbPath: string;
-  extraTransitionPoints?: number[];
+  timeLimitMs?: number;
 }
 
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
-const { task, dbPath, extraTransitionPoints } = input;
+const { task, dbPath, timeLimitMs } = input;
+const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
 
 // Read-only connection — discovery functions only read from DB
 const db = new Database(dbPath, { readonly: true });
@@ -30,25 +39,23 @@ const db = new Database(dbPath, { readonly: true });
 // For results >5000 trade-ups, write to a temp file and send the path instead.
 const LARGE_RESULT_THRESHOLD = 5000;
 
-function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: string }) {
+function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: string; stats?: unknown }) {
   db.close();
 
   if (msg.ok && msg.tradeUps && msg.tradeUps.length > LARGE_RESULT_THRESHOLD) {
     const tmpFile = join(tmpdir(), `calc-worker-${task}-${process.pid}.json`);
 
     // Stream-write as newline-delimited JSON (NDJSON) to avoid V8 string limit.
-    // JSON.stringify of 80K+ trade-ups with outcomes can exceed 512MB.
-    // Parent reads line-by-line to avoid the same limit.
     const ws = createWriteStream(tmpFile);
     for (const tu of msg.tradeUps) {
       ws.write(JSON.stringify(tu) + "\n");
     }
     ws.end(() => {
-      process.send!({ ok: true, resultFile: tmpFile }, () => {
+      process.send!({ ok: true, resultFile: tmpFile, stats: msg.stats }, () => {
         process.exit(0);
       });
     });
-    return; // Don't fall through — ws.end callback handles exit
+    return;
   }
 
   process.send!(msg, () => {
@@ -66,6 +73,15 @@ const typeMap: Record<string, string> = {
   consumer: "consumer_industrial",
 };
 
+// Rarity map for gun tiers
+const rarityMap: Record<string, string> = {
+  classified: "Classified",
+  restricted: "Restricted",
+  milspec: "Mil-Spec",
+  industrial: "Industrial Grade",
+  consumer: "Consumer Grade",
+};
+
 // Load existing listing signatures so discovery skips combos already in DB
 const tradeUpType = typeMap[task] ?? "classified_covert";
 const existingSigs = new Set<string>();
@@ -81,12 +97,13 @@ for (const row of sigRows) {
 console.log(`  Loaded ${existingSigs.size} existing signatures for ${task}`);
 
 try {
+  // Phase 1: Structured discovery
+  const structuredStart = Date.now();
   let tradeUps;
 
   switch (task) {
     case "knife":
       tradeUps = findProfitableKnifeTradeUps(db, {
-        extraTransitionPoints,
         existingSignatures: existingSigs,
       });
       break;
@@ -112,6 +129,42 @@ try {
       break;
   }
 
+  const structuredMs = Date.now() - structuredStart;
+  const structuredCount = tradeUps?.length ?? 0;
+
+  // Add structured results to sig set so exploration doesn't rediscover them
+  for (const tu of tradeUps ?? []) {
+    existingSigs.add(tu.inputs.map(i => i.listing_id).sort().join(","));
+  }
+
+  // Phase 2: Deep exploration with remaining time
+  let exploreCount = 0;
+  if (deadline && Date.now() < deadline - 5000) {
+    const exploreStart = Date.now();
+
+    let explored: typeof tradeUps;
+    if (task === "knife") {
+      explored = exploreKnifeWithBudget(db, deadline, existingSigs, {
+        onProgress: (msg) => console.log(`  ${msg}`),
+      });
+    } else {
+      const inputRarity = rarityMap[task] ?? "Classified";
+      explored = exploreWithBudget(db, deadline, existingSigs, {
+        inputRarity,
+        onProgress: (msg) => console.log(`  ${msg}`),
+      });
+    }
+
+    exploreCount = explored.length;
+    const exploreMs = Date.now() - exploreStart;
+    console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s) + explored ${exploreCount} (${(exploreMs / 1000).toFixed(1)}s)`);
+
+    // Combine results
+    tradeUps = [...(tradeUps ?? []), ...explored];
+  } else {
+    console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s), no time for exploration`);
+  }
+
   // Cap results to avoid OOM on NDJSON write/read (80K+ knife trade-ups with
   // 60+ outcomes each = several GB). Keep top 30K sorted by profit.
   if (tradeUps && tradeUps.length > 30000) {
@@ -119,7 +172,11 @@ try {
     tradeUps = tradeUps.slice(0, 30000);
   }
 
-  sendAndExit({ ok: true, tradeUps });
+  sendAndExit({
+    ok: true,
+    tradeUps,
+    stats: { structuredCount, exploreCount, structuredMs },
+  });
 } catch (err) {
   sendAndExit({ ok: false, error: (err as Error).message });
 }

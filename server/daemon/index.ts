@@ -1,41 +1,47 @@
 /**
- * Trade-Up Daemon — multi-type loop with parallel discovery.
+ * Trade-Up Daemon — time-bounded discovery engine.
  *
  * Phase 1: Housekeeping (purge stale, prune observations)
  * Phase 3: API Probe (rate limit detection)
  * Phase 4: Data Fetch (sale history, listings)
  * Phase 4.5: Verify profitable inputs (individual lookup pool)
- * Phase 5: Knife Calc (discovery)
- * Phase 5b: Classified Calc (discovery)
- * Phase 5c: Staircase (50 Classified → 5 Coverts → 1 Knife/Glove)
- * Phase 6: Cooldown (staleness checks)
+ * Phase 5: TIME-BOUNDED ENGINE — repeating super-batches of:
+ *   (a) 2 workers (structured discovery → deep exploration, 2-min time limit)
+ *   (b) Merge results
+ *   (c) Revival (200 gun + 200 knife)
+ *   (d) Staleness checks (75 listings, paced by API budget)
  */
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fork, type ChildProcess } from "node:child_process";
-import { initDb, DB_PATH, setSyncMeta } from "../db.js";
+import { fork } from "node:child_process";
+import { initDb, DB_PATH, emitEvent } from "../db.js";
 import { takeSnapshot, purgeOldSnapshots } from "../snapshot.js";
 import { initRedis, setCycleVersion, cacheSet } from "../redis.js";
 import type { TradeUp } from "../../shared/types.js";
 
-import { startSkinportListener, getSkinportStats, isDMarketConfigured } from "../sync.js";
-import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS, MIN_COOLDOWN_MS, MAX_COOLDOWN_MS, IDLE_COOLDOWN_MS } from "./state.js";
+import {
+  startSkinportListener, getSkinportStats, isDMarketConfigured,
+  checkListingStaleness, checkDMarketStaleness,
+} from "../sync.js";
+import {
+  mergeTradeUps, updateCollectionScores, buildPriceCache,
+  reviveStaleGunTradeUps, reviveStaleTradeUps,
+  getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
+  type FinishData,
+} from "../engine.js";
+import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
 import {
   timestamp, setDaemonStatus, setDaemonMeta, updateExplorationStats, printCoverageReport,
   ensureStatsTable, saveCycleStats, printPerformanceComparison,
   type CycleStats,
 } from "./utils.js";
-import { cooldownLoop } from "./loops.js";
 import {
   phase1Housekeeping,
   phase3ApiProbe,
   phase4DataFetch,
   phase4p5VerifyInputs,
-  phase5KnifeCalc,
-  phase5ClassifiedCalc,
-  phase5GenericCalc,
 } from "./phases.js";
 
 // Load .env
@@ -48,15 +54,38 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+/** Worker time limit in ms. Workers do structured discovery + deep exploration within this budget. */
+const WORKER_TIME_LIMIT = 120_000; // 2 min
+
+/** Kill timeout buffer — SIGTERM workers that exceed their time limit by this margin. */
+const WORKER_KILL_BUFFER = 30_000; // 30s grace period
+
+/** Worker round definitions: pairs of tiers to run in parallel. */
+const WORKER_ROUNDS: [string, string][] = [
+  ["knife", "classified"],
+  ["restricted", "milspec"],
+  ["industrial", "consumer"],
+];
+
+/** Trade-up type for each worker task. */
+const TASK_TYPE_MAP: Record<string, string> = {
+  knife: "covert_knife",
+  classified: "classified_covert",
+  restricted: "restricted_classified",
+  milspec: "milspec_restricted",
+  industrial: "industrial_milspec",
+  consumer: "consumer_industrial",
+};
+
 /**
  * Spawn a child process for CPU-intensive trade-up discovery.
- * Uses fork() instead of worker_threads because tsx's ESM loader
- * hooks aren't inherited by worker threads in Node.js v24.
+ * Time-bounded: worker runs structured discovery then deep exploration
+ * until timeLimitMs expires. Kill timeout prevents hangs.
  */
 function runCalcWorker(
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
   dbPath: string,
-  extraTransitionPoints?: number[],
+  timeLimitMs?: number,
 ): Promise<TradeUp[]> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -76,14 +105,32 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, dbPath, extraTransitionPoints }),
+        CALC_WORKER_DATA: JSON.stringify({ task, dbPath, timeLimitMs }),
       },
     });
 
     let settled = false;
-    child.on("message", (msg: { ok: boolean; tradeUps?: TradeUp[]; resultFile?: string; error?: string }) => {
+
+    // Kill timeout: terminate worker if it exceeds time limit + buffer
+    let killTimeout: NodeJS.Timeout | undefined;
+    if (timeLimitMs) {
+      killTimeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          child.kill("SIGTERM");
+          reject(new Error(`Worker ${task} timed out after ${timeLimitMs + WORKER_KILL_BUFFER}ms`));
+        }
+      }, timeLimitMs + WORKER_KILL_BUFFER);
+    }
+
+    const cleanup = () => {
+      if (killTimeout) clearTimeout(killTimeout);
+    };
+
+    child.on("message", (msg: { ok: boolean; tradeUps?: TradeUp[]; resultFile?: string; error?: string; stats?: unknown }) => {
       if (settled) return;
       settled = true;
+      cleanup();
       if (msg.ok) {
         if (msg.resultFile) {
           // Large result set written as NDJSON (one JSON object per line).
@@ -97,7 +144,7 @@ function runCalcWorker(
               }
             });
             rl.on("close", () => {
-              try { fs.unlinkSync(msg.resultFile!); } catch { /* expected — temp file already cleaned up */ }
+              try { fs.unlinkSync(msg.resultFile!); } catch { /* already cleaned up */ }
               resolve(data);
             });
           });
@@ -109,11 +156,12 @@ function runCalcWorker(
       }
     });
     child.on("error", (err) => {
-      if (!settled) { settled = true; reject(err); }
+      if (!settled) { settled = true; cleanup(); reject(err); }
     });
     child.on("exit", (code) => {
       if (!settled) {
         settled = true;
+        cleanup();
         if (code !== 0) reject(new Error(`Worker ${task} exited with code ${code}`));
         else reject(new Error(`Worker ${task} exited without sending results`));
       }
@@ -139,11 +187,12 @@ export async function main() {
   ensureStatsTable(db);
   setDaemonMeta(0, daemonStartedAt);
 
-  console.log(`[${timestamp()}] Trade-Up Daemon started`);
-  console.log(`  Phases: Housekeeping → Probe → Fetch → Parallel Calc (knife+classified workers) → Staircase → Cooldown`);
+  console.log(`[${timestamp()}] Trade-Up Daemon started (time-bounded engine)`);
+  console.log(`  Phases: Housekeeping → Probe → Fetch → Time-Bounded Engine (structured + deep exploration)`);
   console.log(`  Rate limits (3 separate pools):`);
   console.log(`    Listing search: 200/~30min | Sale history: 500/~12h | Individual: 50K/~12h`);
   console.log(`  Data sources: CSFloat API${isDMarketConfigured() ? " + DMarket API" : ""} + Skinport WebSocket`);
+  console.log(`  Worker time limit: ${WORKER_TIME_LIMIT / 1000}s per worker, 2 workers per round`);
 
   // Start Skinport WebSocket listener (passive listing accumulation — no auth, no rate limits)
   const stopSkinport = await startSkinportListener(db);
@@ -209,116 +258,193 @@ export async function main() {
       }
     }
 
-    // Phase 5: Parallel discovery via worker threads
-    // Knife, Classified, and ST discovery run concurrently in separate threads.
-    // Each worker opens a read-only DB connection and builds its own price cache.
-    // Saving happens sequentially on the main thread after.
-    const shouldRunKnife = freshness.needsRecalc() || cycleCount === 1;
+    // ─── Phase 5: Time-Bounded Discovery Engine ───────────────────────
+    // Replaces old Phase 5 (one-shot workers) + Phase 6 (cooldown).
+    // Workers do structured discovery (instant via sig-skip) then deep
+    // exploration until their time limit. Between worker rounds: merge,
+    // revival, staleness checks. Repeats until cycle time budget exhausted.
+    const engineBudgetMs = Math.max(TARGET_CYCLE_MS - (Date.now() - cycleStarted), 60_000);
+    const engineEnd = Date.now() + engineBudgetMs;
 
-    let knifeDiscovery: TradeUp[] | undefined;
-    let classifiedDiscovery: TradeUp[] | undefined;
-    let restrictedDiscovery: TradeUp[] | undefined;
-    let milspecDiscovery: TradeUp[] | undefined;
-    let industrialDiscovery: TradeUp[] | undefined;
-    let consumerDiscovery: TradeUp[] | undefined;
+    console.log(`\n[${timestamp()}] Phase 5: Time-Bounded Engine (${(engineBudgetMs / 60000).toFixed(1)} min budget)`);
+    setDaemonStatus(db, "calculating", "Phase 5: Time-Bounded Engine");
 
+    // Build price cache + knife finish cache for main-thread merge/revival
+    buildPriceCache(db, true);
+    const revivalKnifeCache = new Map<string, FinishData[]>();
     {
-      type WorkerTask = { name: string; promise: Promise<TradeUp[]> };
-      // Batch 1: high-priority (knife + classified) — 2 workers max to keep API responsive
-      const batch1: WorkerTask[] = [];
-      if (shouldRunKnife) batch1.push({ name: "knife", promise: runCalcWorker("knife", DB_PATH) });
-      batch1.push({ name: "classified", promise: runCalcWorker("classified", DB_PATH) });
-
-      console.log(`\n[${timestamp()}] Batch 1: ${batch1.map(t => t.name).join(" + ")} (parallel)`);
-      setDaemonStatus(db, "calculating", `Phase 5: ${batch1.map(t => t.name).join(" + ")}`);
-
-      const results1 = await Promise.allSettled(batch1.map(t => t.promise));
-      for (let i = 0; i < results1.length; i++) {
-        const r = results1[i];
-        if (r.status === "fulfilled") {
-          if (batch1[i].name === "knife") knifeDiscovery = r.value;
-          else if (batch1[i].name === "classified") classifiedDiscovery = r.value;
-          console.log(`  Worker ${batch1[i].name}: ${r.value.length} trade-ups`);
-        } else {
-          console.error(`  Worker ${batch1[i].name} failed: ${r.reason?.message}`);
+      const itemTypes = new Set<string>();
+      for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
+        for (const kt of caseInfo.knifeTypes) itemTypes.add(kt);
+        if (caseInfo.gloveGen) {
+          for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) itemTypes.add(gt);
         }
       }
-
-      // Batch 2: lower-priority (restricted + milspec + industrial) — 2 at a time
-      const batch2: WorkerTask[] = [
-        { name: "restricted", promise: runCalcWorker("restricted", DB_PATH) },
-        { name: "milspec", promise: runCalcWorker("milspec", DB_PATH) },
-      ];
-      console.log(`  Batch 2: ${batch2.map(t => t.name).join(" + ")}`);
-      setDaemonStatus(db, "calculating", `Phase 5: ${batch2.map(t => t.name).join(" + ")}`);
-
-      const results2 = await Promise.allSettled(batch2.map(t => t.promise));
-      for (let i = 0; i < results2.length; i++) {
-        const r = results2[i];
-        if (r.status === "fulfilled") {
-          if (batch2[i].name === "restricted") restrictedDiscovery = r.value;
-          else if (batch2[i].name === "milspec") milspecDiscovery = r.value;
-          console.log(`  Worker ${batch2[i].name}: ${r.value.length} trade-ups`);
-        } else {
-          console.error(`  Worker ${batch2[i].name} failed: ${r.reason?.message}`);
-        }
+      for (const it of itemTypes) {
+        const finishes = getKnifeFinishesWithPrices(db, it);
+        if (finishes.length > 0) revivalKnifeCache.set(it, finishes);
       }
-
-      // Batch 3: industrial + consumer (parallel)
-      console.log(`  Batch 3: industrial + consumer`);
-      setDaemonStatus(db, "calculating", "Phase 5: industrial + consumer");
-      const batch3 = [
-        { name: "industrial", promise: runCalcWorker("industrial", DB_PATH) },
-        { name: "consumer", promise: runCalcWorker("consumer", DB_PATH) },
-      ];
-      const batch3Results = await Promise.allSettled(batch3.map(w => w.promise));
-      for (let i = 0; i < batch3.length; i++) {
-        const r = batch3Results[i];
-        if (r.status === "fulfilled") {
-          console.log(`  Worker ${batch3[i].name}: ${r.value.length} trade-ups`);
-          if (batch3[i].name === "industrial") industrialDiscovery = r.value;
-          if (batch3[i].name === "consumer") consumerDiscovery = r.value;
-        } else {
-          console.error(`  Worker ${batch3[i].name} failed: ${r.reason?.message}`);
-        }
-      }
-
     }
 
-    // Phase 5: Knife (saving on main thread)
-    const knifeCalcResult = phase5KnifeCalc(db, freshness, cycleCount === 1, knifeDiscovery);
+    // Engine stats
+    let superBatchCount = 0;
+    let totalKnifeResults = 0;
+    let totalKnifeProfitable = 0;
+    let totalClassifiedResults = 0;
+    let totalClassifiedProfitable = 0;
+    let totalStalenessChecked = 0;
+    let totalStalenessSold = 0;
+    let totalStalenessRemoved = 0;
+    let totalRevived = 0;
+    let totalDmarketChecked = 0;
+    let topKnifeProfit = 0;
 
-    // Phase 5b: Classified (saving on main thread)
-    const classifiedCalcResult = phase5ClassifiedCalc(db, freshness, cycleCount === 1, classifiedDiscovery);
+    const dmarketEnabled = isDMarketConfigured();
 
-    // Phase 5e: Restricted→Classified discovery (must run before staircases)
-    phase5GenericCalc(db, "restricted_classified", restrictedDiscovery);
+    // Super-batch loop: runs until cycle time budget is exhausted
+    while (Date.now() < engineEnd - 30_000) { // Stop 30s before end
+      superBatchCount++;
+      const batchStart = Date.now();
+      console.log(`\n  ── Super-batch ${superBatchCount} ──`);
+      setDaemonStatus(db, "calculating", `Phase 5: Super-batch ${superBatchCount}`);
 
-    // Phase 5f: Mil-Spec→Restricted discovery
-    phase5GenericCalc(db, "milspec_restricted", milspecDiscovery);
+      // Run 3 rounds of 2 workers each
+      for (let roundIdx = 0; roundIdx < WORKER_ROUNDS.length; roundIdx++) {
+        if (Date.now() >= engineEnd - 30_000) break;
 
-    // Phase 5g: Industrial→Mil-Spec discovery
-    phase5GenericCalc(db, "industrial_milspec", industrialDiscovery);
+        const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
+        setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB}`);
 
-    // Phase 5h: Consumer→Industrial discovery
-    phase5GenericCalc(db, "consumer_industrial", consumerDiscovery);
+        const results = await Promise.allSettled([
+          runCalcWorker(taskA as "knife", DB_PATH, WORKER_TIME_LIMIT),
+          runCalcWorker(taskB as "classified", DB_PATH, WORKER_TIME_LIMIT),
+        ]);
 
-    // Staircase removed — single-stage results are non-deterministic (which Coverts
-    // come out of stage 1 is probabilistic, making stage 2 profit estimates unreliable).
+        // Merge results for each worker
+        for (let i = 0; i < 2; i++) {
+          const r = results[i];
+          const taskName = i === 0 ? taskA : taskB;
+          const tradeUpType = TASK_TYPE_MAP[taskName];
+
+          if (r.status === "fulfilled" && r.value.length > 0) {
+            const tradeUps = r.value;
+            const profitable = tradeUps.filter(t => t.profit_cents > 0);
+
+            // Merge-save (cap at 30K for lower tiers to prevent OOM)
+            const MAX_SAVE = 30000;
+            let toSave = tradeUps;
+            if (tradeUps.length > MAX_SAVE) {
+              const profitableSet = tradeUps.filter(t => t.profit_cents > 0);
+              const highChance = tradeUps.filter(t => t.profit_cents <= 0 && (t.chance_to_profit ?? 0) >= 0.25);
+              const rest = tradeUps.filter(t => t.profit_cents <= 0 && (t.chance_to_profit ?? 0) < 0.25);
+              rest.sort((a, b) => b.profit_cents - a.profit_cents);
+              toSave = [...profitableSet, ...highChance, ...rest].slice(0, MAX_SAVE);
+            }
+
+            mergeTradeUps(db, toSave, tradeUpType);
+
+            // Track stats
+            if (taskName === "knife") {
+              totalKnifeResults += tradeUps.length;
+              totalKnifeProfitable += profitable.length;
+              if (profitable.length > 0 && profitable[0].profit_cents > topKnifeProfit) {
+                topKnifeProfit = profitable[0].profit_cents;
+              }
+            } else if (taskName === "classified") {
+              totalClassifiedResults += tradeUps.length;
+              totalClassifiedProfitable += profitable.length;
+            }
+
+            console.log(`    ${taskName}: ${tradeUps.length} trade-ups (${profitable.length} profitable)`);
+
+            // Log top trade-ups for high-value tiers
+            if (profitable.length > 0 && (taskName === "knife" || taskName === "classified")) {
+              for (const tu of profitable.slice(0, 3)) {
+                const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
+                console.log(`      $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) | ${inputNames}`);
+              }
+            }
+
+            emitEvent(db, `${tradeUpType}_calc`, `${profitable.length} profitable, best +$${profitable.length > 0 ? (profitable[0].profit_cents / 100).toFixed(2) : "0.00"}`);
+          } else if (r.status === "rejected") {
+            console.error(`    ${taskName} failed: ${r.reason?.message}`);
+          } else {
+            console.log(`    ${taskName}: 0 trade-ups`);
+          }
+        }
+      }
+
+      // Revival between super-batches (CPU-only, no API calls)
+      setDaemonStatus(db, "calculating", `Phase 5: Revival (batch ${superBatchCount})`);
+      const gunRevival = reviveStaleGunTradeUps(db, 200);
+      const knifeRevival = reviveStaleTradeUps(db, revivalKnifeCache, 200);
+      const batchRevived = gunRevival.revived + knifeRevival.revived;
+      totalRevived += batchRevived;
+      if (batchRevived > 0) {
+        console.log(`    Revival: ${gunRevival.revived} gun + ${knifeRevival.revived} knife revived`);
+      }
+
+      // Staleness checks between super-batches (uses individual API pool)
+      setDaemonStatus(db, "fetching", `Phase 5: Staleness (batch ${superBatchCount})`);
+      try {
+        const stalenessResult = await checkListingStaleness(db, {
+          apiKey,
+          maxChecks: 75,
+          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+        });
+        totalStalenessChecked += stalenessResult.checked;
+        totalStalenessSold += stalenessResult.sold;
+        totalStalenessRemoved += stalenessResult.delisted;
+        if (stalenessResult.sold > 0 || stalenessResult.delisted > 0) {
+          freshness.markListingsChanged();
+          console.log(`    Staleness: ${stalenessResult.checked} checked, ${stalenessResult.sold} sold, ${stalenessResult.delisted} removed`);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("429")) {
+          console.log(`    Staleness: rate limited after ${totalStalenessChecked} total checks`);
+        }
+      }
+
+      // DMarket staleness (every other super-batch)
+      if (dmarketEnabled && superBatchCount % 2 === 0) {
+        try {
+          const dmResult = await checkDMarketStaleness(db, {
+            maxChecks: 5,
+            onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket: ${msg}`),
+          });
+          totalDmarketChecked += dmResult.checked;
+          if (dmResult.removed > 0) {
+            freshness.markListingsChanged();
+            console.log(`    DMarket staleness: ${dmResult.checked} checked, ${dmResult.removed} removed`);
+          }
+        } catch {
+          // DMarket errors don't block engine loop
+        }
+      }
+
+      const batchMs = Date.now() - batchStart;
+      console.log(`    Super-batch ${superBatchCount} done (${(batchMs / 1000).toFixed(1)}s)`);
+    }
+
+    // Post-engine: update collection scores once
+    updateCollectionScores(db);
+    freshness.markCalcDone();
+
+    const engineMs = Date.now() - cycleStarted - (Date.now() - (cycleStarted + engineBudgetMs - (engineEnd - Date.now())));
+    console.log(`\n[${timestamp()}] Engine done: ${superBatchCount} super-batches, ${totalKnifeResults} knife + ${totalClassifiedResults} classified, ${totalRevived} revived, ${totalStalenessChecked} staleness checks`);
+
+    // ─── Post-engine: coverage, snapshot, Redis, stats ────────────────
 
     // Coverage report
     printCoverageReport(db);
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
     // Refresh API read snapshot — backup to temp file, then atomic rename.
-    // Direct backup to tradeup-api.db would lock it for 20-30s (2.8GB copy),
-    // blocking all API reads. Rename is instant and never locks the live file.
     try {
       const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
       const tmpPath = snapshotPath + ".tmp";
       console.log(`  Creating API snapshot...`);
-      // Checkpoint WAL first — backup() copies the main file, not WAL changes.
-      // Without checkpoint, the snapshot may have stale/inconsistent data.
       db.pragma("wal_checkpoint(PASSIVE)");
       await db.backup(tmpPath);
       fs.renameSync(tmpPath, snapshotPath);
@@ -332,7 +458,6 @@ export async function main() {
       const cycleTs = new Date().toISOString();
       await setCycleVersion(cycleTs);
 
-      // Pre-compute global-stats (avoids 6 COUNT queries on cold cache)
       const stats = db.prepare(`
         SELECT
           (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
@@ -354,68 +479,41 @@ export async function main() {
         total_cycles: stats.cycles,
       }, 600);
 
-      // Pre-compute filter-options (avoids DISTINCT on 2.35M rows)
       const inputSkins = db.prepare("SELECT DISTINCT skin_name as name FROM trade_up_inputs").all() as { name: string }[];
       const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
       const collections = db.prepare("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC").all() as { name: string; count: number }[];
       await cacheSet("filter_opts", { skins: skinMap, collections }, 600);
 
-      // Invalidate stale trade-ups cache (new cycle = new data)
-      // Old tu: keys expire via TTL; new cycle_version means new keys
       console.log(`  Redis cache pre-populated`);
     } catch (e) {
       console.error(`  Redis pre-populate failed: ${(e as Error).message}`);
     }
 
-    // Phase 6: Cooldown — dynamic duration targeting fixed cycle time
-    // Runs LAST so all work phases are included in timing calculation
-    const workPhaseMs = Date.now() - cycleStarted;
-    const hasListingBudget = !budget.isListingRateLimited() && budget.hasListingBudget();
-    const hasSaleBudget = !budget.isSaleRateLimited() && budget.hasSaleBudget();
-    let waitMs: number;
-    if (hasListingBudget || hasSaleBudget) {
-      // Dynamic: fill remaining time to hit target cycle duration
-      waitMs = Math.max(MIN_COOLDOWN_MS, Math.min(MAX_COOLDOWN_MS, TARGET_CYCLE_MS - workPhaseMs));
-    } else {
-      // Rate limited on listing+sale pools — long idle cooldown
-      waitMs = IDLE_COOLDOWN_MS;
-    }
-    const cooldownMin = (waitMs / 60000).toFixed(1);
-    const workMin = (workPhaseMs / 60000).toFixed(1);
-    console.log(`  Dynamic cooldown: ${workMin} min work + ${cooldownMin} min cooldown = ${((workPhaseMs + waitMs) / 60000).toFixed(1)} min target cycle`);
-    setDaemonStatus(db, "waiting", `Phase 6: Staleness checks (${cooldownMin} min${hasListingBudget ? ", pacing" : ""})`);
-    const cooldownResult = await cooldownLoop(db, waitMs, {
-      freshness,
-      apiKey,
-      cycleCount,
-      budget,
-    });
-
     // Save cycle stats
     const cycleDuration = Date.now() - cycleStarted;
-    const stats: CycleStats = {
+    const cycleStats: CycleStats = {
       cycle: cycleCount,
       startedAt: cycleStartedAt,
       durationMs: cycleDuration,
       apiCallsUsed: budget.usedCount,
       apiLimitDetected: probe.listingSearch.rateLimit.limit,
       apiAvailable: anyAvailable,
-      knifeTradeUpsTotal: knifeCalcResult.total,
-      knifeProfitable: knifeCalcResult.profitable,
+      knifeTradeUpsTotal: totalKnifeResults,
+      knifeProfitable: totalKnifeProfitable,
       theoriesGenerated: 0,
       theoriesProfitable: 0,
       gapsFilled: 0,
-      cooldownPasses: cooldownResult.passes,
-      cooldownNewFound: cooldownResult.newFound,
-      cooldownImproved: cooldownResult.improved,
-      topProfit: knifeCalcResult.topProfit,
-      avgProfit: knifeCalcResult.avgProfit,
-      classifiedTotal: classifiedCalcResult.total,
-      classifiedProfitable: classifiedCalcResult.profitable,
+      cooldownPasses: superBatchCount,
+      cooldownNewFound: 0,
+      cooldownImproved: 0,
+      topProfit: topKnifeProfit,
+      avgProfit: totalKnifeProfitable > 0 ? Math.round(topKnifeProfit / totalKnifeProfitable) : 0,
+      classifiedTotal: totalClassifiedResults,
+      classifiedProfitable: totalClassifiedProfitable,
       classifiedTheories: 0,
       classifiedTheoriesProfitable: 0,
     };
-    saveCycleStats(db, stats);
+    saveCycleStats(db, cycleStats);
 
     // Take market snapshot for historical analysis
     const snapshotId = takeSnapshot(db, {

@@ -721,3 +721,231 @@ export function randomKnifeExplore(
 
   return { found, explored, improved };
 }
+
+/**
+ * Time-bounded random knife exploration for worker processes.
+ * Read-only: returns TradeUp[] instead of writing to DB.
+ * No swap optimization (requires writable DB).
+ * Runs until deadlineMs timestamp.
+ */
+export function exploreKnifeWithBudget(
+  db: Database.Database,
+  deadlineMs: number,
+  existingSignatures: Set<string>,
+  options: {
+    onProgress?: (msg: string) => void;
+  } = {}
+): TradeUp[] {
+  buildPriceCache(db);
+
+  const allListings = getListingsForRarity(db, "Covert")
+    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
+  if (allListings.length === 0) return [];
+
+  const allAdjusted = addAdjustedFloat(allListings);
+  const byCollection = new Map<string, ListingWithCollection[]>();
+  const byColAdj = new Map<string, AdjustedListing[]>();
+  for (const l of allAdjusted) {
+    const list = byCollection.get(l.collection_name) ?? [];
+    list.push(l);
+    byCollection.set(l.collection_name, list);
+    const adjList = byColAdj.get(l.collection_name) ?? [];
+    adjList.push(l);
+    byColAdj.set(l.collection_name, adjList);
+  }
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+
+  // Build knife finish cache
+  const knifeFinishCache = new Map<string, FinishData[]>();
+  const allItemTypes = new Set<string>();
+  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
+    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
+    if (caseInfo.gloveGen) {
+      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
+    }
+  }
+  for (const itemType of allItemTypes) {
+    const finishes = getKnifeFinishesWithPrices(db, itemType);
+    if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
+  }
+
+  const knifeCollections = [...byCollection.keys()].filter(name => {
+    const m = CASE_KNIFE_MAP[name];
+    return m && (m.knifeTypes.length > 0 || m.gloveGen !== null);
+  });
+  if (knifeCollections.length === 0) return [];
+
+  // Profit-guided weighted pool
+  const profitWeights = new Map<string, number>();
+  const profitRows = db.prepare(`
+    SELECT tui.collection_name, COUNT(*) as cnt
+    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
+    WHERE t.type = 'covert_knife' AND t.profit_cents > 0
+    GROUP BY tui.collection_name
+  `).all() as { collection_name: string; cnt: number }[];
+  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  const weightedPool: string[] = [];
+  for (const col of knifeCollections) {
+    const weight = Math.max(1, profitWeights.get(col) ?? 0);
+    const repeats = Math.min(10, Math.ceil(Math.sqrt(weight)));
+    for (let i = 0; i < repeats; i++) weightedPool.push(col);
+  }
+
+  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+  const shuffle = <T>(arr: T[]): T[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const results: TradeUp[] = [];
+  let explored = 0;
+
+  while (Date.now() < deadlineMs - 1000) {
+    explored++;
+    if (explored % 500 === 0) {
+      const remaining = Math.round((deadlineMs - Date.now()) / 1000);
+      options.onProgress?.(`Knife explore: ${explored} iters, ${results.length} found (${remaining}s left)`);
+    }
+
+    try {
+      const strategy = Math.floor(Math.random() * 7);
+      let inputs: ListingWithCollection[] | null = null;
+
+      switch (strategy) {
+        case 0: {
+          // Random pair with random split + offset
+          const colA = pick(weightedPool);
+          const colB = pick(weightedPool.filter(c => c !== colA));
+          const listA = byCollection.get(colA) ?? [];
+          const listB = byCollection.get(colB) ?? [];
+          const countA = 1 + Math.floor(Math.random() * 4);
+          const countB = 5 - countA;
+          if (listA.length < countA || listB.length < countB) break;
+          const maxOffA = Math.min(listA.length - countA, 20);
+          const maxOffB = Math.min(listB.length - countB, 20);
+          const offA = Math.floor(Math.random() * (maxOffA + 1));
+          const offB = Math.floor(Math.random() * (maxOffB + 1));
+          inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
+          break;
+        }
+
+        case 1: {
+          // Single collection with random offset
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 5) break;
+          const maxOff = Math.min(list.length - 5, 30);
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = list.slice(off, off + 5);
+          break;
+        }
+
+        case 2: {
+          // Condition-pure from random collection
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const cond = pick(conditions);
+          const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
+          if (condListings.length < 5) break;
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 5 + 1, 10));
+          inputs = condListings.slice(off, off + 5);
+          break;
+        }
+
+        case 3: {
+          // Triple collection pool
+          const cols = shuffle(knifeCollections).slice(0, 3);
+          if (cols.length < 3) break;
+          const pooled = cols
+            .flatMap(c => {
+              const list = byCollection.get(c) ?? [];
+              const off = Math.floor(Math.random() * Math.min(list.length, 10));
+              return list.slice(off, off + 8);
+            })
+            .sort((a, b) => a.price_cents - b.price_cents);
+          if (pooled.length < 5) break;
+          inputs = pooled.slice(0, 5);
+          break;
+        }
+
+        case 4: {
+          // Global cheapest pool
+          const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
+          const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
+          const maxOff = Math.min(sorted.length - 5, 100);
+          if (maxOff < 0) break;
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = sorted.slice(off, off + 5);
+          break;
+        }
+
+        case 5: {
+          // Float-targeted random pair
+          const colA = pick(weightedPool);
+          const colB = pick(weightedPool.filter(c => c !== colA));
+          const countA = 1 + Math.floor(Math.random() * 4);
+          const countB = 5 - countA;
+          const target = Math.random() * 0.5;
+          const quotas = new Map([[colA, countA], [colB, countB]]);
+          const selected = selectForFloatTarget(byColAdj, quotas, target, 5);
+          if (selected && selected.length === 5) inputs = selected;
+          break;
+        }
+
+        case 6: {
+          // High-chance-profit targeting: single-knife × glove collection
+          const singleKnifeCollections = knifeCollections.filter(cn => {
+            const ci = CASE_KNIFE_MAP[cn];
+            return ci && ci.knifeTypes.length === 1 && ci.knifeFinishes.length > 0;
+          });
+          const gloveCollections = knifeCollections.filter(cn => {
+            const ci = CASE_KNIFE_MAP[cn];
+            return ci && ci.gloveGen !== null;
+          });
+          if (singleKnifeCollections.length === 0 || gloveCollections.length === 0) break;
+
+          const knCol = pick(singleKnifeCollections);
+          const glCol = pick(gloveCollections);
+          const knList = byCollection.get(knCol) ?? [];
+          const glList = byCollection.get(glCol) ?? [];
+
+          for (const [kn, gl] of [[1, 4], [2, 3], [3, 2]] as [number, number][]) {
+            if (knList.length < kn || glList.length < gl) continue;
+            const knOff = Math.floor(Math.random() * Math.min(knList.length - kn + 1, 10));
+            const glOff = Math.floor(Math.random() * Math.min(glList.length - gl + 1, 10));
+            const candidate = [...knList.slice(knOff, knOff + kn), ...glList.slice(glOff, glOff + gl)];
+            if (candidate.length === 5) {
+              inputs = candidate;
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      if (!inputs || inputs.length !== 5) continue;
+      explored++;
+
+      const sig = inputs.map(i => i.id).sort().join(",");
+      if (existingSignatures.has(sig)) continue;
+
+      const result = evaluateKnifeTradeUp(db, inputs, knifeFinishCache);
+      if (!result) continue;
+      if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
+
+      existingSignatures.add(sig);
+      results.push(result);
+    } catch {
+      // Ignore individual iteration errors
+    }
+  }
+
+  options.onProgress?.(`Knife explore done: ${explored} iters, ${results.length} found`);
+  return results;
+}
