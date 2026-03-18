@@ -1,9 +1,69 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
 import { requireTier, type User } from "../auth.js";
+import { cacheGet, cacheSet, cacheInvalidatePrefix } from "../redis.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
+
+/** Active claim stored in Redis */
+interface ActiveClaim {
+  trade_up_id: number;
+  user_id: string;
+  claimed_at: string;
+  expires_at: string;
+  listing_ids: string[];
+}
+
+/** Get all active claims from Redis (fast) or fall back to SQLite */
+export async function getActiveClaims(db: Database.Database): Promise<ActiveClaim[]> {
+  // Try Redis first
+  const cached = await cacheGet<ActiveClaim[]>("active_claims");
+  if (cached) {
+    // Filter out expired claims
+    const now = new Date().toISOString();
+    return cached.filter(c => c.expires_at > now);
+  }
+
+  // Fallback: load from SQLite and populate Redis
+  try {
+    const claims = db.prepare(
+      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
+    ).all() as { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }[];
+
+    const result: ActiveClaim[] = [];
+    for (const c of claims) {
+      const inputs = db.prepare(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+      ).all(c.trade_up_id) as { listing_id: string }[];
+      result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
+    }
+
+    await cacheSet("active_claims", result, 60); // 60s TTL, refreshed on claim/release
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/** Refresh the Redis claims cache after a claim/release */
+async function refreshClaimsCache(db: Database.Database): Promise<void> {
+  try {
+    const claims = db.prepare(
+      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
+    ).all() as { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }[];
+
+    const result: ActiveClaim[] = [];
+    for (const c of claims) {
+      const inputs = db.prepare(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
+      ).all(c.trade_up_id) as { listing_id: string }[];
+      result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
+    }
+
+    await cacheSet("active_claims", result, 60);
+  } catch { /* non-critical */ }
+}
 
 interface ClaimRow {
   id: number;
@@ -150,6 +210,10 @@ export function claimsRouter(db: Database.Database): Router {
       "SELECT * FROM trade_up_claims WHERE id = ?"
     ).get(result.lastInsertRowid) as ClaimRow;
 
+    // Refresh Redis claims cache + invalidate trade-ups cache (claimed listings change visibility)
+    refreshClaimsCache(db).catch(() => {});
+    cacheInvalidatePrefix("tu:").catch(() => {});
+
     res.json({
       claim: {
         id: claim.id,
@@ -180,6 +244,10 @@ export function claimsRouter(db: Database.Database): Router {
       res.status(404).json({ error: "No active claim found for this trade-up" });
       return;
     }
+
+    // Refresh Redis claims cache + invalidate trade-ups cache
+    refreshClaimsCache(db).catch(() => {});
+    cacheInvalidatePrefix("tu:").catch(() => {});
 
     res.json({ released: true, trade_up_id: tradeUpId });
   });

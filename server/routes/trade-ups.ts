@@ -4,6 +4,7 @@ import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute } from "../redis.js";
+import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
@@ -68,7 +69,7 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
     return results;
   }
 
-  router.get("/api/trade-ups", cachedRoute((req) => "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free"), 600, (req, res) => {
+  router.get("/api/trade-ups", cachedRoute((req) => "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free"), 600, async (req, res) => {
     const {
       sort = "profit",
       order = "desc",
@@ -197,18 +198,20 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       where += ` AND t.created_at <= datetime('now', '-1800 seconds')`;
     }
 
-    // Load active claims to mark (not exclude) claimed trade-ups
+    // Load active claims from Redis (fast) — includes listing IDs for conflict detection
+    const activeClaims = await getActiveClaims(db);
     const claimedByOthers = new Set<number>();
     const claimedByMe = new Set<number>();
-    try {
-      const claims = rdb.prepare(
-        "SELECT trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at > datetime('now')"
-      ).all() as { trade_up_id: number; user_id: string }[];
-      for (const c of claims) {
-        if (c.user_id === userId) claimedByMe.add(c.trade_up_id);
-        else claimedByOthers.add(c.trade_up_id);
+    const claimedListingIds = new Set<string>(); // all listing IDs locked by other users' claims
+    for (const c of activeClaims) {
+      if (c.user_id === userId) {
+        claimedByMe.add(c.trade_up_id);
+      } else {
+        claimedByOthers.add(c.trade_up_id);
+        // Collect all listing IDs from other users' claims — trade-ups sharing these are hidden
+        for (const lid of c.listing_ids) claimedListingIds.add(lid);
       }
-    } catch { /* ignore lock errors */ }
+    }
 
     // "My Claims" filter: restrict to user's active claims (ignores type filter)
     if (my_claims === "true") {
