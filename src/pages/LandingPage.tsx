@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SiteNav } from '../components/SiteNav.js';
+import { blogPosts } from '../data/blog-posts.js';
 
 const IconSteam = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -278,6 +279,28 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             </div>
           </div>
         </section>
+        {/* Blog */}
+        <section id="blog" className="py-20 border-t border-border">
+          <div className="mx-auto max-w-4xl px-6">
+            <h2 className="text-2xl font-bold mb-3 text-center">Blog</h2>
+            <p className="text-muted-foreground text-center mb-10">Guides, strategies, and updates from the TradeUpBot team.</p>
+            <div className="grid sm:grid-cols-3 gap-6">
+              {blogPosts.slice(0, 3).map((post) => (
+                <a key={post.slug} href={`/blog/${post.slug}`} className="border border-border rounded-lg p-5 hover:border-foreground/20 transition-colors block">
+                  <div className="text-xs text-muted-foreground/50 mb-2">{new Date(post.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
+                  <h3 className="font-semibold text-sm mb-2">{post.title}</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{post.excerpt}</p>
+                </a>
+              ))}
+            </div>
+            <div className="text-center mt-8">
+              <a href="/blog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                View all posts &rarr;
+              </a>
+            </div>
+          </div>
+        </section>
+
         {/* FAQ */}
         <section id="faq" className="py-20 border-t border-border">
           <div className="mx-auto max-w-3xl px-6">

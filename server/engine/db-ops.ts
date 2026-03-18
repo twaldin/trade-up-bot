@@ -90,9 +90,10 @@ export function purgeExpiredPreserved(db: Database.Database, maxDays = 2): numbe
 
   if (ids.length === 0) return 0;
 
-  const idList = ids.map(r => r.id).join(",");
-  db.exec(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${idList})`);
-  db.exec(`DELETE FROM trade_ups WHERE id IN (${idList})`);
+  const placeholders = ids.map(() => "?").join(",");
+  const idValues = ids.map(r => r.id);
+  db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`).run(...idValues);
+  db.prepare(`DELETE FROM trade_ups WHERE id IN (${placeholders})`).run(...idValues);
   return ids.length;
 }
 

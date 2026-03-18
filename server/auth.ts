@@ -218,7 +218,6 @@ export function setupAuth(app: Express, db: Database.Database) {
   app.get("/api/auth/me", (req, res) => {
     if (req.user) {
       const u = req.user as User;
-      console.log(`Auth check: ${u.display_name} (${u.tier}${isAdmin(u) ? ", admin" : ""})`);
       res.json({
         steam_id: u.steam_id,
         display_name: u.display_name,
