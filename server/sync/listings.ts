@@ -86,20 +86,24 @@ export async function checkListingStaleness(
   const maxChecks = options.maxChecks ?? 200;
 
   // Priority order:
-  // 1. Listings used in profitable trade-ups (most valuable to verify — stale = invalid trade-up)
+  // 1. Listings used in profitable trade-ups (most valuable to verify)
   // 2. Never-checked listings
   // 3. Oldest-checked listings
+  // Uses CTE to pre-compute profitable listing IDs (avoids correlated subquery on 12M rows)
   const { rows: listings } = await pool.query(`
+    WITH profitable_listings AS (
+      SELECT DISTINCT tui.listing_id
+      FROM trade_up_inputs tui
+      JOIN trade_ups tu ON tui.trade_up_id = tu.id
+      WHERE tu.profit_cents > 0 AND tu.is_theoretical = 0
+    )
     SELECT l.id, l.skin_id, l.price_cents, l.float_value, l.created_at, s.name as skin_name, l.phase
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
+    LEFT JOIN profitable_listings pl ON l.id = pl.listing_id
     ORDER BY
       CASE
-        WHEN l.id IN (
-          SELECT tui.listing_id FROM trade_up_inputs tui
-          JOIN trade_ups tu ON tui.trade_up_id = tu.id
-          WHERE tu.profit_cents > 0 AND tu.is_theoretical = 0
-        ) THEN 0
+        WHEN pl.listing_id IS NOT NULL THEN 0
         WHEN l.staleness_checked_at IS NULL THEN 1
         ELSE 2
       END,
