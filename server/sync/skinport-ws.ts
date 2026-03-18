@@ -12,7 +12,7 @@
  * No auth required. No rate limits. Runs continuously in background.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { io, Socket } from "socket.io-client";
 
 // socket.io-msgpack-parser is a CJS module, use dynamic import
@@ -81,7 +81,7 @@ export function getSkinportStats(): SkinportListenerStats {
  * Runs indefinitely, auto-reconnects on disconnect.
  * Returns a cleanup function to stop the listener.
  */
-export async function startSkinportListener(db: Database.Database): Promise<() => void> {
+export async function startSkinportListener(pool: pg.Pool): Promise<() => void> {
   // Dynamically import msgpack parser
   if (!msgpackParser) {
     try {
@@ -92,22 +92,6 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
       return () => {};
     }
   }
-
-  // Prepare DB statements
-  const lookupSkin = db.prepare(
-    "SELECT id, rarity FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1"
-  );
-  const lookupSkinST = db.prepare(
-    "SELECT id, rarity FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1"
-  );
-  const upsertListing = db.prepare(`
-    INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'skinport', 'buy_now', datetime('now'))
-  `);
-  const insertSaleObservation = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    VALUES (?, ?, ?, 'skinport_sale', datetime('now'))
-  `);
 
   const socket: Socket = io("wss://skinport.com", {
     transports: ["websocket"],
@@ -126,7 +110,7 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
     stats.connected = false;
   });
 
-  socket.on("saleFeed", (data: SkinportFeedData) => {
+  socket.on("saleFeed", async (data: SkinportFeedData) => {
     if (!data?.sales) return;
 
     for (const item of data.sales) {
@@ -136,38 +120,56 @@ export async function startSkinportListener(db: Database.Database): Promise<() =
       // Skip items without float
       if (item.wear == null || item.wear === 0) continue;
 
-      // Parse skin name from marketHashName: "AK-47 | Redline (Field-Tested)" → "AK-47 | Redline"
+      // Parse skin name from marketHashName: "AK-47 | Redline (Field-Tested)" -> "AK-47 | Redline"
       const nameMatch = item.marketHashName?.match(/^(.+?)\s*\([\w\s-]+\)$/);
       const skinName = nameMatch ? nameMatch[1].trim() : item.marketHashName;
       if (!skinName) continue;
 
       // Look up skin in DB
       const stattrak = item.stattrak ?? false;
-      const skinRow = (stattrak ? lookupSkinST : lookupSkin).get(skinName) as { id: string; rarity: string } | undefined;
-      if (!skinRow) continue;
-
-      // Filter by rarity — only store relevant skins
-      if (!RELEVANT_RARITIES.has(skinRow.rarity)) continue;
-
-      if (data.eventType === "listed") {
-        upsertListing.run(
-          `skinport:${item.saleId}`,
-          skinRow.id,
-          item.salePrice,
-          item.wear,
-          item.pattern ?? null,
-          stattrak ? 1 : 0
+      try {
+        const lookupName = stattrak ? skinName : skinName;
+        const { rows } = await pool.query(
+          "SELECT id, rarity FROM skins WHERE name = $1 AND stattrak = $2 LIMIT 1",
+          [lookupName, stattrak ? 1 : 0]
         );
-        stats.totalStored++;
-      } else if (data.eventType === "sold") {
-        stats.totalSold++;
-        // Record sale as a price observation (free real-time sale data)
-        if (item.salePrice > 0) {
-          insertSaleObservation.run(skinName, item.wear, item.salePrice);
-          stats.totalSaleObservations++;
+        const skinRow = rows[0] as { id: string; rarity: string } | undefined;
+        if (!skinRow) continue;
+
+        // Filter by rarity — only store relevant skins
+        if (!RELEVANT_RARITIES.has(skinRow.rarity)) continue;
+
+        if (data.eventType === "listed") {
+          await pool.query(`
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'skinport', 'buy_now', NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'skinport', listing_type = 'buy_now', price_updated_at = NOW()
+          `, [
+            `skinport:${item.saleId}`,
+            skinRow.id,
+            item.salePrice,
+            item.wear,
+            item.pattern ?? null,
+            stattrak ? 1 : 0,
+          ]);
+          stats.totalStored++;
+        } else if (data.eventType === "sold") {
+          stats.totalSold++;
+          // Record sale as a price observation (free real-time sale data)
+          if (item.salePrice > 0) {
+            await pool.query(`
+              INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+              VALUES ($1, $2, $3, 'skinport_sale', NOW())
+              ON CONFLICT DO NOTHING
+            `, [skinName, item.wear, item.salePrice]);
+            stats.totalSaleObservations++;
+          }
+          // Remove sold listing from DB if we had it
+          await pool.query("DELETE FROM listings WHERE id = $1", [`skinport:${item.saleId}`]);
         }
-        // Remove sold listing from DB if we had it
-        db.prepare("DELETE FROM listings WHERE id = ?").run(`skinport:${item.saleId}`);
+      } catch {
+        // DB errors in WS handler are non-critical — skip this item
       }
     }
   });

@@ -6,7 +6,7 @@
  * Phase 4: Data Fetch (sale history, listings)
  * Phase 4.5: Verify profitable inputs (individual lookup pool)
  * Phase 5: TIME-BOUNDED ENGINE — repeating super-batches of:
- *   (a) 2 workers (structured discovery → deep exploration, 2-min time limit)
+ *   (a) 2 workers (structured discovery -> deep exploration, 2-min time limit)
  *   (b) Merge results
  *   (c) Revival (200 gun + 200 knife)
  *   (d) Staleness checks (75 listings, paced by API budget)
@@ -16,7 +16,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { fork } from "node:child_process";
-import { initDb, DB_PATH, emitEvent, getSyncMeta, setSyncMeta } from "../db.js";
+import { initDb, emitEvent, getSyncMeta, setSyncMeta } from "../db.js";
 import { takeSnapshot, purgeOldSnapshots } from "../snapshot.js";
 import { initRedis, setCycleVersion, cacheSet } from "../redis.js";
 import type { TradeUp } from "../../shared/types.js";
@@ -87,7 +87,6 @@ const TASK_TYPE_MAP: Record<string, string> = {
  */
 function runCalcWorker(
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
-  dbPath: string,
   timeLimitMs?: number,
 ): Promise<TradeUp[]> {
   return new Promise((resolve, reject) => {
@@ -108,7 +107,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, dbPath, timeLimitMs }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs }),
       },
     });
 
@@ -179,7 +178,7 @@ export async function main() {
     process.exit(1);
   }
 
-  const db = initDb();
+  const pool = initDb();
   initRedis();
   const freshness = new FreshnessTracker();
   const daemonStartedAt = new Date().toISOString();
@@ -187,24 +186,24 @@ export async function main() {
   // --fresh flag: purge all trade-ups for a clean start (useful when testing new logic)
   const freshStart = process.argv.includes("--fresh") || process.env.DAEMON_FRESH === "1";
 
-  ensureStatsTable(db);
+  await ensureStatsTable(pool);
   setDaemonMeta(0, daemonStartedAt);
 
   console.log(`[${timestamp()}] Trade-Up Daemon started (time-bounded engine)`);
-  console.log(`  Phases: Housekeeping → Probe → Fetch → Time-Bounded Engine (structured + deep exploration)`);
+  console.log(`  Phases: Housekeeping -> Probe -> Fetch -> Time-Bounded Engine (structured + deep exploration)`);
   console.log(`  Rate limits (3 separate pools):`);
   console.log(`    Listing search: 200/~30min | Sale history: 500/~12h | Individual: 50K/~12h`);
   console.log(`  Data sources: CSFloat API${isDMarketConfigured() ? " + DMarket API" : ""} + Skinport WebSocket`);
   console.log(`  Worker time limit: ${MIN_WORKER_TIME / 1000}s-${MAX_WORKER_TIME / 1000}s per worker (dynamic), 2 workers per round`);
 
   // Start Skinport WebSocket listener (passive listing accumulation — no auth, no rate limits)
-  const stopSkinport = await startSkinportListener(db);
+  const stopSkinport = await startSkinportListener(pool);
   console.log(`  Skinport WebSocket: listener started (passive listing feed)`);
 
   if (freshStart) {
-    db.prepare("DELETE FROM trade_up_inputs").run();
-    const purged = db.prepare("DELETE FROM trade_ups").run();
-    console.log(`  --fresh: purged ${purged.changes} trade-ups for clean start`);
+    await pool.query("DELETE FROM trade_up_inputs");
+    const purged = await pool.query("DELETE FROM trade_ups");
+    console.log(`  --fresh: purged ${purged.rowCount} trade-ups for clean start`);
     // Flush Redis cache — old trade-up data is invalid
     try {
       const { getRedis } = await import("../redis.js");
@@ -215,13 +214,13 @@ export async function main() {
       }
     } catch { /* Redis not available */ }
   } else {
-    const existing = db.prepare("SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0").get() as { cnt: number; profitable: number };
-    console.log(`  Resuming with ${existing.cnt} existing trade-ups (${existing.profitable} profitable)`);
+    const { rows: [existing] } = await pool.query("SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0");
+    console.log(`  Resuming with ${existing.cnt} existing trade-ups (${existing.profitable ?? 0} profitable)`);
   }
   console.log("");
 
-  printCoverageReport(db);
-  printPerformanceComparison(db);
+  await printCoverageReport(pool);
+  await printPerformanceComparison(pool);
 
   let cycleCount = 0;
 
@@ -232,7 +231,7 @@ export async function main() {
     const cycleStartedAt = new Date().toISOString();
     const budget = new BudgetTracker();
 
-    updateExplorationStats(db, {
+    await updateExplorationStats(pool, {
       cycle: cycleCount,
       passes_this_cycle: 0,
       new_tradeups_found: 0,
@@ -245,46 +244,42 @@ export async function main() {
     console.log("=".repeat(60));
 
     // Phase 1: Housekeeping
-    await phase1Housekeeping(db, cycleCount);
+    await phase1Housekeeping(pool, cycleCount);
 
     // Phase 3: API Probe (tests all 3 rate limit pools independently)
-    const probe = await phase3ApiProbe(db, budget, apiKey);
+    const probe = await phase3ApiProbe(pool, budget, apiKey);
 
     // Phase 4: Data Fetch — runs whichever endpoints are available
     const anyAvailable = probe.listingSearch.available || probe.saleHistory.available;
     if (anyAvailable) {
-      await phase4DataFetch(db, budget, freshness, apiKey, [], probe);
+      await phase4DataFetch(pool, budget, freshness, apiKey, [], probe);
     } else {
       console.log(`  All endpoints rate limited — skipping Phase 4`);
     }
 
     // Phase 4.5: Verify profitable trade-up inputs still exist
-    await phase4p5VerifyInputs(db, freshness, apiKey, probe, budget);
+    await phase4p5VerifyInputs(pool, freshness, apiKey, probe, budget);
 
     // Phase 4b: Recalc trade-up stats where input prices changed (DMarket/Skinport updates)
     {
       const { recalcTradeUpCosts } = await import("../engine.js");
-      const lastRecalc = getSyncMeta(db, "last_recalc_at");
-      const recalcResult = recalcTradeUpCosts(db, lastRecalc ?? undefined);
-      setSyncMeta(db, "last_recalc_at", new Date().toISOString());
+      const lastRecalc = await getSyncMeta(pool, "last_recalc_at");
+      const recalcResult = await recalcTradeUpCosts(pool, lastRecalc ?? undefined);
+      await setSyncMeta(pool, "last_recalc_at", new Date().toISOString());
       if (recalcResult.updated > 0) {
         console.log(`  Phase 4b: Recalculated ${recalcResult.updated} trade-ups with changed input prices`);
       }
     }
 
-    // ─── Phase 5: Time-Bounded Discovery Engine ───────────────────────
-    // Replaces old Phase 5 (one-shot workers) + Phase 6 (cooldown).
-    // Workers do structured discovery (instant via sig-skip) then deep
-    // exploration until their time limit. Between worker rounds: merge,
-    // revival, staleness checks. Repeats until cycle time budget exhausted.
+    // --- Phase 5: Time-Bounded Discovery Engine ---
     const engineBudgetMs = Math.max(TARGET_CYCLE_MS - (Date.now() - cycleStarted), 60_000);
     const engineEnd = Date.now() + engineBudgetMs;
 
     console.log(`\n[${timestamp()}] Phase 5: Time-Bounded Engine (${(engineBudgetMs / 60000).toFixed(1)} min budget)`);
-    setDaemonStatus(db, "calculating", "Phase 5: Time-Bounded Engine");
+    await setDaemonStatus(pool, "calculating", "Phase 5: Time-Bounded Engine");
 
     // Build price cache + knife finish cache for main-thread merge/revival
-    buildPriceCache(db, true);
+    await buildPriceCache(pool, true);
     const revivalKnifeCache = new Map<string, FinishData[]>();
     {
       const itemTypes = new Set<string>();
@@ -295,7 +290,7 @@ export async function main() {
         }
       }
       for (const it of itemTypes) {
-        const finishes = getKnifeFinishesWithPrices(db, it);
+        const finishes = await getKnifeFinishesWithPrices(pool, it);
         if (finishes.length > 0) revivalKnifeCache.set(it, finishes);
       }
     }
@@ -319,8 +314,8 @@ export async function main() {
     while (Date.now() < engineEnd - 30_000) { // Stop 30s before end
       superBatchCount++;
       const batchStart = Date.now();
-      console.log(`\n  ── Super-batch ${superBatchCount} ──`);
-      setDaemonStatus(db, "calculating", `Phase 5: Super-batch ${superBatchCount}`);
+      console.log(`\n  -- Super-batch ${superBatchCount} --`);
+      await setDaemonStatus(pool, "calculating", `Phase 5: Super-batch ${superBatchCount}`);
 
       // Run 3 rounds of 2 workers each
       for (let roundIdx = 0; roundIdx < WORKER_ROUNDS.length; roundIdx++) {
@@ -328,20 +323,17 @@ export async function main() {
 
         const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
 
-        // Dynamic worker time: first super-batch gets generous time for full
-        // structured discovery (no existing sigs on fresh/cycle 1).
-        // Subsequent super-batches: structured is instant, use minimum for exploration.
         const isFirstBatch = superBatchCount === 1;
         const remainingMs = engineEnd - Date.now();
         const workerTimeLimit = isFirstBatch
           ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / WORKER_ROUNDS.length))
           : MIN_WORKER_TIME;
 
-        setDaemonStatus(db, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
+        await setDaemonStatus(pool, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
 
         const results = await Promise.allSettled([
-          runCalcWorker(taskA as "knife", DB_PATH, workerTimeLimit),
-          runCalcWorker(taskB as "classified", DB_PATH, workerTimeLimit),
+          runCalcWorker(taskA as "knife", workerTimeLimit),
+          runCalcWorker(taskB as "classified", workerTimeLimit),
         ]);
 
         // Merge results for each worker
@@ -365,7 +357,7 @@ export async function main() {
               toSave = [...profitableSet, ...highChance, ...rest].slice(0, MAX_SAVE);
             }
 
-            mergeTradeUps(db, toSave, tradeUpType);
+            await mergeTradeUps(pool, toSave, tradeUpType);
 
             // Track stats
             if (taskName === "knife") {
@@ -381,7 +373,6 @@ export async function main() {
 
             console.log(`    ${taskName}: ${tradeUps.length} trade-ups (${profitable.length} profitable)`);
 
-            // Log top trade-ups for high-value tiers
             if (profitable.length > 0 && (taskName === "knife" || taskName === "classified")) {
               for (const tu of profitable.slice(0, 3)) {
                 const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
@@ -389,7 +380,7 @@ export async function main() {
               }
             }
 
-            emitEvent(db, `${tradeUpType}_calc`, `${profitable.length} profitable, best +$${profitable.length > 0 ? (profitable[0].profit_cents / 100).toFixed(2) : "0.00"}`);
+            await emitEvent(pool, `${tradeUpType}_calc`, `${profitable.length} profitable, best +$${profitable.length > 0 ? (profitable[0].profit_cents / 100).toFixed(2) : "0.00"}`);
           } else if (r.status === "rejected") {
             console.error(`    ${taskName} failed: ${r.reason?.message}`);
           } else {
@@ -399,9 +390,9 @@ export async function main() {
       }
 
       // Revival between super-batches (CPU-only, no API calls)
-      setDaemonStatus(db, "calculating", `Phase 5: Revival (batch ${superBatchCount})`);
-      const gunRevival = reviveStaleGunTradeUps(db, 200);
-      const knifeRevival = reviveStaleTradeUps(db, revivalKnifeCache, 200);
+      await setDaemonStatus(pool, "calculating", `Phase 5: Revival (batch ${superBatchCount})`);
+      const gunRevival = await reviveStaleGunTradeUps(pool, 200);
+      const knifeRevival = await reviveStaleTradeUps(pool, revivalKnifeCache, 200);
       const batchRevived = gunRevival.revived + knifeRevival.revived;
       totalRevived += batchRevived;
       if (batchRevived > 0) {
@@ -410,24 +401,35 @@ export async function main() {
 
       // Handle expired claims: clear claimed_by, check if listings were actually purchased
       {
-        const expired = db.prepare(`
+        const { rows: expired } = await pool.query(`
           SELECT id, trade_up_id, user_id FROM trade_up_claims
-          WHERE released_at IS NULL AND confirmed_at IS NULL AND expires_at <= datetime('now')
-        `).all() as { id: number; trade_up_id: number; user_id: string }[];
+          WHERE released_at IS NULL AND confirmed_at IS NULL AND expires_at <= NOW()
+        `);
         if (expired.length > 0) {
-          const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
-          const releaseClaim = db.prepare("UPDATE trade_up_claims SET released_at = datetime('now') WHERE id = ?");
-          db.transaction(() => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
             for (const claim of expired) {
-              const listings = db.prepare(
-                "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = ?"
-              ).all(claim.trade_up_id) as { listing_id: string }[];
-              for (const { listing_id } of listings) clearClaimed.run(listing_id, claim.user_id);
-              releaseClaim.run(claim.id);
+              const { rows: claimListings } = await client.query(
+                "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+                [claim.trade_up_id]
+              );
+              for (const { listing_id } of claimListings) {
+                await client.query(
+                  "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
+                  [listing_id, claim.user_id]
+                );
+              }
+              await client.query("UPDATE trade_up_claims SET released_at = NOW() WHERE id = $1", [claim.id]);
             }
-          })();
+            await client.query('COMMIT');
+          } catch (txErr) {
+            await client.query('ROLLBACK');
+            throw txErr;
+          } finally {
+            client.release();
+          }
           console.log(`    Expired claims: ${expired.length} released`);
-          // Expired listings will be checked by the staleness batch below
         }
       }
 
@@ -442,11 +444,19 @@ export async function main() {
             confirmedIds.push(id);
           }
           if (confirmedIds.length > 0) {
-            const deleteListing = db.prepare("DELETE FROM listings WHERE id = ?");
-            db.transaction(() => {
-              for (const lid of confirmedIds) deleteListing.run(lid);
-            })();
-            // refreshListingStatuses in next housekeeping will cascade partial status
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              for (const lid of confirmedIds) {
+                await client.query("DELETE FROM listings WHERE id = $1", [lid]);
+              }
+              await client.query('COMMIT');
+            } catch (txErr) {
+              await client.query('ROLLBACK');
+              throw txErr;
+            } finally {
+              client.release();
+            }
             console.log(`    Confirmed purchases: deleted ${confirmedIds.length} listings`);
           }
         }
@@ -467,12 +477,12 @@ export async function main() {
       } catch { /* Redis unavailable */ }
 
       // Staleness checks between super-batches (uses individual API pool)
-      setDaemonStatus(db, "fetching", `Phase 5: Staleness (batch ${superBatchCount})`);
+      await setDaemonStatus(pool, "fetching", `Phase 5: Staleness (batch ${superBatchCount})`);
       try {
-        const stalenessResult = await checkListingStaleness(db, {
+        const stalenessResult = await checkListingStaleness(pool, {
           apiKey,
           maxChecks: stalenessMaxChecks,
-          onProgress: (msg) => setDaemonStatus(db, "fetching", msg),
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
         });
         totalStalenessChecked += stalenessResult.checked;
         totalStalenessSold += stalenessResult.sold;
@@ -491,9 +501,9 @@ export async function main() {
       // DMarket staleness (every other super-batch)
       if (dmarketEnabled && superBatchCount % 2 === 0) {
         try {
-          const dmResult = await checkDMarketStaleness(db, {
+          const dmResult = await checkDMarketStaleness(pool, {
             maxChecks: 5,
-            onProgress: (msg) => setDaemonStatus(db, "fetching", `DMarket: ${msg}`),
+            onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
           });
           totalDmarketChecked += dmResult.checked;
           if (dmResult.removed > 0) {
@@ -510,28 +520,23 @@ export async function main() {
     }
 
     // Post-engine: update collection scores + global trim
-    updateCollectionScores(db);
-    trimGlobalExcess(db, 5_000_000); // 5M cap — will lower if cycle time exceeds 30 min
+    await updateCollectionScores(pool);
+    await trimGlobalExcess(pool, 5_000_000);
     freshness.markCalcDone();
 
-    const engineMs = Date.now() - cycleStarted - (Date.now() - (cycleStarted + engineBudgetMs - (engineEnd - Date.now())));
     console.log(`\n[${timestamp()}] Engine done: ${superBatchCount} super-batches, ${totalKnifeResults} knife + ${totalClassifiedResults} classified, ${totalRevived} revived, ${totalStalenessChecked} staleness checks`);
 
-    // ─── Post-engine: coverage, snapshot, Redis, stats ────────────────
+    // --- Post-engine: coverage, snapshot, Redis, stats ---
 
-    // Coverage report
-    printCoverageReport(db);
+    await printCoverageReport(pool);
     console.log(`  API: ${budget.saleCount} sale calls (${budget.saleRemaining} remaining) + ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 
-    // WAL checkpoint — keeps WAL file size manageable
-    db.pragma("wal_checkpoint(PASSIVE)");
-
-    // Pre-populate Redis cache so API never hits cold SQLite
+    // Pre-populate Redis cache so API never hits cold DB
     try {
       const cycleTs = new Date().toISOString();
       await setCycleVersion(cycleTs);
 
-      const stats = db.prepare(`
+      const { rows: [stats] } = await pool.query(`
         SELECT
           (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
           (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
@@ -540,21 +545,21 @@ export async function main() {
           (SELECT COUNT(*) FROM sale_history) as sale_hist,
           (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
           (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
-      `).get() as { total_tu: number; profitable_tu: number; listings: number; sale_obs: number; sale_hist: number; refs: number; cycles: number };
+      `);
       await cacheSet("global_stats", {
-        total_trade_ups: stats.total_tu,
-        profitable_trade_ups: stats.profitable_tu ?? 0,
-        total_data_points: stats.listings + stats.sale_obs + stats.sale_hist + stats.refs,
-        listings: stats.listings,
-        sale_observations: stats.sale_obs,
-        sale_history: stats.sale_hist,
-        ref_prices: stats.refs,
-        total_cycles: stats.cycles,
+        total_trade_ups: Number(stats.total_tu),
+        profitable_trade_ups: Number(stats.profitable_tu ?? 0),
+        total_data_points: Number(stats.listings) + Number(stats.sale_obs) + Number(stats.sale_hist) + Number(stats.refs),
+        listings: Number(stats.listings),
+        sale_observations: Number(stats.sale_obs),
+        sale_history: Number(stats.sale_hist),
+        ref_prices: Number(stats.refs),
+        total_cycles: Number(stats.cycles),
       }, 60);
 
-      const inputSkins = db.prepare("SELECT DISTINCT skin_name as name FROM trade_up_inputs").all() as { name: string }[];
+      const { rows: inputSkins } = await pool.query("SELECT DISTINCT skin_name as name FROM trade_up_inputs");
       const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
-      const collections = db.prepare("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC").all() as { name: string; count: number }[];
+      const { rows: collections } = await pool.query("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC");
       await cacheSet("filter_opts", { skins: skinMap, collections }, 600);
 
       // Invalidate stale trade-up list cache so API shows fresh counts
@@ -590,10 +595,10 @@ export async function main() {
       classifiedTheories: 0,
       classifiedTheoriesProfitable: 0,
     };
-    saveCycleStats(db, cycleStats);
+    await saveCycleStats(pool, cycleStats);
 
     // Take market snapshot for historical analysis
-    const snapshotId = takeSnapshot(db, {
+    const snapshotId = await takeSnapshot(pool, {
       cycle: cycleCount,
       type: "covert_knife",
       topN: 25,
@@ -603,7 +608,7 @@ export async function main() {
         individual: probe.individualListing.rateLimit.remaining ?? undefined,
       },
     });
-    if (cycleCount % 10 === 0) purgeOldSnapshots(db, 30);
+    if (cycleCount % 10 === 0) await purgeOldSnapshots(pool, 30);
     console.log(`  Snapshot #${snapshotId} saved (top 25 trade-ups)`);
 
     // Log Skinport WebSocket stats
@@ -613,6 +618,6 @@ export async function main() {
     }
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
-    printPerformanceComparison(db);
+    await printPerformanceComparison(pool);
   }
 }

@@ -2,7 +2,7 @@
  * Database persistence: save trade-ups, update collection scores, theory tracking.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { setSyncMeta } from "../db.js";
 import { type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
@@ -13,22 +13,21 @@ import { evaluateTradeUp } from "./evaluation.js";
 import { getOutcomesForCollections } from "./data-load.js";
 
 /**
- * Retry a function that may fail with SQLITE_BUSY or SQLITE_BUSY_SNAPSHOT.
- * Waits briefly between retries to let the other writer finish.
+ * Retry a function that may fail with connection errors.
+ * PG handles concurrency natively; this only retries transient connection issues.
  */
-function withRetry<T>(fn: () => T, maxRetries = 5, label = "DB operation"): T {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, label = "DB operation"): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return fn();
+      return await fn();
     } catch (err: unknown) {
       const msg = (err as Error).message ?? "";
       const code = (err as { code?: string }).code ?? "";
-      if ((code.includes("SQLITE_BUSY") || msg.includes("database is locked")) && attempt < maxRetries) {
-        // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-        const waitMs = 2000 * Math.pow(2, attempt);
-        console.log(`  ${label}: DB busy (${code}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
-        const start = Date.now();
-        while (Date.now() - start < waitMs) { /* spin wait — better-sqlite3 is sync */ }
+      const isTransient = code === "ECONNREFUSED" || code === "ECONNRESET" || code === "57P01" || msg.includes("Connection terminated");
+      if (isTransient && attempt < maxRetries) {
+        const waitMs = 1000 * Math.pow(2, attempt);
+        console.log(`  ${label}: connection error (${code}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
         continue;
       }
       throw err;
@@ -41,9 +40,9 @@ function withRetry<T>(fn: () => T, maxRetries = 5, label = "DB operation"): T {
  * Refresh listing_status for all real trade-ups based on whether their
  * input listings still exist in the DB. Fast — single SQL pass.
  */
-export function refreshListingStatuses(db: Database.Database): { active: number; partial: number; stale: number; preserved: number } {
+export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: number; partial: number; stale: number; preserved: number }> {
   // Count missing inputs per trade-up
-  const result = db.prepare(`
+  await pool.query(`
     UPDATE trade_ups SET
       listing_status = CASE
         WHEN (SELECT COUNT(*) FROM trade_up_inputs tui
@@ -58,23 +57,24 @@ export function refreshListingStatuses(db: Database.Database): { active: number;
         WHEN (SELECT COUNT(*) FROM trade_up_inputs tui
               LEFT JOIN listings l ON tui.listing_id = l.id
               WHERE tui.trade_up_id = trade_ups.id AND l.id IS NULL) = 0 THEN NULL
-        ELSE COALESCE(preserved_at, datetime('now'))
+        ELSE COALESCE(preserved_at, NOW())
       END
     WHERE is_theoretical = 0
-  `).run();
+  `);
 
-  const counts = db.prepare(`
+  const { rows: counts } = await pool.query(`
     SELECT listing_status, COUNT(*) as cnt
     FROM trade_ups WHERE is_theoretical = 0
     GROUP BY listing_status
-  `).all() as { listing_status: string; cnt: number }[];
+  `);
 
   const m: Record<string, number> = {};
-  for (const r of counts) m[r.listing_status] = r.cnt;
+  for (const r of counts) m[r.listing_status] = parseInt(r.cnt, 10);
 
-  const preserved = (db.prepare(
+  const { rows: preservedRows } = await pool.query(
     "SELECT COUNT(*) as cnt FROM trade_ups WHERE preserved_at IS NOT NULL"
-  ).get() as { cnt: number }).cnt;
+  );
+  const preserved = parseInt(preservedRows[0].cnt, 10);
 
   return { active: m.active ?? 0, partial: m.partial ?? 0, stale: m.stale ?? 0, preserved };
 }
@@ -82,142 +82,137 @@ export function refreshListingStatuses(db: Database.Database): { active: number;
 /**
  * Purge preserved trade-ups older than maxDays.
  */
-export function purgeExpiredPreserved(db: Database.Database, maxDays = 2): number {
+export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
   // Delete outcomes and inputs first (foreign key cascade should handle it, but be explicit)
-  const ids = db.prepare(
-    "SELECT id FROM trade_ups WHERE preserved_at IS NOT NULL AND julianday('now') - julianday(preserved_at) > ?"
-  ).all(maxDays) as { id: number }[];
+  const { rows: ids } = await pool.query(
+    "SELECT id FROM trade_ups WHERE preserved_at IS NOT NULL AND EXTRACT(EPOCH FROM NOW() - preserved_at::timestamptz) / 86400.0 > $1",
+    [maxDays]
+  );
 
   if (ids.length === 0) return 0;
 
-  const placeholders = ids.map(() => "?").join(",");
-  const idValues = ids.map(r => r.id);
-  db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`).run(...idValues);
-  db.prepare(`DELETE FROM trade_ups WHERE id IN (${placeholders})`).run(...idValues);
+  const idValues = ids.map((r: { id: number }) => r.id);
+  const placeholders = idValues.map((_: number, i: number) => `$${i + 1}`).join(",");
+  await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`, idValues);
+  await pool.query(`DELETE FROM trade_ups WHERE id IN (${placeholders})`, idValues);
   return ids.length;
 }
 
 /**
  * Record a combo as profitable in the history table. Called whenever discovery finds profit.
  */
-export function recordProfitableCombo(db: Database.Database, tu: TradeUp, comboKey: string) {
+export async function recordProfitableCombo(pool: pg.Pool, tu: TradeUp, comboKey: string) {
   const collections = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join(" + ");
   const recipe = tu.inputs.map(i =>
     `${i.skin_name}|${i.condition}|${i.collection_name}`
   ).sort().join(";");
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO profitable_combos (combo_key, collections, best_profit_cents, best_roi,
       times_profitable, last_profitable_at, last_cost_cents, input_recipe)
-    VALUES (?, ?, ?, ?, 1, datetime('now'), ?, ?)
+    VALUES ($1, $2, $3, $4, 1, NOW(), $5, $6)
     ON CONFLICT(combo_key) DO UPDATE SET
-      best_profit_cents = MAX(profitable_combos.best_profit_cents, excluded.best_profit_cents),
-      best_roi = MAX(profitable_combos.best_roi, excluded.best_roi),
+      best_profit_cents = GREATEST(profitable_combos.best_profit_cents, EXCLUDED.best_profit_cents),
+      best_roi = GREATEST(profitable_combos.best_roi, EXCLUDED.best_roi),
       times_profitable = profitable_combos.times_profitable + 1,
-      last_profitable_at = datetime('now'),
-      last_cost_cents = excluded.last_cost_cents,
-      input_recipe = excluded.input_recipe
-  `).run(comboKey, collections, tu.profit_cents, tu.roi_percentage, tu.total_cost_cents, recipe);
+      last_profitable_at = NOW(),
+      last_cost_cents = EXCLUDED.last_cost_cents,
+      input_recipe = EXCLUDED.input_recipe
+  `, [comboKey, collections, tu.profit_cents, tu.roi_percentage, tu.total_cost_cents, recipe]);
 }
 
 /**
  * Get profitable combo history for wanted list boosting.
  * Returns combos that have been profitable, sorted by recency and profit.
  */
-export function getProfitableCombosForWantedList(db: Database.Database): {
+export async function getProfitableCombosForWantedList(pool: pg.Pool): Promise<{
   combo_key: string; collections: string; best_profit: number; input_recipe: string; last_profitable: string;
-}[] {
-  return db.prepare(`
+}[]> {
+  const { rows } = await pool.query(`
     SELECT combo_key, collections, best_profit_cents as best_profit,
            input_recipe, last_profitable_at as last_profitable
     FROM profitable_combos
-    WHERE julianday('now') - julianday(last_profitable_at) <= 7
+    WHERE EXTRACT(EPOCH FROM NOW() - last_profitable_at::timestamptz) / 86400.0 <= 7
     ORDER BY last_profitable_at DESC, best_profit_cents DESC
     LIMIT 50
-  `).all() as { combo_key: string; collections: string; best_profit: number; input_recipe: string; last_profitable: string }[];
+  `);
+  return rows;
 }
 
-export function saveTradeUps(db: Database.Database, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
-  const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
+  await withRetry(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-  const saveAll = db.transaction(() => {
-    if (clearFirst) {
-      // Preserve materialized results when discovery clears — they're found by a different process
-      const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
-      db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = ? AND is_theoretical = ?${sourceFilter})`).run(type, isTheoretical ? 1 : 0);
-      db.prepare(`DELETE FROM trade_ups WHERE type = ? AND is_theoretical = ?${sourceFilter}`).run(type, isTheoretical ? 1 : 0);
-    }
-
-    for (const tu of tradeUps) {
-      const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-        sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0
-      );
-
-      const bestCase = tu.outcomes.length > 0
-        ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-      const worstCase = tu.outcomes.length > 0
-        ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-
-      const result = insertTradeUp.run(
-        tu.total_cost_cents,
-        tu.expected_value_cents,
-        tu.profit_cents,
-        tu.roi_percentage,
-        chanceToProfit,
-        type,
-        bestCase,
-        worstCase,
-        isTheoretical ? 1 : 0,
-        source,
-        JSON.stringify(tu.outcomes)
-      );
-      const tradeUpId = result.lastInsertRowid;
-
-      for (const input of tu.inputs) {
-        insertInput.run(
-          tradeUpId,
-          input.listing_id,
-          input.skin_id,
-          input.skin_name,
-          input.collection_name,
-          input.price_cents,
-          input.float_value,
-          input.condition,
-          input.source ?? "csfloat"
-        );
+      if (clearFirst) {
+        // Preserve materialized results when discovery clears — they're found by a different process
+        const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
+        await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical ? 1 : 0]);
+        await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical ? 1 : 0]);
       }
-    }
-  });
 
-  withRetry(() => saveAll(), 3, "saveTradeUps");
-  setSyncMeta(db, "last_calculation", new Date().toISOString());
+      for (const tu of tradeUps) {
+        const chanceToProfit = tu.outcomes.reduce((sum, o) =>
+          sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0
+        );
+
+        const bestCase = tu.outcomes.length > 0
+          ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+        const worstCase = tu.outcomes.length > 0
+          ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+
+        const { rows } = await client.query(`
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          RETURNING id
+        `, [
+          tu.total_cost_cents,
+          tu.expected_value_cents,
+          tu.profit_cents,
+          tu.roi_percentage,
+          chanceToProfit,
+          type,
+          bestCase,
+          worstCase,
+          isTheoretical ? 1 : 0,
+          source,
+          JSON.stringify(tu.outcomes)
+        ]);
+        const tradeUpId = rows[0].id;
+
+        for (const input of tu.inputs) {
+          await client.query(`
+            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `, [
+            tradeUpId,
+            input.listing_id,
+            input.skin_id,
+            input.skin_name,
+            input.collection_name,
+            input.price_cents,
+            input.float_value,
+            input.condition,
+            input.source ?? "csfloat"
+          ]);
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }, 3, "saveTradeUps");
+
+  await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 }
 
-export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: string = "classified_covert") {
+export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: string = "classified_covert") {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
-
-  const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'discovery', ?)
-  `);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?, roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
-      peak_profit_cents = MAX(peak_profit_cents, ?), listing_status = 'active', preserved_at = NULL, outcomes_json = ?,
-      profit_streak = ?, previous_inputs = NULL
-    WHERE id=?
-  `);
-  const getOldProfit = db.prepare(`SELECT profit_cents, profit_streak FROM trade_ups WHERE id = ?`);
 
   const newSigs = new Map<string, number>();
   for (let i = 0; i < tradeUps.length; i++) {
@@ -226,13 +221,13 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
   }
 
   // Read existing signatures (single query, no transaction needed)
-  const existing = db.prepare(`
-    SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+  const { rows: existing } = await pool.query(`
+    SELECT t.id, STRING_AGG(tui.listing_id::text, ',') as ids
     FROM trade_ups t
     JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
-    WHERE t.type = ? AND t.is_theoretical = 0
+    WHERE t.type = $1 AND t.is_theoretical = 0
     GROUP BY t.id
-  `).all(type) as { id: number; ids: string }[];
+  `, [type]);
 
   const existingSigs = new Map<string, number>();
   for (const row of existing) {
@@ -261,25 +256,40 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
 
   for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
     const batch = toUpdate.slice(i, i + BATCH_SIZE);
-    const batchTx = db.transaction(() => {
-      for (const { existId, tu } of batch) {
-        const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-          sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
-        const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        const old = getOldProfit.get(existId) as { profit_cents: number; profit_streak: number } | undefined;
-        let streak = 0;
-        if (tu.profit_cents > 0) {
-          streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
+    await withRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const { existId, tu } of batch) {
+          const chanceToProfit = tu.outcomes.reduce((sum, o) =>
+            sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
+          const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+          const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+          const { rows: oldRows } = await client.query(`SELECT profit_cents, profit_streak FROM trade_ups WHERE id = $1`, [existId]);
+          const old = oldRows[0] as { profit_cents: number; profit_streak: number } | undefined;
+          let streak = 0;
+          if (tu.profit_cents > 0) {
+            streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
+          }
+          await client.query(`
+            UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3, roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
+              peak_profit_cents = GREATEST(peak_profit_cents, $8), listing_status = 'active', preserved_at = NULL, outcomes_json = $9,
+              profit_streak = $10, previous_inputs = NULL
+            WHERE id=$11
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId]);
+          if (tu.profit_cents > 0) {
+            const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
+            await recordProfitableCombo(client as unknown as pg.Pool, tu, comboKey);
+          }
         }
-        updateTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId);
-        if (tu.profit_cents > 0) {
-          const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-          recordProfitableCombo(db, tu, comboKey);
-        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
-    });
-    withRetry(() => batchTx(), 3, "mergeTradeUps-update");
+    }, 3, "mergeTradeUps-update");
   }
 
   // Batch 2: insert new trade-ups in batches
@@ -291,27 +301,43 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
 
   for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
     const batch = toInsert.slice(i, i + BATCH_SIZE);
-    const insertTx = db.transaction(() => {
-      for (const tu of batch) {
-        const chanceToProfit = tu.outcomes.reduce((sum, o) =>
-          sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
-        const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
-        const result = insertTradeUp.run(tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes));
-        const tradeUpId = result.lastInsertRowid;
-        if (tu.profit_cents > 0) {
-          db.prepare("UPDATE trade_ups SET peak_profit_cents = ? WHERE id = ?").run(tu.profit_cents, tradeUpId);
-          const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-          recordProfitableCombo(db, tu, comboKey);
+    await withRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const tu of batch) {
+          const chanceToProfit = tu.outcomes.reduce((sum, o) =>
+            sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
+          const bestCase = tu.outcomes.length > 0 ? Math.max(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+          const worstCase = tu.outcomes.length > 0 ? Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents : 0;
+          const { rows } = await client.query(`
+            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'discovery', $9)
+            RETURNING id
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes)]);
+          const tradeUpId = rows[0].id;
+          if (tu.profit_cents > 0) {
+            await client.query("UPDATE trade_ups SET peak_profit_cents = $1 WHERE id = $2", [tu.profit_cents, tradeUpId]);
+            const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
+            await recordProfitableCombo(client as unknown as pg.Pool, tu, comboKey);
+          }
+          for (const inp of tu.inputs) {
+            await client.query(`
+              INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `, [tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat"]);
+          }
         }
-        for (const inp of tu.inputs) {
-          insertInput.run(tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
-        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
-    });
-    withRetry(() => insertTx(), 3, "mergeTradeUps-insert");
+    }, 3, "mergeTradeUps-insert");
   }
-  setSyncMeta(db, "last_calculation", new Date().toISOString());
+  await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 
   // No per-type caps — keep all trade-ups. Global 1M cap applied separately.
   // Natural staleness (listings sell → refreshListingStatuses → purgeExpiredPreserved)
@@ -322,37 +348,39 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
  * Trim trade-ups for a type down to maxKeep, scored by profit + chance-to-profit.
  * Profitable and high-chance trade-ups are kept; low-value unprofitable ones are purged.
  */
-function trimExcessTradeUps(db: Database.Database, type: string, maxKeep: number) {
-  const count = (db.prepare(
-    "SELECT COUNT(*) as cnt FROM trade_ups WHERE type = ? AND is_theoretical = 0"
-  ).get(type) as { cnt: number }).cnt;
+async function trimExcessTradeUps(pool: pg.Pool, type: string, maxKeep: number) {
+  const { rows: countRows } = await pool.query(
+    "SELECT COUNT(*) as cnt FROM trade_ups WHERE type = $1 AND is_theoretical = 0",
+    [type]
+  );
+  const count = parseInt(countRows[0].cnt, 10);
 
   if (count <= maxKeep) return;
 
   const toDelete = count - maxKeep;
   // Delete lowest-scored: sort by (profit + chance_bonus) ascending, delete the bottom N
   // Profitable trade-ups and high-chance ones are preserved
-  const deleted = db.prepare(`
+  await pool.query(`
     DELETE FROM trade_up_inputs WHERE trade_up_id IN (
       SELECT id FROM trade_ups
-      WHERE type = ? AND is_theoretical = 0
+      WHERE type = $1 AND is_theoretical = 0
       ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) ASC
-      LIMIT ?
+      LIMIT $2
     )
-  `).run(type, toDelete);
+  `, [type, toDelete]);
 
-  const deleted2 = db.prepare(`
-    DELETE FROM trade_ups WHERE type = ? AND is_theoretical = 0
+  const deleted2 = await pool.query(`
+    DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = 0
       AND id NOT IN (
         SELECT id FROM trade_ups
-        WHERE type = ? AND is_theoretical = 0
+        WHERE type = $1 AND is_theoretical = 0
         ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) DESC
-        LIMIT ?
+        LIMIT $2
       )
-  `).run(type, type, maxKeep);
+  `, [type, maxKeep]);
 
-  if (deleted2.changes > 0) {
-    console.log(`  Trimmed ${deleted2.changes} excess ${type} trade-ups (kept top ${maxKeep})`);
+  if ((deleted2.rowCount ?? 0) > 0) {
+    console.log(`  Trimmed ${deleted2.rowCount} excess ${type} trade-ups (kept top ${maxKeep})`);
   }
 }
 
@@ -361,132 +389,84 @@ function trimExcessTradeUps(db: Database.Database, type: string, maxKeep: number
  * Global trade-up cap: trim the worst trade-ups across ALL types when total exceeds maxTotal.
  * Deletes by worst ROI (most negative first). Keeps profitable + high-chance ones.
  */
-export function trimGlobalExcess(db: Database.Database, maxTotal: number = 1_000_000): number {
-  const count = (db.prepare(
+export async function trimGlobalExcess(pool: pg.Pool, maxTotal: number = 1_000_000): Promise<number> {
+  const { rows: countRows } = await pool.query(
     "SELECT COUNT(*) as cnt FROM trade_ups WHERE is_theoretical = 0"
-  ).get() as { cnt: number }).cnt;
+  );
+  const count = parseInt(countRows[0].cnt, 10);
 
   if (count <= maxTotal) return 0;
 
   const toDelete = count - maxTotal;
   // Delete worst by ROI across all types
-  db.prepare(`
+  await pool.query(`
     DELETE FROM trade_up_inputs WHERE trade_up_id IN (
       SELECT id FROM trade_ups
       WHERE is_theoretical = 0
       ORDER BY roi_percentage ASC
-      LIMIT ?
+      LIMIT $1
     )
-  `).run(toDelete);
+  `, [toDelete]);
 
-  const deleted = db.prepare(`
+  const deleted = await pool.query(`
     DELETE FROM trade_ups WHERE is_theoretical = 0
       AND id NOT IN (
         SELECT id FROM trade_ups
         WHERE is_theoretical = 0
         ORDER BY roi_percentage DESC
-        LIMIT ?
+        LIMIT $1
       )
-  `).run(maxTotal);
+  `, [maxTotal]);
 
-  if (deleted.changes > 0) {
-    console.log(`  Global trim: removed ${deleted.changes} worst-ROI trade-ups (cap ${maxTotal.toLocaleString()})`);
+  if ((deleted.rowCount ?? 0) > 0) {
+    console.log(`  Global trim: removed ${deleted.rowCount} worst-ROI trade-ups (cap ${maxTotal.toLocaleString()})`);
   }
-  return deleted.changes;
+  return deleted.rowCount ?? 0;
 }
 
 // Replace missing inputs with alternative listings from same skin/collection.
-export function reviveStaleTradeUps(
-  db: Database.Database,
+export async function reviveStaleTradeUps(
+  pool: pg.Pool,
   knifeFinishCache: Map<string, FinishData[]>,
   limit = 100
-): { checked: number; revived: number; improved: number } {
+): Promise<{ checked: number; revived: number; improved: number }> {
   // Get partial/stale knife trade-ups, prioritize by profit potential
-  const stale = db.prepare(`
+  const { rows: stale } = await pool.query(`
     SELECT t.id, t.profit_cents, t.peak_profit_cents, t.listing_status
     FROM trade_ups t
     WHERE t.type = 'covert_knife'
       AND t.is_theoretical = 0
       AND t.listing_status IN ('partial', 'stale')
     ORDER BY t.peak_profit_cents DESC, t.profit_cents DESC
-    LIMIT ?
-  `).all(limit) as { id: number; profit_cents: number; peak_profit_cents: number; listing_status: string }[];
+    LIMIT $1
+  `, [limit]);
 
   if (stale.length === 0) return { checked: 0, revived: 0, improved: 0 };
-
-  const getInputs = db.prepare(`
-    SELECT tui.listing_id, tui.skin_id, tui.skin_name, tui.collection_name,
-           tui.price_cents, tui.float_value, tui.condition, tui.source
-    FROM trade_up_inputs tui
-    WHERE tui.trade_up_id = ?
-  `);
-
-  const checkListingExists = db.prepare(`SELECT id FROM listings WHERE id = ?`);
-
-  // Find replacement: same skin_id, closest float, cheapest
-  const findSameSkin = db.prepare(`
-    SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
-           l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
-           s.rarity, sc.collection_id, c.name as collection_name
-    FROM listings l
-    JOIN skins s ON l.skin_id = s.id
-    JOIN skin_collections sc ON s.id = sc.skin_id
-    JOIN collections c ON sc.collection_id = c.id
-    WHERE l.skin_id = ? AND l.id NOT IN (${Array(5).fill('?').join(',')})
-    ORDER BY ABS(l.float_value - ?) ASC, l.price_cents ASC
-    LIMIT 1
-  `);
-
-  // Find replacement: same collection, same rarity (Covert), similar float
-  const findSameCollection = db.prepare(`
-    SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
-           l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
-           s.rarity, sc.collection_id, c.name as collection_name
-    FROM listings l
-    JOIN skins s ON l.skin_id = s.id
-    JOIN skin_collections sc ON s.id = sc.skin_id
-    JOIN collections c ON sc.collection_id = c.id
-    WHERE c.name = ? AND s.rarity = 'Covert' AND l.stattrak = 0
-      AND l.id NOT IN (${Array(5).fill('?').join(',')})
-    ORDER BY ABS(l.float_value - ?) ASC, l.price_cents ASC
-    LIMIT 1
-  `);
-
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?,
-      roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
-      peak_profit_cents = MAX(peak_profit_cents, ?),
-      listing_status = 'active', preserved_at = NULL,
-      previous_inputs = ?, outcomes_json = ?
-    WHERE id=?
-  `);
-  const deleteInputs = db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id = ?`);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   let checked = 0, revived = 0, improved = 0;
 
   // Build set of existing listing signatures to prevent revival from creating duplicates.
   const knifeExistingSigs = new Set<string>();
-  const knifeExisting = db.prepare(`
-    SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+  const { rows: knifeExisting } = await pool.query(`
+    SELECT t.id, STRING_AGG(tui.listing_id::text, ',') as ids
     FROM trade_ups t JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
     WHERE t.type = 'covert_knife' AND t.is_theoretical = 0
     GROUP BY t.id
-  `).all() as { id: number; ids: string }[];
+  `);
   for (const row of knifeExisting) {
     knifeExistingSigs.add(row.ids.split(",").sort().join(","));
   }
 
-  const reviveAll = db.transaction(() => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
     for (const tu of stale) {
       checked++;
-      const inputs = getInputs.all(tu.id) as {
-        listing_id: string; skin_id: string; skin_name: string;
-        collection_name: string; price_cents: number; float_value: number; condition: string;
-      }[];
+      const { rows: inputs } = await client.query(`
+        SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+        FROM trade_up_inputs WHERE trade_up_id = $1
+      `, [tu.id]);
 
       if (inputs.length !== 5) continue;
 
@@ -497,10 +477,10 @@ export function reviveStaleTradeUps(
       const usedIds = new Set<string>();
 
       for (const inp of inputs) {
-        const exists = checkListingExists.get(inp.listing_id);
-        if (exists) {
+        const { rows: existRows } = await client.query(`SELECT id FROM listings WHERE id = $1`, [inp.listing_id]);
+        if (existRows.length > 0) {
           // Listing still exists — fetch full data
-          const full = db.prepare(`
+          const { rows: fullRows } = await client.query(`
             SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
                    l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
                    s.rarity, sc.collection_id, c.name as collection_name
@@ -508,8 +488,9 @@ export function reviveStaleTradeUps(
             JOIN skins s ON l.skin_id = s.id
             JOIN skin_collections sc ON s.id = sc.skin_id
             JOIN collections c ON sc.collection_id = c.id
-            WHERE l.id = ?
-          `).get(inp.listing_id) as ListingWithCollection | undefined;
+            WHERE l.id = $1
+          `, [inp.listing_id]);
+          const full = fullRows[0] as ListingWithCollection | undefined;
           if (full) {
             newInputs.push(full);
             usedIds.add(full.id);
@@ -520,11 +501,21 @@ export function reviveStaleTradeUps(
         anyMissing = true;
 
         // Try same skin first
-        const excludeIds = [...usedIds, ...inputs.map(i => i.listing_id)];
-        while (excludeIds.length < 5) excludeIds.push('');
-        const sameSkin = findSameSkin.get(
-          inp.skin_id, ...excludeIds.slice(0, 5), inp.float_value
-        ) as ListingWithCollection | undefined;
+        const excludeIds = [...usedIds, ...inputs.map((i: { listing_id: string }) => i.listing_id)];
+        const excludePlaceholders = excludeIds.map((_, idx) => `$${idx + 2}`).join(",");
+        const { rows: sameSkinRows } = await client.query(`
+          SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
+                 l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
+                 s.rarity, sc.collection_id, c.name as collection_name
+          FROM listings l
+          JOIN skins s ON l.skin_id = s.id
+          JOIN skin_collections sc ON s.id = sc.skin_id
+          JOIN collections c ON sc.collection_id = c.id
+          WHERE l.skin_id = $1 AND l.id NOT IN (${excludePlaceholders})
+          ORDER BY ABS(l.float_value - $${excludeIds.length + 2}) ASC, l.price_cents ASC
+          LIMIT 1
+        `, [inp.skin_id, ...excludeIds, inp.float_value]);
+        const sameSkin = sameSkinRows[0] as ListingWithCollection | undefined;
 
         if (sameSkin) {
           newInputs.push(sameSkin);
@@ -534,9 +525,20 @@ export function reviveStaleTradeUps(
         }
 
         // Try same collection
-        const sameCol = findSameCollection.get(
-          inp.collection_name, ...excludeIds.slice(0, 5), inp.float_value
-        ) as ListingWithCollection | undefined;
+        const { rows: sameColRows } = await client.query(`
+          SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
+                 l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
+                 s.rarity, sc.collection_id, c.name as collection_name
+          FROM listings l
+          JOIN skins s ON l.skin_id = s.id
+          JOIN skin_collections sc ON s.id = sc.skin_id
+          JOIN collections c ON sc.collection_id = c.id
+          WHERE c.name = $1 AND s.rarity = 'Covert' AND l.stattrak = 0
+            AND l.id NOT IN (${excludePlaceholders})
+          ORDER BY ABS(l.float_value - $${excludeIds.length + 2}) ASC, l.price_cents ASC
+          LIMIT 1
+        `, [inp.collection_name, ...excludeIds, inp.float_value]);
+        const sameCol = sameColRows[0] as ListingWithCollection | undefined;
 
         if (sameCol) {
           newInputs.push(sameCol);
@@ -558,18 +560,18 @@ export function reviveStaleTradeUps(
       if (knifeExistingSigs.has(newSig)) continue; // Would create duplicate — skip
 
       // Re-evaluate with the new inputs
-      const result = evaluateKnifeTradeUp(db, newInputs, knifeFinishCache);
+      const result = await evaluateKnifeTradeUp(pool, newInputs, knifeFinishCache);
       if (!result) continue;
 
       // Build previous_inputs: only store inputs that were replaced
-      const oldListingIds = new Set(inputs.map(i => i.listing_id));
+      const oldListingIds = new Set(inputs.map((i: { listing_id: string }) => i.listing_id));
       const newListingIds = new Set(result.inputs.map(i => i.listing_id));
-      const replacedOld = inputs.filter(i => !newListingIds.has(i.listing_id));
+      const replacedOld = inputs.filter((i: { listing_id: string }) => !newListingIds.has(i.listing_id));
       const replacedNew = result.inputs.filter(i => !oldListingIds.has(i.listing_id));
       const previousInputsJson = replacedOld.length > 0 ? JSON.stringify({
         old_profit_cents: tu.profit_cents,
-        old_cost_cents: inputs.reduce((s, i) => s + i.price_cents, 0),
-        replaced: replacedOld.map((old, idx) => ({
+        old_cost_cents: inputs.reduce((s: number, i: { price_cents: number }) => s + i.price_cents, 0),
+        replaced: replacedOld.map((old: { skin_name: string; price_cents: number; float_value: number; condition: string; listing_id: string }, idx: number) => ({
           old: { skin_name: old.skin_name, price_cents: old.price_cents, float_value: old.float_value, condition: old.condition, listing_id: old.listing_id },
           new: replacedNew[idx] ? { skin_name: replacedNew[idx].skin_name, price_cents: replacedNew[idx].price_cents, float_value: replacedNew[idx].float_value, condition: replacedNew[idx].condition, listing_id: replacedNew[idx].listing_id } : null,
         })),
@@ -581,17 +583,27 @@ export function reviveStaleTradeUps(
       const bestCase = result.outcomes.length > 0 ? Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents : 0;
       const worstCase = result.outcomes.length > 0 ? Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents : 0;
 
-      updateTradeUp.run(
+      await client.query(`
+        UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3,
+          roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
+          peak_profit_cents = GREATEST(peak_profit_cents, $8),
+          listing_status = 'active', preserved_at = NULL,
+          previous_inputs = $9, outcomes_json = $10
+        WHERE id=$11
+      `, [
         result.total_cost_cents, result.expected_value_cents, result.profit_cents,
         result.roi_percentage, chanceToProfit, bestCase, worstCase,
         Math.max(result.profit_cents, 0), previousInputsJson, JSON.stringify(result.outcomes), tu.id
-      );
+      ]);
 
       // Replace inputs
-      deleteInputs.run(tu.id);
+      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = $1`, [tu.id]);
       for (const inp of result.inputs) {
-        insertInput.run(tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
-          inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
+        await client.query(`
+          INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
+          inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat"]);
       }
 
       revived++;
@@ -600,12 +612,18 @@ export function reviveStaleTradeUps(
       // Record if newly profitable
       if (result.profit_cents > 0) {
         const comboKey = [...new Set(result.inputs.map(i => i.collection_name))].sort().join("|");
-        recordProfitableCombo(db, result, comboKey);
+        await recordProfitableCombo(client as unknown as pg.Pool, result, comboKey);
       }
     }
-  });
 
-  reviveAll();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
   return { checked, revived, improved };
 }
 
@@ -613,67 +631,21 @@ export function reviveStaleTradeUps(
  * Revive stale/partial classified→covert trade-ups by finding replacement listings.
  * Same pattern as reviveStaleTradeUps but for 10 Classified inputs → Covert outputs.
  */
-export function reviveStaleGunTradeUps(
-  db: Database.Database,
+export async function reviveStaleGunTradeUps(
+  pool: pg.Pool,
   limit = 100
-): { checked: number; revived: number; improved: number } {
-  const stale = db.prepare(`
+): Promise<{ checked: number; revived: number; improved: number }> {
+  const { rows: stale } = await pool.query(`
     SELECT t.id, t.profit_cents, t.peak_profit_cents, t.listing_status
     FROM trade_ups t
     WHERE t.type = 'classified_covert'
       AND t.is_theoretical = 0
       AND t.listing_status IN ('partial', 'stale')
     ORDER BY t.peak_profit_cents DESC, t.profit_cents DESC
-    LIMIT ?
-  `).all(limit) as { id: number; profit_cents: number; peak_profit_cents: number; listing_status: string }[];
+    LIMIT $1
+  `, [limit]);
 
   if (stale.length === 0) return { checked: 0, revived: 0, improved: 0 };
-
-  const getInputs = db.prepare(`
-    SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
-    FROM trade_up_inputs WHERE trade_up_id = ?
-  `);
-  const checkListingExists = db.prepare(`SELECT id FROM listings WHERE id = ?`);
-
-  const findSameSkin = db.prepare(`
-    SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
-           l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
-           s.rarity, sc.collection_id, c.name as collection_name
-    FROM listings l
-    JOIN skins s ON l.skin_id = s.id
-    JOIN skin_collections sc ON s.id = sc.skin_id
-    JOIN collections c ON sc.collection_id = c.id
-    WHERE l.skin_id = ?
-    ORDER BY ABS(l.float_value - ?) ASC, l.price_cents ASC
-    LIMIT 1
-  `);
-
-  const findSameCollection = db.prepare(`
-    SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
-           l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
-           s.rarity, sc.collection_id, c.name as collection_name
-    FROM listings l
-    JOIN skins s ON l.skin_id = s.id
-    JOIN skin_collections sc ON s.id = sc.skin_id
-    JOIN collections c ON sc.collection_id = c.id
-    WHERE c.name = ? AND s.rarity = 'Classified' AND l.stattrak = 0
-    ORDER BY ABS(l.float_value - ?) ASC, l.price_cents ASC
-    LIMIT 1
-  `);
-
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents=?, expected_value_cents=?, profit_cents=?,
-      roi_percentage=?, chance_to_profit=?, best_case_cents=?, worst_case_cents=?,
-      peak_profit_cents = MAX(peak_profit_cents, ?),
-      listing_status = 'active', preserved_at = NULL,
-      previous_inputs = ?, outcomes_json = ?
-    WHERE id=?
-  `);
-  const deleteInputs = db.prepare(`DELETE FROM trade_up_inputs WHERE trade_up_id = ?`);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   let checked = 0, revived = 0, improved = 0;
 
@@ -681,24 +653,27 @@ export function reviveStaleGunTradeUps(
   const gunExistingSigs = new Set<string>();
   const gunTypes = ["classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
   for (const gType of gunTypes) {
-    const rows = db.prepare(`
-      SELECT t.id, GROUP_CONCAT(tui.listing_id) as ids
+    const { rows } = await pool.query(`
+      SELECT t.id, STRING_AGG(tui.listing_id::text, ',') as ids
       FROM trade_ups t JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
-      WHERE t.type = ? AND t.is_theoretical = 0
+      WHERE t.type = $1 AND t.is_theoretical = 0
       GROUP BY t.id
-    `).all(gType) as { id: number; ids: string }[];
+    `, [gType]);
     for (const row of rows) {
       gunExistingSigs.add(row.ids.split(",").sort().join(","));
     }
   }
 
-  const reviveAll = db.transaction(() => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
     for (const tu of stale) {
       checked++;
-      const inputs = getInputs.all(tu.id) as {
-        listing_id: string; skin_id: string; skin_name: string;
-        collection_name: string; price_cents: number; float_value: number; condition: string;
-      }[];
+      const { rows: inputs } = await client.query(`
+        SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+        FROM trade_up_inputs WHERE trade_up_id = $1
+      `, [tu.id]);
 
       if (inputs.length !== 10) continue;
 
@@ -708,9 +683,9 @@ export function reviveStaleGunTradeUps(
       const usedIds = new Set<string>();
 
       for (const inp of inputs) {
-        const exists = checkListingExists.get(inp.listing_id);
-        if (exists) {
-          const full = db.prepare(`
+        const { rows: existRows } = await client.query(`SELECT id FROM listings WHERE id = $1`, [inp.listing_id]);
+        if (existRows.length > 0) {
+          const { rows: fullRows } = await client.query(`
             SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
                    l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
                    s.rarity, sc.collection_id, c.name as collection_name
@@ -718,8 +693,9 @@ export function reviveStaleGunTradeUps(
             JOIN skins s ON l.skin_id = s.id
             JOIN skin_collections sc ON s.id = sc.skin_id
             JOIN collections c ON sc.collection_id = c.id
-            WHERE l.id = ?
-          `).get(inp.listing_id) as ListingWithCollection | undefined;
+            WHERE l.id = $1
+          `, [inp.listing_id]);
+          const full = fullRows[0] as ListingWithCollection | undefined;
           if (full) {
             newInputs.push(full);
             usedIds.add(full.id);
@@ -730,7 +706,19 @@ export function reviveStaleGunTradeUps(
         anyMissing = true;
 
         // Try same skin first (exclude already-used IDs)
-        const sameSkin = findSameSkin.get(inp.skin_id, inp.float_value) as ListingWithCollection | undefined;
+        const { rows: sameSkinRows } = await client.query(`
+          SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
+                 l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
+                 s.rarity, sc.collection_id, c.name as collection_name
+          FROM listings l
+          JOIN skins s ON l.skin_id = s.id
+          JOIN skin_collections sc ON s.id = sc.skin_id
+          JOIN collections c ON sc.collection_id = c.id
+          WHERE l.skin_id = $1
+          ORDER BY ABS(l.float_value - $2) ASC, l.price_cents ASC
+          LIMIT 1
+        `, [inp.skin_id, inp.float_value]);
+        const sameSkin = sameSkinRows[0] as ListingWithCollection | undefined;
         if (sameSkin && !usedIds.has(sameSkin.id)) {
           newInputs.push(sameSkin);
           usedIds.add(sameSkin.id);
@@ -739,7 +727,19 @@ export function reviveStaleGunTradeUps(
         }
 
         // Try same collection
-        const sameCol = findSameCollection.get(inp.collection_name, inp.float_value) as ListingWithCollection | undefined;
+        const { rows: sameColRows } = await client.query(`
+          SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
+                 l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
+                 s.rarity, sc.collection_id, c.name as collection_name
+          FROM listings l
+          JOIN skins s ON l.skin_id = s.id
+          JOIN skin_collections sc ON s.id = sc.skin_id
+          JOIN collections c ON sc.collection_id = c.id
+          WHERE c.name = $1 AND s.rarity = 'Classified' AND l.stattrak = 0
+          ORDER BY ABS(l.float_value - $2) ASC, l.price_cents ASC
+          LIMIT 1
+        `, [inp.collection_name, inp.float_value]);
+        const sameCol = sameColRows[0] as ListingWithCollection | undefined;
         if (sameCol && !usedIds.has(sameCol.id)) {
           newInputs.push(sameCol);
           usedIds.add(sameCol.id);
@@ -758,20 +758,20 @@ export function reviveStaleGunTradeUps(
 
       // Get Covert outcomes for the collections in this trade-up
       const collectionIds = [...new Set(newInputs.map(i => i.collection_id))];
-      const outcomes = getOutcomesForCollections(db, collectionIds, "Covert");
+      const outcomes = await getOutcomesForCollections(pool, collectionIds, "Covert");
       if (outcomes.length === 0) continue;
 
-      const result = evaluateTradeUp(db, newInputs, outcomes);
+      const result = await evaluateTradeUp(pool, newInputs, outcomes);
       if (!result) continue;
 
-      const oldListingIds = new Set(inputs.map(i => i.listing_id));
+      const oldListingIds = new Set(inputs.map((i: { listing_id: string }) => i.listing_id));
       const newListingIds = new Set(result.inputs.map(i => i.listing_id));
-      const replacedOld = inputs.filter(i => !newListingIds.has(i.listing_id));
+      const replacedOld = inputs.filter((i: { listing_id: string }) => !newListingIds.has(i.listing_id));
       const replacedNew = result.inputs.filter(i => !oldListingIds.has(i.listing_id));
       const previousInputsJson = replacedOld.length > 0 ? JSON.stringify({
         old_profit_cents: tu.profit_cents,
-        old_cost_cents: inputs.reduce((s, i) => s + i.price_cents, 0),
-        replaced: replacedOld.map((old, idx) => ({
+        old_cost_cents: inputs.reduce((s: number, i: { price_cents: number }) => s + i.price_cents, 0),
+        replaced: replacedOld.map((old: { skin_name: string; price_cents: number; float_value: number; condition: string; listing_id: string }, idx: number) => ({
           old: { skin_name: old.skin_name, price_cents: old.price_cents, float_value: old.float_value, condition: old.condition, listing_id: old.listing_id },
           new: replacedNew[idx] ? { skin_name: replacedNew[idx].skin_name, price_cents: replacedNew[idx].price_cents, float_value: replacedNew[idx].float_value, condition: replacedNew[idx].condition, listing_id: replacedNew[idx].listing_id } : null,
         })),
@@ -782,29 +782,45 @@ export function reviveStaleGunTradeUps(
       const bestCase = result.outcomes.length > 0 ? Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents : 0;
       const worstCase = result.outcomes.length > 0 ? Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents : 0;
 
-      updateTradeUp.run(
+      await client.query(`
+        UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3,
+          roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
+          peak_profit_cents = GREATEST(peak_profit_cents, $8),
+          listing_status = 'active', preserved_at = NULL,
+          previous_inputs = $9, outcomes_json = $10
+        WHERE id=$11
+      `, [
         result.total_cost_cents, result.expected_value_cents, result.profit_cents,
         result.roi_percentage, chanceToProfit, bestCase, worstCase,
         Math.max(result.profit_cents, 0), previousInputsJson, JSON.stringify(result.outcomes), tu.id
-      );
+      ]);
 
-      deleteInputs.run(tu.id);
+      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = $1`, [tu.id]);
       for (const inp of result.inputs) {
-        insertInput.run(tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
-          inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat");
+        await client.query(`
+          INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [tu.id, inp.listing_id, inp.skin_id, inp.skin_name,
+          inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat"]);
       }
 
       revived++;
       if (result.profit_cents > tu.profit_cents) improved++;
     }
-  });
 
-  reviveAll();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
   return { checked, revived, improved };
 }
 
-export function updateCollectionScores(db: Database.Database) {
-  const scores = db.prepare(`
+export async function updateCollectionScores(pool: pg.Pool) {
+  const { rows: scores } = await pool.query(`
     SELECT
       tui.collection_name,
       COUNT(DISTINCT tu.id) as total_tradeups,
@@ -815,51 +831,52 @@ export function updateCollectionScores(db: Database.Database) {
     FROM trade_ups tu
     JOIN trade_up_inputs tui ON tu.id = tui.trade_up_id
     GROUP BY tui.collection_name
-  `).all() as {
-    collection_name: string;
-    total_tradeups: number;
-    profitable_count: number;
-    avg_profit: number | null;
-    max_profit: number;
-    avg_roi: number | null;
-  }[];
-
-  const colIdLookup = new Map<string, string>();
-  const colRows = db.prepare("SELECT id, name FROM collections").all() as { id: string; name: string }[];
-  for (const r of colRows) colIdLookup.set(r.name, r.id);
-
-  const upsert = db.prepare(`
-    INSERT OR REPLACE INTO collection_scores
-      (collection_id, collection_name, profitable_count, avg_profit_cents, max_profit_cents, avg_roi, total_tradeups, priority_score, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
-  const updateAll = db.transaction(() => {
-    db.exec("DELETE FROM collection_scores");
+  const colIdLookup = new Map<string, string>();
+  const { rows: colRows } = await pool.query("SELECT id, name FROM collections");
+  for (const r of colRows) colIdLookup.set(r.name, r.id);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("DELETE FROM collection_scores");
 
     for (const s of scores) {
       const colId = colIdLookup.get(s.collection_name);
       if (!colId) continue;
 
-      const profitableWeight = Math.min(s.profitable_count, 50);
+      const profitableWeight = Math.min(parseInt(s.profitable_count, 10), 50);
       const avgProfitWeight = Math.min((s.avg_profit ?? 0) / 100, 50);
       const roiWeight = Math.min((s.avg_roi ?? 0) / 5, 20);
       const priorityScore = profitableWeight * 2 + avgProfitWeight + roiWeight;
 
-      upsert.run(
+      await client.query(`
+        INSERT INTO collection_scores
+          (collection_id, collection_name, profitable_count, avg_profit_cents, max_profit_cents, avg_roi, total_tradeups, priority_score, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        ON CONFLICT (collection_id) DO UPDATE SET
+          collection_name = $2, profitable_count = $3, avg_profit_cents = $4, max_profit_cents = $5,
+          avg_roi = $6, total_tradeups = $7, priority_score = $8, updated_at = NOW()
+      `, [
         colId,
         s.collection_name,
-        s.profitable_count,
+        parseInt(s.profitable_count, 10),
         Math.round(s.avg_profit ?? 0),
         s.max_profit,
         Math.round((s.avg_roi ?? 0) * 100) / 100,
-        s.total_tradeups,
+        parseInt(s.total_tradeups, 10),
         Math.round(priorityScore * 100) / 100
-      );
+      ]);
     }
-  });
 
-  updateAll();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
   console.log(`  Updated ${scores.length} collection scores`);
 }
 
@@ -874,89 +891,94 @@ export function updateCollectionScores(db: Database.Database) {
  * price_updated_at is after that timestamp (avoids scanning all 10M+ input rows).
  * Falls back to full scan if no timestamp is provided.
  */
-export function recalcTradeUpCosts(db: Database.Database, sinceTimestamp?: string): { updated: number } {
+export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string): Promise<{ updated: number }> {
   // Find trade-ups with at least one input whose price differs from the listing.
   // When sinceTimestamp is available, only check recently-updated listings.
   let staleInputs: { trade_up_id: number }[];
   if (sinceTimestamp) {
-    staleInputs = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT DISTINCT tui.trade_up_id
       FROM trade_up_inputs tui
       JOIN listings l ON tui.listing_id = l.id
-      WHERE l.price_updated_at > ? AND tui.price_cents != l.price_cents
-    `).all(sinceTimestamp) as { trade_up_id: number }[];
+      WHERE l.price_updated_at > $1 AND tui.price_cents != l.price_cents
+    `, [sinceTimestamp]);
+    staleInputs = rows;
   } else {
-    staleInputs = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT DISTINCT tui.trade_up_id
       FROM trade_up_inputs tui
       JOIN listings l ON tui.listing_id = l.id
       WHERE tui.price_cents != l.price_cents
-    `).all() as { trade_up_id: number }[];
+    `);
+    staleInputs = rows;
   }
 
   if (staleInputs.length === 0) {
     // Clear price_updated_at on processed listings so they aren't re-scanned
     if (sinceTimestamp) {
-      db.prepare("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > ?").run(sinceTimestamp);
+      await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
     }
     return { updated: 0 };
   }
 
   const tuIds = staleInputs.map(r => r.trade_up_id);
 
-  // Update input prices to match current listing prices
-  const updateInputPrice = db.prepare(`
-    UPDATE trade_up_inputs SET price_cents = (
-      SELECT l.price_cents FROM listings l WHERE l.id = trade_up_inputs.listing_id
-    ) WHERE trade_up_id = ? AND listing_id IN (
-      SELECT l.id FROM listings l
-      JOIN trade_up_inputs tui2 ON tui2.listing_id = l.id
-      WHERE tui2.trade_up_id = ? AND tui2.price_cents != l.price_cents
-    )
-  `);
-
-  // Recalc trade-up stats from updated inputs + stored outcomes
-  const getInputCost = db.prepare("SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = ?");
-  const getTradeUp = db.prepare("SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = ?");
-  const updateStats = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents = ?, profit_cents = ?, roi_percentage = ?,
-      chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?
-    WHERE id = ?
-  `);
-
   let updated = 0;
   const BATCH = 500;
   for (let i = 0; i < tuIds.length; i += BATCH) {
     const batch = tuIds.slice(i, i + BATCH);
-    const tx = db.transaction(() => {
-      for (const tuId of batch) {
-        // Update input prices
-        updateInputPrice.run(tuId, tuId);
+    await withRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const tuId of batch) {
+          // Update input prices
+          await client.query(`
+            UPDATE trade_up_inputs SET price_cents = (
+              SELECT l.price_cents FROM listings l WHERE l.id = trade_up_inputs.listing_id
+            ) WHERE trade_up_id = $1 AND listing_id IN (
+              SELECT l.id FROM listings l
+              JOIN trade_up_inputs tui2 ON tui2.listing_id = l.id
+              WHERE tui2.trade_up_id = $1 AND tui2.price_cents != l.price_cents
+            )
+          `, [tuId]);
 
-        // Recalculate stats
-        const cost = (getInputCost.get(tuId) as { total: number }).total;
-        const tu = getTradeUp.get(tuId) as { expected_value_cents: number; outcomes_json: string | null } | undefined;
-        if (!tu) continue;
+          // Recalculate stats
+          const { rows: costRows } = await client.query("SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = $1", [tuId]);
+          const cost = parseInt(costRows[0].total, 10);
+          const { rows: tuRows } = await client.query("SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = $1", [tuId]);
+          const tu = tuRows[0] as { expected_value_cents: number; outcomes_json: string | null } | undefined;
+          if (!tu) continue;
 
-        const ev = tu.expected_value_cents;
-        const profit = ev - cost;
-        const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
+          const ev = tu.expected_value_cents;
+          const profit = ev - cost;
+          const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
 
-        const outcomes = JSON.parse(tu.outcomes_json || "[]") as { estimated_price_cents: number; probability: number }[];
-        const chance = outcomes.reduce((sum, o) => sum + (o.estimated_price_cents > cost ? o.probability : 0), 0);
-        const best = outcomes.length > 0 ? Math.max(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
-        const worst = outcomes.length > 0 ? Math.min(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
+          const outcomes = JSON.parse(tu.outcomes_json || "[]") as { estimated_price_cents: number; probability: number }[];
+          const chance = outcomes.reduce((sum, o) => sum + (o.estimated_price_cents > cost ? o.probability : 0), 0);
+          const best = outcomes.length > 0 ? Math.max(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
+          const worst = outcomes.length > 0 ? Math.min(...outcomes.map(o => o.estimated_price_cents)) - cost : 0;
 
-        updateStats.run(cost, profit, roi, chance, best, worst, tuId);
-        updated++;
+          await client.query(`
+            UPDATE trade_ups SET total_cost_cents = $1, profit_cents = $2, roi_percentage = $3,
+              chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6
+            WHERE id = $7
+          `, [cost, profit, roi, chance, best, worst, tuId]);
+          updated++;
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
-    });
-    withRetry(() => tx(), 3, "recalcTradeUpCosts");
+    }, 3, "recalcTradeUpCosts");
   }
 
   // Clear price_updated_at on processed listings so they aren't re-scanned next cycle
   if (sinceTimestamp) {
-    db.prepare("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > ?").run(sinceTimestamp);
+    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
   }
 
   return { updated };

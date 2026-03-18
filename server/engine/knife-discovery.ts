@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition, type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import type { ListingWithCollection, AdjustedListing } from "./types.js";
 import type { FinishData } from "./knife-data.js";
@@ -19,20 +19,20 @@ import { evaluateKnifeTradeUp, getKnifeFinishesWithPrices } from "./knife-evalua
  * Also tries cross-collection combos where different cases contribute
  * different input proportions.
  */
-export function findProfitableKnifeTradeUps(
-  db: Database.Database,
+export async function findProfitableKnifeTradeUps(
+  pool: pg.Pool,
   options: {
     onProgress?: (msg: string) => void;
     extraTransitionPoints?: number[];
     existingSignatures?: Set<string>;
     deadlineMs?: number;
   } = {}
-): TradeUp[] {
+): Promise<TradeUp[]> {
   options.onProgress?.("Building price cache for knife trade-ups...");
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
   // Get all Covert gun listings (knife trade-up inputs)
-  const allListings = getListingsForRarity(db, "Covert")
+  const allListings = (await getListingsForRarity(pool, "Covert"))
     .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon)); // Only gun skins, not knives
 
   if (allListings.length === 0) {
@@ -60,7 +60,7 @@ export function findProfitableKnifeTradeUps(
     }
   }
   for (const itemType of allItemTypes) {
-    const finishes = getKnifeFinishesWithPrices(db, itemType);
+    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
     if (finishes.length > 0) {
       knifeFinishCache.set(itemType, finishes);
     }
@@ -95,10 +95,10 @@ export function findProfitableKnifeTradeUps(
   const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
 
   /** Evaluate only if this listing combo is new (skip evaluation for known combos). */
-  const tryEvalKnife = (inputs: ListingWithCollection[]) => {
+  const tryEvalKnife = async (inputs: ListingWithCollection[]) => {
     const sig = sigOf(inputs);
     if (seen.has(sig)) { skippedExisting++; return; }
-    tryAdd(evaluateKnifeTradeUp(db, inputs, knifeFinishCache));
+    tryAdd(await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache));
   };
 
   // Collections that have knife or glove mappings
@@ -150,7 +150,7 @@ export function findProfitableKnifeTradeUps(
 
     // Sliding windows (cheapest) — cap at 15
     for (let offset = 0; offset + 5 <= listings.length && offset < 15; offset++) {
-      tryEvalKnife(listings.slice(offset, offset + 5));
+      await tryEvalKnife(listings.slice(offset, offset + 5));
     }
 
     // Value-sorted: sort by lowest adjusted float (best output condition), then cheapest.
@@ -163,19 +163,19 @@ export function findProfitableKnifeTradeUps(
       }
     );
     for (let offset = 0; offset + 5 <= valueSorted.length && offset < 15; offset += 5) {
-      tryEvalKnife(valueSorted.slice(offset, offset + 5));
+      await tryEvalKnife(valueSorted.slice(offset, offset + 5));
     }
 
     // Float-targeted: for each transition point
     const quotas = new Map([[colName, 5]]);
     for (const target of knifeTransitionPoints) {
       const selected = selectForKnifeFloat(quotas, target);
-      if (selected) tryEvalKnife(selected);
+      if (selected) await tryEvalKnife(selected);
     }
 
     // Lowest-float selection
     const lowestFloat = selectLowestKnifeFloat(quotas);
-    if (lowestFloat) tryEvalKnife(lowestFloat);
+    if (lowestFloat) await tryEvalKnife(lowestFloat);
 
     // Condition-pure groups — deeper windows to find combos systematic cheapest misses.
     // Random explore proved $100 trade-ups hide in non-cheapest condition groups.
@@ -191,7 +191,7 @@ export function findProfitableKnifeTradeUps(
       for (let window = 0; window < 3; window++) {
         const off = window * 5;
         if (condListings.length >= off + 5) {
-          tryEvalKnife(condListings.slice(off, off + 5));
+          await tryEvalKnife(condListings.slice(off, off + 5));
         }
       }
     }
@@ -207,7 +207,7 @@ export function findProfitableKnifeTradeUps(
     // Try each skin individually (if enough listings)
     for (const [, skinListings] of bySkin) {
       if (skinListings.length >= 5) {
-        tryEvalKnife(skinListings.slice(0, 5));
+        await tryEvalKnife(skinListings.slice(0, 5));
         // Also try per-condition within the skin
         const skinByCondition = new Map<string, ListingWithCollection[]>();
         for (const l of skinListings) {
@@ -218,7 +218,7 @@ export function findProfitableKnifeTradeUps(
         }
         for (const [, condSkinListings] of skinByCondition) {
           if (condSkinListings.length >= 5) {
-            tryEvalKnife(condSkinListings.slice(0, 5));
+            await tryEvalKnife(condSkinListings.slice(0, 5));
           }
         }
       }
@@ -229,7 +229,7 @@ export function findProfitableKnifeTradeUps(
       const pooled = skinGroups.flatMap(g => g.slice(0, 3)).sort((a, b) => a.price_cents - b.price_cents);
       if (pooled.length >= 5) {
         for (let off = 0; off + 5 <= pooled.length && off < 15; off += 3) {
-          tryEvalKnife(pooled.slice(off, off + 5));
+          await tryEvalKnife(pooled.slice(off, off + 5));
         }
       }
     }
@@ -253,14 +253,14 @@ export function findProfitableKnifeTradeUps(
         if (listingsA.length < countA || listingsB.length < countB) continue;
 
         // Baseline: cheapest combo
-        tryEvalKnife([
+        await tryEvalKnife([
           ...listingsA.slice(0, countA),
           ...listingsB.slice(0, countB),
         ]);
 
         // Offset combos
         if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
-          tryEvalKnife([
+          await tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(5, 5 + countB),
           ]);
@@ -268,13 +268,13 @@ export function findProfitableKnifeTradeUps(
 
         // Mixed: cheap A + offset B
         if (listingsB.length >= countB + 5) {
-          tryEvalKnife([
+          await tryEvalKnife([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(5, 5 + countB),
           ]);
         }
         if (listingsA.length >= countA + 5) {
-          tryEvalKnife([
+          await tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(0, countB),
           ]);
@@ -284,19 +284,19 @@ export function findProfitableKnifeTradeUps(
         const quotas = new Map([[colA, countA], [colB, countB]]);
         for (const target of knifeTransitionPoints) {
           const selected = selectForKnifeFloat(quotas, target);
-          if (selected) tryEvalKnife(selected);
+          if (selected) await tryEvalKnife(selected);
         }
 
         // Lowest-float
         const lowestFloat = selectLowestKnifeFloat(quotas);
-        if (lowestFloat) tryEvalKnife(lowestFloat);
+        if (lowestFloat) await tryEvalKnife(lowestFloat);
 
         // Condition-targeted pairs: cheapest N at each condition
         for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
           const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
           const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
           if (condA.length >= countA && condB.length >= countB) {
-            tryEvalKnife([
+            await tryEvalKnife([
               ...condA.slice(0, countA),
               ...condB.slice(0, countB),
             ]);
@@ -313,12 +313,12 @@ export function findProfitableKnifeTradeUps(
           const poolA = listingsA.filter(l => floatToCondition(l.float_value) === c1);
           const poolB = listingsB.filter(l => floatToCondition(l.float_value) === c2);
           if (poolA.length >= countA && poolB.length >= countB) {
-            tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)]);
+            await tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)]);
           }
           const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === c2);
           const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === c1);
           if (poolAr.length >= countA && poolBr.length >= countB) {
-            tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)]);
+            await tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)]);
           }
         }
       }
@@ -347,7 +347,7 @@ export function findProfitableKnifeTradeUps(
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length < 5) continue;
         // Just cheapest-5 pooled — no float targeting for triples (saves ~80% of triple eval time)
-        tryEvalKnife(pooled.slice(0, 5));
+        await tryEvalKnife(pooled.slice(0, 5));
       }
     }
   }
@@ -369,17 +369,17 @@ export function findProfitableKnifeTradeUps(
  * and listing offsets to discover profitable knife trade-ups not found
  * by the deterministic search.
  */
-export function randomKnifeExplore(
-  db: Database.Database,
+export async function randomKnifeExplore(
+  pool: pg.Pool,
   options: {
     iterations?: number;
     onProgress?: (msg: string) => void;
   } = {}
-): { found: number; explored: number; improved: number } {
+): Promise<{ found: number; explored: number; improved: number }> {
   const iterations = options.iterations ?? 500;
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
-  const allListings = getListingsForRarity(db, "Covert")
+  const allListings = (await getListingsForRarity(pool, "Covert"))
     .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
 
@@ -408,7 +408,7 @@ export function randomKnifeExplore(
     }
   }
   for (const itemType of allItemTypes) {
-    const finishes = getKnifeFinishesWithPrices(db, itemType);
+    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
     if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
   }
 
@@ -420,13 +420,13 @@ export function randomKnifeExplore(
 
   // Profit-guided: weight random picks toward collections in recent profitable trade-ups
   const profitWeights = new Map<string, number>();
-  const profitRows = db.prepare(`
+  const { rows: profitRows } = await pool.query(`
     SELECT tui.collection_name, COUNT(*) as cnt
     FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
     WHERE t.type = 'covert_knife' AND t.profit_cents > 0
     GROUP BY tui.collection_name
-  `).all() as { collection_name: string; cnt: number }[];
-  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  `);
+  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
 
   // Build weighted pool: profitable collections appear more often
   const weightedPool: string[] = [];
@@ -438,23 +438,14 @@ export function randomKnifeExplore(
 
   // Load existing trade-up signatures to avoid duplicates
   const existingSignatures = new Set<string>();
-  const existingRows = db.prepare(`
-    SELECT trade_up_id, GROUP_CONCAT(listing_id) as ids
+  const { rows: existingRows } = await pool.query(`
+    SELECT trade_up_id, STRING_AGG(listing_id::text, ',') as ids
     FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = 'covert_knife')
     GROUP BY trade_up_id
-  `).all() as { trade_up_id: number; ids: string }[];
+  `);
   for (const row of existingRows) {
     existingSignatures.add(row.ids.split(",").sort().join(","));
   }
-
-  const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
-    VALUES (?, ?, ?, ?, ?, 'covert_knife', ?, ?, 'explore', ?)
-  `);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
   const shuffle = <T>(arr: T[]): T[] => {
@@ -471,17 +462,10 @@ export function randomKnifeExplore(
   let improved = 0;
 
   // Also load existing trade-ups for improvement attempts
-  const existingTradeUps = db.prepare(`
+  const { rows: existingTradeUps } = await pool.query<{ id: number; profit_cents: number; total_cost_cents: number }>(`
     SELECT id, profit_cents, total_cost_cents FROM trade_ups WHERE type = 'covert_knife' AND profit_cents > 0
     ORDER BY profit_cents DESC LIMIT 200
-  `).all() as { id: number; profit_cents: number; total_cost_cents: number }[];
-  const getInputs = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
-
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents = ?, expected_value_cents = ?, profit_cents = ?, roi_percentage = ?, chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?, outcomes_json = ?
-    WHERE id = ?
   `);
-  const deleteInputs = db.prepare("DELETE FROM trade_up_inputs WHERE trade_up_id = ?");
 
   for (let iter = 0; iter < iterations; iter++) {
     if (iter % 100 === 0) {
@@ -494,12 +478,11 @@ export function randomKnifeExplore(
 
       switch (strategy) {
         case 0: {
-          // Random pair with random split + random offset
           const colA = pick(weightedPool);
           const colB = pick(weightedPool.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
           const listB = byCollection.get(colB) ?? [];
-          const countA = 1 + Math.floor(Math.random() * 4); // 1-4
+          const countA = 1 + Math.floor(Math.random() * 4);
           const countB = 5 - countA;
           if (listA.length < countA || listB.length < countB) break;
           const maxOffA = Math.min(listA.length - countA, 20);
@@ -511,7 +494,6 @@ export function randomKnifeExplore(
         }
 
         case 1: {
-          // Single collection with random offset
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 5) break;
@@ -522,20 +504,18 @@ export function randomKnifeExplore(
         }
 
         case 2: {
-          // Float-targeted random pair
           const colA = pick(weightedPool);
           const colB = pick(weightedPool.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 4);
           const countB = 5 - countA;
-          const target = Math.random() * 0.5; // random float target 0-0.5
+          const target = Math.random() * 0.5;
           const quotas = new Map([[colA, countA], [colB, countB]]);
-          // Use byColAdj for float-targeted selection
           const totalBudget = 5 * target;
           const candidates: AdjustedListing[] = [];
           for (const [col, quota] of quotas) {
-            const pool = byColAdj.get(col);
-            if (!pool || pool.length < quota) { inputs = null; break; }
-            for (const l of pool) { if (l.adjustedFloat <= totalBudget) candidates.push(l); }
+            const colPool = byColAdj.get(col);
+            if (!colPool || colPool.length < quota) { inputs = null; break; }
+            for (const l of colPool) { if (l.adjustedFloat <= totalBudget) candidates.push(l); }
           }
           if (!candidates.length) break;
           candidates.sort((a, b) => a.price_cents - b.price_cents);
@@ -561,7 +541,6 @@ export function randomKnifeExplore(
         }
 
         case 3: {
-          // Triple collection — pool cheapest with random offsets
           const cols = shuffle(knifeCollections).slice(0, 3);
           if (cols.length < 3) break;
           const pooled = cols
@@ -577,7 +556,6 @@ export function randomKnifeExplore(
         }
 
         case 4: {
-          // Condition-pure from random collection
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
@@ -590,7 +568,6 @@ export function randomKnifeExplore(
         }
 
         case 5: {
-          // Global cheapest pool (cross-collection)
           const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
           const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
           const maxOff = Math.min(sorted.length - 5, 100);
@@ -601,9 +578,6 @@ export function randomKnifeExplore(
         }
 
         case 7: {
-          // High-chance-profit targeting: single-knife collection × glove collection
-          // Single-knife = fewer outcomes per finish = higher per-outcome probability
-          // Glove collections add mid-value outcomes that often exceed low input costs
           const singleKnifeCollections = knifeCollections.filter(cn => {
             const ci = CASE_KNIFE_MAP[cn];
             return ci && ci.knifeTypes.length === 1 && ci.knifeFinishes.length > 0;
@@ -619,10 +593,8 @@ export function randomKnifeExplore(
           const knList = byCollection.get(knCol) ?? [];
           const glList = byCollection.get(glCol) ?? [];
 
-          // Try various splits biased toward glove collection (cheaper, more mid-value outcomes)
           for (const [kn, gl] of [[1, 4], [2, 3], [3, 2]]) {
             if (knList.length < kn || glList.length < gl) continue;
-            // Random offset into cheapest range
             const knOff = Math.floor(Math.random() * Math.min(knList.length - kn + 1, 10));
             const glOff = Math.floor(Math.random() * Math.min(glList.length - gl + 1, 10));
             const candidate = [...knList.slice(knOff, knOff + kn), ...glList.slice(glOff, glOff + gl)];
@@ -638,14 +610,14 @@ export function randomKnifeExplore(
           // Swap optimization — take an existing profitable trade-up and try improving one slot
           if (existingTradeUps.length === 0) break;
           const existing = pick(existingTradeUps);
-          const existInputs = getInputs.all(existing.id) as TradeUpInput[];
+          const { rows: existInputs } = await pool.query("SELECT * FROM trade_up_inputs WHERE trade_up_id = $1", [existing.id]);
           if (existInputs.length !== 5) break;
 
           // Find the listings for this trade-up
           const listingById = new Map<string, ListingWithCollection>();
           for (const l of allListings) listingById.set(l.id, l);
 
-          const currentInputs = existInputs.map(i => listingById.get(i.listing_id)).filter(Boolean) as ListingWithCollection[];
+          const currentInputs = existInputs.map((i: TradeUpInput) => listingById.get(i.listing_id)).filter(Boolean) as ListingWithCollection[];
           if (currentInputs.length !== 5) break;
 
           // Pick a random slot to swap
@@ -669,7 +641,7 @@ export function randomKnifeExplore(
           for (const candidate of toTry) {
             const newInputs = [...currentInputs];
             newInputs[slot] = candidate;
-            const result = evaluateKnifeTradeUp(db, newInputs, knifeFinishCache);
+            const result = await evaluateKnifeTradeUp(pool, newInputs, knifeFinishCache);
             if (result && result.profit_cents > existing.profit_cents) {
               if (!bestResult || result.profit_cents > bestResult.profit_cents) {
                 bestResult = result;
@@ -683,19 +655,32 @@ export function randomKnifeExplore(
             );
             const bestCaseSwap = Math.max(...bestResult.outcomes.map(o => o.estimated_price_cents)) - bestResult.total_cost_cents;
             const worstCaseSwap = Math.min(...bestResult.outcomes.map(o => o.estimated_price_cents)) - bestResult.total_cost_cents;
-            const applyUpdate = db.transaction(() => {
-              updateTradeUp.run(
-                bestResult!.total_cost_cents, bestResult!.expected_value_cents,
-                bestResult!.profit_cents, bestResult!.roi_percentage, chanceToProfit,
-                bestCaseSwap, worstCaseSwap, JSON.stringify(bestResult!.outcomes), existing.id
-              );
-              deleteInputs.run(existing.id);
-              for (const input of bestResult!.inputs) {
-                insertInput.run(existing.id, input.listing_id, input.skin_id, input.skin_name,
-                  input.collection_name, input.price_cents, input.float_value, input.condition);
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              await client.query(`
+                UPDATE trade_ups SET total_cost_cents = $1, expected_value_cents = $2, profit_cents = $3, roi_percentage = $4, chance_to_profit = $5, best_case_cents = $6, worst_case_cents = $7, outcomes_json = $8
+                WHERE id = $9
+              `, [
+                bestResult.total_cost_cents, bestResult.expected_value_cents,
+                bestResult.profit_cents, bestResult.roi_percentage, chanceToProfit,
+                bestCaseSwap, worstCaseSwap, JSON.stringify(bestResult.outcomes), existing.id
+              ]);
+              await client.query("DELETE FROM trade_up_inputs WHERE trade_up_id = $1", [existing.id]);
+              for (const input of bestResult.inputs) {
+                await client.query(`
+                  INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                `, [existing.id, input.listing_id, input.skin_id, input.skin_name,
+                  input.collection_name, input.price_cents, input.float_value, input.condition]);
               }
-            });
-            applyUpdate();
+              await client.query('COMMIT');
+            } catch (err) {
+              await client.query('ROLLBACK');
+              throw err;
+            } finally {
+              client.release();
+            }
             improved++;
             // Update the cached profit for future improvement attempts
             existing.profit_cents = bestResult.profit_cents;
@@ -711,7 +696,7 @@ export function randomKnifeExplore(
       const sig = inputs.map(i => i.id).sort().join(",");
       if (existingSignatures.has(sig)) continue;
 
-      const result = evaluateKnifeTradeUp(db, inputs, knifeFinishCache);
+      const result = await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache);
       if (!result || result.profit_cents <= 0) continue;
 
       existingSignatures.add(sig);
@@ -721,19 +706,33 @@ export function randomKnifeExplore(
       const bestCaseNew = Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
       const worstCaseNew = Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
 
-      const saveTu = db.transaction(() => {
-        const info = insertTradeUp.run(
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const { rows: infoRows } = await client.query(`
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
+          VALUES ($1, $2, $3, $4, $5, 'covert_knife', $6, $7, 'explore', $8)
+          RETURNING id
+        `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
           bestCaseNew, worstCaseNew, JSON.stringify(result.outcomes)
-        );
-        const tuId = info.lastInsertRowid;
+        ]);
+        const tuId = infoRows[0].id;
         for (const input of result.inputs) {
-          insertInput.run(tuId, input.listing_id, input.skin_id, input.skin_name,
-            input.collection_name, input.price_cents, input.float_value, input.condition);
+          await client.query(`
+            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `, [tuId, input.listing_id, input.skin_id, input.skin_name,
+            input.collection_name, input.price_cents, input.float_value, input.condition]);
         }
-      });
-      saveTu();
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
       found++;
     } catch (err) {
       console.error("  Knife explore error:", err instanceof Error ? err.message : err);
@@ -749,17 +748,17 @@ export function randomKnifeExplore(
  * No swap optimization (requires writable DB).
  * Runs until deadlineMs timestamp.
  */
-export function exploreKnifeWithBudget(
-  db: Database.Database,
+export async function exploreKnifeWithBudget(
+  pool: pg.Pool,
   deadlineMs: number,
   existingSignatures: Set<string>,
   options: {
     onProgress?: (msg: string) => void;
   } = {}
-): TradeUp[] {
-  buildPriceCache(db);
+): Promise<TradeUp[]> {
+  await buildPriceCache(pool);
 
-  const allListings = getListingsForRarity(db, "Covert")
+  const allListings = (await getListingsForRarity(pool, "Covert"))
     .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
   if (allListings.length === 0) return [];
 
@@ -787,7 +786,7 @@ export function exploreKnifeWithBudget(
     }
   }
   for (const itemType of allItemTypes) {
-    const finishes = getKnifeFinishesWithPrices(db, itemType);
+    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
     if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
   }
 
@@ -799,13 +798,13 @@ export function exploreKnifeWithBudget(
 
   // Profit-guided weighted pool
   const profitWeights = new Map<string, number>();
-  const profitRows = db.prepare(`
+  const { rows: profitRows } = await pool.query(`
     SELECT tui.collection_name, COUNT(*) as cnt
     FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
     WHERE t.type = 'covert_knife' AND t.profit_cents > 0
     GROUP BY tui.collection_name
-  `).all() as { collection_name: string; cnt: number }[];
-  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  `);
+  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
   const weightedPool: string[] = [];
   for (const col of knifeCollections) {
     const weight = Math.max(1, profitWeights.get(col) ?? 0);
@@ -839,7 +838,6 @@ export function exploreKnifeWithBudget(
 
       switch (strategy) {
         case 0: {
-          // Random pair with random split + offset
           const colA = pick(weightedPool);
           const colB = pick(weightedPool.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
@@ -856,7 +854,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 1: {
-          // Single collection with random offset
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 5) break;
@@ -867,7 +864,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 2: {
-          // Condition-pure from random collection
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
@@ -880,7 +876,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 3: {
-          // Triple collection pool
           const cols = shuffle(knifeCollections).slice(0, 3);
           if (cols.length < 3) break;
           const pooled = cols
@@ -896,7 +891,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 4: {
-          // Global cheapest pool
           const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
           const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
           const maxOff = Math.min(sorted.length - 5, 100);
@@ -907,7 +901,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 5: {
-          // Float-targeted random pair
           const colA = pick(weightedPool);
           const colB = pick(weightedPool.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 4);
@@ -920,7 +913,6 @@ export function exploreKnifeWithBudget(
         }
 
         case 6: {
-          // High-chance-profit targeting: single-knife × glove collection
           const singleKnifeCollections = knifeCollections.filter(cn => {
             const ci = CASE_KNIFE_MAP[cn];
             return ci && ci.knifeTypes.length === 1 && ci.knifeFinishes.length > 0;
@@ -956,7 +948,7 @@ export function exploreKnifeWithBudget(
       const sig = inputs.map(i => i.id).sort().join(",");
       if (existingSignatures.has(sig)) continue;
 
-      const result = evaluateKnifeTradeUp(db, inputs, knifeFinishCache);
+      const result = await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache);
       if (!result) continue;
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 

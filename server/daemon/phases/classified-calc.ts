@@ -4,7 +4,8 @@
  * Phase 5c: Staircase evaluation.
  */
 
-import { initDb, emitEvent } from "../../db.js";
+import pg from "pg";
+import { emitEvent } from "../../db.js";
 import {
   findProfitableTradeUps,
   randomExplore,
@@ -28,21 +29,21 @@ export interface ClassifiedCalcResult {
   avgProfit: number;
 }
 
-export function phase5ClassifiedCalc(
-  db: ReturnType<typeof initDb>,
+export async function phase5ClassifiedCalc(
+  pool: pg.Pool,
   freshness: FreshnessTracker,
   force: boolean = false,
   discoveryResults?: TradeUp[],
-): ClassifiedCalcResult {
+): Promise<ClassifiedCalcResult> {
   console.log(`\n[${timestamp()}] Phase 5b: Classified→Covert Calc${discoveryResults ? ' (worker)' : ''}`);
-  setDaemonStatus(db, "calculating", "Phase 5b: Classified→Covert discovery");
-  emitEvent(db, "phase", "Phase 5b: Classified Calc");
+  await setDaemonStatus(pool, "calculating", "Phase 5b: Classified→Covert discovery");
+  await emitEvent(pool, "phase", "Phase 5b: Classified Calc");
 
   try {
-    const tradeUps = discoveryResults ?? findProfitableTradeUps(db, {
-      onProgress: (msg) => {
+    const tradeUps = discoveryResults ?? await findProfitableTradeUps(pool, {
+      onProgress: async (msg) => {
         process.stdout.write(`\r  ${msg}                    `);
-        setDaemonStatus(db, "calculating", msg);
+        await setDaemonStatus(pool, "calculating", msg);
       },
     });
     if (!discoveryResults) console.log("");
@@ -51,10 +52,10 @@ export function phase5ClassifiedCalc(
     console.log(`  Found ${tradeUps.length} classified→covert trade-ups (${profitable.length} profitable)`);
 
     // Random exploration — uses CPU time saved from theory removal
-    setDaemonStatus(db, "calculating", "Phase 5b: Random exploration");
-    const exploreResult = randomExplore(db, {
+    await setDaemonStatus(pool, "calculating", "Phase 5b: Random exploration");
+    const exploreResult = await randomExplore(pool, {
       iterations: 500,
-      onProgress: (msg) => setDaemonStatus(db, "calculating", msg),
+      onProgress: async (msg) => setDaemonStatus(pool, "calculating", msg),
     });
     if (exploreResult.found > 0) {
       console.log(`  Classified explore: ${exploreResult.explored} iterations, +${exploreResult.found} new, ${exploreResult.improved} improved`);
@@ -63,7 +64,7 @@ export function phase5ClassifiedCalc(
     // Re-sort and save
     tradeUps.sort((a, b) => b.profit_cents - a.profit_cents);
     if (tradeUps.length > 0) {
-      mergeTradeUps(db, tradeUps);
+      await mergeTradeUps(pool, tradeUps);
       console.log(`  Saved ${tradeUps.length} classified→covert trade-ups`);
 
       const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
@@ -73,17 +74,17 @@ export function phase5ClassifiedCalc(
           const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
           console.log(`    $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) | ${inputNames}`);
         }
-        emitEvent(db, "classified_calc", `${allProfitable.length} profitable, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
+        await emitEvent(pool, "classified_calc", `${allProfitable.length} profitable, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
       }
     }
 
     // Revive stale/partial classified trade-ups with replacement listings
-    const classifiedRevival = reviveStaleGunTradeUps(db, 500);
+    const classifiedRevival = await reviveStaleGunTradeUps(pool, 500);
     if (classifiedRevival.revived > 0) {
       console.log(`  Classified revival: checked ${classifiedRevival.checked}, revived ${classifiedRevival.revived} (${classifiedRevival.improved} improved)`);
     }
 
-    updateCollectionScores(db);
+    await updateCollectionScores(pool);
 
     const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
     const topProfit = allProfitable.length > 0 ? allProfitable[0].profit_cents : 0;
@@ -104,8 +105,8 @@ export function phase5ClassifiedCalc(
  * razor-thin-margin restricted profits that only appear intermittently).
  * Capped at 30K to prevent OOM from unbounded accumulation.
  */
-export function phase5GenericCalc(
-  db: ReturnType<typeof initDb>,
+export async function phase5GenericCalc(
+  pool: pg.Pool,
   tierType: string,
   discoveryResults?: TradeUp[],
 ) {
@@ -116,10 +117,10 @@ export function phase5GenericCalc(
   }
   const label = `${tierConfig.inputRarity}→${tierConfig.outputRarity}`;
   console.log(`\n[${timestamp()}] Phase 5: ${label} Calc${discoveryResults ? ' (worker)' : ''}`);
-  setDaemonStatus(db, "calculating", `Phase 5: ${label} discovery`);
+  await setDaemonStatus(pool, "calculating", `Phase 5: ${label} discovery`);
 
   try {
-    const tradeUps = discoveryResults ?? findProfitableTradeUps(db, {
+    const tradeUps = discoveryResults ?? await findProfitableTradeUps(pool, {
       rarities: [tierConfig.inputRarity],
     });
 
@@ -128,11 +129,11 @@ export function phase5GenericCalc(
     console.log(`  Found ${tradeUps.length} ${label} trade-ups (${profitable.length} profitable, ${highChance.length} high-chance)`);
 
     // Random exploration for this tier — finds combos the deterministic scan misses
-    setDaemonStatus(db, "calculating", `Phase 5: ${label} exploration`);
-    const exploreResult = randomExplore(db, {
+    await setDaemonStatus(pool, "calculating", `Phase 5: ${label} exploration`);
+    const exploreResult = await randomExplore(pool, {
       iterations: 200,
       inputRarity: tierConfig.inputRarity,
-      onProgress: (msg) => setDaemonStatus(db, "calculating", msg),
+      onProgress: async (msg) => setDaemonStatus(pool, "calculating", msg),
     });
     if (exploreResult.found > 0 || exploreResult.improved > 0) {
       console.log(`  ${label} explore: ${exploreResult.explored} iterations, +${exploreResult.found} new, ${exploreResult.improved} improved`);
@@ -154,7 +155,7 @@ export function phase5GenericCalc(
         toSave = [...profitableSet, ...highChanceSet, ...rest].slice(0, MAX_SAVE);
       }
 
-      mergeTradeUps(db, toSave, tierConfig.tradeUpType);
+      await mergeTradeUps(pool, toSave, tierConfig.tradeUpType);
       console.log(`  Saved ${toSave.length} ${label} trade-ups (merge-save, cap ${MAX_SAVE})`);
 
       if (profitable.length > 0) {
@@ -163,7 +164,7 @@ export function phase5GenericCalc(
           const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
           console.log(`    $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) | ${inputNames}`);
         }
-        emitEvent(db, `${tierType}_calc`, `${profitable.length} profitable, best +$${(profitable[0].profit_cents / 100).toFixed(2)}`);
+        await emitEvent(pool, `${tierType}_calc`, `${profitable.length} profitable, best +$${(profitable[0].profit_cents / 100).toFixed(2)}`);
       }
     }
   } catch (err) {
@@ -171,12 +172,12 @@ export function phase5GenericCalc(
   }
 }
 
-export function phase5cStaircase(db: ReturnType<typeof initDb>) {
+export async function phase5cStaircase(pool: pg.Pool) {
   console.log(`\n[${timestamp()}] Phase 5c: Staircase`);
-  setDaemonStatus(db, "calculating", "Phase 5c: Staircase evaluation");
+  await setDaemonStatus(pool, "calculating", "Phase 5c: Staircase evaluation");
 
   try {
-    const result = findStaircaseTradeUps(db);
+    const result = await findStaircaseTradeUps(pool);
     if (result.total > 0) {
       console.log(`  Staircase: ${result.total} evaluated, ${result.profitable} profitable`);
       for (const tu of result.tradeUps.slice(0, 3)) {
@@ -185,16 +186,16 @@ export function phase5cStaircase(db: ReturnType<typeof initDb>) {
 
       // Save staircase trade-ups with real classified inputs (not synthetic Coverts)
       // Load the actual 50 classified listing inputs from stage1 trade-up IDs
-      const loadStage1Inputs = db.prepare(`
-        SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
-        FROM trade_up_inputs WHERE trade_up_id = ?
-      `);
       for (const st of result.tradeUps) {
         // Replace synthetic Covert inputs with real classified inputs from stage1
         const realInputs: typeof st.tradeUp.inputs = [];
         for (const s1Id of st.stage1Ids) {
-          const rows = loadStage1Inputs.all(s1Id) as { listing_id: string; skin_id: string; skin_name: string; collection_name: string; price_cents: number; float_value: number; condition: Condition; source: string | null }[];
-          for (const r of rows) {
+          const { rows } = await pool.query(
+            `SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+             FROM trade_up_inputs WHERE trade_up_id = $1`,
+            [s1Id]
+          );
+          for (const r of rows as { listing_id: string; skin_id: string; skin_name: string; collection_name: string; price_cents: number; float_value: number; condition: Condition; source: string | null }[]) {
             realInputs.push({
               listing_id: r.listing_id,
               skin_id: r.skin_id,
@@ -210,7 +211,7 @@ export function phase5cStaircase(db: ReturnType<typeof initDb>) {
         st.tradeUp.inputs = realInputs;
       }
       const tradeUps = result.tradeUps.map(s => s.tradeUp);
-      saveTradeUps(db, tradeUps, true, "staircase", false, "staircase");
+      await saveTradeUps(pool, tradeUps, true, "staircase", false, "staircase");
       console.log(`  Saved ${tradeUps.length} staircase trade-ups (${tradeUps[0]?.inputs.length ?? 0} inputs each)`);
     } else {
       console.log(`  Staircase: no viable combinations found`);

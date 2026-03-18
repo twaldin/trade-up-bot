@@ -2,7 +2,8 @@
  * Phase 5: Knife Calc — discovery of knife/glove trade-ups.
  */
 
-import { initDb, emitEvent } from "../../db.js";
+import pg from "pg";
+import { emitEvent } from "../../db.js";
 import {
   findProfitableKnifeTradeUps,
   randomKnifeExplore,
@@ -27,31 +28,31 @@ export interface KnifeCalcResult {
   avgProfit: number;
 }
 
-export function phase5KnifeCalc(
-  db: ReturnType<typeof initDb>,
+export async function phase5KnifeCalc(
+  pool: pg.Pool,
   freshness: FreshnessTracker,
   force: boolean = false,
   discoveryResults?: TradeUp[],
-): KnifeCalcResult {
+): Promise<KnifeCalcResult> {
   if (!discoveryResults && !force && !freshness.needsRecalc()) {
     console.log(`\n[${timestamp()}] Phase 5: Knife Calc (skipped — no new data)`);
     return { total: 0, profitable: 0, topProfit: 0, avgProfit: 0 };
   }
 
   console.log(`\n[${timestamp()}] Phase 5: Knife Calc${discoveryResults ? ' (worker)' : ''}`);
-  setDaemonStatus(db, "calculating", "Phase 5: Finding profitable knife trade-ups");
-  emitEvent(db, "phase", "Phase 5: Knife Calc");
+  await setDaemonStatus(pool, "calculating", "Phase 5: Finding profitable knife trade-ups");
+  await emitEvent(pool, "phase", "Phase 5: Knife Calc");
 
   // Rebuild price cache (needed even when discovery came from worker)
   if (freshness.needsRecalc() || discoveryResults) {
-    buildPriceCache(db, true);
+    await buildPriceCache(pool, true);
   }
 
   try {
-    const tradeUps = discoveryResults ?? findProfitableKnifeTradeUps(db, {
+    const tradeUps = discoveryResults ?? await findProfitableKnifeTradeUps(pool, {
       onProgress: (msg) => {
         process.stdout.write(`\r  ${msg}                    `);
-        setDaemonStatus(db, "calculating", msg);
+        setDaemonStatus(pool, "calculating", msg);
       },
     });
     if (!discoveryResults) console.log("");
@@ -60,8 +61,8 @@ export function phase5KnifeCalc(
     console.log(`  Found ${tradeUps.length} knife trade-ups (${profitable.length} profitable)`);
 
     // Random knife exploration — uses CPU time saved from theory removal
-    setDaemonStatus(db, "calculating", "Phase 5: Random knife exploration");
-    const exploreResult = randomKnifeExplore(db, { iterations: 1000 });
+    await setDaemonStatus(pool, "calculating", "Phase 5: Random knife exploration");
+    const exploreResult = await randomKnifeExplore(pool, { iterations: 1000 });
     if (exploreResult.found > 0 || exploreResult.improved > 0) {
       console.log(`  Knife explore: ${exploreResult.explored} iterations, +${exploreResult.found} new, ${exploreResult.improved} improved`);
     }
@@ -70,7 +71,7 @@ export function phase5KnifeCalc(
     tradeUps.sort((a, b) => b.profit_cents - a.profit_cents);
 
     if (tradeUps.length > 0) {
-      mergeTradeUps(db, tradeUps, "covert_knife");
+      await mergeTradeUps(pool, tradeUps, "covert_knife");
       console.log(`  Saved ${tradeUps.length} knife trade-ups`);
 
       const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
@@ -80,15 +81,15 @@ export function phase5KnifeCalc(
           const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
           console.log(`    $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) $${(tu.total_cost_cents / 100).toFixed(2)} cost | ${inputNames}`);
         }
-        emitEvent(db, "calc_complete", `${allProfitable.length} profitable trade-ups, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
+        await emitEvent(pool, "calc_complete", `${allProfitable.length} profitable trade-ups, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
       } else {
-        emitEvent(db, "calc_complete", `${tradeUps.length} trade-ups evaluated, 0 profitable`);
+        await emitEvent(pool, "calc_complete", `${tradeUps.length} trade-ups evaluated, 0 profitable`);
       }
     }
 
     // Revival: try to find replacement listings for stale/partial trade-ups
     {
-      setDaemonStatus(db, "calculating", "Phase 5: Reviving stale trade-ups");
+      await setDaemonStatus(pool, "calculating", "Phase 5: Reviving stale trade-ups");
       // Build knife finish cache for revival (cheap — DB queries only)
       const revivalCache = new Map<string, FinishData[]>();
       const itemTypes = new Set<string>();
@@ -99,22 +100,22 @@ export function phase5KnifeCalc(
         }
       }
       for (const it of itemTypes) {
-        const finishes = getKnifeFinishesWithPrices(db, it);
+        const finishes = await getKnifeFinishesWithPrices(pool, it);
         if (finishes.length > 0) revivalCache.set(it, finishes);
       }
 
-      const revival = reviveStaleTradeUps(db, revivalCache, 500);
+      const revival = await reviveStaleTradeUps(pool, revivalCache, 500);
       if (revival.revived > 0) {
         console.log(`  Revival: checked ${revival.checked}, revived ${revival.revived} (${revival.improved} improved)`);
       }
     }
 
-    updateCollectionScores(db);
+    await updateCollectionScores(pool);
 
     freshness.markCalcDone();
 
     const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
-    setDaemonStatus(db, "calculating", `Phase 5 done: ${allProfitable.length} profitable knife trade-ups`);
+    await setDaemonStatus(pool, "calculating", `Phase 5 done: ${allProfitable.length} profitable knife trade-ups`);
 
     const topProfit = allProfitable.length > 0 ? allProfitable[0].profit_cents : 0;
     const avgProfit = allProfitable.length > 0
@@ -124,7 +125,7 @@ export function phase5KnifeCalc(
     return { total: tradeUps.length, profitable: allProfitable.length, topProfit, avgProfit };
   } catch (err) {
     console.error(`  Knife calc error: ${(err as Error).message}`);
-    setDaemonStatus(db, "error", (err as Error).message);
+    await setDaemonStatus(pool, "error", (err as Error).message);
     return { total: 0, profitable: 0, topProfit: 0, avgProfit: 0 };
   }
 }

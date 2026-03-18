@@ -10,7 +10,7 @@
  * observation management (seeding, snapshots, pruning).
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 
 export const FLOAT_BUCKETS = [
@@ -38,14 +38,14 @@ const _learnedCache = new Map<string, { price: number | null; unavailable: boole
 let _learnedCacheLoadedAt = 0;
 const LEARNED_CACHE_TTL_MS = 60 * 1000;
 
-function ensureLearnedCache(db: Database.Database) {
+async function ensureLearnedCache(pool: pg.Pool) {
   if (_learnedCache.size > 0 && Date.now() - _learnedCacheLoadedAt < LEARNED_CACHE_TTL_MS) return;
   _learnedCache.clear();
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT skin_name, float_min, float_max, avg_price_cents, listing_count
     FROM float_price_data
-  `).all() as { skin_name: string; float_min: number; float_max: number; avg_price_cents: number; listing_count: number }[];
+  `);
 
   for (const row of rows) {
     const key = `${row.skin_name}:${row.float_min}:${row.float_max}`;
@@ -70,13 +70,13 @@ export function clearLearnedCache() {
  * bucket avg based on position within the bucket, but only in the bottom 15%
  * (transition zone). Prevents boundary float exploitation.
  */
-export function getLearnedPrice(
-  db: Database.Database,
+export async function getLearnedPrice(
+  pool: pg.Pool,
   skinName: string,
   float: number,
   opts?: { realOnly?: boolean }
-): number | null {
-  ensureLearnedCache(db);
+): Promise<number | null> {
+  await ensureLearnedCache(pool);
   const bucket = getFloatBucket(float);
   if (!bucket) return null;
 
@@ -112,14 +112,14 @@ export function getLearnedPrice(
  * Interpolated price lookup: if exact bucket has no data, interpolate between
  * nearest known buckets for this skin. Returns null if zero learned prices.
  */
-export function getInterpolatedPrice(
-  db: Database.Database,
+export async function getInterpolatedPrice(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): number | null {
-  ensureLearnedCache(db);
+): Promise<number | null> {
+  await ensureLearnedCache(pool);
 
-  const direct = getLearnedPrice(db, skinName, float);
+  const direct = await getLearnedPrice(pool, skinName, float);
   if (direct !== null) return direct;
 
   const known: { mid: number; price: number }[] = [];
@@ -171,17 +171,17 @@ function dynamicHalfLife(observationCount: number): number {
   return Math.round(45 - (observationCount - 10) * (45 - 14) / (50 - 10));
 }
 
-function ensureKnnCache(db: Database.Database) {
+async function ensureKnnCache(pool: pg.Pool) {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
   _knnCache.clear();
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT skin_name, float_value, price_cents, source,
-      julianday('now') - julianday(observed_at) as age_days
+      EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
     FROM price_observations
-    WHERE julianday('now') - julianday(observed_at) <= ?
+    WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 <= $1
     ORDER BY skin_name, float_value
-  `).all(KNN_MAX_OBS_AGE_DAYS) as { skin_name: string; float_value: number; price_cents: number; source: string; age_days: number }[];
+  `, [KNN_MAX_OBS_AGE_DAYS]);
 
   // Group raw observations by skin
   const rawBySkin = new Map<string, typeof rows>();
@@ -220,12 +220,12 @@ const KNN_MIN_OBS = 3;
 const KNN_MAX_FLOAT_DIST = 0.04;
 const KNN_MAX_NEAREST_DIST = 0.012;
 
-export function knnPriceAtFloat(
-  db: Database.Database,
+export async function knnPriceAtFloat(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): number | null {
-  ensureKnnCache(db);
+): Promise<number | null> {
+  await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
   if (!obs || obs.length < KNN_MIN_OBS) return null;
 
@@ -264,12 +264,12 @@ export function knnPriceAtFloat(
  * Uses weighted median (not bottom-N average like input pricing).
  * Returns null if insufficient data.
  */
-export function knnOutputPriceAtFloat(
-  db: Database.Database,
+export async function knnOutputPriceAtFloat(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): { priceCents: number; confidence: number; observationCount: number } | null {
-  ensureKnnCache(db);
+): Promise<{ priceCents: number; confidence: number; observationCount: number } | null> {
+  await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
   if (!obs || obs.length < KNN_MIN_OBS) return null;
 
@@ -322,24 +322,24 @@ export function knnOutputPriceAtFloat(
   return { priceCents: Math.round(medianPrice), confidence, observationCount: filtered.length };
 }
 
-export function getKnnObservationCount(
-  db: Database.Database,
+export async function getKnnObservationCount(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): number {
-  ensureKnnCache(db);
+): Promise<number> {
+  await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
   if (!obs) return 0;
   const targetCondition = floatToCondition(float);
   return obs.filter(o => Math.abs(o.float - float) <= KNN_MAX_FLOAT_DIST && floatToCondition(o.float) === targetCondition).length;
 }
 
-export function getKnnObservationCountBroad(
-  db: Database.Database,
+export async function getKnnObservationCountBroad(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): number {
-  ensureKnnCache(db);
+): Promise<number> {
+  await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
   if (!obs) return 0;
   const targetCondition = floatToCondition(float);
@@ -351,130 +351,138 @@ export function getKnnObservationCountBroad(
  * These records have float+price tuples ideal for KNN output pricing.
  * Also snapshots current knife/glove listings as observations.
  */
-export function seedKnifeSaleObservations(db: Database.Database): number {
+export async function seedKnifeSaleObservations(pool: pg.Pool): Promise<number> {
   let inserted = 0;
 
   // Seed knife/glove sales from sale_history
-  const sales = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const sales = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT skin_name, float_value, price_cents, 'sale', sold_at
     FROM sale_history WHERE skin_name LIKE '★%' AND float_value > 0 AND price_cents > 0
-  `).run();
-  inserted += sales.changes;
+    ON CONFLICT DO NOTHING
+  `);
+  inserted += sales.rowCount ?? 0;
 
   // Seed knife/glove listings as observations (Extraordinary rarity)
-  const listings = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const listings = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT s.name, l.float_value, l.price_cents, 'listing', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE s.rarity = 'Extraordinary' AND l.float_value > 0 AND l.price_cents > 0
       AND l.stattrak = 0
       AND (l.source = 'csfloat' OR l.source IS NULL)
-  `).run();
-  inserted += listings.changes;
+    ON CONFLICT DO NOTHING
+  `);
+  inserted += listings.rowCount ?? 0;
 
   if (inserted > 0) clearKnnCache();
   return inserted;
 }
 
-export function seedPriceObservations(db: Database.Database): number {
-  const existing = (db.prepare("SELECT COUNT(*) as n FROM price_observations").get() as { n: number }).n;
+export async function seedPriceObservations(pool: pg.Pool): Promise<number> {
+  const { rows } = await pool.query("SELECT COUNT(*) as n FROM price_observations");
+  const existing = parseInt(rows[0].n, 10);
   if (existing > 1000) return 0;
 
   let inserted = 0;
 
-  const sales = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const sales = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT skin_name, float_value, price_cents, 'sale', sold_at
     FROM sale_history WHERE float_value > 0 AND price_cents > 0
-  `).run();
-  inserted += sales.changes;
+    ON CONFLICT DO NOTHING
+  `);
+  inserted += sales.rowCount ?? 0;
 
-  const listings = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const listings = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT s.name, l.float_value, l.price_cents, 'listing', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
-  `).run();
-  inserted += listings.changes;
+    ON CONFLICT DO NOTHING
+  `);
+  inserted += listings.rowCount ?? 0;
 
   clearKnnCache();
   return inserted;
 }
 
-export function snapshotListingsToObservations(
-  db: Database.Database,
+export async function snapshotListingsToObservations(
+  pool: pg.Pool,
   maxAgeDays: number = 14
-): number {
+): Promise<number> {
   let total = 0;
 
   // CSFloat listings → source 'listing'
   // Phase-qualify Doppler skins so observations are per-phase
-  const csfloat = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const csfloat = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
                 THEN s.name || ' ' || l.phase ELSE s.name END,
            l.float_value, l.price_cents, 'listing', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
       AND (l.source = 'csfloat' OR l.source IS NULL)
-      AND datetime(l.created_at) < datetime('now', '-' || ? || ' days')
-  `).run(maxAgeDays);
-  total += csfloat.changes;
+      AND l.created_at < NOW() - ($1 || ' days')::interval
+    ON CONFLICT DO NOTHING
+  `, [maxAgeDays]);
+  total += csfloat.rowCount ?? 0;
 
   // DMarket listings → source 'listing_dmarket' (price normalized with 2.5% buyer fee)
-  const dmarket = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const dmarket = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
                 THEN s.name || ' ' || l.phase ELSE s.name END,
            l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'listing_dmarket', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
       AND l.source = 'dmarket'
-      AND datetime(l.created_at) < datetime('now', '-' || ? || ' days')
-  `).run(maxAgeDays);
-  total += dmarket.changes;
+      AND l.created_at < NOW() - ($1 || ' days')::interval
+    ON CONFLICT DO NOTHING
+  `, [maxAgeDays]);
+  total += dmarket.rowCount ?? 0;
 
   // Skinport listings → source 'listing_skinport'
-  const skinport = db.prepare(`
-    INSERT OR IGNORE INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+  const skinport = await pool.query(`
+    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
     SELECT s.name, l.float_value, l.price_cents, 'listing_skinport', l.created_at
     FROM listings l JOIN skins s ON l.skin_id = s.id
     WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
       AND l.source = 'skinport'
-      AND datetime(l.created_at) < datetime('now', '-' || ? || ' days')
-  `).run(maxAgeDays);
-  total += skinport.changes;
+      AND l.created_at < NOW() - ($1 || ' days')::interval
+    ON CONFLICT DO NOTHING
+  `, [maxAgeDays]);
+  total += skinport.rowCount ?? 0;
 
   if (total > 0) clearKnnCache();
   return total;
 }
 
-export function pruneObservations(db: Database.Database, maxPerSkin: number = 500): number {
+export async function pruneObservations(pool: pg.Pool, maxPerSkin: number = 500): Promise<number> {
   let pruned = 0;
 
-  const stale = db.prepare(`
+  const stale = await pool.query(`
     DELETE FROM price_observations
-    WHERE julianday('now') - julianday(observed_at) > ?
-  `).run(KNN_MAX_OBS_AGE_DAYS);
-  pruned += stale.changes;
+    WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 > $1
+  `, [KNN_MAX_OBS_AGE_DAYS]);
+  pruned += stale.rowCount ?? 0;
 
-  const overLimit = db.prepare(`
+  const { rows: overLimit } = await pool.query(`
     SELECT skin_name, COUNT(*) as cnt FROM price_observations
-    GROUP BY skin_name HAVING cnt > ?
-  `).all(maxPerSkin) as { skin_name: string; cnt: number }[];
+    GROUP BY skin_name HAVING COUNT(*) > $1
+  `, [maxPerSkin]);
 
   for (const { skin_name, cnt } of overLimit) {
-    const excess = cnt - maxPerSkin;
-    const result = db.prepare(`
+    const excess = parseInt(cnt, 10) - maxPerSkin;
+    const result = await pool.query(`
       DELETE FROM price_observations WHERE id IN (
         SELECT id FROM price_observations
-        WHERE skin_name = ?
+        WHERE skin_name = $1
         ORDER BY source ASC, observed_at ASC
-        LIMIT ?
+        LIMIT $2
       )
-    `).run(skin_name, excess);
-    pruned += result.changes;
+    `, [skin_name, excess]);
+    pruned += result.rowCount ?? 0;
   }
   if (pruned > 0) clearKnnCache();
   return pruned;
@@ -484,11 +492,11 @@ const _supplyCache = new Map<string, number>();
 let _supplyCacheLoadedAt = 0;
 const SUPPLY_CACHE_TTL_MS = 5 * 60 * 1000;
 
-function ensureSupplyCache(db: Database.Database): void {
+async function ensureSupplyCache(pool: pg.Pool): Promise<void> {
   if (_supplyCache.size > 0 && Date.now() - _supplyCacheLoadedAt < SUPPLY_CACHE_TTL_MS) return;
   _supplyCache.clear();
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT s.name as skin_name,
       CASE
         WHEN l.float_value < 0.03 THEN 0.00
@@ -505,20 +513,20 @@ function ensureSupplyCache(db: Database.Database): void {
     JOIN skins s ON l.skin_id = s.id
     WHERE l.stattrak = 0
     GROUP BY s.name, bucket_min
-  `).all() as { skin_name: string; bucket_min: number; cnt: number }[];
+  `);
 
   for (const r of rows) {
-    _supplyCache.set(`${r.skin_name}:${r.bucket_min}`, r.cnt);
+    _supplyCache.set(`${r.skin_name}:${r.bucket_min}`, parseInt(r.cnt, 10));
   }
   _supplyCacheLoadedAt = Date.now();
 }
 
-export function getSupplyCount(
-  db: Database.Database,
+export async function getSupplyCount(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): number {
-  ensureSupplyCache(db);
+): Promise<number> {
+  await ensureSupplyCache(pool);
   const bucket = getFloatBucket(float);
   if (!bucket) return 0;
   return _supplyCache.get(`${skinName}:${bucket.min}`) ?? 0;
@@ -529,30 +537,32 @@ export function clearSupplyCache(): void {
   _supplyCacheLoadedAt = 0;
 }
 
-export function isFloatUnavailable(
-  db: Database.Database,
+export async function isFloatUnavailable(
+  pool: pg.Pool,
   skinName: string,
   float: number
-): boolean {
-  ensureLearnedCache(db);
+): Promise<boolean> {
+  await ensureLearnedCache(pool);
   const bucket = getFloatBucket(float);
   if (!bucket) return false;
   const cached = _learnedCache.get(`${skinName}:${bucket.min}:${bucket.max}`);
   return cached?.unavailable ?? false;
 }
 
-function storeLearnedPrice(
-  db: Database.Database,
+async function storeLearnedPrice(
+  pool: pg.Pool,
   skinName: string,
   floatMin: number,
   floatMax: number,
   avgPriceCents: number,
   listingCount: number
 ) {
-  db.prepare(`
-    INSERT OR REPLACE INTO float_price_data (skin_name, float_min, float_max, avg_price_cents, listing_count, last_checked)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `).run(skinName, floatMin, floatMax, avgPriceCents, listingCount);
+  await pool.query(`
+    INSERT INTO float_price_data (skin_name, float_min, float_max, avg_price_cents, listing_count, last_checked)
+    VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (skin_name, float_min, float_max) DO UPDATE SET
+      avg_price_cents = $4, listing_count = $5, last_checked = NOW()
+  `, [skinName, floatMin, floatMax, avgPriceCents, listingCount]);
 }
 
 const CONDITION_TO_BUCKETS: Record<string, typeof FLOAT_BUCKETS> = {
@@ -569,16 +579,16 @@ const CONDITION_TO_BUCKETS: Record<string, typeof FLOAT_BUCKETS> = {
  * Pass 1: Real listings → bottom-5 avg per skin × float bucket (high confidence).
  * Pass 2: Ref prices → fill remaining gaps with condition-level averages (lower confidence).
  */
-export function bootstrapLearnedPrices(db: Database.Database): number {
+export async function bootstrapLearnedPrices(pool: pg.Pool): Promise<number> {
   let seeded = 0;
 
   // Per-condition ref price map for outlier filtering
   const condRefMap = new Map<string, number>();
-  const condRefRows = db.prepare(`
+  const { rows: condRefRows } = await pool.query(`
     SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE avg_price_cents END) as ref
     FROM price_data WHERE (min_price_cents > 0 OR avg_price_cents > 0)
     GROUP BY skin_name, condition
-  `).all() as { skin_name: string; condition: string; ref: number }[];
+  `);
   for (const r of condRefRows) if (r.ref > 0) condRefMap.set(`${r.skin_name}:${r.condition}`, r.ref);
 
   const bucketToCondition = (bucketMin: number): string => {
@@ -591,25 +601,23 @@ export function bootstrapLearnedPrices(db: Database.Database): number {
 
   // Pass 1: Seed from real listings
   for (const bucket of FLOAT_BUCKETS) {
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT s.name as skin_name, COUNT(*) as cnt,
         (SELECT CAST(AVG(sub.price_cents) AS INTEGER)
          FROM (SELECT price_cents FROM listings l2
                JOIN skins s2 ON l2.skin_id = s2.id
                WHERE s2.name = s.name
-                 AND l2.float_value >= ? AND l2.float_value < ?
+                 AND l2.float_value >= $1 AND l2.float_value < $2
                  AND l2.stattrak = 0
                ORDER BY l2.price_cents ASC LIMIT 5) sub
         ) as avg_bottom5
       FROM listings l
       JOIN skins s ON l.skin_id = s.id
-      WHERE l.float_value >= ? AND l.float_value < ?
+      WHERE l.float_value >= $3 AND l.float_value < $4
         AND l.stattrak = 0
       GROUP BY s.name
-      HAVING cnt >= 2
-    `).all(bucket.min, bucket.max, bucket.min, bucket.max) as {
-      skin_name: string; cnt: number; avg_bottom5: number;
-    }[];
+      HAVING COUNT(*) >= 2
+    `, [bucket.min, bucket.max, bucket.min, bucket.max]);
 
     const condition = bucketToCondition(bucket.min);
 
@@ -619,24 +627,26 @@ export function bootstrapLearnedPrices(db: Database.Database): number {
       const condRef = condRefMap.get(`${row.skin_name}:${condition}`);
       if (condRef && row.avg_bottom5 > condRef * 5) continue;
 
-      const existing = db.prepare(
-        `SELECT listing_count, last_checked FROM float_price_data WHERE skin_name = ? AND float_min = ? AND float_max = ?`
-      ).get(row.skin_name, bucket.min, bucket.max) as { listing_count: number; last_checked: string } | undefined;
+      const { rows: existingRows } = await pool.query(
+        `SELECT listing_count, last_checked FROM float_price_data WHERE skin_name = $1 AND float_min = $2 AND float_max = $3`,
+        [row.skin_name, bucket.min, bucket.max]
+      );
+      const existing = existingRows[0] as { listing_count: number; last_checked: string } | undefined;
       if (!existing || existing.listing_count === -1 ||
           (Date.now() - new Date(existing.last_checked + 'Z').getTime() > 12 * 3600 * 1000)) {
-        storeLearnedPrice(db, row.skin_name, bucket.min, bucket.max, row.avg_bottom5, row.cnt);
+        await storeLearnedPrice(pool, row.skin_name, bucket.min, bucket.max, row.avg_bottom5, parseInt(row.cnt, 10));
         seeded++;
       }
     }
   }
 
   // Pass 2: Fill gaps from ref prices for skins with NO real listing data
-  const skinsWithRealData = new Set(
-    (db.prepare(`SELECT DISTINCT skin_name FROM float_price_data WHERE listing_count > 0`).all() as { skin_name: string }[])
-      .map(r => r.skin_name)
+  const { rows: skinsWithRealRows } = await pool.query(
+    `SELECT DISTINCT skin_name FROM float_price_data WHERE listing_count > 0`
   );
+  const skinsWithRealData = new Set(skinsWithRealRows.map((r: { skin_name: string }) => r.skin_name));
 
-  const refRows = db.prepare(`
+  const { rows: refRows } = await pool.query(`
     SELECT skin_name, condition, avg_price_cents,
       CASE source
         WHEN 'csfloat_sales' THEN 1
@@ -649,7 +659,7 @@ export function bootstrapLearnedPrices(db: Database.Database): number {
     FROM price_data
     WHERE avg_price_cents > 0
     ORDER BY skin_name, condition, priority
-  `).all() as { skin_name: string; condition: string; avg_price_cents: number; priority: number }[];
+  `);
 
   const refMap = new Map<string, Record<string, number>>();
   for (const row of refRows) {
@@ -666,10 +676,11 @@ export function bootstrapLearnedPrices(db: Database.Database): number {
       if (!condPrice || condPrice <= 0) continue;
 
       for (const bucket of buckets) {
-        const existing = db.prepare(
-          `SELECT 1 FROM float_price_data WHERE skin_name = ? AND float_min = ? AND float_max = ?`
-        ).get(skinName, bucket.min, bucket.max);
-        if (existing) continue;
+        const { rows: existCheck } = await pool.query(
+          `SELECT 1 FROM float_price_data WHERE skin_name = $1 AND float_min = $2 AND float_max = $3`,
+          [skinName, bucket.min, bucket.max]
+        );
+        if (existCheck.length > 0) continue;
 
         let price = condPrice;
         if (bucket.label === "FN-low") {
@@ -678,7 +689,7 @@ export function bootstrapLearnedPrices(db: Database.Database): number {
           if (mwPrice && mwPrice > price) price = mwPrice;
         }
 
-        storeLearnedPrice(db, skinName, bucket.min, bucket.max, price, -1);
+        await storeLearnedPrice(pool, skinName, bucket.min, bucket.max, price, -1);
         seeded++;
       }
     }

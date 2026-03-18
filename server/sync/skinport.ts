@@ -1,8 +1,8 @@
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { setSyncMeta } from "../db.js";
 
-export async function syncSkinportPrices(db: Database.Database) {
+export async function syncSkinportPrices(pool: pg.Pool) {
   console.log("Fetching Skinport prices...");
 
   const res = await fetch(
@@ -26,13 +26,10 @@ export async function syncSkinportPrices(db: Database.Database) {
 
   console.log(`  Got ${items.length} items from Skinport`);
 
-  const insertPrice = db.prepare(`
-    INSERT OR REPLACE INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'skinport', datetime('now'))
-  `);
-
   let count = 0;
-  const insertPrices = db.transaction(() => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
     for (const item of items) {
       // Parse condition from market_hash_name
       const condMatch = item.market_hash_name.match(
@@ -50,19 +47,22 @@ export async function syncSkinportPrices(db: Database.Database) {
         .replace(/\s*\([^)]+\)\s*$/, "")
         .trim();
 
-      insertPrice.run(
-        skinName,
-        condition,
-        avgCents,
-        medianCents,
-        minCents,
-        item.quantity,
-      );
+      await client.query(`
+        INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'skinport', NOW())
+        ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+          avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
+      `, [skinName, condition, avgCents, medianCents, minCents, item.quantity]);
       count++;
     }
-  });
-  insertPrices();
+    await client.query('COMMIT');
+  } catch (txErr) {
+    await client.query('ROLLBACK');
+    throw txErr;
+  } finally {
+    client.release();
+  }
 
   console.log(`  Inserted ${count} price entries`);
-  setSyncMeta(db, "last_price_sync", new Date().toISOString());
+  await setSyncMeta(pool, "last_price_sync", new Date().toISOString());
 }

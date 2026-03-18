@@ -2,7 +2,7 @@
  * Core trade-up evaluator: computes EV, profit, ROI for a set of inputs.
  */
 
-import Database from "better-sqlite3";
+import pg from "pg";
 import { floatToCondition, type TradeUp, type TradeUpInput, type TradeUpOutcome } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome } from "./types.js";
 import { calculateOutputFloat, calculateOutcomeProbabilities } from "./core.js";
@@ -10,11 +10,11 @@ import { lookupOutputPrice } from "./pricing.js";
 import { effectiveBuyCost } from "./fees.js";
 import { DOPPLER_PHASES } from "./knife-data.js";
 
-export function evaluateTradeUp(
-  db: Database.Database,
+export async function evaluateTradeUp(
+  pool: pg.Pool,
   inputs: ListingWithCollection[],
   outcomes: DbSkinOutcome[]
-): TradeUp | null {
+): Promise<TradeUp | null> {
   const totalCost = inputs.reduce((sum, i) => sum + effectiveBuyCost(i), 0);
   const inputFloats = inputs.map((i) => ({
     float_value: i.float_value,
@@ -41,7 +41,7 @@ export function evaluateTradeUp(
       for (const { phase, weight } of dopplerPhases) {
         const phaseName = `${outcome.name} ${phase}`;
         const phaseProb = probability * weight;
-        const output = lookupOutputPrice(db, phaseName, predFloat);
+        const output = await lookupOutputPrice(pool, phaseName, predFloat);
         if (output.priceCents <= 0) continue;
         ev += phaseProb * output.priceCents;
         tradeUpOutcomes.push({
@@ -56,7 +56,7 @@ export function evaluateTradeUp(
         });
       }
     } else {
-      const output = lookupOutputPrice(db, outcome.name, predFloat);
+      const output = await lookupOutputPrice(pool, outcome.name, predFloat);
       const price = output.priceCents;
       ev += probability * price;
       tradeUpOutcomes.push({

@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import pg from "pg";
 import {
   floatToCondition,
   type TradeUp,
@@ -25,8 +25,8 @@ export type ProgressCallback = (msg: string, current: number, total: number) => 
  * This captures the huge value difference between conditions
  * (e.g., AK-47 Asiimov FN=$645 vs FT=$44).
  */
-export function findProfitableTradeUps(
-  db: Database.Database,
+export async function findProfitableTradeUps(
+  pool: pg.Pool,
   options: {
     maxInputCost?: number;
     maxTotalCost?: number;
@@ -41,7 +41,7 @@ export function findProfitableTradeUps(
     existingSignatures?: Set<string>;
     deadlineMs?: number;
   } = {}
-): TradeUp[] {
+): Promise<TradeUp[]> {
   const targetRarities = options.rarities ?? ["Classified"];
   const stattrak = options.stattrak ?? false;
   const limit = options.limit ?? 200000;
@@ -49,7 +49,7 @@ export function findProfitableTradeUps(
   let isFirstFlush = true;
 
   options.onProgress?.("Building price cache...", 0, 100);
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
   const tryAdd = (tu: TradeUp | null) => {
     if (!tu) return;
@@ -67,9 +67,9 @@ export function findProfitableTradeUps(
   const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
 
   /** Evaluate only if this listing combo is new (not in existing signatures). */
-  const tryEval = (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
+  const tryEval = async (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
     if (store.hasSig(sigOf(inputs))) return;
-    tryAdd(evaluateTradeUp(db, inputs, outcomes));
+    tryAdd(await evaluateTradeUp(pool, inputs, outcomes));
   };
 
   const pastDeadline = () => options.deadlineMs !== undefined && Date.now() >= options.deadlineMs;
@@ -81,7 +81,7 @@ export function findProfitableTradeUps(
 
     options.onProgress?.(`Loading ${inputRarity}...`, 0, 100);
 
-    const allListings = getListingsForRarity(db, inputRarity, options.maxInputCost, stattrak);
+    const allListings = await getListingsForRarity(pool, inputRarity, options.maxInputCost, stattrak);
     if (allListings.length === 0) continue;
 
     // Pre-compute adjusted floats
@@ -106,7 +106,7 @@ export function findProfitableTradeUps(
     }
 
     const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
-    const allOutcomes = getOutcomesForCollections(db, allCollectionIds, outputRarity, stattrak);
+    const allOutcomes = await getOutcomesForCollections(pool, allCollectionIds, outputRarity, stattrak);
     if (allOutcomes.length === 0) continue;
 
     const collectionsWithOutcomes = new Set(allOutcomes.map((o) => o.collection_id));
@@ -146,7 +146,7 @@ export function findProfitableTradeUps(
 
       // Baseline: sliding windows of cheapest
       for (let offset = 0; offset + 10 <= colListings.length && offset < 50; offset += 5) {
-        tryEval(colListings.slice(offset, offset + 10), outcomes);
+        await tryEval(colListings.slice(offset, offset + 10), outcomes);
       }
 
       // Value-sorted: lowest adjusted float first (best output condition, may cost more)
@@ -158,7 +158,7 @@ export function findProfitableTradeUps(
         }
       );
       for (let offset = 0; offset + 10 <= valueSorted.length && offset < 30; offset += 10) {
-        tryEval(valueSorted.slice(offset, offset + 10), outcomes);
+        await tryEval(valueSorted.slice(offset, offset + 10), outcomes);
       }
 
       // Float-targeted: for each transition point, select optimal listings
@@ -166,14 +166,14 @@ export function findProfitableTradeUps(
       for (const target of transitions) {
         const selected = selectForFloatTarget(byColAdj, quotas, target);
         if (selected) {
-          tryEval(selected, outcomes);
+          await tryEval(selected, outcomes);
         }
       }
 
       // Lowest-float selection (best possible output condition)
       const lowestFloat = selectLowestFloat(byColAdj, quotas);
       if (lowestFloat) {
-        tryEval(lowestFloat, outcomes);
+        await tryEval(lowestFloat, outcomes);
       }
 
       // Condition-pure groups — deeper windows catch non-cheapest profitable combos
@@ -188,7 +188,7 @@ export function findProfitableTradeUps(
         for (let window = 0; window < 3; window++) {
           const off = window * 10;
           if (condListings.length >= off + 10) {
-            tryEval(condListings.slice(off, off + 10), outcomes);
+            await tryEval(condListings.slice(off, off + 10), outcomes);
           }
         }
       }
@@ -208,7 +208,7 @@ export function findProfitableTradeUps(
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length >= 10) {
           for (let offset = 0; offset + 10 <= pooled.length && offset < 30; offset += 5) {
-            tryEval(pooled.slice(offset, offset + 10), outcomes);
+            await tryEval(pooled.slice(offset, offset + 10), outcomes);
           }
         }
       }
@@ -242,20 +242,20 @@ export function findProfitableTradeUps(
           if (listingsA.length < countA || listingsB.length < countB) continue;
 
           // Baseline: cheapest combo
-          tryEval([
+          await tryEval([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(0, countB),
           ], outcomes);
 
           // Baseline: offset combos
           if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
-            tryEval([
+            await tryEval([
               ...listingsA.slice(5, 5 + countA),
               ...listingsB.slice(5, 5 + countB),
             ], outcomes);
           }
           if (listingsA.length >= countA + 10 && listingsB.length >= countB + 10) {
-            tryEval([
+            await tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(10, 10 + countB),
             ], outcomes);
@@ -263,13 +263,13 @@ export function findProfitableTradeUps(
 
           // Mixed: cheap A + offset B, and vice versa
           if (listingsB.length >= countB + 10) {
-            tryEval([
+            await tryEval([
               ...listingsA.slice(0, countA),
               ...listingsB.slice(10, 10 + countB),
             ], outcomes);
           }
           if (listingsA.length >= countA + 10) {
-            tryEval([
+            await tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(0, countB),
             ], outcomes);
@@ -280,14 +280,14 @@ export function findProfitableTradeUps(
           for (const target of transitions) {
             const selected = selectForFloatTarget(byColAdj, quotas, target);
             if (selected) {
-              tryEval(selected, outcomes);
+              await tryEval(selected, outcomes);
             }
           }
 
           // Lowest-float selection
           const lowestFloat = selectLowestFloat(byColAdj, quotas);
           if (lowestFloat) {
-            tryEval(lowestFloat, outcomes);
+            await tryEval(lowestFloat, outcomes);
           }
 
           // Condition-targeted pairs: cheapest N at each condition
@@ -295,7 +295,7 @@ export function findProfitableTradeUps(
             const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
             const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
             if (condA.length >= countA && condB.length >= countB) {
-              tryEval([
+              await tryEval([
                 ...condA.slice(0, countA),
                 ...condB.slice(0, countB),
               ], outcomes);
@@ -315,13 +315,13 @@ export function findProfitableTradeUps(
             const poolA = listingsA.filter(l => floatToCondition(l.float_value) === condA);
             const poolB = listingsB.filter(l => floatToCondition(l.float_value) === condB);
             if (poolA.length >= countA && poolB.length >= countB) {
-              tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes);
+              await tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes);
             }
             // Also try reversed (B cond from A, A cond from B)
             const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === condB);
             const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === condA);
             if (poolAr.length >= countA && poolBr.length >= countB) {
-              tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes);
+              await tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes);
             }
           }
         }
@@ -363,7 +363,7 @@ export function findProfitableTradeUps(
           // Just cheapest-10 pooled — no float targeting for triples
           const inputs = pooled.slice(0, 10);
           const usedCols = [...new Set(inputs.map((l) => l.collection_id))];
-          tryEval(inputs, outcomesForCols(...usedCols));
+          await tryEval(inputs, outcomesForCols(...usedCols));
         }
       }
     }
@@ -390,23 +390,23 @@ export function findProfitableTradeUps(
  * Mirrors randomKnifeExplore pattern but with 10 inputs, Classified rarity,
  * and Covert gun outcomes via evaluateTradeUp.
  */
-export function randomExplore(
-  db: Database.Database,
+export async function randomExplore(
+  pool: pg.Pool,
   options: {
     iterations?: number;
     stattrak?: boolean;
     inputRarity?: string;
     onProgress?: (msg: string) => void;
   } = {}
-): { found: number; explored: number; improved: number } {
+): Promise<{ found: number; explored: number; improved: number }> {
   const iterations = options.iterations ?? 300;
   const stattrak = options.stattrak ?? false;
   const inputRarity = options.inputRarity ?? "Classified";
   const outputRarity = getNextRarity(inputRarity);
   if (!outputRarity) return { found: 0, explored: 0, improved: 0 };
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
-  const allListings = getListingsForRarity(db, inputRarity, undefined, stattrak);
+  const allListings = await getListingsForRarity(pool, inputRarity, undefined, stattrak);
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
 
   const allAdjusted = addAdjustedFloat(allListings);
@@ -426,7 +426,7 @@ export function randomExplore(
 
   // Collections that have outputs at the next rarity (excluding non-tradeable collections)
   const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
-  const allOutcomes = getOutcomesForCollections(db, allCollectionIds, outputRarity, stattrak);
+  const allOutcomes = await getOutcomesForCollections(pool, allCollectionIds, outputRarity, stattrak);
   const collectionsWithOutcomes = new Set(allOutcomes.map(o => o.collection_id));
   const eligibleCollections = [...collectionsWithOutcomes].filter(id => (byCollection.get(id)?.length ?? 0) >= 1);
 
@@ -444,13 +444,13 @@ export function randomExplore(
 
   // Profit-guided: weight toward collections in recent profitable trade-ups
   const profitWeights = new Map<string, number>();
-  const profitRows = db.prepare(`
+  const { rows: profitRows } = await pool.query(`
     SELECT tui.collection_name, COUNT(*) as cnt
     FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = ? AND t.profit_cents > 0
+    WHERE t.type = $1 AND t.profit_cents > 0
     GROUP BY tui.collection_name
-  `).all(tradeUpType) as { collection_name: string; cnt: number }[];
-  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  `, [tradeUpType]);
+  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
   const weightedPool: string[] = [];
   for (const col of eligibleCollections) {
     const w = Math.max(1, profitWeights.get(col) ?? 0);
@@ -475,23 +475,14 @@ export function randomExplore(
 
   // Load existing signatures
   const existingSignatures = new Set<string>();
-  const existingRows = db.prepare(`
-    SELECT trade_up_id, GROUP_CONCAT(listing_id) as ids
-    FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = ?)
+  const { rows: existingRows } = await pool.query(`
+    SELECT trade_up_id, STRING_AGG(listing_id::text, ',') as ids
+    FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1)
     GROUP BY trade_up_id
-  `).all(tradeUpType) as { trade_up_id: number; ids: string }[];
+  `, [tradeUpType]);
   for (const row of existingRows) {
     existingSignatures.add(row.ids.split(",").sort().join(","));
   }
-
-  const insertTradeUp = db.prepare(`
-    INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'explore', ?)
-  `);
-  const insertInput = db.prepare(`
-    INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
   const shuffle = <T>(arr: T[]): T[] => {
@@ -508,16 +499,10 @@ export function randomExplore(
   let improved = 0;
 
   // Load existing profitable trade-ups for swap optimization
-  const existingTradeUps = db.prepare(`
-    SELECT id, profit_cents, total_cost_cents FROM trade_ups WHERE type = ? AND profit_cents > 0
+  const { rows: existingTradeUps } = await pool.query<{ id: number; profit_cents: number; total_cost_cents: number }>(`
+    SELECT id, profit_cents, total_cost_cents FROM trade_ups WHERE type = $1 AND profit_cents > 0
     ORDER BY profit_cents DESC LIMIT 200
-  `).all(tradeUpType) as { id: number; profit_cents: number; total_cost_cents: number }[];
-  const getInputsStmt = db.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?");
-  const updateTradeUp = db.prepare(`
-    UPDATE trade_ups SET total_cost_cents = ?, expected_value_cents = ?, profit_cents = ?, roi_percentage = ?, chance_to_profit = ?, best_case_cents = ?, worst_case_cents = ?, outcomes_json = ?
-    WHERE id = ?
-  `);
-  const deleteInputs = db.prepare("DELETE FROM trade_up_inputs WHERE trade_up_id = ?");
+  `, [tradeUpType]);
 
   // Build listing lookup for swap optimization
   const listingById = new Map<string, ListingWithCollection>();
@@ -623,10 +608,10 @@ export function randomExplore(
           // Swap optimization — take an existing profitable trade-up and try improving one slot
           if (existingTradeUps.length === 0) break;
           const existing = pick(existingTradeUps);
-          const existInputs = getInputsStmt.all(existing.id) as { listing_id: string; skin_id: string; skin_name: string; collection_name: string; price_cents: number; float_value: number; condition: string }[];
+          const { rows: existInputs } = await pool.query("SELECT * FROM trade_up_inputs WHERE trade_up_id = $1", [existing.id]);
           if (existInputs.length !== 10) break;
 
-          const currentInputs = existInputs.map(i => listingById.get(i.listing_id)).filter(Boolean) as ListingWithCollection[];
+          const currentInputs = existInputs.map((i: { listing_id: string }) => listingById.get(i.listing_id)).filter(Boolean) as ListingWithCollection[];
           if (currentInputs.length !== 10) break;
 
           // Pick a random slot to swap
@@ -655,7 +640,7 @@ export function randomExplore(
           for (const candidate of toTry) {
             const newInputs = [...currentInputs];
             newInputs[slot] = candidate;
-            const result = evaluateTradeUp(db, newInputs, swapOutcomes);
+            const result = await evaluateTradeUp(pool, newInputs, swapOutcomes);
             if (result && result.profit_cents > existing.profit_cents) {
               if (!bestSwapResult || result.profit_cents > bestSwapResult.profit_cents) {
                 bestSwapResult = result;
@@ -668,19 +653,32 @@ export function randomExplore(
               sum + (o.estimated_price_cents > bestSwapResult!.total_cost_cents ? o.probability : 0), 0);
             const swapBest = Math.max(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
             const swapWorst = Math.min(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
-            const applySwap = db.transaction(() => {
-              updateTradeUp.run(
-                bestSwapResult!.total_cost_cents, bestSwapResult!.expected_value_cents,
-                bestSwapResult!.profit_cents, bestSwapResult!.roi_percentage, swapChance,
-                swapBest, swapWorst, JSON.stringify(bestSwapResult!.outcomes), existing.id
-              );
-              deleteInputs.run(existing.id);
-              for (const input of bestSwapResult!.inputs) {
-                insertInput.run(existing.id, input.listing_id, input.skin_id, input.skin_name,
-                  input.collection_name, input.price_cents, input.float_value, input.condition);
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              await client.query(`
+                UPDATE trade_ups SET total_cost_cents = $1, expected_value_cents = $2, profit_cents = $3, roi_percentage = $4, chance_to_profit = $5, best_case_cents = $6, worst_case_cents = $7, outcomes_json = $8
+                WHERE id = $9
+              `, [
+                bestSwapResult.total_cost_cents, bestSwapResult.expected_value_cents,
+                bestSwapResult.profit_cents, bestSwapResult.roi_percentage, swapChance,
+                swapBest, swapWorst, JSON.stringify(bestSwapResult.outcomes), existing.id
+              ]);
+              await client.query("DELETE FROM trade_up_inputs WHERE trade_up_id = $1", [existing.id]);
+              for (const input of bestSwapResult.inputs) {
+                await client.query(`
+                  INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                `, [existing.id, input.listing_id, input.skin_id, input.skin_name,
+                  input.collection_name, input.price_cents, input.float_value, input.condition]);
               }
-            });
-            applySwap();
+              await client.query('COMMIT');
+            } catch (err) {
+              await client.query('ROLLBACK');
+              throw err;
+            } finally {
+              client.release();
+            }
             improved++;
             existing.profit_cents = bestSwapResult.profit_cents;
           }
@@ -722,7 +720,7 @@ export function randomExplore(
 
       const usedCols = [...new Set(inputs.map(l => l.collection_id))];
       const outcomes = outcomesForCols(...usedCols);
-      const result = evaluateTradeUp(db, inputs, outcomes);
+      const result = await evaluateTradeUp(pool, inputs, outcomes);
       if (!result) continue;
       // Keep profitable OR high chance-to-profit trade-ups
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
@@ -733,19 +731,33 @@ export function randomExplore(
       const bestCase = Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
       const worstCase = Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
 
-      const saveTu = db.transaction(() => {
-        const info = insertTradeUp.run(
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const { rows: infoRows } = await client.query(`
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9)
+          RETURNING id
+        `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
           tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes)
-        );
-        const tuId = info.lastInsertRowid;
+        ]);
+        const tuId = infoRows[0].id;
         for (const input of result.inputs) {
-          insertInput.run(tuId, input.listing_id, input.skin_id, input.skin_name,
-            input.collection_name, input.price_cents, input.float_value, input.condition);
+          await client.query(`
+            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `, [tuId, input.listing_id, input.skin_id, input.skin_name,
+            input.collection_name, input.price_cents, input.float_value, input.condition]);
         }
-      });
-      saveTu();
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
       found++;
     } catch (err) {
       // Ignore individual iteration errors
@@ -761,8 +773,8 @@ export function randomExplore(
  * No swap optimization (requires writable DB).
  * Runs until deadlineMs timestamp.
  */
-export function exploreWithBudget(
-  db: Database.Database,
+export async function exploreWithBudget(
+  pool: pg.Pool,
   deadlineMs: number,
   existingSignatures: Set<string>,
   options: {
@@ -770,14 +782,14 @@ export function exploreWithBudget(
     stattrak?: boolean;
     onProgress?: (msg: string) => void;
   } = {}
-): TradeUp[] {
+): Promise<TradeUp[]> {
   const inputRarity = options.inputRarity ?? "Classified";
   const stattrak = options.stattrak ?? false;
   const outputRarity = getNextRarity(inputRarity);
   if (!outputRarity) return [];
-  buildPriceCache(db);
+  await buildPriceCache(pool);
 
-  const allListings = getListingsForRarity(db, inputRarity, undefined, stattrak);
+  const allListings = await getListingsForRarity(pool, inputRarity, undefined, stattrak);
   if (allListings.length === 0) return [];
 
   const allAdjusted = addAdjustedFloat(allListings);
@@ -795,7 +807,7 @@ export function exploreWithBudget(
   for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
   const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
-  const allOutcomes = getOutcomesForCollections(db, allCollectionIds, outputRarity, stattrak);
+  const allOutcomes = await getOutcomesForCollections(pool, allCollectionIds, outputRarity, stattrak);
   const collectionsWithOutcomes = new Set(allOutcomes.map(o => o.collection_id));
   const eligibleCollections = [...collectionsWithOutcomes].filter(id => (byCollection.get(id)?.length ?? 0) >= 1);
   if (eligibleCollections.length === 0) return [];
@@ -810,13 +822,13 @@ export function exploreWithBudget(
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
   const profitWeights = new Map<string, number>();
-  const profitRows = db.prepare(`
+  const { rows: profitRows } = await pool.query(`
     SELECT tui.collection_name, COUNT(*) as cnt
     FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = ? AND t.profit_cents > 0
+    WHERE t.type = $1 AND t.profit_cents > 0
     GROUP BY tui.collection_name
-  `).all(tradeUpType) as { collection_name: string; cnt: number }[];
-  for (const r of profitRows) profitWeights.set(r.collection_name, r.cnt);
+  `, [tradeUpType]);
+  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
   const weightedPool: string[] = [];
   for (const col of eligibleCollections) {
     const w = Math.max(1, profitWeights.get(col) ?? 0);
@@ -856,7 +868,6 @@ export function exploreWithBudget(
 
       switch (strategy) {
         case 0: {
-          // Random pair with random split + offset
           const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
@@ -873,7 +884,6 @@ export function exploreWithBudget(
         }
 
         case 1: {
-          // Single collection with random offset
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 10) break;
@@ -884,7 +894,6 @@ export function exploreWithBudget(
         }
 
         case 2: {
-          // Condition-pure from random collection
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
@@ -897,7 +906,6 @@ export function exploreWithBudget(
         }
 
         case 3: {
-          // Triple collection pool
           const cols = [pick(weightedPool)];
           while (cols.length < 3) {
             const c = pick(weightedPool);
@@ -918,7 +926,6 @@ export function exploreWithBudget(
         }
 
         case 4: {
-          // Global cheapest pool
           const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
           const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
           const maxOff = Math.min(sorted.length - 10, 100);
@@ -929,7 +936,6 @@ export function exploreWithBudget(
         }
 
         case 5: {
-          // Float-targeted random pair
           const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 9);
@@ -942,7 +948,6 @@ export function exploreWithBudget(
         }
 
         case 6: {
-          // Cross-condition random
           const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const listA = byCollection.get(colA) ?? [];
@@ -974,7 +979,7 @@ export function exploreWithBudget(
 
       const usedCols = [...new Set(inputs.map(l => l.collection_id))];
       const outcomes = outcomesForCols(...usedCols);
-      const result = evaluateTradeUp(db, inputs, outcomes);
+      const result = await evaluateTradeUp(pool, inputs, outcomes);
       if (!result) continue;
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
