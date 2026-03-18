@@ -317,6 +317,9 @@ export async function main() {
       const snapshotPath = DB_PATH.replace(/[^/\\]+$/, "tradeup-api.db");
       const tmpPath = snapshotPath + ".tmp";
       console.log(`  Creating API snapshot...`);
+      // Checkpoint WAL first — backup() copies the main file, not WAL changes.
+      // Without checkpoint, the snapshot may have stale/inconsistent data.
+      db.pragma("wal_checkpoint(PASSIVE)");
       await db.backup(tmpPath);
       fs.renameSync(tmpPath, snapshotPath);
       console.log(`  API snapshot created`);
