@@ -110,6 +110,20 @@ initRedis();
 const readDb = new Database(DB_PATH, { readonly: true });
 readDb.pragma("busy_timeout = 5000");
 
+// Slow request logger: log any API request that takes >3 seconds
+app.use("/api", (req, _res, next) => {
+  const start = Date.now();
+  const originalEnd = _res.end.bind(_res);
+  _res.end = function (...args: Parameters<typeof originalEnd>) {
+    const ms = Date.now() - start;
+    if (ms > 3000) {
+      console.error(`SLOW REQUEST: ${req.method} ${req.originalUrl} took ${ms}ms (status ${_res.statusCode})`);
+    }
+    return originalEnd(...args);
+  } as typeof _res.end;
+  next();
+});
+
 // Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
 setupAuth(app, db);
 
