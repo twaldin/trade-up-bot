@@ -540,6 +540,14 @@ export function tradeUpsRouter(db: Database.Database): Router {
   });
 
   router.post("/api/verify-trade-up/:id", async (req, res) => {
+    // Verify requires authentication (basic+ tier)
+    const userId = (req.user as any)?.steam_id;
+    const userTier = (req.user as any)?.tier || "free";
+    if (!userId || userTier === "free") {
+      res.status(403).json({ error: "Verify requires Basic or Pro plan" });
+      return;
+    }
+
     const apiKey = process.env.CSFLOAT_API_KEY;
     if (!apiKey) {
       res.status(500).json({ error: "No API key configured" });
@@ -553,8 +561,6 @@ export function tradeUpsRouter(db: Database.Database): Router {
     }
 
     // Rate limit: basic 10/hr, pro 20/hr
-    const userId = (req.user as any)?.steam_id || "anonymous";
-    const userTier = (req.user as any)?.tier || "free";
     const verifyMax = userTier === "pro" || userTier === "admin" ? 20 : 10;
     const { checkRateLimit: checkRL } = await import("../redis.js");
     const verifyRateLimit = await checkRL(userId, "verify", verifyMax, 3600);

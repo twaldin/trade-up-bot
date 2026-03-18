@@ -85,25 +85,45 @@ export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
   return 0;
 }
 
+/** In-memory rate limit fallback when Redis is unavailable */
+const _memRateLimits = new Map<string, { count: number; expiresAt: number }>();
+
 /** Rate limit check: increment counter, reject if over limit. Returns usage info. */
 export async function checkRateLimit(
   userId: string, action: string, maxCount: number, windowSeconds: number = 3600
 ): Promise<{ allowed: boolean; remaining: number; total: number; resetIn: number | null }> {
-  if (!_available || !_redis) return { allowed: true, remaining: maxCount, total: maxCount, resetIn: null };
-  try {
-    const key = `rate:${action}:${userId}`;
-    const count = await _redis.incr(key);
-    if (count === 1) await _redis.expire(key, windowSeconds);
-    const ttl = await _redis.ttl(key);
+  // Try Redis first
+  if (_available && _redis) {
+    try {
+      const key = `rate:${action}:${userId}`;
+      const count = await _redis.incr(key);
+      if (count === 1) await _redis.expire(key, windowSeconds);
+      const ttl = await _redis.ttl(key);
 
-    if (count > maxCount) {
-      await _redis.decr(key); // undo — we're rejecting
-      return { allowed: false, remaining: 0, total: maxCount, resetIn: ttl > 0 ? ttl : windowSeconds };
-    }
-    return { allowed: true, remaining: maxCount - count, total: maxCount, resetIn: ttl > 0 ? ttl : null };
-  } catch {
-    return { allowed: true, remaining: maxCount, total: maxCount, resetIn: null };
+      if (count > maxCount) {
+        await _redis.decr(key);
+        return { allowed: false, remaining: 0, total: maxCount, resetIn: ttl > 0 ? ttl : windowSeconds };
+      }
+      return { allowed: true, remaining: maxCount - count, total: maxCount, resetIn: ttl > 0 ? ttl : null };
+    } catch { /* fall through to in-memory */ }
   }
+
+  // In-memory fallback — prevents bypass when Redis is down
+  const memKey = `${action}:${userId}`;
+  const now = Date.now();
+  const entry = _memRateLimits.get(memKey);
+  if (!entry || now >= entry.expiresAt) {
+    _memRateLimits.set(memKey, { count: 1, expiresAt: now + windowSeconds * 1000 });
+    return { allowed: true, remaining: maxCount - 1, total: maxCount, resetIn: windowSeconds };
+  }
+  entry.count++;
+  if (entry.count > maxCount) {
+    entry.count--; // undo
+    const resetIn = Math.ceil((entry.expiresAt - now) / 1000);
+    return { allowed: false, remaining: 0, total: maxCount, resetIn };
+  }
+  const resetIn = Math.ceil((entry.expiresAt - now) / 1000);
+  return { allowed: true, remaining: maxCount - entry.count, total: maxCount, resetIn };
 }
 
 /** Get current rate limit usage without incrementing. */
