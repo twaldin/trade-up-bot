@@ -144,16 +144,12 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
                       </button>
                     )}
                     {user.tier === "free" && (
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer"
-                        onClick={async () => {
-                          const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) });
-                          const data = await res.json();
-                          if (data.url) window.location.href = data.url;
-                        }}
+                      <a
+                        href="/pricing"
+                        className="block w-full text-left px-3 py-2 text-xs text-blue-400 hover:bg-muted cursor-pointer"
                       >
-                        Upgrade to Basic — $5/mo
-                      </button>
+                        View Plans
+                      </a>
                     )}
                     <a
                       href="/auth/logout"
