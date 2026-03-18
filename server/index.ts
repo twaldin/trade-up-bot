@@ -3,7 +3,8 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { initDb } from "./db.js";
+import Database from "better-sqlite3";
+import { initDb, DB_PATH } from "./db.js";
 import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
@@ -134,28 +135,28 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: NextFu
   res.status(500).json({ error: "Internal server error" });
 });
 
-// Pre-warm SQLite page cache BEFORE accepting connections.
-// Cold-cache aggregate queries on a 2.8GB DB take 20-30s — run them at
-// startup so no user request ever hits a cold cache.
-console.log("Warming up page cache...");
-const warmupStart = Date.now();
-try {
-  // Touch the key tables/indexes that API routes query
-  db.prepare("SELECT COUNT(*) FROM trade_ups").get();
-  db.prepare("SELECT COUNT(*) FROM listings").get();
-  db.prepare("SELECT COUNT(*) FROM trade_up_inputs LIMIT 1").get();
-  db.prepare("SELECT COUNT(*) FROM price_observations").get();
-  db.prepare("SELECT COUNT(*) FROM sale_history").get();
-  db.prepare("SELECT COUNT(*) FROM price_data").get();
-  db.prepare("SELECT COUNT(*) FROM daemon_cycle_stats").get();
-  db.prepare("SELECT COUNT(*) FROM skins").get();
-  console.log(`Page cache warm (${((Date.now() - warmupStart) / 1000).toFixed(1)}s)`);
-} catch (e) {
-  console.error("Warmup failed:", (e as Error).message);
-}
-
+// Start listening IMMEDIATELY — don't block on warmup.
+// Warmup runs in background after server starts accepting connections.
 app.listen(PORT, () => {
   console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+
+  // Background warmup: touch key tables to prime SQLite page cache.
+  // Uses a separate read-only connection so it doesn't block on daemon writes.
+  setTimeout(() => {
+    try {
+      const warmDb = new Database(DB_PATH, { readonly: true });
+      warmDb.pragma("busy_timeout = 5000");
+      console.log("Warming up page cache...");
+      const t = Date.now();
+      warmDb.prepare("SELECT COUNT(*) FROM trade_ups").get();
+      warmDb.prepare("SELECT COUNT(*) FROM listings").get();
+      warmDb.prepare("SELECT COUNT(*) FROM skins").get();
+      warmDb.close();
+      console.log(`Page cache warm (${((Date.now() - t) / 1000).toFixed(1)}s)`);
+    } catch (e) {
+      console.error("Warmup failed:", (e as Error).message);
+    }
+  }, 100);
 });
 
 process.on("uncaughtException", (err) => {
