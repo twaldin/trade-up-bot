@@ -51,7 +51,7 @@ export type ProgressCallback = (message: string) => void;
  */
 export const EXCLUDED_COLLECTIONS = new Set([
   "collection-set-xpshop-wpn-01", // Limited Edition Item (Armory rewards: Aphrodite, Solitude, Heat Treated)
-  "collection-set-community-37",  // Dead Hand Collection — trade-locked until late March 2026, no market data
+  // Dead Hand Collection (collection-set-community-37) — trade lock lifted March 2026, now included
 ]);
 
 /** Condition float boundaries — single source of truth for all engine modules. */
