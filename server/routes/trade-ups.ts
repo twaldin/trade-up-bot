@@ -399,25 +399,33 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const sortCol = sortMap[sort] ?? "t.profit_cents";
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
-    // Combined query: window functions compute total count + profitable count
-    // in the same scan as the paginated results (avoids separate COUNT query = 2x speedup)
+    // Two parallel queries: COUNT (lightweight, uses partial index) + paginated results.
+    // Window functions (COUNT(*) OVER()) force PG to scan all 664K+ matching rows
+    // before returning the 50-row page — splitting is actually faster.
     const limitParam = paramIndex++;
     const offsetParam = paramIndex++;
-    const { rows } = await pool.query(
-      `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-              t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
-              t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
-              t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-              0 as outcome_count,
-              COUNT(*) OVER() as _total,
-              SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) OVER() as _profitable
-       FROM trade_ups t ${where}
-       ORDER BY ${sortCol} ${sortOrder}
-       LIMIT $${limitParam} OFFSET $${offsetParam}`,
-      [...params, perPage, offset]
-    );
-    const total = rows.length > 0 ? parseInt(rows[0]._total) : 0;
-    const totalProfitable = rows.length > 0 ? parseInt(rows[0]._profitable) ?? 0 : 0;
+
+    const [countResult, dataResult] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as c, SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups t ${where}`,
+        params
+      ),
+      pool.query(
+        `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+                t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+                t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
+                t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+                0 as outcome_count
+         FROM trade_ups t ${where}
+         ORDER BY ${sortCol} ${sortOrder}
+         LIMIT $${limitParam} OFFSET $${offsetParam}`,
+        [...params, perPage, offset]
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.c) || 0;
+    const totalProfitable = parseInt(countResult.rows[0]?.profitable) || 0;
+    const rows = dataResult.rows;
 
     // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
     // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
