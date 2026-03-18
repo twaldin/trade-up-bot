@@ -81,9 +81,9 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity min-w-[200px]">
+        <Link to="/" className="flex items-center gap-2 font-bold tracking-tight hover:opacity-80 transition-opacity shrink-0">
           <img src="/favicon.svg" alt="" className="w-5 h-5" />
-          TradeUpBot
+          <span className="hidden sm:inline">TradeUpBot</span>
         </Link>
         <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
           {centerLinks ? (
@@ -102,8 +102,7 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
             ))
           )}
         </div>
-        {/* Fixed-width right section prevents center nav from shifting */}
-        <div className="flex items-center gap-3 min-w-[200px] justify-end">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-end">
           {user ? (
             <>
               <Link
@@ -118,11 +117,11 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
                   className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer rounded-md px-2 py-1.5 hover:bg-muted"
                 >
                   {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
-                  <span className="hidden md:inline">{user.display_name}</span>
-                  <span className={`hidden md:inline ${tierColors[user.tier] || "text-muted-foreground"}`}>
+                  <span className="hidden lg:inline">{user.display_name}</span>
+                  <span className={`hidden lg:inline ${tierColors[user.tier] || "text-muted-foreground"}`}>
                     ({user.tier})
                   </span>
-                  <span className="text-muted-foreground/50">&#9662;</span>
+                  <span className="text-muted-foreground/50 text-[10px]">&#9662;</span>
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-xl z-50 py-1">
