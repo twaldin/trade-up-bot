@@ -225,6 +225,11 @@ export function claimsRouter(db: Database.Database): Router {
       return;
     }
 
+    if (tradeUp.listing_status === "stale") {
+      res.status(400).json({ error: "Trade-up is stale — listings have been purchased or removed" });
+      return;
+    }
+
     // Check no active claim on this trade-up
     const existingClaim = db.prepare(
       "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = ? AND released_at IS NULL AND expires_at > datetime('now')"
@@ -385,7 +390,12 @@ export function claimsRouter(db: Database.Database): Router {
       console.log(`Confirm: queued ${listingIds.length} listings for deletion (trade-up ${tradeUpId}, user ${userId})`);
     }
 
-    // Clear claimed_by immediately (listings are being bought, no longer need claim lock)
+    // Mark the trade-up as stale immediately (listings are bought, trade-up is done)
+    db.prepare(
+      "UPDATE trade_ups SET listing_status = 'stale', preserved_at = datetime('now') WHERE id = ?"
+    ).run(tradeUpId);
+
+    // Clear claimed_by (listings being bought, claim lock no longer needed)
     const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ?");
     for (const id of listingIds) clearClaimed.run(id);
 
