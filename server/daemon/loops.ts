@@ -147,30 +147,43 @@ export async function cooldownLoop(
     // random exploration + revival (no API calls, just computation on existing data)
     const nextBatchAt = Date.now() + batchIntervalMs;
     if (nextBatchAt - Date.now() > 3000) {
-      // Random explore: fill available CPU time with exploration
-      // VPS runs 24/7 — invest idle time in finding new profitable combos
-      // Rotate through tiers each batch to spread exploration
-      const knifeExp = randomKnifeExplore(db, { iterations: 2000 });
-      const classifiedExp = randomExplore(db, { iterations: 2000 });
+      // Random explore: fill available CPU time with exploration (3x iterations).
+      // Discovery with sig-skipping finishes faster — invest freed time in exploration.
+      // VPS runs 24/7 — exploration finds combos structured discovery misses.
+      const knifeExp = randomKnifeExplore(db, { iterations: 6000 });
+      const classifiedExp = randomExplore(db, { iterations: 6000 });
       cooldownExploreFound += knifeExp.found + classifiedExp.found;
       cooldownExploreImproved += knifeExp.improved + classifiedExp.improved;
 
-      // Also explore lower rarities (rotate by batch to spread CPU)
-      if (batchCount % 2 === 0) {
-        const restrictedExp = randomExplore(db, { iterations: 500, inputRarity: "Restricted" });
-        cooldownExploreFound += restrictedExp.found;
-        cooldownExploreImproved += restrictedExp.improved;
+      // Explore lower rarities — rotate through all tiers each batch
+      const tierRotation = batchCount % 4;
+      if (tierRotation === 0) {
+        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Restricted" });
+        cooldownExploreFound += exp.found;
+        cooldownExploreImproved += exp.improved;
+      } else if (tierRotation === 1) {
+        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Mil-Spec" });
+        cooldownExploreFound += exp.found;
+        cooldownExploreImproved += exp.improved;
+      } else if (tierRotation === 2) {
+        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Industrial Grade" });
+        cooldownExploreFound += exp.found;
+        cooldownExploreImproved += exp.improved;
       } else {
-        const milspecExp = randomExplore(db, { iterations: 500, inputRarity: "Mil-Spec" });
-        cooldownExploreFound += milspecExp.found;
-        cooldownExploreImproved += milspecExp.improved;
+        const exp = randomExplore(db, { iterations: 1500, inputRarity: "Consumer Grade" });
+        cooldownExploreFound += exp.found;
+        cooldownExploreImproved += exp.improved;
       }
 
-      // Revival: check a batch of stale/partial trade-ups (CPU-only DB queries)
-      if (batchCount % 3 === 0) {
-        // Classified revival every 3rd batch
-        const gunRevival = reviveStaleGunTradeUps(db, 100);
-        cooldownRevived += gunRevival.revived;
+      // Revival: check stale/partial trade-ups EVERY batch (not just every 3rd).
+      // Stale trade-ups accumulate fast as listings sell — revival is cheap (CPU-only)
+      // and keeping trade-ups alive is more valuable than discovering new low-value ones.
+      const gunRevival = reviveStaleGunTradeUps(db, 200);
+      cooldownRevived += gunRevival.revived;
+      if (batchCount % 2 === 0) {
+        // Knife revival: pass empty finish cache (revive uses it for re-evaluation)
+        const knifeRevival = reviveStaleTradeUps(db, new Map(), 200);
+        cooldownRevived += knifeRevival.revived;
       }
     }
 

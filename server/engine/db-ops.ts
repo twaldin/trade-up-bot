@@ -324,7 +324,13 @@ export function mergeTradeUps(db: Database.Database, tradeUps: TradeUp[], type: 
 
   // Trim excess: keep top 50K by composite score (profit + chance-to-profit bonus).
   // Merge-save accumulates forever — classified hit 400K+, knife 220K+. Purge the rest.
-  trimExcessTradeUps(db, type, 50000);
+  // Lower caps — sig-skipping means fewer new trade-ups per cycle, so accumulation is slower.
+  // 20K per type saves memory during merge-save on 2.8GB DB.
+  const typeCaps: Record<string, number> = {
+    covert_knife: 20000,
+    classified_covert: 20000,
+  };
+  trimExcessTradeUps(db, type, typeCaps[type] ?? 15000);
 }
 
 /**
