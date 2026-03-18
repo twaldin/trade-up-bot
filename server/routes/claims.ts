@@ -39,7 +39,7 @@ export async function getActiveClaims(db: Database.Database): Promise<ActiveClai
       result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
     }
 
-    await cacheSet("active_claims", result, 60); // 60s TTL, refreshed on claim/release
+    await cacheSet("active_claims", result, 300); // 5-min TTL, refreshed on claim/release
     return result;
   } catch {
     return [];
@@ -61,8 +61,11 @@ async function refreshClaimsCache(db: Database.Database): Promise<void> {
       result.push({ ...c, listing_ids: inputs.map(i => i.listing_id) });
     }
 
-    await cacheSet("active_claims", result, 60);
-  } catch { /* non-critical */ }
+    await cacheSet("active_claims", result, 300); // 5-min TTL
+    console.log(`Claims cache refreshed: ${result.length} active claims`);
+  } catch (e) {
+    console.error("Claims cache refresh failed:", e instanceof Error ? e.message : e);
+  }
 }
 
 interface ClaimRow {
