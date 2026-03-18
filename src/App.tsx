@@ -345,16 +345,33 @@ interface AuthUser {
 }
 
 function AuthGatedApp() {
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  // Initialize from localStorage to avoid blocking "Loading..." screen.
+  // If cached user exists, show UI immediately. Background fetch refreshes.
+  const [user, setUser] = useState<AuthUser | null | undefined>(() => {
+    try {
+      const cached = localStorage.getItem("site_nav_user");
+      if (cached) return JSON.parse(cached) as AuthUser;
+    } catch {}
+    return undefined; // no cache = show loading briefly
+  });
   const location = useLocation();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
-      .then(r => r.json())
-      .then(data => setUser(data))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.steam_id) {
+          setUser(data);
+          try { localStorage.setItem("site_nav_user", JSON.stringify(data)); } catch {}
+        } else {
+          setUser(null);
+          try { localStorage.removeItem("site_nav_user"); } catch {}
+        }
+      })
       .catch(() => setUser(null));
   }, []);
 
+  // Only show loading if no cached user (first visit ever)
   if (user === undefined) {
     return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
   }
