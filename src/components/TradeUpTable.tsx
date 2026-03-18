@@ -117,23 +117,37 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [priceOverrides, setPriceOverrides] = useState<Map<number, { total_cost_cents: number; profit_cents: number; roi_percentage: number }>>(new Map());
   const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
-  // Lazy-loaded outcomes (not included in list response)
+  // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
+  const [loadedInputs, setLoadedInputs] = useState<Map<number, TradeUp["inputs"]>>(new Map());
 
   const handleExpand = useCallback(async (tuId: number) => {
     if (expandedId === tuId) { setExpandedId(null); return; }
     setExpandedId(tuId);
-    // Load outcomes if not cached
+    // Load outcomes + inputs if not cached
+    const promises: Promise<void>[] = [];
     if (!loadedOutcomes.has(tuId)) {
-      try {
-        const res = await fetch(`/api/trade-up/${tuId}/outcomes`);
-        if (res.ok) {
-          const data = await res.json();
-          setLoadedOutcomes(prev => new Map(prev).set(tuId, data.outcomes || []));
-        }
-      } catch { /* non-critical */ }
+      promises.push(
+        fetch(`/api/trade-up/${tuId}/outcomes`).then(async res => {
+          if (res.ok) {
+            const data = await res.json();
+            setLoadedOutcomes(prev => new Map(prev).set(tuId, data.outcomes || []));
+          }
+        }).catch(() => {})
+      );
     }
-  }, [expandedId, loadedOutcomes]);
+    if (!loadedInputs.has(tuId)) {
+      promises.push(
+        fetch(`/api/trade-up/${tuId}/inputs`).then(async res => {
+          if (res.ok) {
+            const data = await res.json();
+            setLoadedInputs(prev => new Map(prev).set(tuId, data.inputs || []));
+          }
+        }).catch(() => {})
+      );
+    }
+    await Promise.all(promises);
+  }, [expandedId, loadedOutcomes, loadedInputs]);
 
   const handleVerify = useCallback(async (tuId: number) => {
     setVerifying(tuId);
@@ -248,15 +262,20 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     const override = priceOverrides.get(rawTu.id);
     const tu = {
       ...rawTu,
+      inputs: loadedInputs.get(rawTu.id) ?? rawTu.inputs,
       outcomes: loadedOutcomes.get(rawTu.id) ?? rawTu.outcomes,
       ...(override ? { total_cost_cents: override.total_cost_cents, profit_cents: override.profit_cents, roi_percentage: override.roi_percentage } : {}),
     };
+    // Use server-computed input_summary for collapsed view (avoids sending full inputs in list)
+    const summary = tu.input_summary;
     return {
       tu,
       chance: chanceToProfit(tu),
       best: bestCase(tu),
       worst: worstCase(tu),
-      inputSummary: summarizeInputs(tu.inputs),
+      inputSummary: summary?.skins ?? summarizeInputs(tu.inputs),
+      inputCount: summary?.input_count ?? tu.inputs.length,
+      collections: summary?.collections ?? [...new Set(tu.inputs.map(i => i.collection_name))],
       age: tu.created_at ? (() => {
         const ms = Date.now() - new Date(tu.created_at + "Z").getTime();
         const mins = Math.floor(ms / 60000);
@@ -288,7 +307,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
     {/* Mobile card layout */}
     <div className="md:hidden flex flex-col gap-2">
-      {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, age }) => (
+      {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, collections, age }) => (
         <div key={tu.id}>
           <div
             className={`rounded-lg border border-border bg-card cursor-pointer active:bg-muted transition-colors ${
@@ -301,7 +320,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             <div className="px-3.5 pt-3 pb-1.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[0.78rem] text-foreground/70 leading-snug min-w-0">
-                  {tu.inputs.length === 0 ? (
+                  {inputCount === 0 ? (
                     <span className="italic text-muted-foreground/50">{tu.type?.replace("_", " → ")}</span>
                   ) : (
                     inputSummary.map((item, i) => (
@@ -317,9 +336,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </div>
               </div>
               {/* Collection badges */}
-              {tu.inputs.length > 0 && onNavigateCollection && (
+              {inputCount > 0 && onNavigateCollection && (
                 <div className="flex gap-1 mt-1 flex-wrap">
-                  {[...new Set(tu.inputs.map(i => i.collection_name))].map((col, i) => (
+                  {collections.map((col, i) => (
                     <span key={i} className="text-[0.55rem] px-1 py-0 rounded bg-slate-800 text-slate-400 border border-slate-700">
                       {col.replace(/^The /, "").replace(/ Collection$/, "")}
                     </span>
@@ -371,7 +390,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           </tr>
         </thead>
         <tbody>
-          {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, age }) => (
+          {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, collections, age }) => (
             <>
               <tr
                 key={tu.id}
@@ -382,7 +401,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   {expandedId === tu.id ? "\u25BC" : "\u25B6"}
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {tu.inputs.length === 0 ? (
+                  {inputCount === 0 ? (
                     <span className="text-[0.75rem] text-muted-foreground/50 italic">
                       {tu.type?.replace("_", " → ")}
                     </span>
@@ -404,10 +423,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                       </span>
                     ))}
                     {onNavigateCollection && (() => {
-                      const cols = [...new Set(tu.inputs.map(i => i.collection_name))];
                       return (
                         <span className="inline ml-1">
-                          {cols.map((col, i) => (
+                          {collections.map((col, i) => (
                             <button
                               key={i}
                               className="inline-block text-[0.6rem] px-1 py-0 rounded-[3px] bg-slate-800 text-slate-400 border border-slate-700 cursor-pointer ml-[3px] align-middle hover:bg-slate-700 hover:text-slate-200 hover:border-slate-600"
@@ -422,12 +440,12 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     })()}
                     {tu.listing_status === 'stale' && (
                       <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-red-950 text-red-300 border-red-900" title="All input listings gone">
-                        {tu.missing_inputs}/{tu.inputs.length} missing
+                        {tu.missing_inputs}/{inputCount} missing
                       </Badge>
                     )}
                     {tu.listing_status === 'partial' && (
                       <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-yellow-950 text-yellow-200 border-yellow-900" title="Some input listings gone">
-                        {tu.missing_inputs}/{tu.inputs.length} missing
+                        {tu.missing_inputs}/{inputCount} missing
                       </Badge>
                     )}
                     {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && (

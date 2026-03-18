@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { priceCache, priceSources } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
+import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database): Router {
   const router = Router();
@@ -149,22 +149,38 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       const freeRows = getFreeTierTradeUps(freeTypes);
 
       // Batch-load inputs for all free tier trade-ups (fixes N+1)
+      // Build input summaries for free tier (same lightweight approach as paid)
       const freeIds = freeRows.map((r: any) => r.id);
-      const freeInputsByTuId = new Map<number, TradeUpInput[]>();
+      const freeSummaryByTuId = new Map<number, InputSummary>();
       if (freeIds.length > 0) {
         const ph = freeIds.map(() => "?").join(",");
-        const allInputs = rdb.prepare(
-          `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${ph})`
-        ).all(...freeIds) as (TradeUpInput & { trade_up_id: number })[];
-        for (const inp of allInputs) {
-          const list = freeInputsByTuId.get(inp.trade_up_id) ?? [];
-          list.push({ ...inp, listing_id: "hidden" } as TradeUpInput);
-          freeInputsByTuId.set(inp.trade_up_id, list);
+        const summaryRows = rdb.prepare(
+          `SELECT trade_up_id, skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id IN (${ph})`
+        ).all(...freeIds) as { trade_up_id: number; skin_name: string; condition: string; collection_name: string }[];
+        const grouped = new Map<number, typeof summaryRows>();
+        for (const r of summaryRows) {
+          const list = grouped.get(r.trade_up_id) ?? [];
+          list.push(r);
+          grouped.set(r.trade_up_id, list);
+        }
+        for (const [tuId, inputs] of grouped) {
+          const skinCounts = new Map<string, { count: number; condition: string }>();
+          const collections = new Set<string>();
+          for (const inp of inputs) {
+            const existing = skinCounts.get(inp.skin_name);
+            if (existing) existing.count++;
+            else skinCounts.set(inp.skin_name, { count: 1, condition: inp.condition });
+            collections.add(inp.collection_name);
+          }
+          freeSummaryByTuId.set(tuId, {
+            skins: [...skinCounts.entries()].sort((a, b) => b[1].count - a[1].count).map(([name, info]) => ({ name, count: info.count, condition: info.condition })),
+            collections: [...collections],
+            input_count: inputs.length,
+          });
         }
       }
 
       const tradeUps: TradeUp[] = freeRows.map((row: any) => {
-        const inputs = freeInputsByTuId.get(row.id) ?? [];
         return {
           id: row.id,
           type: row.type,
@@ -174,7 +190,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
           roi_percentage: row.roi_percentage,
           created_at: row.created_at,
           is_theoretical: false,
-          inputs,
+          inputs: [],
+          input_summary: freeSummaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 },
           outcomes: [],
           chance_to_profit: row.chance_to_profit ?? 0,
           best_case_cents: row.best_case_cents ?? 0,
@@ -374,72 +391,78 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       combo_key: string | null;
     }[];
 
-    // Batch-load all inputs for the page in ONE query (fixes N+1: was 50 queries, now 1)
+    // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
+    // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
     const tuIds = rows.map(r => r.id);
-    const inputsByTuId = new Map<number, TradeUpInput[]>();
+    const summaryByTuId = new Map<number, InputSummary>();
+    const inputCountByTuId = new Map<number, number>();
     if (tuIds.length > 0) {
       const placeholders = tuIds.map(() => "?").join(",");
-      const allInputs = rdb.prepare(
-        `SELECT * FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`
-      ).all(...tuIds) as (TradeUpInput & { trade_up_id: number })[];
-      for (const inp of allInputs) {
-        const list = inputsByTuId.get(inp.trade_up_id) ?? [];
-        list.push(inp);
-        inputsByTuId.set(inp.trade_up_id, list);
+      const summaryRows = rdb.prepare(
+        `SELECT trade_up_id, skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`
+      ).all(...tuIds) as { trade_up_id: number; skin_name: string; condition: string; collection_name: string }[];
+
+      // Group by trade_up_id and compute summaries
+      const grouped = new Map<number, typeof summaryRows>();
+      for (const r of summaryRows) {
+        const list = grouped.get(r.trade_up_id) ?? [];
+        list.push(r);
+        grouped.set(r.trade_up_id, list);
+      }
+      for (const [tuId, inputs] of grouped) {
+        const skinCounts = new Map<string, { count: number; condition: string }>();
+        const collections = new Set<string>();
+        for (const inp of inputs) {
+          const existing = skinCounts.get(inp.skin_name);
+          if (existing) existing.count++;
+          else skinCounts.set(inp.skin_name, { count: 1, condition: inp.condition });
+          collections.add(inp.collection_name);
+        }
+        summaryByTuId.set(tuId, {
+          skins: [...skinCounts.entries()]
+            .sort((a, b) => b[1].count - a[1].count)
+            .map(([name, info]) => ({ name, count: info.count, condition: info.condition })),
+          collections: [...collections],
+          input_count: inputs.length,
+        });
+        inputCountByTuId.set(tuId, inputs.length);
       }
     }
 
-    // Batch-load missing input listing IDs for non-active trade-ups (1 query instead of 50+50)
+    // Batch-load missing input counts for non-active trade-ups
     const nonActiveIds = rows.filter(r => r.listing_status !== 'active').map(r => r.id);
-    const missingByTuId = new Map<number, Set<string>>();
+    const missingCountByTuId = new Map<number, number>();
     if (nonActiveIds.length > 0) {
       const placeholders = nonActiveIds.map(() => "?").join(",");
       const missingRows = rdb.prepare(`
-        SELECT tui.trade_up_id, tui.listing_id FROM trade_up_inputs tui
+        SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
         LEFT JOIN listings l ON tui.listing_id = l.id
         WHERE tui.trade_up_id IN (${placeholders}) AND l.id IS NULL
-      `).all(...nonActiveIds) as { trade_up_id: number; listing_id: string }[];
+        GROUP BY tui.trade_up_id
+      `).all(...nonActiveIds) as { trade_up_id: number; cnt: number }[];
       for (const r of missingRows) {
-        const set = missingByTuId.get(r.trade_up_id) ?? new Set();
-        set.add(r.listing_id);
-        missingByTuId.set(r.trade_up_id, set);
+        missingCountByTuId.set(r.trade_up_id, r.cnt);
       }
     }
 
     // Auto-correct listing_status based on actual missing count
-    // 0 missing → active, some missing but status=stale → partial
-    const statusFixes = new Map<number, string>(); // id → correct status
+    const statusFixes = new Map<number, string>();
     for (const id of nonActiveIds) {
-      const missing = missingByTuId.get(id)?.size ?? 0;
+      const missing = missingCountByTuId.get(id) ?? 0;
       const row = rows.find(r => r.id === id);
       if (!row) continue;
       if (missing === 0 && row.listing_status !== 'active') {
         statusFixes.set(id, 'active');
       } else if (missing > 0 && row.listing_status === 'stale') {
-        // Has some inputs but marked stale — should be partial
-        const totalInputs = (inputsByTuId.get(id) ?? []).length;
+        const totalInputs = inputCountByTuId.get(id) ?? 0;
         if (missing < totalInputs) statusFixes.set(id, 'partial');
       }
     }
-    // Status fixes are non-critical — display already uses correctedStatus from
-    // statusFixes map. DB persistence happens during daemon housekeeping phase
-    // (refreshListingStatuses). Removed setImmediate writes that blocked the
-    // event loop for up to 30s when daemon held a write lock.
 
     const tradeUps: TradeUp[] = rows.map((row) => {
-      const inputs = inputsByTuId.get(row.id) ?? [];
-      const missingSet = missingByTuId.get(row.id);
-      const missingCount = missingSet?.size ?? 0;
+      const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
+      const missingCount = missingCountByTuId.get(row.id) ?? 0;
       const correctedStatus = statusFixes.get(row.id);
-
-      // Mark which inputs are missing
-      if (missingSet && missingSet.size > 0) {
-        for (const inp of inputs) {
-          if (missingSet.has(inp.listing_id)) {
-            (inp as any).missing = true;
-          }
-        }
-      }
 
       const tu: TradeUp = {
         id: row.id,
@@ -450,7 +473,8 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
         roi_percentage: row.roi_percentage,
         created_at: row.created_at,
         is_theoretical: row.is_theoretical === 1,
-        inputs,
+        inputs: [], // loaded on-demand via /api/trade-up/:id/inputs
+        input_summary: summary,
         outcomes: [],
         chance_to_profit: (row as any).chance_to_profit ?? 0,
         best_case_cents: (row as any).best_case_cents ?? 0,
@@ -781,6 +805,31 @@ export function tradeUpsRouter(db: Database.Database, readDb?: Database.Database
       any_price_changed: anyPriceChanged,
       updated_trade_up: updatedTradeUp,
     });
+  });
+
+  // Load inputs on-demand (not included in list response to save bandwidth)
+  router.get("/api/trade-up/:id/inputs", (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+    const inputs = rdb.prepare("SELECT * FROM trade_up_inputs WHERE trade_up_id = ?").all(id) as TradeUpInput[];
+    if (inputs.length === 0) {
+      // Check if trade-up exists
+      const exists = rdb.prepare("SELECT id FROM trade_ups WHERE id = ?").get(id);
+      if (!exists) { res.status(404).json({ error: "Not found" }); return; }
+    }
+    // Check for missing listings
+    const missingIds = new Set<string>();
+    if (inputs.length > 0) {
+      const ph = inputs.map(() => "?").join(",");
+      const missing = rdb.prepare(
+        `SELECT tui.listing_id FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = ? AND l.id IS NULL`
+      ).all(id) as { listing_id: string }[];
+      for (const m of missing) missingIds.add(m.listing_id);
+    }
+    for (const inp of inputs) {
+      if (missingIds.has(inp.listing_id)) (inp as any).missing = true;
+    }
+    res.json({ inputs });
   });
 
   // Load outcomes on-demand (not included in list response to save bandwidth)
