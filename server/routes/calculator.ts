@@ -31,8 +31,9 @@ interface SkinRow {
   collection_name: string;
 }
 
-export function calculatorRouter(db: Database.Database): Router {
+export function calculatorRouter(readDb: Database.Database): Router {
   const router = Router();
+  const db = readDb;
 
   // --- Skin search autocomplete ---
   router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, (req, res) => {

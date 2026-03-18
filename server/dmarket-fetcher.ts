@@ -226,7 +226,7 @@ async function main() {
         const skin = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 0 LIMIT 1").get(skinName) as { id: string } | undefined;
         const stSkin = db.prepare("SELECT id FROM skins WHERE name = ? AND stattrak = 1 LIMIT 1").get(`StatTrak™ ${skinName}`) as { id: string } | undefined;
         const upsert = db.prepare(
-          "INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?)"
+          "INSERT OR REPLACE INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'dmarket', 'buy_now', ?, datetime('now'))"
         );
 
         let inserted = 0;

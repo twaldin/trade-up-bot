@@ -106,17 +106,20 @@ app.use((req, res, next) => {
 const db = initDb();
 initRedis();
 
+// Read-only connection for API queries — never contends with daemon writes in WAL mode
+const readDb = new Database(DB_PATH, { readonly: true });
+readDb.pragma("busy_timeout = 5000");
+
 // Auth (Steam OpenID + sessions) — sessions use their own DB file (never contends with daemon)
 setupAuth(app, db);
 
-// Mount route modules — all use main DB (WAL mode handles concurrency,
-// Redis cache absorbs 95% of reads, no need for snapshot DB)
-app.use(statusRouter(db));
-app.use(tradeUpsRouter(db));
-app.use(dataRouter(db, knifeTypeToCases, collectionKnifePool));
-app.use(collectionsRouter(db, collectionKnifePool));
-app.use(snapshotsRouter(db));
-app.use(calculatorRouter(db));
+// Mount route modules — read-only routes use readDb, write routes use db
+app.use(statusRouter(readDb));
+app.use(tradeUpsRouter(db, readDb));
+app.use(dataRouter(readDb, knifeTypeToCases, collectionKnifePool));
+app.use(collectionsRouter(readDb, collectionKnifePool));
+app.use(snapshotsRouter(readDb));
+app.use(calculatorRouter(readDb));
 app.use(claimsRouter(db));
 app.use(stripeRouter(db));
 

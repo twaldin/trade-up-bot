@@ -266,6 +266,10 @@ function createTables(db: Database.Database) {
     db.exec("ALTER TABLE listings ADD COLUMN claimed_at TEXT");
   }
 
+  if (!listingCols.some((c) => c.name === "price_updated_at")) {
+    db.exec("ALTER TABLE listings ADD COLUMN price_updated_at TEXT");
+  }
+
   // Claim confirmed_at column (user reports they bought the listings)
   const claimCols = db.pragma("table_info(trade_up_claims)") as { name: string }[];
   if (!claimCols.some((c) => c.name === "confirmed_at")) {
@@ -490,6 +494,7 @@ function createTables(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_listings_stattrak_type_price ON listings(stattrak, listing_type, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak_price ON listings(skin_id, stattrak, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_float_stattrak ON listings(float_value, stattrak);
+    CREATE INDEX IF NOT EXISTS idx_listings_price_updated ON listings(price_updated_at) WHERE price_updated_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_float_price_data_listing_count ON float_price_data(listing_count);
 
     CREATE INDEX IF NOT EXISTS idx_trade_ups_listing_status ON trade_ups(listing_status, preserved_at);

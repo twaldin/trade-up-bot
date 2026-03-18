@@ -16,7 +16,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { fork } from "node:child_process";
-import { initDb, DB_PATH, emitEvent } from "../db.js";
+import { initDb, DB_PATH, emitEvent, getSyncMeta, setSyncMeta } from "../db.js";
 import { takeSnapshot, purgeOldSnapshots } from "../snapshot.js";
 import { initRedis, setCycleVersion, cacheSet } from "../redis.js";
 import type { TradeUp } from "../../shared/types.js";
@@ -264,7 +264,9 @@ export async function main() {
     // Phase 4b: Recalc trade-up stats where input prices changed (DMarket/Skinport updates)
     {
       const { recalcTradeUpCosts } = await import("../engine.js");
-      const recalcResult = recalcTradeUpCosts(db);
+      const lastRecalc = getSyncMeta(db, "last_recalc_at");
+      const recalcResult = recalcTradeUpCosts(db, lastRecalc ?? undefined);
+      setSyncMeta(db, "last_recalc_at", new Date().toISOString());
       if (recalcResult.updated > 0) {
         console.log(`  Phase 4b: Recalculated ${recalcResult.updated} trade-ups with changed input prices`);
       }

@@ -2,8 +2,9 @@ import { Router } from "express";
 import type Database from "better-sqlite3";
 import { cachedRoute } from "../redis.js";
 
-export function snapshotsRouter(db: Database.Database): Router {
+export function snapshotsRouter(readDb: Database.Database): Router {
   const router = Router();
+  const db = readDb;
 
   router.get("/api/snapshots", cachedRoute((req) => `snapshots:${req.query.since || ""}:${req.query.until || ""}:${req.query.type || ""}`, 86400, (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);

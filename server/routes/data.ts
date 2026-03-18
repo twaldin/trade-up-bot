@@ -6,11 +6,12 @@ type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: strin
 type KnifeTypeToCases = Map<string, string[]>;
 
 export function dataRouter(
-  db: Database.Database,
+  readDb: Database.Database,
   knifeTypeToCases: KnifeTypeToCases,
   collectionKnifePool: CollectionKnifePool,
 ): Router {
   const router = Router();
+  const db = readDb;
 
   // Skin browser: list all Covert skins with listing stats and pricing
 

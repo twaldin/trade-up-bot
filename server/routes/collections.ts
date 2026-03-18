@@ -5,10 +5,11 @@ import { cachedRoute } from "../redis.js";
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>;
 
 export function collectionsRouter(
-  db: Database.Database,
+  readDb: Database.Database,
   collectionKnifePool: CollectionKnifePool,
 ): Router {
   const router = Router();
+  const db = readDb;
 
   router.get("/api/collections", cachedRoute("collections", 300, (_req, res) => {
     try {
