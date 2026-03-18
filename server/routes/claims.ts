@@ -100,6 +100,8 @@ export function claimsRouter(db: Database.Database): Router {
     const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
     const releaseClaim = db.prepare("UPDATE trade_up_claims SET released_at = datetime('now') WHERE id = ?");
 
+    const affectedTuIds = new Set<number>();
+
     db.transaction(() => {
       for (const claim of expired) {
         const listings = db.prepare(
@@ -109,8 +111,31 @@ export function claimsRouter(db: Database.Database): Router {
           clearClaimed.run(listing_id, claim.user_id);
         }
         releaseClaim.run(claim.id);
+        affectedTuIds.add(claim.trade_up_id);
+        // Also find other trade-ups sharing these listings
+        for (const { listing_id } of listings) {
+          const others = db.prepare(
+            "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = ?"
+          ).all(listing_id) as { trade_up_id: number }[];
+          for (const { trade_up_id } of others) affectedTuIds.add(trade_up_id);
+        }
       }
     })();
+
+    // Restore listing_status for trade-ups whose listings are all back
+    if (affectedTuIds.size > 0) {
+      const checkMissing = db.prepare(`
+        SELECT COUNT(*) as cnt FROM trade_up_inputs tui
+        WHERE tui.trade_up_id = ? AND tui.listing_id NOT LIKE 'theor%'
+          AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NULL)
+      `);
+      for (const tuId of affectedTuIds) {
+        const { cnt } = checkMissing.get(tuId) as { cnt: number };
+        if (cnt === 0) {
+          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ? AND listing_status <> 'active'").run(tuId);
+        }
+      }
+    }
   }
 
   // Check if a listing still exists in the DB
@@ -323,6 +348,32 @@ export function claimsRouter(db: Database.Database): Router {
     const clearClaimed = db.prepare("UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?");
     for (const { listing_id } of listingRows) {
       clearClaimed.run(listing_id, userId);
+    }
+
+    // Restore listing_status for trade-ups that were marked partial by this claim.
+    // Check all trade-ups whose listings are now fully available (no missing, no claimed).
+    const releasedIds = listingRows.map(r => r.listing_id);
+    if (releasedIds.length > 0) {
+      const placeholders = releasedIds.map(() => "?").join(",");
+      // Find trade-ups that share these listings and are currently partial/stale
+      const affectedTus = db.prepare(
+        `SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id IN (${placeholders})`
+      ).all(...releasedIds) as { trade_up_id: number }[];
+
+      // For each affected trade-up, check if ALL its listings exist and are unclaimed
+      for (const { trade_up_id } of affectedTus) {
+        const missingCount = (db.prepare(`
+          SELECT COUNT(*) as cnt FROM trade_up_inputs tui
+          WHERE tui.trade_up_id = ?
+            AND tui.listing_id NOT LIKE 'theor%'
+            AND (NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id)
+                 OR EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NOT NULL))
+        `).get(trade_up_id) as { cnt: number }).cnt;
+
+        if (missingCount === 0) {
+          db.prepare("UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = ?").run(trade_up_id);
+        }
+      }
     }
 
     // Await Redis updates before responding

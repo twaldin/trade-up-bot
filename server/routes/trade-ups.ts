@@ -402,31 +402,39 @@ export function tradeUpsRouter(db: Database.Database): Router {
 
     // Batch-load missing input counts for non-active trade-ups
     const nonActiveIds = rows.filter(r => r.listing_status !== 'active').map(r => r.id);
+    // Check ALL returned trade-ups for missing inputs (not just non-active)
+    // Catches: phantom stale (0 missing but marked stale) AND phantom active (has missing but marked active)
+    const allIds = rows.map(r => r.id);
     const missingCountByTuId = new Map<number, number>();
-    if (nonActiveIds.length > 0) {
-      const placeholders = nonActiveIds.map(() => "?").join(",");
-      const missingRows = rdb.prepare(`
-        SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
-        LEFT JOIN listings l ON tui.listing_id = l.id
-        WHERE tui.trade_up_id IN (${placeholders}) AND l.id IS NULL
-        GROUP BY tui.trade_up_id
-      `).all(...nonActiveIds) as { trade_up_id: number; cnt: number }[];
-      for (const r of missingRows) {
-        missingCountByTuId.set(r.trade_up_id, r.cnt);
+    if (allIds.length > 0) {
+      // Batch in chunks of 500 to avoid SQLite variable limit
+      for (let i = 0; i < allIds.length; i += 500) {
+        const chunk = allIds.slice(i, i + 500);
+        const placeholders = chunk.map(() => "?").join(",");
+        const missingRows = rdb.prepare(`
+          SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
+          LEFT JOIN listings l ON tui.listing_id = l.id
+          WHERE tui.trade_up_id IN (${placeholders})
+            AND l.id IS NULL AND tui.listing_id NOT LIKE 'theor%'
+          GROUP BY tui.trade_up_id
+        `).all(...chunk) as { trade_up_id: number; cnt: number }[];
+        for (const r of missingRows) {
+          missingCountByTuId.set(r.trade_up_id, r.cnt);
+        }
       }
     }
 
     // Auto-correct listing_status based on actual missing count
     const statusFixes = new Map<number, string>();
-    for (const id of nonActiveIds) {
-      const missing = missingCountByTuId.get(id) ?? 0;
-      const row = rows.find(r => r.id === id);
-      if (!row) continue;
+    for (const row of rows) {
+      const missing = missingCountByTuId.get(row.id) ?? 0;
+      const totalInputs = inputCountByTuId.get(row.id) ?? 0;
       if (missing === 0 && row.listing_status !== 'active') {
-        statusFixes.set(id, 'active');
-      } else if (missing > 0 && row.listing_status === 'stale') {
-        const totalInputs = inputCountByTuId.get(id) ?? 0;
-        if (missing < totalInputs) statusFixes.set(id, 'partial');
+        statusFixes.set(row.id, 'active');
+      } else if (missing > 0 && row.listing_status === 'active') {
+        statusFixes.set(row.id, missing >= totalInputs ? 'stale' : 'partial');
+      } else if (missing > 0 && row.listing_status === 'stale' && missing < totalInputs) {
+        statusFixes.set(row.id, 'partial');
       }
     }
 
@@ -452,7 +460,7 @@ export function tradeUpsRouter(db: Database.Database): Router {
         worst_case_cents: (row as any).worst_case_cents ?? 0,
         outcome_count: (row as any).outcome_count ?? 0,
         listing_status: (correctedStatus ?? row.listing_status ?? 'active') as TradeUp['listing_status'],
-        missing_inputs: correctedStatus === 'active' ? 0 : missingCount,
+        missing_inputs: missingCount,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
         preserved_at: correctedStatus === 'active' ? null : (row.preserved_at ?? null),
