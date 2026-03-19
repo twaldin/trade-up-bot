@@ -103,7 +103,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         prevMax = bucket.max === Infinity ? prevMax : bucket.max;
       }
 
-      // Backfill if buckets didn't fill to 10 — grab best remaining
+      // Backfill if buckets didn't fill to 10 — first try profitable, then least-negative ROI
       if (rows.length < FREE_PER_TYPE) {
         const existingIds = new Set(rows.map((r: any) => r.id));
         const { rows: backfill } = await pool.query(`
@@ -120,6 +120,27 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           LIMIT $2
         `, [t, FREE_PER_TYPE * 2]);
         for (const r of backfill) {
+          if (rows.length >= FREE_PER_TYPE) break;
+          if (!existingIds.has(r.id)) rows.push(r);
+        }
+      }
+
+      // Final backfill: if still not enough, grab least-negative ROI trade-ups
+      if (rows.length < FREE_PER_TYPE) {
+        const existingIds = new Set(rows.map((r: any) => r.id));
+        const { rows: fallback } = await pool.query(`
+          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
+                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+                 0 as outcome_count
+          FROM trade_ups t
+          WHERE t.is_theoretical = 0 AND t.type = $1
+            AND t.listing_status = 'active'
+            AND t.created_at <= NOW() - INTERVAL '10800 seconds'
+          ORDER BY t.roi_percentage DESC
+          LIMIT $2
+        `, [t, FREE_PER_TYPE * 2]);
+        for (const r of fallback) {
           if (rows.length >= FREE_PER_TYPE) break;
           if (!existingIds.has(r.id)) rows.push(r);
         }
