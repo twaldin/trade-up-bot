@@ -56,16 +56,14 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Purged ${ids.length} DMarket listings (>24h old)`);
   }
 
-  // Purge Skinport listings older than 12h
-  const { rows: spPurgedRows } = await pool.query(`
-    SELECT id FROM listings WHERE source = 'skinport'
-      AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 0.5
-  `);
-  if (spPurgedRows.length > 0) {
-    const ids = spPurgedRows.map((r: any) => r.id);
+  // Skinport listings no longer stored (sale observations only).
+  // One-time cleanup of any remaining Skinport listings from before the change.
+  const { rows: spRemaining } = await pool.query("SELECT id FROM listings WHERE source = 'skinport' LIMIT 1000");
+  if (spRemaining.length > 0) {
+    const ids = spRemaining.map((r: any) => r.id);
     await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
     await cascadeTradeUpStatuses(pool, ids);
-    console.log(`  Purged ${ids.length} Skinport listings (>12h old)`);
+    console.log(`  Cleaned ${ids.length} remaining Skinport listings`);
   }
 
   // Prune observations every 10 cycles
