@@ -102,7 +102,7 @@ async function ensureRoles(guild: Guild): Promise<Map<string, Role>> {
     if (!role) {
       role = await guild.roles.create({
         name: def.name,
-        color: def.color,
+        colors: { primaryColor: def.color },
         hoist: def.hoist,
         reason: "TradeUpBot auto-setup",
       });
@@ -297,7 +297,7 @@ const client = new Client({
   ],
 });
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user!.tag}`);
 
   // Set presence
