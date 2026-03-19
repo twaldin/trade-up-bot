@@ -26,6 +26,7 @@ export { saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts
 // Listing status & preservation
 export {
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
+  cascadeTradeUpStatuses, deleteListings,
 } from "./engine/db-ops.js";
 
 // Selection

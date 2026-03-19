@@ -14,6 +14,7 @@
 
 import pg from "pg";
 import { io, Socket } from "socket.io-client";
+import { deleteListings } from "../engine.js";
 
 // socket.io-msgpack-parser is a CJS module, use dynamic import
 let msgpackParser: any = null;
@@ -166,7 +167,7 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
             stats.totalSaleObservations++;
           }
           // Remove sold listing from DB if we had it
-          await pool.query("DELETE FROM listings WHERE id = $1", [`skinport:${item.saleId}`]);
+          await deleteListings(pool, [`skinport:${item.saleId}`]);
         }
       } catch {
         // DB errors in WS handler are non-critical — skip this item

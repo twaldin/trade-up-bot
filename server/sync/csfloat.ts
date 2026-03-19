@@ -1,6 +1,7 @@
 
 import pg from "pg";
 import { getSyncMeta, setSyncMeta } from "../db.js";
+import { cascadeTradeUpStatuses } from "../engine.js";
 import { CSFLOAT_BASE, HIGH_VALUE_COLLECTIONS } from "./types.js";
 import type { CSFloatListing, CSFloatResponse, SmartFetchSkin } from "./types.js";
 import { isListingTooOld, findSkinId, saveReferencePrices, getValidConditions } from "./utils.js";
@@ -1051,11 +1052,16 @@ export async function verifyTopTradeUpListings(
 
       // Remove our stored listings that didn't appear in the fresh fetch
       let skinRemoved = 0;
+      const deletedIds: string[] = [];
       for (const listingId of listing_ids) {
         if (!currentIds.has(listingId)) {
           await pool.query("DELETE FROM listings WHERE id = $1", [listingId]);
+          deletedIds.push(listingId);
           skinRemoved++;
         }
+      }
+      if (deletedIds.length > 0) {
+        await cascadeTradeUpStatuses(pool, deletedIds);
       }
       totalRemoved += skinRemoved;
       totalVerified += listing_ids.size - skinRemoved;

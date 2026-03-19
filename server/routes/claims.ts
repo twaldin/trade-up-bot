@@ -2,6 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { requireTier, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
+import { cascadeTradeUpStatuses, deleteListings } from "../engine.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
@@ -133,20 +134,21 @@ export function claimsRouter(pool: pg.Pool): Router {
 
       await client.query('COMMIT');
 
-      // Restore listing_status for trade-ups whose listings are all back
+      // Cascade status — unclaimed listings may restore trade-ups to active
       if (affectedTuIds.size > 0) {
-        for (const tuId of affectedTuIds) {
-          const { rows: [checkRow] } = await pool.query(`
-            SELECT COUNT(*) as cnt FROM trade_up_inputs tui
-            WHERE tui.trade_up_id = $1 AND tui.listing_id NOT LIKE 'theor%'
-              AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.id = tui.listing_id AND l.claimed_by IS NULL)
-          `, [tuId]);
-          if (parseInt(checkRow.cnt) === 0) {
-            await pool.query(
-              "UPDATE trade_ups SET listing_status = 'active', preserved_at = NULL WHERE id = $1 AND listing_status <> 'active'",
-              [tuId]
-            );
+        // Collect all listing IDs from expired claims for cascade
+        const allListingIds: string[] = [];
+        for (const claim of expired) {
+          const { rows: ls } = await pool.query(
+            "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+            [claim.trade_up_id]
+          );
+          for (const { listing_id } of ls) {
+            if (!listing_id.startsWith("theor")) allListingIds.push(listing_id);
           }
+        }
+        if (allListingIds.length > 0) {
+          await cascadeTradeUpStatuses(pool, allListingIds);
         }
       }
     } catch (err) {
@@ -334,9 +336,8 @@ export function claimsRouter(pool: pg.Pool): Router {
       [tradeUpId, userId]
     );
 
-    // No cascade on claim — with 207 avg listing overlap, cascading would update
-    // thousands of trade-ups per claim. Instead, claimed listings are filtered via
-    // Redis active_claims in the list endpoint. Trade-up statuses stay as-is.
+    // Cascade status to other trade-ups sharing these now-claimed listings
+    await cascadeTradeUpStatuses(pool, listingIds);
 
     // Refresh Redis claims cache + invalidate trade-ups cache (AWAIT before responding
     // so the next request sees fresh data — fire-and-forget caused claims to not show up)
@@ -387,6 +388,10 @@ export function claimsRouter(pool: pg.Pool): Router {
         [listing_id, userId]
       );
     }
+
+    // Cascade status — listings are unclaimed so other trade-ups may become active again
+    const releasedIds = listingRows2.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+    await cascadeTradeUpStatuses(pool, releasedIds);
 
     // Await Redis updates before responding
     await refreshClaimsCache(pool);
@@ -476,19 +481,10 @@ export function claimsRouter(pool: pg.Pool): Router {
       client.release();
     }
 
-    // Cascade: mark all trade-ups sharing deleted listings as partial/stale in DB
-    // This prevents them from appearing in active queries and creating empty pages
-    if (confirmed.length > 0) {
-      const ph = confirmed.map((_: string, i: number) => `$${i + 1}`).join(",");
-      await pool.query(`
-        UPDATE trade_ups SET listing_status = 'partial',
-          preserved_at = COALESCE(preserved_at, NOW())
-        WHERE listing_status = 'active' AND id != $${confirmed.length + 1}
-          AND id IN (
-            SELECT DISTINCT trade_up_id FROM trade_up_inputs
-            WHERE listing_id IN (${ph})
-          )
-      `, [...confirmed, tradeUpId]);
+    // Cascade status to all trade-ups sharing deleted/released listings
+    const allAffectedIds = [...confirmed, ...released];
+    if (allAffectedIds.length > 0) {
+      await cascadeTradeUpStatuses(pool, allAffectedIds);
     }
 
     console.log(`Confirm: ${confirmed.length} bought, ${released.length} released (trade-up ${tradeUpId}, user ${userId})`);

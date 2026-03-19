@@ -11,6 +11,7 @@
 
 import pg from "pg";
 import nacl from "tweetnacl";
+import { deleteListings } from "../engine.js";
 
 const DMARKET_API = "https://api.dmarket.com";
 const GAME_ID = "a8db"; // CS2
@@ -307,8 +308,7 @@ export async function checkDMarketStaleness(
 
       const toRemove = stored.filter(s => !activeIds.has(s.id));
       if (toRemove.length > 0) {
-        const ph = toRemove.map((_, i) => `$${i + 1}`).join(",");
-        await pool.query(`DELETE FROM listings WHERE id IN (${ph})`, toRemove.map(r => r.id));
+        await deleteListings(pool, toRemove.map(r => r.id));
         removed += toRemove.length;
       }
 

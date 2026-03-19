@@ -29,6 +29,7 @@ import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
+  cascadeTradeUpStatuses,
   type FinishData,
 } from "../engine.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
@@ -430,6 +431,20 @@ export async function main() {
             client.release();
           }
           console.log(`    Expired claims: ${expired.length} released`);
+          // Cascade status — unclaimed listings may restore trade-ups to active
+          const allExpiredListingIds: string[] = [];
+          for (const claim of expired) {
+            const { rows: ls } = await pool.query(
+              "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+              [claim.trade_up_id]
+            );
+            for (const { listing_id } of ls) {
+              if (!listing_id.startsWith("theor")) allExpiredListingIds.push(listing_id);
+            }
+          }
+          if (allExpiredListingIds.length > 0) {
+            await cascadeTradeUpStatuses(pool, allExpiredListingIds);
+          }
         }
       }
 
@@ -457,6 +472,8 @@ export async function main() {
             } finally {
               client.release();
             }
+            // Cascade trade-up statuses for confirmed (deleted) listings
+            await cascadeTradeUpStatuses(pool, confirmedIds);
             console.log(`    Confirmed purchases: deleted ${confirmedIds.length} listings`);
           }
         }
