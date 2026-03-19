@@ -10,7 +10,6 @@ import {
 import {
   snapshotListingsToObservations,
   pruneObservations,
-  refreshListingStatuses,
   purgeExpiredPreserved,
   cascadeTradeUpStatuses,
 } from "../../engine.js";
@@ -88,11 +87,9 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Cleaned ${cleanedCount} corrupt trade-ups`);
   }
 
-  // Refresh listing statuses (marks partial/stale trade-ups)
-  const lsResult = await refreshListingStatuses(pool);
-  if (lsResult.partial > 0 || lsResult.stale > 0) {
-    console.log(`  Listing status: ${lsResult.active} active, ${lsResult.partial} partial, ${lsResult.stale} stale (${lsResult.preserved} preserved)`);
-  }
+  // Listing statuses now maintained by cascadeTradeUpStatuses() on every listing
+  // deletion/staleness check. Full-scan refreshListingStatuses removed — caused
+  // deadlocks with concurrent DMarket fetcher on 2.8M trade-ups.
 
   // Purge trade-ups preserved >7 days
   const purgedPreserved = await purgeExpiredPreserved(pool, 7);
