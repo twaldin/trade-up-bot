@@ -576,23 +576,20 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     });
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    const unclaimed = tradeUps.filter((tu: any) => !tu.claimed_by_other);
+    const filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
 
-    // Filter out trade-ups that auto-corrected to partial/stale when "Show stale" is off
-    const filteredTradeUps = includeStale
-      ? unclaimed
-      : unclaimed.filter(tu => tu.listing_status === 'active');
+    // Note: no post-filter for listing_status. The DB query already filters by listing_status
+    // via the WHERE clause. Auto-correct fixes the returned status for display only — it does
+    // NOT filter results out, since that would create empty pages (LIMIT already applied in SQL).
+    // Status cascading happens at write time (confirm, staleness checks, daemon housekeeping).
 
-    // Adjust counts for filtered results
-    const filteredTotal = includeStale ? total : total - (tradeUps.length - filteredTradeUps.length);
-    const filteredProfitable = includeStale
-      ? totalProfitable
-      : totalProfitable - tradeUps.filter(tu => tu.listing_status !== 'active' && tu.profit_cents > 0).length;
+    // Adjust total for claimed trade-ups removed from this page
+    const claimedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {
       trade_ups: filteredTradeUps,
-      total: filteredTotal,
-      total_profitable: filteredProfitable,
+      total: total - claimedOnPage,
+      total_profitable: totalProfitable,
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
