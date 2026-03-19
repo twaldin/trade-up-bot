@@ -5,11 +5,11 @@
  * Phase 3: API Probe (rate limit detection)
  * Phase 4: Data Fetch (sale history, listings)
  * Phase 4.5: Verify profitable inputs (individual lookup pool)
+ * Phase 4.6: CSFloat staleness checks (dedicated, budget-paced from 50K individual pool)
  * Phase 5: TIME-BOUNDED ENGINE — repeating super-batches of:
  *   (a) 2 workers (structured discovery -> deep exploration, 2-min time limit)
  *   (b) Merge results
  *   (c) Revival (200 gun + 200 knife)
- *   (d) Staleness checks (budget-paced from 50K individual pool)
  */
 
 import fs from "fs";
@@ -261,6 +261,50 @@ export async function main() {
     // Phase 4.5: Verify profitable trade-up inputs still exist
     await phase4p5VerifyInputs(pool, freshness, apiKey, probe, budget);
 
+    // Phase 4.6: CSFloat staleness checks (dedicated phase — guaranteed to run before engine)
+    let totalStalenessChecked = 0;
+    let totalStalenessSold = 0;
+    let totalStalenessRemoved = 0;
+    {
+      const staleBudget = Math.min(Math.floor(budget.cycleIndividualBudget() * 0.85), 2000);
+      if (staleBudget > 0 && probe.individualListing.available) {
+        // Deduct user verify calls from budget
+        let adjustedBudget = staleBudget;
+        try {
+          const { getRedis } = await import("../redis.js");
+          const redis = getRedis();
+          if (redis) {
+            const verifyCalls = parseInt(await redis.getset("verify_api_calls", "0") || "0");
+            if (verifyCalls > 0) {
+              adjustedBudget = Math.max(25, staleBudget - verifyCalls);
+            }
+          }
+        } catch { /* Redis unavailable */ }
+
+        console.log(`\n[${timestamp()}] Phase 4.6: CSFloat staleness (${adjustedBudget} checks from ${budget.individualRemaining} individual pool)`);
+        await setDaemonStatus(pool, "fetching", `Phase 4.6: Staleness checks (${adjustedBudget})`);
+        try {
+          const stalenessResult = await checkListingStaleness(pool, {
+            apiKey,
+            maxChecks: adjustedBudget,
+            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+          });
+          totalStalenessChecked = stalenessResult.checked;
+          totalStalenessSold = stalenessResult.sold;
+          totalStalenessRemoved = stalenessResult.delisted;
+          if (stalenessResult.sold > 0 || stalenessResult.delisted > 0) {
+            freshness.markListingsChanged();
+          }
+          console.log(`  Staleness: ${stalenessResult.checked} checked, ${stalenessResult.stillListed} active, ${stalenessResult.sold} sold, ${stalenessResult.delisted} removed`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("429")) {
+            console.log(`  Staleness: rate limited after ${totalStalenessChecked} checks`);
+          }
+        }
+      }
+    }
+
     // Phase 4b: Recalc trade-up stats where input prices changed (DMarket/Skinport updates)
     {
       const { recalcTradeUpCosts } = await import("../engine.js");
@@ -302,19 +346,11 @@ export async function main() {
     let totalKnifeProfitable = 0;
     let totalClassifiedResults = 0;
     let totalClassifiedProfitable = 0;
-    let totalStalenessChecked = 0;
-    let totalStalenessSold = 0;
-    let totalStalenessRemoved = 0;
     let totalRevived = 0;
     let totalDmarketChecked = 0;
     let topKnifeProfit = 0;
 
     const dmarketEnabled = isDMarketConfigured();
-
-    // Calculate staleness budget for the entire cycle from the individual pool
-    const cycleStaleBudget = Math.floor(budget.cycleIndividualBudget() * 0.85);
-    let remainingStaleBudget = cycleStaleBudget;
-    console.log(`  Staleness budget: ${cycleStaleBudget} checks this cycle (from ${budget.individualRemaining} individual pool)`);
 
     // Super-batch loop: runs until cycle time budget is exhausted
     while (Date.now() < engineEnd - 30_000) { // Stop 30s before end
@@ -481,43 +517,6 @@ export async function main() {
             await cascadeTradeUpStatuses(pool, confirmedIds);
             console.log(`    Confirmed purchases: deleted ${confirmedIds.length} listings`);
           }
-        }
-      }
-
-      // Budget-paced staleness checks from the individual pool (50K/12h)
-      let stalenessMaxChecks = Math.min(remainingStaleBudget, 500);
-      try {
-        const { getRedis } = await import("../redis.js");
-        const redis = getRedis();
-        if (redis) {
-          const verifyCalls = parseInt(await redis.getset("verify_api_calls", "0") || "0");
-          if (verifyCalls > 0) {
-            stalenessMaxChecks = Math.max(25, stalenessMaxChecks - verifyCalls);
-            console.log(`    Staleness budget adjusted: ${stalenessMaxChecks} (${verifyCalls} verify calls deducted)`);
-          }
-        }
-      } catch { /* Redis unavailable */ }
-
-      // Staleness checks between super-batches (uses individual API pool)
-      await setDaemonStatus(pool, "fetching", `Phase 5: Staleness (batch ${superBatchCount})`);
-      try {
-        const stalenessResult = await checkListingStaleness(pool, {
-          apiKey,
-          maxChecks: stalenessMaxChecks,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        totalStalenessChecked += stalenessResult.checked;
-        totalStalenessSold += stalenessResult.sold;
-        totalStalenessRemoved += stalenessResult.delisted;
-        remainingStaleBudget -= stalenessResult.checked;
-        if (stalenessResult.sold > 0 || stalenessResult.delisted > 0) {
-          freshness.markListingsChanged();
-          console.log(`    Staleness: ${stalenessResult.checked} checked, ${stalenessResult.sold} sold, ${stalenessResult.delisted} removed`);
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("429")) {
-          console.log(`    Staleness: rate limited after ${totalStalenessChecked} total checks`);
         }
       }
 
