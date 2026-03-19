@@ -259,32 +259,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    let staleGuard = ""; // SQL-level filter added to data query only (not count — too slow on 1M+ rows)
     const params: (string | number)[] = [];
     let paramIndex = 1;
     if (includeStale) {
       where = `WHERE t.is_theoretical = 0 AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
       where = `WHERE t.is_theoretical = 0 AND t.listing_status = 'active'`;
-      // NOT EXISTS prevents trade-ups with missing/claimed inputs from being fetched.
-      // Evaluated per candidate row using indexed lookups — fast with LIMIT 50.
-      // Exception: user's own claimed trade-ups always pass through.
-      staleGuard = ` AND (
-          NOT EXISTS (
-            SELECT 1 FROM trade_up_inputs tui
-            LEFT JOIN listings l ON tui.listing_id = l.id
-            WHERE tui.trade_up_id = t.id
-              AND tui.listing_id NOT LIKE 'theor%'
-              AND (l.id IS NULL OR l.claimed_by IS NOT NULL)
-          )
-          OR EXISTS (
-            SELECT 1 FROM trade_up_claims tc
-            WHERE tc.trade_up_id = t.id AND tc.user_id = $${paramIndex}
-              AND tc.released_at IS NULL AND tc.expires_at > NOW()
-          )
-        )`;
-      params.push(userId);
-      paramIndex++;
     }
 
     // Basic tier: 30-min delay — only show trade-ups created 30+ min ago
@@ -434,7 +414,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               0 as outcome_count
-       FROM trade_ups t ${where}${staleGuard}
+       FROM trade_ups t ${where}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, perPage, offset]
