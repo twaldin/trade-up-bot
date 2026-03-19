@@ -65,11 +65,12 @@ export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinp
 export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number): string {
   const source = listingSource(listingId);
   if (source === "dmarket") {
+    // DMarket: float precision is 3 digits, tight ±0.002 range to find the exact listing
     const params = new URLSearchParams({ title: skinName ?? "" });
+    params.set("category_0", "not_stattrak_tm");
     if (floatValue !== undefined && floatValue > 0) {
-      const margin = 0.005;
-      params.set("floatValueFrom", Math.max(0, floatValue - margin).toFixed(3));
-      params.set("floatValueTo", Math.min(1, floatValue + margin).toFixed(3));
+      params.set("floatValueFrom", Math.max(0, floatValue - 0.002).toFixed(3));
+      params.set("floatValueTo", Math.min(1, floatValue + 0.002).toFixed(3));
     }
     if (priceCents !== undefined && priceCents > 0) {
       // Reverse DMarket 2.5% buyer fee to get original listing price
@@ -81,15 +82,13 @@ export function listingUrl(listingId: string, skinName?: string, condition?: str
     return `https://dmarket.com/ingame-items/item-list/csgo-skins?${params.toString()}`;
   }
   if (source === "skinport") {
-    // Skinport: search with condition + float/price range filters
+    // Skinport: tight float range (±0.002) and non-StatTrak filter
     // Skinport has 0% buyer fee — priceCents IS the listing price
     const query = condition ? `${skinName} (${condition})` : (skinName ?? "");
-    const params = new URLSearchParams({ search: query });
+    const params = new URLSearchParams({ search: query, type: "default" });
     if (floatValue !== undefined && floatValue > 0) {
-      // Skinport uses wear as integer percentage (0-100)
-      const wearPct = Math.round(floatValue * 100);
-      params.set("weargt", String(Math.max(0, wearPct - 1)));
-      params.set("wearlt", String(Math.min(100, wearPct + 1)));
+      params.set("float_min", Math.max(0, floatValue - 0.002).toFixed(4));
+      params.set("float_max", Math.min(1, floatValue + 0.002).toFixed(4));
     }
     if (priceCents !== undefined && priceCents > 0) {
       params.set("pricegt", String(Math.max(0, priceCents - 100)));
