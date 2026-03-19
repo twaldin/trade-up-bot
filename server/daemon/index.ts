@@ -9,7 +9,7 @@
  *   (a) 2 workers (structured discovery -> deep exploration, 2-min time limit)
  *   (b) Merge results
  *   (c) Revival (200 gun + 200 knife)
- *   (d) Staleness checks (75 listings, paced by API budget)
+ *   (d) Staleness checks (budget-paced from 50K individual pool)
  */
 
 import fs from "fs";
@@ -311,6 +311,11 @@ export async function main() {
 
     const dmarketEnabled = isDMarketConfigured();
 
+    // Calculate staleness budget for the entire cycle from the individual pool
+    const cycleStaleBudget = Math.floor(budget.cycleIndividualBudget() * 0.85);
+    let remainingStaleBudget = cycleStaleBudget;
+    console.log(`  Staleness budget: ${cycleStaleBudget} checks this cycle (from ${budget.individualRemaining} individual pool)`);
+
     // Super-batch loop: runs until cycle time budget is exhausted
     while (Date.now() < engineEnd - 30_000) { // Stop 30s before end
       superBatchCount++;
@@ -479,16 +484,16 @@ export async function main() {
         }
       }
 
-      // Adjust staleness budget based on verify API calls from users
-      let stalenessMaxChecks = 75;
+      // Budget-paced staleness checks from the individual pool (50K/12h)
+      let stalenessMaxChecks = Math.min(remainingStaleBudget, 500);
       try {
         const { getRedis } = await import("../redis.js");
         const redis = getRedis();
         if (redis) {
           const verifyCalls = parseInt(await redis.getset("verify_api_calls", "0") || "0");
           if (verifyCalls > 0) {
-            stalenessMaxChecks = Math.max(25, 75 - verifyCalls);
-            console.log(`    Staleness budget adjusted: 75 - ${verifyCalls} verify calls = ${stalenessMaxChecks}`);
+            stalenessMaxChecks = Math.max(25, stalenessMaxChecks - verifyCalls);
+            console.log(`    Staleness budget adjusted: ${stalenessMaxChecks} (${verifyCalls} verify calls deducted)`);
           }
         }
       } catch { /* Redis unavailable */ }
@@ -504,6 +509,7 @@ export async function main() {
         totalStalenessChecked += stalenessResult.checked;
         totalStalenessSold += stalenessResult.sold;
         totalStalenessRemoved += stalenessResult.delisted;
+        remainingStaleBudget -= stalenessResult.checked;
         if (stalenessResult.sold > 0 || stalenessResult.delisted > 0) {
           freshness.markListingsChanged();
           console.log(`    Staleness: ${stalenessResult.checked} checked, ${stalenessResult.sold} sold, ${stalenessResult.delisted} removed`);

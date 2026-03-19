@@ -191,12 +191,6 @@ app.use((req, res, next) => {
           await cacheSet("type_counts", counts, 1800);
           console.log(`Cache warmed: type-counts (${((Date.now() - t2) / 1000).toFixed(1)}s)`);
         }
-        // Fix existing incorrect listing statuses (claimed listings now count as missing)
-        console.log("Fixing listing statuses (one-time cleanup)...");
-        const t3 = Date.now();
-        const { refreshListingStatuses } = await import("./engine.js");
-        const statusResult = await refreshListingStatuses(pool);
-        console.log(`Listing statuses fixed: ${statusResult.active} active, ${statusResult.partial} partial, ${statusResult.stale} stale (${((Date.now() - t3) / 1000).toFixed(1)}s)`);
       } catch (e) {
         console.error("Cache warming failed:", (e as Error).message);
       }
