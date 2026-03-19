@@ -507,16 +507,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       // Batch in chunks of 500 to avoid param limit issues
       for (let i = 0; i < allIds.length; i += 500) {
         const chunk = allIds.slice(i, i + 500);
-        const userParam = chunk.length + 1;
         const placeholders = chunk.map((_: any, j: number) => `$${j + 1}`).join(",");
         const { rows: missingRows } = await pool.query(`
           SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
           LEFT JOIN listings l ON tui.listing_id = l.id
           WHERE tui.trade_up_id IN (${placeholders})
-            AND (l.id IS NULL OR (l.claimed_by IS NOT NULL AND l.claimed_by != $${userParam}))
+            AND (l.id IS NULL OR l.claimed_by IS NOT NULL)
             AND tui.listing_id NOT LIKE 'theor%'
           GROUP BY tui.trade_up_id
-        `, [...chunk, userId]);
+        `, chunk);
         for (const r of missingRows) {
           missingCountByTuId.set(r.trade_up_id, parseInt(r.cnt));
         }
@@ -524,8 +523,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     // Auto-correct listing_status based on actual missing count
+    // Skip auto-correct for user's own claimed trade-ups — they should always show as active to the claimer
     const statusFixes = new Map<number, string>();
     for (const row of rows) {
+      if (claimedByMe.has(row.id)) continue;
       const missing = missingCountByTuId.get(row.id) ?? 0;
       const totalInputs = inputCountByTuId.get(row.id) ?? 0;
       if (missing === 0 && row.listing_status !== 'active') {
@@ -537,19 +538,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Persist auto-corrected statuses to DB (fire-and-forget, non-blocking)
-    if (statusFixes.size > 0) {
-      (async () => {
-        for (const [tuId, newStatus] of statusFixes) {
-          await pool.query(
-            `UPDATE trade_ups SET listing_status = $1,
-              preserved_at = CASE WHEN $1 = 'active' THEN NULL ELSE COALESCE(preserved_at, NOW()) END
-             WHERE id = $2 AND listing_status IS DISTINCT FROM $1`,
-            [newStatus, tuId]
-          );
-        }
-      })().catch(() => {});
-    }
+    // Note: auto-correct statuses are NOT persisted to DB here. The DB query uses
+    // listing_status = 'active' for pagination, and persisting claimed-as-missing would
+    // cause trade-ups to disappear from active queries, creating empty pages. The read-time
+    // correction is sufficient — it runs on every request and returns correct data.
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
@@ -1071,20 +1063,16 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // Load inputs on-demand (not included in list response to save bandwidth)
-  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => {
-    const uid = (req.user as any)?.steam_id || "anon";
-    return "tu_inputs:" + req.params.id + ":" + uid;
-  }, 120, async (req, res) => {
+  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-    const currentUserId = (req.user as User | undefined)?.steam_id || "anonymous";
     const { rows: inputs } = await pool.query("SELECT * FROM trade_up_inputs WHERE trade_up_id = $1", [id]);
     if (inputs.length === 0) {
       // Check if trade-up exists
       const { rows: [exists] } = await pool.query("SELECT id FROM trade_ups WHERE id = $1", [id]);
       if (!exists) { res.status(404).json({ error: "Not found" }); return; }
     }
-    // Check for missing/claimed listings (claimed by others treated as unavailable)
+    // Check for missing/claimed listings
     const missingIds = new Set<string>();
     const claimedIds = new Set<string>();
     if (inputs.length > 0) {
@@ -1092,8 +1080,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         `SELECT tui.listing_id, l.id as lid, l.claimed_by FROM trade_up_inputs tui
          LEFT JOIN listings l ON tui.listing_id = l.id
          WHERE tui.trade_up_id = $1
-           AND (l.id IS NULL OR (l.claimed_by IS NOT NULL AND l.claimed_by != $2))`,
-        [id, currentUserId]
+           AND (l.id IS NULL OR l.claimed_by IS NOT NULL)`,
+        [id]
       );
       for (const r of unavailable) {
         if (r.lid === null) missingIds.add(r.listing_id);
