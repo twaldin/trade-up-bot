@@ -237,7 +237,8 @@ function AppShell({ user }: { user?: AuthUser | null }) {
   }, []);
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1">
       <div className="flex items-center justify-between gap-2 mb-3">
         <a href="/" className="flex items-center gap-2 text-lg md:text-xl font-bold text-foreground whitespace-nowrap shrink-0 hover:opacity-80 transition-opacity">
           <img src="/favicon.svg" alt="" className="w-5 h-5 md:w-6 md:h-6" />
@@ -309,8 +310,9 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           </Suspense>
         } />
       </Routes>
+      </div>
       <SiteFooter />
-    </>
+    </div>
   );
 }
 
