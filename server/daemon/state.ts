@@ -21,9 +21,9 @@ const DEFAULT_SALE_BUDGET = 190; // 500 pool / 12h window. Probe detects actual 
 const DEFAULT_LISTING_BUDGET = 180; // Conservative buffer from ~200 listing limit
 
 /** Safety buffers — never let remaining drop below these to avoid 12h lockout */
-const LISTING_SAFETY_BUFFER = 15;
+const LISTING_SAFETY_BUFFER = 5;
 const SALE_SAFETY_BUFFER = 30;
-const INDIVIDUAL_SAFETY_BUFFER = 500; // 50K pool, keep 500 as margin
+const INDIVIDUAL_SAFETY_BUFFER = 100; // 50K pool, 0.2% margin — maximizes staleness throughput
 
 /** Target total cycle duration — at 1M trade-ups, Phase 4b recalc takes ~10 min.
  *  30 min syncs with Basic tier delay (users see "one cycle ago" data).
@@ -33,8 +33,8 @@ export const MIN_COOLDOWN_MS = 30 * 1000;          // 30s minimum
 export const MAX_COOLDOWN_MS = 30 * 60 * 1000;     // 30 min cap
 export const IDLE_COOLDOWN_MS = 15 * 60 * 1000;    // 15 min when no API budget at all
 
-/** Estimated cycle for budget pacing. 15 min = ~100 listing calls, ~14 sale calls, ~1400 individual. */
-export const ESTIMATED_CYCLE_MS = 15 * 60 * 1000;
+/** Estimated cycle for budget pacing. Matches TARGET_CYCLE_MS for accurate pacing. */
+export const ESTIMATED_CYCLE_MS = 30 * 60 * 1000;
 
 export class BudgetTracker {
   /** Sale history calls (500-limit endpoint, ~12h window) */
