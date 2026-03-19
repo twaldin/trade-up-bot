@@ -107,11 +107,7 @@ export async function checkListingStaleness(
     JOIN skins s ON l.skin_id = s.id
     LEFT JOIN profitable_listings pl ON l.id = pl.listing_id
     ORDER BY
-      CASE
-        WHEN pl.listing_id IS NOT NULL THEN 0
-        WHEN l.staleness_checked_at IS NULL THEN 1
-        ELSE 2
-      END,
+      CASE WHEN pl.listing_id IS NOT NULL THEN 0 ELSE 1 END,
       COALESCE(l.staleness_checked_at, l.created_at) ASC
     LIMIT $1
   `, [maxChecks]) as { rows: {
