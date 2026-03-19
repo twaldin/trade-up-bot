@@ -79,10 +79,10 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   // deletion/staleness check. Full-scan refreshListingStatuses removed — caused
   // deadlocks with concurrent DMarket fetcher on 2.8M trade-ups.
 
-  // Purge trade-ups preserved >7 days
-  const purgedPreserved = await purgeExpiredPreserved(pool, 7);
+  // Purge trade-ups preserved >24 hours (partial/stale listings aren't coming back)
+  const purgedPreserved = await purgeExpiredPreserved(pool, 1);
   if (purgedPreserved > 0) {
-    console.log(`  Purged ${purgedPreserved} expired preserved trade-ups (>7 days)`);
+    console.log(`  Purged ${purgedPreserved} expired preserved trade-ups (>24h)`);
   }
 
   // Re-run ANALYZE every 6 hours (every ~30 cycles) to keep query planner current
