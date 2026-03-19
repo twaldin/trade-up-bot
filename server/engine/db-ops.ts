@@ -160,19 +160,12 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
  * Purge preserved trade-ups older than maxDays.
  */
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
-  // Delete outcomes and inputs first (foreign key cascade should handle it, but be explicit)
-  const { rows: ids } = await pool.query(
-    "SELECT id FROM trade_ups WHERE preserved_at IS NOT NULL AND EXTRACT(EPOCH FROM NOW() - preserved_at::timestamptz) / 86400.0 > $1",
-    [maxDays]
-  );
+  const condition = "preserved_at IS NOT NULL AND EXTRACT(EPOCH FROM NOW() - preserved_at::timestamptz) / 86400.0 > $1";
 
-  if (ids.length === 0) return 0;
-
-  const idValues = ids.map((r: { id: number }) => r.id);
-  const placeholders = idValues.map((_: number, i: number) => `$${i + 1}`).join(",");
-  await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`, idValues);
-  await pool.query(`DELETE FROM trade_ups WHERE id IN (${placeholders})`, idValues);
-  return ids.length;
+  // Delete inputs first (no FK cascade), then trade-ups — use subquery to avoid 500K+ placeholder lists
+  await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE ${condition})`, [maxDays]);
+  const { rowCount } = await pool.query(`DELETE FROM trade_ups WHERE ${condition}`, [maxDays]);
+  return rowCount ?? 0;
 }
 
 /**
