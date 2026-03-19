@@ -476,6 +476,21 @@ export function claimsRouter(pool: pg.Pool): Router {
       client.release();
     }
 
+    // Cascade: mark all trade-ups sharing deleted listings as partial/stale in DB
+    // This prevents them from appearing in active queries and creating empty pages
+    if (confirmed.length > 0) {
+      const ph = confirmed.map((_: string, i: number) => `$${i + 1}`).join(",");
+      await pool.query(`
+        UPDATE trade_ups SET listing_status = 'partial',
+          preserved_at = COALESCE(preserved_at, NOW())
+        WHERE listing_status = 'active' AND id != $${confirmed.length + 1}
+          AND id IN (
+            SELECT DISTINCT trade_up_id FROM trade_up_inputs
+            WHERE listing_id IN (${ph})
+          )
+      `, [...confirmed, tradeUpId]);
+    }
+
     console.log(`Confirm: ${confirmed.length} bought, ${released.length} released (trade-up ${tradeUpId}, user ${userId})`);
 
     await refreshClaimsCache(pool);
