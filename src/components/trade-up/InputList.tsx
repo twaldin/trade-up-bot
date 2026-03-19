@@ -93,7 +93,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
 
   return (
     <div
-      className={`rounded-md border px-2 py-1.5 text-[0.75rem] transition-colors ${
+      className={`rounded-md border px-2.5 py-2 text-[0.78rem] transition-colors ${
         confirmMode ? (confirmChecked ? "border-green-600/50 bg-green-950/20" : "opacity-50 border-border/30 bg-muted/30") :
         isMissing || isClaimedByOther ? "opacity-50 border-red-800/50 bg-red-950/20" :
         isSoldOrDelisted ? "opacity-60 border-red-800/50 bg-red-950/20" : "border-border/50 bg-muted/50"
@@ -108,20 +108,20 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
         </div>
       )}
       {/* Row 1: Skin name + verify status */}
-      <div className="flex items-start justify-between gap-1 mb-0.5">
+      <div className="flex items-start justify-between gap-1 mb-1">
         {showListingLinks && input.listing_id !== "hidden" ? (
           <a
             href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents)}
             target="_blank"
             rel="noopener noreferrer"
-            className={`no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
+            className={`no-underline hover:text-blue-400 leading-tight text-[0.75rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
             title={input.skin_name}
           >
             {input.skin_name}
           </a>
         ) : (
           <span
-            className={`leading-tight text-[0.72rem] truncate ${isMissing ? "line-through text-red-400/70" : "text-foreground/90"}`}
+            className={`leading-tight text-[0.75rem] truncate ${isMissing ? "line-through text-red-400/70" : "text-foreground/90"}`}
             title={input.skin_name}
           >
             {input.skin_name}
@@ -141,30 +141,22 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
           {inputStatus && inputStatus.status === "delisted" && (
             <Badge variant="outline" className="text-[0.55rem] bg-yellow-950 text-amber-500 border-yellow-800 font-semibold py-0 h-3.5" title="Removed from market">GONE</Badge>
           )}
-          {onNavigateSkin && (
-            <button
-              className="inline-flex items-center justify-center bg-transparent border border-border rounded-[3px] text-muted-foreground text-[0.6rem] cursor-pointer px-[3px] py-0 leading-none opacity-60 transition-all hover:opacity-100 hover:text-blue-400 hover:border-blue-400"
-              title={`View ${input.skin_name} data`}
-              onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
-            >View data</button>
-          )}
         </div>
       </div>
-      {/* Row 2: Source + condition + float */}
-      <div className="flex items-center gap-1 mb-0.5">
-        {!isTheory && input.source && input.source !== "csfloat" && (
-          <span className="inline-block px-1 py-0 text-[0.55rem] font-semibold rounded text-white shrink-0" style={{ backgroundColor: sourceColor(input.source) }}>{sourceLabel(input.source)}</span>
-        )}
-        {isTheory && (
-          <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
-        )}
-        <span className={`text-[0.68rem] ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-muted-foreground"}`}>
-          {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
-        </span>
-      </div>
-      {/* Row 3: Price */}
-      <div className="flex items-center justify-between">
-        <span className={`text-[0.72rem] font-medium ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
+      {/* Row 2: Source + condition + float + price */}
+      <div className="flex justify-between items-center mb-0.5">
+        <div className="flex items-center gap-1">
+          {!isTheory && input.source && input.source !== "csfloat" && (
+            <span className="inline-block px-1 py-0 text-[0.55rem] font-semibold rounded text-white shrink-0" style={{ backgroundColor: sourceColor(input.source) }}>{sourceLabel(input.source)}</span>
+          )}
+          {isTheory && (
+            <Badge variant="outline" className="text-[0.6rem] bg-violet-950 text-violet-400 border-violet-800 py-0 h-4">theory</Badge>
+          )}
+          <span className={`text-[0.7rem] ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-muted-foreground"}`}>
+            {condAbbr(input.condition)}{input.float_value > 0 ? ` ${input.float_value.toFixed(4)}` : ""}
+          </span>
+        </div>
+        <span className={`text-[0.75rem] ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
           {formatDollars(input.price_cents)}
           {inputStatus && inputStatus.price_changed && inputStatus.current_price && (
             <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatDollars(inputStatus.original_price)}, now ${formatDollars(inputStatus.current_price)}`}>
@@ -173,6 +165,14 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
           )}
         </span>
       </div>
+      {/* Row 3: View data link */}
+      {onNavigateSkin && (
+        <button
+          className="mt-0.5 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
+          title={`View ${input.skin_name} data`}
+          onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
+        >View data &rarr;</button>
+      )}
     </div>
   );
 }
