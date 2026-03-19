@@ -336,8 +336,8 @@ export async function main() {
     }
 
     // --- Phase 5: Time-Bounded Discovery Engine ---
-    const engineBudgetMs = Math.max(TARGET_CYCLE_MS - (Date.now() - cycleStarted), 60_000);
-    const engineEnd = Date.now() + engineBudgetMs;
+    const engineEnd = cycleStarted + TARGET_CYCLE_MS - 30_000; // 30s reserved for post-engine work
+    const engineBudgetMs = Math.max(engineEnd - Date.now(), 60_000);
 
     console.log(`\n[${timestamp()}] Phase 5: Time-Bounded Engine (${(engineBudgetMs / 60000).toFixed(1)} min budget)`);
     await setDaemonStatus(pool, "calculating", "Phase 5: Time-Bounded Engine");
@@ -679,5 +679,13 @@ export async function main() {
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
     await printPerformanceComparison(pool);
+
+    // Sleep until 30-min mark to align with listing pool reset window
+    const elapsed = Date.now() - cycleStarted;
+    const remaining = TARGET_CYCLE_MS - elapsed;
+    if (remaining > 1000) {
+      console.log(`  Sleeping ${(remaining / 1000).toFixed(0)}s to align with listing pool reset`);
+      await new Promise(r => setTimeout(r, remaining));
+    }
   }
 }
