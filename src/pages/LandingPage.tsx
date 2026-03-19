@@ -232,6 +232,8 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 10 sample trade-ups per tier</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full outcome details</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Sort columns</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No listing links</li>
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No filters</li>
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
@@ -267,8 +269,6 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   <li className="flex items-center gap-2"><IconCheck /> Real-time data</li>
                   <li className="flex items-center gap-2"><IconCheck /> Claim system (30 min lock)</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
                 </ul>
                 <Btn onClick={login} className="w-full">Go Pro</Btn>
               </div>

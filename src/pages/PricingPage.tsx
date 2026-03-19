@@ -90,6 +90,8 @@ export function PricingPage() {
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full outcome details and chart</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Sort by any column</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 3-hour data delay</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No listing links</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No filters or search</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No verification</li>
@@ -134,8 +136,6 @@ export function PricingPage() {
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (20/hr)</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (10/hr)</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
               </ul>
               <Btn onClick={() => user ? subscribe("pro") : login()} className="w-full">
                 {user?.tier === "pro" ? "Current plan" : "Go Pro"}
@@ -167,8 +167,8 @@ export function PricingPage() {
                   { feature: "Verify availability", free: false, basic: "10/hr", pro: "20/hr" },
                   { feature: "Claim system", free: false, basic: false, pro: "10/hr" },
                   { feature: "Active claims", free: false, basic: false, pro: "Up to 5" },
-                  { feature: "Collection browser", free: false, basic: false, pro: true },
-                  { feature: "Price analytics", free: false, basic: false, pro: true },
+                  { feature: "Collection browser", free: true, basic: true, pro: true },
+                  { feature: "Price analytics", free: true, basic: true, pro: true },
                 ].map((row, i) => (
                   <tr key={i} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3 text-foreground">{row.feature}</td>
