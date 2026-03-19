@@ -46,112 +46,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
   });
 
-  // Free tier: 10 diverse active trade-ups per type across price buckets.
-  // Same set for ALL free users. Refreshed each daemon cycle.
-  // 3-hour delay: only shows trade-ups created 3+ hours ago.
-  const FREE_PER_TYPE = 10;
-  const freeCache = new Map<string, { rows: any[]; calcTs: string }>();
-
-  // Price bucket configs per trade-up type
-  const KNIFE_BUCKETS = [
-    { max: 50000, count: 3 },    // cheap: $0-500
-    { max: 150000, count: 4 },   // mid: $500-1500
-    { max: Infinity, count: 3 }, // expensive: $1500+
-  ];
-  const GUN_BUCKETS = [
-    { max: 2000, count: 3 },     // cheap: $0-20
-    { max: 10000, count: 4 },    // mid: $20-100
-    { max: Infinity, count: 3 }, // expensive: $100+
-  ];
-
-  async function getFreeTierTradeUps(types: string[]): Promise<any[]> {
-    const { rows: calcRows } = await pool.query("SELECT value FROM sync_meta WHERE key = 'last_calculation'");
-    const calcTs = calcRows[0]?.value || "";
-
-    const results: any[] = [];
-    for (const t of types) {
-      const cached = freeCache.get(t);
-      if (cached && cached.calcTs === calcTs) {
-        results.push(...cached.rows);
-        continue;
-      }
-
-      const buckets = t === "covert_knife" ? KNIFE_BUCKETS : GUN_BUCKETS;
-      const rows: any[] = [];
-      let prevMax = 0;
-
-      for (const bucket of buckets) {
-        const costFilter = bucket.max === Infinity
-          ? `AND t.total_cost_cents >= ${prevMax}`
-          : `AND t.total_cost_cents >= ${prevMax} AND t.total_cost_cents < ${bucket.max}`;
-
-        const { rows: bucketRows } = await pool.query(`
-          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
-                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-                 0 as outcome_count
-          FROM trade_ups t
-          WHERE t.is_theoretical = 0 AND t.type = $1
-            AND t.listing_status = 'active'
-            AND t.created_at <= NOW() - INTERVAL '10800 seconds'
-            AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
-            ${costFilter}
-          ORDER BY t.chance_to_profit DESC, t.profit_cents DESC
-          LIMIT $2
-        `, [t, bucket.count]);
-        rows.push(...bucketRows);
-        prevMax = bucket.max === Infinity ? prevMax : bucket.max;
-      }
-
-      // Backfill if buckets didn't fill to 10 — first try profitable, then least-negative ROI
-      if (rows.length < FREE_PER_TYPE) {
-        const existingIds = new Set(rows.map((r: any) => r.id));
-        const { rows: backfill } = await pool.query(`
-          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
-                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-                 0 as outcome_count
-          FROM trade_ups t
-          WHERE t.is_theoretical = 0 AND t.type = $1
-            AND t.listing_status = 'active'
-            AND t.created_at <= NOW() - INTERVAL '10800 seconds'
-            AND (t.profit_cents > 0 OR t.chance_to_profit >= 0.25)
-          ORDER BY t.chance_to_profit DESC, t.profit_cents DESC
-          LIMIT $2
-        `, [t, FREE_PER_TYPE * 2]);
-        for (const r of backfill) {
-          if (rows.length >= FREE_PER_TYPE) break;
-          if (!existingIds.has(r.id)) rows.push(r);
-        }
-      }
-
-      // Final backfill: if still not enough, grab least-negative ROI trade-ups
-      if (rows.length < FREE_PER_TYPE) {
-        const existingIds = new Set(rows.map((r: any) => r.id));
-        const { rows: fallback } = await pool.query(`
-          SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
-                 t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
-                 t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-                 0 as outcome_count
-          FROM trade_ups t
-          WHERE t.is_theoretical = 0 AND t.type = $1
-            AND t.listing_status = 'active'
-            AND t.created_at <= NOW() - INTERVAL '10800 seconds'
-          ORDER BY t.roi_percentage DESC
-          LIMIT $2
-        `, [t, FREE_PER_TYPE * 2]);
-        for (const r of fallback) {
-          if (rows.length >= FREE_PER_TYPE) break;
-          if (!existingIds.has(r.id)) rows.push(r);
-        }
-      }
-
-      freeCache.set(t, { rows, calcTs });
-      results.push(...rows);
-    }
-    return results;
-  }
-
   router.get("/api/trade-ups", cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
@@ -192,95 +86,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const userId = user?.steam_id || "anonymous";
     const effectiveTier = isInternal ? "pro" : (user?.tier || "free");
 
-    // === FREE TIER: return fixed 10 oldest stale per type, no filters/pagination ===
-    // Free users see full trade-up data (inputs, outcomes, prices) but no listing links
-    if (effectiveTier === "free") {
-      const freeTypes = type && type !== "all"
-        ? [type]
-        : ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
-      const freeRows = await getFreeTierTradeUps(freeTypes);
-
-      // Batch-load inputs for all free tier trade-ups (fixes N+1)
-      // Build input summaries for free tier (same lightweight approach as paid)
-      const freeIds = freeRows.map((r: any) => r.id);
-      const freeSummaryByTuId = new Map<number, InputSummary>();
-      if (freeIds.length > 0) {
-        const ph = freeIds.map((_: any, i: number) => `$${i + 1}`).join(",");
-        const { rows: summaryRows } = await pool.query(
-          `SELECT trade_up_id, skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id IN (${ph})`,
-          freeIds
-        );
-        const grouped = new Map<number, typeof summaryRows>();
-        for (const r of summaryRows) {
-          const list = grouped.get(r.trade_up_id) ?? [];
-          list.push(r);
-          grouped.set(r.trade_up_id, list);
-        }
-        for (const [tuId, inputs] of grouped) {
-          const skinCounts = new Map<string, { count: number; condition: string }>();
-          const collections = new Set<string>();
-          for (const inp of inputs) {
-            const existing = skinCounts.get(inp.skin_name);
-            if (existing) existing.count++;
-            else skinCounts.set(inp.skin_name, { count: 1, condition: inp.condition });
-            collections.add(inp.collection_name);
-          }
-          freeSummaryByTuId.set(tuId, {
-            skins: [...skinCounts.entries()].sort((a, b) => b[1].count - a[1].count).map(([name, info]) => ({ name, count: info.count, condition: info.condition })),
-            collections: [...collections],
-            input_count: inputs.length,
-          });
-        }
-      }
-
-      const tradeUps: TradeUp[] = freeRows.map((row: any) => {
-        return {
-          id: row.id,
-          type: row.type,
-          total_cost_cents: row.total_cost_cents,
-          expected_value_cents: row.expected_value_cents,
-          profit_cents: row.profit_cents,
-          roi_percentage: row.roi_percentage,
-          created_at: row.created_at,
-          is_theoretical: false,
-          inputs: [],
-          input_summary: freeSummaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 },
-          outcomes: [],
-          chance_to_profit: row.chance_to_profit ?? 0,
-          best_case_cents: row.best_case_cents ?? 0,
-          worst_case_cents: row.worst_case_cents ?? 0,
-          outcome_count: row.outcome_count ?? 0,
-          listing_status: 'active' as const, // Don't reveal stale status
-          missing_inputs: 0,
-          profit_streak: 0,
-          peak_profit_cents: 0,
-          preserved_at: null,
-          previous_inputs: null,
-        };
-      });
-
-      let myClaimCount = 0;
-      try {
-        const { rows: [claimRow] } = await pool.query(
-          "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND released_at IS NULL AND expires_at > NOW()",
-          [userId]
-        );
-        myClaimCount = parseInt(claimRow.c);
-      } catch {}
-
-      const result = {
-        trade_ups: tradeUps,
-        total: tradeUps.length,
-        page: 1,
-        per_page: tradeUps.length,
-        tier: "free",
-        tier_config: tierConfig,
-        my_claim_count: myClaimCount,
-      };
-      res.json(result);
-      return;
-    }
-
     const pageNum = parseInt(page);
     const perPage = Math.min(parseInt(per_page), 500);
     const offset = (pageNum - 1) * perPage;
@@ -293,6 +98,11 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       where = `WHERE t.is_theoretical = 0 AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
       where = `WHERE t.is_theoretical = 0 AND t.listing_status = 'active'`;
+    }
+
+    // Free tier: 3-hour delay
+    if (effectiveTier === "free") {
+      where += ` AND t.created_at <= NOW() - INTERVAL '10800 seconds'`;
     }
 
     // Basic tier: 30-min delay — only show trade-ups created 30+ min ago
@@ -632,8 +442,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
-      claim_limit: (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? await getRateLimit(userId, "claim", 10) : null,
-      verify_limit: await getRateLimit(userId, "verify", (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? 20 : 10),
+      claim_limit: (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin"
+        ? await getRateLimit(userId, "claim", 10)
+        : (effectiveTier as string) === "basic"
+          ? await getRateLimit(userId, "claim", 5)
+          : null,
+      verify_limit: (effectiveTier as string) === "free" ? null : await getRateLimit(userId, "verify", (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? 20 : 10),
     };
     res.json(result);
   }));

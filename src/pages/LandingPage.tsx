@@ -229,13 +229,12 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   <div className="text-3xl font-bold">$0</div>
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 10 sample trade-ups per tier</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full outcome details</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Sort columns</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Unlimited trade-ups</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full filters & search</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Listing links</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 3-hour data delay</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
-                  <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No listing links</li>
-                  <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No filters</li>
+                  <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No verification</li>
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
                 </ul>
                 <Btn variant="outline" onClick={login} className="w-full">Get started</Btn>
@@ -248,12 +247,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Unlimited trade-ups</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 30-min delay on new finds</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Filters, search, pagination</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Direct listing links</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability</li>
-                  <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (10/hr)</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (5/day)</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
                 </ul>
                 <Btn variant="outline" onClick={login} className="w-full">Subscribe</Btn>
               </div>

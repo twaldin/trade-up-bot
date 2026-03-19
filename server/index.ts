@@ -124,6 +124,43 @@ app.use((req, res, next) => {
   app.use(stripeRouter(pool));
   app.use(discordRouter(pool));
 
+  // Dynamic OG tags for shareable trade-up pages (social media bots)
+  const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot/i;
+  const TYPE_LABELS: Record<string, string> = {
+    covert_knife: "Knife/Glove", classified_covert: "Covert",
+    restricted_classified: "Classified", milspec_restricted: "Restricted",
+    industrial_milspec: "Mil-Spec", consumer_industrial: "Industrial",
+    staircase: "Staircase",
+  };
+  app.get("/trade-ups/:id", async (req, res, next) => {
+    const ua = req.headers["user-agent"] || "";
+    if (!SOCIAL_BOTS.test(ua)) return next(); // normal browser → SPA fallback
+    try {
+      const { rows: [row] } = await pool.query("SELECT type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit FROM trade_ups WHERE id = $1", [req.params.id]);
+      if (!row) return next();
+      const typeLabel = TYPE_LABELS[row.type] || row.type;
+      const profit = (row.profit_cents / 100).toFixed(2);
+      const cost = (row.total_cost_cents / 100).toFixed(2);
+      const chance = Math.round((row.chance_to_profit ?? 0) * 100);
+      const roi = row.roi_percentage?.toFixed(1) ?? "0";
+      const title = `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance)`;
+      const desc = `$${cost} cost, ${roi}% ROI. Found on TradeUpBot.`;
+      const url = `https://tradeupbot.app/trade-ups/${req.params.id}`;
+      res.send(`<!DOCTYPE html><html><head>
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${desc}" />
+<meta property="og:image" content="https://tradeupbot.app/tradeuptable.png" />
+<meta property="og:url" content="${url}" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${title}" />
+<meta name="twitter:description" content="${desc}" />
+<meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.png" />
+<title>${title}</title>
+</head><body></body></html>`);
+    } catch { next(); }
+  });
+
   // Serve built frontend in production (Vite handles this in dev via proxy)
   const distPath = path.join(__dirname, "..", "dist");
   if (fs.existsSync(distPath)) {

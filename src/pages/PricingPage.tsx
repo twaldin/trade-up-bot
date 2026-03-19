@@ -83,17 +83,16 @@ export function PricingPage() {
               <div className="mb-6">
                 <div className="text-sm text-muted-foreground mb-1">Free</div>
                 <div className="text-3xl font-bold">$0</div>
-                <p className="text-xs text-muted-foreground mt-2">Explore the platform and see how trade-ups work. No credit card required.</p>
+                <p className="text-xs text-muted-foreground mt-2">Full access to all trade-ups with filters, sorting, and listing links. 3-hour data delay.</p>
               </div>
               <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 10 sample trade-ups per tier</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Unlimited trade-ups</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full filters, search, sorting</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Direct listing links</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Full outcome details and chart</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Sort by any column</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 3-hour data delay</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Collection browser</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Price analytics</li>
-                <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No listing links</li>
-                <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No filters or search</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No verification</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
               </ul>
@@ -105,17 +104,15 @@ export function PricingPage() {
               <div className="mb-6">
                 <div className="text-sm mb-1">Basic</div>
                 <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
-                <p className="text-xs text-muted-foreground mt-2">Unlimited access with a 30-minute delay on new discoveries. Full filtering and verification.</p>
+                <p className="text-xs text-muted-foreground mt-2">Faster data, verification, and claims. See trade-ups 30 minutes after discovery.</p>
               </div>
               <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Unlimited trade-ups</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 30-min delay on new finds</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Filters, search, pagination</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Direct listing links</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (10/hr)</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> All rarity tiers</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (5/day)</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
                 <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No real-time data</li>
-                <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
               </ul>
               <Btn variant="outline" onClick={() => user ? subscribe("basic") : login()} className="w-full">
                 {user?.tier === "basic" ? "Current plan" : "Subscribe"}
@@ -157,16 +154,16 @@ export function PricingPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {[
-                  { feature: "Trade-ups visible", free: "10 per tier", basic: "Unlimited", pro: "Unlimited" },
+                  { feature: "Trade-ups visible", free: "Unlimited", basic: "Unlimited", pro: "Unlimited" },
                   { feature: "Data freshness", free: "3-hour delay", basic: "30-min delay", pro: "Real-time" },
                   { feature: "Outcome details", free: true, basic: true, pro: true },
                   { feature: "Sort columns", free: true, basic: true, pro: true },
-                  { feature: "Filters & search", free: false, basic: true, pro: true },
-                  { feature: "Pagination", free: false, basic: true, pro: true },
-                  { feature: "Direct listing links", free: false, basic: true, pro: true },
+                  { feature: "Filters & search", free: true, basic: true, pro: true },
+                  { feature: "Pagination", free: true, basic: true, pro: true },
+                  { feature: "Direct listing links", free: true, basic: true, pro: true },
                   { feature: "Verify availability", free: false, basic: "10/hr", pro: "20/hr" },
-                  { feature: "Claim system", free: false, basic: false, pro: "10/hr" },
-                  { feature: "Active claims", free: false, basic: false, pro: "Up to 5" },
+                  { feature: "Claim system", free: false, basic: "5/day", pro: "10/hr" },
+                  { feature: "Active claims", free: false, basic: "Up to 5", pro: "Up to 5" },
                   { feature: "Collection browser", free: true, basic: true, pro: true },
                   { feature: "Price analytics", free: true, basic: true, pro: true },
                 ].map((row, i) => (
@@ -226,11 +223,11 @@ export function PricingPage() {
               </p>
             </PricingFaqItem>
 
-            <PricingFaqItem question="What does '30-minute delay' mean on Basic?">
+            <PricingFaqItem question="What do the data delays mean?">
               <p>
-                Basic tier users see trade-ups 30 minutes after they're discovered. Pro users see them
-                immediately. This means Pro users have a window to claim and act on the highest-profit
-                trade-ups before Basic users see them.
+                Free users see trade-ups 3 hours after they're discovered. Basic users see them after 30 minutes.
+                Pro users see them immediately. Shorter delays mean you can act on opportunities before other
+                users see them.
               </p>
             </PricingFaqItem>
 

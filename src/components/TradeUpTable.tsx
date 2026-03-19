@@ -150,6 +150,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Confirm mode: which trade-up is in confirm mode, and which listings are selected
   const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
   const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
+  const [shareCopied, setShareCopied] = useState<number | null>(null);
 
   // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
@@ -238,8 +239,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
         <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
           {showUpgradeLocal && (
             <div className="flex items-center justify-between mb-1.5 px-3 py-2 bg-yellow-950/40 border border-yellow-500/30 rounded text-[0.75rem] text-yellow-200">
-              <span>Upgrade to Pro to claim trade-ups and lock listings while you buy</span>
-              <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
+              <span>Upgrade to Basic to claim trade-ups and lock listings while you buy</span>
+              <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
                 Upgrade →
               </button>
             </div>
@@ -249,13 +250,13 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               {myClaimLocal
                 ? <span className="text-purple-400 font-medium">You claimed this trade-up — please confirm or release to help keep data fresh for everyone</span>
                 : otherClaim
-                  ? <span className="text-muted-foreground">Claimed by a Pro user</span>
+                  ? <span className="text-muted-foreground">Claimed by another user</span>
                   : <span>Claim to lock listings for 30 min while you buy</span>
               }
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {!myClaimLocal && !otherClaim && (
-                isPro
+                (isPro || isBasic)
                   ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} />
                   : <button
                       className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
@@ -352,7 +353,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           verifying={verifying === tu.id}
           onVerify={handleVerify}
           onNavigateSkin={onNavigateSkin}
-          showListingLinks={isPro}
+          showListingLinks={true}
           showVerify={isPro || isBasic}
           verifyLimit={verifyLimit}
           confirmMode={confirmModeId === tu.id}
@@ -372,6 +373,19 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onTogglePriceDetail={setPriceDetailKey}
           onNavigateSkin={onNavigateSkin}
         />
+        <div className="flex justify-end">
+          <button
+            className="px-3 py-1.5 text-[0.72rem] rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 cursor-pointer transition-colors flex items-center gap-1.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(`${window.location.origin}/trade-ups/${tu.id}`);
+              setShareCopied(tu.id);
+              setTimeout(() => setShareCopied(null), 2000);
+            }}
+          >
+            {shareCopied === tu.id ? "Copied!" : "Share"}
+          </button>
+        </div>
       </div>
     </div>
   );

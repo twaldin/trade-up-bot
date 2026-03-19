@@ -31,6 +31,7 @@ interface InputListProps {
   confirmMode?: boolean;
   confirmSelected?: Set<string>;
   onConfirmToggle?: (listingId: string) => void;
+  onUnauthLinkClick?: () => void;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -76,7 +77,7 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
   );
 }
 
-function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLinks = true, confirmMode = false, confirmChecked = false, onConfirmToggle }: {
+function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLinks = true, confirmMode = false, confirmChecked = false, onConfirmToggle, onUnauthLinkClick }: {
   input: TradeUpInput;
   verifyResult?: VerifyResult;
   onNavigateSkin?: (skinName: string) => void;
@@ -84,6 +85,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
   confirmMode?: boolean;
   confirmChecked?: boolean;
   onConfirmToggle?: () => void;
+  onUnauthLinkClick?: () => void;
 }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
@@ -119,6 +121,14 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
           >
             {input.skin_name}
           </a>
+        ) : onUnauthLinkClick ? (
+          <button
+            className={`leading-tight text-[0.75rem] truncate cursor-pointer hover:text-blue-400 transition-colors text-left ${isMissing ? "line-through text-red-400/70" : "text-foreground/90"}`}
+            title="Sign in to view listing link"
+            onClick={(e) => { e.stopPropagation(); onUnauthLinkClick(); }}
+          >
+            {input.skin_name}
+          </button>
         ) : (
           <span
             className={`leading-tight text-[0.75rem] truncate ${isMissing ? "line-through text-red-400/70" : "text-foreground/90"}`}
@@ -201,7 +211,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle, onUnauthLinkClick }: InputListProps) {
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -267,6 +277,7 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
             confirmMode={confirmMode}
             confirmChecked={confirmSelected?.has(input.listing_id) ?? false}
             onConfirmToggle={onConfirmToggle ? () => onConfirmToggle(input.listing_id) : undefined}
+            onUnauthLinkClick={onUnauthLinkClick}
           />
         ))}
       </div>
