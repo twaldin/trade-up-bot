@@ -57,6 +57,8 @@ export interface User {
   tier: "free" | "basic" | "pro";
   is_admin: boolean;
   stripe_customer_id: string | null;
+  discord_id: string | null;
+  discord_tag: string | null;
   created_at: string;
   last_login_at: string;
 }
@@ -132,6 +134,20 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   } catch (e: unknown) {
     // Non-critical — admin flag will be set on next login
     console.error("Admin migration deferred:", (e as Error).message);
+  }
+
+  // Migration: add discord_id/discord_tag columns for Discord account linking
+  try {
+    const { rows: cols2 } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
+    );
+    if (!cols2.find((c: { column_name: string }) => c.column_name === "discord_id")) {
+      await pool.query("ALTER TABLE users ADD COLUMN discord_id TEXT UNIQUE");
+      await pool.query("ALTER TABLE users ADD COLUMN discord_tag TEXT");
+      console.log("Migration: added discord_id, discord_tag columns to users");
+    }
+  } catch (e: unknown) {
+    console.error("Discord column migration deferred:", (e as Error).message);
   }
 
   const store = new SqliteSessionStore(DB_PATH);
@@ -261,6 +277,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
         avatar_url: u.avatar_url,
         tier: u.tier,
         is_admin: isAdmin(u),
+        discord_id: u.discord_id || null,
+        discord_tag: u.discord_tag || null,
       });
     } else {
       res.json(null);

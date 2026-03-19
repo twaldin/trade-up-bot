@@ -179,11 +179,18 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       my_claims,
     } = req.query as Record<string, string>;
 
+    // Internal API bypass: bot/daemon calls with INTERNAL_API_TOKEN get pro-level access
+    const internalToken = process.env.INTERNAL_API_TOKEN;
+    const authHeader = req.headers.authorization;
+    const isInternal = internalToken && authHeader === `Bearer ${internalToken}`;
+
     // Tier gating
-    const tierConfig = getTierConfig(req);
+    const tierConfig = isInternal
+      ? { delay: 0, limit: 0, showListingIds: true }
+      : getTierConfig(req);
     const user = req.user as User | undefined;
     const userId = user?.steam_id || "anonymous";
-    const effectiveTier = user?.tier || "free";
+    const effectiveTier = isInternal ? "pro" : (user?.tier || "free");
 
     // === FREE TIER: return fixed 10 oldest stale per type, no filters/pagination ===
     // Free users see full trade-up data (inputs, outcomes, prices) but no listing links

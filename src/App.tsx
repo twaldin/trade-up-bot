@@ -180,6 +180,23 @@ function UserMenu({ user }: { user: AuthUser }) {
             </button>
           )}
 
+          {/* Discord linking */}
+          {!user.discord_id ? (
+            <a href="/api/auth/discord" className="block w-full text-left px-3 py-2 text-xs text-indigo-400 hover:bg-muted cursor-pointer">
+              Link Discord
+            </a>
+          ) : (
+            <div className="px-3 py-2 border-t border-border">
+              <div className="text-xs text-muted-foreground">Discord: <span className="text-foreground">{user.discord_tag}</span></div>
+              <button className="text-xs text-red-400 hover:text-red-300 mt-1 cursor-pointer" onClick={async () => {
+                await fetch("/api/auth/discord", { method: "DELETE", credentials: "include" });
+                window.location.reload();
+              }}>
+                Unlink
+              </button>
+            </div>
+          )}
+
           {/* Admin: direct plan change buttons */}
           {user.is_admin && (
             <>
@@ -322,6 +339,8 @@ interface AuthUser {
   avatar_url: string;
   tier: string;
   is_admin: boolean;
+  discord_id?: string | null;
+  discord_tag?: string | null;
 }
 
 function AuthGatedApp() {

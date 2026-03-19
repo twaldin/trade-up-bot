@@ -16,6 +16,7 @@ import { snapshotsRouter } from "./routes/snapshots.js";
 import { calculatorRouter } from "./routes/calculator.js";
 import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
+import { discordRouter } from "./routes/discord.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -121,6 +122,7 @@ app.use((req, res, next) => {
   app.use(calculatorRouter(pool));
   app.use(claimsRouter(pool));
   app.use(stripeRouter(pool));
+  app.use(discordRouter(pool));
 
   // Serve built frontend in production (Vite handles this in dev via proxy)
   const distPath = path.join(__dirname, "..", "dist");
