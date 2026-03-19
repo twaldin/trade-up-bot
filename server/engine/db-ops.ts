@@ -716,6 +716,12 @@ export async function reviveStaleGunTradeUps(
   limit = 100,
   type: string = "classified_covert"
 ): Promise<{ checked: number; revived: number; improved: number }> {
+  // Resolve input/output rarities from tier config (not hardcoded)
+  const { getTierById } = await import("./rarity-tiers.js");
+  const tier = getTierById(type);
+  if (!tier) return { checked: 0, revived: 0, improved: 0 };
+  const inputRarity = tier.inputRarity;
+  const outputRarity = tier.outputRarity;
   const { rows: stale } = await pool.query(`
     SELECT t.id, t.profit_cents, t.peak_profit_cents, t.listing_status
     FROM trade_ups t
@@ -815,10 +821,10 @@ export async function reviveStaleGunTradeUps(
           JOIN skins s ON l.skin_id = s.id
           JOIN skin_collections sc ON s.id = sc.skin_id
           JOIN collections c ON sc.collection_id = c.id
-          WHERE c.name = $1 AND s.rarity = 'Classified' AND l.stattrak = 0
+          WHERE c.name = $1 AND s.rarity = $3 AND l.stattrak = 0
           ORDER BY ABS(l.float_value - $2) ASC, l.price_cents ASC
           LIMIT 1
-        `, [inp.collection_name, inp.float_value]);
+        `, [inp.collection_name, inp.float_value, inputRarity]);
         const sameCol = sameColRows[0] as ListingWithCollection | undefined;
         if (sameCol && !usedIds.has(sameCol.id)) {
           newInputs.push(sameCol);
@@ -836,9 +842,9 @@ export async function reviveStaleGunTradeUps(
       const gunNewSig = newInputs.map(i => i.id).sort().join(",");
       if (gunExistingSigs.has(gunNewSig)) continue;
 
-      // Get Covert outcomes for the collections in this trade-up
+      // Get outcomes at the correct output rarity for the collections in this trade-up
       const collectionIds = [...new Set(newInputs.map(i => i.collection_id))];
-      const outcomes = await getOutcomesForCollections(pool, collectionIds, "Covert");
+      const outcomes = await getOutcomesForCollections(pool, collectionIds, outputRarity);
       if (outcomes.length === 0) continue;
 
       const result = await evaluateTradeUp(pool, newInputs, outcomes);
