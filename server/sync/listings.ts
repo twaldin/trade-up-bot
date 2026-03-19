@@ -1,6 +1,7 @@
 
 import pg from "pg";
 import { emitEvent } from "../db.js";
+import { deleteListings, cascadeTradeUpStatuses } from "../engine.js";
 import type { SkinCoverageInfo, ListingCheckResult } from "./types.js";
 
 /**
@@ -11,11 +12,15 @@ export async function purgeStaleListings(
   pool: pg.Pool,
   maxAgeDays: number = 14
 ): Promise<{ deleted: number }> {
-  const result = await pool.query(
-    "DELETE FROM listings WHERE EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > $1",
+  // Collect IDs first, then use deleteListings to cascade status changes
+  const { rows } = await pool.query(
+    "SELECT id FROM listings WHERE EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > $1",
     [maxAgeDays]
   );
-  return { deleted: result.rowCount ?? 0 };
+  const ids = rows.map((r: any) => r.id);
+  if (ids.length === 0) return { deleted: 0 };
+  const deleted = await deleteListings(pool, ids);
+  return { deleted };
 }
 
 /**
@@ -118,6 +123,8 @@ export async function checkListingStaleness(
     checked: 0, stillListed: 0, sold: 0, delisted: 0, errors: 0, salesRecorded: 0,
   };
 
+  const deletedIds: string[] = [];
+
   for (const listing of listings) {
     try {
       const res = await fetch(`https://csfloat.com/api/v1/listings/${listing.id}`, {
@@ -138,6 +145,7 @@ export async function checkListingStaleness(
       if (!res.ok) {
         // 404 or other error — listing no longer exists
         await pool.query("DELETE FROM listings WHERE id = $1", [listing.id]);
+        deletedIds.push(listing.id);
         result.delisted++;
         continue;
       }
@@ -180,10 +188,12 @@ export async function checkListingStaleness(
         await emitEvent(pool, "listing_sold", `${listing.skin_name} sold $${(salePrice / 100).toFixed(2)} @ ${saleFloat.toFixed(4)}`);
 
         await pool.query("DELETE FROM listings WHERE id = $1", [listing.id]);
+        deletedIds.push(listing.id);
         result.sold++;
       } else {
         // delisted, refunded, etc.
         await pool.query("DELETE FROM listings WHERE id = $1", [listing.id]);
+        deletedIds.push(listing.id);
         result.delisted++;
       }
 
@@ -197,6 +207,10 @@ export async function checkListingStaleness(
     } catch { /* network error — non-critical */
       result.errors++;
     }
+  }
+
+  if (deletedIds.length > 0) {
+    await cascadeTradeUpStatuses(pool, deletedIds);
   }
 
   return result;

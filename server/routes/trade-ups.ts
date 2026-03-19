@@ -1,6 +1,6 @@
 import { Router } from "express";
 import pg from "pg";
-import { priceCache, priceSources } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses } from "../engine.js";
 import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit } from "../redis.js";
@@ -259,13 +259,33 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
+    let staleGuard = ""; // SQL-level filter added to data query only (not count — too slow on 1M+ rows)
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
     if (includeStale) {
       where = `WHERE t.is_theoretical = 0 AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
       where = `WHERE t.is_theoretical = 0 AND t.listing_status = 'active'`;
+      // NOT EXISTS prevents trade-ups with missing/claimed inputs from being fetched.
+      // Evaluated per candidate row using indexed lookups — fast with LIMIT 50.
+      // Exception: user's own claimed trade-ups always pass through.
+      staleGuard = ` AND (
+          NOT EXISTS (
+            SELECT 1 FROM trade_up_inputs tui
+            LEFT JOIN listings l ON tui.listing_id = l.id
+            WHERE tui.trade_up_id = t.id
+              AND tui.listing_id NOT LIKE 'theor%'
+              AND (l.id IS NULL OR l.claimed_by IS NOT NULL)
+          )
+          OR EXISTS (
+            SELECT 1 FROM trade_up_claims tc
+            WHERE tc.trade_up_id = t.id AND tc.user_id = $${paramIndex}
+              AND tc.released_at IS NULL AND tc.expires_at > NOW()
+          )
+        )`;
+      params.push(userId);
+      paramIndex++;
     }
-    const params: (string | number)[] = [];
-    let paramIndex = 1;
 
     // Basic tier: 30-min delay — only show trade-ups created 30+ min ago
     if (effectiveTier === "basic") {
@@ -414,7 +434,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               0 as outcome_count
-       FROM trade_ups t ${where}
+       FROM trade_ups t ${where}${staleGuard}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, perPage, offset]
@@ -538,10 +558,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Note: auto-correct statuses are NOT persisted to DB here. The DB query uses
-    // listing_status = 'active' for pagination, and persisting claimed-as-missing would
-    // cause trade-ups to disappear from active queries, creating empty pages. The read-time
-    // correction is sufficient — it runs on every request and returns correct data.
+    // Auto-correct display status is applied to responses for badge rendering.
+    // The SQL-level NOT EXISTS filter prevents stale trade-ups from being fetched
+    // when include_stale=false. Post-filter below is an additional safety net.
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
@@ -576,19 +595,29 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     });
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    const filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
+    let filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
 
-    // Note: no post-filter for listing_status. The DB query already filters by listing_status
-    // via the WHERE clause. Auto-correct fixes the returned status for display only — it does
-    // NOT filter results out, since that would create empty pages (LIMIT already applied in SQL).
-    // Status cascading happens at write time (confirm, staleness checks, daemon housekeeping).
+    // Post-filter: when Show stale is OFF, remove any trade-ups that auto-correct
+    // found to have missing inputs. This safety net ensures stale data never shows.
+    if (!includeStale) {
+      // Persist corrections to DB so future queries are accurate (non-blocking batch update)
+      const toFix = [...statusFixes.entries()].filter(([id]) => !claimedByMe.has(id));
+      if (toFix.length > 0) {
+        const updates = toFix.map(([id, newStatus]) => pool.query(
+          "UPDATE trade_ups SET listing_status = $1, preserved_at = CASE WHEN $1 = 'active' THEN NULL ELSE COALESCE(preserved_at, NOW()) END WHERE id = $2",
+          [newStatus, id]
+        ));
+        await Promise.all(updates);
+      }
+      filteredTradeUps = filteredTradeUps.filter((tu: any) => tu.listing_status === 'active');
+    }
 
-    // Adjust total for claimed trade-ups removed from this page
-    const claimedOnPage = tradeUps.length - filteredTradeUps.length;
+    // Adjust total for removed trade-ups on this page
+    const removedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {
       trade_ups: filteredTradeUps,
-      total: total - claimedOnPage,
+      total: total - removedOnPage,
       total_profitable: totalProfitable,
       page: pageNum,
       per_page: perPage,
@@ -1014,23 +1043,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Propagate sold/delisted status to ALL other trade-ups sharing deleted listings
+    // Cascade status to all trade-ups sharing deleted listings (uses proper active/partial/stale logic)
     if (deletedListingIds.length > 0) {
-      for (const lid of deletedListingIds) {
-        const { rows: affected } = await pool.query(
-          "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = $1 AND trade_up_id != $2",
-          [lid, tradeUpId]
-        );
-        if (affected.length > 0) {
-          const ids = affected.map((r: any) => r.trade_up_id);
-          const placeholders = ids.map((_: any, i: number) => `$${i + 1}`).join(",");
-          await pool.query(
-            `UPDATE trade_ups SET listing_status = 'partial', preserved_at = COALESCE(preserved_at, NOW())
-             WHERE id IN (${placeholders}) AND listing_status = 'active'`,
-            ids
-          );
-        }
-      }
+      await cascadeTradeUpStatuses(pool, deletedListingIds);
     }
 
     // Track verify API calls in Redis so daemon can adjust staleness budget

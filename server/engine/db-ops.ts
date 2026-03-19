@@ -37,12 +37,78 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, label = "DB op
 }
 
 /**
+ * Cascade trade-up listing_status changes when specific listings are deleted or claimed.
+ * Lightweight: only re-evaluates trade-ups referencing the given listing IDs.
+ * Skips trade-ups with active claims (they stay 'active' for the claimer).
+ */
+export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]): Promise<number> {
+  if (listingIds.length === 0) return 0;
+  const { cacheInvalidatePrefix } = await import("../redis.js");
+  // Batch in chunks of 500 to avoid param limit issues
+  let totalUpdated = 0;
+  for (let i = 0; i < listingIds.length; i += 500) {
+    const chunk = listingIds.slice(i, i + 500);
+    const result = await pool.query(`
+      WITH affected_tus AS (
+        SELECT DISTINCT tui.trade_up_id
+        FROM trade_up_inputs tui
+        WHERE tui.listing_id = ANY($1)
+      ),
+      status_calc AS (
+        SELECT a.trade_up_id,
+          COUNT(*) FILTER (WHERE l.id IS NULL OR l.claimed_by IS NOT NULL) as missing,
+          COUNT(*) as total
+        FROM affected_tus a
+        JOIN trade_up_inputs tui ON tui.trade_up_id = a.trade_up_id
+        LEFT JOIN listings l ON tui.listing_id = l.id
+        WHERE tui.listing_id NOT LIKE 'theor%'
+        GROUP BY a.trade_up_id
+      )
+      UPDATE trade_ups t SET
+        listing_status = CASE WHEN sc.missing = 0 THEN 'active' WHEN sc.missing < sc.total THEN 'partial' ELSE 'stale' END,
+        preserved_at = CASE
+          WHEN sc.missing > 0 AND t.listing_status = 'active' THEN NOW()
+          WHEN sc.missing = 0 THEN NULL
+          ELSE t.preserved_at
+        END
+      FROM status_calc sc
+      WHERE t.id = sc.trade_up_id
+        AND t.listing_status IS DISTINCT FROM (
+          CASE WHEN sc.missing = 0 THEN 'active' WHEN sc.missing < sc.total THEN 'partial' ELSE 'stale' END
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM trade_up_claims tc
+          WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+        )
+    `, [chunk]);
+    totalUpdated += result.rowCount ?? 0;
+  }
+  if (totalUpdated > 0) {
+    await cacheInvalidatePrefix("tu:");
+  }
+  return totalUpdated;
+}
+
+/**
+ * Delete listings by ID and cascade status changes to affected trade-ups.
+ * Use this instead of raw DELETE FROM listings everywhere.
+ */
+export async function deleteListings(pool: pg.Pool, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
+  await cascadeTradeUpStatuses(pool, ids);
+  return rowCount ?? 0;
+}
+
+/**
  * Refresh listing_status for all real trade-ups based on whether their
  * input listings still exist in the DB. Fast — single SQL pass.
  */
 export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: number; partial: number; stale: number; preserved: number }> {
   // JOIN-based approach: pre-compute missing/present counts per trade-up in one pass,
   // then UPDATE using the aggregated results. Avoids correlated subqueries on 1.25M rows.
+  // Treats both deleted listings (l.id IS NULL) and claimed listings (l.claimed_by IS NOT NULL) as missing.
+  // Skips trade-ups with active claims (they stay 'active' for the claimer).
   await pool.query(`
     UPDATE trade_ups t SET
       listing_status = s.new_status,
@@ -53,18 +119,25 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
     FROM (
       SELECT tui.trade_up_id,
         CASE
-          WHEN COUNT(*) FILTER (WHERE l.id IS NULL) = 0 THEN 'active'
-          WHEN COUNT(*) FILTER (WHERE l.id IS NOT NULL) > 0 THEN 'partial'
+          WHEN COUNT(*) FILTER (WHERE l.id IS NULL OR l.claimed_by IS NOT NULL) = 0 THEN 'active'
+          WHEN COUNT(*) FILTER (WHERE l.id IS NOT NULL AND l.claimed_by IS NULL) > 0 THEN 'partial'
           ELSE 'stale'
         END as new_status
       FROM trade_up_inputs tui
       LEFT JOIN listings l ON tui.listing_id = l.id
+      WHERE tui.listing_id NOT LIKE 'theor%'
       GROUP BY tui.trade_up_id
     ) s
     WHERE t.id = s.trade_up_id
       AND t.is_theoretical = 0
       AND (t.listing_status IS DISTINCT FROM s.new_status)
+      AND NOT EXISTS (
+        SELECT 1 FROM trade_up_claims tc
+        WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+      )
   `);
+  const { cacheInvalidatePrefix } = await import("../redis.js");
+  await cacheInvalidatePrefix("tu:");
 
   const { rows: counts } = await pool.query(`
     SELECT listing_status, COUNT(*) as cnt

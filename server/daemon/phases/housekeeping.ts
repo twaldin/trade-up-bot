@@ -12,6 +12,7 @@ import {
   pruneObservations,
   refreshListingStatuses,
   purgeExpiredPreserved,
+  cascadeTradeUpStatuses,
 } from "../../engine.js";
 
 import { timestamp, setDaemonStatus } from "../utils.js";
@@ -32,31 +33,40 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   }
 
   // Aggressively purge old listings that were never staleness-checked.
-  const { rowCount: oldUncheckedCount } = await pool.query(`
-    DELETE FROM listings
+  const { rows: oldUncheckedRows } = await pool.query(`
+    SELECT id FROM listings
     WHERE staleness_checked_at IS NULL
       AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 3
   `);
-  if ((oldUncheckedCount ?? 0) > 0) {
-    console.log(`  Purged ${oldUncheckedCount} old unchecked listings (>3 days, never verified)`);
+  if (oldUncheckedRows.length > 0) {
+    const ids = oldUncheckedRows.map((r: any) => r.id);
+    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
+    await cascadeTradeUpStatuses(pool, ids);
+    console.log(`  Purged ${ids.length} old unchecked listings (>3 days, never verified)`);
   }
 
   // Purge DMarket listings older than 24h
-  const { rowCount: dmPurgedCount } = await pool.query(`
-    DELETE FROM listings WHERE source = 'dmarket'
+  const { rows: dmPurgedRows } = await pool.query(`
+    SELECT id FROM listings WHERE source = 'dmarket'
       AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 1
   `);
-  if ((dmPurgedCount ?? 0) > 0) {
-    console.log(`  Purged ${dmPurgedCount} DMarket listings (>24h old)`);
+  if (dmPurgedRows.length > 0) {
+    const ids = dmPurgedRows.map((r: any) => r.id);
+    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
+    await cascadeTradeUpStatuses(pool, ids);
+    console.log(`  Purged ${ids.length} DMarket listings (>24h old)`);
   }
 
   // Purge Skinport listings older than 12h
-  const { rowCount: spPurgedCount } = await pool.query(`
-    DELETE FROM listings WHERE source = 'skinport'
+  const { rows: spPurgedRows } = await pool.query(`
+    SELECT id FROM listings WHERE source = 'skinport'
       AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 0.5
   `);
-  if ((spPurgedCount ?? 0) > 0) {
-    console.log(`  Purged ${spPurgedCount} Skinport listings (>12h old)`);
+  if (spPurgedRows.length > 0) {
+    const ids = spPurgedRows.map((r: any) => r.id);
+    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
+    await cascadeTradeUpStatuses(pool, ids);
+    console.log(`  Purged ${ids.length} Skinport listings (>12h old)`);
   }
 
   // Prune observations every 10 cycles

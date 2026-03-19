@@ -20,6 +20,7 @@ import {
   fetchDMarketListings,
   isDMarketConfigured,
 } from "./sync/dmarket.js";
+import { cascadeTradeUpStatuses } from "./engine.js";
 
 const { Pool } = pg;
 
@@ -239,11 +240,16 @@ async function main() {
           [skinName]
         );
         let removed = 0;
+        const deletedIds: string[] = [];
         for (const s of stored) {
           if (!activeIds.has(s.id)) {
             await pool.query("DELETE FROM listings WHERE id = $1", [s.id]);
+            deletedIds.push(s.id);
             removed++;
           }
+        }
+        if (deletedIds.length > 0) {
+          await cascadeTradeUpStatuses(pool, deletedIds);
         }
 
         stats.totalCalls++;
