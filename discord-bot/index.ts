@@ -68,6 +68,7 @@ const commands = [
           { name: "Classified", value: "classified" },
           { name: "Restricted", value: "restricted" },
           { name: "Mil-Spec", value: "milspec" },
+          { name: "Industrial", value: "industrial" },
         ),
     )
     .addStringOption(opt =>
