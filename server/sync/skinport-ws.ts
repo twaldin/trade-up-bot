@@ -111,6 +111,12 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
   socket.on("saleFeed", async (data: SkinportFeedData) => {
     if (!data?.sales) return;
 
+    // Detect unsupported event types — docs list "price_changed" and "canceled" as unsupported.
+    // If Skinport ever enables them, we want to know immediately.
+    if (data.eventType !== "listed" && data.eventType !== "sold") {
+      console.log(`[Skinport WS] NEW EVENT TYPE: "${data.eventType}" — investigate! Sample: ${JSON.stringify(data.sales[0]).slice(0, 300)}`);
+    }
+
     for (const item of data.sales) {
       stats.totalReceived++;
       stats.lastEventAt = new Date().toISOString();
@@ -161,6 +167,17 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
             stats.totalSaleObservations++;
           }
           // Remove sold listing from DB if we had it
+          await deleteListings(pool, [`skinport:${item.saleId}`]);
+        } else if (data.eventType === "price_changed") {
+          // Docs list as "unsupported" but handle if it ever appears
+          console.log(`[Skinport WS] price_changed event! saleId=${item.saleId} ${skinName} $${(item.salePrice / 100).toFixed(2)}`);
+          await pool.query(
+            "UPDATE listings SET price_cents = $1, price_updated_at = NOW(), staleness_checked_at = NOW() WHERE id = $2",
+            [item.salePrice, `skinport:${item.saleId}`]
+          );
+        } else if (data.eventType === "canceled") {
+          // Docs list as "unsupported" but handle if it ever appears
+          console.log(`[Skinport WS] canceled event! saleId=${item.saleId} ${skinName}`);
           await deleteListings(pool, [`skinport:${item.saleId}`]);
         }
       } catch {
