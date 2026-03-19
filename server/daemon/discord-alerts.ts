@@ -25,6 +25,7 @@ const TYPES = [
   "restricted_classified",
   "milspec_restricted",
   "industrial_milspec",
+  "consumer_industrial",
 ];
 
 const TYPE_WEBHOOK_KEY: Record<string, string> = {
@@ -33,6 +34,7 @@ const TYPE_WEBHOOK_KEY: Record<string, string> = {
   restricted_classified: "DISCORD_WEBHOOK_CLASSIFIED",
   milspec_restricted: "DISCORD_WEBHOOK_RESTRICTED",
   industrial_milspec: "DISCORD_WEBHOOK_MILSPEC",
+  consumer_industrial: "DISCORD_WEBHOOK_INDUSTRIAL",
 };
 
 const TYPE_ALERT_ROLE: Record<string, string> = {
@@ -41,6 +43,7 @@ const TYPE_ALERT_ROLE: Record<string, string> = {
   restricted_classified: "classified-alerts",
   milspec_restricted: "restricted-alerts",
   industrial_milspec: "milspec-alerts",
+  consumer_industrial: "industrial-alerts",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -49,6 +52,7 @@ const TYPE_LABELS: Record<string, string> = {
   restricted_classified: "Classified",
   milspec_restricted: "Restricted",
   industrial_milspec: "Mil-Spec",
+  consumer_industrial: "Industrial",
 };
 
 const TYPE_COLORS: Record<string, number> = {
@@ -57,6 +61,7 @@ const TYPE_COLORS: Record<string, number> = {
   restricted_classified: 0xe91e8b,
   milspec_restricted: 0x9b59b6,
   industrial_milspec: 0x3498db,
+  consumer_industrial: 0x5dade2,
 };
 
 interface TopEntry {

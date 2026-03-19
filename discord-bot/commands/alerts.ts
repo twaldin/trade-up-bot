@@ -13,6 +13,7 @@ const ALERT_OPTIONS = [
   { label: "Classified", value: "classified-alerts", emoji: "🩷" },
   { label: "Restricted", value: "restricted-alerts", emoji: "🟣" },
   { label: "Mil-Spec", value: "milspec-alerts", emoji: "🔵" },
+  { label: "Industrial", value: "industrial-alerts", emoji: "⚪" },
 ];
 
 export async function handleAlerts(interaction: ChatInputCommandInteraction): Promise<void> {

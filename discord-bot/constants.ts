@@ -44,6 +44,7 @@ export const CATEGORIES: CategoryDef[] = [
       { name: "classified-alerts", topic: "New all-time top classified trade-ups (Pro only)", proOnly: true },
       { name: "restricted-alerts", topic: "New all-time top restricted trade-ups (Pro only)", proOnly: true },
       { name: "milspec-alerts", topic: "New all-time top mil-spec trade-ups (Pro only)", proOnly: true },
+      { name: "industrial-alerts", topic: "New all-time top industrial trade-ups (Pro only)", proOnly: true },
     ],
   },
   {
@@ -77,6 +78,7 @@ export const ROLES: RoleDef[] = [
   { name: "classified-alerts", color: "#E91E8B", hoist: false },
   { name: "restricted-alerts", color: "#9B59B6", hoist: false },
   { name: "milspec-alerts", color: "#3498DB", hoist: false },
+  { name: "industrial-alerts", color: "#5DADE2", hoist: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -90,6 +92,7 @@ export const TRADE_UP_TYPE_MAP: Record<string, string> = {
   classified: "restricted_classified",
   restricted: "milspec_restricted",
   milspec: "industrial_milspec",
+  industrial: "consumer_industrial",
 };
 
 /** Maps DB trade-up type → user-facing label */
@@ -99,6 +102,7 @@ export const TYPE_LABELS: Record<string, string> = {
   restricted_classified: "Classified",
   milspec_restricted: "Restricted",
   industrial_milspec: "Mil-Spec",
+  consumer_industrial: "Industrial",
 };
 
 /** Maps DB trade-up type → webhook env var key */
@@ -108,6 +112,7 @@ export const TYPE_WEBHOOK_KEY: Record<string, string> = {
   restricted_classified: "DISCORD_WEBHOOK_CLASSIFIED",
   milspec_restricted: "DISCORD_WEBHOOK_RESTRICTED",
   industrial_milspec: "DISCORD_WEBHOOK_MILSPEC",
+  consumer_industrial: "DISCORD_WEBHOOK_INDUSTRIAL",
 };
 
 /** Maps DB trade-up type → alert role name */
@@ -117,6 +122,7 @@ export const TYPE_ALERT_ROLE: Record<string, string> = {
   restricted_classified: "classified-alerts",
   milspec_restricted: "restricted-alerts",
   industrial_milspec: "milspec-alerts",
+  consumer_industrial: "industrial-alerts",
 };
 
 // ---------------------------------------------------------------------------
@@ -139,6 +145,7 @@ export const TYPE_COLORS: Record<string, number> = {
   restricted_classified: EMBED_COLORS.pink,
   milspec_restricted: EMBED_COLORS.purple,
   industrial_milspec: EMBED_COLORS.blue,
+  consumer_industrial: 0x5dade2,
 };
 
 // ---------------------------------------------------------------------------
