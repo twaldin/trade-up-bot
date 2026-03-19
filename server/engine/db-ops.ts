@@ -713,32 +713,32 @@ export async function reviveStaleTradeUps(
  */
 export async function reviveStaleGunTradeUps(
   pool: pg.Pool,
-  limit = 100
+  limit = 100,
+  type: string = "classified_covert"
 ): Promise<{ checked: number; revived: number; improved: number }> {
   const { rows: stale } = await pool.query(`
     SELECT t.id, t.profit_cents, t.peak_profit_cents, t.listing_status
     FROM trade_ups t
-    WHERE t.type = 'classified_covert'
+    WHERE t.type = $2
       AND t.is_theoretical = 0
       AND t.listing_status IN ('partial', 'stale')
     ORDER BY t.peak_profit_cents DESC, t.profit_cents DESC
     LIMIT $1
-  `, [limit]);
+  `, [limit, type]);
 
   if (stale.length === 0) return { checked: 0, revived: 0, improved: 0 };
 
   let checked = 0, revived = 0, improved = 0;
 
-  // Build existing listing signatures to prevent revival duplicates (same as knife revival)
+  // Build existing listing signatures for this type to prevent revival duplicates
   const gunExistingSigs = new Set<string>();
-  const gunTypes = ["classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
-  for (const gType of gunTypes) {
+  {
     const { rows } = await pool.query(`
       SELECT t.id, STRING_AGG(tui.listing_id::text, ',') as ids
       FROM trade_ups t JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
       WHERE t.type = $1 AND t.is_theoretical = 0
       GROUP BY t.id
-    `, [gType]);
+    `, [type]);
     for (const row of rows) {
       gunExistingSigs.add(row.ids.split(",").sort().join(","));
     }

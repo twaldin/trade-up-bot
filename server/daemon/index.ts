@@ -433,12 +433,20 @@ export async function main() {
 
       // Revival between super-batches (CPU-only, no API calls)
       await setDaemonStatus(pool, "calculating", `Phase 5: Revival (batch ${superBatchCount})`);
-      const gunRevival = await reviveStaleGunTradeUps(pool, 1000);
       const knifeRevival = await reviveStaleTradeUps(pool, revivalKnifeCache, 1000);
-      const batchRevived = gunRevival.revived + knifeRevival.revived;
+      const gunTypes = [
+        "classified_covert", "restricted_classified", "milspec_restricted",
+        "industrial_milspec", "consumer_industrial",
+      ];
+      let gunRevived = 0;
+      for (const gt of gunTypes) {
+        const r = await reviveStaleGunTradeUps(pool, 1000, gt);
+        gunRevived += r.revived;
+      }
+      const batchRevived = gunRevived + knifeRevival.revived;
       totalRevived += batchRevived;
       if (batchRevived > 0) {
-        console.log(`    Revival: ${gunRevival.revived} gun + ${knifeRevival.revived} knife revived`);
+        console.log(`    Revival: ${gunRevived} gun (5 types) + ${knifeRevival.revived} knife revived`);
       }
 
       // Handle expired claims: clear claimed_by, check if listings were actually purchased
