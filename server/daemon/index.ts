@@ -671,10 +671,10 @@ export async function main() {
     if (cycleCount % 10 === 0) await purgeOldSnapshots(pool, 30);
     console.log(`  Snapshot #${snapshotId} saved (top 25 trade-ups)`);
 
-    // Log Skinport WebSocket stats
+    // Log Skinport WebSocket stats (sale observations only)
     const spStats = getSkinportStats();
-    if (spStats.totalReceived > 0) {
-      console.log(`  Skinport WS: ${spStats.connected ? "connected" : "disconnected"}, ${spStats.totalStored} stored / ${spStats.totalReceived} received, ${spStats.totalSold} sold`);
+    if (spStats.totalSaleObservations > 0) {
+      console.log(`  Skinport WS: ${spStats.connected ? "connected" : "disconnected"}, ${spStats.totalSaleObservations} sale observations / ${spStats.totalReceived} events`);
     }
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
