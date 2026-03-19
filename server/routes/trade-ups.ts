@@ -736,34 +736,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Pre-fetch Skinport availability by skin name (one API call for all items)
-    const spSkinNames = new Set(
-      inputs.filter((i: any) => i.listing_id.startsWith("skinport:")).map((i: any) => {
-        // Skinport API uses market_hash_name which includes condition
-        const condition = i.condition || "Field-Tested";
-        return `${i.skin_name} (${condition})`;
-      })
-    );
-    const spAvailability = new Map<string, { quantity: number; minPrice: number }>(); // market_hash_name → availability
-    if (spSkinNames.size > 0) {
-      try {
-        const spRes = await fetch("https://api.skinport.com/v1/items?app_id=730&currency=USD", {
-          headers: { "Accept-Encoding": "br, gzip" },
-        });
-        if (spRes.ok) {
-          const spItems = await spRes.json() as { market_hash_name: string; quantity: number; min_price: number | null }[];
-          for (const item of spItems) {
-            if (spSkinNames.has(item.market_hash_name)) {
-              spAvailability.set(item.market_hash_name, {
-                quantity: item.quantity,
-                minPrice: Math.round((item.min_price ?? 0) * 100), // convert to cents
-              });
-            }
-          }
-        }
-      } catch { /* Skinport API unavailable — will mark as error */ }
-    }
-
     for (const input of inputs) {
       // Skip theoretical inputs
       if (input.listing_id === "theoretical" || input.listing_id.startsWith("theory")) {
@@ -817,74 +789,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
             original_price: input.price_cents,
           });
         }
-        continue;
-      }
-
-      // Skinport listings — verify via price proximity check (no individual listing API)
-      if (input.listing_id.startsWith("skinport:")) {
-        const condition = input.condition || "Field-Tested";
-        const marketHashName = `${input.skin_name} (${condition})`;
-        const spInfo = spAvailability.get(marketHashName);
-
-        if (!spInfo) {
-          // Skinport API didn't return this skin — can't verify
-          await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
-          results.push({
-            listing_id: input.listing_id,
-            skin_name: input.skin_name,
-            status: "error",
-            original_price: input.price_cents,
-          });
-          continue;
-        }
-
-        if (spInfo.quantity === 0) {
-          // No listings at all for this skin+condition — definitely sold
-          await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
-          deletedListingIds.push(input.listing_id);
-          results.push({
-            listing_id: input.listing_id,
-            skin_name: input.skin_name,
-            status: "sold",
-            original_price: input.price_cents,
-          });
-          continue;
-        }
-
-        // Price proximity: if min_price is >20% higher than our listing, likely sold (ours was cheapest)
-        const priceDrift = spInfo.minPrice > 0 ? (spInfo.minPrice - input.price_cents) / input.price_cents : 0;
-        if (priceDrift > 0.20) {
-          // Current cheapest is significantly more expensive — our listing was probably bought
-          await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
-          deletedListingIds.push(input.listing_id);
-          results.push({
-            listing_id: input.listing_id,
-            skin_name: input.skin_name,
-            status: "sold",
-            original_price: input.price_cents,
-            current_price: spInfo.minPrice,
-            price_changed: true,
-          });
-          continue;
-        }
-
-        // Price is close — listing likely still available. Update price if changed.
-        const priceChanged = spInfo.minPrice > 0 && Math.abs(spInfo.minPrice - input.price_cents) > 5;
-        if (priceChanged) {
-          await pool.query(
-            "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
-            [spInfo.minPrice, new Date().toISOString(), input.listing_id]
-          );
-        }
-        await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
-        results.push({
-          listing_id: input.listing_id,
-          skin_name: input.skin_name,
-          status: "active",
-          current_price: spInfo.minPrice > 0 ? spInfo.minPrice : input.price_cents,
-          original_price: input.price_cents,
-          price_changed: priceChanged,
-        });
         continue;
       }
 
