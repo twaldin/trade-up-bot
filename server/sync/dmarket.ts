@@ -181,7 +181,7 @@ export async function syncDMarketListingsForSkin(
         INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
         VALUES ($1, $2, $3, $4, $5, 1, NOW(), 'dmarket', 'buy_now', $6, NOW())
         ON CONFLICT (id) DO UPDATE SET
-          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 1, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW()
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 1, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW(), staleness_checked_at = NOW()
       `, [
         `dmarket:${item.itemId}`,
         stSkin.id,
@@ -195,7 +195,7 @@ export async function syncDMarketListingsForSkin(
         INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
         VALUES ($1, $2, $3, $4, $5, 0, NOW(), 'dmarket', 'buy_now', $6, NOW())
         ON CONFLICT (id) DO UPDATE SET
-          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW()
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6, price_updated_at = NOW(), staleness_checked_at = NOW()
       `, [
         `dmarket:${item.itemId}`,
         skin.id,
