@@ -19,11 +19,8 @@ import { deleteListings } from "../engine.js";
 // socket.io-msgpack-parser is a CJS module, use dynamic import
 let msgpackParser: any = null;
 
-const RELEVANT_RARITIES = new Set([
-  "Classified", "Covert", "Extraordinary",
-  // Skinport may use different casing
-  "classified", "covert", "extraordinary",
-]);
+// Accept all rarities — Skinport has 0% buyer fee making inputs attractive across all tiers.
+// 12h purge in housekeeping handles stale listings (no individual listing lookup API exists).
 
 interface SkinportSaleItem {
   saleId: number;
@@ -137,15 +134,12 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
         const skinRow = rows[0] as { id: string; rarity: string } | undefined;
         if (!skinRow) continue;
 
-        // Filter by rarity — only store relevant skins
-        if (!RELEVANT_RARITIES.has(skinRow.rarity)) continue;
-
         if (data.eventType === "listed") {
           await pool.query(`
-            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'skinport', 'buy_now', NOW())
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at, staleness_checked_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'skinport', 'buy_now', NOW(), NOW())
             ON CONFLICT (id) DO UPDATE SET
-              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'skinport', listing_type = 'buy_now', price_updated_at = NOW()
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'skinport', listing_type = 'buy_now', price_updated_at = NOW(), staleness_checked_at = NOW()
           `, [
             `skinport:${item.saleId}`,
             skinRow.id,
