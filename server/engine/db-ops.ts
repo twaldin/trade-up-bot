@@ -977,26 +977,13 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   // If no sinceTimestamp, skip entirely — full scan is too expensive on 12M rows.
   if (!sinceTimestamp) return { updated: 0 };
 
-  // Check how many listings have price changes — if too many, skip (JOIN on 12M rows too expensive)
-  const { rows: [countCheck] } = await pool.query(
-    "SELECT COUNT(*) as cnt FROM listings WHERE price_updated_at > $1",
-    [sinceTimestamp]
-  );
-  const changedCount = parseInt(countCheck.cnt);
-  if (changedCount === 0) return { updated: 0 };
-  if (changedCount > 500) {
-    // Too many changed listings — the JOIN through 12M trade_up_inputs would take minutes.
-    // Clear the flag and let next cycle handle smaller batches.
-    console.log(`  Phase 4b: ${changedCount} listings changed — too many, deferring recalc`);
-    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
-    return { updated: 0 };
-  }
-
-  // Small batch: find affected trade-ups via listing IDs
+  // Cap to 500 listings per cycle to keep the JOIN through trade_up_inputs fast.
+  // Remaining listings keep their price_updated_at and get picked up next cycle.
   const { rows: changedListings } = await pool.query(
-    "SELECT id FROM listings WHERE price_updated_at > $1",
+    "SELECT id FROM listings WHERE price_updated_at > $1 LIMIT 500",
     [sinceTimestamp]
   );
+  if (changedListings.length === 0) return { updated: 0 };
   const changedIds = changedListings.map((r: any) => r.id);
   const ph = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
   const { rows: staleInputRows } = await pool.query(`
@@ -1006,20 +993,13 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     WHERE tui.listing_id IN (${ph}) AND tui.price_cents != l.price_cents
   `, changedIds);
   if (staleInputRows.length === 0) {
-    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
-    return { updated: 0 };
-  }
-  const staleInputs = staleInputRows;
-
-  if (staleInputs.length === 0) {
-    // Clear price_updated_at on processed listings so they aren't re-scanned
-    if (sinceTimestamp) {
-      await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
-    }
+    // No actual price mismatches in this batch — clear their flags
+    const clearPh = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+    await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
     return { updated: 0 };
   }
 
-  const tuIds = staleInputs.map(r => r.trade_up_id);
+  const tuIds = staleInputRows.map(r => r.trade_up_id);
 
   let updated = 0;
   const BATCH = 500;
@@ -1074,9 +1054,11 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     }, 3, "recalcTradeUpCosts");
   }
 
-  // Clear price_updated_at on processed listings so they aren't re-scanned next cycle
-  if (sinceTimestamp) {
-    await pool.query("UPDATE listings SET price_updated_at = NULL WHERE price_updated_at > $1", [sinceTimestamp]);
+  // Clear price_updated_at only on the listings we actually processed (not all changed ones).
+  // Remaining listings keep their flag and get picked up next cycle.
+  if (changedIds.length > 0) {
+    const clearPh = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+    await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
   }
 
   return { updated };
