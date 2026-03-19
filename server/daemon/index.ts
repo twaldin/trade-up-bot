@@ -44,6 +44,7 @@ import {
   phase4DataFetch,
   phase4p5VerifyInputs,
 } from "./phases.js";
+import { initAlertState, checkAndFireAlerts, refreshAlertTops } from "./discord-alerts.js";
 
 // Load .env
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -223,6 +224,17 @@ export async function main() {
   await printCoverageReport(pool);
   await printPerformanceComparison(pool);
 
+  // Initialize Discord alert state (seed Redis with current tops for each type/metric)
+  try {
+    const { getRedis } = await import("../redis.js");
+    const redis = getRedis();
+    if (redis) {
+      await initAlertState(pool, redis);
+    }
+  } catch (e: any) {
+    console.error("  Discord alert init failed (non-critical):", e.message);
+  }
+
   let cycleCount = 0;
 
   while (true) {
@@ -246,6 +258,13 @@ export async function main() {
 
     // Phase 1: Housekeeping
     await phase1Housekeeping(pool, cycleCount);
+
+    // Refresh Discord alert tops (re-validate cached tops are still active)
+    try {
+      const { getRedis } = await import("../redis.js");
+      const redis = getRedis();
+      if (redis) await refreshAlertTops(pool, redis);
+    } catch { /* non-critical */ }
 
     // Phase 3: API Probe (tests all 3 rate limit pools independently)
     const probe = await phase3ApiProbe(pool, budget, apiKey);
@@ -400,6 +419,17 @@ export async function main() {
             }
 
             await mergeTradeUps(pool, toSave, tradeUpType);
+
+            // Check for new all-time records and fire Discord alerts
+            try {
+              const { getRedis } = await import("../redis.js");
+              const redis = getRedis();
+              if (redis) {
+                await checkAndFireAlerts(redis, toSave, tradeUpType);
+              }
+            } catch (e: any) {
+              console.error(`    Alert check failed: ${e.message}`);
+            }
 
             // Track stats
             if (taskName === "knife") {

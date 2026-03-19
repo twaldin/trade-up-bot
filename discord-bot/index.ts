@@ -1,15 +1,36 @@
+// TradeUpBot Discord Bot — slash commands, alerts, role management.
+// Run: npx tsx discord-bot/index.ts
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import {
   Client,
   GatewayIntentBits,
-  ChannelType,
-  PermissionFlagsBits,
-  EmbedBuilder,
-  type Guild,
-  type TextChannel,
-  type CategoryChannel,
-  type Role,
-  type ColorResolvable,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  InteractionType,
 } from "discord.js";
+import { ensureRoles, ensureChannels, ensureEmbeds } from "./setup.js";
+import { handleStatus } from "./commands/status.js";
+import { handleLink } from "./commands/link.js";
+import { handleTop } from "./commands/top.js";
+import { handlePrice, handlePriceAutocomplete } from "./commands/price.js";
+import { handleAlerts, handleAlertSelect } from "./commands/alerts.js";
+
+// ---------------------------------------------------------------------------
+// Load .env from project root
+// ---------------------------------------------------------------------------
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, "..", ".env");
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
+    const match = line.match(/^(\w+)=(.*)$/);
+    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -17,282 +38,95 @@ import {
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GUILD_ID = process.env.DISCORD_GUILD_ID;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 
-if (!TOKEN) {
-  console.error("Missing DISCORD_BOT_TOKEN env var");
-  process.exit(1);
-}
-if (!GUILD_ID) {
-  console.error("Missing DISCORD_GUILD_ID env var");
-  process.exit(1);
-}
+if (!TOKEN) { console.error("Missing DISCORD_BOT_TOKEN"); process.exit(1); }
+if (!GUILD_ID) { console.error("Missing DISCORD_GUILD_ID"); process.exit(1); }
+if (!CLIENT_ID) { console.error("Missing DISCORD_CLIENT_ID"); process.exit(1); }
 
 // ---------------------------------------------------------------------------
-// Channel / role definitions
+// Slash command definitions
 // ---------------------------------------------------------------------------
 
-interface ChannelDef {
-  name: string;
-  topic?: string;
-  readOnly?: boolean; // only admins + bot can send
-  proOnly?: boolean; // locked to @Pro role
-}
+const commands = [
+  new SlashCommandBuilder()
+    .setName("link")
+    .setDescription("Link your Discord to your TradeUpBot account"),
 
-interface CategoryDef {
-  name: string;
-  channels: ChannelDef[];
-}
+  new SlashCommandBuilder()
+    .setName("status")
+    .setDescription("Bot and daemon status"),
 
-const CATEGORIES: CategoryDef[] = [
-  {
-    name: "TRADEUPBOT",
-    channels: [
-      { name: "announcements", topic: "Official updates and patch notes", readOnly: true },
-      { name: "welcome", topic: "Welcome — start here", readOnly: true },
-    ],
-  },
-  {
-    name: "TRADE-UPS",
-    channels: [
-      { name: "general", topic: "General trade-up discussion" },
-      { name: "strategies", topic: "Trade-up strategies, tips, and techniques" },
-      { name: "results", topic: "Share your trade-up results" },
-    ],
-  },
-  {
-    name: "ALERTS",
-    channels: [
-      // TODO: Hook up daemon webhook to post high-profit knife trade-ups
-      { name: "knife-alerts", topic: "High-profit knife trade-up alerts (Pro only)", proOnly: true },
-      // TODO: Daily summary job
-      { name: "top-daily", topic: "Daily best trade-ups summary (Pro only)", proOnly: true },
-    ],
-  },
-  {
-    name: "SUPPORT",
-    channels: [
-      { name: "feedback", topic: "Feature requests and bug reports" },
-      { name: "help", topic: "How to use TradeUpBot" },
-    ],
-  },
+  new SlashCommandBuilder()
+    .setName("top")
+    .setDescription("Top trade-ups by tier")
+    .addStringOption(opt =>
+      opt.setName("tier").setDescription("Rarity tier").setRequired(true)
+        .addChoices(
+          { name: "Knife/Gloves", value: "knife" },
+          { name: "Covert", value: "covert" },
+          { name: "Classified", value: "classified" },
+          { name: "Restricted", value: "restricted" },
+          { name: "Mil-Spec", value: "milspec" },
+        ),
+    )
+    .addStringOption(opt =>
+      opt.setName("sort").setDescription("Sort by (default: profit)")
+        .addChoices(
+          { name: "Profit", value: "profit" },
+          { name: "ROI", value: "roi" },
+          { name: "Chance to Profit", value: "chance" },
+        ),
+    )
+    .addNumberOption(opt =>
+      opt.setName("min_profit").setDescription("Minimum profit in dollars (e.g. 5 = $5)"),
+    )
+    .addNumberOption(opt =>
+      opt.setName("max_cost").setDescription("Maximum cost in dollars"),
+    )
+    .addNumberOption(opt =>
+      opt.setName("min_chance").setDescription("Minimum chance to profit (0-100)"),
+    )
+    .addNumberOption(opt =>
+      opt.setName("min_roi").setDescription("Minimum ROI percentage"),
+    )
+    .addIntegerOption(opt =>
+      opt.setName("count").setDescription("Number of results (1-50, default 5)")
+        .setMinValue(1).setMaxValue(50),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("price")
+    .setDescription("Look up skin price")
+    .addStringOption(opt =>
+      opt.setName("skin").setDescription("Skin name").setRequired(true).setAutocomplete(true),
+    )
+    .addNumberOption(opt =>
+      opt.setName("float").setDescription("Float value (0.0 - 1.0)"),
+    )
+    .addStringOption(opt =>
+      opt.setName("condition").setDescription("Condition (if no float)")
+        .addChoices(
+          { name: "Factory New", value: "FN" },
+          { name: "Minimal Wear", value: "MW" },
+          { name: "Field-Tested", value: "FT" },
+          { name: "Well-Worn", value: "WW" },
+          { name: "Battle-Scarred", value: "BS" },
+        ),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("alerts")
+    .setDescription("Toggle alert notifications (Pro only)"),
 ];
 
-interface RoleDef {
-  name: string;
-  color: ColorResolvable;
-  hoist: boolean;
-}
-
-const ROLES: RoleDef[] = [
-  { name: "Owner", color: "#E74C3C", hoist: true },
-  { name: "Pro", color: "#F1C40F", hoist: true },
-  { name: "Basic", color: "#3498DB", hoist: false },
-  { name: "Announcements", color: "#99AAB5", hoist: false },
-];
-
 // ---------------------------------------------------------------------------
-// Setup: roles
-// ---------------------------------------------------------------------------
-
-async function ensureRoles(guild: Guild): Promise<Map<string, Role>> {
-  const roleMap = new Map<string, Role>();
-
-  for (const def of ROLES) {
-    let role = guild.roles.cache.find((r) => r.name === def.name);
-    if (!role) {
-      role = await guild.roles.create({
-        name: def.name,
-        colors: { primaryColor: def.color },
-        hoist: def.hoist,
-        reason: "TradeUpBot auto-setup",
-      });
-      console.log(`  Created role: @${def.name}`);
-    } else {
-      console.log(`  Role exists: @${def.name}`);
-    }
-    roleMap.set(def.name, role);
-  }
-
-  return roleMap;
-}
-
-// ---------------------------------------------------------------------------
-// Setup: categories + channels
-// ---------------------------------------------------------------------------
-
-async function ensureChannels(guild: Guild, roleMap: Map<string, Role>) {
-  const proRole = roleMap.get("Pro")!;
-
-  for (const catDef of CATEGORIES) {
-    // Find or create category
-    let category = guild.channels.cache.find(
-      (c) => c.type === ChannelType.GuildCategory && c.name === catDef.name,
-    ) as CategoryChannel | undefined;
-
-    if (!category) {
-      category = await guild.channels.create({
-        name: catDef.name,
-        type: ChannelType.GuildCategory,
-        reason: "TradeUpBot auto-setup",
-      });
-      console.log(`  Created category: ${catDef.name}`);
-    } else {
-      console.log(`  Category exists: ${catDef.name}`);
-    }
-
-    // Create channels under category
-    for (const chDef of catDef.channels) {
-      const existing = guild.channels.cache.find(
-        (c) =>
-          c.type === ChannelType.GuildText &&
-          c.name === chDef.name &&
-          c.parentId === category!.id,
-      );
-
-      if (existing) {
-        console.log(`    Channel exists: #${chDef.name}`);
-        continue;
-      }
-
-      // Build permission overwrites
-      const permissionOverwrites: Array<{
-        id: string;
-        allow?: bigint[];
-        deny?: bigint[];
-      }> = [];
-
-      if (chDef.readOnly) {
-        // Everyone can read, only admins can send
-        permissionOverwrites.push({
-          id: guild.id, // @everyone
-          deny: [PermissionFlagsBits.SendMessages],
-        });
-      }
-
-      if (chDef.proOnly) {
-        // @everyone can't see, @Pro can
-        permissionOverwrites.push({
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        });
-        permissionOverwrites.push({
-          id: proRole.id,
-          allow: [PermissionFlagsBits.ViewChannel],
-        });
-      }
-
-      await guild.channels.create({
-        name: chDef.name,
-        type: ChannelType.GuildText,
-        parent: category.id,
-        topic: chDef.topic,
-        permissionOverwrites,
-        reason: "TradeUpBot auto-setup",
-      });
-      console.log(`    Created channel: #${chDef.name}`);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Welcome embed
-// ---------------------------------------------------------------------------
-
-async function sendWelcomeEmbed(guild: Guild) {
-  const welcomeChannel = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === "welcome",
-  ) as TextChannel | undefined;
-
-  if (!welcomeChannel) return;
-
-  // Don't re-send if there's already a message from the bot
-  const messages = await welcomeChannel.messages.fetch({ limit: 10 });
-  if (messages.some((m) => m.author.id === guild.client.user!.id)) {
-    console.log("  Welcome embed already posted, skipping");
-    return;
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor(0x2ecc71)
-    .setTitle("TradeUpBot")
-    .setDescription(
-      "CS2 trade-up contract analyzer. We find profitable trade-ups from real, buyable marketplace listings on CSFloat, DMarket, and Skinport.\n\n" +
-      "Every trade-up links to actual listings with exact floats and prices — no theoretical calculations, no guesswork.",
-    )
-    .addFields(
-      {
-        name: "Get started",
-        value: "[tradeupbot.app](https://tradeupbot.app) — sign in with Steam, browse trade-ups, verify availability, and claim to lock listings.",
-      },
-      {
-        name: "Pricing",
-        value: "**Free** — 10 sample trade-ups per tier\n**Basic ($5/mo)** — unlimited, 30-min delay, verify\n**Pro ($15/mo)** — real-time, claims, full analytics\n\n[Compare plans](https://tradeupbot.app/pricing)",
-      },
-      {
-        name: "Channels",
-        value:
-          "**#general** — chat about trade-ups\n" +
-          "**#strategies** — share tips and techniques\n" +
-          "**#results** — post your trade-up outcomes\n" +
-          "**#feedback** — feature requests and bugs\n" +
-          "**#help** — questions about the tool",
-      },
-    )
-    .setFooter({ text: "Not affiliated with Valve. CS2 is a trademark of Valve Corporation." });
-
-  await welcomeChannel.send({ embeds: [embed] });
-  console.log("  Posted welcome embed");
-}
-
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
-
-const startedAt = Date.now();
-
-function handleCommand(message: { content: string; reply: (text: string) => Promise<unknown>; guild: Guild | null }) {
-  const content = message.content.trim();
-
-  // !status — bot uptime + member count
-  if (content === "!status") {
-    const uptimeMs = Date.now() - startedAt;
-    const hours = Math.floor(uptimeMs / 3_600_000);
-    const minutes = Math.floor((uptimeMs % 3_600_000) / 60_000);
-    const uptime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-    const members = message.guild?.memberCount ?? "?";
-
-    message.reply(`Bot uptime: ${uptime} | Server members: ${members}`);
-    return;
-  }
-
-  // !link <steam_id> — placeholder for future Steam account linking
-  if (content.startsWith("!link ")) {
-    const steamId = content.slice(6).trim();
-    if (!steamId) {
-      message.reply("Usage: `!link <steam_id>`");
-      return;
-    }
-    // TODO: Implement Steam account linking
-    // - Verify steam_id exists
-    // - Check subscription tier via API
-    // - Store Discord user ID <-> Steam ID mapping
-    // - Assign tier role (@Basic / @Pro) if subscribed
-    message.reply(
-      `Account linking isn't live yet. When it is, this will link your Discord to Steam ID \`${steamId}\` and auto-assign your tier role.`,
-    );
-    return;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Main
+// Client
 // ---------------------------------------------------------------------------
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
   ],
 });
@@ -300,14 +134,12 @@ const client = new Client({
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user!.tag}`);
 
-  // Set presence
-  // TODO: Replace placeholder count with real count from API (/api/global-stats)
   client.user!.setPresence({
-    activities: [{ name: "profitable trade-ups", type: 3 }], // type 3 = Watching
+    activities: [{ name: "profitable trade-ups", type: 3 }], // Watching
     status: "online",
   });
 
-  // Auto-setup server
+  // Setup server
   const guild = client.guilds.cache.get(GUILD_ID!);
   if (!guild) {
     console.error(`Guild ${GUILD_ID} not found. Is the bot invited?`);
@@ -315,18 +147,63 @@ client.once("clientReady", async () => {
   }
 
   console.log(`Setting up server: ${guild.name}`);
-
   const roleMap = await ensureRoles(guild);
   await ensureChannels(guild, roleMap);
-  await sendWelcomeEmbed(guild);
-
+  await ensureEmbeds(guild);
   console.log("Server setup complete");
+
+  // Register slash commands (guild-scoped = instant)
+  try {
+    const rest = new REST().setToken(TOKEN!);
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID!, GUILD_ID!),
+      { body: commands.map(c => c.toJSON()) },
+    );
+    console.log(`Registered ${commands.length} slash commands`);
+  } catch (err: any) {
+    console.error("Failed to register slash commands:", err.message);
+  }
 });
 
-client.on("messageCreate", (message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith("!")) return;
-  handleCommand(message);
+// ---------------------------------------------------------------------------
+// Interaction handler
+// ---------------------------------------------------------------------------
+
+client.on("interactionCreate", async (interaction) => {
+  try {
+    // Slash commands
+    if (interaction.isChatInputCommand()) {
+      switch (interaction.commandName) {
+        case "link": return await handleLink(interaction);
+        case "status": return await handleStatus(interaction);
+        case "top": return await handleTop(interaction);
+        case "price": return await handlePrice(interaction);
+        case "alerts": return await handleAlerts(interaction);
+      }
+    }
+
+    // Autocomplete (for /price skin search)
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === "price") {
+        return await handlePriceAutocomplete(interaction);
+      }
+    }
+
+    // Select menu (for /alerts toggle)
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === "alert_select") {
+        return await handleAlertSelect(interaction);
+      }
+    }
+  } catch (err: any) {
+    console.error(`Interaction error (${interaction.type}):`, err.message);
+    // Try to respond if we haven't already
+    try {
+      if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Something went wrong.", ephemeral: true });
+      }
+    } catch { /* already responded */ }
+  }
 });
 
 client.login(TOKEN);

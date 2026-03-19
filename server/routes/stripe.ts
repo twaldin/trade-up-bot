@@ -5,6 +5,7 @@ import type { Request, Response } from "express";
 import Stripe from "stripe";
 import pg from "pg";
 import { requireAuth, invalidateAllUserCache, type User } from "../auth.js";
+import { syncDiscordRoles } from "../discord-rest.js";
 
 // Read at request time, not module load (env may not be loaded yet)
 function getPlan(plan: string): { priceId: string; name: string } | null {
@@ -124,6 +125,16 @@ export function stripeRouter(pool: pg.Pool): Router {
         // Invalidate user cache so tier change is immediate (no 60s stale window)
         invalidateAllUserCache();
         console.log(`Stripe: customer ${customerId} -> ${tier}`);
+
+        // Sync Discord role if user has linked their account
+        pool.query("SELECT discord_id FROM users WHERE stripe_customer_id = $1", [customerId])
+          .then(({ rows }) => {
+            if (rows[0]?.discord_id) {
+              syncDiscordRoles(rows[0].discord_id, tier).catch(err =>
+                console.error(`Discord role sync failed: ${err.message}`));
+            }
+          })
+          .catch(() => {}); // non-blocking
         break;
       }
 
@@ -133,6 +144,16 @@ export function stripeRouter(pool: pg.Pool): Router {
         await pool.query("UPDATE users SET tier = 'free' WHERE stripe_customer_id = $1", [customerId]);
         invalidateAllUserCache();
         console.log(`Stripe: customer ${customerId} -> free (cancelled)`);
+
+        // Sync Discord role
+        pool.query("SELECT discord_id FROM users WHERE stripe_customer_id = $1", [customerId])
+          .then(({ rows }) => {
+            if (rows[0]?.discord_id) {
+              syncDiscordRoles(rows[0].discord_id, "free").catch(err =>
+                console.error(`Discord role sync failed: ${err.message}`));
+            }
+          })
+          .catch(() => {});
         break;
       }
     }
