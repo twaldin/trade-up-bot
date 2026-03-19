@@ -56,14 +56,26 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Purged ${ids.length} DMarket listings (>24h old)`);
   }
 
-  // Skinport listings no longer stored (sale observations only).
-  // One-time cleanup of any remaining Skinport listings from before the change.
+  // Skinport cleanup: remove remaining listings + purge trade-ups with Skinport inputs.
+  // Skinport listings are no longer stored (sale observations only). Trade-ups referencing
+  // Skinport inputs are un-revivable and waste revival cycles.
   const { rows: spRemaining } = await pool.query("SELECT id FROM listings WHERE source = 'skinport' LIMIT 1000");
   if (spRemaining.length > 0) {
     const ids = spRemaining.map((r: any) => r.id);
     await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
     await cascadeTradeUpStatuses(pool, ids);
     console.log(`  Cleaned ${ids.length} remaining Skinport listings`);
+  }
+  // Purge trade-ups that have any Skinport input (un-revivable)
+  const { rows: spTradeUps } = await pool.query(`
+    SELECT DISTINCT tui.trade_up_id FROM trade_up_inputs tui
+    WHERE tui.listing_id LIKE 'skinport:%' LIMIT 50000
+  `);
+  if (spTradeUps.length > 0) {
+    const tuIds = spTradeUps.map((r: any) => r.trade_up_id);
+    await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = ANY($1)`, [tuIds]);
+    await pool.query(`DELETE FROM trade_ups WHERE id = ANY($1)`, [tuIds]);
+    console.log(`  Purged ${tuIds.length} trade-ups with Skinport inputs (un-revivable)`);
   }
 
   // Prune observations every 10 cycles
