@@ -29,7 +29,7 @@ export function SiteFooter() {
           <div>
             <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Contact</div>
             <div className="space-y-2 text-sm">
-              <a href="https://discord.gg/tradeupbot" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+              <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
               <a href="mailto:tradeupbot@gmail.com" className="block text-muted-foreground hover:text-foreground transition-colors">tradeupbot@gmail.com</a>
             </div>
           </div>
