@@ -24,6 +24,7 @@
     "clsx": "^2.1.1",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
+    "discord.js": "^14.25.1",
     "express": "^4.21.0",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.19.0",
