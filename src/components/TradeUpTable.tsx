@@ -150,7 +150,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Confirm mode: which trade-up is in confirm mode, and which listings are selected
   const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
   const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
-  const [shareCopied, setShareCopied] = useState<number | null>(null);
 
   // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
@@ -355,6 +354,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onNavigateSkin={onNavigateSkin}
           showListingLinks={true}
           showVerify={isPro || isBasic}
+          showShare={true}
           verifyLimit={verifyLimit}
           confirmMode={confirmModeId === tu.id}
           confirmSelected={confirmSelected}
@@ -373,19 +373,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onTogglePriceDetail={setPriceDetailKey}
           onNavigateSkin={onNavigateSkin}
         />
-        <div className="flex justify-end">
-          <button
-            className="px-3 py-1.5 text-[0.72rem] rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 cursor-pointer transition-colors flex items-center gap-1.5"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigator.clipboard.writeText(`${window.location.origin}/trade-ups/${tu.id}`);
-              setShareCopied(tu.id);
-              setTimeout(() => setShareCopied(null), 2000);
-            }}
-          >
-            {shareCopied === tu.id ? "Copied!" : "Share"}
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ interface InputListProps {
   confirmSelected?: Set<string>;
   onConfirmToggle?: (listingId: string) => void;
   onUnauthLinkClick?: () => void;
+  showShare?: boolean;
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
@@ -211,7 +212,8 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   );
 }
 
-export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle, onUnauthLinkClick }: InputListProps) {
+export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle, onUnauthLinkClick, showShare = false }: InputListProps) {
+  const [shareCopied, setShareCopied] = useState(false);
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -232,6 +234,20 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
             </button>
           );
         })()}
+        {showShare && (
+          <button
+            className="ml-2 px-2.5 py-0.5 text-[0.7rem] rounded bg-secondary text-foreground/80 border border-border cursor-pointer align-middle hover:bg-accent hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(`${window.location.origin}/trade-ups/${tu.id}`);
+              setShareCopied(true);
+              setTimeout(() => setShareCopied(false), 2000);
+            }}
+            title="Copy shareable link"
+          >
+            {shareCopied ? "Copied!" : "Share"}
+          </button>
+        )}
         {!tu.is_theoretical && !showVerify && (
           <span className="ml-2 text-[0.65rem] text-muted-foreground/60 align-middle">Upgrade to Basic to verify listings</span>
         )}
