@@ -303,7 +303,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             order={order}
             onSort={handleSort}
             onNavigateSkin={isPro ? onNavigateSkin : undefined}
-            onNavigateCollection={isPro ? onNavigateCollection : undefined}
+            onNavigateCollection={onNavigateCollection}
             onClaimChange={isPro ? handleClaimChange : undefined}
             tier={tier}
             showMyClaims={showMyClaims}
