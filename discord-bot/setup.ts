@@ -1,13 +1,14 @@
 // Server setup: roles, channels, embeds. Idempotent — safe to re-run.
+// Permissions are enforced on EVERY startup, not just on channel creation.
 
 import {
   ChannelType,
   PermissionFlagsBits,
-  type Client,
   type Guild,
   type TextChannel,
   type CategoryChannel,
   type Role,
+  type OverwriteResolvable,
 } from "discord.js";
 import Redis from "ioredis";
 import { CATEGORIES, ROLES } from "./constants.js";
@@ -66,12 +67,67 @@ export async function ensureRoles(guild: Guild): Promise<Map<string, Role>> {
 }
 
 // ---------------------------------------------------------------------------
-// Channels
+// Build permission overwrites for a channel
+// ---------------------------------------------------------------------------
+
+function buildPermissions(
+  guild: Guild,
+  roleMap: Map<string, Role>,
+  chDef: { readOnly?: boolean; proOnly?: boolean },
+): OverwriteResolvable[] {
+  const overwrites: OverwriteResolvable[] = [];
+  const proRole = roleMap.get("Pro");
+  const ownerRole = roleMap.get("Owner");
+  const botId = guild.client.user!.id;
+
+  if (chDef.readOnly) {
+    // @everyone can read but not send
+    overwrites.push({
+      id: guild.id,
+      deny: [PermissionFlagsBits.SendMessages],
+    });
+    // Bot can send (for posting embeds)
+    overwrites.push({
+      id: botId,
+      allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel],
+    });
+  }
+
+  if (chDef.proOnly) {
+    // @everyone can't see
+    overwrites.push({
+      id: guild.id,
+      deny: [PermissionFlagsBits.ViewChannel],
+    });
+    // @Pro can see
+    if (proRole) {
+      overwrites.push({
+        id: proRole.id,
+        allow: [PermissionFlagsBits.ViewChannel],
+      });
+    }
+    // @Owner can see
+    if (ownerRole) {
+      overwrites.push({
+        id: ownerRole.id,
+        allow: [PermissionFlagsBits.ViewChannel],
+      });
+    }
+    // Bot can see + send (for webhook fallback / embed posting)
+    overwrites.push({
+      id: botId,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+    });
+  }
+
+  return overwrites;
+}
+
+// ---------------------------------------------------------------------------
+// Channels — create if missing, enforce permissions always
 // ---------------------------------------------------------------------------
 
 export async function ensureChannels(guild: Guild, roleMap: Map<string, Role>) {
-  const proRole = roleMap.get("Pro")!;
-
   for (const catDef of CATEGORIES) {
     let category = guild.channels.cache.find(
       (c) => c.type === ChannelType.GuildCategory && c.name === catDef.name,
@@ -94,35 +150,23 @@ export async function ensureChannels(guild: Guild, roleMap: Map<string, Role>) {
           c.type === ChannelType.GuildText &&
           c.name === chDef.name &&
           c.parentId === category!.id,
-      );
+      ) as TextChannel | undefined;
+
+      const overwrites = buildPermissions(guild, roleMap, chDef);
 
       if (existing) {
-        console.log(`    Channel exists: #${chDef.name}`);
+        // Enforce permissions on existing channels every startup
+        if (chDef.readOnly || chDef.proOnly) {
+          try {
+            await existing.permissionOverwrites.set(overwrites);
+            console.log(`    Channel exists: #${chDef.name} (permissions synced)`);
+          } catch (err: any) {
+            console.log(`    Channel exists: #${chDef.name} (perm sync failed: ${err.message})`);
+          }
+        } else {
+          console.log(`    Channel exists: #${chDef.name}`);
+        }
         continue;
-      }
-
-      const permissionOverwrites: Array<{
-        id: string;
-        allow?: bigint[];
-        deny?: bigint[];
-      }> = [];
-
-      if (chDef.readOnly) {
-        permissionOverwrites.push({
-          id: guild.id,
-          deny: [PermissionFlagsBits.SendMessages],
-        });
-      }
-
-      if (chDef.proOnly) {
-        permissionOverwrites.push({
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        });
-        permissionOverwrites.push({
-          id: proRole.id,
-          allow: [PermissionFlagsBits.ViewChannel],
-        });
       }
 
       await guild.channels.create({
@@ -130,7 +174,7 @@ export async function ensureChannels(guild: Guild, roleMap: Map<string, Role>) {
         type: ChannelType.GuildText,
         parent: category.id,
         topic: chDef.topic,
-        permissionOverwrites,
+        permissionOverwrites: overwrites,
         reason: "TradeUpBot auto-setup",
       });
       console.log(`    Created channel: #${chDef.name}`);
