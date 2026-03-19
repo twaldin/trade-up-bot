@@ -285,7 +285,7 @@ export async function main() {
     let totalStalenessSold = 0;
     let totalStalenessRemoved = 0;
     {
-      const staleBudget = Math.min(Math.floor(budget.cycleIndividualBudget() * 0.85), 2000);
+      const staleBudget = Math.floor(budget.cycleIndividualBudget() * 0.85);
       if (staleBudget > 0 && probe.individualListing.available) {
         // Deduct user verify calls from budget
         let adjustedBudget = staleBudget;
