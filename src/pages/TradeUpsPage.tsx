@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
@@ -84,9 +84,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
 
-  // Sync state to URL search params (skip for free tier — no filters/pagination)
+  // Sync state to URL search params
   useEffect(() => {
-    if (isFree) return;
     const params = filtersToParams(filters);
     if (sort !== "profit") params.set("sort", sort);
     if (order !== "desc") params.set("order", order);
@@ -94,7 +93,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     if (includeStale) params.set("stale", "true");
     if (type !== types[0]?.value) params.set("type", type);
     setSearchParams(params, { replace: true });
-  }, [sort, order, page, includeStale, filters, type, setSearchParams, types, isFree]);
+  }, [sort, order, page, includeStale, filters, type, setSearchParams, types]);
 
   const handleFiltersChange = useCallback((f: Filters) => {
     setFilters(f);
@@ -113,19 +112,17 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
     if (!silent) setLoading(true);
     try {
-      const params = isFree ? new URLSearchParams() : filtersToParams(filters);
-      if (!isFree) {
-        params.set("sort", sort);
-        params.set("order", order);
-        params.set("page", String(page));
-        params.set("per_page", String(perPage));
-      }
+      const params = filtersToParams(filters);
+      params.set("sort", sort);
+      params.set("order", order);
+      params.set("page", String(page));
+      params.set("per_page", String(perPage));
       if (showMyClaims) {
         params.set("my_claims", "true");
       } else if (type !== "all") {
         params.set("type", type);
       }
-      if (!isFree && includeStale) params.set("include_stale", "true");
+      if (includeStale) params.set("include_stale", "true");
 
       const res = await fetch(`/api/trade-ups?${params}`, {
         credentials: "include",
@@ -147,7 +144,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     } finally {
       if (!controller.signal.aborted && !silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims, isFree]);
+  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims]);
 
   useEffect(() => {
     fetchTradeUps();
@@ -161,23 +158,11 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       setSort(column);
       setOrder("desc");
     }
-    if (!isFree) setPage(1);
+    setPage(1);
   };
 
-  // Free tier: client-side sorting (fixed set of ~60 trade-ups, server ignores sort params)
-  const SORT_KEYS: Record<string, keyof TradeUp> = {
-    profit: "profit_cents", ev: "expected_value_cents", roi: "roi_percentage",
-    chance: "chance_to_profit", cost: "total_cost_cents", best: "best_case_cents",
-    worst: "worst_case_cents", age: "created_at",
-  };
-  const sortedTradeUps = useMemo(() => {
-    if (!isFree) return tradeUps;
-    const key = SORT_KEYS[sort] || "profit_cents";
-    return [...tradeUps].sort((a, b) => {
-      const av = a[key] as number, bv = b[key] as number;
-      return order === "desc" ? bv - av : av - bv;
-    });
-  }, [tradeUps, sort, order, isFree]);
+  // Server handles sorting for all tiers now
+  const sortedTradeUps = tradeUps;
 
   const handleTypeChange = (newType: TradeUpType) => {
     // Batch state updates: set loading with type change so old data
@@ -220,7 +205,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
               </button>
             );
           })}
-          {isPro && myClaimCount > 0 && (
+          {(isPro || isBasic) && myClaimCount > 0 && (
             <button
               className={`px-3 md:px-4 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-full border transition-colors cursor-pointer ${
                 showMyClaims
@@ -235,8 +220,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       )}
 
-      {/* Filters + Show stale — hidden for free tier */}
-      {!isFree && (
+      {/* Filters + Show stale */}
+      {(
         <div className="flex items-center gap-3 mb-2">
           <div className="flex-1 min-w-0">
             <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
@@ -257,14 +242,11 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <div className="flex items-center gap-2 flex-wrap mb-1.5 min-h-[20px]">
         {total > 0 && (
           <span className={`text-xs text-muted-foreground whitespace-nowrap ${loading ? "opacity-50" : ""}`}>
-            {isFree
-              ? `Showing ${tradeUps.length} free sample trade-ups`
-              : <>{total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}</>
-            }
+            {total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}
           </span>
         )}
         {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
-        {!isFree && <FilterChips filters={filters} onUpdate={handleFiltersChange} />}
+        <FilterChips filters={filters} onUpdate={handleFiltersChange} />
       </div>
 
       {/* Empty state — only when not loading AND no data */}
@@ -302,9 +284,9 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             sort={sort}
             order={order}
             onSort={handleSort}
-            onNavigateSkin={isPro ? onNavigateSkin : undefined}
+            onNavigateSkin={onNavigateSkin}
             onNavigateCollection={onNavigateCollection}
-            onClaimChange={isPro ? handleClaimChange : undefined}
+            onClaimChange={(isPro || isBasic) ? handleClaimChange : undefined}
             tier={tier}
             showMyClaims={showMyClaims}
             claimLimit={claimLimit}
@@ -313,33 +295,18 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onVerifyLimitUpdate={setVerifyLimit}
           />
 
-          {/* Free tier: upgrade banner instead of pagination (hide during loading to prevent flash) */}
+          {/* Free tier: upgrade banner */}
           {isFree && !loading && (
-            <UpgradeBanner message="Upgrade to see all trade-ups, real-time data, filters, and inputs" plan="basic" />
+            <UpgradeBanner message="Upgrade to Basic for verification, claims, and 30-minute data delay" plan="basic" />
           )}
 
-          {/* Basic tier: upgrade banner for real-time + claims */}
+          {/* Basic tier: upgrade banner for real-time + more claims */}
           {isBasic && !loading && (
-            <UpgradeBanner message="Viewing trade-ups with 30-minute delay. Upgrade to Pro for real-time data and claims." plan="pro" />
+            <UpgradeBanner message="Viewing with 30-minute delay. Upgrade to Pro for real-time data and unlimited claims." plan="pro" />
           )}
 
-          {/* Pagination — pro/admin only */}
-          {isPro && totalPages > 1 && (
-            <div className="flex gap-2 justify-center items-center mt-4 text-sm text-muted-foreground">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Prev
-              </Button>
-              <span>
-                Page {page} of {totalPages} ({total.toLocaleString()} results)
-              </span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </Button>
-            </div>
-          )}
-
-          {/* Basic tier pagination */}
-          {isBasic && totalPages > 1 && (
+          {/* Pagination — all tiers */}
+          {totalPages > 1 && (
             <div className="flex gap-2 justify-center items-center mt-4 text-sm text-muted-foreground">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                 Prev

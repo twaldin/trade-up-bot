@@ -167,18 +167,16 @@ export function FaqPage() {
 
             <FaqItem question="What's the difference between Free, Basic, and Pro?">
               <p>
-                <strong className="text-foreground">Free</strong> — 10 sample trade-ups per rarity tier with full outcome details.
-                No listing links, filters, or claims. Good for exploring the platform.
+                <strong className="text-foreground">Free</strong> — Unlimited trade-ups with full filters, search, sorting, listing
+                links, and outcome details. 3-hour data delay. No verification or claims.
               </p>
               <p>
-                <strong className="text-foreground">Basic ($5/mo)</strong> — Unlimited trade-ups with a 30-minute delay on new
-                discoveries. Full filtering, search, pagination, direct listing links, and
-                availability verification.
+                <strong className="text-foreground">Basic ($5/mo)</strong> — Everything in Free plus a 30-minute data delay,
+                availability verification (10/hr), and claims (5/day, up to 5 active).
               </p>
               <p>
                 <strong className="text-foreground">Pro ($15/mo)</strong> — Everything in Basic plus real-time data (no delay),
-                the claim system (lock listings for 30 minutes), up to 5 active claims,
-                collection browser, and price analytics.
+                more verifications (20/hr), and more claims (10/hr).
               </p>
               <BlogLink slug="how-to-use-tradeupbot" title="How to Use TradeUpBot" />
             </FaqItem>
@@ -207,7 +205,7 @@ export function FaqPage() {
               </p>
               <ul className="list-disc list-inside ml-2 space-y-1">
                 <li><strong className="text-foreground">Verify</strong> — Basic: 10/hour, Pro: 20/hour</li>
-                <li><strong className="text-foreground">Claim</strong> — Pro only: 10/hour, up to 5 active claims</li>
+                <li><strong className="text-foreground">Claim</strong> — Basic: 5/day, Pro: 10/hour (up to 5 active claims)</li>
               </ul>
               <p>
                 These limits exist to ensure fair access and prevent abuse of marketplace APIs.
