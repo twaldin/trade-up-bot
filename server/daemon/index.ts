@@ -392,8 +392,8 @@ export async function main() {
 
       // Revival between super-batches (CPU-only, no API calls)
       await setDaemonStatus(pool, "calculating", `Phase 5: Revival (batch ${superBatchCount})`);
-      const gunRevival = await reviveStaleGunTradeUps(pool, 200);
-      const knifeRevival = await reviveStaleTradeUps(pool, revivalKnifeCache, 200);
+      const gunRevival = await reviveStaleGunTradeUps(pool, 1000);
+      const knifeRevival = await reviveStaleTradeUps(pool, revivalKnifeCache, 1000);
       const batchRevived = gunRevival.revived + knifeRevival.revived;
       totalRevived += batchRevived;
       if (batchRevived > 0) {
