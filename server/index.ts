@@ -124,6 +124,30 @@ app.use((req, res, next) => {
   app.use(stripeRouter(pool));
   app.use(discordRouter(pool));
 
+  // Dynamic OG image for shareable trade-up pages
+  const { generateOgImage } = await import("./og-image.js");
+
+  app.get("/og/trade-ups/:id.png", async (req, res) => {
+    try {
+      const { rows: [row] } = await pool.query(
+        "SELECT id, type, total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, best_case_cents, worst_case_cents FROM trade_ups WHERE id = $1",
+        [req.params.id]
+      );
+      if (!row) { res.status(404).end(); return; }
+      const { rows: inputs } = await pool.query(
+        "SELECT skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id = $1",
+        [row.id]
+      );
+      const png = await generateOgImage({ ...row, inputs });
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(png);
+    } catch (e) {
+      console.error("OG image error:", e instanceof Error ? e.message : e);
+      res.status(500).end();
+    }
+  });
+
   // Dynamic OG tags for shareable trade-up pages (social media bots)
   const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot/i;
   const TYPE_LABELS: Record<string, string> = {
@@ -146,16 +170,19 @@ app.use((req, res, next) => {
       const title = `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance)`;
       const desc = `$${cost} cost, ${roi}% ROI. Found on TradeUpBot.`;
       const url = `https://tradeupbot.app/trade-ups/${req.params.id}`;
+      const ogImage = `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`;
       res.send(`<!DOCTYPE html><html><head>
 <meta property="og:title" content="${title}" />
 <meta property="og:description" content="${desc}" />
-<meta property="og:image" content="https://tradeupbot.app/tradeuptable.png" />
+<meta property="og:image" content="${ogImage}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 <meta property="og:url" content="${url}" />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${desc}" />
-<meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.png" />
+<meta name="twitter:image" content="${ogImage}" />
 <title>${title}</title>
 </head><body></body></html>`);
     } catch { next(); }
