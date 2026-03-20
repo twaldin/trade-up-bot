@@ -5,12 +5,64 @@ import {
 } from "../../shared/types.js";
 import type { DbSkinOutcome, ListingWithCollection } from "./types.js";
 import { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./types.js";
-import { buildPriceCache } from "./pricing.js";
+import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./data-load.js";
 import { getConditionTransitions, selectForFloatTarget, selectLowestFloat } from "./selection.js";
 import { TradeUpStore } from "./store.js";
 import { evaluateTradeUp } from "./evaluation.js";
-import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
+import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
+
+/**
+ * Per-collection output opportunity profile.
+ * Precomputed at discovery start to inform strategy selection.
+ */
+interface OutputProfile {
+  collection: string;
+  outputSkins: { name: string; minFloat: number; maxFloat: number; avgPrice: number }[];
+  bestStrategy: "cheapest" | "low-float" | "mixed";
+}
+
+/**
+ * Compute output profiles for each collection from outcomes data + price cache.
+ * "cheapest" = narrow-range outputs (e.g., AWP Fade 0-0.08, always FN) → optimize input cost
+ * "low-float" = wide-range expensive outputs → optimize input float for premium
+ * "mixed" = moderate range → balance cost and float
+ */
+function buildOutputProfiles(
+  outcomesByCol: Map<string, DbSkinOutcome[]>,
+  priceMap: Map<string, number>,
+): Map<string, OutputProfile> {
+  const profiles = new Map<string, OutputProfile>();
+  for (const [colId, outcomes] of outcomesByCol) {
+    const skins = outcomes.map(o => ({
+      name: o.name,
+      minFloat: o.min_float,
+      maxFloat: o.max_float,
+      avgPrice: priceMap.get(o.name) ?? 0,
+    }));
+    if (skins.length === 0) continue;
+
+    // Average output float range weighted by price
+    const totalPrice = skins.reduce((s, sk) => s + sk.avgPrice, 0);
+    const avgRange = totalPrice > 0
+      ? skins.reduce((s, sk) => s + (sk.maxFloat - sk.minFloat) * sk.avgPrice, 0) / totalPrice
+      : skins.reduce((s, sk) => s + (sk.maxFloat - sk.minFloat), 0) / skins.length;
+    const maxPrice = Math.max(...skins.map(s => s.avgPrice));
+
+    let bestStrategy: "cheapest" | "low-float" | "mixed";
+    if (avgRange < 0.15) {
+      bestStrategy = "cheapest"; // narrow range, condition doesn't vary much
+    } else if (maxPrice > 5000 && avgRange > 0.25) {
+      bestStrategy = "low-float"; // wide range + expensive → float matters a lot
+    } else {
+      bestStrategy = "mixed";
+    }
+
+    profiles.set(colId, { collection: colId, outputSkins: skins, bestStrategy });
+  }
+  return profiles;
+}
+
 
 export type DiscoveryProgressCallback = (msg: string, current: number, total: number) => void;
 
@@ -160,6 +212,8 @@ export async function findProfitableTradeUps(
       }
 
       // Condition-pure groups — deeper windows catch non-cheapest profitable combos
+      // For conditions where float matters (FN, expensive MW/FT), only try lowest-float
+      // window. For others (WW, BS, cheap skins), try all 3 windows.
       const byCondition = new Map<string, ListingWithCollection[]>();
       for (const l of colListings) {
         const cond = floatToCondition(l.float_value);
@@ -167,8 +221,15 @@ export async function findProfitableTradeUps(
         list.push(l);
         byCondition.set(cond, list);
       }
-      for (const [, condListings] of byCondition) {
-        for (let window = 0; window < 3; window++) {
+      const avgOutcomePrice = outcomes.length > 0
+        ? outcomes.reduce((s, o) => s + (o.min_float + o.max_float) / 2, 0) / outcomes.length * 10000
+        : 0;
+      for (const [cond, condListings] of byCondition) {
+        const floatMatters = cond === "Factory New" ||
+          (cond === "Minimal Wear" && avgOutcomePrice > 5000) ||
+          (cond === "Field-Tested" && avgOutcomePrice > 5000);
+        const maxWindows = floatMatters ? 1 : 3;
+        for (let window = 0; window < maxWindows; window++) {
           const off = window * 10;
           if (condListings.length >= off + 10) {
             await tryEval(condListings.slice(off, off + 10), outcomes);
@@ -456,13 +517,31 @@ export async function randomExplore(
   const listingById = new Map<string, ListingWithCollection>();
   for (const l of allListings) listingById.set(l.id, l);
 
+  // Build output profiles using real price cache data
+  const randomExplorePriceMap = new Map<string, number>();
+  for (const o of allOutcomes) {
+    if (!randomExplorePriceMap.has(o.name)) {
+      let bestPrice = 0;
+      for (const cond of CONDITION_BOUNDS) {
+        const price = globalPriceCache.get(`${o.name}:${cond.name}`);
+        if (price && price > bestPrice) bestPrice = price;
+      }
+      randomExplorePriceMap.set(o.name, bestPrice);
+    }
+  }
+  const outputProfiles = buildOutputProfiles(outcomesByCol, randomExplorePriceMap);
+
+  // Float-biased strategies get 2x weight: float-targeted (5), output-aware (8), ultra-low-float (9)
+  const EXPLORE_FLOAT_BIASED = [5, 8, 9];
+  const EXPLORE_TOTAL_STRATEGIES = 10;
+
   for (let iter = 0; iter < iterations; iter++) {
     if (iter % 100 === 0) {
       options.onProgress?.(`${inputRarity} explore: ${iter}/${iterations} (${found} new, ${improved} improved)`);
     }
 
     try {
-      const strategy = Math.floor(Math.random() * 8);
+      const strategy = pickWeightedStrategy(EXPLORE_TOTAL_STRATEGIES, EXPLORE_FLOAT_BIASED);
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -656,6 +735,48 @@ export async function randomExplore(
           }
           break;
         }
+
+        case 8: {
+          // Output-value-aware: pick collections with wide-range expensive outputs,
+          // target optimal input floats for best output condition.
+          const col = pick(weightedPool);
+          const colOutcomes = outcomesByCol.get(col);
+          if (!colOutcomes || colOutcomes.length === 0) break;
+          const profile = outputProfiles.get(col);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 10) break;
+
+          if (profile?.bestStrategy === "cheapest") {
+            const off = Math.floor(Math.random() * Math.min(list.length - 10 + 1, 10));
+            inputs = list.slice(off, off + 10);
+          } else {
+            const targetOutcome = pick(colOutcomes);
+            const outputRange = targetOutcome.max_float - targetOutcome.min_float;
+            const targetAdjFloat = outputRange > 0
+              ? Math.min(0.07 / outputRange, 0.5) * (Math.random() * 0.3 + 0.7)
+              : Math.random() * 0.3;
+            const quotas = new Map([[col, 10]]);
+            const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat);
+            if (selected && selected.length === 10) inputs = selected;
+          }
+          break;
+        }
+
+        case 9: {
+          // Ultra-low-float pool: pick 2-3 lowest-float listings per collection,
+          // fill remaining with cheapest.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 10) break;
+          const floatSorted = [...list].sort((a, b) => a.float_value - b.float_value);
+          const lowFloatCount = 2 + Math.floor(Math.random() * 2);
+          const lowFloats = floatSorted.slice(0, lowFloatCount);
+          const lowFloatIds = new Set(lowFloats.map(l => l.id));
+          const remaining = list.filter(l => !lowFloatIds.has(l.id));
+          if (remaining.length < 10 - lowFloatCount) break;
+          inputs = [...lowFloats, ...remaining.slice(0, 10 - lowFloatCount)];
+          break;
+        }
       }
 
       if (!inputs || inputs.length !== 10) continue;
@@ -724,6 +845,7 @@ export async function exploreWithBudget(
   options: {
     inputRarity?: string;
     stattrak?: boolean;
+    cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
   } = {}
 ): Promise<TradeUp[]> {
@@ -770,6 +892,40 @@ export async function exploreWithBudget(
     return result;
   };
 
+  // Build output profiles using real price cache data
+  const outputPriceMap = new Map<string, number>();
+  for (const o of allOutcomes) {
+    if (!outputPriceMap.has(o.name)) {
+      // Best available price for this skin across all conditions
+      let bestPrice = 0;
+      for (const cond of CONDITION_BOUNDS) {
+        const price = globalPriceCache.get(`${o.name}:${cond.name}`);
+        if (price && price > bestPrice) bestPrice = price;
+      }
+      outputPriceMap.set(o.name, bestPrice);
+    }
+  }
+  const outputProfiles = buildOutputProfiles(outcomesByCol, outputPriceMap);
+
+  // Build new-listing pool: listings fetched this cycle (for new-listing priority strategy)
+  const newListingsByCol = new Map<string, ListingWithCollection[]>();
+  if (options.cycleStartedAt) {
+    // Query for listing IDs created after cycle start
+    const { rows: newRows } = await pool.query<{ id: string }>(
+      `SELECT id FROM listings WHERE created_at > to_timestamp($1 / 1000.0)`,
+      [options.cycleStartedAt]
+    );
+    const newIds = new Set(newRows.map(r => r.id));
+    for (const [colId, listings] of byCollection) {
+      const newOnes = listings.filter(l => newIds.has(l.id));
+      if (newOnes.length > 0) newListingsByCol.set(colId, newOnes);
+    }
+  }
+
+  // Float-biased strategies: output-aware (7), ultra-low-float (8) get 2x probability
+  const FLOAT_BIASED_CASES = [5, 7, 8];
+  const TOTAL_STRATEGIES = 10;
+
   const results: TradeUp[] = [];
   let explored = 0;
 
@@ -781,7 +937,7 @@ export async function exploreWithBudget(
     }
 
     try {
-      const strategy = Math.floor(Math.random() * 7);
+      const strategy = pickWeightedStrategy(TOTAL_STRATEGIES, FLOAT_BIASED_CASES);
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -886,6 +1042,78 @@ export async function exploreWithBudget(
             const offB = Math.floor(Math.random() * Math.min(poolB.length - countB + 1, 10));
             inputs = [...poolA.slice(offA, offA + countA), ...poolB.slice(offB, offB + countB)];
           }
+          break;
+        }
+
+        case 7: {
+          // Output-value-aware: pick collections with expensive outputs, target optimal
+          // input floats to produce the best output condition for that skin.
+          const col = pick(weightedPool);
+          const colOutcomes = outcomesByCol.get(col);
+          if (!colOutcomes || colOutcomes.length === 0) break;
+          const profile = outputProfiles.get(col);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 10) break;
+
+          if (profile?.bestStrategy === "cheapest") {
+            // Narrow-range outputs: just use cheapest listings
+            const off = Math.floor(Math.random() * Math.min(list.length - 10 + 1, 10));
+            inputs = list.slice(off, off + 10);
+          } else {
+            // Wide-range or mixed: target low adjusted floats for premium output condition
+            // Pick a random expensive output skin and compute what input float produces FN/MW
+            const targetOutcome = pick(colOutcomes);
+            const outputRange = targetOutcome.max_float - targetOutcome.min_float;
+            // Target input adjusted float that puts output in lowest condition bucket
+            const targetAdjFloat = outputRange > 0
+              ? Math.min(0.07 / outputRange, 0.5) * (Math.random() * 0.3 + 0.7) // target FN output, with jitter
+              : Math.random() * 0.3;
+            const quotas = new Map([[col, 10]]);
+            const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat);
+            if (selected && selected.length === 10) inputs = selected;
+          }
+          break;
+        }
+
+        case 8: {
+          // Ultra-low-float pool: pick 2-3 lowest-float listings per collection,
+          // fill remaining with cheapest. Tests if output float premium outweighs input cost.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 10) break;
+
+          // Sort by float to find lowest-float listings
+          const floatSorted = [...list].sort((a, b) => a.float_value - b.float_value);
+          const lowFloatCount = 2 + Math.floor(Math.random() * 2); // 2 or 3
+          const lowFloats = floatSorted.slice(0, lowFloatCount);
+          const lowFloatIds = new Set(lowFloats.map(l => l.id));
+
+          // Fill remaining with cheapest (excluding already picked)
+          const remaining = list.filter(l => !lowFloatIds.has(l.id));
+          if (remaining.length < 10 - lowFloatCount) break;
+          inputs = [...lowFloats, ...remaining.slice(0, 10 - lowFloatCount)];
+          break;
+        }
+
+        case 9: {
+          // New-listing priority: build combos including at least 1 listing fetched this cycle.
+          // Ensures every data fetch creates new discovery opportunities.
+          if (newListingsByCol.size === 0) break;
+          const newCols = [...newListingsByCol.keys()].filter(id => collectionsWithOutcomes.has(id));
+          if (newCols.length === 0) break;
+
+          const col = pick(newCols);
+          const newListings = newListingsByCol.get(col) ?? [];
+          const allColListings = byCollection.get(col) ?? [];
+          if (newListings.length === 0 || allColListings.length < 10) break;
+
+          // Include 1-3 new listings, fill rest with cheapest from same collection
+          const newCount = Math.min(1 + Math.floor(Math.random() * 3), newListings.length);
+          const picked = shuffle(newListings).slice(0, newCount);
+          const pickedIds = new Set(picked.map(l => l.id));
+          const filler = allColListings.filter(l => !pickedIds.has(l.id));
+          if (filler.length < 10 - newCount) break;
+          inputs = [...picked, ...filler.slice(0, 10 - newCount)];
           break;
         }
       }

@@ -27,10 +27,11 @@ const { Pool } = pg;
 interface WorkerInput {
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer";
   timeLimitMs?: number;
+  cycleStartedAt?: number;
 }
 
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
-const { task, timeLimitMs } = input;
+const { task, timeLimitMs, cycleStartedAt } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
 
 // Create own PG pool — worker needs its own connection
@@ -158,12 +159,14 @@ const rarityMap: Record<string, string> = {
       let explored: typeof tradeUps;
       if (task === "knife") {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
+          cycleStartedAt,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       } else {
         const inputRarity = rarityMap[task] ?? "Classified";
         explored = await exploreWithBudget(pool, deadline, existingSigs, {
           inputRarity,
+          cycleStartedAt,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       }

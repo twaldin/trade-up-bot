@@ -107,7 +107,7 @@ Workers (`server/daemon/calc-worker.ts`): child processes via fork(), read-only 
 Dynamic time limits: first super-batch gets remaining/3 (up to 5 min), subsequent batches get 2 min minimum. Kill timeout at workerTimeLimit + 30s.
 
 Other daemon files:
-- `state.ts` — BudgetTracker (safety buffers), FreshnessTracker, 20-min cycle target
+- `state.ts` — BudgetTracker (safety buffers), FreshnessTracker, 30-min cycle target (TARGET_CYCLE_MS)
 - `utils.ts` — logging, rate limit detection, cycle stats
 - `phases/` — phase implementations (housekeeping, data-fetch, knife-calc, classified-calc)
 

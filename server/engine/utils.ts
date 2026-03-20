@@ -18,6 +18,24 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+/**
+ * Weighted random strategy selection.
+ * Strategies in floatBiasedCases get 2x probability.
+ */
+export function pickWeightedStrategy(maxStrategy: number, floatBiasedCases: number[]): number {
+  const weights: number[] = [];
+  for (let i = 0; i < maxStrategy; i++) {
+    weights.push(floatBiasedCases.includes(i) ? 2 : 1);
+  }
+  const total = weights.reduce((s, w) => s + w, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return i;
+  }
+  return maxStrategy - 1;
+}
+
 /** Listing-combo signature from an array of IDs. */
 export function listingSig(ids: string[]): string {
   return [...ids].sort().join(",");
