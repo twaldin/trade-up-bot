@@ -47,7 +47,7 @@ export async function syncWantedListings(
     const skinName = info.skin_name;
 
     const { rows } = await pool.query(
-      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = false LIMIT 1",
       [skinName]
     );
     const skin = rows[0] as { id: string; name: string; min_float: number; max_float: number } | undefined;

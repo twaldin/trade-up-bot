@@ -1,12 +1,13 @@
 import pg from "pg";
 import { floatToCondition, type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import type { ListingWithCollection, AdjustedListing } from "./types.js";
-import type { FinishData } from "./knife-data.js";
-import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS, KNIFE_WEAPONS } from "./knife-data.js";
+import { CONDITION_BOUNDS } from "./types.js";
+import { CASE_KNIFE_MAP, KNIFE_WEAPONS } from "./knife-data.js";
 import { buildPriceCache } from "./pricing.js";
-import { getListingsForRarity } from "./data-load.js";
-import { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./selection.js";
-import { evaluateKnifeTradeUp, getKnifeFinishesWithPrices } from "./knife-evaluation.js";
+import { loadDiscoveryData, buildWeightedPool } from "./data-load.js";
+import { selectForFloatTarget, selectLowestFloat } from "./selection.js";
+import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
+import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 
 /**
  * Discover profitable knife trade-ups.
@@ -32,39 +33,17 @@ export async function findProfitableKnifeTradeUps(
   await buildPriceCache(pool);
 
   // Get all Covert gun listings (knife trade-up inputs)
-  const allListings = (await getListingsForRarity(pool, "Covert"))
-    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon)); // Only gun skins, not knives
+  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+    pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
+  );
 
   if (allListings.length === 0) {
     options.onProgress?.("No Covert gun listings found");
     return [];
   }
 
-  // Group by collection
-  const byCollection = new Map<string, ListingWithCollection[]>();
-  for (const l of allListings) {
-    const list = byCollection.get(l.collection_name) ?? [];
-    list.push(l);
-    byCollection.set(l.collection_name, list);
-  }
-  // Sort by price within each collection
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-
-  // Build knife + glove finish price cache (same structure, keyed by weapon type)
-  const knifeFinishCache = new Map<string, FinishData[]>();
-  const allItemTypes = new Set<string>();
-  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
-    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
-    if (caseInfo.gloveGen) {
-      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
-    }
-  }
-  for (const itemType of allItemTypes) {
-    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
-    if (finishes.length > 0) {
-      knifeFinishCache.set(itemType, finishes);
-    }
-  }
+  // Build knife + glove finish price cache
+  const knifeFinishCache = await buildKnifeFinishCache(pool);
 
   const knifeCount = [...knifeFinishCache.entries()].filter(([k]) => k.includes("Knife") || k === "Bayonet" || k === "Karambit").length;
   const gloveCount = knifeFinishCache.size - knifeCount;
@@ -82,7 +61,7 @@ export async function findProfitableKnifeTradeUps(
     if (!tu || tu.expected_value_cents === 0) return;
     // Keep profitable OR high chance-to-profit trade-ups
     if (tu.profit_cents <= 0 && (tu.chance_to_profit ?? 0) < 0.25) return;
-    const key = tu.inputs.map(i => i.listing_id).sort().join(",");
+    const key = listingSig(tu.inputs.map(i => i.listing_id));
     if (seen.has(key)) {
       if (options.existingSignatures?.has(key)) skippedExisting++;
       return;
@@ -92,7 +71,7 @@ export async function findProfitableKnifeTradeUps(
   };
 
   /** Compute listing-combo signature for pre-evaluation sig-skipping. */
-  const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
+  const sigOf = (inputs: { id: string }[]) => listingSig(inputs.map(i => i.id));
 
   /** Evaluate only if this listing combo is new (skip evaluation for known combos). */
   const tryEvalKnife = async (inputs: ListingWithCollection[]) => {
@@ -107,16 +86,6 @@ export async function findProfitableKnifeTradeUps(
     return m && (m.knifeTypes.length > 0 || m.gloveGen !== null);
   });
   console.log(`  ${knifeCollections.length} collections with knife/glove mappings`);
-
-  // Pre-compute adjusted floats for float-targeted selection
-  const allAdjusted = addAdjustedFloat(allListings);
-  const byColAdj = new Map<string, AdjustedListing[]>();
-  for (const l of allAdjusted) {
-    const list = byColAdj.get(l.collection_name) ?? [];
-    list.push(l);
-    byColAdj.set(l.collection_name, list);
-  }
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
   // Dense float targets — condition boundaries are where profit lives.
   // FT at 0.16 is worth way more than FT at 0.37. 30 points catches the sweet spots.
@@ -292,7 +261,7 @@ export async function findProfitableKnifeTradeUps(
         if (lowestFloat) await tryEvalKnife(lowestFloat);
 
         // Condition-targeted pairs: cheapest N at each condition
-        for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
+        for (const cond of CONDITION_BOUNDS.map(c => c.name)) {
           const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
           const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
           if (condA.length >= countA && condB.length >= countB) {
@@ -379,38 +348,13 @@ export async function randomKnifeExplore(
   const iterations = options.iterations ?? 500;
   await buildPriceCache(pool);
 
-  const allListings = (await getListingsForRarity(pool, "Covert"))
-    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
+  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+    pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
+  );
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
 
-  const allAdjusted = addAdjustedFloat(allListings);
-
-  const byCollection = new Map<string, ListingWithCollection[]>();
-  const byColAdj = new Map<string, AdjustedListing[]>();
-  for (const l of allAdjusted) {
-    const list = byCollection.get(l.collection_name) ?? [];
-    list.push(l);
-    byCollection.set(l.collection_name, list);
-    const adjList = byColAdj.get(l.collection_name) ?? [];
-    adjList.push(l);
-    byColAdj.set(l.collection_name, adjList);
-  }
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
-
   // Build knife finish cache
-  const knifeFinishCache = new Map<string, FinishData[]>();
-  const allItemTypes = new Set<string>();
-  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
-    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
-    if (caseInfo.gloveGen) {
-      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
-    }
-  }
-  for (const itemType of allItemTypes) {
-    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
-    if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
-  }
+  const knifeFinishCache = await buildKnifeFinishCache(pool);
 
   const knifeCollections = [...byCollection.keys()].filter(name => {
     const m = CASE_KNIFE_MAP[name];
@@ -418,23 +362,8 @@ export async function randomKnifeExplore(
   });
   if (knifeCollections.length === 0) return { found: 0, explored: 0, improved: 0 };
 
-  // Profit-guided: weight random picks toward collections in recent profitable trade-ups
-  const profitWeights = new Map<string, number>();
-  const { rows: profitRows } = await pool.query(`
-    SELECT tui.collection_name, COUNT(*) as cnt
-    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = 'covert_knife' AND t.profit_cents > 0
-    GROUP BY tui.collection_name
-  `);
-  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
-
-  // Build weighted pool: profitable collections appear more often
-  const weightedPool: string[] = [];
-  for (const col of knifeCollections) {
-    const weight = Math.max(1, profitWeights.get(col) ?? 0);
-    const repeats = Math.min(10, Math.ceil(Math.sqrt(weight)));
-    for (let i = 0; i < repeats; i++) weightedPool.push(col);
-  }
+  // Profit-guided weighted pool
+  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife");
 
   // Load existing trade-up signatures to avoid duplicates
   const existingSignatures = new Set<string>();
@@ -444,18 +373,8 @@ export async function randomKnifeExplore(
     GROUP BY trade_up_id
   `);
   for (const row of existingRows) {
-    existingSignatures.add(row.ids.split(",").sort().join(","));
+    existingSignatures.add(listingSig(row.ids.split(",")));
   }
-
-  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-  const shuffle = <T>(arr: T[]): T[] => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
 
   let found = 0;
   let explored = 0;
@@ -558,7 +477,7 @@ export async function randomKnifeExplore(
         case 4: {
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
-          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const conditions = CONDITION_BOUNDS.map(c => c.name);
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 5) break;
@@ -650,11 +569,8 @@ export async function randomKnifeExplore(
           }
 
           if (bestResult) {
-            const chanceToProfit = bestResult.outcomes.reduce((sum, o) =>
-              sum + (o.estimated_price_cents > bestResult!.total_cost_cents ? o.probability : 0), 0
-            );
-            const bestCaseSwap = Math.max(...bestResult.outcomes.map(o => o.estimated_price_cents)) - bestResult.total_cost_cents;
-            const worstCaseSwap = Math.min(...bestResult.outcomes.map(o => o.estimated_price_cents)) - bestResult.total_cost_cents;
+            const chanceToProfit = computeChanceToProfit(bestResult.outcomes, bestResult.total_cost_cents);
+            const { bestCase: bestCaseSwap, worstCase: worstCaseSwap } = computeBestWorstCase(bestResult.outcomes, bestResult.total_cost_cents);
             const client = await pool.connect();
             try {
               await client.query('BEGIN');
@@ -693,18 +609,15 @@ export async function randomKnifeExplore(
       if (!inputs || inputs.length !== 5) continue;
       explored++;
 
-      const sig = inputs.map(i => i.id).sort().join(",");
+      const sig = listingSig(inputs.map(i => i.id));
       if (existingSignatures.has(sig)) continue;
 
       const result = await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache);
       if (!result || result.profit_cents <= 0) continue;
 
       existingSignatures.add(sig);
-      const chanceToProfit = result.outcomes.reduce((sum, o) =>
-        sum + (o.estimated_price_cents > result.total_cost_cents ? o.probability : 0), 0
-      );
-      const bestCaseNew = Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
-      const worstCaseNew = Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
+      const chanceToProfit = computeChanceToProfit(result.outcomes, result.total_cost_cents);
+      const { bestCase: bestCaseNew, worstCase: worstCaseNew } = computeBestWorstCase(result.outcomes, result.total_cost_cents);
 
       const client = await pool.connect();
       try {
@@ -758,37 +671,13 @@ export async function exploreKnifeWithBudget(
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
 
-  const allListings = (await getListingsForRarity(pool, "Covert"))
-    .filter(l => !(KNIFE_WEAPONS as readonly string[]).includes(l.weapon));
+  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+    pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
+  );
   if (allListings.length === 0) return [];
 
-  const allAdjusted = addAdjustedFloat(allListings);
-  const byCollection = new Map<string, ListingWithCollection[]>();
-  const byColAdj = new Map<string, AdjustedListing[]>();
-  for (const l of allAdjusted) {
-    const list = byCollection.get(l.collection_name) ?? [];
-    list.push(l);
-    byCollection.set(l.collection_name, list);
-    const adjList = byColAdj.get(l.collection_name) ?? [];
-    adjList.push(l);
-    byColAdj.set(l.collection_name, adjList);
-  }
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
-
   // Build knife finish cache
-  const knifeFinishCache = new Map<string, FinishData[]>();
-  const allItemTypes = new Set<string>();
-  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
-    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
-    if (caseInfo.gloveGen) {
-      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
-    }
-  }
-  for (const itemType of allItemTypes) {
-    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
-    if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
-  }
+  const knifeFinishCache = await buildKnifeFinishCache(pool);
 
   const knifeCollections = [...byCollection.keys()].filter(name => {
     const m = CASE_KNIFE_MAP[name];
@@ -797,30 +686,7 @@ export async function exploreKnifeWithBudget(
   if (knifeCollections.length === 0) return [];
 
   // Profit-guided weighted pool
-  const profitWeights = new Map<string, number>();
-  const { rows: profitRows } = await pool.query(`
-    SELECT tui.collection_name, COUNT(*) as cnt
-    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = 'covert_knife' AND t.profit_cents > 0
-    GROUP BY tui.collection_name
-  `);
-  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
-  const weightedPool: string[] = [];
-  for (const col of knifeCollections) {
-    const weight = Math.max(1, profitWeights.get(col) ?? 0);
-    const repeats = Math.min(10, Math.ceil(Math.sqrt(weight)));
-    for (let i = 0; i < repeats; i++) weightedPool.push(col);
-  }
-
-  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-  const shuffle = <T>(arr: T[]): T[] => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
+  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife");
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -866,7 +732,7 @@ export async function exploreKnifeWithBudget(
         case 2: {
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
-          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const conditions = CONDITION_BOUNDS.map(c => c.name);
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 5) break;
@@ -945,7 +811,7 @@ export async function exploreKnifeWithBudget(
       if (!inputs || inputs.length !== 5) continue;
       explored++;
 
-      const sig = inputs.map(i => i.id).sort().join(",");
+      const sig = listingSig(inputs.map(i => i.id));
       if (existingSignatures.has(sig)) continue;
 
       const result = await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache);

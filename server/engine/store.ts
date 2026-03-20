@@ -8,18 +8,19 @@
  */
 
 import type { TradeUp } from "../../shared/types.js";
+import { computeChanceToProfit as computeCTP, listingSig } from "./utils.js";
+
+/** Compute chance-to-profit for a TradeUp object. */
+function chanceToProfit(tu: TradeUp): number {
+  if (!tu.outcomes || tu.outcomes.length === 0) return 0;
+  return computeCTP(tu.outcomes, tu.total_cost_cents);
+}
 
 /** Composite score: profitable trade-ups first, then by chance-to-profit for similar profit. */
 function tradeUpScore(tu: TradeUp): number {
-  const chanceToProfit = tu.chance_to_profit ?? computeChanceToProfit(tu);
+  const ctp = tu.chance_to_profit ?? chanceToProfit(tu);
   // Profit is primary, but high-chance low-profit trade-ups get a bonus
-  return tu.profit_cents + (chanceToProfit > 0.25 ? chanceToProfit * 5000 : 0);
-}
-
-function computeChanceToProfit(tu: TradeUp): number {
-  if (!tu.outcomes || tu.outcomes.length === 0) return 0;
-  return tu.outcomes.reduce((sum, o) =>
-    sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
+  return tu.profit_cents + (ctp > 0.25 ? ctp * 5000 : 0);
 }
 
 export class TradeUpStore {
@@ -46,13 +47,13 @@ export class TradeUpStore {
 
     // Compute and attach chance_to_profit for downstream use
     if (tu.chance_to_profit === undefined) {
-      tu.chance_to_profit = computeChanceToProfit(tu);
+      tu.chance_to_profit = chanceToProfit(tu);
     }
 
     // Keep trade-ups that are profitable OR have >25% chance to profit
     if (tu.profit_cents <= 0 && (tu.chance_to_profit ?? 0) < 0.25) return false;
 
-    const key = tu.inputs.map((i) => i.listing_id).sort().join(",");
+    const key = listingSig(tu.inputs.map(i => i.listing_id));
     if (this.seen.has(key)) return false;
     this.seen.add(key);
 

@@ -139,7 +139,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const saleHistory = useMemo(() => {
     if (!selectedPhase) return allSaleHistory;
     // Phase-specific observations — empty if none accumulated yet
-    const phaseSaleData = (detail as any)?.phaseSales?.[selectedPhase];
+    const phaseSaleData = detail?.phaseSales?.[selectedPhase];
     return phaseSaleData ?? [];
   }, [allSaleHistory, selectedPhase, detail]);
 

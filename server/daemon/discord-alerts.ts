@@ -102,7 +102,7 @@ export async function initAlertState(pool: pg.Pool, redis: Redis): Promise<void>
                   COALESCE(best_case_cents, 0) as best_case_cents,
                   COALESCE(worst_case_cents, 0) as worst_case_cents
            FROM trade_ups
-           WHERE type = $1 AND listing_status = 'active' AND is_theoretical = 0
+           WHERE type = $1 AND listing_status = 'active' AND is_theoretical = false
            ORDER BY ${metric} DESC LIMIT 1`,
           [type],
         );
@@ -270,7 +270,7 @@ export async function refreshAlertTops(pool: pg.Pool, redis: Redis): Promise<voi
                 COALESCE(best_case_cents, 0) as best_case_cents,
                 COALESCE(worst_case_cents, 0) as worst_case_cents
          FROM trade_ups
-         WHERE type = $1 AND listing_status = 'active' AND is_theoretical = 0
+         WHERE type = $1 AND listing_status = 'active' AND is_theoretical = false
          ORDER BY ${metric} DESC LIMIT 1`,
         [type],
       );

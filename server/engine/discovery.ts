@@ -3,15 +3,16 @@ import {
   floatToCondition,
   type TradeUp,
 } from "../../shared/types.js";
-import type { DbSkinOutcome, ListingWithCollection, AdjustedListing } from "./types.js";
-import { EXCLUDED_COLLECTIONS } from "./types.js";
+import type { DbSkinOutcome, ListingWithCollection } from "./types.js";
+import { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./types.js";
 import { buildPriceCache } from "./pricing.js";
-import { getListingsForRarity, getOutcomesForCollections, getNextRarity } from "./data-load.js";
-import { addAdjustedFloat, getConditionTransitions, selectForFloatTarget, selectLowestFloat } from "./selection.js";
+import { getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./data-load.js";
+import { getConditionTransitions, selectForFloatTarget, selectLowestFloat } from "./selection.js";
 import { TradeUpStore } from "./store.js";
 import { evaluateTradeUp } from "./evaluation.js";
+import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 
-export type ProgressCallback = (msg: string, current: number, total: number) => void;
+export type DiscoveryProgressCallback = (msg: string, current: number, total: number) => void;
 
 /**
  * Float-targeted trade-up discovery.
@@ -36,7 +37,7 @@ export async function findProfitableTradeUps(
     limit?: number;
     maxPerSignature?: number;
     stattrak?: boolean;
-    onProgress?: ProgressCallback;
+    onProgress?: DiscoveryProgressCallback;
     onFlush?: (tradeUps: TradeUp[], isFirst: boolean) => void;
     existingSignatures?: Set<string>;
     deadlineMs?: number;
@@ -64,7 +65,7 @@ export async function findProfitableTradeUps(
   };
 
   /** Compute listing-combo signature. Used to skip evaluation for known combos. */
-  const sigOf = (inputs: { id: string }[]) => inputs.map(i => i.id).sort().join(",");
+  const sigOf = (inputs: { id: string }[]) => listingSig(inputs.map(i => i.id));
 
   /** Evaluate only if this listing combo is new (not in existing signatures). */
   const tryEval = async (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
@@ -81,29 +82,11 @@ export async function findProfitableTradeUps(
 
     options.onProgress?.(`Loading ${inputRarity}...`, 0, 100);
 
-    const allListings = await getListingsForRarity(pool, inputRarity, options.maxInputCost, stattrak);
+    const { allListings, allAdjusted, byCollection, byColAdj } = await loadDiscoveryData(
+      pool, inputRarity, "collection_id",
+      { maxInputCost: options.maxInputCost, stattrak }
+    );
     if (allListings.length === 0) continue;
-
-    // Pre-compute adjusted floats
-    const allAdjusted = addAdjustedFloat(allListings);
-
-    // Group by collection (original and float-adjusted)
-    const byCollection = new Map<string, ListingWithCollection[]>();
-    const byColAdj = new Map<string, AdjustedListing[]>();
-    for (const l of allAdjusted) {
-      const list = byCollection.get(l.collection_id) ?? [];
-      list.push(l);
-      byCollection.set(l.collection_id, list);
-
-      const adjList = byColAdj.get(l.collection_id) ?? [];
-      adjList.push(l);
-      byColAdj.set(l.collection_id, adjList);
-    }
-
-    // Sort adjusted listings by price within each collection (for greedy selection)
-    for (const [, list] of byColAdj) {
-      list.sort((a, b) => a.price_cents - b.price_cents);
-    }
 
     const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
     const allOutcomes = await getOutcomesForCollections(pool, allCollectionIds, outputRarity, stattrak);
@@ -291,7 +274,7 @@ export async function findProfitableTradeUps(
           }
 
           // Condition-targeted pairs: cheapest N at each condition
-          for (const cond of ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const) {
+          for (const cond of CONDITION_BOUNDS.map(c => c.name)) {
             const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
             const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
             if (condA.length >= countA && condB.length >= countB) {
@@ -406,23 +389,10 @@ export async function randomExplore(
   if (!outputRarity) return { found: 0, explored: 0, improved: 0 };
   await buildPriceCache(pool);
 
-  const allListings = await getListingsForRarity(pool, inputRarity, undefined, stattrak);
+  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+    pool, inputRarity, "collection_id", { stattrak }
+  );
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
-
-  const allAdjusted = addAdjustedFloat(allListings);
-
-  const byCollection = new Map<string, ListingWithCollection[]>();
-  const byColAdj = new Map<string, AdjustedListing[]>();
-  for (const l of allAdjusted) {
-    const list = byCollection.get(l.collection_id) ?? [];
-    list.push(l);
-    byCollection.set(l.collection_id, list);
-    const adjList = byColAdj.get(l.collection_id) ?? [];
-    adjList.push(l);
-    byColAdj.set(l.collection_id, adjList);
-  }
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
   // Collections that have outputs at the next rarity (excluding non-tradeable collections)
   const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
@@ -443,19 +413,7 @@ export async function randomExplore(
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
   // Profit-guided: weight toward collections in recent profitable trade-ups
-  const profitWeights = new Map<string, number>();
-  const { rows: profitRows } = await pool.query(`
-    SELECT tui.collection_name, COUNT(*) as cnt
-    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = $1 AND t.profit_cents > 0
-    GROUP BY tui.collection_name
-  `, [tradeUpType]);
-  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
-  const weightedPool: string[] = [];
-  for (const col of eligibleCollections) {
-    const w = Math.max(1, profitWeights.get(col) ?? 0);
-    for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
-  }
+  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType);
 
   // Index outcomes by collection
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
@@ -481,18 +439,8 @@ export async function randomExplore(
     GROUP BY trade_up_id
   `, [tradeUpType]);
   for (const row of existingRows) {
-    existingSignatures.add(row.ids.split(",").sort().join(","));
+    existingSignatures.add(listingSig(row.ids.split(",")));
   }
-
-  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-  const shuffle = <T>(arr: T[]): T[] => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
 
   let found = 0;
   let explored = 0;
@@ -550,7 +498,7 @@ export async function randomExplore(
           // Condition-pure from random collection
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
-          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const conditions = CONDITION_BOUNDS.map(c => c.name);
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 10) break;
@@ -649,10 +597,8 @@ export async function randomExplore(
           }
 
           if (bestSwapResult) {
-            const swapChance = bestSwapResult.outcomes.reduce((sum, o) =>
-              sum + (o.estimated_price_cents > bestSwapResult!.total_cost_cents ? o.probability : 0), 0);
-            const swapBest = Math.max(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
-            const swapWorst = Math.min(...bestSwapResult.outcomes.map(o => o.estimated_price_cents)) - bestSwapResult.total_cost_cents;
+            const swapChance = computeChanceToProfit(bestSwapResult.outcomes, bestSwapResult.total_cost_cents);
+            const { bestCase: swapBest, worstCase: swapWorst } = computeBestWorstCase(bestSwapResult.outcomes, bestSwapResult.total_cost_cents);
             const client = await pool.connect();
             try {
               await client.query('BEGIN');
@@ -715,7 +661,7 @@ export async function randomExplore(
       if (!inputs || inputs.length !== 10) continue;
       explored++;
 
-      const sig = inputs.map(i => i.id).sort().join(",");
+      const sig = listingSig(inputs.map(i => i.id));
       if (existingSignatures.has(sig)) continue;
 
       const usedCols = [...new Set(inputs.map(l => l.collection_id))];
@@ -726,10 +672,8 @@ export async function randomExplore(
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
-      const chanceToProfit = result.outcomes.reduce((sum, o) =>
-        sum + (o.estimated_price_cents > result.total_cost_cents ? o.probability : 0), 0);
-      const bestCase = Math.max(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
-      const worstCase = Math.min(...result.outcomes.map(o => o.estimated_price_cents)) - result.total_cost_cents;
+      const chanceToProfit = computeChanceToProfit(result.outcomes, result.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(result.outcomes, result.total_cost_cents);
 
       const client = await pool.connect();
       try {
@@ -789,22 +733,10 @@ export async function exploreWithBudget(
   if (!outputRarity) return [];
   await buildPriceCache(pool);
 
-  const allListings = await getListingsForRarity(pool, inputRarity, undefined, stattrak);
+  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+    pool, inputRarity, "collection_id", { stattrak }
+  );
   if (allListings.length === 0) return [];
-
-  const allAdjusted = addAdjustedFloat(allListings);
-  const byCollection = new Map<string, ListingWithCollection[]>();
-  const byColAdj = new Map<string, AdjustedListing[]>();
-  for (const l of allAdjusted) {
-    const list = byCollection.get(l.collection_id) ?? [];
-    list.push(l);
-    byCollection.set(l.collection_id, list);
-    const adjList = byColAdj.get(l.collection_id) ?? [];
-    adjList.push(l);
-    byColAdj.set(l.collection_id, adjList);
-  }
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
   const allCollectionIds = [...byCollection.keys()].filter(id => !EXCLUDED_COLLECTIONS.has(id));
   const allOutcomes = await getOutcomesForCollections(pool, allCollectionIds, outputRarity, stattrak);
@@ -821,19 +753,7 @@ export async function exploreWithBudget(
   };
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
-  const profitWeights = new Map<string, number>();
-  const { rows: profitRows } = await pool.query(`
-    SELECT tui.collection_name, COUNT(*) as cnt
-    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
-    WHERE t.type = $1 AND t.profit_cents > 0
-    GROUP BY tui.collection_name
-  `, [tradeUpType]);
-  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
-  const weightedPool: string[] = [];
-  for (const col of eligibleCollections) {
-    const w = Math.max(1, profitWeights.get(col) ?? 0);
-    for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
-  }
+  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType);
 
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
   for (const o of allOutcomes) {
@@ -849,8 +769,6 @@ export async function exploreWithBudget(
     }
     return result;
   };
-
-  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -896,7 +814,7 @@ export async function exploreWithBudget(
         case 2: {
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
-          const conditions = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+          const conditions = CONDITION_BOUNDS.map(c => c.name);
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 10) break;
@@ -974,7 +892,7 @@ export async function exploreWithBudget(
 
       if (!inputs || inputs.length !== 10) continue;
 
-      const sig = inputs.map(i => i.id).sort().join(",");
+      const sig = listingSig(inputs.map(i => i.id));
       if (existingSignatures.has(sig)) continue;
 
       const usedCols = [...new Set(inputs.map(l => l.collection_id))];

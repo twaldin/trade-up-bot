@@ -10,8 +10,8 @@ import pg from "pg";
 import { floatToCondition, type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 import type { FinishData } from "./knife-data.js";
-import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./knife-data.js";
-import { evaluateKnifeTradeUp, getKnifeFinishesWithPrices } from "./knife-evaluation.js";
+import { CASE_KNIFE_MAP } from "./knife-data.js";
+import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
 import { buildPriceCache } from "./pricing.js";
 
 interface SyntheticCovert {
@@ -54,7 +54,7 @@ export async function findStaircaseTradeUps(
   const { rows: stage1Candidates } = await pool.query(`
     SELECT t.id, t.total_cost_cents, t.expected_value_cents, t.profit_cents, t.roi_percentage
     FROM trade_ups t
-    WHERE t.type = 'classified_covert' AND t.is_theoretical = 0
+    WHERE t.type = 'classified_covert' AND t.is_theoretical = false
       AND t.roi_percentage >= $1
     ORDER BY t.roi_percentage DESC
     LIMIT 5000
@@ -126,18 +126,7 @@ export async function findStaircaseTradeUps(
   }
 
   // Build knife finish cache
-  const knifeFinishCache = new Map<string, FinishData[]>();
-  const allItemTypes = new Set<string>();
-  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
-    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
-    if (caseInfo.gloveGen) {
-      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
-    }
-  }
-  for (const itemType of allItemTypes) {
-    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
-    if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
-  }
+  const knifeFinishCache = await buildKnifeFinishCache(pool);
 
   // Deduplicate by sorted stage1Ids
   const seen = new Set<string>();
@@ -230,7 +219,7 @@ async function evaluateStaircase(
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
       JOIN collections c ON sc.collection_id = c.id
-      WHERE c.name = $1 AND s.rarity = 'Covert' AND s.stattrak = 0 AND s.name NOT LIKE '★%'
+      WHERE c.name = $1 AND s.rarity = 'Covert' AND s.stattrak = false AND s.name NOT LIKE '★%'
       LIMIT 1
     `, [inp.collection]);
     const covertSkin = covertRows[0] as {
@@ -248,7 +237,7 @@ async function evaluateStaircase(
       price_cents: inp.manufacturedCostCents,
       float_value: inp.expectedFloat,
       paint_seed: null,
-      stattrak: 0,
+      stattrak: false,
       min_float: covertSkin.min_float,
       max_float: covertSkin.max_float,
       rarity: "Covert",

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import pg from "pg";
-import { priceCache, priceSources, cascadeTradeUpStatuses } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit } from "../redis.js";
@@ -49,7 +49,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   router.get("/api/trade-ups", cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
-    return "tu:" + JSON.stringify(req.query) + ((req.user as any)?.steam_id || "anon") + ((req.user as any)?.tier || "free");
+    return "tu:" + JSON.stringify(req.query) + (req.user?.steam_id || "anon") + (req.user?.tier || "free");
   }, 1800, async (req, res) => { // 30 min TTL — matches cycle time, daemon invalidates after each cycle
     const {
       sort = "profit",
@@ -95,9 +95,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const params: (string | number)[] = [];
     let paramIndex = 1;
     if (includeStale) {
-      where = `WHERE t.is_theoretical = 0 AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
+      where = `WHERE t.is_theoretical = false AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
-      where = `WHERE t.is_theoretical = 0 AND t.listing_status = 'active'`;
+      where = `WHERE t.is_theoretical = false AND t.listing_status = 'active'`;
     }
 
     // Free tier: 3-hour delay
@@ -274,7 +274,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         // Cache miss: compute and cache for all types at once (one query, amortized)
         const { rows: countRows } = await pool.query(`
           SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-          FROM trade_ups WHERE is_theoretical = 0 AND listing_status = 'active'
+          FROM trade_ups WHERE is_theoretical = false AND listing_status = 'active'
           GROUP BY type
         `);
         const counts: Record<string, { total: number; profitable: number }> = {};
@@ -299,10 +299,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
     // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
-    const tuIds = rows.map((r: any) => r.id);
+    const tuIds = rows.map((r: { id: number }) => r.id);
     const summaryByTuId = new Map<number, InputSummary>();
     if (tuIds.length > 0) {
-      const placeholders = tuIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+      const placeholders = tuIds.map((_: number, i: number) => `$${i + 1}`).join(",");
       const { rows: summaryRows } = await pool.query(
         `SELECT trade_up_id, skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`,
         tuIds
@@ -349,7 +349,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         profit_cents: row.profit_cents,
         roi_percentage: row.roi_percentage,
         created_at: row.created_at,
-        is_theoretical: row.is_theoretical === true || row.is_theoretical === 1,
+        is_theoretical: !!row.is_theoretical,
         inputs: [],
         input_summary: summary,
         outcomes: [],
@@ -369,7 +369,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     });
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    const filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
+    const filteredTradeUps = tradeUps.filter(tu => !tu.claimed_by_other);
     const removedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {
@@ -413,8 +413,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
   router.post("/api/verify-trade-up/:id", async (req, res) => {
     // Verify requires authentication (basic+ tier)
-    const userId = (req.user as any)?.steam_id;
-    const userTier = (req.user as any)?.tier || "free";
+    const userId = req.user?.steam_id;
+    const userTier = req.user?.tier || "free";
     if (!userId || userTier === "free") {
       res.status(403).json({ error: "Verify requires Basic or Pro plan" });
       return;
@@ -522,7 +522,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           if (existRows.length === 0) {
             await pool.query(`
               INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, created_at, source, listing_type, staleness_checked_at, price_updated_at)
-              VALUES ($1, $2, $3, $4, 0, NOW(), 'dmarket', 'buy_now', NOW(), NOW())
+              VALUES ($1, $2, $3, $4, false, NOW(), 'dmarket', 'buy_now', NOW(), NOW())
               ON CONFLICT (id) DO NOTHING
             `, [input.listing_id, input.skin_id, currentPrice ?? input.price_cents, input.float_value]);
           } else {
@@ -775,11 +775,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         else claimedIds.add(r.listing_id);
       }
     }
-    for (const inp of inputs) {
-      if (missingIds.has(inp.listing_id)) (inp as any).missing = true;
-      if (claimedIds.has(inp.listing_id)) (inp as any).claimed_by_other = true;
-    }
-    res.json({ inputs });
+    const enrichedInputs = inputs.map(inp => ({
+      ...inp,
+      ...(missingIds.has(inp.listing_id) ? { missing: true } : {}),
+      ...(claimedIds.has(inp.listing_id) ? { claimed_by_other: true } : {}),
+    }));
+    res.json({ inputs: enrichedInputs });
   }));
 
   // Load outcomes on-demand (not included in list response to save bandwidth)
@@ -810,14 +811,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     `, [skin_name, condition]);
 
     // Listing floor
-    const condBounds: Record<string, { min: number; max: number }> = {
-      "Factory New": { min: 0.0, max: 0.07 },
-      "Minimal Wear": { min: 0.07, max: 0.15 },
-      "Field-Tested": { min: 0.15, max: 0.38 },
-      "Well-Worn": { min: 0.38, max: 0.45 },
-      "Battle-Scarred": { min: 0.45, max: 1.0 },
-    };
-    const bounds = condBounds[condition];
+    const bounds = CONDITION_BOUNDS.find(b => b.name === condition);
     let listings: any[] = [];
     if (bounds) {
       const { rows } = await pool.query(`
@@ -862,7 +856,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const stats: Record<string, { listings: number; sales: number; sources: string[] }> = {};
     for (const name of skins.slice(0, 100)) {
       const { rows: [listingRow] } = await pool.query(
-        "SELECT COUNT(*) as c FROM listings WHERE skin_id IN (SELECT id FROM skins WHERE name = $1) AND stattrak = 0",
+        "SELECT COUNT(*) as c FROM listings WHERE skin_id IN (SELECT id FROM skins WHERE name = $1) AND stattrak = false",
         [name]
       );
       const { rows: [saleRow] } = await pool.query(

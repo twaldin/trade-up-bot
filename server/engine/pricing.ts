@@ -6,13 +6,10 @@ import { CONDITION_BOUNDS, type PriceAnchor } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
 import { knnOutputPriceAtFloat } from "./knn-pricing.js";
 
-const CONDITION_MIDPOINTS: { name: string; mid: number }[] = [
-  { name: "Factory New", mid: 0.035 },
-  { name: "Minimal Wear", mid: 0.11 },
-  { name: "Field-Tested", mid: 0.265 },
-  { name: "Well-Worn", mid: 0.415 },
-  { name: "Battle-Scarred", mid: 0.725 },
-];
+const CONDITION_MIDPOINTS = CONDITION_BOUNDS.map(b => ({
+  name: b.name,
+  mid: (b.min + b.max) / 2,
+}));
 
 export const priceCache = new Map<string, number>();
 export const priceSources = new Map<string, string>(); // key → source label
@@ -26,77 +23,68 @@ const conditionPricesCache = new Map<string, PriceAnchor[]>();
 let priceCacheBuiltAt = 0;
 const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Rebuild price cache. Skips if already built within TTL unless force=true. */
-export async function buildPriceCache(pool: pg.Pool, force = false) {
-  if (!force && priceCacheBuilt && Date.now() - priceCacheBuiltAt < PRICE_CACHE_TTL_MS) {
-    return; // Cache is fresh, skip rebuild
-  }
-  priceCache.clear();
-  priceSources.clear();
-  dmarketFloorCache.clear();
-  skinportFloorCache.clear();
-  conditionPricesCache.clear();
+// Module-level ref price map shared between loadCsfloatRefPrices and overrideWithListingFloors/fillKnifeLastResort
+let _refPrice = new Map<string, number>();
 
-  const condBounds = [
-    { name: "Factory New", min: 0.0, max: 0.07 },
-    { name: "Minimal Wear", min: 0.07, max: 0.15 },
-    { name: "Field-Tested", min: 0.15, max: 0.38 },
-    { name: "Well-Worn", min: 0.38, max: 0.45 },
-    { name: "Battle-Scarred", min: 0.45, max: 1.0 },
-  ];
-
-  // Step 1: CSFloat sale history median prices
-  // Step 1: CSFloat ref prices FIRST (conservative condition-level averages, high volume).
-  // Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
-  // Ref is the better estimate for "average price at this condition".
-  let salesCount = 0;
-  const { rows: refRows2 } = await pool.query(`
+/** Step 1: Load CSFloat ref prices (conservative condition-level averages, high volume).
+ *  Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
+ *  Ref is the better estimate for "average price at this condition". */
+async function loadCsfloatRefPrices(pool: pg.Pool): Promise<{ cached: number; totalRows: number }> {
+  let cached = 0;
+  const { rows } = await pool.query(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_ref' AND volume >= 3
   `);
-  for (const row of refRows2) {
+  for (const row of rows) {
     const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
     if (price > 0) {
       const k = `${row.skin_name}:${row.condition}`;
       priceCache.set(k, price);
       priceSources.set(k, `csfloat_ref (${row.volume} vol)`);
-      salesCount++;
+      cached++;
     }
   }
+  return { cached, totalRows: rows.length };
+}
 
-  // Step 1b: CSFloat sales fill gaps where ref doesn't exist
-  const { rows: salesRows } = await pool.query(`
+/** Step 1b: CSFloat sales fill gaps where ref doesn't exist. */
+async function fillCsfloatSalesGaps(pool: pg.Pool): Promise<number> {
+  let count = 0;
+  const { rows } = await pool.query(`
     SELECT skin_name, condition, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_sales'
   `);
-  for (const row of salesRows) {
+  for (const row of rows) {
     if (row.median_price_cents > 0 && row.volume >= 2) {
       const k = `${row.skin_name}:${row.condition}`;
       if (!priceCache.has(k)) {
         priceCache.set(k, row.median_price_cents);
         priceSources.set(k, `csfloat_sales (${row.volume} sales)`);
-        salesCount++;
+        count++;
       }
     }
   }
+  return count;
+}
 
-  // Step 1b: Lowest Covert listings per condition — use min(sale_median, lowest_listing)
-  // Always prefer the lower estimate to avoid inflated EV calculations
-  let listingOverrides = 0;
-  let listingFills = 0;
+/** Step 1c: Override with listing floors where lower, fill Covert gaps from listings.
+ *  Builds per-condition reference price map for outlier detection, shared with fillKnifeLastResort. */
+async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: number; fills: number }> {
+  let overrides = 0;
+  let fills = 0;
 
   // Build per-condition reference price from price_data to detect outlier listings
   // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150)
-  const refPrice = new Map<string, number>();
+  _refPrice = new Map<string, number>();
   const { rows: refRows } = await pool.query(`
     SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE median_price_cents END) as ref
     FROM price_data WHERE (min_price_cents > 0 OR median_price_cents > 0)
       AND source IN ('csfloat_sales', 'csfloat_ref')
     GROUP BY skin_name, condition
   `);
-  for (const r of refRows) if (r.ref > 0) refPrice.set(`${r.skin_name}:${r.condition}`, r.ref);
+  for (const r of refRows) if (r.ref > 0) _refPrice.set(`${r.skin_name}:${r.condition}`, r.ref);
 
-  for (const cond of condBounds) {
+  for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`
       SELECT s.name, s.rarity, MIN(l.price_cents) as lowest_price, COUNT(*) as cnt
       FROM listings l JOIN skins s ON l.skin_id = s.id
@@ -109,7 +97,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
       // Filter out outlier listings: >5x the per-condition reference price
-      const ref = refPrice.get(`${row.name}:${cond.name}`);
+      const ref = _refPrice.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
@@ -120,31 +108,26 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
         if (row.lowest_price < existing) {
           priceCache.set(key, row.lowest_price);
           priceSources.set(key, `listing floor (${row.cnt} listings, lower than ${priceSources.get(key)})`);
-          listingOverrides++;
+          overrides++;
         }
       } else if (row.rarity === "Covert" && parseInt(row.cnt, 10) >= 3) {
         // For Covert inputs with decent listing depth: fill from listings
         priceCache.set(key, row.lowest_price);
         priceSources.set(key, `listing floor (${row.cnt} listings)`);
-        listingFills++;
+        fills++;
       }
       // For Extraordinary (knives/gloves): don't fill from listings alone —
       // let ref/steam/skinport prices fill first (listings can be inflated by rare patterns)
     }
   }
+  return { overrides, fills };
+}
 
-  // Step 2: Ref already loaded in Step 1. Count for logging.
-  const csfloatRefCount = refRows2.length;
-
-  // CSFloat-only output pricing. No DMarket/Steam/Skinport gap-fill.
-  // CSFloat ref + sales + listing floors are the only trusted sources.
-  // Coverage builds naturally as listing API cycles through all rarities.
-  const steamPriceCount = 0;
-  const skinportPriceCount = 0;
-
-  // Step 3: Fill remaining gaps from listings (last resort for knives/gloves)
-  let listingLastResort = 0;
-  for (const cond of condBounds) {
+/** Step 3: Fill remaining gaps from listings (last resort for knives/gloves). */
+async function fillKnifeLastResort(pool: pg.Pool): Promise<{ lastResort: number; overrides: number }> {
+  let lastResort = 0;
+  let overrides = 0;
+  for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`
       SELECT s.name, MIN(l.price_cents) as lowest_price
       FROM listings l JOIN skins s ON l.skin_id = s.id
@@ -157,7 +140,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
 
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
-      const ref = refPrice.get(`${row.name}:${cond.name}`);
+      const ref = _refPrice.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
@@ -165,19 +148,22 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
       if (existing === undefined) {
         priceCache.set(key, row.lowest_price);
         priceSources.set(key, `knife listing floor`);
-        listingLastResort++;
+        lastResort++;
       } else if (row.lowest_price < existing) {
         priceCache.set(key, row.lowest_price);
         priceSources.set(key, `knife listing floor (lower than ${priceSources.get(key)})`);
-        listingOverrides++;
+        overrides++;
       }
     }
   }
+  return { lastResort, overrides };
+}
 
-  // Step 4: Condition extrapolation for ★ items — fill missing conditions from adjacent known ones
-  // Uses conservative ratios: 0.85x stepping down (worse condition), 1.0x stepping up (no FN premium assumed)
+/** Step 4: Condition extrapolation for ★ items — fill missing conditions from adjacent known ones.
+ *  Uses conservative ratios: 0.85x stepping down (worse condition), 1.15x stepping up. */
+function extrapolateKnifeConditions(): number {
   let knifeExtrapolated = 0;
-  const condOrder = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+  const condOrder = CONDITION_BOUNDS.map(c => c.name);
   const STEP_DOWN = 0.85; // conservative discount for worse condition
   const STEP_UP = 1.15;   // conservative FN premium over MW (real premiums often 2-10x)
 
@@ -222,28 +208,41 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
       }
     }
   }
+  return knifeExtrapolated;
+}
 
+/** Rebuild price cache. Skips if already built within TTL unless force=true. */
+export async function buildPriceCache(pool: pg.Pool, force = false) {
+  if (!force && priceCacheBuilt && Date.now() - priceCacheBuiltAt < PRICE_CACHE_TTL_MS) {
+    return; // Cache is fresh, skip rebuild
+  }
+  priceCache.clear();
+  priceSources.clear();
+  dmarketFloorCache.clear();
+  skinportFloorCache.clear();
+  conditionPricesCache.clear();
+
+  const { cached: refCached, totalRows: csfloatRefCount } = await loadCsfloatRefPrices(pool);
+  const salesGapFills = await fillCsfloatSalesGaps(pool);
+  const salesCount = refCached + salesGapFills;
+  const { overrides: listingOverrides1, fills: listingFills } = await overrideWithListingFloors(pool);
+  const { lastResort: listingLastResort, overrides: listingOverrides2 } = await fillKnifeLastResort(pool);
+  const listingOverrides = listingOverrides1 + listingOverrides2;
+  const knifeExtrapolated = extrapolateKnifeConditions();
   await buildSourceFloorCaches(pool);
-  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, ${steamPriceCount} steam, ${skinportPriceCount} skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
+
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
+  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, 0 steam, 0 skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
 }
 
 async function buildSourceFloorCaches(pool: pg.Pool) {
   dmarketFloorCache.clear();
   skinportFloorCache.clear();
 
-  const condBounds = [
-    { name: "Factory New", min: 0.0, max: 0.07 },
-    { name: "Minimal Wear", min: 0.07, max: 0.15 },
-    { name: "Field-Tested", min: 0.15, max: 0.38 },
-    { name: "Well-Worn", min: 0.38, max: 0.45 },
-    { name: "Battle-Scarred", min: 0.45, max: 1.0 },
-  ];
-
   for (const source of ["dmarket", "skinport"] as const) {
     const cache = source === "dmarket" ? dmarketFloorCache : skinportFloorCache;
-    for (const cond of condBounds) {
+    for (const cond of CONDITION_BOUNDS) {
       // Require 2+ listings for floor price — single listings are unreliable
       // (collector prices, mispriced items, etc.)
       const { rows } = await pool.query(`
@@ -332,35 +331,17 @@ export async function lookupOutputPrice(
     }
   }
 
-  // CSFloat: use the full price cache (sales + ref + extrapolation)
+  // CSFloat-only output pricing. No DMarket/Skinport gap-fill — both overestimate.
+  // If CSFloat has no data, price stays 0 (conservative: unpriced outcome = $0).
   const csfloatGross = lookupPrice(pool, skinName, predictedFloat);
   const csfloatNet = csfloatGross > 0 ? effectiveSellProceeds(csfloatGross, "csfloat") : 0;
 
-  // DMarket: use listing floor for NON-knife skins only.
-  // Knife/glove skins excluded (thin liquidity, collector outliers).
-  // Commodity gun skins have many DMarket listings — floor is reliable.
-  const isKnife = skinName.startsWith("★");
-  const dmGross = isKnife ? 0 : (dmarketFloorCache.get(`${skinName}:${condition}`) ?? 0);
-  const dmNet = dmGross > 0 ? effectiveSellProceeds(dmGross, "dmarket") : 0;
-
-  // Skinport: listing floor only (skip for StatTrak — unreliable thin-volume data)
-  const isStatTrak = skinName.startsWith("StatTrak");
-  const spGross = isStatTrak ? 0 : (skinportFloorCache.get(`${skinName}:${condition}`) ?? 0);
-  const spNet = spGross > 0 ? effectiveSellProceeds(spGross, "skinport") : 0;
-
-  // CSFloat price cache (sales + ref) is the primary source — highest volume, most reliable.
-  // DMarket/Skinport floors only used to FILL GAPS when CSFloat has no data for this skin+condition.
-  // This prevents low-volume Skinport outliers ($471, 5 vol) from overriding CSFloat sales ($210, 40 vol).
-  let best: OutputPriceResult = {
+  return {
     priceCents: csfloatNet,
     marketplace: "csfloat",
     grossPrice: csfloatGross,
     feePct: MARKETPLACE_FEES.csfloat.sellerFee,
   };
-
-  // CSFloat-only output pricing. No DMarket/Skinport gap-fill — both overestimate.
-  // If CSFloat has no data, price stays 0 (conservative: unpriced outcome = $0).
-  return best;
 }
 
 export async function getConditionPrices(
@@ -371,7 +352,7 @@ export async function getConditionPrices(
   if (cached !== undefined) return cached;
 
   const { rows: skinInfoRows } = await pool.query(
-    `SELECT min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1`,
+    `SELECT min_float, max_float FROM skins WHERE name = $1 AND stattrak = false LIMIT 1`,
     [skinName]
   );
   const skinInfo = skinInfoRows[0] as { min_float: number; max_float: number } | undefined;

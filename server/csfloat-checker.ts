@@ -107,7 +107,7 @@ async function buildCheckQueue(pool: pg.Pool, maxSize: number): Promise<QueueLis
       SELECT DISTINCT tui.listing_id
       FROM trade_up_inputs tui
       JOIN trade_ups tu ON tui.trade_up_id = tu.id
-      WHERE tu.profit_cents > 0 AND tu.is_theoretical = 0
+      WHERE tu.profit_cents > 0 AND tu.is_theoretical = false
     )
     SELECT l.id, l.skin_id, l.price_cents, l.float_value, s.name as skin_name, l.phase
     FROM listings l

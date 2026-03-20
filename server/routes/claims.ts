@@ -93,69 +93,60 @@ export function claimsRouter(pool: pg.Pool): Router {
   const router = Router();
 
   // Auto-expire: release claims past their expires_at and clear claimed_by on listings
+  // Uses FOR UPDATE SKIP LOCKED to prevent double-processing with daemon
   async function releaseExpiredClaims() {
-    const { rows: expired } = await pool.query(
-      "SELECT id, trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at <= NOW()"
-    );
-
-    if (expired.length === 0) return;
-
     const client = await pool.connect();
+    let expired: { id: number; trade_up_id: number; user_id: string }[] = [];
     try {
       await client.query('BEGIN');
 
-      const affectedTuIds = new Set<number>();
+      const { rows } = await client.query(
+        "SELECT id, trade_up_id, user_id FROM trade_up_claims WHERE released_at IS NULL AND expires_at <= NOW() FOR UPDATE SKIP LOCKED"
+      );
+      expired = rows;
 
-      for (const claim of expired) {
-        const { rows: listings } = await client.query(
-          "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
-          [claim.trade_up_id]
-        );
-        for (const { listing_id } of listings) {
+      if (expired.length > 0) {
+        for (const claim of expired) {
+          const { rows: listings } = await client.query(
+            "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+            [claim.trade_up_id]
+          );
+          for (const { listing_id } of listings) {
+            await client.query(
+              "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
+              [listing_id, claim.user_id]
+            );
+          }
           await client.query(
-            "UPDATE listings SET claimed_by = NULL, claimed_at = NULL WHERE id = $1 AND claimed_by = $2",
-            [listing_id, claim.user_id]
+            "UPDATE trade_up_claims SET released_at = NOW() WHERE id = $1",
+            [claim.id]
           );
-        }
-        await client.query(
-          "UPDATE trade_up_claims SET released_at = NOW() WHERE id = $1",
-          [claim.id]
-        );
-        affectedTuIds.add(claim.trade_up_id);
-        // Also find other trade-ups sharing these listings
-        for (const { listing_id } of listings) {
-          const { rows: others } = await client.query(
-            "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = $1",
-            [listing_id]
-          );
-          for (const { trade_up_id } of others) affectedTuIds.add(trade_up_id);
         }
       }
 
       await client.query('COMMIT');
-
-      // Cascade status — unclaimed listings may restore trade-ups to active
-      if (affectedTuIds.size > 0) {
-        // Collect all listing IDs from expired claims for cascade
-        const allListingIds: string[] = [];
-        for (const claim of expired) {
-          const { rows: ls } = await pool.query(
-            "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
-            [claim.trade_up_id]
-          );
-          for (const { listing_id } of ls) {
-            if (!listing_id.startsWith("theor")) allListingIds.push(listing_id);
-          }
-        }
-        if (allListingIds.length > 0) {
-          await cascadeTradeUpStatuses(pool, allListingIds);
-        }
-      }
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
+    }
+
+    if (expired.length === 0) return;
+
+    // Cascade status — unclaimed listings may restore trade-ups to active
+    const allListingIds: string[] = [];
+    for (const claim of expired) {
+      const { rows: ls } = await pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [claim.trade_up_id]
+      );
+      for (const { listing_id } of ls) {
+        if (!listing_id.startsWith("theor")) allListingIds.push(listing_id);
+      }
+    }
+    if (allListingIds.length > 0) {
+      await cascadeTradeUpStatuses(pool, allListingIds);
     }
   }
 

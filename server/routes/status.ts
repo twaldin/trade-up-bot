@@ -15,11 +15,11 @@ export function statusRouter(pool: pg.Pool): Router {
       const { rows: [r] } = await pool.query(`
         SELECT COUNT(l.id) as total_listings, COUNT(DISTINCT s.name) as skins_with_listings
         FROM listings l JOIN skins s ON l.skin_id = s.id
-        WHERE s.rarity = $1 AND s.stattrak = 0 ${knifeFilter}
+        WHERE s.rarity = $1 AND s.stattrak = false ${knifeFilter}
       `, [rarity]);
       const knifeFilterNoAlias = excludeKnives ? "AND name NOT LIKE '★%'" : "";
       const { rows: [totalRow] } = await pool.query(
-        `SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = $1 AND stattrak = 0 ${knifeFilterNoAlias}`,
+        `SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = $1 AND stattrak = false ${knifeFilterNoAlias}`,
         [rarity]
       );
       return { listings: parseInt(r.total_listings), skins: parseInt(r.skins_with_listings), total: parseInt(totalRow.c) };
@@ -51,7 +51,7 @@ export function statusRouter(pool: pg.Pool): Router {
             SUM(CASE WHEN listing_status = 'active' THEN 1 ELSE 0 END) as active,
             SUM(CASE WHEN listing_status = 'partial' THEN 1 ELSE 0 END) as partial,
             SUM(CASE WHEN listing_status = 'stale' THEN 1 ELSE 0 END) as stale
-          FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = 0
+          FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = false
         `);
         return {
           cnt: parseInt(row.cnt) || 0,
@@ -114,7 +114,7 @@ export function statusRouter(pool: pg.Pool): Router {
       })(),
       ref_coverage: null,
       total_skins: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = 0");
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = false");
         return parseInt(r.c);
       })(),
       total_listings: await (async () => {
@@ -122,15 +122,15 @@ export function statusRouter(pool: pg.Pool): Router {
         return parseInt(r.c);
       })(),
       knife_glove_skins: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = 0");
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = false");
         return parseInt(r.c);
       })(),
       knife_glove_with_listings: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = 0");
+        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = false");
         return parseInt(r.c);
       })(),
       knife_glove_listings: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = 0");
+        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = false");
         return parseInt(r.c);
       })(),
       collection_count: await (async () => {
@@ -162,8 +162,8 @@ export function statusRouter(pool: pg.Pool): Router {
     try {
       const { rows: [stats] } = await pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
-          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
+          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
+          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
           (SELECT COUNT(*) FROM listings) as listings,
           (SELECT COUNT(*) FROM price_observations) as sale_obs,
           (SELECT COUNT(*) FROM sale_history) as sale_hist,

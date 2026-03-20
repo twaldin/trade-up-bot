@@ -78,8 +78,8 @@ export async function syncSkinData(pool: pg.Pool) {
           s.min_float ?? 0.0,
           s.max_float ?? 1.0,
           rarity,
-          s.stattrak ? 1 : 0,
-          s.souvenir ? 1 : 0,
+          !!s.stattrak,
+          !!s.souvenir,
           s.image ?? null,
         ]
       );

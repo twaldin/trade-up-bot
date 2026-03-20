@@ -23,7 +23,7 @@ function makeInput(overrides: Partial<ListingWithCollection> = {}): ListingWithC
     price_cents: 500,
     float_value: 0.15,
     paint_seed: null,
-    stattrak: 0,
+    stattrak: false,
     min_float: 0.0,
     max_float: 1.0,
     rarity: "Classified",

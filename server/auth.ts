@@ -31,7 +31,7 @@ class SqliteSessionStore extends session.Store {
   }
   set(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
     try {
-      const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+      const maxAge = sess.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
       this.sessionDb.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
       cb?.();
@@ -42,7 +42,7 @@ class SqliteSessionStore extends session.Store {
   }
   touch(sid: string, sess: session.SessionData, cb?: (err?: any) => void) {
     try {
-      const maxAge = (sess as any)?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+      const maxAge = sess.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
       this.sessionDb.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
@@ -76,9 +76,17 @@ declare global {
   }
 }
 
+// Extend express-session with custom fields
+declare module "express-session" {
+  interface SessionData {
+    returnTo?: string;
+    discordState?: string;
+  }
+}
+
 export function isAdmin(user: Express.User | User | undefined): boolean {
   if (!user) return false;
-  return (user as any).is_admin === 1 || (user as any).is_admin === true;
+  return !!user.is_admin;
 }
 
 // Module-level ref to the user cache inside setupAuth (set during init)
@@ -111,7 +119,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       display_name TEXT,
       avatar_url TEXT,
       tier TEXT NOT NULL DEFAULT 'free',
-      is_admin INTEGER NOT NULL DEFAULT 0,
+      is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -125,10 +133,10 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
     );
     if (!cols.find((c: { column_name: string }) => c.column_name === "is_admin")) {
-      await pool.query("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+      await pool.query("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT false");
     }
     if (adminSteamId) {
-      await pool.query("UPDATE users SET is_admin = 1 WHERE steam_id = $1", [adminSteamId]);
+      await pool.query("UPDATE users SET is_admin = true WHERE steam_id = $1", [adminSteamId]);
       await pool.query("UPDATE users SET tier = 'pro' WHERE steam_id = $1 AND tier = 'admin'", [adminSteamId]);
     }
   } catch (e: unknown) {
@@ -213,7 +221,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       const avatar = profile.photos?.[2]?.value || profile.photos?.[0]?.value || "";
 
       // Upsert user — set is_admin flag if ADMIN_STEAM_ID matches
-      const isAdminUser = steamId === adminSteamId ? 1 : 0;
+      const isAdminUser = steamId === adminSteamId;
 
       pool.query(`
         INSERT INTO users (steam_id, display_name, avatar_url, is_admin, last_login_at)
@@ -237,7 +245,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     // Auth routes
     app.get("/auth/steam", (req, res, next) => {
       // Save return URL so we can redirect back after auth
-      if (req.query.return) (req.session as any).returnTo = req.query.return as string;
+      if (req.query.return) req.session.returnTo = req.query.return as string;
       passport.authenticate("steam")(req, res, next);
     });
     app.get("/auth/steam/callback", (req, res, next) => {
@@ -254,8 +262,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             return res.redirect("/?auth=failed");
           }
           console.log(`Steam login: ${user.display_name} (${user.steam_id})`);
-          const returnTo = (req.session as any).returnTo || "/";
-          delete (req.session as any).returnTo;
+          const returnTo = req.session.returnTo || "/";
+          delete req.session.returnTo;
           res.redirect(returnTo);
         });
       })(req, res, next);

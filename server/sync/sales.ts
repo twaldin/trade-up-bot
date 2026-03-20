@@ -66,7 +66,7 @@ export async function syncSaleHistory(
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
     JOIN skin_collections sc ON s.id = sc.skin_id
-    WHERE s.rarity = 'Covert' AND s.stattrak = 0
+    WHERE s.rarity = 'Covert' AND s.stattrak = false
       AND sc.collection_id IN (
         SELECT DISTINCT sc2.collection_id
         FROM skins s2
@@ -287,7 +287,7 @@ export async function syncStatTrakSaleHistory(
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
     JOIN skin_collections sc ON s.id = sc.skin_id
-    WHERE s.rarity = 'Covert' AND s.stattrak = 1
+    WHERE s.rarity = 'Covert' AND s.stattrak = true
       AND sc.collection_id IN (
         SELECT DISTINCT sc2.collection_id
         FROM skins s2
@@ -488,7 +488,7 @@ export async function syncSaleHistoryForRarity(
   const { rows: skins } = await pool.query(`
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
-    WHERE s.rarity = $1 AND s.stattrak = 0
+    WHERE s.rarity = $1 AND s.stattrak = false
     ORDER BY s.name
   `, [rarity]) as { rows: { name: string; min_float: number; max_float: number }[] };
 
@@ -680,24 +680,16 @@ export async function syncKnifeGloveSaleHistory(
   const { rows: skins } = await pool.query(`
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
-    WHERE s.stattrak = 0
+    WHERE s.stattrak = false
       AND (s.weapon LIKE '%Knife%' OR s.weapon LIKE '%Bayonet%'
         OR s.weapon LIKE '%Gloves%' OR s.weapon LIKE '%Wraps%'
         OR s.weapon = 'Shadow Daggers')
     ORDER BY s.name
   `) as { rows: { name: string; min_float: number; max_float: number }[] };
 
-  const condBounds = [
-    { name: "Factory New", min: 0.0, max: 0.07 },
-    { name: "Minimal Wear", min: 0.07, max: 0.15 },
-    { name: "Field-Tested", min: 0.15, max: 0.38 },
-    { name: "Well-Worn", min: 0.38, max: 0.45 },
-    { name: "Battle-Scarred", min: 0.45, max: 1.0 },
-  ];
-
   const pairs: { skinName: string; condition: string; marketHashName: string }[] = [];
   for (const skin of skins) {
-    for (const cond of condBounds) {
+    for (const cond of CONDITION_FROM_FLOAT) {
       if (skin.min_float >= cond.max || skin.max_float <= cond.min) continue;
       pairs.push({
         skinName: skin.name,
