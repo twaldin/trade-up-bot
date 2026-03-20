@@ -44,7 +44,7 @@ const DEFAULT_INTERVAL_MS = 1700; // ~35/min
 const QUEUE_SIZE = 2000;
 const QUEUE_REBUILD_INTERVAL_MS = 30 * 60 * 1000; // 30 min
 const VERIFY_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min
-const CASCADE_BATCH_SIZE = 50;
+const CASCADE_BATCH_SIZE = 1; // Cascade immediately — no window where listing is gone but trade-up still 'active'
 
 function log(msg: string) {
   const line = `[${new Date().toISOString().replace("T", " ").slice(0, 19)}] ${msg}`;
