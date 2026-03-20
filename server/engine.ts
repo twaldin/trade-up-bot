@@ -26,7 +26,7 @@ export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/co
 
 // === Pricing ===
 export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
-export { clearKnnCache, knnOutputPriceAtFloat } from "./engine/knn-pricing.js";
+export { clearKnnCache, knnOutputPriceAtFloat, clearLearnedCache } from "./engine/knn-pricing.js";
 
 // === Observation Management ===
 export {
