@@ -134,7 +134,8 @@ export const CASE_KNIFE_MAP: Record<string, CaseMapping> = {
   "The Recoil Collection":             { knifeTypes: [], knifeFinishes: [], gloveGen: 3 },
 
   // Gen 4 gloves (Dead Hand Terminal -- Driver, Specialist, Sport)
-  "The Dead Hand Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: 4 },
+  // TEMP: gloveGen null until CSFloat has sale/ref data for Gen 4 gloves (collection too new)
+  "The Dead Hand Collection":          { knifeTypes: [], knifeFinishes: [], gloveGen: null },
 };
 
 // Doppler/Gamma Doppler phase weights (probability of each phase when traded up)
