@@ -112,8 +112,8 @@ async function buildCheckQueue(pool: pg.Pool, maxSize: number): Promise<QueueLis
     SELECT l.id, l.skin_id, l.price_cents, l.float_value, s.name as skin_name, l.phase
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
-    WHERE l.source = 'csfloat'
     LEFT JOIN profitable_listings pl ON l.id = pl.listing_id
+    WHERE l.source = 'csfloat'
     ORDER BY
       CASE WHEN pl.listing_id IS NOT NULL THEN 0 ELSE 1 END,
       COALESCE(l.staleness_checked_at, '2000-01-01'::timestamptz) ASC
@@ -203,8 +203,8 @@ async function main() {
     let queue: QueueListing[];
     try {
       queue = await buildCheckQueue(pool, QUEUE_SIZE);
-    } catch {
-      log("  DB error during queue build — waiting 10s");
+    } catch (err) {
+      log(`  DB error during queue build: ${(err as Error).message?.slice(0, 200)} — waiting 10s`);
       await new Promise(r => setTimeout(r, 10_000));
       continue;
     }
