@@ -194,7 +194,7 @@ export async function main() {
   console.log(`[${timestamp()}] Trade-Up Daemon started (time-bounded engine)`);
   console.log(`  Phases: Housekeeping -> Probe -> Fetch -> Time-Bounded Engine (structured + deep exploration)`);
   console.log(`  Rate limits (2 pools, individual managed by csfloat-checker):`);
-  console.log(`    Listing search: 200/~30min | Sale history: 500/~12h`);
+  console.log(`    Listing search: 200/~1h | Sale history: 500/~24h`);
   console.log(`  Data sources: CSFloat API${isDMarketConfigured() ? " + DMarket API" : ""} + Skinport WebSocket`);
   console.log(`  Worker time limit: ${MIN_WORKER_TIME / 1000}s-${MAX_WORKER_TIME / 1000}s per worker (dynamic), 2 workers per round`);
 

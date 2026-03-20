@@ -2,14 +2,14 @@
  * Daemon state: API budget tracking and data freshness.
  *
  * CSFloat has THREE separate rate limits:
- *   - Listings: 200 per ~30min rolling window (separate pool)
- *   - Sale history: 500 per ~12h window (separate pool)
- *   - Individual: 50,000 per ~12h window (separate pool)
+ *   - Listings: 200 per ~1h rolling window (separate pool)
+ *   - Sale history: 500 per ~24h window (separate pool)
+ *   - Individual: 50,000 per ~24h window (separate pool)
  * They're independent — one can be rate limited while the other has budget.
  *
  * CRITICAL: If any pool hits 0 remaining, ALL pools get locked behind a
- * shared ~12h reset (verified 2026-03-12). We MUST keep a safety buffer
- * to stay in rolling replenishment mode and avoid the 12h lockout.
+ * shared ~24h reset (verified 2026-03-20). We MUST keep a safety buffer
+ * to stay in rolling replenishment mode and avoid the 24h lockout.
  *
  * Budget pacing: instead of burning the entire listing pool in one cycle,
  * we drip-feed calls across cycles to maximize discovery frequency.
@@ -17,17 +17,17 @@
  * proportional to (cycleDuration / timeUntilReset).
  */
 
-const DEFAULT_SALE_BUDGET = 190; // 500 pool / 12h window. Probe detects actual remaining.
+const DEFAULT_SALE_BUDGET = 190; // 500 pool / 24h window. Probe detects actual remaining.
 const DEFAULT_LISTING_BUDGET = 180; // Conservative buffer from ~200 listing limit
 
-/** Safety buffers — never let remaining drop below these to avoid 12h lockout */
+/** Safety buffers — never let remaining drop below these to avoid 24h lockout */
 const LISTING_SAFETY_BUFFER = 5;
 const SALE_SAFETY_BUFFER = 30;
 const INDIVIDUAL_SAFETY_BUFFER = 100; // 50K pool, 0.2% margin — maximizes staleness throughput
 
 /** Target total cycle duration — at 1M trade-ups, Phase 4b recalc takes ~10 min.
  *  30 min syncs with Basic tier delay (users see "one cycle ago" data).
- *  Listing pool (200/~30min) means ~1 cycle per reset → ~185 calls/cycle. */
+ *  Listing pool (200/~1h) means ~2 cycles per reset → ~95 calls/cycle. */
 export const TARGET_CYCLE_MS = 30 * 60 * 1000;    // 30 min — matches Basic tier delay
 export const MIN_COOLDOWN_MS = 30 * 1000;          // 30s minimum
 export const MAX_COOLDOWN_MS = 30 * 60 * 1000;     // 30 min cap
@@ -37,10 +37,10 @@ export const IDLE_COOLDOWN_MS = 15 * 60 * 1000;    // 15 min when no API budget 
 export const ESTIMATED_CYCLE_MS = 30 * 60 * 1000;
 
 export class BudgetTracker {
-  /** Sale history calls (500-limit endpoint, ~12h window) */
+  /** Sale history calls (500-limit endpoint, ~24h window) */
   private saleUsed = 0;
   private saleBudget: number;
-  /** Listing calls (200-limit endpoint, ~30min window) */
+  /** Listing calls (200-limit endpoint, ~1h window) */
   private listingUsed = 0;
   private listingBudget: number;
   /** Individual lookup calls (50K-limit endpoint, ~24h window) */
@@ -171,8 +171,8 @@ export class BudgetTracker {
 
   /**
    * Calculate sale history calls to use THIS cycle.
-   * Sale pool is 500/12h so we're less aggressive with pacing.
-   * Respects safety buffer to avoid 12h lockout.
+   * Sale pool is 500/24h so we're less aggressive with pacing.
+   * Respects safety buffer to avoid 24h lockout.
    */
   cycleSaleBudget(cycleDurationMs: number = ESTIMATED_CYCLE_MS): number {
     const usable = this.saleUsable;

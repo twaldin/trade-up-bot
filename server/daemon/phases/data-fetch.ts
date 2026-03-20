@@ -81,7 +81,7 @@ export async function phase3ApiProbe(
   if (probe.listingSearch.available) {
     const remaining = probe.listingSearch.rateLimit.remaining ?? 200;
     if (remaining <= budget.listingSafetyBuffer) {
-      console.log(`  Listing search at safety buffer (${remaining} <= ${budget.listingSafetyBuffer}) — pausing to avoid 12h lockout`);
+      console.log(`  Listing search at safety buffer (${remaining} <= ${budget.listingSafetyBuffer}) — pausing to avoid 24h lockout`);
       budget.markListingRateLimited();
     }
   } else {
@@ -178,13 +178,13 @@ export async function phase4DataFetch(
     return;
   }
 
-  // 4a: Sale history (500/~12h window — independent from listing search)
+  // 4a: Sale history (500/~24h window — independent from listing search)
   if (salesAvailable) {
     const cycleSaleBudget = budget.cycleSaleBudget();
     console.log(`  [${timestamp()}] 4a: Sale history (${budget.saleRemaining} remaining, ${cycleSaleBudget} this cycle)`);
 
     await setDaemonStatus(pool, "fetching", "Phase 4a: Knife/Glove sale history");
-    const knifeSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.30)));
+    const knifeSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.25)));
     if (knifeSaleBudget >= 2) {
       try {
         const result = await syncKnifeGloveSaleHistory(pool, {
@@ -268,11 +268,43 @@ export async function phase4DataFetch(
         else console.error(`    Mil-Spec sales error: ${(err as Error).message}`);
       }
     }
+
+    const industrialSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
+    if (industrialSaleBudget >= 1) {
+      try {
+        const result = await syncSaleHistoryForRarity(pool, "Industrial Grade", {
+          apiKey,
+          maxCalls: industrialSaleBudget,
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+        });
+        budget.useSale(result.fetched);
+        console.log(`    Industrial sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("429")) console.log(`    Industrial sales: rate limited`);
+        else console.error(`    Industrial sales error: ${(err as Error).message}`);
+      }
+    }
+
+    const consumerSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
+    if (consumerSaleBudget >= 1) {
+      try {
+        const result = await syncSaleHistoryForRarity(pool, "Consumer Grade", {
+          apiKey,
+          maxCalls: consumerSaleBudget,
+          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+        });
+        budget.useSale(result.fetched);
+        console.log(`    Consumer sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("429")) console.log(`    Consumer sales: rate limited`);
+        else console.error(`    Consumer sales error: ${(err as Error).message}`);
+      }
+    }
   } else {
     console.log(`  [${timestamp()}] 4a: Sale history — rate limited, skipping`);
   }
 
-  // 4b: Listing search (200/~30min window — paced across cycles)
+  // 4b: Listing search (200/~1h window — paced across cycles)
   if (listingsAvailable) {
     const listingBudget = budget.cycleListingBudget();
     console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);

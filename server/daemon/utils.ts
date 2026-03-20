@@ -53,9 +53,9 @@ export interface RateLimitInfo {
 
 /**
  * CSFloat has 3 separate rate limit pools:
- *   - Listing search (/api/v1/listings?market_hash_name=...): 200/~30min
- *   - Individual listing (/api/v1/listings/<id>): 50,000/~12h
- *   - Sale history (/api/v1/history/.../sales): 500/~12h
+ *   - Listing search (/api/v1/listings?market_hash_name=...): 200/~1h
+ *   - Individual listing (/api/v1/listings/<id>): 50,000/~24h
+ *   - Sale history (/api/v1/history/.../sales): 500/~24h
  * Each must be probed independently.
  */
 export interface ApiProbeResult {

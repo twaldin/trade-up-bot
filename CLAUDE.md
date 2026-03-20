@@ -177,9 +177,9 @@ All fetching is **coverage-based** — no theory-guided wanted lists.
 ## API Keys & Rate Limits
 
 - **CSFloat**: `CSFLOAT_API_KEY` in `.env`
-  - 3 independent pools: Listings (200/~30min), Sales (500/~12h), Individual (50K/~24h)
+  - 3 independent pools: Listings (200/~1h), Sales (500/~24h), Individual (50K/~24h)
   - Listing + Sale pools managed by daemon. Individual pool managed by csfloat-checker process.
-  - Safety buffers prevent 12h lockout. Budget pacing spreads calls across cycles.
+  - Safety buffers prevent 24h lockout. Budget pacing spreads calls across cycles.
 - **DMarket**: `DMARKET_PUBLIC_KEY` + `DMARKET_SECRET_KEY` in `.env`
   - 2 RPS (independent from CSFloat). Continuous fetcher runs as separate process.
 - **Skinport**: WebSocket feed (no auth, passive, no rate limits)
