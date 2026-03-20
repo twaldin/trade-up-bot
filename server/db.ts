@@ -446,6 +446,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     { table: "skins", column: "souvenir" },
     { table: "listings", column: "stattrak" },
     { table: "trade_ups", column: "is_theoretical" },
+    { table: "snapshot_tradeups", column: "is_theoretical" },
     { table: "users", column: "is_admin" },
   ];
   for (const { table, column } of boolMigrations) {
@@ -455,9 +456,26 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     );
     if (rows.length > 0) {
       console.log(`  Migrating ${table}.${column} INTEGER → BOOLEAN...`);
+      // Drop indexes that reference this column (partial indexes with = 0/1 block ALTER TYPE)
+      const { rows: idxRows } = await pool.query(
+        `SELECT indexname, indexdef FROM pg_indexes WHERE tablename=$1 AND indexdef LIKE '%' || $2 || '%'`,
+        [table, column]
+      );
+      const droppedIndexes: { name: string; def: string }[] = [];
+      for (const idx of idxRows) {
+        console.log(`    Dropping index ${idx.indexname} (references ${column})...`);
+        await pool.query(`DROP INDEX IF EXISTS ${idx.indexname}`);
+        droppedIndexes.push({ name: idx.indexname, def: idx.indexdef });
+      }
       await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
       await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} TYPE BOOLEAN USING CASE WHEN ${column} = 0 THEN false ELSE true END`);
       await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT false`);
+      // Recreate indexes with boolean conditions (= 0 → = false, = 1 → = true)
+      for (const idx of droppedIndexes) {
+        const newDef = idx.def.replace(/= 0/g, "= false").replace(/= 1/g, "= true");
+        console.log(`    Recreating index ${idx.name}...`);
+        await pool.query(newDef);
+      }
     }
   }
 }
