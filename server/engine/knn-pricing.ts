@@ -224,54 +224,19 @@ export function clearKnnCache() {
 }
 
 const KNN_K = 12;
-const KNN_BOTTOM_N = 5;
 const KNN_MIN_OBS = 3;
+const KNN_MIN_INTERP = 2;  // minimum for linear interpolation fallback
 const KNN_MAX_FLOAT_DIST = 0.04;
 const KNN_MAX_NEAREST_DIST = 0.012;
-
-export async function knnPriceAtFloat(
-  pool: pg.Pool,
-  skinName: string,
-  float: number
-): Promise<number | null> {
-  await ensureKnnCache(pool);
-  const obs = _knnCache.get(skinName);
-  if (!obs || obs.length < KNN_MIN_OBS) return null;
-
-  const targetCondition = floatToCondition(float);
-  const sameCondition = obs.filter(o => o.condition === targetCondition);
-  if (sameCondition.length < KNN_MIN_OBS) return null;
-
-  const withDist = sameCondition
-    .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
-    .filter(o => o.dist <= KNN_MAX_FLOAT_DIST);
-
-  if (withDist.length < KNN_MIN_OBS) return null;
-
-  withDist.sort((a, b) => a.dist - b.dist);
-  if (withDist[0].dist > KNN_MAX_NEAREST_DIST) return null;
-
-  const neighbors = withDist.slice(0, KNN_K);
-
-  const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
-  const median = prices[Math.floor(prices.length / 2)];
-  const priceFloor = Math.round(median / 2);
-  const filtered = neighbors.filter(n => n.price <= median * 5 && n.price >= priceFloor);
-  if (filtered.length < KNN_MIN_OBS) return null;
-
-  filtered.sort((a, b) => a.price - b.price);
-  const bottomN = filtered.slice(0, KNN_BOTTOM_N);
-  const EPSILON = 0.001;
-  const totalWeight = bottomN.reduce((s, o) => s + o.weight / (o.dist + EPSILON), 0);
-  const weightedAvg = bottomN.reduce((s, o) => s + o.price * o.weight / (o.dist + EPSILON), 0) / totalWeight;
-
-  return Math.round(weightedAvg);
-}
+const KNN_DEFAULT_SIGMA = 0.015;
 
 /**
- * KNN output price lookup — estimates sell price at a specific float.
- * Uses weighted median (not bottom-N average like input pricing).
- * Returns null if insufficient data.
+ * KNN price lookup with Gaussian kernel weighting and linear interpolation fallback.
+ *
+ * 3-tier pricing chain:
+ *   1. KNN (3+ neighbors within 0.04 float): Gaussian-weighted mean, adaptive σ
+ *   2. Linear interpolation (2+ same-condition obs): interpolate between 2 nearest
+ *   3. Returns null → caller falls back to condition-level (csfloat_ref)
  */
 export async function knnOutputPriceAtFloat(
   pool: pg.Pool,
@@ -280,7 +245,7 @@ export async function knnOutputPriceAtFloat(
 ): Promise<{ priceCents: number; confidence: number; observationCount: number } | null> {
   await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
-  if (!obs || obs.length < KNN_MIN_OBS) return null;
+  if (!obs || obs.length < KNN_MIN_INTERP) return null;
 
   // Freshness gate: require recent observations to avoid stale pricing
   const recentCount = _knnFreshnessCache.get(skinName) ?? 0;
@@ -288,51 +253,83 @@ export async function knnOutputPriceAtFloat(
 
   const targetCondition = floatToCondition(float);
   const sameCondition = obs.filter(o => o.condition === targetCondition);
-  if (sameCondition.length < KNN_MIN_OBS) return null;
 
-  const withDist = sameCondition
-    .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
-    .filter(o => o.dist <= KNN_MAX_FLOAT_DIST);
+  // === Tier 1: KNN with Gaussian kernel ===
+  if (sameCondition.length >= KNN_MIN_OBS) {
+    const withDist = sameCondition
+      .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
+      .filter(o => o.dist <= KNN_MAX_FLOAT_DIST);
 
-  if (withDist.length < KNN_MIN_OBS) return null;
+    if (withDist.length >= KNN_MIN_OBS) {
+      withDist.sort((a, b) => a.dist - b.dist);
+      if (withDist[0].dist <= KNN_MAX_NEAREST_DIST) {
+        const neighbors = withDist.slice(0, KNN_K);
 
-  withDist.sort((a, b) => a.dist - b.dist);
-  if (withDist[0].dist > KNN_MAX_NEAREST_DIST) return null;
+        // Outlier filtering: remove prices >5x or <0.2x the median
+        const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
+        const median = prices[Math.floor(prices.length / 2)];
+        const filtered = neighbors.filter(n => n.price <= median * 5 && n.price >= median * 0.2);
 
-  const neighbors = withDist.slice(0, KNN_K);
+        if (filtered.length >= KNN_MIN_OBS) {
+          // Adaptive sigma: median distance to neighbors, with floor
+          const sigma = filtered.length >= 6
+            ? Math.max(filtered[Math.floor(filtered.length / 2)].dist, 0.005)
+            : KNN_DEFAULT_SIGMA;
 
-  // Outlier filtering: remove prices >5x or <0.2x the median
-  const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
-  const median = prices[Math.floor(prices.length / 2)];
-  const filtered = neighbors.filter(n => n.price <= median * 5 && n.price >= median * 0.2);
-  if (filtered.length < KNN_MIN_OBS) return null;
+          // Gaussian-weighted mean: weight = source_weight * age_decay * exp(-dist²/σ²)
+          let totalWeight = 0;
+          let weightedSum = 0;
+          for (const n of filtered) {
+            const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
+            const w = n.weight * gaussWeight;
+            totalWeight += w;
+            weightedSum += n.price * w;
+          }
 
-  // Weighted median by (source_weight * age_decay / distance)
-  const EPSILON = 0.001;
-  const weighted: { price: number; weight: number }[] = filtered.map(n => ({
-    price: n.price,
-    weight: n.weight / (n.dist + EPSILON),
-  }));
-  weighted.sort((a, b) => a.price - b.price);
+          const avgDist = filtered.reduce((s, n) => s + n.dist, 0) / filtered.length;
+          const countFactor = Math.min(filtered.length / 8, 1.0);
+          const distFactor = 1 - Math.min(avgDist / KNN_MAX_FLOAT_DIST, 1.0);
+          const confidence = countFactor * 0.6 + distFactor * 0.4;
 
-  const totalWeight = weighted.reduce((s, w) => s + w.weight, 0);
-  let cumWeight = 0;
-  let medianPrice = weighted[0].price;
-  for (const w of weighted) {
-    cumWeight += w.weight;
-    if (cumWeight >= totalWeight / 2) {
-      medianPrice = w.price;
-      break;
+          return {
+            priceCents: Math.round(weightedSum / totalWeight),
+            confidence,
+            observationCount: filtered.length,
+          };
+        }
+      }
     }
   }
 
-  // Confidence based on observation count and distance spread
-  const avgDist = filtered.reduce((s, n) => s + n.dist, 0) / filtered.length;
-  const countFactor = Math.min(filtered.length / 8, 1.0); // peaks at 8+ obs
-  const distFactor = 1 - Math.min(avgDist / KNN_MAX_FLOAT_DIST, 1.0);
-  const confidence = countFactor * 0.6 + distFactor * 0.4;
+  // === Tier 2: Linear interpolation between 2 nearest same-condition obs ===
+  if (sameCondition.length >= KNN_MIN_INTERP) {
+    const sorted = sameCondition
+      .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
+      .sort((a, b) => a.dist - b.dist);
+    const a = sorted[0];
+    const b = sorted[1];
 
-  return { priceCents: Math.round(medianPrice), confidence, observationCount: filtered.length };
+    let interpolated: number;
+    if (Math.abs(a.float - b.float) < 0.0001) {
+      // Same float — average their prices (weighted by source/age)
+      interpolated = Math.round((a.price * a.weight + b.price * b.weight) / (a.weight + b.weight));
+    } else {
+      // Linear interpolation between the two nearest
+      const t = (float - a.float) / (b.float - a.float);
+      // Clamp t to [-0.5, 1.5] to allow slight extrapolation but not wild
+      const tClamped = Math.max(-0.5, Math.min(1.5, t));
+      interpolated = Math.round(a.price + tClamped * (b.price - a.price));
+    }
+
+    return {
+      priceCents: Math.max(interpolated, 0),
+      confidence: 0.3,
+      observationCount: sameCondition.length,
+    };
+  }
+
+  // === Tier 3: Not enough data → return null (caller falls back to condition-level) ===
+  return null;
 }
 
 export async function getKnnObservationCount(

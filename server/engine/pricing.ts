@@ -399,7 +399,7 @@ export async function lookupOutputPrice(
   const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
   let grossPrice = 0;
 
-  if (knn && knn.confidence >= 0.4) {
+  if (knn && knn.confidence >= 0.3) {
     grossPrice = knn.priceCents;
   } else {
     // 2. Fallback: condition-level pricing from csfloat_ref + listing floors
