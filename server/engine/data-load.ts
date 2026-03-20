@@ -4,7 +4,8 @@
 
 import pg from "pg";
 import { RARITY_ORDER } from "../../shared/types.js";
-import type { ListingWithCollection, DbSkinOutcome } from "./types.js";
+import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "./types.js";
+import { addAdjustedFloat } from "./selection.js";
 
 export async function getListingsForRarity(
   pool: pg.Pool,
@@ -25,7 +26,7 @@ export async function getListingsForRarity(
       AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
       AND l.claimed_by IS NULL
   `;
-  const params: (string | number | boolean)[] = [rarity, stattrak ? 1 : 0];
+  const params: (string | number | boolean)[] = [rarity, stattrak];
   let paramIdx = 3;
   if (maxPriceCents) {
     sql += ` AND l.price_cents <= $${paramIdx}`;
@@ -54,7 +55,7 @@ export async function getOutcomesForCollections(
      JOIN collections c ON sc.collection_id = c.id
      WHERE sc.collection_id IN (${placeholders})
      AND s.rarity = $${nextParam} AND s.stattrak = $${nextParam + 1}`,
-    [...collectionIds, targetRarity, stattrak ? 1 : 0]
+    [...collectionIds, targetRarity, stattrak]
   );
   return rows as DbSkinOutcome[];
 }
@@ -65,4 +66,83 @@ export function getNextRarity(rarity: string): string | null {
   const entries = Object.entries(RARITY_ORDER);
   const next = entries.find(([, v]) => v === order + 1);
   return next?.[0] ?? null;
+}
+
+export interface DiscoveryData {
+  allListings: ListingWithCollection[];
+  allAdjusted: AdjustedListing[];
+  byCollection: Map<string, ListingWithCollection[]>;
+  byColAdj: Map<string, AdjustedListing[]>;
+}
+
+/**
+ * Load listings for a rarity, compute adjusted floats, and group by collection.
+ * Replaces the duplicated 20-30 line data-loading block in discovery functions.
+ *
+ * @param groupKey - "collection_id" for gun discovery, "collection_name" for knife discovery
+ * @param options.excludeWeapons - filter out listings whose weapon is in this set (e.g. KNIFE_WEAPONS)
+ */
+export async function loadDiscoveryData(
+  pool: pg.Pool,
+  rarity: string,
+  groupKey: "collection_id" | "collection_name",
+  options?: { maxInputCost?: number; stattrak?: boolean; excludeWeapons?: readonly string[] }
+): Promise<DiscoveryData> {
+  let allListings = await getListingsForRarity(pool, rarity, options?.maxInputCost, options?.stattrak);
+
+  if (options?.excludeWeapons) {
+    const excluded = options.excludeWeapons;
+    allListings = allListings.filter(l => !(excluded as readonly string[]).includes(l.weapon));
+  }
+
+  const allAdjusted = addAdjustedFloat(allListings);
+
+  const byCollection = new Map<string, ListingWithCollection[]>();
+  const byColAdj = new Map<string, AdjustedListing[]>();
+  for (const l of allAdjusted) {
+    const key = l[groupKey];
+    const list = byCollection.get(key) ?? [];
+    list.push(l);
+    byCollection.set(key, list);
+
+    const adjList = byColAdj.get(key) ?? [];
+    adjList.push(l);
+    byColAdj.set(key, adjList);
+  }
+
+  // Sort both maps by price within each group (for greedy selection)
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+
+  return { allListings, allAdjusted, byCollection, byColAdj };
+}
+
+/**
+ * Build a profit-weighted collection pool for randomized exploration.
+ * Collections with more historically profitable trade-ups get higher weight (sqrt-scaled).
+ *
+ * NOTE: Gun discovery passes collection_id values as eligibleCollections, but the
+ * profitWeights query is keyed by collection_name. These never match, so gun discovery
+ * always falls back to weight=1. This is preserved existing behavior.
+ */
+export async function buildWeightedPool(
+  pool: pg.Pool,
+  eligibleCollections: string[],
+  tradeUpType: string
+): Promise<string[]> {
+  const profitWeights = new Map<string, number>();
+  const { rows: profitRows } = await pool.query(`
+    SELECT tui.collection_name, COUNT(*) as cnt
+    FROM trade_up_inputs tui JOIN trade_ups t ON t.id = tui.trade_up_id
+    WHERE t.type = $1 AND t.profit_cents > 0
+    GROUP BY tui.collection_name
+  `, [tradeUpType]);
+  for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
+
+  const weightedPool: string[] = [];
+  for (const col of eligibleCollections) {
+    const w = Math.max(1, profitWeights.get(col) ?? 0);
+    for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
+  }
+  return weightedPool;
 }

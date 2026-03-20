@@ -71,7 +71,7 @@ async function getCoverageGaps(pool: pg.Pool, limit: number = 50): Promise<{ ski
     SELECT s.name as "skinName", s.rarity, COUNT(l.id) as "listingCount"
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
-    WHERE s.stattrak = 0
+    WHERE s.stattrak = false
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     GROUP BY s.id, s.name, s.rarity
     ORDER BY COUNT(l.id) ASC
@@ -88,7 +88,7 @@ async function getStaleSkins(pool: pg.Pool, limit: number = 30): Promise<string[
     SELECT s.name, MAX(l.created_at) as newest
     FROM skins s
     JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket'
-    WHERE s.stattrak = 0
+    WHERE s.stattrak = false
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     GROUP BY s.id, s.name
     HAVING MAX(l.created_at) < NOW() - INTERVAL '30 minutes'
@@ -201,8 +201,8 @@ async function main() {
         const activeIds = new Set<string>();
 
         // Upsert active listings
-        const { rows: skinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1", [skinName]);
-        const { rows: stSkinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1", [`StatTrak™ ${skinName}`]);
+        const { rows: skinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1", [skinName]);
+        const { rows: stSkinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = true LIMIT 1", [`StatTrak™ ${skinName}`]);
         const skin = skinRows[0] as { id: string } | undefined;
         const stSkin = stSkinRows[0] as { id: string } | undefined;
 
@@ -231,7 +231,7 @@ async function main() {
                 skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7,
                 price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
                 staleness_checked_at = NOW()
-            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak ? 1 : 0, item.extra.phase ?? null]);
+            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null]);
             inserted++;
           }
         }

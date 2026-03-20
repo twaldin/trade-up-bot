@@ -5,14 +5,13 @@ import {
   buildPriceCache,
   evaluateTradeUp,
   evaluateKnifeTradeUp,
-  getKnifeFinishesWithPrices,
+  buildKnifeFinishCache,
   getOutcomesForCollections,
   getNextRarity,
-  CASE_KNIFE_MAP,
-  GLOVE_GEN_SKINS,
+  computeChanceToProfit,
+  computeBestWorstCase,
 } from "../engine.js";
 import type { ListingWithCollection, DbSkinOutcome } from "../engine/types.js";
-import type { FinishData } from "../engine/knife-data.js";
 
 interface CalculatorInput {
   skinName: string;
@@ -48,7 +47,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
       JOIN collections c ON sc.collection_id = c.id
-      WHERE s.name LIKE $1 AND s.stattrak = 0
+      WHERE s.name LIKE $1 AND s.stattrak = false
       ORDER BY
         CASE WHEN s.name LIKE $2 THEN 0 ELSE 1 END,
         s.rarity DESC,
@@ -63,7 +62,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
         SELECT MIN(l.price_cents) as floor_price
         FROM listings l
         JOIN skins s ON l.skin_id = s.id
-        WHERE s.name = $1 AND s.stattrak = 0
+        WHERE s.name = $1 AND s.stattrak = false
           AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
       `, [r.name]);
 
@@ -107,7 +106,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
         FROM skins s
         JOIN skin_collections sc ON s.id = sc.skin_id
         JOIN collections c ON sc.collection_id = c.id
-        WHERE s.name = $1 AND s.stattrak = 0
+        WHERE s.name = $1 AND s.stattrak = false
         LIMIT 1
       `, [inp.skinName]);
 
@@ -130,7 +129,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
         price_cents: inp.priceCents,
         float_value: inp.floatValue,
         paint_seed: null,
-        stattrak: 0,
+        stattrak: false,
         min_float: skin.min_float,
         max_float: skin.max_float,
         rarity: skin.rarity,
@@ -178,22 +177,8 @@ export function calculatorRouter(pool: pg.Pool): Router {
     let result;
 
     if (isKnifeTradeUp) {
-      // Build knife finish cache (same as knife-discovery.ts)
-      const knifeFinishCache = new Map<string, FinishData[]>();
-      const allItemTypes = new Set<string>();
-      for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
-        for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
-        if (caseInfo.gloveGen) {
-          const genSkins = GLOVE_GEN_SKINS[caseInfo.gloveGen];
-          if (genSkins) {
-            for (const gloveType of Object.keys(genSkins)) allItemTypes.add(gloveType);
-          }
-        }
-      }
-      for (const itemType of allItemTypes) {
-        const finishes = await getKnifeFinishesWithPrices(pool, itemType);
-        if (finishes.length > 0) knifeFinishCache.set(itemType, finishes);
-      }
+      // Build knife finish cache
+      const knifeFinishCache = await buildKnifeFinishCache(pool);
 
       result = await evaluateKnifeTradeUp(pool, engineInputs, knifeFinishCache);
       if (result) result.type = "covert_knife";
@@ -232,16 +217,8 @@ export function calculatorRouter(pool: pg.Pool): Router {
     }
 
     // Compute additional stats
-    const chanceToProfit = result.outcomes.reduce(
-      (sum: number, o: any) => sum + (o.estimated_price_cents > result!.total_cost_cents ? o.probability : 0),
-      0
-    );
-    const bestCase = result.outcomes.length > 0
-      ? Math.max(...result.outcomes.map((o: any) => o.estimated_price_cents)) - result.total_cost_cents
-      : -result.total_cost_cents;
-    const worstCase = result.outcomes.length > 0
-      ? Math.min(...result.outcomes.map((o: any) => o.estimated_price_cents)) - result.total_cost_cents
-      : -result.total_cost_cents;
+    const chanceToProfit = computeChanceToProfit(result.outcomes, result.total_cost_cents);
+    const { bestCase, worstCase } = computeBestWorstCase(result.outcomes, result.total_cost_cents);
 
     res.json({
       trade_up: result,

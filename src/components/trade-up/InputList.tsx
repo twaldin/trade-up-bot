@@ -91,8 +91,8 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
   const isSoldOrDelisted = inputStatus?.status === "sold" || inputStatus?.status === "delisted";
-  const isMissing = (input as any).missing === true;
-  const isClaimedByOther = (input as any).claimed_by_other === true;
+  const isMissing = input.missing === true;
+  const isClaimedByOther = input.claimed_by_other === true;
 
   return (
     <div

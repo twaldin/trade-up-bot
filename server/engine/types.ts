@@ -11,7 +11,7 @@ export interface DbListing {
   price_cents: number;
   float_value: number;
   paint_seed: number | null;
-  stattrak: number;
+  stattrak: boolean;
   min_float: number;
   max_float: number;
   rarity: string;

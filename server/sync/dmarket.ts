@@ -154,7 +154,7 @@ export async function syncDMarketListingsForSkin(
 
   // Resolve skin_id from name
   const { rows: skinRows } = await pool.query(
-    "SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+    "SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1",
     [skinName]
   );
   const skin = skinRows[0] as { id: string } | undefined;
@@ -165,7 +165,7 @@ export async function syncDMarketListingsForSkin(
 
   // Also look up the StatTrak variant for this skin
   const { rows: stRows } = await pool.query(
-    "SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1",
+    "SELECT id FROM skins WHERE name = $1 AND stattrak = true LIMIT 1",
     [`StatTrak™ ${skinName}`]
   );
   const stSkin = stRows[0] as { id: string } | undefined;
@@ -196,9 +196,9 @@ export async function syncDMarketListingsForSkin(
       if (!stSkin) continue;
       await pool.query(`
         INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
-        VALUES ($1, $2, $3, $4, $5, 1, NOW(), 'dmarket', 'buy_now', $6, NOW())
+        VALUES ($1, $2, $3, $4, $5, true, NOW(), 'dmarket', 'buy_now', $6, NOW())
         ON CONFLICT (id) DO UPDATE SET
-          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 1, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6,
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = true, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6,
           price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
           staleness_checked_at = NOW()
       `, [
@@ -212,9 +212,9 @@ export async function syncDMarketListingsForSkin(
     } else {
       await pool.query(`
         INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
-        VALUES ($1, $2, $3, $4, $5, 0, NOW(), 'dmarket', 'buy_now', $6, NOW())
+        VALUES ($1, $2, $3, $4, $5, false, NOW(), 'dmarket', 'buy_now', $6, NOW())
         ON CONFLICT (id) DO UPDATE SET
-          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6,
+          skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = false, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $6,
           price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
           staleness_checked_at = NOW()
       `, [
@@ -254,7 +254,7 @@ export async function syncDMarketListingsForRarity(
     SELECT s.name, COUNT(l.id) as listing_count
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id AND l.source = 'dmarket' AND l.listing_type = 'buy_now'
-    WHERE s.rarity = $1 AND s.stattrak = 0
+    WHERE s.rarity = $1 AND s.stattrak = false
     GROUP BY s.id, s.name
     ORDER BY listing_count ASC
     LIMIT $2
@@ -334,8 +334,8 @@ export async function checkDMarketStaleness(
       }
 
       // Also insert any new listings we didn't have
-      const { rows: skinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1", [skinRow.name]);
-      const { rows: stSkinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = 1 LIMIT 1", [`StatTrak™ ${skinRow.name}`]);
+      const { rows: skinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1", [skinRow.name]);
+      const { rows: stSkinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = true LIMIT 1", [`StatTrak™ ${skinRow.name}`]);
       const skinId = skinIdRows[0] as { id: string } | undefined;
       const stSkinId = stSkinIdRows[0] as { id: string } | undefined;
 
@@ -361,7 +361,7 @@ export async function checkDMarketStaleness(
             priceCents,
             item.extra.floatValue,
             item.extra.paintSeed ?? null,
-            isStatTrak ? 1 : 0,
+            isStatTrak,
             item.extra.phase ?? null,
           ]);
         }

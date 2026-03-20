@@ -154,10 +154,10 @@ const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   listing_skinport: 0.7,  // Skinport data-only source
 };
 
-const _knnCache = new Map<string, { float: number; price: number; weight: number }[]>();
+const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
-const KNN_MAX_OBS_AGE_DAYS = 90;
+export const KNN_MAX_OBS_AGE_DAYS = 90;
 
 /**
  * Dynamic half-life based on observation density:
@@ -194,7 +194,7 @@ async function ensureKnnCache(pool: pg.Pool) {
   // Build cache with per-skin dynamic half-life
   for (const [skinName, skinRows] of rawBySkin) {
     const halfLife = dynamicHalfLife(skinRows.length);
-    const arr: { float: number; price: number; weight: number }[] = [];
+    const arr: { float: number; price: number; weight: number; condition: string }[] = [];
     for (const row of skinRows) {
       const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
       const ageDecay = 1 / (1 + (row.age_days || 0) / halfLife);
@@ -202,6 +202,7 @@ async function ensureKnnCache(pool: pg.Pool) {
         float: row.float_value,
         price: row.price_cents,
         weight: baseWeight * ageDecay,
+        condition: floatToCondition(row.float_value),
       });
     }
     _knnCache.set(skinName, arr);
@@ -230,7 +231,7 @@ export async function knnPriceAtFloat(
   if (!obs || obs.length < KNN_MIN_OBS) return null;
 
   const targetCondition = floatToCondition(float);
-  const sameCondition = obs.filter(o => floatToCondition(o.float) === targetCondition);
+  const sameCondition = obs.filter(o => o.condition === targetCondition);
   if (sameCondition.length < KNN_MIN_OBS) return null;
 
   const withDist = sameCondition
@@ -274,7 +275,7 @@ export async function knnOutputPriceAtFloat(
   if (!obs || obs.length < KNN_MIN_OBS) return null;
 
   const targetCondition = floatToCondition(float);
-  const sameCondition = obs.filter(o => floatToCondition(o.float) === targetCondition);
+  const sameCondition = obs.filter(o => o.condition === targetCondition);
   if (sameCondition.length < KNN_MIN_OBS) return null;
 
   const withDist = sameCondition
@@ -331,7 +332,7 @@ export async function getKnnObservationCount(
   const obs = _knnCache.get(skinName);
   if (!obs) return 0;
   const targetCondition = floatToCondition(float);
-  return obs.filter(o => Math.abs(o.float - float) <= KNN_MAX_FLOAT_DIST && floatToCondition(o.float) === targetCondition).length;
+  return obs.filter(o => Math.abs(o.float - float) <= KNN_MAX_FLOAT_DIST && o.condition === targetCondition).length;
 }
 
 export async function getKnnObservationCountBroad(
@@ -343,149 +344,7 @@ export async function getKnnObservationCountBroad(
   const obs = _knnCache.get(skinName);
   if (!obs) return 0;
   const targetCondition = floatToCondition(float);
-  return obs.filter(o => floatToCondition(o.float) === targetCondition).length;
-}
-
-/**
- * Seed knife/glove sale_history into price_observations.
- * These records have float+price tuples ideal for KNN output pricing.
- * Also snapshots current knife/glove listings as observations.
- */
-export async function seedKnifeSaleObservations(pool: pg.Pool): Promise<number> {
-  let inserted = 0;
-
-  // Seed knife/glove sales from sale_history
-  const sales = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT skin_name, float_value, price_cents, 'sale', sold_at
-    FROM sale_history WHERE skin_name LIKE '★%' AND float_value > 0 AND price_cents > 0
-    ON CONFLICT DO NOTHING
-  `);
-  inserted += sales.rowCount ?? 0;
-
-  // Seed knife/glove listings as observations (Extraordinary rarity)
-  const listings = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT s.name, l.float_value, l.price_cents, 'listing', l.created_at
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE s.rarity = 'Extraordinary' AND l.float_value > 0 AND l.price_cents > 0
-      AND l.stattrak = 0
-      AND (l.source = 'csfloat' OR l.source IS NULL)
-    ON CONFLICT DO NOTHING
-  `);
-  inserted += listings.rowCount ?? 0;
-
-  if (inserted > 0) clearKnnCache();
-  return inserted;
-}
-
-export async function seedPriceObservations(pool: pg.Pool): Promise<number> {
-  const { rows } = await pool.query("SELECT COUNT(*) as n FROM price_observations");
-  const existing = parseInt(rows[0].n, 10);
-  if (existing > 1000) return 0;
-
-  let inserted = 0;
-
-  const sales = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT skin_name, float_value, price_cents, 'sale', sold_at
-    FROM sale_history WHERE float_value > 0 AND price_cents > 0
-    ON CONFLICT DO NOTHING
-  `);
-  inserted += sales.rowCount ?? 0;
-
-  const listings = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT s.name, l.float_value, l.price_cents, 'listing', l.created_at
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
-    ON CONFLICT DO NOTHING
-  `);
-  inserted += listings.rowCount ?? 0;
-
-  clearKnnCache();
-  return inserted;
-}
-
-export async function snapshotListingsToObservations(
-  pool: pg.Pool,
-  maxAgeDays: number = 14
-): Promise<number> {
-  let total = 0;
-
-  // CSFloat listings → source 'listing'
-  // Phase-qualify Doppler skins so observations are per-phase
-  const csfloat = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
-                THEN s.name || ' ' || l.phase ELSE s.name END,
-           l.float_value, l.price_cents, 'listing', l.created_at
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
-      AND (l.source = 'csfloat' OR l.source IS NULL)
-      AND l.created_at < NOW() - ($1 || ' days')::interval
-    ON CONFLICT DO NOTHING
-  `, [maxAgeDays]);
-  total += csfloat.rowCount ?? 0;
-
-  // DMarket listings → source 'listing_dmarket' (price normalized with 2.5% buyer fee)
-  const dmarket = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT CASE WHEN s.name LIKE '%Doppler%' AND l.phase IS NOT NULL AND l.phase != ''
-                THEN s.name || ' ' || l.phase ELSE s.name END,
-           l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'listing_dmarket', l.created_at
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
-      AND l.source = 'dmarket'
-      AND l.created_at < NOW() - ($1 || ' days')::interval
-    ON CONFLICT DO NOTHING
-  `, [maxAgeDays]);
-  total += dmarket.rowCount ?? 0;
-
-  // Skinport listings → source 'listing_skinport'
-  const skinport = await pool.query(`
-    INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT s.name, l.float_value, l.price_cents, 'listing_skinport', l.created_at
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE l.float_value > 0 AND l.price_cents > 0 AND l.stattrak = 0
-      AND l.source = 'skinport'
-      AND l.created_at < NOW() - ($1 || ' days')::interval
-    ON CONFLICT DO NOTHING
-  `, [maxAgeDays]);
-  total += skinport.rowCount ?? 0;
-
-  if (total > 0) clearKnnCache();
-  return total;
-}
-
-export async function pruneObservations(pool: pg.Pool, maxPerSkin: number = 500): Promise<number> {
-  let pruned = 0;
-
-  const stale = await pool.query(`
-    DELETE FROM price_observations
-    WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 > $1
-  `, [KNN_MAX_OBS_AGE_DAYS]);
-  pruned += stale.rowCount ?? 0;
-
-  const { rows: overLimit } = await pool.query(`
-    SELECT skin_name, COUNT(*) as cnt FROM price_observations
-    GROUP BY skin_name HAVING COUNT(*) > $1
-  `, [maxPerSkin]);
-
-  for (const { skin_name, cnt } of overLimit) {
-    const excess = parseInt(cnt, 10) - maxPerSkin;
-    const result = await pool.query(`
-      DELETE FROM price_observations WHERE id IN (
-        SELECT id FROM price_observations
-        WHERE skin_name = $1
-        ORDER BY source ASC, observed_at ASC
-        LIMIT $2
-      )
-    `, [skin_name, excess]);
-    pruned += result.rowCount ?? 0;
-  }
-  if (pruned > 0) clearKnnCache();
-  return pruned;
+  return obs.filter(o => o.condition === targetCondition).length;
 }
 
 const _supplyCache = new Map<string, number>();
@@ -511,7 +370,7 @@ async function ensureSupplyCache(pool: pg.Pool): Promise<void> {
       COUNT(*) as cnt
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
-    WHERE l.stattrak = 0
+    WHERE l.stattrak = false
     GROUP BY s.name, bucket_min
   `);
 
@@ -608,13 +467,13 @@ export async function bootstrapLearnedPrices(pool: pg.Pool): Promise<number> {
                JOIN skins s2 ON l2.skin_id = s2.id
                WHERE s2.name = s.name
                  AND l2.float_value >= $1 AND l2.float_value < $2
-                 AND l2.stattrak = 0
+                 AND l2.stattrak = false
                ORDER BY l2.price_cents ASC LIMIT 5) sub
         ) as avg_bottom5
       FROM listings l
       JOIN skins s ON l.skin_id = s.id
       WHERE l.float_value >= $3 AND l.float_value < $4
-        AND l.stattrak = 0
+        AND l.stattrak = false
       GROUP BY s.name
       HAVING COUNT(*) >= 2
     `, [bucket.min, bucket.max, bucket.min, bucket.max]);

@@ -142,7 +142,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const [claimedIds, setClaimedIds] = useState<Set<number>>(() => {
     const ids = new Set<number>();
     for (const tu of tradeUps) {
-      if ((tu as any).claimed_by_me) ids.add(tu.id);
+      if (tu.claimed_by_me) ids.add(tu.id);
     }
     return ids;
   });
@@ -156,7 +156,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   useEffect(() => {
     const ids = new Set<number>();
     for (const tu of tradeUps) {
-      if ((tu as any).claimed_by_me) ids.add(tu.id);
+      if (tu.claimed_by_me) ids.add(tu.id);
     }
     setClaimedIds(ids);
   }, [tradeUps]);
@@ -233,7 +233,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     <div className="bg-card">
       {tu.profit_cents > 0 && (() => {
         const myClaimLocal = claimedIds.has(tu.id);
-        const otherClaim = !myClaimLocal && (tu as any).claimed_by_other;
+        const otherClaim = !myClaimLocal && tu.claimed_by_other;
         const showUpgradeLocal = upgradeMsg === tu.id;
         return (
         <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
@@ -455,7 +455,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 <div className="flex items-center gap-1.5 shrink-0">
                   {age && <span className="text-[0.6rem] text-muted-foreground/40">{age}</span>}
                   {(claimedIds.has(tu.id)) && <span className="text-[0.6rem] text-purple-400">🔒</span>}
-                  {(tu as any).claimed_by_other && <span className="text-[0.6rem] text-muted-foreground">🔒</span>}
+                  {tu.claimed_by_other && <span className="text-[0.6rem] text-muted-foreground">🔒</span>}
                   <span className="text-muted-foreground/30 text-xs">{expandedId === tu.id ? "▼" : "▶"}</span>
                 </div>
               </div>
@@ -622,7 +622,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   <div className="flex items-center gap-1">
                     {(claimedIds.has(tu.id))
                       ? <span className="text-[0.6rem] text-purple-400" title="You claimed this">🔒</span>
-                      : (tu as any).claimed_by_other
+                      : tu.claimed_by_other
                         ? <span className="text-[0.6rem] text-muted-foreground" title="Claimed by another user">🔒</span>
                         : null}
                     <button

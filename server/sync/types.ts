@@ -7,21 +7,10 @@ export const CSFLOAT_BASE = "https://csfloat.com/api/v1";
 export const COLLECTIONS_URL = "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/collections.json";
 export const SKINS_URL = "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins_not_grouped.json";
 
-export const CONDITIONS_LIST = [
-  { name: "Factory New", min: 0.0, max: 0.07 },
-  { name: "Minimal Wear", min: 0.07, max: 0.15 },
-  { name: "Field-Tested", min: 0.15, max: 0.38 },
-  { name: "Well-Worn", min: 0.38, max: 0.45 },
-  { name: "Battle-Scarred", min: 0.45, max: 1.0 },
-];
+import { CONDITION_BOUNDS } from "../engine/types.js";
 
-export const CONDITION_FROM_FLOAT: { name: string; min: number; max: number }[] = [
-  { name: "Factory New", min: 0.0, max: 0.07 },
-  { name: "Minimal Wear", min: 0.07, max: 0.15 },
-  { name: "Field-Tested", min: 0.15, max: 0.38 },
-  { name: "Well-Worn", min: 0.38, max: 0.45 },
-  { name: "Battle-Scarred", min: 0.45, max: 1.0 },
-];
+export const CONDITIONS_LIST = CONDITION_BOUNDS;
+export const CONDITION_FROM_FLOAT = CONDITION_BOUNDS;
 
 // High-value single-Covert collections — their Classified inputs are always worth fetching
 export const HIGH_VALUE_COLLECTIONS = [

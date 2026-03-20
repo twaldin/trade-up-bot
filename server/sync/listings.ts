@@ -50,7 +50,7 @@ export async function getSkinsNeedingCoverage(
       END) as condition_count
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id
-    WHERE s.rarity = $1 AND s.stattrak = 0
+    WHERE s.rarity = $1 AND s.stattrak = false
     GROUP BY s.id, s.name, s.rarity, s.min_float, s.max_float
     HAVING COUNT(l.id) < $2 OR COUNT(DISTINCT CASE
         WHEN l.float_value < 0.07 THEN 'FN'
@@ -100,7 +100,7 @@ export async function checkListingStaleness(
       SELECT DISTINCT tui.listing_id
       FROM trade_up_inputs tui
       JOIN trade_ups tu ON tui.trade_up_id = tu.id
-      WHERE tu.profit_cents > 0 AND tu.is_theoretical = 0
+      WHERE tu.profit_cents > 0 AND tu.is_theoretical = false
     )
     SELECT l.id, l.skin_id, l.price_cents, l.float_value, l.created_at, s.name as skin_name, l.phase
     FROM listings l

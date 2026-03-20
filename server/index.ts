@@ -219,8 +219,8 @@ app.use((req, res, next) => {
           const t = Date.now();
           const { rows: [stats] } = await pool.query(`
             SELECT
-              (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
-              (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
+              (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
+              (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
               (SELECT COUNT(*) FROM listings) as listings,
               (SELECT COUNT(*) FROM price_observations) as sale_obs,
               (SELECT COUNT(*) FROM sale_history) as sale_hist,
@@ -247,7 +247,7 @@ app.use((req, res, next) => {
           const t2 = Date.now();
           const { rows: countRows } = await pool.query(`
             SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-            FROM trade_ups WHERE is_theoretical = 0 AND listing_status = 'active'
+            FROM trade_ups WHERE is_theoretical = false AND listing_status = 'active'
             GROUP BY type
           `);
           const counts: Record<string, { total: number; profitable: number }> = {};

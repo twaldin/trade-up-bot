@@ -17,7 +17,7 @@ export async function getKnifeFinishesWithPrices(
   const { rows: skins } = await pool.query(`
     SELECT DISTINCT s.name, s.min_float, s.max_float
     FROM skins s
-    WHERE s.weapon = $1 AND s.stattrak = 0
+    WHERE s.weapon = $1 AND s.stattrak = false
   `, [knifeType]);
 
   const results: FinishData[] = [];
@@ -90,6 +90,27 @@ export async function getKnifeFinishesWithPrices(
   }
 
   return results;
+}
+
+/**
+ * Build the knife/glove finish price cache for all item types across all cases.
+ * Iterates CASE_KNIFE_MAP to collect all knife + glove weapon types, then fetches
+ * finish price data for each. Used by knife discovery, staircase, and calculator.
+ */
+export async function buildKnifeFinishCache(pool: pg.Pool): Promise<Map<string, FinishData[]>> {
+  const cache = new Map<string, FinishData[]>();
+  const allItemTypes = new Set<string>();
+  for (const caseInfo of Object.values(CASE_KNIFE_MAP)) {
+    for (const kt of caseInfo.knifeTypes) allItemTypes.add(kt);
+    if (caseInfo.gloveGen) {
+      for (const gt of Object.keys(GLOVE_GEN_SKINS[caseInfo.gloveGen])) allItemTypes.add(gt);
+    }
+  }
+  for (const itemType of allItemTypes) {
+    const finishes = await getKnifeFinishesWithPrices(pool, itemType);
+    if (finishes.length > 0) cache.set(itemType, finishes);
+  }
+  return cache;
 }
 
 // Evaluate a knife trade-up: 5 Covert inputs → EV from knife/glove pool.

@@ -103,6 +103,20 @@ export class BudgetTracker {
     this.individualUsed = 0;
   }
 
+  /** Lower-rarity call budgets — set during data-fetch, read by subsequent phases */
+  private _restrictedCalls = 0;
+  private _milspecCalls = 0;
+  private _industrialCalls = 0;
+
+  setLowerRarityBudgets(restricted: number, milspec: number, industrial: number) {
+    this._restrictedCalls = restricted;
+    this._milspecCalls = milspec;
+    this._industrialCalls = industrial;
+  }
+  get restrictedCalls() { return this._restrictedCalls; }
+  get milspecCalls() { return this._milspecCalls; }
+  get industrialCalls() { return this._industrialCalls; }
+
   useIndividual(count: number = 1) { this.individualUsed += count; }
   get individualRemaining() { return this.individualBudget - this.individualUsed; }
   get individualUsable() { return Math.max(0, this.individualRemaining - INDIVIDUAL_SAFETY_BUFFER); }

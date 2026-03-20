@@ -75,10 +75,16 @@ export async function cacheSet(key: string, data: unknown, ttlSeconds: number): 
 export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
   if (!_available || !_redis) return 0;
   try {
-    const keys = await _redis.keys(`${prefix}*`);
-    if (keys.length > 0) {
-      return await _redis.del(...keys);
-    }
+    let cursor = "0";
+    let total = 0;
+    do {
+      const [nextCursor, keys] = await _redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        total += await _redis.del(...keys);
+      }
+    } while (cursor !== "0");
+    return total;
   } catch (e) {
     console.error("Cache invalidation failed:", e instanceof Error ? e.message : e);
   }

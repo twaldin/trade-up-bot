@@ -215,7 +215,7 @@ export async function main() {
       }
     } catch { /* Redis not available */ }
   } else {
-    const { rows: [existing] } = await pool.query("SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = 0");
+    const { rows: [existing] } = await pool.query("SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups WHERE is_theoretical = false");
     console.log(`  Resuming with ${existing.cnt} existing trade-ups (${existing.profitable ?? 0} profitable)`);
   }
   console.log("");
@@ -434,15 +434,19 @@ export async function main() {
       }
 
       // Handle expired claims: clear claimed_by, check if listings were actually purchased
+      // Uses FOR UPDATE SKIP LOCKED to prevent double-processing with API route
       {
-        const { rows: expired } = await pool.query(`
-          SELECT id, trade_up_id, user_id FROM trade_up_claims
-          WHERE released_at IS NULL AND confirmed_at IS NULL AND expires_at <= NOW()
-        `);
-        if (expired.length > 0) {
-          const client = await pool.connect();
-          try {
-            await client.query('BEGIN');
+        const client = await pool.connect();
+        let expired: { id: number; trade_up_id: number; user_id: string }[] = [];
+        try {
+          await client.query('BEGIN');
+          const { rows } = await client.query(`
+            SELECT id, trade_up_id, user_id FROM trade_up_claims
+            WHERE released_at IS NULL AND confirmed_at IS NULL AND expires_at <= NOW()
+            FOR UPDATE SKIP LOCKED
+          `);
+          expired = rows;
+          if (expired.length > 0) {
             for (const claim of expired) {
               const { rows: claimListings } = await client.query(
                 "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
@@ -456,13 +460,15 @@ export async function main() {
               }
               await client.query("UPDATE trade_up_claims SET released_at = NOW() WHERE id = $1", [claim.id]);
             }
-            await client.query('COMMIT');
-          } catch (txErr) {
-            await client.query('ROLLBACK');
-            throw txErr;
-          } finally {
-            client.release();
           }
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
+        }
+        if (expired.length > 0) {
           console.log(`    Expired claims: ${expired.length} released`);
           // Cascade status — unclaimed listings may restore trade-ups to active
           const allExpiredListingIds: string[] = [];
@@ -552,8 +558,8 @@ export async function main() {
 
       const { rows: [stats] } = await pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = 0) as total_tu,
-          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = 0) as profitable_tu,
+          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
+          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
           (SELECT COUNT(*) FROM listings) as listings,
           (SELECT COUNT(*) FROM price_observations) as sale_obs,
           (SELECT COUNT(*) FROM sale_history) as sale_hist,

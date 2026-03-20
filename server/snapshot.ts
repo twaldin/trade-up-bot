@@ -19,14 +19,14 @@ export async function takeSnapshot(pool: pg.Pool, opts: SnapshotOptions = {}): P
   const { rows: [stats] } = await pool.query(`
     SELECT
       COUNT(*) as total,
-      SUM(CASE WHEN profit_cents > 0 AND is_theoretical = 0 THEN 1 ELSE 0 END) as profitable,
-      MAX(CASE WHEN is_theoretical = 0 THEN profit_cents END) as best_profit,
-      AVG(CASE WHEN profit_cents > 0 AND is_theoretical = 0 THEN profit_cents END) as avg_profit,
-      MAX(CASE WHEN is_theoretical = 0 THEN roi_percentage END) as best_roi,
+      SUM(CASE WHEN profit_cents > 0 AND is_theoretical = false THEN 1 ELSE 0 END) as profitable,
+      MAX(CASE WHEN is_theoretical = false THEN profit_cents END) as best_profit,
+      AVG(CASE WHEN profit_cents > 0 AND is_theoretical = false THEN profit_cents END) as avg_profit,
+      MAX(CASE WHEN is_theoretical = false THEN roi_percentage END) as best_roi,
       AVG(total_cost_cents) as avg_cost,
       AVG(chance_to_profit) as avg_chance,
-      SUM(CASE WHEN is_theoretical = 1 THEN 1 ELSE 0 END) as theories,
-      SUM(CASE WHEN is_theoretical = 1 AND profit_cents > 0 THEN 1 ELSE 0 END) as theory_profitable
+      SUM(CASE WHEN is_theoretical THEN 1 ELSE 0 END) as theories,
+      SUM(CASE WHEN is_theoretical AND profit_cents > 0 THEN 1 ELSE 0 END) as theory_profitable
     FROM trade_ups WHERE type = $1
   `, [type]);
 
@@ -35,7 +35,7 @@ export async function takeSnapshot(pool: pg.Pool, opts: SnapshotOptions = {}): P
     SELECT COUNT(DISTINCT s.name) as skins, COUNT(*) as listings
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
-    WHERE s.rarity = 'Covert' AND l.stattrak = 0
+    WHERE s.rarity = 'Covert' AND l.stattrak = false
   `);
 
   // Near-misses & cooldowns

@@ -19,11 +19,11 @@ export function dataRouter(
     const rarity = (req.query.rarity as string) || "all";
     const collection = (req.query.collection as string) || "";
     const outputCollection = (req.query.outputCollection as string) || "";
-    const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1 ? 1 : 0;
+    const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1;
 
     // Build params array with numbered placeholders
     // First 3 params are always stattrak (for the literal column, the join, and the where)
-    const params: (string | number)[] = [stattrak, stattrak, stattrak];
+    const params: (string | number | boolean)[] = [stattrak, stattrak, stattrak];
     let paramIndex = 4; // next available $N
 
     // Rarity filter: specific rarity, "knife_glove" for ★ items, "all" for everything
@@ -91,7 +91,7 @@ export function dataRouter(
 
     // Fast query — no correlated subqueries. Listing stats via simple JOIN + GROUP BY.
     const { rows: skins } = await pool.query(`
-      SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, $1::int as stattrak,
+      SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, $1::boolean as stattrak,
         STRING_AGG(DISTINCT c.name, ',') as collection_names,
         COUNT(DISTINCT l.id) as listing_count,
         MIN(l.price_cents) as min_price,
@@ -102,8 +102,8 @@ export function dataRouter(
       FROM skins s
       LEFT JOIN skin_collections sc ON s.id = sc.skin_id
       LEFT JOIN collections c ON sc.collection_id = c.id
-      LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = $2::int
-      WHERE s.stattrak = $3::int ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
+      LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = $2::boolean
+      WHERE s.stattrak = $3::boolean ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
         ${searchFilter}
       GROUP BY s.name, s.rarity, s.weapon, s.min_float, s.max_float
       ORDER BY listing_count DESC
@@ -159,7 +159,7 @@ export function dataRouter(
 
   router.get("/api/skin-data/:name", cachedRoute((req) => `skin_detail:${req.params.name}`, 60, async (req, res) => {
     const skinName = decodeURIComponent(req.params.name as string);
-    const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1 ? 1 : 0;
+    const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1;
 
     // Listings (individual data points for scatter plot)
     const { rows: listings } = await pool.query(`
@@ -291,7 +291,7 @@ export function dataRouter(
     try {
       const since = req.query.since as string | undefined;
       const tab = req.query.tab as string || "Covert";
-      const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1 ? 1 : 0;
+      const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1;
 
       let filter = "";
       if (tab === "Covert") filter = "AND s.rarity = 'Covert' AND s.name NOT LIKE '★%'";

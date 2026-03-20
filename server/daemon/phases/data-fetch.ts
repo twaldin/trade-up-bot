@@ -294,9 +294,7 @@ export async function phase4DataFetch(
       wantedCalls = 0;
       console.log(`    Budget: ${knifeInputCalls} knife + ${outputCalls} output + ${classifiedInputCalls} classified + ${restrictedCalls} restricted + ${milspecCalls} milspec + ${industrialCalls} industrial = ${listingBudget} (50/50 profit/coverage)`);
 
-      (budget as any)._restrictedCalls = restrictedCalls;
-      (budget as any)._milspecCalls = milspecCalls;
-      (budget as any)._industrialCalls = industrialCalls;
+      budget.setLowerRarityBudgets(restrictedCalls, milspecCalls, industrialCalls);
     }
 
     await setDaemonStatus(pool, "fetching", "Phase 4b: Prioritized knife inputs");
@@ -353,9 +351,9 @@ export async function phase4DataFetch(
       }
     }
 
-    const restrictedCalls = (budget as any)._restrictedCalls ?? 0;
-    const milspecCalls = (budget as any)._milspecCalls ?? 0;
-    const industrialCalls = (budget as any)._industrialCalls ?? 0;
+    const restrictedCalls = budget.restrictedCalls;
+    const milspecCalls = budget.milspecCalls;
+    const industrialCalls = budget.industrialCalls;
     const consumerCalls = Math.max(2, Math.floor(industrialCalls / 2));
 
     for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls - consumerCalls], ["Consumer Grade", consumerCalls]] as const) {

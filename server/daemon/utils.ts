@@ -243,7 +243,7 @@ export async function printCoverageReport(pool: pg.Pool) {
       COUNT(l.id) as total_listings
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id
-    WHERE s.rarity = 'Covert' AND s.stattrak = 0
+    WHERE s.rarity = 'Covert' AND s.stattrak = false
   `);
 
   const { rows: [classifiedCoverage] } = await pool.query(`
@@ -253,7 +253,7 @@ export async function printCoverageReport(pool: pg.Pool) {
       COUNT(l.id) as total_listings
     FROM skins s
     LEFT JOIN listings l ON s.id = l.skin_id
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    WHERE s.rarity = 'Classified' AND s.stattrak = false
   `);
 
   const { rows: [salePrices] } = await pool.query(
@@ -267,7 +267,7 @@ export async function printCoverageReport(pool: pg.Pool) {
   const { rows: tradeUpCounts } = await pool.query(`
     SELECT COALESCE(type, 'unknown') as type, COUNT(*) as cnt,
            SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-    FROM trade_ups WHERE is_theoretical = 0 GROUP BY type
+    FROM trade_ups WHERE is_theoretical = false GROUP BY type
   `);
 
   console.log(`\n[${timestamp()}] === Coverage Report ===`);

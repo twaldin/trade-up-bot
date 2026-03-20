@@ -157,7 +157,7 @@ export async function syncListingsForRarity(
             listing.price,
             listing.item.float_value,
             listing.item.paint_seed ?? null,
-            isStattrak ? 1 : 0,
+            isStattrak,
             listing.created_at,
             listing.type,
           ]);
@@ -278,7 +278,7 @@ export async function syncListingsForSkin(
             listing.price,
             listing.item.float_value,
             listing.item.paint_seed ?? null,
-            isStattrak ? 1 : 0,
+            isStattrak,
             listing.created_at,
             listing.type,
           ]);
@@ -366,8 +366,8 @@ export async function syncLowFloatClassifiedListings(
     SELECT s.id, s.name, s.min_float, s.max_float,
            COUNT(CASE WHEN l.float_value < 0.07 THEN 1 END) as fn_listings
     FROM skins s
-    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.rarity = 'Classified' AND s.stattrak = 0
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = false
+    WHERE s.rarity = 'Classified' AND s.stattrak = false
       AND s.min_float < 0.07
     GROUP BY s.id, s.name, s.min_float, s.max_float
     ORDER BY fn_listings ASC, s.name
@@ -432,9 +432,9 @@ export async function syncLowFloatClassifiedListings(
           if (isStattrak) continue; // Only non-StatTrak for trade-ups
           await client.query(`
             INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, price_updated_at)
-            VALUES ($1, $2, $3, $4, $5, 0, $6, 'csfloat', $7, NOW())
+            VALUES ($1, $2, $3, $4, $5, false, $6, 'csfloat', $7, NOW())
             ON CONFLICT (id) DO UPDATE SET
-              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = 0, created_at = $6, source = 'csfloat', listing_type = $7, price_updated_at = NOW()
+              skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = false, created_at = $6, source = 'csfloat', listing_type = $7, price_updated_at = NOW()
           `, [
             listing.id, skin.id, listing.price,
             listing.item.float_value, listing.item.paint_seed ?? null,
@@ -507,8 +507,8 @@ export async function syncSmartListingsForRarity(
       COUNT(CASE WHEN l.float_value < 0.07 THEN 1 END) as fn_count,
       COALESCE(MIN(EXTRACT(EPOCH FROM NOW() - l.created_at) / 86400.0), 999) as newest_age_days
     FROM skins s
-    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.rarity = $1 AND s.stattrak = 0
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = false
+    WHERE s.rarity = $1 AND s.stattrak = false
     GROUP BY s.id, s.name, s.min_float, s.max_float
   `, [rarity]) as { rows: { id: string; name: string; min_float: number; max_float: number; listing_count: string; fn_count: string; newest_age_days: number }[] };
 
@@ -520,7 +520,7 @@ export async function syncSmartListingsForRarity(
     FROM skin_collections sc
     JOIN collections c ON sc.collection_id = c.id
     JOIN skins s ON sc.skin_id = s.id
-    WHERE s.rarity = $1 AND s.stattrak = 0
+    WHERE s.rarity = $1 AND s.stattrak = false
       AND c.name IN (${hvPh})
   `, [rarity, ...HIGH_VALUE_COLLECTIONS]) as { rows: { skin_id: string }[] };
   for (const r of hvRows) highValueSkinIds.add(r.skin_id);
@@ -694,8 +694,8 @@ export async function syncPrioritizedKnifeInputs(
     FROM collections c
     JOIN skin_collections sc ON c.id = sc.collection_id
     JOIN skins s ON sc.skin_id = s.id
-    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.rarity = 'Covert' AND s.stattrak = 0
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = false
+    WHERE s.rarity = 'Covert' AND s.stattrak = false
       AND s.weapon NOT LIKE '%Knife%' AND s.weapon NOT LIKE '%Bayonet%'
       AND s.weapon NOT LIKE '%Gloves%' AND s.weapon NOT LIKE '%Wraps%'
       AND s.weapon != 'Shadow Daggers'
@@ -742,7 +742,7 @@ export async function syncPrioritizedKnifeInputs(
       SELECT s.id, s.name, s.min_float, s.max_float
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
-      WHERE sc.collection_id = $1 AND s.rarity = 'Covert' AND s.stattrak = 0
+      WHERE sc.collection_id = $1 AND s.rarity = 'Covert' AND s.stattrak = false
         AND s.weapon NOT LIKE '%Knife%' AND s.weapon NOT LIKE '%Bayonet%'
         AND s.weapon NOT LIKE '%Gloves%' AND s.weapon NOT LIKE '%Wraps%'
         AND s.weapon != 'Shadow Daggers'
@@ -815,8 +815,8 @@ export async function syncCovertOutputListings(
   const { rows: uncoveredOutputs } = await pool.query(`
     SELECT s.name as skin_name, COUNT(l.id) as appearances
     FROM skins s
-    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = 0
-    WHERE s.name LIKE '★%' AND s.stattrak = 0
+    LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = false
+    WHERE s.name LIKE '★%' AND s.stattrak = false
     GROUP BY s.id, s.name
     ORDER BY appearances ASC
     LIMIT 50
@@ -848,7 +848,7 @@ export async function syncCovertOutputListings(
 
     // Find the skin ID for this output (Covert knives or Extraordinary gloves)
     const { rows: skinRows } = await pool.query(
-      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = 0 LIMIT 1",
+      "SELECT id, name, min_float, max_float FROM skins WHERE name = $1 AND stattrak = false LIMIT 1",
       [output.skin_name]
     );
     const skin = skinRows[0] as { id: string; name: string; min_float: number; max_float: number } | undefined;
@@ -923,7 +923,7 @@ export async function syncCovertOutputListings(
                 listing.price,
                 listing.item.float_value,
                 listing.item.paint_seed ?? null,
-                isStattrak ? 1 : 0,
+                isStattrak,
                 listing.created_at,
                 listing.type,
               ]);
@@ -1036,7 +1036,7 @@ export async function verifyTopTradeUpListings(
             listing.price,
             listing.item.float_value,
             listing.item.paint_seed ?? null,
-            isStattrak ? 1 : 0,
+            isStattrak,
             listing.created_at,
             listing.type,
           ]);

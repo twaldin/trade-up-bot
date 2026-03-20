@@ -1,22 +1,14 @@
 import { type ChatInputCommandInteraction, type AutocompleteInteraction, EmbedBuilder } from "discord.js";
 import { API_BASE, INTERNAL_API_TOKEN, EMBED_COLORS } from "../constants.js";
+import { CONDITIONS } from "../../shared/types.js";
 
-// Condition bounds matching shared/types.ts CONDITION_BOUNDS
-const CONDITION_BOUNDS: Record<string, [number, number]> = {
-  FN: [0.00, 0.07],
-  MW: [0.07, 0.15],
-  FT: [0.15, 0.38],
-  WW: [0.38, 0.45],
-  BS: [0.45, 1.00],
-};
+const CONDITION_BOUNDS: Record<string, [number, number]> = Object.fromEntries(
+  CONDITIONS.map(c => [c.abbr, [c.min, c.max] as [number, number]])
+);
 
-const CONDITION_NAMES: Record<string, string> = {
-  FN: "Factory New",
-  MW: "Minimal Wear",
-  FT: "Field-Tested",
-  WW: "Well-Worn",
-  BS: "Battle-Scarred",
-};
+const CONDITION_NAMES: Record<string, string> = Object.fromEntries(
+  CONDITIONS.map(c => [c.abbr, c.name])
+);
 
 function floatToCondition(float: number): string {
   if (float < 0.07) return "FN";

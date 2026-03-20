@@ -111,6 +111,8 @@ export interface TradeUpInput {
   float_value: number;
   condition: Condition;
   source: string;
+  missing?: boolean;
+  claimed_by_other?: boolean;
 }
 
 export interface InputSummary {
@@ -140,6 +142,8 @@ export interface TradeUp {
   profit_streak?: number; // consecutive cycles this trade-up has been profitable
   peak_profit_cents?: number; // highest profit ever seen for this trade-up
   preserved_at?: string | null; // when this trade-up was first marked stale
+  claimed_by_me?: boolean;
+  claimed_by_other?: boolean;
   previous_inputs?: {
     old_profit_cents: number;
     old_cost_cents: number;

@@ -98,7 +98,7 @@ const rarityMap: Record<string, string> = {
     const { rows: sigRows } = await pool.query(`
       SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
       FROM trade_up_inputs WHERE trade_up_id IN (
-        SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = 0
+        SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
       ) GROUP BY trade_up_id
     `, [tradeUpType]);
     for (const row of sigRows) {

@@ -44,11 +44,12 @@ export function initDb(): pg.Pool {
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts). */
 export async function createTables(pool: pg.Pool): Promise<void> {
-  // Fast check: if trade_ups table exists, schema is already set up
+  // Fast check: if trade_ups table exists, schema is already set up — skip CREATE but still run migrations
   const { rows } = await pool.query(
     "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' LIMIT 1"
   );
-  if (rows.length > 0) return;
+  const tablesExist = rows.length > 0;
+  if (!tablesExist) {
   await pool.query(`
     -- Static skin/collection data (from ByMykel/CSGO-API)
     CREATE TABLE IF NOT EXISTS collections (
@@ -64,8 +65,8 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       min_float DOUBLE PRECISION NOT NULL DEFAULT 0.0,
       max_float DOUBLE PRECISION NOT NULL DEFAULT 1.0,
       rarity TEXT NOT NULL,
-      stattrak INTEGER NOT NULL DEFAULT 0,
-      souvenir INTEGER NOT NULL DEFAULT 0,
+      stattrak BOOLEAN NOT NULL DEFAULT false,
+      souvenir BOOLEAN NOT NULL DEFAULT false,
       image_url TEXT
     );
 
@@ -84,7 +85,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       price_cents INTEGER NOT NULL,
       float_value DOUBLE PRECISION NOT NULL,
       paint_seed INTEGER,
-      stattrak INTEGER NOT NULL DEFAULT 0,
+      stattrak BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       source TEXT NOT NULL DEFAULT 'csfloat',
       listing_type TEXT NOT NULL DEFAULT 'buy_now',
@@ -119,7 +120,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       type TEXT NOT NULL DEFAULT 'classified_covert',
       best_case_cents INTEGER NOT NULL DEFAULT 0,
       worst_case_cents INTEGER NOT NULL DEFAULT 0,
-      is_theoretical INTEGER NOT NULL DEFAULT 0,
+      is_theoretical BOOLEAN NOT NULL DEFAULT false,
       source TEXT NOT NULL DEFAULT 'discovery',
       combo_key TEXT,
       listing_status TEXT NOT NULL DEFAULT 'active',
@@ -141,18 +142,6 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       float_value DOUBLE PRECISION NOT NULL,
       condition TEXT NOT NULL DEFAULT '',
       source TEXT NOT NULL DEFAULT 'csfloat',
-      FOREIGN KEY (trade_up_id) REFERENCES trade_ups(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS trade_up_outcomes (
-      trade_up_id INTEGER NOT NULL,
-      skin_id TEXT NOT NULL,
-      skin_name TEXT NOT NULL,
-      collection_name TEXT NOT NULL,
-      probability DOUBLE PRECISION NOT NULL,
-      predicted_float DOUBLE PRECISION NOT NULL,
-      predicted_condition TEXT NOT NULL,
-      estimated_price_cents INTEGER NOT NULL,
       FOREIGN KEY (trade_up_id) REFERENCES trade_ups(id) ON DELETE CASCADE
     );
 
@@ -316,7 +305,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       chance_to_profit DOUBLE PRECISION NOT NULL,
       best_case_cents INTEGER NOT NULL DEFAULT 0,
       worst_case_cents INTEGER NOT NULL DEFAULT 0,
-      is_theoretical INTEGER NOT NULL DEFAULT 0,
+      is_theoretical BOOLEAN NOT NULL DEFAULT false,
       source TEXT,
       combo_key TEXT,
       collections TEXT NOT NULL,
@@ -353,7 +342,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       display_name TEXT,
       avatar_url TEXT,
       tier TEXT NOT NULL DEFAULT 'free',
-      is_admin INTEGER NOT NULL DEFAULT 0,
+      is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -386,6 +375,8 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     );
   `);
 
+  } // end if (!tablesExist)
+
   // Create indexes
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_skins_rarity ON skins(rarity);
@@ -395,7 +386,6 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_trade_ups_profit ON trade_ups(profit_cents DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_roi ON trade_ups(roi_percentage DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_trade ON trade_up_inputs(trade_up_id);
-    CREATE INDEX IF NOT EXISTS idx_trade_up_outcomes_trade ON trade_up_outcomes(trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_theoretical ON trade_ups(is_theoretical, type, profit_cents DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_profit ON trade_ups(type, profit_cents DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_roi ON trade_ups(type, roi_percentage DESC);
@@ -415,7 +405,6 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
     CREATE INDEX IF NOT EXISTS idx_skins_weapon_stattrak ON skins(weapon, stattrak);
     CREATE INDEX IF NOT EXISTS idx_price_data_source ON price_data(source);
-    CREATE INDEX IF NOT EXISTS idx_trade_up_outcomes_skin_cond ON trade_up_outcomes(skin_name, predicted_condition);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin ON trade_up_inputs(skin_name);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin_tuid ON trade_up_inputs(skin_name, trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_collection_tuid ON trade_up_inputs(collection_name, trade_up_id);
@@ -444,6 +433,30 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   // Partial index for listings with price_updated_at
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_listings_price_updated ON listings(price_updated_at) WHERE price_updated_at IS NOT NULL;
+  `);
+
+  // Drop unused trade_up_outcomes table (outcomes stored as JSON in trade_ups.outcomes_json)
+  await pool.query(`DROP TABLE IF EXISTS trade_up_outcomes;`);
+
+  // Migrate INTEGER boolean columns to BOOLEAN (idempotent — checks column type first)
+  await pool.query(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='stattrak' AND data_type='integer') THEN
+        ALTER TABLE skins ALTER COLUMN stattrak TYPE BOOLEAN USING stattrak::int::boolean;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='souvenir' AND data_type='integer') THEN
+        ALTER TABLE skins ALTER COLUMN souvenir TYPE BOOLEAN USING souvenir::int::boolean;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='listings' AND column_name='stattrak' AND data_type='integer') THEN
+        ALTER TABLE listings ALTER COLUMN stattrak TYPE BOOLEAN USING stattrak::int::boolean;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trade_ups' AND column_name='is_theoretical' AND data_type='integer') THEN
+        ALTER TABLE trade_ups ALTER COLUMN is_theoretical TYPE BOOLEAN USING is_theoretical::int::boolean;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_admin' AND data_type='integer') THEN
+        ALTER TABLE users ALTER COLUMN is_admin TYPE BOOLEAN USING is_admin::int::boolean;
+      END IF;
+    END $$;
   `);
 }
 

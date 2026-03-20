@@ -19,7 +19,7 @@ export function collectionsRouter(
           SUM(CASE WHEN s.rarity = 'Covert' AND s.name NOT LIKE '★%' THEN 1 ELSE 0 END) as covert_count
         FROM collections c
         JOIN skin_collections sc ON c.id = sc.collection_id
-        JOIN skins s ON sc.skin_id = s.id AND s.stattrak = 0
+        JOIN skins s ON sc.skin_id = s.id AND s.stattrak = false
         GROUP BY c.id, c.name
       `);
 
@@ -30,7 +30,7 @@ export function collectionsRouter(
         FROM listings l
         JOIN skins s ON l.skin_id = s.id
         JOIN skin_collections sc ON s.id = sc.skin_id
-        WHERE l.stattrak = 0
+        WHERE l.stattrak = false
         GROUP BY sc.collection_id
       `);
       for (const r of lcRows) listingCounts.set(r.collection_id, parseInt(r.cnt));
@@ -41,7 +41,7 @@ export function collectionsRouter(
         SELECT i.collection_name, COUNT(DISTINCT t.id) as cnt, MAX(t.profit_cents) as best
         FROM trade_ups t
         JOIN trade_up_inputs i ON t.id = i.trade_up_id
-        WHERE t.is_theoretical = 0 AND t.profit_cents > 0
+        WHERE t.is_theoretical = false AND t.profit_cents > 0
         GROUP BY i.collection_name
       `);
       for (const r of psRows) profitStats.set(r.collection_name, { cnt: parseInt(r.cnt), best: parseInt(r.best) });

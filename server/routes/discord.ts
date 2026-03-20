@@ -26,7 +26,7 @@ export function discordRouter(pool: pg.Pool): Router {
 
     // Generate state for CSRF protection
     const state = crypto.randomBytes(16).toString("hex");
-    (req.session as any).discordState = state;
+    req.session.discordState = state;
 
     const redirectUri = `${baseUrl}/api/auth/discord/callback`;
     const params = new URLSearchParams({
@@ -51,8 +51,8 @@ export function discordRouter(pool: pg.Pool): Router {
     }
 
     const { code, state } = req.query as { code?: string; state?: string };
-    const expectedState = (req.session as any).discordState;
-    delete (req.session as any).discordState;
+    const expectedState = req.session.discordState;
+    delete req.session.discordState;
 
     if (!code || !state || state !== expectedState) {
       res.redirect("/?discord=error");
