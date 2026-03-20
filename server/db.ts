@@ -440,35 +440,26 @@ export async function createTables(pool: pg.Pool): Promise<void> {
 
   // Migrate INTEGER boolean columns to BOOLEAN (idempotent — checks column type first)
   // Must drop DEFAULT before ALTER TYPE (PG can't auto-cast DEFAULT 0 to boolean), then set new DEFAULT.
-  await pool.query(`
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='stattrak' AND data_type='integer') THEN
-        ALTER TABLE skins ALTER COLUMN stattrak DROP DEFAULT;
-        ALTER TABLE skins ALTER COLUMN stattrak TYPE BOOLEAN USING (stattrak != 0);
-        ALTER TABLE skins ALTER COLUMN stattrak SET DEFAULT false;
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='souvenir' AND data_type='integer') THEN
-        ALTER TABLE skins ALTER COLUMN souvenir DROP DEFAULT;
-        ALTER TABLE skins ALTER COLUMN souvenir TYPE BOOLEAN USING (souvenir != 0);
-        ALTER TABLE skins ALTER COLUMN souvenir SET DEFAULT false;
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='listings' AND column_name='stattrak' AND data_type='integer') THEN
-        ALTER TABLE listings ALTER COLUMN stattrak DROP DEFAULT;
-        ALTER TABLE listings ALTER COLUMN stattrak TYPE BOOLEAN USING (stattrak != 0);
-        ALTER TABLE listings ALTER COLUMN stattrak SET DEFAULT false;
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trade_ups' AND column_name='is_theoretical' AND data_type='integer') THEN
-        ALTER TABLE trade_ups ALTER COLUMN is_theoretical DROP DEFAULT;
-        ALTER TABLE trade_ups ALTER COLUMN is_theoretical TYPE BOOLEAN USING (is_theoretical != 0);
-        ALTER TABLE trade_ups ALTER COLUMN is_theoretical SET DEFAULT false;
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_admin' AND data_type='integer') THEN
-        ALTER TABLE users ALTER COLUMN is_admin DROP DEFAULT;
-        ALTER TABLE users ALTER COLUMN is_admin TYPE BOOLEAN USING (is_admin != 0);
-        ALTER TABLE users ALTER COLUMN is_admin SET DEFAULT false;
-      END IF;
-    END $$;
-  `);
+  // Use CASE expression for the cast (PG has no direct integer→boolean cast operator).
+  const boolMigrations = [
+    { table: "skins", column: "stattrak" },
+    { table: "skins", column: "souvenir" },
+    { table: "listings", column: "stattrak" },
+    { table: "trade_ups", column: "is_theoretical" },
+    { table: "users", column: "is_admin" },
+  ];
+  for (const { table, column } of boolMigrations) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name=$1 AND column_name=$2 AND data_type='integer'`,
+      [table, column]
+    );
+    if (rows.length > 0) {
+      console.log(`  Migrating ${table}.${column} INTEGER → BOOLEAN...`);
+      await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
+      await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} TYPE BOOLEAN USING CASE WHEN ${column} = 0 THEN false ELSE true END`);
+      await pool.query(`ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT false`);
+    }
+  }
 }
 
 export async function getSyncMeta(pool: pg.Pool, key: string): Promise<string | null> {
