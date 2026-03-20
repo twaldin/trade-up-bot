@@ -221,6 +221,8 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   dmarketFloorCache.clear();
   skinportFloorCache.clear();
   conditionPricesCache.clear();
+  _floatCeilingCache.clear();
+  _floatCeilingCacheBuiltAt = 0;
 
   const { cached: refCached, totalRows: csfloatRefCount } = await loadCsfloatRefPrices(pool);
   const salesGapFills = await fillCsfloatSalesGaps(pool);
@@ -285,63 +287,159 @@ export interface OutputPriceResult {
   feePct: number;          // seller fee percentage
 }
 
+// Float-monotonicity ceiling: per-skin sorted arrays of (float, price) from all data sources
+const _floatCeilingCache = new Map<string, { float: number; price: number }[]>();
+let _floatCeilingCacheBuiltAt = 0;
+const FLOAT_CEILING_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
+  if (_floatCeilingCache.size > 0 && Date.now() - _floatCeilingCacheBuiltAt < FLOAT_CEILING_CACHE_TTL_MS) return;
+  _floatCeilingCache.clear();
+
+  // Union of: active CSFloat listings, active DMarket listings (with buyer fee),
+  // sale_history, and sale observations (sale + skinport_sale)
+  const { rows } = await pool.query(`
+    SELECT skin_name, float_value, price_cents FROM (
+      -- Active CSFloat listings
+      SELECT s.name as skin_name, l.float_value, l.price_cents
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE (l.source = 'csfloat' OR l.source IS NULL) AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
+        AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
+      UNION ALL
+      -- Active DMarket listings (normalized with 2.5% buyer fee)
+      SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER)
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE l.source = 'dmarket' AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
+      UNION ALL
+      -- Sale history (CSFloat confirmed sales)
+      SELECT skin_name, float_value, price_cents
+      FROM sale_history
+      WHERE float_value > 0 AND price_cents > 0
+        AND sold_at > NOW() - INTERVAL '45 days'
+      UNION ALL
+      -- Price observations (sale sources only — no listing obs to avoid double-counting)
+      SELECT skin_name, float_value, price_cents
+      FROM price_observations
+      WHERE source IN ('sale', 'skinport_sale')
+        AND float_value > 0 AND price_cents > 0
+        AND observed_at > NOW() - INTERVAL '45 days'
+    ) combined
+    ORDER BY skin_name, float_value
+  `);
+
+  for (const row of rows) {
+    let arr = _floatCeilingCache.get(row.skin_name);
+    if (!arr) { arr = []; _floatCeilingCache.set(row.skin_name, arr); }
+    arr.push({ float: row.float_value, price: row.price_cents });
+  }
+  _floatCeilingCacheBuiltAt = Date.now();
+}
+
+/**
+ * Float-monotonicity ceiling: cap output price at the bottom-3 average of
+ * all known data points at equal-or-lower floats (better condition = higher price expected).
+ * Returns null if insufficient data to establish a ceiling.
+ */
+async function getFloatCeiling(
+  pool: pg.Pool,
+  skinName: string,
+  predictedFloat: number
+): Promise<number | null> {
+  await ensureFloatCeilingCache(pool);
+  const data = _floatCeilingCache.get(skinName);
+  if (!data || data.length < 3) return null;
+
+  // Find all data points at floats <= predictedFloat (same or better condition)
+  const lowerFloat = data.filter(d => d.float <= predictedFloat);
+  if (lowerFloat.length < 2) return null;
+
+  // Sort by price ascending, take bottom-3 average as ceiling
+  const sorted = lowerFloat.map(d => d.price).sort((a, b) => a - b);
+  const n = Math.min(3, sorted.length);
+  const bottom3Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
+
+  return bottom3Avg;
+}
+
 /**
  * Look up best output price across all marketplaces.
- * Returns the marketplace with highest net proceeds after seller fees.
+ * Architecture: KNN-primary for all skins → condition-level fallback → float ceiling guard rail.
+ * Vanilla knives (no finish): listing floor / recent sale floor.
  */
 export async function lookupOutputPrice(
   pool: pg.Pool,
   skinName: string,
   predictedFloat: number
 ): Promise<OutputPriceResult> {
-  const condition = floatToCondition(predictedFloat);
+  const zeroResult: OutputPriceResult = { priceCents: 0, marketplace: "csfloat", grossPrice: 0, feePct: MARKETPLACE_FEES.csfloat.sellerFee };
 
-  // Float-precise KNN for knife/glove skins only (they have rich sale observation data).
-  // Non-knife skins lack observations — KNN returns null, falling through to condition-level.
-  if (skinName.startsWith("★")) {
-    const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
-    if (knn && knn.confidence >= 0.5) {
-      // Find the best marketplace net proceeds for the KNN price
-      // DMarket excluded from output pricing — unreliable floor prices
-      const csfNet = effectiveSellProceeds(knn.priceCents, "csfloat");
-      const spGross = skinportFloorCache.get(`${skinName}:${condition}`) ?? 0;
-      const spNet = spGross > 0 ? effectiveSellProceeds(spGross, "skinport") : 0;
-
-      let best: OutputPriceResult = {
-        priceCents: csfNet,
-        marketplace: "csfloat",
-        grossPrice: knn.priceCents,
-        feePct: MARKETPLACE_FEES.csfloat.sellerFee,
-      };
-      if (spNet > best.priceCents) {
-        best = { priceCents: spNet, marketplace: "skinport", grossPrice: spGross, feePct: MARKETPLACE_FEES.skinport.sellerFee };
-      }
-
-      // Conservative: if cached condition-level price is lower, use that instead
-      // Only check the in-memory cache — don't trigger DB queries for every knife finish
-      const condCached = priceCache.get(`${skinName}:${condition}`);
-      if (condCached && condCached > 0) {
-        const condNet = effectiveSellProceeds(condCached, "csfloat");
-        if (condNet < best.priceCents) {
-          best = { priceCents: condNet, marketplace: "csfloat", grossPrice: condCached, feePct: MARKETPLACE_FEES.csfloat.sellerFee };
-        }
-      }
-
-      return best;
-    }
+  // Vanilla knives: no finish, no condition — use listing/sale floor
+  const isVanilla = skinName.startsWith("★") && !skinName.includes(" | ");
+  if (isVanilla) {
+    const vanillaPrice = await getVanillaKnifePrice(pool, skinName);
+    if (vanillaPrice <= 0) return zeroResult;
+    const netPrice = effectiveSellProceeds(vanillaPrice, "csfloat");
+    return { priceCents: netPrice, marketplace: "csfloat", grossPrice: vanillaPrice, feePct: MARKETPLACE_FEES.csfloat.sellerFee };
   }
 
-  // CSFloat-only output pricing. No DMarket/Skinport gap-fill — both overestimate.
-  // If CSFloat has no data, price stays 0 (conservative: unpriced outcome = $0).
-  const csfloatGross = lookupPrice(pool, skinName, predictedFloat);
-  const csfloatNet = csfloatGross > 0 ? effectiveSellProceeds(csfloatGross, "csfloat") : 0;
+  // 1. Try KNN float-specific pricing for ALL skins (not just ★)
+  const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
+  let grossPrice = 0;
 
+  if (knn && knn.confidence >= 0.4) {
+    grossPrice = knn.priceCents;
+  } else {
+    // 2. Fallback: condition-level pricing from csfloat_ref + listing floors
+    grossPrice = lookupPrice(pool, skinName, predictedFloat);
+  }
+
+  if (grossPrice <= 0) return zeroResult;
+
+  // 3. Apply float-monotonicity ceiling from listings + sales at equal-or-lower floats
+  const ceiling = await getFloatCeiling(pool, skinName, predictedFloat);
+  if (ceiling !== null && ceiling < grossPrice) {
+    grossPrice = ceiling;
+  }
+
+  const netPrice = effectiveSellProceeds(grossPrice, "csfloat");
   return {
-    priceCents: csfloatNet,
+    priceCents: netPrice,
     marketplace: "csfloat",
-    grossPrice: csfloatGross,
+    grossPrice,
     feePct: MARKETPLACE_FEES.csfloat.sellerFee,
   };
+}
+
+/**
+ * Vanilla knife pricing: listing floor + recent sale floor (no condition/float).
+ * Returns the lower of the two (conservative).
+ */
+async function getVanillaKnifePrice(pool: pg.Pool, skinName: string): Promise<number> {
+  // Listing floor: cheapest active listing across CSFloat + DMarket (require 2+)
+  const { rows: listingRows } = await pool.query(`
+    SELECT MIN(CASE WHEN l.source = 'dmarket' THEN CAST(ROUND(l.price_cents * 1.025) AS INTEGER) ELSE l.price_cents END) as floor_price,
+      COUNT(*) as cnt
+    FROM listings l JOIN skins s ON l.skin_id = s.id
+    WHERE s.name = $1 AND l.stattrak = false AND l.price_cents > 0
+      AND l.source IN ('csfloat', 'dmarket')
+      AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
+  `, [skinName]);
+  const listingFloor = (listingRows[0]?.cnt >= 2 && listingRows[0]?.floor_price > 0) ? listingRows[0].floor_price : 0;
+
+  // Recent sale floor: cheapest sale in last 7 days
+  const { rows: saleRows } = await pool.query(`
+    SELECT MIN(price_cents) as floor_price, COUNT(*) as cnt
+    FROM sale_history
+    WHERE skin_name = $1 AND price_cents > 0
+      AND sold_at > NOW() - INTERVAL '7 days'
+  `, [skinName]);
+  const saleFloor = (saleRows[0]?.cnt >= 1 && saleRows[0]?.floor_price > 0) ? saleRows[0].floor_price : 0;
+
+  // Use the lower of the two, or whichever is available
+  if (listingFloor > 0 && saleFloor > 0) return Math.min(listingFloor, saleFloor);
+  return listingFloor || saleFloor;
 }
 
 export async function getConditionPrices(
