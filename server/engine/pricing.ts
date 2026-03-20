@@ -296,8 +296,9 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
   if (_floatCeilingCache.size > 0 && Date.now() - _floatCeilingCacheBuiltAt < FLOAT_CEILING_CACHE_TTL_MS) return;
   _floatCeilingCache.clear();
 
-  // Union of: active CSFloat listings, active DMarket listings (with buyer fee),
-  // sale_history, and sale observations (sale + skinport_sale)
+  // Listings-only ceiling: active market offers represent current reality.
+  // Historical sales excluded — they introduce noise from below-market transactions
+  // and Skinport fee differentials. KNN already handles sale history for estimation.
   const { rows } = await pool.query(`
     SELECT skin_name, float_value, price_cents FROM (
       -- Active CSFloat listings
@@ -312,19 +313,6 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE l.source = 'dmarket' AND l.stattrak = false
         AND l.float_value > 0 AND l.price_cents > 0
-      UNION ALL
-      -- Sale history (CSFloat confirmed sales)
-      SELECT skin_name, float_value, price_cents
-      FROM sale_history
-      WHERE float_value > 0 AND price_cents > 0
-        AND sold_at > NOW() - INTERVAL '45 days'
-      UNION ALL
-      -- Price observations (sale sources only — no listing obs to avoid double-counting)
-      SELECT skin_name, float_value, price_cents
-      FROM price_observations
-      WHERE source IN ('sale', 'skinport_sale')
-        AND float_value > 0 AND price_cents > 0
-        AND observed_at > NOW() - INTERVAL '45 days'
     ) combined
     ORDER BY skin_name, float_value
   `);
@@ -375,14 +363,15 @@ async function getFloatCeiling(
     d.float >= condFloor &&
     (predictedFloat - d.float) <= CEILING_MAX_FLOAT_DIST
   );
-  if (nearbyLower.length < 3) return null;
+  if (nearbyLower.length < 5) return null;
 
-  // Sort by price ascending, take bottom-3 average as ceiling
+  // Sort by price ascending, take bottom-5 average as ceiling
+  // Requires 5+ listings for consensus — prevents single outlier listings from capping
   const sorted = nearbyLower.map(d => d.price).sort((a, b) => a - b);
-  const n = Math.min(3, sorted.length);
-  const bottom3Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
+  const n = Math.min(5, sorted.length);
+  const bottom5Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 
-  return bottom3Avg;
+  return bottom5Avg;
 }
 
 /**
