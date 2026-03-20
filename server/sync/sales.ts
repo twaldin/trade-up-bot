@@ -110,7 +110,8 @@ export async function syncSaleHistory(
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
-    WHERE error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours'
+    WHERE (error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours')
+       OR (error_code = 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '7 days')
   `);
   for (const r of errorRows) errorSkins.add(r.market_hash_name);
 
@@ -167,9 +168,20 @@ export async function syncSaleHistory(
       totalFetched++;
 
       if (sales.length === 0) {
+        // Track empty result so we skip this skin for 7 days (saves budget)
+        await pool.query(`
+          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+          VALUES ($1, 0)
+          ON CONFLICT(market_hash_name) DO UPDATE SET
+            error_count = sale_fetch_errors.error_count + 1,
+            last_seen_at = NOW()
+        `, [pair.marketHashName]);
         await new Promise((r) => setTimeout(r, 1500));
         continue;
       }
+
+      // Got results — clear any previous empty-result tracking
+      await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
       // Store individual sales
       const client = await pool.connect();
@@ -329,7 +341,8 @@ export async function syncStatTrakSaleHistory(
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
-    WHERE error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours'
+    WHERE (error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours')
+       OR (error_code = 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '7 days')
   `);
   for (const r of errorRows) errorSkins.add(r.market_hash_name);
 
@@ -383,9 +396,17 @@ export async function syncStatTrakSaleHistory(
 
       totalFetched++;
       if (sales.length === 0) {
+        await pool.query(`
+          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+          VALUES ($1, 0)
+          ON CONFLICT(market_hash_name) DO UPDATE SET
+            error_count = sale_fetch_errors.error_count + 1,
+            last_seen_at = NOW()
+        `, [pair.marketHashName]);
         await new Promise(r => setTimeout(r, 1500));
         continue;
       }
+      await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
       // Store ST sales (don't filter out is_stattrak — that's what we want)
       const client = await pool.connect();
@@ -530,7 +551,8 @@ export async function syncSaleHistoryForRarity(
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
-    WHERE error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours'
+    WHERE (error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours')
+       OR (error_code = 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '7 days')
   `);
   for (const r of errorRows) errorSkins.add(r.market_hash_name);
 
@@ -589,9 +611,17 @@ export async function syncSaleHistoryForRarity(
       totalFetched++;
 
       if (sales.length === 0) {
+        await pool.query(`
+          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+          VALUES ($1, 0)
+          ON CONFLICT(market_hash_name) DO UPDATE SET
+            error_count = sale_fetch_errors.error_count + 1,
+            last_seen_at = NOW()
+        `, [pair.marketHashName]);
         await new Promise((r) => setTimeout(r, 1500));
         continue;
       }
+      await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
       const client = await pool.connect();
       try {
@@ -734,7 +764,8 @@ export async function syncKnifeGloveSaleHistory(
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
-    WHERE error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours'
+    WHERE (error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours')
+       OR (error_code = 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '7 days')
   `);
   for (const r of errorRows) errorSkins.add(r.market_hash_name);
 
@@ -795,9 +826,17 @@ export async function syncKnifeGloveSaleHistory(
       totalFetched++;
 
       if (sales.length === 0) {
+        await pool.query(`
+          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+          VALUES ($1, 0)
+          ON CONFLICT(market_hash_name) DO UPDATE SET
+            error_count = sale_fetch_errors.error_count + 1,
+            last_seen_at = NOW()
+        `, [pair.marketHashName]);
         await new Promise((r) => setTimeout(r, 1500));
         continue;
       }
+      await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
       const client = await pool.connect();
       try {
