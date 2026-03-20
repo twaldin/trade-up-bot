@@ -130,7 +130,7 @@ export class BudgetTracker {
 
   /**
    * Usable listing calls = remaining minus safety buffer.
-   * The safety buffer keeps us above 0 to avoid triggering the 12h lockout.
+   * The safety buffer keeps us above 0 to avoid triggering the 24h lockout.
    */
   get listingUsable() { return Math.max(0, this.listingRemaining - LISTING_SAFETY_BUFFER); }
   get saleUsable() { return Math.max(0, this.saleRemaining - SALE_SAFETY_BUFFER); }

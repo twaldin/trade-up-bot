@@ -164,9 +164,11 @@ const rarityMap: Record<string, string> = {
         });
       } else {
         const inputRarity = rarityMap[task] ?? "Classified";
+        const preferHighFloat = task === "classified" || task === "restricted";
         explored = await exploreWithBudget(pool, deadline, existingSigs, {
           inputRarity,
           cycleStartedAt,
+          preferHighFloat,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       }
@@ -179,12 +181,6 @@ const rarityMap: Record<string, string> = {
       tradeUps = [...(tradeUps ?? []), ...explored];
     } else {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s), no time for exploration`);
-    }
-
-    // Cap results to avoid OOM on NDJSON write/read
-    if (tradeUps && tradeUps.length > 30000) {
-      tradeUps.sort((a, b) => b.profit_cents - a.profit_cents);
-      tradeUps = tradeUps.slice(0, 30000);
     }
 
     await sendAndExit({

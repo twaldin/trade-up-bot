@@ -72,7 +72,7 @@ export async function getSkinsNeedingCoverage(
 }
 
 /**
- * Check listing staleness via individual listing lookups (50K/12h pool).
+ * Check listing staleness via individual listing lookups (50K/24h pool).
  * For each listing in our DB, fetches its current state:
  *   - "listed" -> keep it (update price if changed)
  *   - "sold" -> record as sale observation + delete from listings

@@ -13,8 +13,6 @@ import {
   syncPrioritizedKnifeInputs,
   syncSmartListingsForRarity,
   syncCovertOutputListings,
-  syncDMarketListingsForRarity,
-  isDMarketConfigured,
 } from "../../sync.js";
 
 import { BudgetTracker, FreshnessTracker } from "../state.js";
@@ -96,8 +94,8 @@ export async function phase3ApiProbe(
   const KNOWN_LISTING_LIMIT = 200;
   const KNOWN_SALE_LIMIT = 500;
   const KNOWN_INDIVIDUAL_LIMIT = 50000;
-  const KNOWN_LISTING_WINDOW_S = 12 * 3600;
-  const KNOWN_SALE_WINDOW_S = 12 * 3600;
+  const KNOWN_LISTING_WINDOW_S = 3600;          // Listing pool: ~1h rolling window
+  const KNOWN_SALE_WINDOW_S = 24 * 3600;        // Sale pool: ~24h rolling window
   const KNOWN_INDIVIDUAL_WINDOW_S = 24 * 3600;
 
   const nowS = Date.now() / 1000;
@@ -183,6 +181,36 @@ export async function phase4DataFetch(
     const cycleSaleBudget = budget.cycleSaleBudget();
     console.log(`  [${timestamp()}] 4a: Sale history (${budget.saleRemaining} remaining, ${cycleSaleBudget} this cycle)`);
 
+    // Adaptive allocation: weight remaining sale budget by inverse-log of existing data
+    // Tiers with less data get more budget; Consumer Grade excluded (never an output)
+    const OUTPUT_RARITIES = ['Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade'] as const;
+    let rarityWeights: { rarity: string; weight: number; budget: number }[] = [];
+    try {
+      const { rows: saleCounts } = await pool.query(`
+        SELECT s.rarity, COUNT(*) as cnt FROM sale_history sh
+        JOIN skins s ON sh.skin_id = s.id
+        WHERE s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade')
+        GROUP BY s.rarity
+      `);
+      const countMap = new Map<string, number>(saleCounts.map((r: { rarity: string; cnt: string }) => [r.rarity, parseInt(r.cnt)]));
+      const weights = OUTPUT_RARITIES.map(r => ({
+        rarity: r,
+        weight: 1 / Math.log10((countMap.get(r) ?? 0) + 2),  // +2 to avoid log(1)=0
+      }));
+      const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
+      const gunSaleBudget = Math.floor(cycleSaleBudget * 0.75); // 75% for gun rarities
+      rarityWeights = weights.map(w => ({
+        ...w,
+        budget: Math.max(1, Math.round((w.weight / totalWeight) * gunSaleBudget)),
+      }));
+      console.log(`    Adaptive sale allocation: ${rarityWeights.map(w => `${w.rarity.slice(0, 4)} ${w.budget}`).join(', ')}`);
+    } catch {
+      // Fallback to even split
+      const gunSaleBudget = Math.floor(cycleSaleBudget * 0.75);
+      const perRarity = Math.max(1, Math.floor(gunSaleBudget / OUTPUT_RARITIES.length));
+      rarityWeights = OUTPUT_RARITIES.map(r => ({ rarity: r, weight: 1, budget: perRarity }));
+    }
+
     await setDaemonStatus(pool, "fetching", "Phase 4a: Knife/Glove sale history");
     const knifeSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.25)));
     if (knifeSaleBudget >= 2) {
@@ -201,103 +229,34 @@ export async function phase4DataFetch(
       }
     }
 
-    await setDaemonStatus(pool, "fetching", "Phase 4a: Covert gun sale history");
-    const covertSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
-    if (covertSaleBudget >= 1) {
-      try {
-        const result = await syncSaleHistory(pool, {
-          apiKey,
-          maxCalls: covertSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Covert sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) await emitEvent(pool, "sale_history", `Covert guns: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Covert sales: rate limited, moving on`);
-        else console.error(`    Covert sales error: ${(err as Error).message}`);
-      }
-    }
+    // Fetch sale history for each output rarity with adaptive budgets
+    for (const { rarity, budget: rarityBudget } of rarityWeights) {
+      if (rarityBudget < 1 || !budget.hasSaleBudget(1)) break;
+      const callBudget = Math.min(budget.saleRemaining, rarityBudget);
+      if (callBudget < 1) continue;
 
-    await setDaemonStatus(pool, "fetching", "Phase 4a: Classified sale history");
-    const classifiedSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
-    if (classifiedSaleBudget >= 1) {
+      await setDaemonStatus(pool, "fetching", `Phase 4a: ${rarity} sale history`);
       try {
-        const result = await syncSaleHistoryForRarity(pool, "Classified", {
-          apiKey,
-          maxCalls: classifiedSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Classified sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) await emitEvent(pool, "sale_history", `Classified: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
+        if (rarity === 'Covert') {
+          const result = await syncSaleHistory(pool, {
+            apiKey,
+            maxCalls: callBudget,
+            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+          });
+          budget.useSale(result.fetched);
+          if (result.sales > 0) console.log(`    ${rarity} sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
+        } else {
+          const result = await syncSaleHistoryForRarity(pool, rarity, {
+            apiKey,
+            maxCalls: callBudget,
+            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+          });
+          budget.useSale(result.fetched);
+          if (result.sales > 0) console.log(`    ${rarity} sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
+        }
       } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Classified sales: rate limited, moving on`);
-        else console.error(`    Classified sales error: ${(err as Error).message}`);
-      }
-    }
-
-    const restrictedSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.15)));
-    if (restrictedSaleBudget >= 1) {
-      try {
-        const result = await syncSaleHistoryForRarity(pool, "Restricted", {
-          apiKey,
-          maxCalls: restrictedSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Restricted sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Restricted sales: rate limited`);
-        else console.error(`    Restricted sales error: ${(err as Error).message}`);
-      }
-    }
-
-    const milspecSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
-    if (milspecSaleBudget >= 1) {
-      try {
-        const result = await syncSaleHistoryForRarity(pool, "Mil-Spec", {
-          apiKey,
-          maxCalls: milspecSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Mil-Spec sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Mil-Spec sales: rate limited`);
-        else console.error(`    Mil-Spec sales error: ${(err as Error).message}`);
-      }
-    }
-
-    const industrialSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
-    if (industrialSaleBudget >= 1) {
-      try {
-        const result = await syncSaleHistoryForRarity(pool, "Industrial Grade", {
-          apiKey,
-          maxCalls: industrialSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Industrial sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Industrial sales: rate limited`);
-        else console.error(`    Industrial sales error: ${(err as Error).message}`);
-      }
-    }
-
-    const consumerSaleBudget = Math.min(budget.saleRemaining, Math.max(1, Math.floor(cycleSaleBudget * 0.10)));
-    if (consumerSaleBudget >= 1) {
-      try {
-        const result = await syncSaleHistoryForRarity(pool, "Consumer Grade", {
-          apiKey,
-          maxCalls: consumerSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Consumer sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Consumer sales: rate limited`);
-        else console.error(`    Consumer sales error: ${(err as Error).message}`);
+        if (err instanceof Error && err.message.includes("429")) console.log(`    ${rarity} sales: rate limited`);
+        else console.error(`    ${rarity} sales error: ${(err as Error).message}`);
       }
     }
   } else {
@@ -407,54 +366,6 @@ export async function phase4DataFetch(
     }
   } else {
     console.log(`  [${timestamp()}] 4b: Listing search — rate limited, skipping`);
-  }
-
-  // 4d: DMarket listings (independent API — 2 RPS, doesn't use CSFloat budget)
-  if (isDMarketConfigured()) {
-    console.log(`  [${timestamp()}] 4d: DMarket listing fetch`);
-    await setDaemonStatus(pool, "fetching", "Phase 4d: DMarket listings");
-    let dmCoverageInserted = 0;
-
-    try {
-      await setDaemonStatus(pool, "fetching", "Phase 4d: DMarket coverage");
-      const covertResult = await syncDMarketListingsForRarity(pool, "Covert", {
-        maxSkinsPerCall: 8,
-        maxListingsPerSkin: 50,
-        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
-      });
-      dmCoverageInserted += covertResult.listingsInserted;
-
-      const classifiedResult = await syncDMarketListingsForRarity(pool, "Classified", {
-        maxSkinsPerCall: 8,
-        maxListingsPerSkin: 50,
-        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
-      });
-      dmCoverageInserted += classifiedResult.listingsInserted;
-
-      const restrictedResult = await syncDMarketListingsForRarity(pool, "Restricted", {
-        maxSkinsPerCall: 12,
-        maxListingsPerSkin: 30,
-        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket Restricted: ${msg}`),
-      });
-      dmCoverageInserted += restrictedResult.listingsInserted;
-
-      const milspecResult = await syncDMarketListingsForRarity(pool, "Mil-Spec", {
-        maxSkinsPerCall: 12,
-        maxListingsPerSkin: 30,
-        onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket Mil-Spec: ${msg}`),
-      });
-      dmCoverageInserted += milspecResult.listingsInserted;
-
-      if (dmCoverageInserted > 0) freshness.markListingsChanged();
-      const totalSkinsChecked = covertResult.skinsChecked + classifiedResult.skinsChecked + restrictedResult.skinsChecked + milspecResult.skinsChecked;
-      console.log(`    DMarket coverage: ${totalSkinsChecked} skins, ${dmCoverageInserted} listings (R:${restrictedResult.listingsInserted} MS:${milspecResult.listingsInserted})`);
-
-      if (dmCoverageInserted > 0) {
-        await emitEvent(pool, "listings_fetched", `DMarket: +${dmCoverageInserted} listings`);
-      }
-    } catch (err) {
-      console.error(`    DMarket fetch error: ${(err as Error).message}`);
-    }
   }
 
   console.log(`  Data fetch done — ${budget.saleCount} sale calls (${budget.saleRemaining} remaining), ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);

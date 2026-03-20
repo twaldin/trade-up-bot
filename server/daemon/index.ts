@@ -98,10 +98,11 @@ const MAX_WORKER_TIME = 300_000; // 5 min maximum
 const WORKER_KILL_BUFFER = 30_000; // 30s grace period
 
 /** Worker round definitions: pairs of tiers to run in parallel. */
-const WORKER_ROUNDS: [string, string][] = [
+const WORKER_ROUNDS: ([string, string] | [string, null])[] = [
   ["knife", "classified"],
-  ["restricted", "milspec"],
-  ["industrial", "consumer"],
+  ["knife", "restricted"],
+  ["milspec", "industrial"],
+  ["consumer", null],
 ];
 
 /** Trade-up type for each worker task. */
@@ -119,11 +120,16 @@ const TASK_TYPE_MAP: Record<string, string> = {
  * Time-bounded: worker runs structured discovery then deep exploration
  * until timeLimitMs expires. Kill timeout prevents hangs.
  */
+interface WorkerResult {
+  tradeUps: TradeUp[];
+  stats?: { structuredCount: number; exploreCount: number; structuredMs: number };
+}
+
 function runCalcWorker(
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
   timeLimitMs?: number,
   cycleStartedAt?: number,
-): Promise<TradeUp[]> {
+): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
 
@@ -182,11 +188,11 @@ function runCalcWorker(
             });
             rl.on("close", () => {
               try { fs.unlinkSync(msg.resultFile!); } catch { /* already cleaned up */ }
-              resolve(data);
+              resolve({ tradeUps: data, stats: msg.stats as WorkerResult['stats'] });
             });
           });
         } else {
-          resolve(msg.tradeUps!);
+          resolve({ tradeUps: msg.tradeUps!, stats: msg.stats as WorkerResult['stats'] });
         }
       } else {
         reject(new Error(`Worker ${task}: ${msg.error}`));
@@ -366,7 +372,7 @@ export async function main() {
       console.log(`\n  -- Super-batch ${superBatchCount} --`);
       await setDaemonStatus(pool, "calculating", `Phase 5: Super-batch ${superBatchCount}`);
 
-      // Run 3 rounds of 2 workers each
+      // Run worker rounds (1-2 workers per round)
       for (let roundIdx = 0; roundIdx < WORKER_ROUNDS.length; roundIdx++) {
         if (Date.now() >= engineEnd - 30_000) break;
 
@@ -378,35 +384,32 @@ export async function main() {
           ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / WORKER_ROUNDS.length))
           : MIN_WORKER_TIME;
 
-        await setDaemonStatus(pool, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
+        const statusDetail = taskB
+          ? `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`
+          : `Phase 5: ${taskA} (${Math.round(workerTimeLimit / 1000)}s)`;
+        await setDaemonStatus(pool, "calculating", statusDetail);
 
-        const results = await Promise.allSettled([
+        const workers: Promise<WorkerResult>[] = [
           runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted),
-          runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted),
-        ]);
+        ];
+        if (taskB) {
+          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted));
+        }
+        const results = await Promise.allSettled(workers);
 
         // Merge results for each worker
-        for (let i = 0; i < 2; i++) {
+        const taskNames = taskB ? [taskA, taskB] : [taskA];
+        for (let i = 0; i < taskNames.length; i++) {
           const r = results[i];
-          const taskName = i === 0 ? taskA : taskB;
+          const taskName = taskNames[i];
           const tradeUpType = TASK_TYPE_MAP[taskName];
 
-          if (r.status === "fulfilled" && r.value.length > 0) {
-            const tradeUps = r.value;
+          if (r.status === "fulfilled" && r.value.tradeUps.length > 0) {
+            const tradeUps = r.value.tradeUps;
+            const wStats = r.value.stats;
             const profitable = tradeUps.filter(t => t.profit_cents > 0);
 
-            // Merge-save (cap at 30K for lower tiers to prevent OOM)
-            const MAX_SAVE = 30000;
-            let toSave = tradeUps;
-            if (tradeUps.length > MAX_SAVE) {
-              const profitableSet = tradeUps.filter(t => t.profit_cents > 0);
-              const highChance = tradeUps.filter(t => t.profit_cents <= 0 && (t.chance_to_profit ?? 0) >= 0.25);
-              const rest = tradeUps.filter(t => t.profit_cents <= 0 && (t.chance_to_profit ?? 0) < 0.25);
-              rest.sort((a, b) => b.profit_cents - a.profit_cents);
-              toSave = [...profitableSet, ...highChance, ...rest].slice(0, MAX_SAVE);
-            }
-
-            await mergeTradeUps(pool, toSave, tradeUpType);
+            await mergeTradeUps(pool, tradeUps, tradeUpType);
 
             // Check for new all-time records and fire Discord alerts (post-merge, uses DB data)
             try {
@@ -432,6 +435,9 @@ export async function main() {
             }
 
             console.log(`    ${taskName}: ${tradeUps.length} trade-ups (${profitable.length} profitable)`);
+            if (wStats) {
+              console.log(`      structured ${wStats.structuredCount} (${(wStats.structuredMs / 1000).toFixed(1)}s) + explored ${wStats.exploreCount}`);
+            }
 
             if (profitable.length > 0 && (taskName === "knife" || taskName === "classified")) {
               for (const tu of profitable.slice(0, 3)) {

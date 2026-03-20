@@ -384,35 +384,6 @@ export async function findProfitableTradeUps(
       70, 100
     );
 
-    // Step 3: Triple-collection combos (reduced scope)
-    // Data shows 0% historically profitable for 3+, but keep triples at reduced
-    // limits in case market shifts. Quads+ removed entirely.
-    if (pastDeadline()) {
-      options.onProgress?.(`${inputRarity}: stopped at deadline (${store.total} trade-ups)`, 90, 100);
-      if (options.onFlush) {
-        options.onFlush(store.getAll(limit), isFirstFlush);
-        isFirstFlush = false;
-      }
-      continue;
-    }
-    const maxTriple = Math.min(colIds.length, 20); // was 27
-    for (let i = 0; i < maxTriple; i++) {
-      for (let j = i + 1; j < maxTriple; j++) {
-        for (let k = j + 1; k < maxTriple; k++) {
-          const cols = [colIds[i], colIds[j], colIds[k]];
-          const pooled = cols
-            .flatMap((c) => byCollection.get(c) ?? [])
-            .sort((a, b) => a.price_cents - b.price_cents);
-          if (pooled.length < 10) continue;
-          // Just cheapest-10 pooled — no float targeting for triples
-          const inputs = pooled.slice(0, 10);
-          const usedCols = [...new Set(inputs.map((l) => l.collection_id))];
-          await tryEval(inputs, outcomesForCols(...usedCols));
-        }
-      }
-    }
-    // Steps 4+: N>=4 collection combos removed — never profitable historically.
-
     options.onProgress?.(
       `${inputRarity}: done (${store.total} trade-ups, ${store.getSignatureCount()} signatures)`,
       90, 100
@@ -847,6 +818,7 @@ export async function exploreWithBudget(
     stattrak?: boolean;
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    preferHighFloat?: boolean;
   } = {}
 ): Promise<TradeUp[]> {
   const inputRarity = options.inputRarity ?? "Classified";
@@ -922,8 +894,9 @@ export async function exploreWithBudget(
     }
   }
 
-  // Float-biased strategies: output-aware (7), ultra-low-float (8) get 2x probability
-  const FLOAT_BIASED_CASES = [5, 7, 8];
+  // Low-float bias: strategies 5 (float-targeted pair), 7 (output-value-aware), 8 (ultra-low-float)
+  // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
+  const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8];
   const TOTAL_STRATEGIES = 10;
 
   const results: TradeUp[] = [];
