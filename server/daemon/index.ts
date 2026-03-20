@@ -89,6 +89,7 @@ const TASK_TYPE_MAP: Record<string, string> = {
 function runCalcWorker(
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
   timeLimitMs?: number,
+  cycleStartedAt?: number,
 ): Promise<TradeUp[]> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -108,7 +109,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt }),
       },
     });
 
@@ -347,8 +348,8 @@ export async function main() {
         await setDaemonStatus(pool, "calculating", `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`);
 
         const results = await Promise.allSettled([
-          runCalcWorker(taskA as "knife", workerTimeLimit),
-          runCalcWorker(taskB as "classified", workerTimeLimit),
+          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted),
+          runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted),
         ]);
 
         // Merge results for each worker

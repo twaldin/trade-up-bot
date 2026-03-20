@@ -12,6 +12,7 @@
 
 import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
+import { CONDITION_BOUNDS } from "./types.js";
 
 export const FLOAT_BUCKETS = [
   { min: 0.00, max: 0.03, label: "FN-low" },
@@ -150,9 +151,6 @@ export async function getInterpolatedPrice(
 const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   sale: 3.0,              // CSFloat verified transactions — ground truth
   skinport_sale: 2.0,     // Skinport confirmed transactions
-  listing: 1.5,           // CSFloat market offers
-  listing_dmarket: 1.0,   // DMarket listings, buyer-fee-normalized
-  listing_skinport: 0.7,  // Skinport data-only source
 };
 
 const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
@@ -179,11 +177,14 @@ async function ensureKnnCache(pool: pg.Pool) {
   _knnCache.clear();
   _knnFreshnessCache.clear();
 
+  // Sales-only for output pricing: listings are ask prices (not transaction prices)
+  // and inflate estimates for expensive skins where sellers list at collector premiums.
   const { rows } = await pool.query(`
     SELECT skin_name, float_value, price_cents, source,
       EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
     FROM price_observations
     WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 <= $1
+      AND source IN ('sale', 'skinport_sale')
     ORDER BY skin_name, float_value
   `, [KNN_MAX_OBS_AGE_DAYS]);
 
@@ -228,7 +229,6 @@ const KNN_MIN_OBS = 3;
 const KNN_MIN_INTERP = 2;  // minimum for linear interpolation fallback
 const KNN_MAX_FLOAT_DIST = 0.04;
 const KNN_MAX_NEAREST_DIST = 0.012;
-const KNN_DEFAULT_SIGMA = 0.015;
 
 /**
  * KNN price lookup with Gaussian kernel weighting and linear interpolation fallback.
@@ -265,16 +265,19 @@ export async function knnOutputPriceAtFloat(
       if (withDist[0].dist <= KNN_MAX_NEAREST_DIST) {
         const neighbors = withDist.slice(0, KNN_K);
 
-        // Outlier filtering: remove prices >5x or <0.2x the median
+        // Outlier filtering: remove prices >3x or <0.3x the median
         const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
         const median = prices[Math.floor(prices.length / 2)];
-        const filtered = neighbors.filter(n => n.price <= median * 5 && n.price >= median * 0.2);
+        const filtered = neighbors.filter(n => n.price <= median * 3 && n.price >= median * 0.3);
 
         if (filtered.length >= KNN_MIN_OBS) {
-          // Adaptive sigma: median distance to neighbors, with floor
+          // Range-normalized sigma: scale by condition float width so KNN is
+          // equally selective across conditions (0.015 = 21% of FN but 7% of FT)
+          const condBounds = CONDITION_BOUNDS.find(c => c.name === targetCondition);
+          const condWidth = condBounds ? condBounds.max - condBounds.min : 0.23;
           const sigma = filtered.length >= 6
-            ? Math.max(filtered[Math.floor(filtered.length / 2)].dist, 0.005)
-            : KNN_DEFAULT_SIGMA;
+            ? Math.max(filtered[Math.floor(filtered.length / 2)].dist, condWidth * 0.05)
+            : condWidth * 0.15;
 
           // Gaussian-weighted mean: weight = source_weight * age_decay * exp(-dist²/σ²)
           let totalWeight = 0;

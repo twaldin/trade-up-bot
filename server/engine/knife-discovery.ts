@@ -7,7 +7,7 @@ import { buildPriceCache } from "./pricing.js";
 import { loadDiscoveryData, buildWeightedPool } from "./data-load.js";
 import { selectForFloatTarget, selectLowestFloat } from "./selection.js";
 import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
-import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
+import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 
 /**
  * Discover profitable knife trade-ups.
@@ -155,9 +155,12 @@ export async function findProfitableKnifeTradeUps(
       list.push(l);
       byCondition.set(cond, list);
     }
-    for (const [, condListings] of byCondition) {
-      // Try multiple windows within each condition (cheapest, 2nd cheapest, 3rd cheapest)
-      for (let window = 0; window < 3; window++) {
+    // For conditions where float matters (FN, expensive MW/FT), only try lowest-float window.
+    // For others (WW, BS, cheap skins), try all 3 windows.
+    for (const [cond, condListings] of byCondition) {
+      const floatMatters = cond === "Factory New" || cond === "Minimal Wear";
+      const maxWindows = floatMatters ? 1 : 3;
+      for (let window = 0; window < maxWindows; window++) {
         const off = window * 5;
         if (condListings.length >= off + 5) {
           await tryEvalKnife(condListings.slice(off, off + 5));
@@ -386,13 +389,17 @@ export async function randomKnifeExplore(
     ORDER BY profit_cents DESC LIMIT 200
   `);
 
+  // Float-biased strategies: float-targeted (2), ultra-low-float (8), output-aware (9) get 2x
+  const RKNIFE_FLOAT_BIASED = [2, 8, 9];
+  const RKNIFE_TOTAL_STRATEGIES = 10;
+
   for (let iter = 0; iter < iterations; iter++) {
     if (iter % 100 === 0) {
       options.onProgress?.(`Knife explore: ${iter}/${iterations} (${found} new, ${improved} improved)`);
     }
 
     try {
-      const strategy = Math.floor(Math.random() * 8);
+      const strategy = pickWeightedStrategy(RKNIFE_TOTAL_STRATEGIES, RKNIFE_FLOAT_BIASED);
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -604,6 +611,33 @@ export async function randomKnifeExplore(
           explored++;
           continue; // Don't fall through to the new trade-up insertion below
         }
+
+        case 8: {
+          // Ultra-low-float pool: pick lowest-float listings, fill rest with cheapest.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 5) break;
+          const floatSorted = [...list].sort((a, b) => a.float_value - b.float_value);
+          const lowFloatCount = 1 + Math.floor(Math.random() * 2);
+          const lowFloats = floatSorted.slice(0, lowFloatCount);
+          const lowFloatIds = new Set(lowFloats.map(l => l.id));
+          const remaining = list.filter(l => !lowFloatIds.has(l.id));
+          if (remaining.length < 5 - lowFloatCount) break;
+          inputs = [...lowFloats, ...remaining.slice(0, 5 - lowFloatCount)];
+          break;
+        }
+
+        case 9: {
+          // Output-value-aware: target very low adjusted floats for premium knife output.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 5) break;
+          const targetAdjFloat = Math.random() * 0.15;
+          const quotas = new Map([[col, 5]]);
+          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5);
+          if (selected && selected.length === 5) inputs = selected;
+          break;
+        }
       }
 
       if (!inputs || inputs.length !== 5) continue;
@@ -666,6 +700,7 @@ export async function exploreKnifeWithBudget(
   deadlineMs: number,
   existingSignatures: Set<string>,
   options: {
+    cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
   } = {}
 ): Promise<TradeUp[]> {
@@ -688,6 +723,24 @@ export async function exploreKnifeWithBudget(
   // Profit-guided weighted pool
   const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife");
 
+  // Build new-listing pool for new-listing priority strategy
+  const newListingsByCol = new Map<string, ListingWithCollection[]>();
+  if (options.cycleStartedAt) {
+    const { rows: newRows } = await pool.query<{ id: string }>(
+      `SELECT id FROM listings WHERE created_at > to_timestamp($1 / 1000.0)`,
+      [options.cycleStartedAt]
+    );
+    const newIds = new Set(newRows.map(r => r.id));
+    for (const [colName, listings] of byCollection) {
+      const newOnes = listings.filter(l => newIds.has(l.id));
+      if (newOnes.length > 0) newListingsByCol.set(colName, newOnes);
+    }
+  }
+
+  // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8) get 2x
+  const KNIFE_FLOAT_BIASED = [5, 7, 8];
+  const KNIFE_TOTAL_STRATEGIES = 10;
+
   const results: TradeUp[] = [];
   let explored = 0;
 
@@ -699,7 +752,7 @@ export async function exploreKnifeWithBudget(
     }
 
     try {
-      const strategy = Math.floor(Math.random() * 7);
+      const strategy = pickWeightedStrategy(KNIFE_TOTAL_STRATEGIES, KNIFE_FLOAT_BIASED);
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -804,6 +857,59 @@ export async function exploreKnifeWithBudget(
               break;
             }
           }
+          break;
+        }
+
+        case 7: {
+          // Ultra-low-float pool: pick 2-3 lowest-float listings per collection,
+          // fill remaining with cheapest. Tests if output float premium outweighs cost.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 5) break;
+          const floatSorted = [...list].sort((a, b) => a.float_value - b.float_value);
+          const lowFloatCount = 1 + Math.floor(Math.random() * 2); // 1 or 2 for knife (5 inputs)
+          const lowFloats = floatSorted.slice(0, lowFloatCount);
+          const lowFloatIds = new Set(lowFloats.map(l => l.id));
+          const remaining = list.filter(l => !lowFloatIds.has(l.id));
+          if (remaining.length < 5 - lowFloatCount) break;
+          inputs = [...lowFloats, ...remaining.slice(0, 5 - lowFloatCount)];
+          break;
+        }
+
+        case 8: {
+          // Output-value-aware: target input floats that produce the best output condition.
+          // For knife trade-ups, lower input floats → lower output floats → higher-value knives.
+          const col = pick(weightedPool);
+          const list = byCollection.get(col) ?? [];
+          if (list.length < 5) break;
+          // Target very low adjusted floats (FN/MW output territory)
+          const targetAdjFloat = Math.random() * 0.15; // heavily biased toward low floats
+          const quotas = new Map([[col, 5]]);
+          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5);
+          if (selected && selected.length === 5) inputs = selected;
+          break;
+        }
+
+        case 9: {
+          // New-listing priority: build combos including at least 1 listing fetched this cycle.
+          if (newListingsByCol.size === 0) break;
+          const newCols = [...newListingsByCol.keys()].filter(cn => {
+            const m = CASE_KNIFE_MAP[cn];
+            return m && (m.knifeTypes.length > 0 || m.gloveGen !== null);
+          });
+          if (newCols.length === 0) break;
+
+          const col = pick(newCols);
+          const newListings = newListingsByCol.get(col) ?? [];
+          const allColListings = byCollection.get(col) ?? [];
+          if (newListings.length === 0 || allColListings.length < 5) break;
+
+          const newCount = Math.min(1 + Math.floor(Math.random() * 2), newListings.length);
+          const picked = shuffle(newListings).slice(0, newCount);
+          const pickedIds = new Set(picked.map(l => l.id));
+          const filler = allColListings.filter(l => !pickedIds.has(l.id));
+          if (filler.length < 5 - newCount) break;
+          inputs = [...picked, ...filler.slice(0, 5 - newCount)];
           break;
         }
       }

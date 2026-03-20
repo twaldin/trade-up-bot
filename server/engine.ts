@@ -19,7 +19,7 @@ export { RARITY_TIERS, getTierById, getGunTiers, getNewTiers } from "./engine/ra
 export { MARKETPLACE_FEES, effectiveBuyCost, effectiveBuyCostRaw, effectiveSellProceeds } from "./engine/fees.js";
 
 // === Utilities ===
-export { pick, shuffle, listingSig, parseSig, computeChanceToProfit, computeBestWorstCase, withRetry } from "./engine/utils.js";
+export { pick, shuffle, listingSig, parseSig, computeChanceToProfit, computeBestWorstCase, withRetry, pickWeightedStrategy } from "./engine/utils.js";
 
 // === Core Math ===
 export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/core.js";
