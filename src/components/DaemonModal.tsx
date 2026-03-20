@@ -37,9 +37,12 @@ interface DaemonLogData {
     listingsStored: number;
     lastFetchAt: string | null;
   } | null;
-  skinportStats: {
-    listingsStored: number;
-    saleObservations: number;
+  stalenessStats: {
+    csfloat_avg_hours: number | null;
+    csfloat_median_hours: number | null;
+    dmarket_avg_hours: number | null;
+    checked_24h: number;
+    total_listings: number;
   } | null;
 }
 
@@ -223,7 +226,7 @@ function CycleHistory() {
 }
 
 export function DaemonModal({ onClose }: { onClose: () => void }) {
-  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, skinportStats: null });
+  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null });
   const logEndRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -312,9 +315,9 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
               )}
               {rl && (
                 <>
-                  <RateLimitBar label="Listings" pool={rl.listing_search} />
-                  <RateLimitBar label="Sales" pool={rl.sale_history} />
-                  <RateLimitBar label="Individual" pool={rl.individual} />
+                  <RateLimitBar label="Listings (200/1h)" pool={rl.listing_search} />
+                  <RateLimitBar label="Sales (500/24h)" pool={rl.sale_history} />
+                  <RateLimitBar label="Individual (50K/24h)" pool={rl.individual} />
                   <div className="text-[0.6rem] text-muted-foreground/40 mt-1.5 text-right">
                     Updated {timeAgo(rl.detected_at)}
                   </div>
@@ -322,47 +325,58 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
               )}
             </div>
 
-            {/* DMarket + Skinport */}
-            {(logData.dmarketStats || logData.skinportStats) && (
+            {/* DMarket */}
+            {logData.dmarketStats && (
               <div className="mt-5 pt-4 border-t border-border">
-                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">Other Sources</h3>
-
-                {logData.dmarketStats && (
-                  <div className="mb-2">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <span className="text-xs text-muted-foreground">DMarket API</span>
-                      <Badge
-                        variant="secondary"
-                        className={`text-[0.6rem] px-1.5 py-0 h-4 ${logData.dmarketStats.configured ? "text-green-500" : "text-muted-foreground/60"}`}
-                      >
-                        {logData.dmarketStats.configured ? "Configured" : "Off"}
-                      </Badge>
-                    </div>
-                    <div className="text-[0.68rem] text-muted-foreground/60">
-                      {logData.dmarketStats.listingsStored.toLocaleString()} listings
-                      {logData.dmarketStats.lastFetchAt && (
-                        <span className="text-muted-foreground/40"> · {timeAgo(logData.dmarketStats.lastFetchAt)}</span>
-                      )}
-                    </div>
+                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">DMarket</h3>
+                <div className="mb-2">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-xs text-muted-foreground">DMarket API</span>
+                    <Badge
+                      variant="secondary"
+                      className={`text-[0.6rem] px-1.5 py-0 h-4 ${logData.dmarketStats.configured ? "text-green-500" : "text-muted-foreground/60"}`}
+                    >
+                      {logData.dmarketStats.configured ? "2 RPS" : "Off"}
+                    </Badge>
                   </div>
-                )}
-
-                {logData.skinportStats && (
-                  <div className="mb-2">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <span className="text-xs text-muted-foreground">Skinport WS</span>
-                      <Badge variant="secondary" className="text-[0.6rem] px-1.5 py-0 h-4 text-green-500">
-                        Passive
-                      </Badge>
-                    </div>
-                    <div className="text-[0.68rem] text-muted-foreground/60">
-                      {logData.skinportStats.listingsStored.toLocaleString()} listings
-                      {logData.skinportStats.saleObservations > 0 && (
-                        <> &middot; {logData.skinportStats.saleObservations.toLocaleString()} sales</>
-                      )}
-                    </div>
+                  <div className="text-[0.68rem] text-muted-foreground/60">
+                    {logData.dmarketStats.listingsStored.toLocaleString()} listings
+                    {logData.dmarketStats.lastFetchAt && (
+                      <span className="text-muted-foreground/40"> · {timeAgo(logData.dmarketStats.lastFetchAt)}</span>
+                    )}
                   </div>
-                )}
+                </div>
+              </div>
+            )}
+
+            {/* Staleness */}
+            {logData.stalenessStats && (
+              <div className="mt-5 pt-4 border-t border-border">
+                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">Listing Freshness</h3>
+                <div className="space-y-1 text-[0.68rem] text-muted-foreground/70">
+                  {logData.stalenessStats.csfloat_avg_hours !== null && (
+                    <div className="flex justify-between">
+                      <span>CSFloat avg</span>
+                      <span>{Math.round(logData.stalenessStats.csfloat_avg_hours)}h</span>
+                    </div>
+                  )}
+                  {logData.stalenessStats.csfloat_median_hours !== null && (
+                    <div className="flex justify-between">
+                      <span>CSFloat median</span>
+                      <span>{Math.round(logData.stalenessStats.csfloat_median_hours)}h</span>
+                    </div>
+                  )}
+                  {logData.stalenessStats.dmarket_avg_hours !== null && (
+                    <div className="flex justify-between">
+                      <span>DMarket avg</span>
+                      <span>{Math.round(logData.stalenessStats.dmarket_avg_hours)}h</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>Checked &lt;24h</span>
+                    <span>{logData.stalenessStats.checked_24h.toLocaleString()}/{logData.stalenessStats.total_listings.toLocaleString()}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
