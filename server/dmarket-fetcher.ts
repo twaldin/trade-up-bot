@@ -184,18 +184,6 @@ async function main() {
     for (const skinName of queue) {
       if (!running) break;
 
-      // Pause when daemon is in heavy DB write phases
-      try {
-        const { rows } = await pool.query("SELECT value FROM sync_meta WHERE key = 'daemon_status'");
-        if (rows[0]) {
-          const parsed = JSON.parse(rows[0].value);
-          if (parsed.phase === "calculating") {
-            await new Promise(r => setTimeout(r, 5000));
-            continue;
-          }
-        }
-      } catch { /* ignore parse errors */ }
-
       try {
         const items = await fetchAllDMarketListings(skinName);
         const activeIds = new Set<string>();

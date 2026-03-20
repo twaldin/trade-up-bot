@@ -231,18 +231,6 @@ async function main() {
     for (const listing of queue) {
       if (!running) break;
 
-      // Yield during daemon calc phase
-      try {
-        const { rows } = await pool.query("SELECT value FROM sync_meta WHERE key = 'daemon_status'");
-        if (rows[0]) {
-          const parsed = JSON.parse(rows[0].value);
-          if (parsed.phase === "calculating") {
-            await new Promise(r => setTimeout(r, 5000));
-            continue;
-          }
-        }
-      } catch { /* ignore */ }
-
       // Poll verify_api_calls from Redis periodically
       if (redis && Date.now() - lastVerifyPoll > VERIFY_POLL_INTERVAL_MS) {
         try {
