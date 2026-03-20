@@ -183,13 +183,13 @@ export async function phase4DataFetch(
 
     // Adaptive allocation: weight remaining sale budget by inverse-log of existing data
     // Tiers with less data get more budget; Consumer Grade excluded (never an output)
-    const OUTPUT_RARITIES = ['Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade'] as const;
+    const OUTPUT_RARITIES = ['Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade', 'Consumer Grade'] as const;
     let rarityWeights: { rarity: string; weight: number; budget: number }[] = [];
     try {
       const { rows: saleCounts } = await pool.query(`
         SELECT s.rarity, COUNT(*) as cnt FROM sale_history sh
         JOIN skins s ON s.name = sh.skin_name AND s.stattrak = false
-        WHERE s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade')
+        WHERE s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade', 'Consumer Grade')
         GROUP BY s.rarity
       `);
       const countMap = new Map<string, number>(saleCounts.map((r: { rarity: string; cnt: string }) => [r.rarity, parseInt(r.cnt)]));
