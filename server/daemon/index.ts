@@ -375,12 +375,12 @@ export async function main() {
 
             await mergeTradeUps(pool, toSave, tradeUpType);
 
-            // Check for new all-time records and fire Discord alerts
+            // Check for new all-time records and fire Discord alerts (post-merge, uses DB data)
             try {
               const { getRedis } = await import("../redis.js");
               const redis = getRedis();
               if (redis) {
-                await checkAndFireAlerts(redis, toSave, tradeUpType);
+                await checkAndFireAlerts(pool, redis, tradeUpType);
               }
             } catch (e: any) {
               console.error(`    Alert check failed: ${e.message}`);
