@@ -188,7 +188,7 @@ export async function phase4DataFetch(
     try {
       const { rows: saleCounts } = await pool.query(`
         SELECT s.rarity, COUNT(*) as cnt FROM sale_history sh
-        JOIN skins s ON sh.skin_id = s.id
+        JOIN skins s ON s.name = sh.skin_name AND s.stattrak = false
         WHERE s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade')
         GROUP BY s.rarity
       `);
