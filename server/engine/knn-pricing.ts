@@ -155,6 +155,7 @@ const KNN_SOURCE_WEIGHTS: Record<string, number> = {
 
 const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
 const _knnFreshnessCache = new Map<string, number>(); // skin_name → count of observations < 14 days old
+const _knnHasCsfloatSales = new Set<string>(); // skins with at least 1 CSFloat sale (source='sale')
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
 const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 days
@@ -176,6 +177,7 @@ async function ensureKnnCache(pool: pg.Pool) {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
   _knnCache.clear();
   _knnFreshnessCache.clear();
+  _knnHasCsfloatSales.clear();
 
   // Sales-only for output pricing: listings are ask prices (not transaction prices)
   // and inflate estimates for expensive skins where sellers list at collector premiums.
@@ -196,11 +198,12 @@ async function ensureKnnCache(pool: pg.Pool) {
     arr.push(row);
   }
 
-  // Build cache with per-skin dynamic half-life + track freshness
+  // Build cache with per-skin dynamic half-life + track freshness + CSFloat sale presence
   for (const [skinName, skinRows] of rawBySkin) {
     const halfLife = dynamicHalfLife(skinRows.length);
     const arr: { float: number; price: number; weight: number; condition: string }[] = [];
     let recentCount = 0;
+    let hasCsfloat = false;
     for (const row of skinRows) {
       const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
       const ageDecay = 1 / (1 + (row.age_days || 0) / halfLife);
@@ -211,9 +214,11 @@ async function ensureKnnCache(pool: pg.Pool) {
         condition: floatToCondition(row.float_value),
       });
       if ((row.age_days || 0) < 14) recentCount++;
+      if (row.source === "sale") hasCsfloat = true;
     }
     _knnCache.set(skinName, arr);
     _knnFreshnessCache.set(skinName, recentCount);
+    if (hasCsfloat) _knnHasCsfloatSales.add(skinName);
   }
   _knnCacheLoadedAt = Date.now();
 }
@@ -221,6 +226,7 @@ async function ensureKnnCache(pool: pg.Pool) {
 export function clearKnnCache() {
   _knnCache.clear();
   _knnFreshnessCache.clear();
+  _knnHasCsfloatSales.clear();
   _knnCacheLoadedAt = 0;
 }
 
@@ -250,6 +256,10 @@ export async function knnOutputPriceAtFloat(
   // Freshness gate: require recent observations to avoid stale pricing
   const recentCount = _knnFreshnessCache.get(skinName) ?? 0;
   if (recentCount < KNN_FRESHNESS_MIN) return null;
+
+  // CSFloat gate: skins with only Skinport sales (no CSFloat sales) have unreliable
+  // KNN data due to platform-specific inflation. Fall through to condition-level ref.
+  if (!_knnHasCsfloatSales.has(skinName)) return null;
 
   const targetCondition = floatToCondition(float);
   const sameCondition = obs.filter(o => o.condition === targetCondition);
