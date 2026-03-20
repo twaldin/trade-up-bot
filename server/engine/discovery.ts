@@ -93,6 +93,7 @@ export async function findProfitableTradeUps(
     onFlush?: (tradeUps: TradeUp[], isFirst: boolean) => void;
     existingSignatures?: Set<string>;
     deadlineMs?: number;
+    preferHighFloat?: boolean;
   } = {}
 ): Promise<TradeUp[]> {
   const targetRarities = options.rarities ?? ["Classified"];
@@ -178,6 +179,12 @@ export async function findProfitableTradeUps(
 
       const outcomes = outcomesForCols(colId);
       const transitions = getConditionTransitions(outcomes);
+      if (options.preferHighFloat) {
+        // Add high-float targets for FT/BS output optimization
+        for (const t of [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]) {
+          transitions.push(t);
+        }
+      }
 
       // Baseline: sliding windows of cheapest
       for (let offset = 0; offset + 10 <= colListings.length && offset < 50; offset += 5) {
@@ -280,6 +287,11 @@ export async function findProfitableTradeUps(
         const outcomes = outcomesForCols(colA, colB);
         if (outcomes.length === 0) continue;
         const transitions = getConditionTransitions(outcomes);
+        if (options.preferHighFloat) {
+          for (const t of [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]) {
+            transitions.push(t);
+          }
+        }
 
         for (let countA = 1; countA <= 9; countA++) {
           const countB = 10 - countA;
@@ -894,10 +906,80 @@ export async function exploreWithBudget(
     }
   }
 
+  // Build collection name → collection_id mapping for swap pool lookups
+  const collectionNameToId = new Map<string, string>();
+  for (const [colId, listings] of byCollection) {
+    if (listings.length > 0) {
+      collectionNameToId.set(listings[0].collection_name, colId);
+    }
+  }
+
+  // Load profitable trade-ups + inputs for swap optimization (1 query total)
+  const swapPool: { id: number; inputs: { listing_id: string; skin_name: string; collection_id: string; price_cents: number }[] }[] = [];
+  try {
+    const { rows: profInputs } = await pool.query(`
+      SELECT tu.id as trade_up_id, tui.listing_id, tui.skin_name,
+        tui.collection_name, tui.price_cents
+      FROM trade_ups tu
+      JOIN trade_up_inputs tui ON tui.trade_up_id = tu.id
+      WHERE tu.type = $1 AND tu.profit_cents > 0 AND tu.is_theoretical = false
+      AND (tu.listing_status IS NULL OR tu.listing_status = 'active')
+      ORDER BY tu.profit_cents DESC
+    `, [tradeUpType]);
+    // Group inputs by trade_up_id, mapping collection_name to collection_id
+    const byTU = new Map<number, { listing_id: string; skin_name: string; collection_id: string; price_cents: number }[]>();
+    for (const row of profInputs) {
+      const colId = collectionNameToId.get(row.collection_name) ?? row.collection_name;
+      const list = byTU.get(row.trade_up_id) ?? [];
+      list.push({ listing_id: row.listing_id, skin_name: row.skin_name, collection_id: colId, price_cents: row.price_cents });
+      byTU.set(row.trade_up_id, list);
+    }
+    // Take top 500
+    let swapCount = 0;
+    for (const [id, inputs] of byTU) {
+      if (swapCount >= 500) break;
+      inputs.sort((a, b) => b.price_cents - a.price_cents); // most expensive first
+      swapPool.push({ id, inputs });
+      swapCount++;
+    }
+  } catch { /* swap pool loading failed, skip swap strategy */ }
+
+  // Load explored collection pairs for this type
+  const exploredPairs = new Set<string>();
+  try {
+    const { rows: pairRows } = await pool.query(`
+      SELECT DISTINCT
+        LEAST(MIN(tui.collection_name), MAX(tui.collection_name)) as col_a,
+        GREATEST(MIN(tui.collection_name), MAX(tui.collection_name)) as col_b
+      FROM trade_up_inputs tui
+      JOIN trade_ups tu ON tui.trade_up_id = tu.id
+      WHERE tu.type = $1 AND tu.is_theoretical = false
+      GROUP BY tui.trade_up_id
+      HAVING COUNT(DISTINCT tui.collection_name) = 2
+    `, [tradeUpType]);
+    for (const r of pairRows) exploredPairs.add(`${r.col_a}|${r.col_b}`);
+  } catch { /* non-critical */ }
+
+  // Build unexplored pair list
+  const unexploredPairs: [string, string][] = [];
+  for (let i = 0; i < eligibleCollections.length; i++) {
+    for (let j = i + 1; j < eligibleCollections.length; j++) {
+      const a = eligibleCollections[i];
+      const b = eligibleCollections[j];
+      const nameA = byCollection.get(a)?.[0]?.collection_name;
+      const nameB = byCollection.get(b)?.[0]?.collection_name;
+      if (!nameA || !nameB) continue;
+      const pairKey = nameA < nameB ? `${nameA}|${nameB}` : `${nameB}|${nameA}`;
+      if (!exploredPairs.has(pairKey)) {
+        unexploredPairs.push([a, b]);
+      }
+    }
+  }
+
   // Low-float bias: strategies 5 (float-targeted pair), 7 (output-value-aware), 8 (ultra-low-float)
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8];
-  const TOTAL_STRATEGIES = 10;
+  const TOTAL_STRATEGIES = 12;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -1087,6 +1169,60 @@ export async function exploreWithBudget(
           const filler = allColListings.filter(l => !pickedIds.has(l.id));
           if (filler.length < 10 - newCount) break;
           inputs = [...picked, ...filler.slice(0, 10 - newCount)];
+          break;
+        }
+
+        case 10: {
+          // Smart swap: take profitable TU, replace most expensive input with cheaper alternative
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          const expensiveInput = tu.inputs[0]; // already sorted most expensive first
+          if (!expensiveInput) break;
+
+          // Find cheaper alternatives from the same collection
+          const colListings = byCollection.get(expensiveInput.collection_id);
+          if (!colListings || colListings.length < 2) break;
+
+          // Pick a random cheaper listing from the same collection
+          const cheaper = colListings.filter(l =>
+            l.price_cents < expensiveInput.price_cents &&
+            l.id !== expensiveInput.listing_id &&
+            !tu.inputs.some(inp => inp.listing_id === l.id)
+          );
+          if (cheaper.length === 0) break;
+
+          const replacement = pick(cheaper.slice(0, 20)); // from top 20 cheapest alternatives
+
+          // Reconstruct input set with the swap
+          const inputListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            if (inp.listing_id === expensiveInput.listing_id) {
+              const found = allListings.find(l => l.id === replacement.id);
+              if (found) inputListings.push(found);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 10) {
+            inputs = inputListings;
+          }
+          break;
+        }
+
+        case 11: {
+          // Unexplored pair: try a collection pair that hasn't been combined before
+          if (unexploredPairs.length === 0) break;
+          const pairIdx = Math.floor(Math.random() * unexploredPairs.length);
+          const [colA, colB] = unexploredPairs[pairIdx];
+          const listA = byCollection.get(colA) ?? [];
+          const listB = byCollection.get(colB) ?? [];
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          if (listA.length < countA || listB.length < countB) break;
+          // Try cheapest listings from both collections
+          inputs = [...listA.slice(0, countA), ...listB.slice(0, countB)];
           break;
         }
       }

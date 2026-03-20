@@ -32,6 +32,7 @@ export interface DbSkinOutcome {
 export interface ListingWithCollection extends DbListing {
   collection_id: string;
   collection_name: string;
+  valueRatio?: number; // KNN-predicted fair value ratio: <1.0 = underpriced, >1.0 = overpriced
 }
 
 export interface AdjustedListing extends ListingWithCollection {

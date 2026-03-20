@@ -335,6 +335,87 @@ export async function knnOutputPriceAtFloat(
   return null;
 }
 
+/**
+ * Batch compute KNN fair-value estimates for input listings.
+ * Uses the existing _knnCache (sales-only observations) to predict what each
+ * listing SHOULD cost at its specific float. Returns a Map of listing_id → valueRatio.
+ * valueRatio < 1.0 means underpriced (good deal), > 1.0 means overpriced.
+ *
+ * Uses simplified KNN: Gaussian-weighted mean of same-condition observations
+ * within ±0.04 float. Skips freshness gate (input pricing is less critical than output).
+ * Falls back to condition-level median for skins with few observations.
+ *
+ * Performance: purely in-memory computation using cached observations.
+ * No DB queries — call ensureKnnCache(pool) before this.
+ */
+export async function batchInputValueRatios(
+  pool: pg.Pool,
+  listings: { id: string; skin_name: string; float_value: number; price_cents: number }[]
+): Promise<Map<string, number>> {
+  await ensureKnnCache(pool);
+
+  const result = new Map<string, number>();
+
+  for (const listing of listings) {
+    const obs = _knnCache.get(listing.skin_name);
+    if (!obs || obs.length < 2) {
+      result.set(listing.id, 1.0); // No data — neutral
+      continue;
+    }
+
+    const targetCondition = floatToCondition(listing.float_value);
+    const sameCondition = obs.filter(o => o.condition === targetCondition);
+
+    if (sameCondition.length < 2) {
+      result.set(listing.id, 1.0); // Not enough same-condition data
+      continue;
+    }
+
+    // Find nearby observations (within ±0.04 float)
+    const nearby = sameCondition
+      .map(o => ({ ...o, dist: Math.abs(o.float - listing.float_value) }))
+      .filter(o => o.dist <= 0.04);
+
+    if (nearby.length < 2) {
+      // Fall back to condition median
+      const condPrices = sameCondition.map(o => o.price).sort((a, b) => a - b);
+      const median = condPrices[Math.floor(condPrices.length / 2)];
+      result.set(listing.id, median > 0 ? listing.price_cents / median : 1.0);
+      continue;
+    }
+
+    // Gaussian-weighted mean (simplified version of knnOutputPriceAtFloat)
+    nearby.sort((a, b) => a.dist - b.dist);
+    const neighbors = nearby.slice(0, 20); // Use more neighbors for input pricing
+
+    // Outlier filtering
+    const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
+    const median = prices[Math.floor(prices.length / 2)];
+    const filtered = neighbors.filter(n => n.price <= median * 3 && n.price >= median * 0.3);
+
+    if (filtered.length < 2) {
+      result.set(listing.id, median > 0 ? listing.price_cents / median : 1.0);
+      continue;
+    }
+
+    // Gaussian kernel
+    const sigma = Math.max(filtered[Math.floor(filtered.length / 2)].dist, 0.005);
+    let totalWeight = 0;
+    let weightedSum = 0;
+    for (const n of filtered) {
+      const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
+      const w = n.weight * gaussWeight;
+      totalWeight += w;
+      weightedSum += n.price * w;
+    }
+
+    const predictedPrice = totalWeight > 0 ? weightedSum / totalWeight : median;
+    result.set(listing.id, predictedPrice > 0 ? listing.price_cents / predictedPrice : 1.0);
+  }
+
+  return result;
+}
+
 export async function getKnnObservationCount(
   pool: pg.Pool,
   skinName: string,

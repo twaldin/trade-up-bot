@@ -73,6 +73,7 @@ export interface DiscoveryData {
   allAdjusted: AdjustedListing[];
   byCollection: Map<string, ListingWithCollection[]>;
   byColAdj: Map<string, AdjustedListing[]>;
+  byColValue: Map<string, ListingWithCollection[]>;
 }
 
 /**
@@ -95,6 +96,13 @@ export async function loadDiscoveryData(
     allListings = allListings.filter(l => !(excluded as readonly string[]).includes(l.weapon));
   }
 
+  // KNN-based input value scoring: identify underpriced listings at their specific float
+  const { batchInputValueRatios } = await import("./knn-pricing.js");
+  const valueRatios = await batchInputValueRatios(pool, allListings);
+  for (const l of allListings) {
+    l.valueRatio = valueRatios.get(l.id);
+  }
+
   const allAdjusted = addAdjustedFloat(allListings);
 
   const byCollection = new Map<string, ListingWithCollection[]>();
@@ -114,7 +122,13 @@ export async function loadDiscoveryData(
   for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
   for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
 
-  return { allListings, allAdjusted, byCollection, byColAdj };
+  // Also create value-sorted maps for strategies that want underpriced listings first
+  const byColValue = new Map<string, ListingWithCollection[]>();
+  for (const [key, list] of byCollection) {
+    byColValue.set(key, [...list].sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1)));
+  }
+
+  return { allListings, allAdjusted, byCollection, byColAdj, byColValue };
 }
 
 /**
