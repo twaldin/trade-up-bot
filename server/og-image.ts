@@ -97,9 +97,9 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
 
   // Stat cell helper
   const stat = (label: string, value: string, color: string, bold = false) =>
-    h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" } },
-      h("div", { style: { fontSize: "14px", color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.05em" } }, label),
-      h("div", { style: { fontSize: "28px", fontWeight: bold ? 700 : 600, color } }, value),
+    h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: "1" } },
+      h("div", { style: { fontSize: "18px", color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.05em" } }, label),
+      h("div", { style: { fontSize: "36px", fontWeight: bold ? 700 : 600, color } }, value),
     );
 
   const element = h("div", {
@@ -109,86 +109,92 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
       width: "1200px",
       height: "630px",
       backgroundColor: "#0a0a0a",
-      padding: "44px 52px",
+      padding: "40px 52px 36px",
       fontFamily: "Inter",
       color: "#e5e5e5",
       justifyContent: "space-between",
     },
   },
-    // Top section
+    // Top section: branding + type + inputs + collections
     h("div", { style: { display: "flex", flexDirection: "column" } },
       // Branding + type badge
-      h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" } },
-        h("div", { style: { fontSize: "24px", fontWeight: 700, color: "#e5e5e5" } }, "TradeUpBot"),
+      h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" } },
+        h("div", { style: { fontSize: "28px", fontWeight: 700, color: "#e5e5e5" } }, "TradeUpBot"),
         h("div", {
           style: {
             display: "flex",
             alignItems: "center",
-            padding: "8px 20px",
+            padding: "8px 22px",
             borderRadius: "20px",
             border: `1.5px solid ${typeColor}40`,
             backgroundColor: `${typeColor}18`,
             color: typeColor,
-            fontSize: "17px",
+            fontSize: "20px",
             fontWeight: 600,
           },
         }, `${typeLabel} Trade-Up`),
       ),
 
-      // Input skins row
+      // Input skins
       h("div", {
         style: {
           display: "flex",
-          fontSize: "26px",
+          fontSize: "30px",
           color: "#d4d4d4",
           marginBottom: "14px",
-          lineHeight: 1.3,
+          lineHeight: 1.4,
         },
-      }, inputText.length > 70 ? inputText.slice(0, 67) + "..." : inputText),
+      }, inputText.length > 60 ? inputText.slice(0, 57) + "..." : inputText),
 
       // Collection badges
-      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" as const } },
+      h("div", { style: { display: "flex", gap: "10px", flexWrap: "wrap" as const } },
         ...collections.map(col =>
           h("div", {
             style: {
               display: "flex",
-              padding: "5px 12px",
-              borderRadius: "5px",
+              padding: "6px 14px",
+              borderRadius: "6px",
               backgroundColor: "#1e293b",
               border: "1px solid #334155",
               color: "#94a3b8",
-              fontSize: "14px",
+              fontSize: "18px",
             },
           }, col)
         ),
       ),
     ),
 
-    // Stats grid — main metrics (fills middle)
+    // Stats — two rows
     h("div", {
       style: {
         display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: "column",
         backgroundColor: "#141414",
         border: "1px solid #262626",
         borderRadius: "14px",
-        padding: "36px 48px",
+        padding: "28px 40px",
+        gap: "24px",
       },
     },
-      stat("Profit", fmt(data.profit_cents), profitColor, true),
-      stat("ROI", `${data.roi_percentage.toFixed(1)}%`, roiColor),
-      stat("Chance", `${chance}%`, chanceColor),
-      stat("Cost", fmt(data.total_cost_cents), "#d4d4d4"),
-      stat("EV", fmt(data.expected_value_cents), "#d4d4d4"),
-      stat("Best", fmt(data.best_case_cents), bestColor),
-      stat("Worst", fmt(data.worst_case_cents), worstColor),
+      // Row 1: Profit, ROI, Chance, Cost
+      h("div", { style: { display: "flex", justifyContent: "space-around" } },
+        stat("Profit", fmt(data.profit_cents), profitColor, true),
+        stat("ROI", `${data.roi_percentage.toFixed(1)}%`, roiColor),
+        stat("Chance", `${chance}%`, chanceColor),
+        stat("Cost", fmt(data.total_cost_cents), "#d4d4d4"),
+      ),
+      // Row 2: EV, Best, Worst
+      h("div", { style: { display: "flex", justifyContent: "space-around" } },
+        stat("EV", fmt(data.expected_value_cents), "#d4d4d4"),
+        stat("Best", fmt(data.best_case_cents), bestColor),
+        stat("Worst", fmt(data.worst_case_cents), worstColor),
+      ),
     ),
 
     // Footer
     h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      h("div", { style: { fontSize: "16px", color: "#6b7280" } }, "tradeupbot.app"),
-      h("div", { style: { fontSize: "16px", color: "#6b7280" } }, `Trade-Up #${data.id}`),
+      h("div", { style: { fontSize: "18px", color: "#6b7280" } }, "tradeupbot.app"),
+      h("div", { style: { fontSize: "18px", color: "#6b7280" } }, `Trade-Up #${data.id}`),
     ),
   );
 
