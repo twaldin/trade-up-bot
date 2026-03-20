@@ -57,8 +57,8 @@ export async function evaluateTradeUp(
       }
     } else {
       const output = await lookupOutputPrice(pool, outcome.name, predFloat);
-      const price = output.priceCents;
-      ev += probability * price;
+      if (output.priceCents <= 0) continue;
+      ev += probability * output.priceCents;
       tradeUpOutcomes.push({
         skin_id: outcome.id,
         skin_name: outcome.name,
@@ -66,11 +66,15 @@ export async function evaluateTradeUp(
         probability,
         predicted_float: predFloat,
         predicted_condition: predCondition,
-        estimated_price_cents: price,
+        estimated_price_cents: output.priceCents,
         sell_marketplace: output.marketplace,
       });
     }
   }
+
+  // Reject trade-ups where we couldn't price all outcomes (probabilities don't sum to ~1)
+  const totalProb = tradeUpOutcomes.reduce((s, o) => s + o.probability, 0);
+  if (totalProb < 0.99) return null;
 
   const evCents = Math.round(ev);
   const profit = evCents - totalCost;
