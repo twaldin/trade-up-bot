@@ -149,31 +149,35 @@ export async function getInterpolatedPrice(
 
 const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   sale: 3.0,              // CSFloat verified transactions — ground truth
+  skinport_sale: 2.0,     // Skinport confirmed transactions
   listing: 1.5,           // CSFloat market offers
   listing_dmarket: 1.0,   // DMarket listings, buyer-fee-normalized
   listing_skinport: 0.7,  // Skinport data-only source
 };
 
 const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
+const _knnFreshnessCache = new Map<string, number>(); // skin_name → count of observations < 14 days old
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
-export const KNN_MAX_OBS_AGE_DAYS = 90;
+const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 days
+export const KNN_MAX_OBS_AGE_DAYS = 45;
 
 /**
  * Dynamic half-life based on observation density:
- * - < 10 observations in 90 days → 45 days (rare skins need longer memory)
- * - > 50 observations → 14 days (liquid skins can use fresh data)
+ * - < 10 observations in 45 days → 30 days (rare skins need longer memory)
+ * - > 50 observations → 10 days (liquid skins can use fresh data)
  * - Linear interpolation between
  */
 function dynamicHalfLife(observationCount: number): number {
-  if (observationCount <= 10) return 45;
-  if (observationCount >= 50) return 14;
-  return Math.round(45 - (observationCount - 10) * (45 - 14) / (50 - 10));
+  if (observationCount <= 10) return 30;
+  if (observationCount >= 50) return 10;
+  return Math.round(30 - (observationCount - 10) * (30 - 10) / (50 - 10));
 }
 
 async function ensureKnnCache(pool: pg.Pool) {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
   _knnCache.clear();
+  _knnFreshnessCache.clear();
 
   const { rows } = await pool.query(`
     SELECT skin_name, float_value, price_cents, source,
@@ -191,10 +195,11 @@ async function ensureKnnCache(pool: pg.Pool) {
     arr.push(row);
   }
 
-  // Build cache with per-skin dynamic half-life
+  // Build cache with per-skin dynamic half-life + track freshness
   for (const [skinName, skinRows] of rawBySkin) {
     const halfLife = dynamicHalfLife(skinRows.length);
     const arr: { float: number; price: number; weight: number; condition: string }[] = [];
+    let recentCount = 0;
     for (const row of skinRows) {
       const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
       const ageDecay = 1 / (1 + (row.age_days || 0) / halfLife);
@@ -204,14 +209,17 @@ async function ensureKnnCache(pool: pg.Pool) {
         weight: baseWeight * ageDecay,
         condition: floatToCondition(row.float_value),
       });
+      if ((row.age_days || 0) < 14) recentCount++;
     }
     _knnCache.set(skinName, arr);
+    _knnFreshnessCache.set(skinName, recentCount);
   }
   _knnCacheLoadedAt = Date.now();
 }
 
 export function clearKnnCache() {
   _knnCache.clear();
+  _knnFreshnessCache.clear();
   _knnCacheLoadedAt = 0;
 }
 
@@ -273,6 +281,10 @@ export async function knnOutputPriceAtFloat(
   await ensureKnnCache(pool);
   const obs = _knnCache.get(skinName);
   if (!obs || obs.length < KNN_MIN_OBS) return null;
+
+  // Freshness gate: require recent observations to avoid stale pricing
+  const recentCount = _knnFreshnessCache.get(skinName) ?? 0;
+  if (recentCount < KNN_FRESHNESS_MIN) return null;
 
   const targetCondition = floatToCondition(float);
   const sameCondition = obs.filter(o => o.condition === targetCondition);
