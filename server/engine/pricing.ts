@@ -339,9 +339,16 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
 
 /**
  * Float-monotonicity ceiling: cap output price at the bottom-3 average of
- * all known data points at equal-or-lower floats (better condition = higher price expected).
+ * nearby data points at equal-or-lower floats.
+ *
+ * Only considers data within 0.05 float distance below the predicted float.
+ * This prevents cheap sales at very different float positions (e.g., FT 0.20 vs FT 0.35)
+ * from creating artificially low ceilings.
+ *
  * Returns null if insufficient data to establish a ceiling.
  */
+const CEILING_MAX_FLOAT_DIST = 0.05;
+
 async function getFloatCeiling(
   pool: pg.Pool,
   skinName: string,
@@ -351,12 +358,14 @@ async function getFloatCeiling(
   const data = _floatCeilingCache.get(skinName);
   if (!data || data.length < 3) return null;
 
-  // Find all data points at floats <= predictedFloat (same or better condition)
-  const lowerFloat = data.filter(d => d.float <= predictedFloat);
-  if (lowerFloat.length < 2) return null;
+  // Find data points within CEILING_MAX_FLOAT_DIST below the predicted float
+  const nearbyLower = data.filter(d =>
+    d.float <= predictedFloat && (predictedFloat - d.float) <= CEILING_MAX_FLOAT_DIST
+  );
+  if (nearbyLower.length < 3) return null;
 
   // Sort by price ascending, take bottom-3 average as ceiling
-  const sorted = lowerFloat.map(d => d.price).sort((a, b) => a - b);
+  const sorted = nearbyLower.map(d => d.price).sort((a, b) => a - b);
   const n = Math.min(3, sorted.length);
   const bottom3Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 
