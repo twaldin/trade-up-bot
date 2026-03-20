@@ -2,12 +2,12 @@
  * Cooldown loop: paced listing staleness checks.
  *
  * Replaces explore-heavy cooldown with pure staleness checking,
- * paced to use the 50K individual lookup pool evenly across ~12h.
+ * paced to use the 50K individual lookup pool evenly across ~24h.
  *
  * CSFloat rate limits (per-endpoint):
  *   - Listing search: 200/~30min (probed during cooldown)
  *   - Sale history: 500/~12h
- *   - Individual listing: 50,000/~12h (staleness checks)
+ *   - Individual listing: 50,000/~24h (staleness checks)
  */
 
 import pg from "pg";
@@ -41,7 +41,7 @@ export interface CooldownResult {
 /**
  * Staleness checking during cooldown.
  *
- * Target: cover all listings within a few cooldowns. With 50K/12h pool and
+ * Target: cover all listings within a few cooldowns. With 50K/24h pool and
  * ~20K listings (after old-unchecked purge), 25% of pool per cooldown = ~12.5K
  * checks, completing a full pass in ~2 cooldowns.
  *

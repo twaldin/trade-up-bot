@@ -113,7 +113,7 @@ export async function phase3ApiProbe(
   const KNOWN_INDIVIDUAL_LIMIT = 50000;
   const KNOWN_LISTING_WINDOW_S = 12 * 3600;
   const KNOWN_SALE_WINDOW_S = 12 * 3600;
-  const KNOWN_INDIVIDUAL_WINDOW_S = 12 * 3600;
+  const KNOWN_INDIVIDUAL_WINDOW_S = 24 * 3600;
 
   const nowS = Date.now() / 1000;
   const capResetAt = (raw: number | null, windowS: number): number | null => {
