@@ -299,33 +299,6 @@ export async function findProfitableKnifeTradeUps(
 
   options.onProgress?.(`Knife: pairs done (${results.length} trade-ups)`);
 
-  // Step 3: Three-collection knife trade-ups (reduced scope)
-  // Data shows 0% historically profitable for 3+ collections, but keep triples
-  // with reduced limits in case the market shifts.
-  if (pastDeadline()) {
-    options.onProgress?.(`Knife: stopped at deadline (${results.length} trade-ups)`);
-    if (skippedExisting > 0) console.log(`  Knife discovery: skipped ${skippedExisting} combos already in DB`);
-    results.sort((a, b) => b.profit_cents - a.profit_cents);
-    return results;
-  }
-  options.onProgress?.("Knife: three-collection combos...");
-  const maxTripleKnife = Math.min(knifeCollections.length, 20); // was 35
-  for (let i = 0; i < maxTripleKnife; i++) {
-    for (let j = i + 1; j < maxTripleKnife; j++) {
-      for (let k = j + 1; k < maxTripleKnife; k++) {
-        const cols = [knifeCollections[i], knifeCollections[j], knifeCollections[k]];
-        const pooled = cols
-          .flatMap(c => byCollection.get(c) ?? [])
-          .sort((a, b) => a.price_cents - b.price_cents);
-        if (pooled.length < 5) continue;
-        // Just cheapest-5 pooled — no float targeting for triples (saves ~80% of triple eval time)
-        await tryEvalKnife(pooled.slice(0, 5));
-      }
-    }
-  }
-  options.onProgress?.(`Knife: triples done (${results.length} trade-ups)`);
-  // Steps 4-5: Quads/quints removed — never profitable historically.
-
   if (skippedExisting > 0) {
     console.log(`  Knife discovery: skipped ${skippedExisting} combos already in DB`);
   }

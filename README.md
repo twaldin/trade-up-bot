@@ -125,10 +125,10 @@ CSFloat has 3 independent rate limit pools with different reset windows:
 | Pool | Budget | Reset Window | Usage |
 |------|--------|-------------|-------|
 | Listings | ~200 calls | ~30 min | Fetch new listings |
-| Sales | ~500 calls | ~12 hours | Price history |
-| Individual | ~50K calls | ~12 hours | Verify + staleness checks |
+| Sales | ~500 calls | ~24 hours | Price history |
+| Individual | ~50K calls | ~24 hours | Verify + staleness checks |
 
-The daemon probes remaining limits at cycle start and paces calls with safety buffers to avoid 12-hour lockouts. DMarket runs as a separate process at a steady 2 RPS. Skinport is passive WebSocket ingestion with no rate limits.
+The daemon probes remaining limits at cycle start and paces calls with safety buffers to avoid 24-hour lockouts. DMarket runs as a separate process at a steady 2 RPS. Skinport is passive WebSocket ingestion with no rate limits.
 
 ### Data Quality
 
