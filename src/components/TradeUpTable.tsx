@@ -150,6 +150,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Confirm mode: which trade-up is in confirm mode, and which listings are selected
   const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
   const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
+  const [shareCopiedId, setShareCopiedId] = useState<number | null>(null);
 
   // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
@@ -354,7 +355,6 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onNavigateSkin={onNavigateSkin}
           showListingLinks={true}
           showVerify={isPro || isBasic}
-          showShare={true}
           verifyLimit={verifyLimit}
           confirmMode={confirmModeId === tu.id}
           confirmSelected={confirmSelected}
@@ -518,7 +518,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             <>
               <tr
                 key={tu.id}
-                className={`cursor-pointer hover:bg-muted ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
+                className={`cursor-pointer hover:bg-muted group/row ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
                 onClick={() => handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">
@@ -617,13 +617,31 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     {formatDollars(worst)}
                   </span>
                 </td>
-                {/* Claim status shown as small badge inline */}
+                {/* Claim status + share icon */}
                 <td className="px-2 py-2.5 border-b border-border/70">
-                  {(claimedIds.has(tu.id))
-                    ? <span className="text-[0.6rem] text-purple-400" title="You claimed this">🔒</span>
-                    : (tu as any).claimed_by_other
-                      ? <span className="text-[0.6rem] text-muted-foreground" title="Claimed by another user">🔒</span>
-                      : null}
+                  <div className="flex items-center gap-1">
+                    {(claimedIds.has(tu.id))
+                      ? <span className="text-[0.6rem] text-purple-400" title="You claimed this">🔒</span>
+                      : (tu as any).claimed_by_other
+                        ? <span className="text-[0.6rem] text-muted-foreground" title="Claimed by another user">🔒</span>
+                        : null}
+                    <button
+                      className="opacity-0 group-hover/row:opacity-100 text-muted-foreground/50 hover:text-foreground transition-opacity cursor-pointer p-0.5"
+                      title="Copy shareable link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(`${window.location.origin}/trade-ups/${tu.id}`);
+                        setShareCopiedId(tu.id);
+                        setTimeout(() => setShareCopiedId(null), 1500);
+                      }}
+                    >
+                      {shareCopiedId === tu.id ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                      )}
+                    </button>
+                  </div>
                 </td>
               </tr>
               {expandedId === tu.id && (
