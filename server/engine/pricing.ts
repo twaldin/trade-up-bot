@@ -339,15 +339,23 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
 
 /**
  * Float-monotonicity ceiling: cap output price at the bottom-3 average of
- * nearby data points at equal-or-lower floats.
+ * nearby data points at equal-or-lower floats WITHIN THE SAME CONDITION.
  *
- * Only considers data within 0.05 float distance below the predicted float.
- * This prevents cheap sales at very different float positions (e.g., FT 0.20 vs FT 0.35)
- * from creating artificially low ceilings.
+ * Only considers data within 0.05 float distance below the predicted float,
+ * and never crosses condition boundaries (FN/MW/FT/WW/BS are different markets).
  *
  * Returns null if insufficient data to establish a ceiling.
  */
 const CEILING_MAX_FLOAT_DIST = 0.05;
+const CONDITION_BOUNDARIES = [0.07, 0.15, 0.38, 0.45]; // FN|MW|FT|WW|BS
+
+function conditionFloor(float: number): number {
+  // Returns the lower bound of the current condition range
+  for (let i = CONDITION_BOUNDARIES.length - 1; i >= 0; i--) {
+    if (float >= CONDITION_BOUNDARIES[i]) return CONDITION_BOUNDARIES[i];
+  }
+  return 0; // Factory New starts at 0
+}
 
 async function getFloatCeiling(
   pool: pg.Pool,
@@ -358,9 +366,14 @@ async function getFloatCeiling(
   const data = _floatCeilingCache.get(skinName);
   if (!data || data.length < 3) return null;
 
-  // Find data points within CEILING_MAX_FLOAT_DIST below the predicted float
+  const condFloor = conditionFloor(predictedFloat);
+
+  // Find data points within CEILING_MAX_FLOAT_DIST below the predicted float,
+  // but never crossing condition boundaries
   const nearbyLower = data.filter(d =>
-    d.float <= predictedFloat && (predictedFloat - d.float) <= CEILING_MAX_FLOAT_DIST
+    d.float <= predictedFloat &&
+    d.float >= condFloor &&
+    (predictedFloat - d.float) <= CEILING_MAX_FLOAT_DIST
   );
   if (nearbyLower.length < 3) return null;
 
