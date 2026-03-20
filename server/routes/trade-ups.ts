@@ -1,7 +1,7 @@
 import { Router } from "express";
 import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses } from "../engine.js";
-import { fetchDMarketListings, isDMarketConfigured } from "../sync.js";
+import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
@@ -537,7 +537,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     if (dmSkinNames.size > 0 && isDMarketConfigured()) {
       for (const skinName of dmSkinNames) {
         try {
-          const { items } = await fetchDMarketListings(skinName, { limit: 100 });
+          const items = await fetchAllDMarketListings(skinName);
           const ids = new Set<string>();
           for (const item of items) {
             ids.add(`dmarket:${item.itemId}`);
@@ -578,13 +578,23 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         if (activeSet.has(input.listing_id)) {
           const currentPrice = dmPrices.get(input.listing_id);
           const priceChanged = currentPrice !== undefined && currentPrice !== input.price_cents;
-          if (priceChanged && currentPrice !== undefined) {
-            await pool.query(
-              "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
-              [currentPrice, new Date().toISOString(), input.listing_id]
-            );
+          // Re-insert if listing was deleted from our DB but still active on DMarket
+          const { rows: existRows } = await pool.query("SELECT id FROM listings WHERE id = $1", [input.listing_id]);
+          if (existRows.length === 0) {
+            await pool.query(`
+              INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, created_at, source, listing_type, staleness_checked_at, price_updated_at)
+              VALUES ($1, $2, $3, $4, 0, NOW(), 'dmarket', 'buy_now', NOW(), NOW())
+              ON CONFLICT (id) DO NOTHING
+            `, [input.listing_id, input.skin_id, currentPrice ?? input.price_cents, input.float_value]);
+          } else {
+            if (priceChanged && currentPrice !== undefined) {
+              await pool.query(
+                "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
+                [currentPrice, new Date().toISOString(), input.listing_id]
+              );
+            }
+            await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           }
-          await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,

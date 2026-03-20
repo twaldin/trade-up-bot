@@ -48,7 +48,8 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
   let totalUpdated = 0;
   for (let i = 0; i < listingIds.length; i += 500) {
     const chunk = listingIds.slice(i, i + 500);
-    const result = await pool.query(`
+    // Compute status for affected trade-ups
+    const { rows: statusRows } = await pool.query(`
       WITH affected_tus AS (
         SELECT DISTINCT tui.trade_up_id
         FROM trade_up_inputs tui
@@ -64,24 +65,49 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
         WHERE tui.listing_id NOT LIKE 'theor%'
         GROUP BY a.trade_up_id
       )
-      UPDATE trade_ups t SET
-        listing_status = CASE WHEN sc.missing = 0 THEN 'active' WHEN sc.missing < sc.total THEN 'partial' ELSE 'stale' END,
-        preserved_at = CASE
-          WHEN sc.missing > 0 AND t.listing_status = 'active' THEN NOW()
-          WHEN sc.missing = 0 THEN NULL
-          ELSE t.preserved_at
-        END
-      FROM status_calc sc
-      WHERE t.id = sc.trade_up_id
-        AND t.listing_status IS DISTINCT FROM (
-          CASE WHEN sc.missing = 0 THEN 'active' WHEN sc.missing < sc.total THEN 'partial' ELSE 'stale' END
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM trade_up_claims tc
-          WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
-        )
+      SELECT trade_up_id, missing::int, total::int FROM status_calc
     `, [chunk]);
-    totalUpdated += result.rowCount ?? 0;
+
+    // Separate: trade-ups to delete (all inputs gone) vs update (partial/active)
+    const toDelete: number[] = [];
+    const toUpdate: { trade_up_id: number; missing: number; total: number }[] = [];
+    for (const row of statusRows) {
+      if (row.missing === row.total) {
+        toDelete.push(row.trade_up_id);
+      } else {
+        toUpdate.push(row);
+      }
+    }
+
+    // Delete fully stale trade-ups immediately
+    if (toDelete.length > 0) {
+      await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = ANY($1)`, [toDelete]);
+      await pool.query(`DELETE FROM trade_ups WHERE id = ANY($1)`, [toDelete]);
+      totalUpdated += toDelete.length;
+    }
+
+    // Update partial/active trade-ups
+    if (toUpdate.length > 0) {
+      for (const row of toUpdate) {
+        const newStatus = row.missing === 0 ? 'active' : 'partial';
+        const result = await pool.query(`
+          UPDATE trade_ups SET
+            listing_status = $1,
+            preserved_at = CASE
+              WHEN $2 > 0 AND listing_status = 'active' THEN NOW()
+              WHEN $2 = 0 THEN NULL
+              ELSE preserved_at
+            END
+          WHERE id = $3
+            AND listing_status IS DISTINCT FROM $1
+            AND NOT EXISTS (
+              SELECT 1 FROM trade_up_claims tc
+              WHERE tc.trade_up_id = $3 AND tc.released_at IS NULL AND tc.expires_at > NOW()
+            )
+        `, [newStatus, row.missing, row.trade_up_id]);
+        totalUpdated += result.rowCount ?? 0;
+      }
+    }
   }
   if (totalUpdated > 0) {
     await cacheInvalidatePrefix("tu:");

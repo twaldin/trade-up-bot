@@ -13,7 +13,7 @@
  */
 
 export { phase1Housekeeping } from "./phases/housekeeping.js";
-export { phase3ApiProbe, phase4DataFetch, phase4p5VerifyInputs } from "./phases/data-fetch.js";
+export { phase3ApiProbe, phase4DataFetch } from "./phases/data-fetch.js";
 export { phase5KnifeCalc, type KnifeCalcResult } from "./phases/knife-calc.js";
 export {
   phase5ClassifiedCalc,

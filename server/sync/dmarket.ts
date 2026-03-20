@@ -89,6 +89,23 @@ interface DMarketSearchResponse {
 }
 
 /**
+ * Fetch ALL DMarket listings for a skin using cursor pagination.
+ * Pages through results in batches of 100 until no more cursor or safety cap.
+ */
+export async function fetchAllDMarketListings(
+  skinName: string
+): Promise<DMarketItem[]> {
+  const allItems: DMarketItem[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await fetchDMarketListings(skinName, { limit: 100, cursor });
+    allItems.push(...result.items);
+    cursor = result.cursor || undefined;
+  } while (cursor);
+  return allItems;
+}
+
+/**
  * Search DMarket for listings of a specific skin.
  * Returns up to `limit` listings sorted by price ascending.
  */
@@ -300,7 +317,7 @@ export async function checkDMarketStaleness(
 
   for (const skinRow of skinRows) {
     try {
-      const { items } = await fetchDMarketListings(skinRow.name, { limit: 100 });
+      const items = await fetchAllDMarketListings(skinRow.name);
       const activeIds = new Set(items.map(i => `dmarket:${i.itemId}`));
 
       // Get our stored DMarket listings for this skin

@@ -17,7 +17,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import {
-  fetchDMarketListings,
+  fetchAllDMarketListings,
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
@@ -197,7 +197,7 @@ async function main() {
       } catch { /* ignore parse errors */ }
 
       try {
-        const { items } = await fetchDMarketListings(skinName, { limit: 100 });
+        const items = await fetchAllDMarketListings(skinName);
         const activeIds = new Set<string>();
 
         // Upsert active listings
@@ -236,7 +236,7 @@ async function main() {
           }
         }
 
-        // Staleness: remove DB listings not in the API response
+        // Staleness: remove DB listings not in the full API response
         const { rows: stored } = await pool.query(
           "SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = $1 AND l.source = 'dmarket'",
           [skinName]

@@ -2,14 +2,14 @@
  * Trade-Up Daemon — time-bounded discovery engine.
  *
  * Phase 1: Housekeeping (purge stale, prune observations)
- * Phase 3: API Probe (rate limit detection)
+ * Phase 3: API Probe (rate limit detection for listing + sale pools)
  * Phase 4: Data Fetch (sale history, listings)
- * Phase 4.5: Verify profitable inputs (individual lookup pool)
- * Phase 4.6: CSFloat staleness checks (dedicated, budget-paced from 50K individual pool)
  * Phase 5: TIME-BOUNDED ENGINE — repeating super-batches of:
  *   (a) 2 workers (structured discovery -> deep exploration, 2-min time limit)
  *   (b) Merge results
  *   (c) Revival (200 gun + 200 knife)
+ *
+ * CSFloat individual pool (staleness checks) managed by separate csfloat-checker process.
  */
 
 import fs from "fs";
@@ -23,7 +23,7 @@ import type { TradeUp } from "../../shared/types.js";
 
 import {
   startSkinportListener, getSkinportStats, isDMarketConfigured,
-  checkListingStaleness, checkDMarketStaleness,
+  checkDMarketStaleness,
 } from "../sync.js";
 import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
@@ -42,7 +42,6 @@ import {
   phase1Housekeeping,
   phase3ApiProbe,
   phase4DataFetch,
-  phase4p5VerifyInputs,
 } from "./phases.js";
 import { initAlertState, checkAndFireAlerts, refreshAlertTops } from "./discord-alerts.js";
 
@@ -193,8 +192,8 @@ export async function main() {
 
   console.log(`[${timestamp()}] Trade-Up Daemon started (time-bounded engine)`);
   console.log(`  Phases: Housekeeping -> Probe -> Fetch -> Time-Bounded Engine (structured + deep exploration)`);
-  console.log(`  Rate limits (3 separate pools):`);
-  console.log(`    Listing search: 200/~30min | Sale history: 500/~12h | Individual: 50K/~24h`);
+  console.log(`  Rate limits (2 pools, individual managed by csfloat-checker):`);
+  console.log(`    Listing search: 200/~30min | Sale history: 500/~12h`);
   console.log(`  Data sources: CSFloat API${isDMarketConfigured() ? " + DMarket API" : ""} + Skinport WebSocket`);
   console.log(`  Worker time limit: ${MIN_WORKER_TIME / 1000}s-${MAX_WORKER_TIME / 1000}s per worker (dynamic), 2 workers per round`);
 
@@ -277,52 +276,7 @@ export async function main() {
       console.log(`  All endpoints rate limited — skipping Phase 4`);
     }
 
-    // Phase 4.5: Verify profitable trade-up inputs still exist
-    await phase4p5VerifyInputs(pool, freshness, apiKey, probe, budget);
-
-    // Phase 4.6: CSFloat staleness checks (dedicated phase — guaranteed to run before engine)
-    let totalStalenessChecked = 0;
-    let totalStalenessSold = 0;
-    let totalStalenessRemoved = 0;
-    {
-      const staleBudget = Math.floor(budget.cycleIndividualBudget() * 0.85);
-      if (staleBudget > 0 && probe.individualListing.available) {
-        // Deduct user verify calls from budget
-        let adjustedBudget = staleBudget;
-        try {
-          const { getRedis } = await import("../redis.js");
-          const redis = getRedis();
-          if (redis) {
-            const verifyCalls = parseInt(await redis.getset("verify_api_calls", "0") || "0");
-            if (verifyCalls > 0) {
-              adjustedBudget = Math.max(25, staleBudget - verifyCalls);
-            }
-          }
-        } catch { /* Redis unavailable */ }
-
-        console.log(`\n[${timestamp()}] Phase 4.6: CSFloat staleness (${adjustedBudget} checks from ${budget.individualRemaining} individual pool)`);
-        await setDaemonStatus(pool, "fetching", `Phase 4.6: Staleness checks (${adjustedBudget})`);
-        try {
-          const stalenessResult = await checkListingStaleness(pool, {
-            apiKey,
-            maxChecks: adjustedBudget,
-            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-          });
-          totalStalenessChecked = stalenessResult.checked;
-          totalStalenessSold = stalenessResult.sold;
-          totalStalenessRemoved = stalenessResult.delisted;
-          if (stalenessResult.sold > 0 || stalenessResult.delisted > 0) {
-            freshness.markListingsChanged();
-          }
-          console.log(`  Staleness: ${stalenessResult.checked} checked, ${stalenessResult.stillListed} active, ${stalenessResult.sold} sold, ${stalenessResult.delisted} removed`);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("429")) {
-            console.log(`  Staleness: rate limited after ${totalStalenessChecked} checks`);
-          }
-        }
-      }
-    }
+    // Phase 4.5/4.6: CSFloat staleness checks handled by separate csfloat-checker process
 
     // Phase 4b: Recalc trade-up stats where input prices changed (DMarket/Skinport updates)
     {
@@ -584,7 +538,7 @@ export async function main() {
     await trimGlobalExcess(pool, 5_000_000);
     freshness.markCalcDone();
 
-    console.log(`\n[${timestamp()}] Engine done: ${superBatchCount} super-batches, ${totalKnifeResults} knife + ${totalClassifiedResults} classified, ${totalRevived} revived, ${totalStalenessChecked} staleness checks`);
+    console.log(`\n[${timestamp()}] Engine done: ${superBatchCount} super-batches, ${totalKnifeResults} knife + ${totalClassifiedResults} classified, ${totalRevived} revived`);
 
     // --- Post-engine: coverage, snapshot, Redis, stats ---
 
@@ -665,7 +619,6 @@ export async function main() {
       apiRemaining: {
         listing: probe.listingSearch.rateLimit.remaining ?? undefined,
         sale: probe.saleHistory.rateLimit.remaining ?? undefined,
-        individual: probe.individualListing.rateLimit.remaining ?? undefined,
       },
     });
     if (cycleCount % 10 === 0) await purgeOldSnapshots(pool, 30);
