@@ -97,9 +97,9 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
 
   // Stat cell helper
   const stat = (label: string, value: string, color: string, bold = false) =>
-    h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" } },
-      h("div", { style: { fontSize: "11px", color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.05em" } }, label),
-      h("div", { style: { fontSize: "20px", fontWeight: bold ? 700 : 600, color } }, value),
+    h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" } },
+      h("div", { style: { fontSize: "14px", color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.05em" } }, label),
+      h("div", { style: { fontSize: "28px", fontWeight: bold ? 700 : 600, color } }, value),
     );
 
   const element = h("div", {
@@ -109,69 +109,71 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
       width: "1200px",
       height: "630px",
       backgroundColor: "#0a0a0a",
-      padding: "48px 56px",
+      padding: "44px 52px",
       fontFamily: "Inter",
       color: "#e5e5e5",
+      justifyContent: "space-between",
     },
   },
-    // Top: branding + type badge
-    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "32px" } },
-      h("div", { style: { display: "flex", alignItems: "center", gap: "12px" } },
-        h("div", { style: { fontSize: "20px", fontWeight: 700, color: "#e5e5e5" } }, "TradeUpBot"),
-      ),
-      h("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          padding: "6px 16px",
-          borderRadius: "20px",
-          border: `1.5px solid ${typeColor}40`,
-          backgroundColor: `${typeColor}18`,
-          color: typeColor,
-          fontSize: "15px",
-          fontWeight: 600,
-        },
-      }, `${typeLabel} Trade-Up`),
-    ),
-
-    // Input skins row
-    h("div", {
-      style: {
-        display: "flex",
-        fontSize: "22px",
-        color: "#d4d4d4",
-        marginBottom: "12px",
-        lineHeight: 1.3,
-      },
-    }, inputText.length > 80 ? inputText.slice(0, 77) + "..." : inputText),
-
-    // Collection badges
-    h("div", { style: { display: "flex", gap: "8px", marginBottom: "36px", flexWrap: "wrap" as const } },
-      ...collections.map(col =>
+    // Top section
+    h("div", { style: { display: "flex", flexDirection: "column" } },
+      // Branding + type badge
+      h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" } },
+        h("div", { style: { fontSize: "24px", fontWeight: 700, color: "#e5e5e5" } }, "TradeUpBot"),
         h("div", {
           style: {
             display: "flex",
-            padding: "4px 10px",
-            borderRadius: "4px",
-            backgroundColor: "#1e293b",
-            border: "1px solid #334155",
-            color: "#94a3b8",
-            fontSize: "13px",
+            alignItems: "center",
+            padding: "8px 20px",
+            borderRadius: "20px",
+            border: `1.5px solid ${typeColor}40`,
+            backgroundColor: `${typeColor}18`,
+            color: typeColor,
+            fontSize: "17px",
+            fontWeight: 600,
           },
-        }, col)
+        }, `${typeLabel} Trade-Up`),
+      ),
+
+      // Input skins row
+      h("div", {
+        style: {
+          display: "flex",
+          fontSize: "26px",
+          color: "#d4d4d4",
+          marginBottom: "14px",
+          lineHeight: 1.3,
+        },
+      }, inputText.length > 70 ? inputText.slice(0, 67) + "..." : inputText),
+
+      // Collection badges
+      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" as const } },
+        ...collections.map(col =>
+          h("div", {
+            style: {
+              display: "flex",
+              padding: "5px 12px",
+              borderRadius: "5px",
+              backgroundColor: "#1e293b",
+              border: "1px solid #334155",
+              color: "#94a3b8",
+              fontSize: "14px",
+            },
+          }, col)
+        ),
       ),
     ),
 
-    // Stats grid — main metrics
+    // Stats grid — main metrics (fills middle)
     h("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
+        alignItems: "center",
         backgroundColor: "#141414",
         border: "1px solid #262626",
-        borderRadius: "12px",
-        padding: "28px 40px",
-        marginBottom: "28px",
+        borderRadius: "14px",
+        padding: "36px 48px",
       },
     },
       stat("Profit", fmt(data.profit_cents), profitColor, true),
@@ -184,9 +186,9 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
     ),
 
     // Footer
-    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto" } },
-      h("div", { style: { fontSize: "14px", color: "#6b7280" } }, "tradeupbot.app"),
-      h("div", { style: { fontSize: "14px", color: "#6b7280" } }, `Trade-Up #${data.id}`),
+    h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      h("div", { style: { fontSize: "16px", color: "#6b7280" } }, "tradeupbot.app"),
+      h("div", { style: { fontSize: "16px", color: "#6b7280" } }, `Trade-Up #${data.id}`),
     ),
   );
 
