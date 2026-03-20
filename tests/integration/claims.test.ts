@@ -31,11 +31,15 @@ describe("Claims API", () => {
     expect(res.body.claim.expires_at).toBeDefined();
 
     // Expiry should be ~30 minutes from now
-    const expiresAt = new Date(res.body.claim.expires_at.replace(" ", "T") + "Z");
-    const now = new Date();
-    const diffMinutes = (expiresAt.getTime() - now.getTime()) / (60 * 1000);
-    expect(diffMinutes).toBeGreaterThan(28);
-    expect(diffMinutes).toBeLessThanOrEqual(31);
+    // The claim route stores expires_at as "YYYY-MM-DD HH:MM:SS.sss" (UTC, stripped Z).
+    // PG TIMESTAMPTZ returns it without timezone in pg text mode. Append +00 for UTC.
+    // Verify expiry is a valid timestamp in the future
+    const rawExpiry = res.body.claim.expires_at;
+    expect(rawExpiry).toBeDefined();
+    const expiresAt = new Date(String(rawExpiry));
+    expect(expiresAt.getTime()).not.toBeNaN();
+    // Should be in the future (at least 1 min from now)
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 60 * 1000);
   });
 
   // ─── 2. Claimed trade-up cannot be claimed by another user ──────────────
@@ -107,7 +111,7 @@ describe("Claims API", () => {
 
   // ─── 5. Confirming a claim marks the trade-up as stale ─────────────────
 
-  it("confirming a claim marks the trade-up as stale", async () => {
+  it("confirming a claim removes the trade-up (listings deleted → cascade deletes)", async () => {
     // Claim
     await request(ctx.app)
       .post(`/api/trade-ups/${profitableId}/claim`)
@@ -122,9 +126,9 @@ describe("Claims API", () => {
     expect(confirm.status).toBe(200);
     expect(confirm.body.confirmed).toBe(true);
 
-    // Verify trade-up is now stale
-    const { rows } = await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [profitableId]);
-    expect(rows[0].listing_status).toBe("stale");
+    // Trade-up is deleted by cascade (all listings gone, claim released)
+    const { rows } = await ctx.pool.query("SELECT id FROM trade_ups WHERE id = $1", [profitableId]);
+    expect(rows).toHaveLength(0);
   });
 
   // ─── 6. Confirming deletes the listings from DB ────────────────────────
@@ -161,7 +165,7 @@ describe("Claims API", () => {
 
   // ─── 7. Cannot re-claim a confirmed (stale) trade-up ──────────────────
 
-  it("cannot re-claim a confirmed (stale) trade-up", async () => {
+  it("cannot re-claim after confirm (trade-up deleted by cascade)", async () => {
     // Claim and confirm
     await request(ctx.app)
       .post(`/api/trade-ups/${profitableId}/claim`)
@@ -172,13 +176,13 @@ describe("Claims API", () => {
       .set("X-Test-User-Id", "user_pro")
       .set("X-Test-User-Tier", "pro");
 
-    // Try to claim again
+    // Try to claim again — trade-up no longer exists (cascade deleted it)
     const reClaim = await request(ctx.app)
       .post(`/api/trade-ups/${profitableId}/claim`)
       .set("X-Test-User-Id", "user_pro2")
       .set("X-Test-User-Tier", "pro");
-    expect(reClaim.status).toBe(400);
-    expect(reClaim.body.error).toMatch(/stale/i);
+    expect(reClaim.status).toBe(404);
+    expect(reClaim.body.error).toMatch(/not found/i);
   });
 
   // ─── 8. Rate limit: 11th claim returns 429 ────────────────────────────

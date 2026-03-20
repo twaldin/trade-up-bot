@@ -30,13 +30,13 @@ const { Pool } = pg;
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
 
-async function createSchema(pool: pg.Pool) {
+async function createSchema(bootstrapPool: pg.Pool) {
   // Use a unique schema per test to avoid collisions
   const schema = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
-  await pool.query(`SET search_path TO "${schema}"`);
+  await bootstrapPool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+  await bootstrapPool.query(`SET search_path TO "${schema}"`);
 
-  await pool.query(`
+  await bootstrapPool.query(`
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -50,8 +50,8 @@ async function createSchema(pool: pg.Pool) {
       min_float DOUBLE PRECISION NOT NULL DEFAULT 0.0,
       max_float DOUBLE PRECISION NOT NULL DEFAULT 1.0,
       rarity TEXT NOT NULL,
-      stattrak INTEGER NOT NULL DEFAULT 0,
-      souvenir INTEGER NOT NULL DEFAULT 0,
+      stattrak BOOLEAN NOT NULL DEFAULT false,
+      souvenir BOOLEAN NOT NULL DEFAULT false,
       image_url TEXT
     );
 
@@ -67,7 +67,7 @@ async function createSchema(pool: pg.Pool) {
       price_cents INTEGER NOT NULL,
       float_value DOUBLE PRECISION NOT NULL,
       paint_seed INTEGER,
-      stattrak INTEGER NOT NULL DEFAULT 0,
+      stattrak BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       source TEXT NOT NULL DEFAULT 'csfloat',
       listing_type TEXT NOT NULL DEFAULT 'buy_now',
@@ -100,7 +100,7 @@ async function createSchema(pool: pg.Pool) {
       type TEXT NOT NULL DEFAULT 'classified_covert',
       best_case_cents INTEGER NOT NULL DEFAULT 0,
       worst_case_cents INTEGER NOT NULL DEFAULT 0,
-      is_theoretical INTEGER NOT NULL DEFAULT 0,
+      is_theoretical BOOLEAN NOT NULL DEFAULT false,
       source TEXT NOT NULL DEFAULT 'discovery',
       combo_key TEXT,
       listing_status TEXT NOT NULL DEFAULT 'active',
@@ -169,10 +169,23 @@ async function createSchema(pool: pg.Pool) {
       display_name TEXT,
       avatar_url TEXT,
       tier TEXT NOT NULL DEFAULT 'free',
-      is_admin INTEGER NOT NULL DEFAULT 0,
+      is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS profitable_combos (
+      combo_key TEXT PRIMARY KEY,
+      collections TEXT NOT NULL,
+      best_profit_cents INTEGER NOT NULL DEFAULT 0,
+      best_roi DOUBLE PRECISION NOT NULL DEFAULT 0,
+      times_profitable INTEGER NOT NULL DEFAULT 0,
+      first_profitable_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_profitable_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_cost_cents INTEGER NOT NULL DEFAULT 0,
+      input_recipe TEXT NOT NULL DEFAULT '',
+      combo_type TEXT NOT NULL DEFAULT 'knife'
     );
 
     -- Indexes needed by trade-ups router
@@ -352,8 +365,15 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestCont
     || process.env.DATABASE_URL
     || "postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot_test";
 
-  const pool = new Pool({ connectionString, max: 5 });
-  const schema = await createSchema(pool);
+  // Bootstrap pool: create schema + DDL, then discard
+  const bootstrapPool = new Pool({ connectionString, max: 1 });
+  const schema = await createSchema(bootstrapPool);
+  await bootstrapPool.end();
+
+  // Main pool: search_path baked into every connection via URL options
+  const sep = connectionString.includes("?") ? "&" : "?";
+  const poolUrl = `${connectionString}${sep}options=-c%20search_path%3D${schema}`;
+  const pool = new Pool({ connectionString: poolUrl, max: 15 });
 
   const app = express();
   app.use(express.json());
