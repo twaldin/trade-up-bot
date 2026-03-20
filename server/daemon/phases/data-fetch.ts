@@ -13,7 +13,6 @@ import {
   syncPrioritizedKnifeInputs,
   syncSmartListingsForRarity,
   syncCovertOutputListings,
-  checkListingStaleness,
   syncDMarketListingsForRarity,
   isDMarketConfigured,
 } from "../../sync.js";
@@ -47,13 +46,10 @@ export async function phase3ApiProbe(
   const saleStatus = probe.saleHistory.available
     ? `OK (${fmtRemaining(probe.saleHistory.rateLimit)})`
     : `429${fmtReset(probe.saleHistory.rateLimit)}`;
-  const individualStatus = probe.individualListing.available
-    ? `OK (${fmtRemaining(probe.individualListing.rateLimit)})`
-    : `429${fmtReset(probe.individualListing.rateLimit)}`;
 
   console.log(`  Listing search:    ${listingStatus}`);
   console.log(`  Sale history:      ${saleStatus}`);
-  console.log(`  Individual lookup: ${individualStatus}`);
+  console.log(`  Individual lookup: managed by csfloat-checker process`);
 
   // Feed pool info into budget tracker for pacing
   const lrl = probe.listingSearch.rateLimit;
@@ -67,12 +63,6 @@ export async function phase3ApiProbe(
     probe.saleHistory.available ? (srl.remaining ?? 500) : 0,
     srl.resetAt
   );
-  const irl = probe.individualListing.rateLimit;
-  budget.setIndividualPool(
-    probe.individualListing.available ? (irl.remaining ?? 50000) : 0,
-    irl.resetAt
-  );
-
   // Log pacing info (with safety buffer awareness)
   const cycleBudget = budget.cycleListingBudget();
   if (probe.listingSearch.available && budget.listingRemaining > 0) {
@@ -83,11 +73,6 @@ export async function phase3ApiProbe(
     const cycleSB = budget.cycleSaleBudget();
     console.log(`  Pacing: ${cycleSB}/${budget.saleUsable} usable sale calls this cycle (${budget.saleRemaining} remaining, ${budget.saleSafetyBuffer} safety buffer)`);
   }
-  if (probe.individualListing.available && budget.individualRemaining > 0) {
-    const cycleIB = budget.cycleIndividualBudget();
-    console.log(`  Pacing: ${cycleIB}/${budget.individualUsable} usable individual calls this cycle (${budget.individualRemaining} remaining, ${budget.individualSafetyBuffer} safety buffer)`);
-  }
-
   // Track probe costs (after setListingPool since that resets counters)
   if (probe.listingSearch.available) budget.useListing(1);
   if (probe.saleHistory.available) budget.useSale(1);
@@ -124,7 +109,23 @@ export async function phase3ApiProbe(
 
   const cycleLB = budget.cycleListingBudget();
   const cycleSB2 = budget.cycleSaleBudget();
-  const cycleIB = budget.cycleIndividualBudget();
+
+  // Read checker status for individual pool info (managed by csfloat-checker process)
+  let individualInfo: { remaining: number | null; reset_at: number | null; available: boolean } = {
+    remaining: null, reset_at: null, available: false,
+  };
+  try {
+    const { rows: [checkerRow] } = await pool.query("SELECT value FROM sync_meta WHERE key = 'csfloat_checker_status'");
+    if (checkerRow) {
+      const checkerStatus = JSON.parse(checkerRow.value);
+      individualInfo = {
+        remaining: checkerStatus.poolRemaining,
+        reset_at: checkerStatus.poolResetAt ? capResetAt(checkerStatus.poolResetAt, KNOWN_INDIVIDUAL_WINDOW_S) : null,
+        available: checkerStatus.poolRemaining !== null && checkerStatus.poolRemaining > 100,
+      };
+    }
+  } catch { /* checker may not be running yet */ }
+
   await setSyncMeta(pool, "api_rate_limit", JSON.stringify({
     listing_search: {
       limit: KNOWN_LISTING_LIMIT,
@@ -144,11 +145,12 @@ export async function phase3ApiProbe(
     },
     individual: {
       limit: KNOWN_INDIVIDUAL_LIMIT,
-      remaining: probe.individualListing.available ? (probe.individualListing.rateLimit.remaining ?? null) : 0,
-      reset_at: capResetAt(probe.individualListing.rateLimit.resetAt, KNOWN_INDIVIDUAL_WINDOW_S),
-      available: probe.individualListing.available,
-      cycle_budget: cycleIB,
-      safety_buffer: budget.individualSafetyBuffer,
+      remaining: individualInfo.remaining,
+      reset_at: individualInfo.reset_at,
+      available: individualInfo.available,
+      cycle_budget: null,
+      safety_buffer: 100,
+      managed_by: "csfloat-checker",
     },
     detected_at: new Date().toISOString(),
   }));
@@ -428,45 +430,4 @@ export async function phase4DataFetch(
   console.log(`  Data fetch done — ${budget.saleCount} sale calls (${budget.saleRemaining} remaining), ${budget.listingCount} listing calls (${budget.listingRemaining} remaining)`);
 }
 
-export async function phase4p5VerifyInputs(
-  pool: pg.Pool,
-  freshness: FreshnessTracker,
-  apiKey: string,
-  probe: ApiProbeResult,
-  budget: BudgetTracker
-) {
-  if (!probe.individualListing.available) return;
-  if (budget.individualUsable <= 0) {
-    console.log(`\n[${timestamp()}] Phase 4.5: Skipped (individual pool exhausted)`);
-    return;
-  }
-
-  // Use listing count from listings table as proxy (fast, avoids 12M row scan on trade_up_inputs)
-  const { rows: [countRow] } = await pool.query("SELECT COUNT(*) as cnt FROM listings");
-  const profitableInputCount = Number(countRow.cnt);
-
-  if (profitableInputCount === 0) return;
-
-  const maxVerify = Math.min(profitableInputCount + 10, 100, Math.floor(budget.cycleIndividualBudget() * 0.10));
-  if (maxVerify <= 0) return;
-
-  console.log(`\n[${timestamp()}] Phase 4.5: Verify profitable inputs (${profitableInputCount} listings, checking ${maxVerify})`);
-  await setDaemonStatus(pool, "fetching", `Phase 4.5: Verifying ${maxVerify} profitable inputs`);
-
-  try {
-    const verifyResult = await checkListingStaleness(pool, {
-      apiKey,
-      maxChecks: maxVerify,
-      onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-    });
-    console.log(`  Verified: ${verifyResult.checked} checked, ${verifyResult.stillListed} active, ${verifyResult.sold} sold, ${verifyResult.delisted} removed`);
-    if (verifyResult.sold > 0 || verifyResult.delisted > 0) {
-      freshness.markListingsChanged();
-      await emitEvent(pool, "staleness_check", `Verified ${verifyResult.checked} inputs: ${verifyResult.sold} sold, ${verifyResult.delisted} removed`);
-    }
-  } catch (err) {
-    if (err instanceof Error && err.message.includes("429")) {
-      console.log(`  Individual lookup pool exhausted during verification`);
-    }
-  }
-}
+// Phase 4.5/4.6 removed — CSFloat individual pool managed by csfloat-checker process

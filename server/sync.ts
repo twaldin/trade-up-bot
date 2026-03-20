@@ -51,6 +51,7 @@ export { syncWantedListings } from "./sync/wanted.js";
 
 // DMarket (listing fetch + buy + staleness)
 export {
+  fetchAllDMarketListings,
   fetchDMarketListings,
   syncDMarketListingsForSkin,
   syncDMarketListingsForRarity,
