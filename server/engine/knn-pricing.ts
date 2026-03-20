@@ -150,7 +150,7 @@ export async function getInterpolatedPrice(
 
 const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   sale: 3.0,              // CSFloat verified transactions — ground truth
-  skinport_sale: 2.0,     // Skinport confirmed transactions
+  skinport_sale: 0.5,     // Skinport confirmed transactions — downweighted due to platform premium bias
 };
 
 const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();

@@ -5,8 +5,8 @@
  * paced to use the 50K individual lookup pool evenly across ~24h.
  *
  * CSFloat rate limits (per-endpoint):
- *   - Listing search: 200/~30min (probed during cooldown)
- *   - Sale history: 500/~12h
+ *   - Listing search: 200/~1h (probed during cooldown)
+ *   - Sale history: 500/~24h
  *   - Individual listing: 50,000/~24h (staleness checks)
  */
 

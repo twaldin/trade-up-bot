@@ -401,6 +401,13 @@ export async function lookupOutputPrice(
 
   if (knn && knn.confidence >= 0.3) {
     grossPrice = knn.priceCents;
+    // Sanity cap: if KNN is >5x condition-level ref, KNN is probably wrong
+    // (pattern premiums, Skinport platform bias, sparse-data interpolation artifacts).
+    // 98.5% of real sales are within 2x ref; >5x are pattern items KNN can't price.
+    const refPrice = lookupPrice(pool, skinName, predictedFloat);
+    if (refPrice > 0 && grossPrice > refPrice * 5) {
+      grossPrice = refPrice;
+    }
   } else {
     // 2. Fallback: condition-level pricing from csfloat_ref + listing floors
     grossPrice = lookupPrice(pool, skinName, predictedFloat);

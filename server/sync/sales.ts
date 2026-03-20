@@ -516,6 +516,17 @@ export async function syncSaleHistoryForRarity(
   const { rows: salesRows } = await pool.query(`SELECT skin_name, condition FROM price_data WHERE source = 'csfloat_sales'`);
   for (const r of salesRows) hasSalesPrice.add(`${r.skin_name}:${r.condition}`);
 
+  // Observation-gap prioritization: fetch skins with fewest KNN observations first
+  const obsCount = new Map<string, number>();
+  const { rows: obsRows } = await pool.query(`
+    SELECT skin_name, COUNT(*) as obs
+    FROM price_observations
+    WHERE source IN ('sale', 'skinport_sale')
+      AND EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 <= 45
+    GROUP BY skin_name
+  `);
+  for (const r of obsRows) obsCount.set(r.skin_name, parseInt(r.obs, 10));
+
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
@@ -527,10 +538,12 @@ export async function syncSaleHistoryForRarity(
     (p) => !recentlyFetched.has(`${p.skinName}:${p.condition}`) && !errorSkins.has(p.marketHashName)
   );
 
+  // Sort: skins without sales price first, then by fewest observations (feeds KNN gaps)
   toFetch.sort((a, b) => {
     const aHas = hasSalesPrice.has(`${a.skinName}:${a.condition}`) ? 1 : 0;
     const bHas = hasSalesPrice.has(`${b.skinName}:${b.condition}`) ? 1 : 0;
-    return aHas - bHas;
+    if (aHas !== bHas) return aHas - bHas;
+    return (obsCount.get(a.skinName) ?? 0) - (obsCount.get(b.skinName) ?? 0);
   });
 
   const maxCalls = options.maxCalls ?? toFetch.length;
