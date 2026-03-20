@@ -43,7 +43,7 @@ export class BudgetTracker {
   /** Listing calls (200-limit endpoint, ~30min window) */
   private listingUsed = 0;
   private listingBudget: number;
-  /** Individual lookup calls (50K-limit endpoint, ~12h window) */
+  /** Individual lookup calls (50K-limit endpoint, ~24h window) */
   private individualUsed = 0;
   private individualBudget = 40000;
   private _saleRateLimited = false;
@@ -177,7 +177,7 @@ export class BudgetTracker {
 
   /**
    * Calculate individual lookup calls to use THIS cycle.
-   * 50K/12h pool used for staleness checks + input verification.
+   * 50K/24h pool used for staleness checks + input verification.
    * Paced like listings/sales to avoid exhausting the pool early.
    */
   cycleIndividualBudget(cycleDurationMs: number = ESTIMATED_CYCLE_MS): number {
