@@ -244,7 +244,10 @@ export async function evaluateKnifeTradeUp(
   }
   const mergedOutcomes = [...mergedMap.values()];
 
-  // Unpriced outcomes contribute $0 (conservative).
+  // Reject trade-ups where we couldn't price all outcomes (probabilities don't sum to ~1)
+  const totalProb = mergedOutcomes.reduce((s, o) => s + o.probability, 0);
+  if (totalProb < 0.99) return null;
+
   const evCents = Math.round(totalEv);
   const profit = evCents - totalCost;
   const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;
