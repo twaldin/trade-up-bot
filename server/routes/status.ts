@@ -268,24 +268,34 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
-      // Skinport WebSocket stats
-      let skinportStats = null;
+      // Listing staleness stats
+      let stalenessStats = null;
       try {
-        const { rows: [row] } = await pool.query(
-          "SELECT COUNT(*) as cnt FROM listings WHERE source = 'skinport'"
-        );
-        const { rows: [obsRow] } = await pool.query(
-          "SELECT COUNT(*) as cnt FROM price_observations WHERE source = 'skinport_sale'"
-        );
-        skinportStats = {
-          listingsStored: parseInt(row.cnt),
-          saleObservations: parseInt(obsRow.cnt),
+        const { rows: [row] } = await pool.query(`
+          SELECT
+            ROUND(AVG(EXTRACT(EPOCH FROM NOW() - COALESCE(staleness_checked_at, created_at)) / 3600)::numeric, 1)
+              FILTER (WHERE source IS NULL OR source = 'csfloat') as csfloat_avg_hours,
+            ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+              ORDER BY EXTRACT(EPOCH FROM NOW() - COALESCE(staleness_checked_at, created_at)) / 3600
+            ) FILTER (WHERE source IS NULL OR source = 'csfloat'))::numeric, 1) as csfloat_median_hours,
+            ROUND(AVG(EXTRACT(EPOCH FROM NOW() - COALESCE(staleness_checked_at, created_at)) / 3600)::numeric, 1)
+              FILTER (WHERE source = 'dmarket') as dmarket_avg_hours,
+            COUNT(*) FILTER (WHERE staleness_checked_at > NOW() - INTERVAL '24 hours') as checked_24h,
+            COUNT(*) as total_listings
+          FROM listings WHERE stattrak = false
+        `);
+        stalenessStats = {
+          csfloat_avg_hours: row.csfloat_avg_hours ? parseFloat(row.csfloat_avg_hours) : null,
+          csfloat_median_hours: row.csfloat_median_hours ? parseFloat(row.csfloat_median_hours) : null,
+          dmarket_avg_hours: row.dmarket_avg_hours ? parseFloat(row.dmarket_avg_hours) : null,
+          checked_24h: parseInt(row.checked_24h),
+          total_listings: parseInt(row.total_listings),
         };
       } catch { /* DB may be locked */ }
 
-      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, skinportStats });
+      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats });
     } catch (err) {
-      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, skinportStats: null });
+      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null });
     }
   }));
 
