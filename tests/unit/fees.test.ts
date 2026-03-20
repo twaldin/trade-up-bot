@@ -165,20 +165,20 @@ describe("effectiveSellProceeds", () => {
     });
   });
 
-  describe("Skinport seller fee (12%)", () => {
-    it("$100 sell → $88.00", () => {
+  describe("Skinport seller fee (8%)", () => {
+    it("$100 sell → $92.00", () => {
       const result = effectiveSellProceeds(10000, "skinport");
-      expect(result).toBe(8800);
+      expect(result).toBe(9200);
     });
 
-    it("$10 sell → $8.80", () => {
+    it("$10 sell → $9.20", () => {
       const result = effectiveSellProceeds(1000, "skinport");
-      expect(result).toBe(880);
+      expect(result).toBe(920);
     });
 
-    it("$1 sell → $0.88", () => {
+    it("$1 sell → $0.92", () => {
       const result = effectiveSellProceeds(100, "skinport");
-      expect(result).toBe(88);
+      expect(result).toBe(92);
     });
   });
 
@@ -197,7 +197,7 @@ describe("effectiveSellProceeds", () => {
     });
 
     it("$0.01 sell on Skinport → rounds to 1 cent", () => {
-      // 1 * 0.88 = 0.88 → Math.round(0.88) = 1
+      // 1 * 0.92 = 0.92 → Math.round(0.92) = 1
       const result = effectiveSellProceeds(1, "skinport");
       expect(result).toBe(1);
     });
@@ -207,9 +207,9 @@ describe("effectiveSellProceeds", () => {
       expect(result).toBe(980_000);
     });
 
-    it("$10,000 sell on Skinport → $8,800.00", () => {
+    it("$10,000 sell on Skinport → $9,200.00", () => {
       const result = effectiveSellProceeds(1_000_000, "skinport");
-      expect(result).toBe(880_000);
+      expect(result).toBe(920_000);
     });
   });
 });
@@ -240,7 +240,7 @@ describe("MARKETPLACE_FEES constants", () => {
     expect(MARKETPLACE_FEES.skinport.buyerFeeFlat).toBe(0);
   });
 
-  it("Skinport seller: 12%", () => {
-    expect(MARKETPLACE_FEES.skinport.sellerFee).toBe(0.12);
+  it("Skinport seller: 8%", () => {
+    expect(MARKETPLACE_FEES.skinport.sellerFee).toBe(0.08);
   });
 });

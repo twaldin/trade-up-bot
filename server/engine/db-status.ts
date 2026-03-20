@@ -37,9 +37,21 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
     `, [chunk]);
 
     // Separate: trade-ups to delete (all inputs gone) vs update (partial/active)
+    // Skip trade-ups with active claims — they should stay 'active' for the claimer.
+    const activelyClaimed = new Set<number>();
+    if (statusRows.length > 0) {
+      const tuIds = statusRows.map((r: { trade_up_id: number }) => r.trade_up_id);
+      const { rows: claimedRows } = await pool.query(
+        `SELECT DISTINCT trade_up_id FROM trade_up_claims WHERE trade_up_id = ANY($1) AND released_at IS NULL AND expires_at > NOW()`,
+        [tuIds]
+      );
+      for (const r of claimedRows) activelyClaimed.add(r.trade_up_id);
+    }
+
     const toDelete: number[] = [];
     const toUpdate: { trade_up_id: number; missing: number; total: number }[] = [];
     for (const row of statusRows) {
+      if (activelyClaimed.has(row.trade_up_id)) continue; // skip actively claimed
       if (row.missing === row.total) {
         toDelete.push(row.trade_up_id);
       } else {

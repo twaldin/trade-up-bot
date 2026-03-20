@@ -43,6 +43,13 @@ export function calculateOutcomeProbabilities(
     outcomesPerCollection.set(outcome.collection_id, list);
   }
 
+  // Every input collection must have at least one outcome — otherwise the
+  // trade-up is invalid (CS2 requires every input collection to contribute
+  // to the outcome pool at the next rarity tier).
+  for (const colId of inputsPerCollection.keys()) {
+    if (!outcomesPerCollection.has(colId)) return [];
+  }
+
   const result: { outcome: DbSkinOutcome; probability: number }[] = [];
   for (const [colId, colOutcomes] of outcomesPerCollection) {
     const inputCount = inputsPerCollection.get(colId) ?? 0;

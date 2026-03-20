@@ -38,6 +38,39 @@ import {
   ensureStatsTable, saveCycleStats, printPerformanceComparison,
   type CycleStats,
 } from "./utils.js";
+
+// ─── Graceful restart queue ──────────────────────────────────────────────────
+// SIGUSR2: queue restart at end of current cycle (PM2 auto-restarts after exit)
+// SIGTERM/SIGINT: graceful shutdown (finish current phase, then exit)
+let restartQueued = false;
+let shutdownRequested = false;
+
+process.on("SIGUSR2", () => {
+  restartQueued = true;
+  console.log(`\n[${timestamp()}] SIGUSR2 received — restart queued for end of cycle`);
+});
+
+process.on("SIGTERM", () => {
+  if (shutdownRequested) {
+    console.log(`\n[${timestamp()}] SIGTERM received again — forcing exit`);
+    process.exit(1);
+  }
+  shutdownRequested = true;
+  restartQueued = true; // also exit at cycle end
+  console.log(`\n[${timestamp()}] SIGTERM received — will exit at end of current cycle`);
+});
+
+process.on("SIGINT", () => {
+  if (shutdownRequested) process.exit(1);
+  shutdownRequested = true;
+  restartQueued = true;
+  console.log(`\n[${timestamp()}] SIGINT received — will exit at end of current cycle`);
+});
+
+/** Check if daemon should skip starting new work (restart/shutdown pending). */
+export function isRestartQueued(): boolean {
+  return restartQueued;
+}
 import {
   phase1Housekeeping,
   phase3ApiProbe,
@@ -639,6 +672,12 @@ export async function main() {
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
     await printPerformanceComparison(pool);
+
+    // Check for queued restart — exit cleanly so PM2 auto-restarts
+    if (restartQueued) {
+      console.log(`\n[${timestamp()}] Queued restart: exiting after cycle ${cycleCount}`);
+      process.exit(0);
+    }
 
     // Sleep until 30-min mark to align with listing pool reset window
     const elapsed = Date.now() - cycleStarted;

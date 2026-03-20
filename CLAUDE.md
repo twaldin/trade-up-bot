@@ -111,6 +111,11 @@ Other daemon files:
 - `utils.ts` — logging, rate limit detection, cycle stats
 - `phases/` — phase implementations (housekeeping, data-fetch, knife-calc, classified-calc)
 
+**Graceful restart**: SIGUSR2 queues restart at end of current cycle (PM2 auto-restarts).
+- `scripts/daemon-restart.sh` — sends SIGUSR2, daemon finishes cycle then exits
+- `scripts/daemon-fresh.sh` — graceful stop → purge DB + Redis → restart
+- Never use `pm2 restart daemon` directly — it kills mid-cycle. Always use the scripts.
+
 ## Trade-Up Types
 
 | Type | Inputs | Output | Input Count |
@@ -123,11 +128,12 @@ Other daemon files:
 
 ## Claims & Verification
 
-### Claims (Pro tier, 10/hour)
+### Claims (Basic + Pro)
 - `POST /api/trade-ups/:id/claim` — locks listing IDs for 30 min
 - `DELETE /api/trade-ups/:id/claim` — releases claim early
 - `claimed_by` + `claimed_at` columns on listings table
-- Listing-level conflict detection: rejects if any listing already claimed
+- **Serialized via `pg_advisory_xact_lock(tradeUpId)`** — prevents concurrent claim races
+- **Listing-level `FOR UPDATE`** — prevents double-claiming shared listings across trade-ups
 - Claimed listings filtered from discovery (`AND claimed_by IS NULL`)
 - Propagates partial status to all trade-ups sharing claimed listings
 - On release: restores listing_status to active if all listings available
@@ -162,7 +168,7 @@ Other daemon files:
 - DMarket: 2.5% buyer fee
 - Skinport: 0% buyer fee
 
-**Seller fees** deducted from output prices: CSFloat 2%, DMarket 2%, Skinport 12%
+**Seller fees** deducted from output prices: CSFloat 2%, DMarket 2%, Skinport 8%
 
 ## Data Fetching Strategy
 
@@ -234,6 +240,16 @@ All fetching is **coverage-based** — no theory-guided wanted lists.
   - `buildKnifeFinishCache(pool)` in `knife-evaluation.ts`
 - **CONDITION_BOUNDS**: single source of truth in `engine/types.ts`. Import it — never hardcode condition float ranges or name arrays.
 - **db-ops is a barrel**: actual code lives in `db-save.ts`, `db-status.ts`, `db-revive.ts`, `db-stats.ts`. Add new DB functions to the appropriate submodule, then re-export from `db-ops.ts`.
+
+### Testing (TDD)
+- **Test suite**: `tests/unit/` (pure logic, no DB), `tests/integration/` (needs PostgreSQL), `tests/stress/` (performance + concurrency)
+- **Run before deploying**: `npx vitest run tests/unit/ tests/integration/ tests/stress/`
+- **TDD for new features**: write failing tests first → implement to pass → refactor. Red-Green-Blue.
+- **When modifying existing behavior**: update tests FIRST to reflect new expected behavior (they should fail), THEN change the code.
+- **Property tests**: `tests/unit/properties/` uses `fast-check` for invariant testing (probabilities sum to 1, fees are monotonic, etc.)
+- **Shared fixtures**: `tests/helpers/fixtures.ts` — use `makeListing()`, `makeOutcome()`, `makeTradeUp()` everywhere.
+- **Integration test DB**: needs local PostgreSQL with `tradeupbot_test` database. Tests create isolated schemas per test run.
+- **Daemon restarts**: always use `scripts/daemon-restart.sh` (queued) instead of `pm2 restart daemon` (hard kill).
 
 ### Tier System
 | Tier | Price | Delay | Limit | Claims | Verify | Listing Links |

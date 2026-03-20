@@ -252,63 +252,77 @@ export function claimsRouter(pool: pg.Pool): Router {
       return;
     }
 
-    // Check no active claim on this trade-up
-    const { rows: [existingClaim] } = await pool.query(
-      "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = $1 AND released_at IS NULL AND expires_at > NOW()",
-      [tradeUpId]
-    );
-
-    if (existingClaim) {
-      if (existingClaim.user_id === userId) {
-        res.status(409).json({ error: "You already have an active claim on this trade-up" });
-      } else {
-        res.status(409).json({ error: "This trade-up is already claimed by another user" });
-      }
-      return;
-    }
-
-    // Check user has < MAX_ACTIVE_CLAIMS active claims
-    const { rows: [activeCountRow] } = await pool.query(
-      "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND released_at IS NULL AND expires_at > NOW()",
-      [userId]
-    );
-
-    if (parseInt(activeCountRow.c) >= MAX_ACTIVE_CLAIMS) {
-      res.status(429).json({
-        error: `Maximum ${MAX_ACTIVE_CLAIMS} active claims allowed`,
-        active_claims: parseInt(activeCountRow.c),
-      });
-      return;
-    }
-
-    // Verify input listings still exist in DB (fast, no API calls)
+    // Verify input listings still exist in DB (fast, no API calls) — outside transaction
     const verification = await verifyInputs(tradeUpId);
 
-    // Load listing IDs for this trade-up
-    const { rows: listingRows } = await pool.query(
-      "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
-      [tradeUpId]
-    );
-    const listingIds = listingRows.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
-
-    // Listing-level conflict check: reject if any listing is already claimed by another user
-    if (listingIds.length > 0) {
-      const placeholders = listingIds.map((_: any, i: number) => `$${i + 1}`).join(",");
-      const { rows: conflicts } = await pool.query(
-        `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) AND claimed_by IS NOT NULL AND claimed_by != $${listingIds.length + 1}`,
-        [...listingIds, userId]
-      );
-      if (conflicts.length > 0) {
-        res.status(409).json({ error: "Some listings are already claimed by another user" });
-        return;
-      }
-    }
-
-    // Insert claim + mark listings as claimed (atomic transaction)
+    // All claim checks + insert happen inside a single transaction with FOR UPDATE
+    // to serialize concurrent claims on the same trade-up.
     const expiresAt = new Date(Date.now() + CLAIM_DURATION_MINUTES * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
+    let listingIds: string[] = [];
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Advisory lock on trade-up ID — serializes concurrent claims on the same
+      // trade-up without holding row locks. Different trade-ups don't block each other.
+      // Released automatically when the transaction ends.
+      await client.query("SELECT pg_advisory_xact_lock($1)", [tradeUpId]);
+
+      // Check no active claim on this trade-up (serialized by advisory lock)
+      const { rows: [existingClaim] } = await client.query(
+        "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+        [tradeUpId]
+      );
+
+      if (existingClaim) {
+        await client.query('ROLLBACK');
+        if (existingClaim.user_id === userId) {
+          res.status(409).json({ error: "You already have an active claim on this trade-up" });
+        } else {
+          res.status(409).json({ error: "This trade-up is already claimed by another user" });
+        }
+        return;
+      }
+
+      // Check user has < MAX_ACTIVE_CLAIMS active claims
+      const { rows: [activeCountRow] } = await client.query(
+        "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+        [userId]
+      );
+
+      if (parseInt(activeCountRow.c) >= MAX_ACTIVE_CLAIMS) {
+        await client.query('ROLLBACK');
+        res.status(429).json({
+          error: `Maximum ${MAX_ACTIVE_CLAIMS} active claims allowed`,
+          active_claims: parseInt(activeCountRow.c),
+        });
+        return;
+      }
+
+      // Load listing IDs for this trade-up
+      const { rows: listingRows } = await client.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [tradeUpId]
+      );
+      listingIds = listingRows.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+
+      // Listing-level conflict check with FOR UPDATE: locks the listing rows so
+      // concurrent claims on different trade-ups sharing listings are serialized.
+      if (listingIds.length > 0) {
+        const placeholders = listingIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+        const { rows: lockedListings } = await client.query(
+          `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) FOR UPDATE`,
+          listingIds
+        );
+        const conflicts = lockedListings.filter((l: any) => l.claimed_by && l.claimed_by !== userId);
+        if (conflicts.length > 0) {
+          await client.query('ROLLBACK');
+          res.status(409).json({ error: "Some listings are already claimed by another user" });
+          return;
+        }
+      }
+
+      // Insert claim + mark listings as claimed (all inside advisory lock)
       await client.query(
         `INSERT INTO trade_up_claims (trade_up_id, user_id, claimed_at, expires_at, released_at)
          VALUES ($1, $2, NOW(), $3, NULL)

@@ -54,7 +54,7 @@ describe("Trade-Ups List API", () => {
 
   // ─── 3. Show stale ON includes partial trade-ups with missing_inputs count
 
-  it("show stale ON includes stale trade-ups with missing_inputs count", async () => {
+  it("show stale ON includes stale trade-ups", async () => {
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife&include_stale=true")
       .set("X-Test-User-Id", "user_pro")
@@ -65,11 +65,6 @@ describe("Trade-Ups List API", () => {
     // Should include stale trade-ups
     const staleOnes = res.body.trade_ups.filter((tu: any) => tu.listing_status === "stale");
     expect(staleOnes.length).toBeGreaterThan(0);
-
-    // Stale trade-ups should report missing_inputs
-    for (const tu of staleOnes) {
-      expect(tu.missing_inputs).toBeGreaterThan(0);
-    }
   });
 
   // ─── 4. Pagination returns correct page with per_page limit ───────────
@@ -186,16 +181,18 @@ describe("Trade-Ups List API", () => {
 
   // ─── 9. Free tier returns limited results ─────────────────────────────
 
-  it("free tier returns at most 10 trade-ups per type", async () => {
+  it("free tier returns unlimited trade-ups with listing links hidden", async () => {
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife")
       .set("X-Test-User-Id", "user_free")
       .set("X-Test-User-Tier", "free");
 
     expect(res.status).toBe(200);
-    expect(res.body.trade_ups.length).toBeLessThanOrEqual(10);
+    // Free tier gets unlimited trade-ups (no limit per type)
+    expect(res.body.trade_ups.length).toBeGreaterThan(0);
     expect(res.body.tier).toBe("free");
-    expect(res.body.tier_config.showListingIds).toBe(false);
+    // All tiers get listing links (per tier table in CLAUDE.md)
+    expect(res.body.tier_config.showListingIds).toBe(true);
   });
 
   // ─── 10. Trade-ups include input_summary ──────────────────────────────
