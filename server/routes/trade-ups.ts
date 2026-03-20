@@ -301,7 +301,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
     const tuIds = rows.map((r: any) => r.id);
     const summaryByTuId = new Map<number, InputSummary>();
-    const inputCountByTuId = new Map<number, number>();
     if (tuIds.length > 0) {
       const placeholders = tuIds.map((_: any, i: number) => `$${i + 1}`).join(",");
       const { rows: summaryRows } = await pool.query(
@@ -332,58 +331,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           collections: [...collections],
           input_count: inputs.length,
         });
-        inputCountByTuId.set(tuId, inputs.length);
       }
     }
 
-    // Batch-load missing input counts for non-active trade-ups
-    // Check ALL returned trade-ups for missing inputs (not just non-active)
-    // Catches: phantom stale (0 missing but marked stale) AND phantom active (has missing but marked active)
-    const allIds = rows.map((r: any) => r.id);
-    const missingCountByTuId = new Map<number, number>();
-    if (allIds.length > 0) {
-      // Batch in chunks of 500 to avoid param limit issues
-      for (let i = 0; i < allIds.length; i += 500) {
-        const chunk = allIds.slice(i, i + 500);
-        const placeholders = chunk.map((_: any, j: number) => `$${j + 1}`).join(",");
-        const { rows: missingRows } = await pool.query(`
-          SELECT tui.trade_up_id, COUNT(*) as cnt FROM trade_up_inputs tui
-          LEFT JOIN listings l ON tui.listing_id = l.id
-          WHERE tui.trade_up_id IN (${placeholders})
-            AND (l.id IS NULL OR l.claimed_by IS NOT NULL)
-            AND tui.listing_id NOT LIKE 'theor%'
-          GROUP BY tui.trade_up_id
-        `, chunk);
-        for (const r of missingRows) {
-          missingCountByTuId.set(r.trade_up_id, parseInt(r.cnt));
-        }
-      }
-    }
-
-    // Auto-correct listing_status based on actual missing count
-    // Skip auto-correct for user's own claimed trade-ups — they should always show as active to the claimer
-    const statusFixes = new Map<number, string>();
-    for (const row of rows) {
-      if (claimedByMe.has(row.id)) continue;
-      const missing = missingCountByTuId.get(row.id) ?? 0;
-      const totalInputs = inputCountByTuId.get(row.id) ?? 0;
-      if (missing === 0 && row.listing_status !== 'active') {
-        statusFixes.set(row.id, 'active');
-      } else if (missing > 0 && row.listing_status === 'active') {
-        statusFixes.set(row.id, missing >= totalInputs ? 'stale' : 'partial');
-      } else if (missing > 0 && row.listing_status === 'stale' && missing < totalInputs) {
-        statusFixes.set(row.id, 'partial');
-      }
-    }
-
-    // Auto-correct display status is applied to responses for badge rendering.
-    // The SQL-level NOT EXISTS filter prevents stale trade-ups from being fetched
-    // when include_stale=false. Post-filter below is an additional safety net.
+    // Status is maintained by cascadeTradeUpStatuses (on listing delete/claim).
+    // No read-time auto-correct needed — trust listing_status column.
+    // Missing input counts computed on-demand when user expands a row (inputs endpoint).
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
-      const missingCount = missingCountByTuId.get(row.id) ?? 0;
-      const correctedStatus = statusFixes.get(row.id);
 
       const tu: TradeUp = {
         id: row.id,
@@ -394,18 +350,18 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         roi_percentage: row.roi_percentage,
         created_at: row.created_at,
         is_theoretical: row.is_theoretical === true || row.is_theoretical === 1,
-        inputs: [], // loaded on-demand via /api/trade-up/:id/inputs
+        inputs: [],
         input_summary: summary,
         outcomes: [],
         chance_to_profit: row.chance_to_profit ?? 0,
         best_case_cents: row.best_case_cents ?? 0,
         worst_case_cents: row.worst_case_cents ?? 0,
         outcome_count: row.outcome_count ?? 0,
-        listing_status: (correctedStatus ?? row.listing_status ?? 'active') as TradeUp['listing_status'],
-        missing_inputs: missingCount,
+        listing_status: (row.listing_status ?? 'active') as TradeUp['listing_status'],
+        missing_inputs: 0,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
-        preserved_at: correctedStatus === 'active' ? null : (row.preserved_at ?? null),
+        preserved_at: row.preserved_at ?? null,
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
 
@@ -413,24 +369,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     });
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    let filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
-
-    // Post-filter: when Show stale is OFF, remove any trade-ups that auto-correct
-    // found to have missing inputs. This safety net ensures stale data never shows.
-    if (!includeStale) {
-      // Persist corrections to DB so future queries are accurate (non-blocking batch update)
-      const toFix = [...statusFixes.entries()].filter(([id]) => !claimedByMe.has(id));
-      if (toFix.length > 0) {
-        const updates = toFix.map(([id, newStatus]) => pool.query(
-          "UPDATE trade_ups SET listing_status = $1, preserved_at = CASE WHEN $1 = 'active' THEN NULL ELSE COALESCE(preserved_at, NOW()) END WHERE id = $2",
-          [newStatus, id]
-        ));
-        await Promise.all(updates);
-      }
-      filteredTradeUps = filteredTradeUps.filter((tu: any) => tu.listing_status === 'active');
-    }
-
-    // Adjust total for removed trade-ups on this page
+    const filteredTradeUps = tradeUps.filter((tu: any) => !tu.claimed_by_other);
     const removedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {
