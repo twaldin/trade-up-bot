@@ -444,27 +444,27 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='stattrak' AND data_type='integer') THEN
         ALTER TABLE skins ALTER COLUMN stattrak DROP DEFAULT;
-        ALTER TABLE skins ALTER COLUMN stattrak TYPE BOOLEAN USING stattrak::int::boolean;
+        ALTER TABLE skins ALTER COLUMN stattrak TYPE BOOLEAN USING (stattrak != 0);
         ALTER TABLE skins ALTER COLUMN stattrak SET DEFAULT false;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='skins' AND column_name='souvenir' AND data_type='integer') THEN
         ALTER TABLE skins ALTER COLUMN souvenir DROP DEFAULT;
-        ALTER TABLE skins ALTER COLUMN souvenir TYPE BOOLEAN USING souvenir::int::boolean;
+        ALTER TABLE skins ALTER COLUMN souvenir TYPE BOOLEAN USING (souvenir != 0);
         ALTER TABLE skins ALTER COLUMN souvenir SET DEFAULT false;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='listings' AND column_name='stattrak' AND data_type='integer') THEN
         ALTER TABLE listings ALTER COLUMN stattrak DROP DEFAULT;
-        ALTER TABLE listings ALTER COLUMN stattrak TYPE BOOLEAN USING stattrak::int::boolean;
+        ALTER TABLE listings ALTER COLUMN stattrak TYPE BOOLEAN USING (stattrak != 0);
         ALTER TABLE listings ALTER COLUMN stattrak SET DEFAULT false;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trade_ups' AND column_name='is_theoretical' AND data_type='integer') THEN
         ALTER TABLE trade_ups ALTER COLUMN is_theoretical DROP DEFAULT;
-        ALTER TABLE trade_ups ALTER COLUMN is_theoretical TYPE BOOLEAN USING is_theoretical::int::boolean;
+        ALTER TABLE trade_ups ALTER COLUMN is_theoretical TYPE BOOLEAN USING (is_theoretical != 0);
         ALTER TABLE trade_ups ALTER COLUMN is_theoretical SET DEFAULT false;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_admin' AND data_type='integer') THEN
         ALTER TABLE users ALTER COLUMN is_admin DROP DEFAULT;
-        ALTER TABLE users ALTER COLUMN is_admin TYPE BOOLEAN USING is_admin::int::boolean;
+        ALTER TABLE users ALTER COLUMN is_admin TYPE BOOLEAN USING (is_admin != 0);
         ALTER TABLE users ALTER COLUMN is_admin SET DEFAULT false;
       END IF;
     END $$;
