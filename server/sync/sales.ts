@@ -941,7 +941,7 @@ export async function syncSaleHistoryRoundRobin(
   }
 ): Promise<{ fetched: number; sales: number; pricesUpdated: number; loopCount: number }> {
   // Build sorted list: skins with zero sale observations FIRST, then rest alphabetically.
-  // This ensures uncovered skins get priority until full coverage is achieved.
+  // source='sale' covers both CSFloat sale history API and staleness checker sold detections.
   const { rows: allSkins } = await pool.query(`
     SELECT DISTINCT s.name, s.min_float, s.max_float,
       CASE WHEN EXISTS (
