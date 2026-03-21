@@ -35,3 +35,6 @@ deployment.md
 prelaunch-checklist.md
 user_acquisition.md
 scaling.md
+
+# Directory-scoped CLAUDE.md files
+server/**/CLAUDE.md

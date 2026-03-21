@@ -11,7 +11,14 @@
     "sync": "tsx server/sync.ts",
     "fetch-listings": "tsx server/fetch-listings.ts",
     "calculate": "tsx server/calculate.ts",
-    "daemon": "tsx server/daemon.ts"
+    "daemon": "tsx server/daemon.ts",
+    "test": "vitest run tests/unit/ tests/integration/",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
+    "test:stress": "vitest run tests/stress/",
+    "test:all": "vitest run tests/unit/ tests/integration/ tests/stress/",
+    "test:watch": "vitest tests/unit/",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
