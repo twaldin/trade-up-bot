@@ -25,6 +25,7 @@ export {
   syncSmartListingsForRarity,
   syncPrioritizedKnifeInputs,
   syncCovertOutputListings,
+  syncListingsRoundRobin,
   verifyTopTradeUpListings,
 } from "./sync/csfloat.js";
 
@@ -34,6 +35,7 @@ export {
   syncSaleHistory,
   syncSaleHistoryForRarity,
   syncKnifeGloveSaleHistory,
+  syncSaleHistoryRoundRobin,
 } from "./sync/sales.js";
 
 // Skinport prices

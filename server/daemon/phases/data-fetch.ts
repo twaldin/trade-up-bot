@@ -1,18 +1,13 @@
 /**
  * Phase 3: API Probe — rate limit detection across all 3 CSFloat pools.
- * Phase 4: Data Fetch — sale history, listings, theory-guided wanted list.
- * Phase 4.5: Verify profitable inputs via individual lookup pool.
+ * Phase 4: Data Fetch — round-robin sale history + listing search for full coverage.
  */
 
 import pg from "pg";
 import { setSyncMeta, emitEvent } from "../../db.js";
 import {
-  syncKnifeGloveSaleHistory,
-  syncSaleHistory,
-  syncSaleHistoryForRarity,
-  syncPrioritizedKnifeInputs,
-  syncSmartListingsForRarity,
-  syncCovertOutputListings,
+  syncListingsRoundRobin,
+  syncSaleHistoryRoundRobin,
 } from "../../sync.js";
 
 import { BudgetTracker, FreshnessTracker } from "../state.js";
@@ -176,192 +171,54 @@ export async function phase4DataFetch(
     return;
   }
 
-  // 4a: Sale history (500/~24h window — independent from listing search)
+  // 4a: Sale history round-robin (500/~24h window)
   if (salesAvailable) {
     const cycleSaleBudget = budget.cycleSaleBudget();
-    console.log(`  [${timestamp()}] 4a: Sale history (${budget.saleRemaining} remaining, ${cycleSaleBudget} this cycle)`);
+    console.log(`  [${timestamp()}] 4a: Sale history round-robin (${budget.saleRemaining} remaining, ${cycleSaleBudget} this cycle)`);
+    await setDaemonStatus(pool, "fetching", "Phase 4a: Sale history round-robin");
 
-    // Adaptive allocation: weight remaining sale budget by inverse-log of existing data
-    // Tiers with less data get more budget; Consumer Grade excluded (never an output)
-    const OUTPUT_RARITIES = ['Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade', 'Consumer Grade'] as const;
-    let rarityWeights: { rarity: string; weight: number; budget: number }[] = [];
     try {
-      const { rows: saleCounts } = await pool.query(`
-        SELECT s.rarity, COUNT(*) as cnt FROM sale_history sh
-        JOIN skins s ON s.name = sh.skin_name AND s.stattrak = false
-        WHERE s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Industrial Grade', 'Consumer Grade')
-        GROUP BY s.rarity
-      `);
-      const countMap = new Map<string, number>(saleCounts.map((r: { rarity: string; cnt: string }) => [r.rarity, parseInt(r.cnt)]));
-      const weights = OUTPUT_RARITIES.map(r => ({
-        rarity: r,
-        weight: 1 / Math.log10((countMap.get(r) ?? 0) + 2),  // +2 to avoid log(1)=0
-      }));
-      const totalWeight = weights.reduce((s, w) => s + w.weight, 0);
-      const gunSaleBudget = Math.floor(cycleSaleBudget * 0.75); // 75% for gun rarities
-      rarityWeights = weights.map(w => ({
-        ...w,
-        budget: Math.max(1, Math.round((w.weight / totalWeight) * gunSaleBudget)),
-      }));
-      console.log(`    Adaptive sale allocation: ${rarityWeights.map(w => `${w.rarity.slice(0, 4)} ${w.budget}`).join(', ')}`);
-    } catch {
-      // Fallback to even split
-      const gunSaleBudget = Math.floor(cycleSaleBudget * 0.75);
-      const perRarity = Math.max(1, Math.floor(gunSaleBudget / OUTPUT_RARITIES.length));
-      rarityWeights = OUTPUT_RARITIES.map(r => ({ rarity: r, weight: 1, budget: perRarity }));
-    }
-
-    await setDaemonStatus(pool, "fetching", "Phase 4a: Knife/Glove sale history");
-    const knifeSaleBudget = Math.min(budget.saleRemaining, Math.max(2, Math.floor(cycleSaleBudget * 0.25)));
-    if (knifeSaleBudget >= 2) {
-      try {
-        const result = await syncKnifeGloveSaleHistory(pool, {
-          apiKey,
-          maxCalls: knifeSaleBudget,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useSale(result.fetched);
-        console.log(`    Knife sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        if (result.sales > 0) await emitEvent(pool, "sale_history", `Knife/glove: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    Knife sales: rate limited, moving on`);
-        else console.error(`    Knife sales error: ${(err as Error).message}`);
-      }
-    }
-
-    // Fetch sale history for each output rarity with adaptive budgets
-    for (const { rarity, budget: rarityBudget } of rarityWeights) {
-      if (rarityBudget < 1 || !budget.hasSaleBudget(1)) break;
-      const callBudget = Math.min(budget.saleRemaining, rarityBudget);
-      if (callBudget < 1) continue;
-
-      await setDaemonStatus(pool, "fetching", `Phase 4a: ${rarity} sale history`);
-      try {
-        if (rarity === 'Covert') {
-          const result = await syncSaleHistory(pool, {
-            apiKey,
-            maxCalls: callBudget,
-            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-          });
-          budget.useSale(result.fetched);
-          if (result.sales > 0) console.log(`    ${rarity} sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        } else {
-          const result = await syncSaleHistoryForRarity(pool, rarity, {
-            apiKey,
-            maxCalls: callBudget,
-            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-          });
-          budget.useSale(result.fetched);
-          if (result.sales > 0) console.log(`    ${rarity} sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices`);
-        }
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) console.log(`    ${rarity} sales: rate limited`);
-        else console.error(`    ${rarity} sales error: ${(err as Error).message}`);
+      const result = await syncSaleHistoryRoundRobin(pool, {
+        apiKey,
+        maxCalls: cycleSaleBudget,
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+      });
+      budget.useSale(result.fetched);
+      console.log(`    Sales: ${result.fetched} calls, ${result.sales} sales, ${result.pricesUpdated} prices (loop ${result.loopCount})`);
+      if (result.sales > 0) await emitEvent(pool, "sale_history", `Round-robin: ${result.sales} sales fetched, ${result.pricesUpdated} prices updated (loop ${result.loopCount})`);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("429")) {
+        console.log(`    Sales: rate limited`);
+        budget.markSaleRateLimited();
+      } else {
+        console.error(`    Sales error: ${(err as Error).message}`);
       }
     }
   } else {
     console.log(`  [${timestamp()}] 4a: Sale history — rate limited, skipping`);
   }
 
-  // 4b: Listing search (200/~1h window — paced across cycles)
+  // 4b: Listing search round-robin (200/~1h window)
   if (listingsAvailable) {
     const listingBudget = budget.cycleListingBudget();
-    console.log(`  [${timestamp()}] 4b: Listing search (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
+    console.log(`  [${timestamp()}] 4b: Listing search round-robin (${budget.listingRemaining} remaining, ${listingBudget} this cycle)`);
+    await setDaemonStatus(pool, "fetching", "Phase 4b: Listing search round-robin");
 
-    let knifeInputCalls: number, classifiedInputCalls: number, outputCalls: number, wantedCalls: number;
-    let coverageCalls = 0;
-    if (listingBudget < 10) {
-      knifeInputCalls = listingBudget; classifiedInputCalls = 0; outputCalls = 0;
-      wantedCalls = 0;
-    } else {
-      knifeInputCalls = Math.floor(listingBudget * 0.20);
-      outputCalls = Math.floor(listingBudget * 0.15);
-      coverageCalls = listingBudget - knifeInputCalls - outputCalls;
-      classifiedInputCalls = Math.floor(coverageCalls * 0.20);
-      const restrictedCalls = Math.floor(coverageCalls * 0.25);
-      const milspecCalls = Math.floor(coverageCalls * 0.30);
-      const industrialCalls = coverageCalls - classifiedInputCalls - restrictedCalls - milspecCalls;
-
-      wantedCalls = 0;
-      console.log(`    Budget: ${knifeInputCalls} knife + ${outputCalls} output + ${classifiedInputCalls} classified + ${restrictedCalls} restricted + ${milspecCalls} milspec + ${industrialCalls} industrial = ${listingBudget} (50/50 profit/coverage)`);
-
-      budget.setLowerRarityBudgets(restrictedCalls, milspecCalls, industrialCalls);
-    }
-
-    await setDaemonStatus(pool, "fetching", "Phase 4b: Prioritized knife inputs");
-    if (knifeInputCalls >= 5) {
-      try {
-        const result = await syncPrioritizedKnifeInputs(pool, {
-          apiKey,
-          maxCalls: knifeInputCalls,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useListing(result.apiCalls);
-        if (result.inserted > 0) freshness.markListingsChanged();
-        console.log(`    Knife inputs: ${result.apiCalls} calls, ${result.inserted} listings, ${result.collectionsServed} collections`);
-        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Knife inputs: +${result.inserted} listings from ${result.collectionsServed} collections`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
-        else console.error(`    Knife input fetch error: ${(err as Error).message}`);
-      }
-    }
-
-    if (!budget.isListingRateLimited() && classifiedInputCalls >= 3) {
-      await setDaemonStatus(pool, "fetching", "Phase 4b: Classified inputs");
-      try {
-        const result = await syncSmartListingsForRarity(pool, "Classified", {
-          apiKey,
-          maxCalls: classifiedInputCalls,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useListing(result.apiCalls);
-        if (result.inserted > 0) freshness.markListingsChanged();
-        console.log(`    Classified inputs: ${result.apiCalls} calls, ${result.inserted} listings`);
-        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Classified: +${result.inserted} listings`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
-        else console.error(`    Classified input fetch error: ${(err as Error).message}`);
-      }
-    }
-
-    if (!budget.isListingRateLimited() && outputCalls >= 5) {
-      await setDaemonStatus(pool, "fetching", "Phase 4b: Output listings");
-      try {
-        const result = await syncCovertOutputListings(pool, {
-          apiKey,
-          maxCalls: outputCalls,
-          onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-        });
-        budget.useListing(result.apiCalls);
-        if (result.inserted > 0) freshness.markListingsChanged();
-        console.log(`    Outputs: ${result.apiCalls} calls, ${result.inserted} listings`);
-        if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Outputs: +${result.inserted} knife/glove listings`);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
-        else console.error(`    Output fetch error: ${(err as Error).message}`);
-      }
-    }
-
-    const restrictedCalls = budget.restrictedCalls;
-    const milspecCalls = budget.milspecCalls;
-    const industrialCalls = budget.industrialCalls;
-    const consumerCalls = Math.max(2, Math.floor(industrialCalls / 2));
-
-    for (const [rarity, calls] of [["Restricted", restrictedCalls], ["Mil-Spec", milspecCalls], ["Industrial Grade", industrialCalls - consumerCalls], ["Consumer Grade", consumerCalls]] as const) {
-      if (!budget.isListingRateLimited() && calls >= 2) {
-        await setDaemonStatus(pool, "fetching", `Phase 4b: ${rarity} coverage`);
-        try {
-          const result = await syncSmartListingsForRarity(pool, rarity, {
-            apiKey,
-            maxCalls: calls,
-            onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
-          });
-          budget.useListing(result.apiCalls);
-          if (result.inserted > 0) freshness.markListingsChanged();
-          if (result.inserted > 0) console.log(`    ${rarity}: ${result.apiCalls} calls, ${result.inserted} listings`);
-        } catch (err) {
-          if (err instanceof Error && err.message.includes("429")) budget.markListingRateLimited();
-        }
+    try {
+      const result = await syncListingsRoundRobin(pool, {
+        apiKey,
+        maxCalls: listingBudget,
+        onProgress: (msg) => setDaemonStatus(pool, "fetching", msg),
+      });
+      budget.useListing(result.apiCalls);
+      if (result.inserted > 0) freshness.markListingsChanged();
+      console.log(`    Listings: ${result.apiCalls} calls, ${result.inserted} listings, ${result.skinsFetched} skins (loop ${result.loopCount})`);
+      if (result.inserted > 0) await emitEvent(pool, "listings_fetched", `Round-robin: +${result.inserted} listings from ${result.skinsFetched} skins (loop ${result.loopCount})`);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("429")) {
+        budget.markListingRateLimited();
+      } else {
+        console.error(`    Listing fetch error: ${(err as Error).message}`);
       }
     }
   } else {
