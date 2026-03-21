@@ -5,7 +5,7 @@
  * main daemon process. Writes listings directly to PostgreSQL.
  *
  * Strategy (coverage-first):
- *   1. Coverage gaps (skins with fewest DMarket listings — Restricted priority)
+ *   1. Coverage gaps (skins with fewest DMarket listings)
  *   2. Staleness refresh (re-check skins not fetched in 30+ minutes)
  *
  * Usage:
