@@ -148,30 +148,57 @@ export async function evaluateKnifeTradeUp(
 
     const allFinishes: (FinishData & { itemType: string })[] = [];
 
-    // Knife finishes — filter to only the correct finish set for this case
+    // Knife finishes — include ALL expected finishes for this case, even without price data.
+    // Same logic as gloves: placeholders for missing finishes so denominator is correct.
     if (caseInfo.knifeTypes.length > 0 && caseInfo.knifeFinishes.length > 0) {
       const allowedFinishes = new Set(caseInfo.knifeFinishes);
       for (const knifeType of caseInfo.knifeTypes) {
-        const finishes = knifeFinishCache.get(knifeType) ?? [];
-        for (const f of finishes) {
-          const finishName = f.name.split(" | ")[1];
-          if (finishName ? allowedFinishes.has(finishName) : allowedFinishes.has("Vanilla")) {
-            allFinishes.push({ ...f, itemType: knifeType });
+        const cachedFinishes = knifeFinishCache.get(knifeType) ?? [];
+        const cachedByFinish = new Map<string, FinishData>();
+        for (const f of cachedFinishes) {
+          const fn = f.name.includes(" | ") ? f.name.split(" | ")[1] : "Vanilla";
+          cachedByFinish.set(fn, f);
+        }
+        for (const finishName of allowedFinishes) {
+          const cached = cachedByFinish.get(finishName);
+          if (cached) {
+            allFinishes.push({ ...cached, itemType: knifeType });
+          } else {
+            // No price data — placeholder
+            const fullName = finishName === "Vanilla" ? `★ ${knifeType}` : `★ ${knifeType} | ${finishName}`;
+            allFinishes.push({
+              name: fullName, avgPrice: 0, minPrice: 0, maxPrice: 0,
+              conditions: 0, skinMinFloat: 0.06, skinMaxFloat: 1.0,
+              itemType: knifeType,
+            });
           }
         }
       }
     }
 
-    // Glove finishes — filter to only the correct generation's skins
+    // Glove finishes — include ALL expected finishes for the generation, even without price data.
+    // Finishes missing from cache get placeholder entries (avgPrice=0) so the probability
+    // denominator reflects the true finish count. lookupOutputPrice will return $0 for these,
+    // they'll be skipped from outcomes, and the probability sum check at the end will reject
+    // the trade-up if too many finishes are unpriced.
     if (caseInfo.gloveGen) {
       const genSkins = GLOVE_GEN_SKINS[caseInfo.gloveGen];
       if (genSkins) {
         for (const [gloveType, finishNames] of Object.entries(genSkins)) {
-          const allowedNames = new Set(finishNames.map(f => `★ ${gloveType} | ${f}`));
-          const finishes = knifeFinishCache.get(gloveType) ?? [];
-          for (const f of finishes) {
-            if (allowedNames.has(f.name)) {
-              allFinishes.push({ ...f, itemType: gloveType });
+          const cachedFinishes = knifeFinishCache.get(gloveType) ?? [];
+          const cachedByName = new Map(cachedFinishes.map(f => [f.name, f]));
+          for (const finishName of finishNames) {
+            const fullName = `★ ${gloveType} | ${finishName}`;
+            const cached = cachedByName.get(fullName);
+            if (cached) {
+              allFinishes.push({ ...cached, itemType: gloveType });
+            } else {
+              // No price data — placeholder so it counts in the denominator
+              allFinishes.push({
+                name: fullName, avgPrice: 0, minPrice: 0, maxPrice: 0,
+                conditions: 0, skinMinFloat: 0.06, skinMaxFloat: 0.80,
+                itemType: gloveType,
+              });
             }
           }
         }
