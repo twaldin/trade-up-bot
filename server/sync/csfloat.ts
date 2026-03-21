@@ -956,6 +956,107 @@ export async function syncCovertOutputListings(
 }
 
 /**
+ * Round-robin listing search: cycles through ALL valid skin+condition pairs
+ * deterministically, fetching listings for each skin across all its valid conditions.
+ *
+ * State is persisted in sync_meta as a cursor (skin index + loop count).
+ * Each skin costs 1-5 API calls depending on valid conditions.
+ * Achieves full coverage in ~2 days at 4,800 calls/day.
+ */
+export async function syncListingsRoundRobin(
+  pool: pg.Pool,
+  options: {
+    apiKey: string;
+    maxCalls: number;
+    onProgress?: (msg: string) => void;
+  }
+): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; loopCount: number }> {
+  // Build sorted list of all non-stattrak skins (deterministic order)
+  const { rows: allSkins } = await pool.query(`
+    SELECT id, name, min_float, max_float
+    FROM skins
+    WHERE stattrak = false
+    ORDER BY name
+  `) as { rows: { id: string; name: string; min_float: number; max_float: number }[] };
+
+  if (allSkins.length === 0) return { apiCalls: 0, inserted: 0, skinsFetched: 0, loopCount: 0 };
+
+  // Load cursor from sync_meta
+  const rawCursor = await getSyncMeta(pool, "listing_round_robin_cursor");
+  let cursor: { index: number; loopCount: number; lastUpdated: string } = rawCursor
+    ? JSON.parse(rawCursor)
+    : { index: 0, loopCount: 0, lastUpdated: new Date().toISOString() };
+
+  // Clamp cursor if skin list changed
+  if (cursor.index >= allSkins.length) {
+    cursor.index = 0;
+    cursor.loopCount++;
+  }
+
+  let totalApiCalls = 0;
+  let totalInserted = 0;
+  let skinsFetched = 0;
+  let consecutiveRateLimits = 0;
+
+  console.log(`  Round-robin listings: ${allSkins.length} skins, starting at index ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls`);
+
+  while (totalApiCalls < options.maxCalls) {
+    if (consecutiveRateLimits >= 2) {
+      console.log("  Bailing — consecutive rate limits");
+      break;
+    }
+
+    const skin = allSkins[cursor.index];
+    const validConditions = getValidConditions(skin.min_float, skin.max_float);
+    const callsNeeded = validConditions.length;
+
+    // If not enough budget for this skin's conditions, stop
+    if (totalApiCalls + callsNeeded > options.maxCalls + 2) break; // +2 grace for partial
+
+    try {
+      const result = await syncListingsForSkin(pool, skin, {
+        apiKey: options.apiKey,
+      });
+      totalApiCalls += result.apiCalls;
+      totalInserted += result.inserted;
+      skinsFetched++;
+      consecutiveRateLimits = 0;
+    } catch (err: any) {
+      if (err.message?.includes("429")) {
+        consecutiveRateLimits++;
+      } else {
+        console.log(`    Error: ${skin.name}: ${err.message}`);
+      }
+      // Still advance cursor — don't get stuck on one skin
+    }
+
+    // Advance cursor
+    cursor.index++;
+    if (cursor.index >= allSkins.length) {
+      cursor.index = 0;
+      cursor.loopCount++;
+      console.log(`  Round-robin: completed loop ${cursor.loopCount - 1}, wrapping to start`);
+    }
+
+    if (skinsFetched % 20 === 0 && skinsFetched > 0) {
+      const msg = `Round-robin listings: ${skinsFetched} skins, ${totalApiCalls}/${options.maxCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount})`;
+      options.onProgress?.(msg);
+      console.log(`  ${msg}`);
+    }
+  }
+
+  // Save cursor
+  cursor.lastUpdated = new Date().toISOString();
+  await setSyncMeta(pool, "listing_round_robin_cursor", JSON.stringify(cursor));
+
+  const msg = `Round-robin listings done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount}, next index ${cursor.index}/${allSkins.length})`;
+  options.onProgress?.(msg);
+  console.log(`  ${msg}`);
+
+  return { apiCalls: totalApiCalls, inserted: totalInserted, skinsFetched, loopCount: cursor.loopCount };
+}
+
+/**
  * Verify that listings used in top profitable trade-ups still exist on CSFloat.
  * Instead of checking each listing individually (expensive), re-fetches the skin's
  * cheapest listings per condition and removes our stored listings that no longer appear.
