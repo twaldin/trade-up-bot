@@ -925,22 +925,12 @@ export async function syncKnifeGloveSaleHistory(
 }
 
 /**
- * Determine condition from float value using standard CS2 condition boundaries.
- */
-function conditionFromFloat(floatValue: number): string {
-  for (const cond of CONDITION_FROM_FLOAT) {
-    if (floatValue >= cond.min && floatValue < cond.max) return cond.name;
-  }
-  return "Battle-Scarred"; // Fallback for float == 1.0
-}
-
-/**
- * Round-robin sale history: cycles through ALL non-stattrak skins deterministically.
- * Each skin = 1 API call returning ~40 sales across all conditions.
+ * Round-robin sale history: cycles through ALL valid skin+condition pairs deterministically.
+ * Grouped by skin — all conditions of one skin fetched consecutively before advancing.
  *
  * State persisted in sync_meta as cursor (skin index + loop count).
- * Skips skins that returned empty on previous loop (reset on wrap).
- * Achieves full coverage in ~4 days at 500 calls/day.
+ * Skips pairs that returned empty on previous loop (reset on wrap).
+ * CSFloat sale API requires condition in market_hash_name.
  */
 export async function syncSaleHistoryRoundRobin(
   pool: pg.Pool,
@@ -950,7 +940,7 @@ export async function syncSaleHistoryRoundRobin(
     onProgress?: (msg: string) => void;
   }
 ): Promise<{ fetched: number; sales: number; pricesUpdated: number; loopCount: number }> {
-  // Build sorted list of all non-stattrak skins
+  // Build sorted list of all non-stattrak skins (cursor iterates by skin)
   const { rows: allSkins } = await pool.query(`
     SELECT DISTINCT name, min_float, max_float
     FROM skins
@@ -960,7 +950,7 @@ export async function syncSaleHistoryRoundRobin(
 
   if (allSkins.length === 0) return { fetched: 0, sales: 0, pricesUpdated: 0, loopCount: 0 };
 
-  // Load cursor
+  // Load cursor (tracks skin index, not pair index)
   const rawCursor = await getSyncMeta(pool, "sale_round_robin_cursor");
   let cursor: { index: number; loopCount: number; lastUpdated: string } = rawCursor
     ? JSON.parse(rawCursor)
@@ -971,7 +961,7 @@ export async function syncSaleHistoryRoundRobin(
     cursor.loopCount++;
   }
 
-  // Load empty-result skip set: skins that returned empty on the current loop
+  // Load empty-result skip set: market_hash_names that returned empty on this loop
   const rawSkips = await getSyncMeta(pool, "sale_round_robin_skips");
   const skipSet: Set<string> = rawSkips ? new Set(JSON.parse(rawSkips)) : new Set();
 
@@ -979,7 +969,8 @@ export async function syncSaleHistoryRoundRobin(
   const errorSkins = new Set<string>();
   const { rows: errorRows } = await pool.query(`
     SELECT market_hash_name FROM sale_fetch_errors
-    WHERE error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours'
+    WHERE (error_code != 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '24 hours')
+       OR (error_code = 0 AND error_count >= 2 AND last_seen_at > NOW() - INTERVAL '7 days')
   `);
   for (const r of errorRows) errorSkins.add(r.market_hash_name);
 
@@ -989,7 +980,15 @@ export async function syncSaleHistoryRoundRobin(
   let consecutiveRateLimits = 0;
   let skipped = 0;
 
-  console.log(`  Round-robin sales: ${allSkins.length} skins, starting at index ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls, ${skipSet.size} empty-skips`);
+  // Count total pairs for logging
+  let totalPairs = 0;
+  for (const skin of allSkins) {
+    for (const cond of CONDITION_FROM_FLOAT) {
+      if (skin.min_float < cond.max && skin.max_float > cond.min) totalPairs++;
+    }
+  }
+
+  console.log(`  Round-robin sales: ${allSkins.length} skins (${totalPairs} pairs), starting at skin ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls, ${skipSet.size} empty-skips`);
 
   while (totalFetched < options.maxCalls) {
     if (consecutiveRateLimits >= 2) {
@@ -998,73 +997,72 @@ export async function syncSaleHistoryRoundRobin(
     }
 
     const skin = allSkins[cursor.index];
+    // Get valid conditions for this skin
+    const validConditions = CONDITION_FROM_FLOAT.filter(c => skin.min_float < c.max && skin.max_float > c.min);
 
-    // Skip if this skin returned empty on the current loop
-    if (skipSet.has(skin.name)) {
-      skipped++;
-      cursor.index++;
-      if (cursor.index >= allSkins.length) {
-        cursor.index = 0;
-        cursor.loopCount++;
-        skipSet.clear(); // Reset skips on new loop
-        console.log(`  Round-robin sales: completed loop ${cursor.loopCount - 1}, clearing empty-skips, wrapping to start`);
+    // Check if we have enough budget for at least 1 condition of this skin
+    if (totalFetched >= options.maxCalls) break;
+
+    // Fetch each condition for this skin
+    for (const cond of validConditions) {
+      if (totalFetched >= options.maxCalls) break;
+      if (consecutiveRateLimits >= 2) break;
+
+      const marketHashName = `${skin.name} (${cond.name})`;
+
+      // Skip if returned empty on this loop
+      if (skipSet.has(marketHashName)) {
+        skipped++;
+        continue;
       }
-      continue;
-    }
 
-    // Skip persistent error skins
-    if (errorSkins.has(skin.name)) {
-      skipped++;
-      cursor.index++;
-      if (cursor.index >= allSkins.length) {
-        cursor.index = 0;
-        cursor.loopCount++;
-        skipSet.clear();
+      // Skip persistent errors
+      if (errorSkins.has(marketHashName)) {
+        skipped++;
+        continue;
       }
-      continue;
-    }
 
-    try {
-      let sales: CSFloatSaleEntry[];
-      let retries = 0;
-      while (true) {
-        try {
-          // Fetch by skin name (no condition) — returns sales across all conditions
-          sales = await fetchSaleHistory(skin.name, options.apiKey);
-          consecutiveRateLimits = 0;
-          break;
-        } catch (err: any) {
-          if (err.status === 429 && retries < 1) {
-            console.log(`    Rate limited, waiting 15s...`);
-            await new Promise((r) => setTimeout(r, 15000));
-            retries++;
-          } else if (err.status === 429) {
-            consecutiveRateLimits++;
-            throw err;
-          } else {
-            throw err;
+      try {
+        let sales: CSFloatSaleEntry[];
+        let retries = 0;
+        while (true) {
+          try {
+            sales = await fetchSaleHistory(marketHashName, options.apiKey);
+            consecutiveRateLimits = 0;
+            break;
+          } catch (err: any) {
+            if (err.status === 429 && retries < 1) {
+              console.log(`    Rate limited, waiting 15s...`);
+              await new Promise((r) => setTimeout(r, 15000));
+              retries++;
+            } else if (err.status === 429) {
+              consecutiveRateLimits++;
+              throw err;
+            } else {
+              throw err;
+            }
           }
         }
-      }
 
-      totalFetched++;
+        totalFetched++;
 
-      if (sales.length === 0) {
-        // Track as empty for this loop
-        skipSet.add(skin.name);
-        await pool.query(`
-          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
-          VALUES ($1, 0)
-          ON CONFLICT(market_hash_name) DO UPDATE SET
-            error_count = sale_fetch_errors.error_count + 1,
-            last_seen_at = NOW()
-        `, [skin.name]);
-        await new Promise((r) => setTimeout(r, 1500));
-      } else {
-        // Clear any previous empty-result tracking
-        await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [skin.name]);
+        if (sales.length === 0) {
+          skipSet.add(marketHashName);
+          await pool.query(`
+            INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+            VALUES ($1, 0)
+            ON CONFLICT(market_hash_name) DO UPDATE SET
+              error_count = sale_fetch_errors.error_count + 1,
+              last_seen_at = NOW()
+          `, [marketHashName]);
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
 
-        // Store individual sales — derive condition from float value
+        // Clear previous empty-result tracking
+        await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
+
+        // Store individual sales
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -1072,12 +1070,11 @@ export async function syncSaleHistoryRoundRobin(
             if (sale.state !== "sold") continue;
             if (sale.item.is_stattrak) continue;
 
-            const condition = conditionFromFloat(sale.item.float_value);
             await client.query(`
               INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
               VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
               ON CONFLICT DO NOTHING
-            `, [sale.id, skin.name, condition, sale.price, sale.item.float_value, sale.created_at]);
+            `, [sale.id, skin.name, cond.name, sale.price, sale.item.float_value, sale.created_at]);
             await recordSaleObservation(pool, skin.name, sale.item.float_value, sale.price, sale.created_at);
             totalSales++;
           }
@@ -1091,69 +1088,63 @@ export async function syncSaleHistoryRoundRobin(
 
         // Save reference price if available
         if (sales[0]?.reference?.base_price) {
-          const refCondition = conditionFromFloat(sales[0].item.float_value);
           await pool.query(`
             INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_ref', NOW())
             ON CONFLICT (skin_name, condition, source) DO UPDATE SET
               avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
           `, [
-            skin.name, refCondition,
+            skin.name, cond.name,
             sales[0].reference.base_price, sales[0].reference.base_price, sales[0].reference.base_price,
             sales[0].reference.quantity ?? 0,
           ]);
         }
 
-        // Calculate median sale price per condition and store in price_data
-        const byCondition = new Map<string, number[]>();
-        for (const sale of sales) {
-          if (sale.state !== "sold" || sale.item.is_stattrak) continue;
-          const cond = conditionFromFloat(sale.item.float_value);
-          if (!byCondition.has(cond)) byCondition.set(cond, []);
-          byCondition.get(cond)!.push(sale.price);
-        }
-        for (const [cond, prices] of byCondition) {
-          prices.sort((a, b) => a - b);
-          if (prices.length >= 2) {
-            const median = prices.length % 2 === 0
-              ? Math.round((prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2)
-              : prices[Math.floor(prices.length / 2)];
-            const avg = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
-            const min = prices[0];
-            await pool.query(`
-              INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
-              VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_sales', NOW())
-              ON CONFLICT (skin_name, condition, source) DO UPDATE SET
-                avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
-            `, [skin.name, cond, avg, median, min, prices.length]);
-            pricesUpdated++;
-          }
+        // Calculate median sale price and store in price_data
+        const validPrices = sales
+          .filter(s => s.state === "sold" && !s.item.is_stattrak)
+          .map(s => s.price)
+          .sort((a, b) => a - b);
+
+        if (validPrices.length >= 2) {
+          const median = validPrices.length % 2 === 0
+            ? Math.round((validPrices[validPrices.length / 2 - 1] + validPrices[validPrices.length / 2]) / 2)
+            : validPrices[Math.floor(validPrices.length / 2)];
+          const avg = Math.round(validPrices.reduce((s, p) => s + p, 0) / validPrices.length);
+          const min = validPrices[0];
+          await pool.query(`
+            INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_sales', NOW())
+            ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+              avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
+          `, [skin.name, cond.name, avg, median, min, validPrices.length]);
+          pricesUpdated++;
         }
 
         await new Promise((r) => setTimeout(r, 1500));
+      } catch (err: any) {
+        console.log(`    Error fetching ${marketHashName}: ${err.message}`);
+        if (err.status !== 429) totalFetched++;
+        if (err.status === 403 || err.status === 404) {
+          await pool.query(`
+            INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+            VALUES ($1, $2)
+            ON CONFLICT(market_hash_name) DO UPDATE SET
+              error_count = sale_fetch_errors.error_count + 1,
+              last_seen_at = NOW()
+          `, [marketHashName, err.status]);
+        }
+        await new Promise((r) => setTimeout(r, 2000));
       }
-
-      if (totalFetched % 10 === 0 && totalFetched > 0) {
-        const msg = `Round-robin sales: ${totalFetched}/${options.maxCalls} fetched, ${totalSales} sales, ${pricesUpdated} prices (loop ${cursor.loopCount})`;
-        options.onProgress?.(msg);
-        console.log(`  ${msg}`);
-      }
-    } catch (err: any) {
-      console.log(`    Error fetching ${skin.name}: ${err.message}`);
-      if (err.status !== 429) totalFetched++;
-      if (err.status === 403 || err.status === 404) {
-        await pool.query(`
-          INSERT INTO sale_fetch_errors (market_hash_name, error_code)
-          VALUES ($1, $2)
-          ON CONFLICT(market_hash_name) DO UPDATE SET
-            error_count = sale_fetch_errors.error_count + 1,
-            last_seen_at = NOW()
-        `, [skin.name, err.status]);
-      }
-      await new Promise((r) => setTimeout(r, 2000));
     }
 
-    // Advance cursor
+    if (totalFetched % 10 === 0 && totalFetched > 0) {
+      const msg = `Round-robin sales: ${totalFetched}/${options.maxCalls} fetched, ${totalSales} sales, ${pricesUpdated} prices (loop ${cursor.loopCount})`;
+      options.onProgress?.(msg);
+      console.log(`  ${msg}`);
+    }
+
+    // Advance cursor (by skin — all conditions done)
     cursor.index++;
     if (cursor.index >= allSkins.length) {
       cursor.index = 0;
@@ -1168,7 +1159,7 @@ export async function syncSaleHistoryRoundRobin(
   await setSyncMeta(pool, "sale_round_robin_cursor", JSON.stringify(cursor));
   await setSyncMeta(pool, "sale_round_robin_skips", JSON.stringify([...skipSet]));
 
-  const finalMsg = `Round-robin sales done: ${totalFetched} fetched, ${totalSales} sales, ${pricesUpdated} prices, ${skipped} skipped (loop ${cursor.loopCount}, next index ${cursor.index}/${allSkins.length})`;
+  const finalMsg = `Round-robin sales done: ${totalFetched} fetched, ${totalSales} sales, ${pricesUpdated} prices, ${skipped} skipped (loop ${cursor.loopCount}, next skin ${cursor.index}/${allSkins.length})`;
   options.onProgress?.(finalMsg);
   console.log(`  ${finalMsg}`);
 
