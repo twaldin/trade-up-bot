@@ -372,13 +372,18 @@ async function fetchSkinData(
           const bareSkinName = isVanilla ? skinName : stripCondition(entry.marketHashName);
           const condition = entry.condition;
 
+          let newSalesOnPage = 0;
           for (const sale of saleResult.items) {
             const { saleInserted, obsInserted } = await insertBuffSale(pool, sale, bareSkinName, condition, isVanilla);
-            if (saleInserted) result.salesInserted++;
+            if (saleInserted) { result.salesInserted++; newSalesOnPage++; }
             if (obsInserted) result.observationsInserted++;
           }
 
-          if (salePage >= saleTotalPages || saleResult.items.length === 0) {
+          // bill_order returns newest-first. If every sale on this page was already
+          // in our DB, everything beyond is older and already stored — stop early.
+          if (saleResult.items.length > 0 && newSalesOnPage === 0) {
+            salesDone = true;
+          } else if (salePage >= saleTotalPages || saleResult.items.length === 0) {
             salesDone = true;
           } else {
             salePage++;
