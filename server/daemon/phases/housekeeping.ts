@@ -8,7 +8,6 @@ import {
   purgeStaleListings,
 } from "../../sync.js";
 import {
-  snapshotListingsToObservations,
   pruneObservations,
   purgeExpiredPreserved,
   cascadeTradeUpStatuses,
@@ -19,12 +18,6 @@ import { timestamp, setDaemonStatus } from "../utils.js";
 export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   console.log(`\n[${timestamp()}] Phase 1: Housekeeping`);
   await setDaemonStatus(pool, "fetching", "Phase 1: Housekeeping");
-
-  // Snapshot listings before purge so KNN keeps the data
-  try {
-    const snapped = await snapshotListingsToObservations(pool);
-    if (snapped > 0) console.log(`  Snapshotted ${snapped} listings to observations`);
-  } catch { /* DB may be locked */ }
 
   const purged = await purgeStaleListings(pool, 90);
   if (purged.deleted > 0) {
