@@ -975,7 +975,13 @@ export async function syncSaleHistoryRoundRobin(
 
   // Load empty-result skip set: market_hash_names that returned empty on this loop
   const rawSkips = await getSyncMeta(pool, "sale_round_robin_skips");
-  const skipSet: Set<string> = rawSkips ? new Set(JSON.parse(rawSkips)) : new Set();
+  let skipSet: Set<string> = rawSkips ? new Set(JSON.parse(rawSkips)) : new Set();
+  // Clean stale entries without condition suffix (from old code before condition-per-skin fix)
+  const staleCount = [...skipSet].filter(s => !s.startsWith("★") && !s.includes("(")).length;
+  if (staleCount > 0) {
+    skipSet = new Set([...skipSet].filter(s => s.startsWith("★") || s.includes("(")));
+    console.log(`  Cleaned ${staleCount} stale skip entries (bare names from old code)`);
+  }
 
   // Load persistent error skins (403/404)
   const errorSkins = new Set<string>();
@@ -1015,138 +1021,250 @@ export async function syncSaleHistoryRoundRobin(
     // Check if we have enough budget for at least 1 condition of this skin
     if (totalFetched >= options.maxCalls) break;
 
-    // Fetch each condition for this skin
-    for (const cond of validConditions) {
-      if (totalFetched >= options.maxCalls) break;
-      if (consecutiveRateLimits >= 2) break;
+    // Vanilla knives (★ Name without |) use bare name — CSFloat doesn't add condition to market_hash_name
+    const isVanillaKnife = skin.name.startsWith("★") && !skin.name.includes("|");
 
-      const marketHashName = `${skin.name} (${cond.name})`;
+    if (isVanillaKnife) {
+      // Single API call with bare name — sales contain all conditions mixed together
+      const marketHashName = skin.name;
 
-      // Skip if returned empty on this loop
-      if (skipSet.has(marketHashName)) {
+      if (skipSet.has(marketHashName) || errorSkins.has(marketHashName)) {
         skipped++;
-        continue;
-      }
-
-      // Skip persistent errors
-      if (errorSkins.has(marketHashName)) {
-        skipped++;
-        continue;
-      }
-
-      try {
-        let sales: CSFloatSaleEntry[];
-        let retries = 0;
-        while (true) {
-          try {
-            sales = await fetchSaleHistory(marketHashName, options.apiKey);
-            consecutiveRateLimits = 0;
-            break;
-          } catch (err: any) {
-            if (err.status === 429 && retries < 1) {
-              console.log(`    Rate limited, waiting 15s...`);
-              await new Promise((r) => setTimeout(r, 15000));
-              retries++;
-            } else if (err.status === 429) {
-              consecutiveRateLimits++;
-              throw err;
-            } else {
-              throw err;
+        // Advance cursor below
+      } else {
+        try {
+          let sales: CSFloatSaleEntry[];
+          let retries = 0;
+          while (true) {
+            try {
+              sales = await fetchSaleHistory(marketHashName, options.apiKey);
+              consecutiveRateLimits = 0;
+              break;
+            } catch (err: any) {
+              if (err.status === 429 && retries < 1) {
+                console.log(`    Rate limited, waiting 15s...`);
+                await new Promise((r) => setTimeout(r, 15000));
+                retries++;
+              } else if (err.status === 429) {
+                consecutiveRateLimits++;
+                throw err;
+              } else {
+                throw err;
+              }
             }
           }
+
+          totalFetched++;
+
+          if (sales.length === 0) {
+            skipSet.add(marketHashName);
+            console.log(`    Empty: ${marketHashName} (vanilla knife, 0 sales)`);
+            await pool.query(`
+              INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+              VALUES ($1, 0)
+              ON CONFLICT(market_hash_name) DO UPDATE SET
+                error_count = sale_fetch_errors.error_count + 1,
+                last_seen_at = NOW()
+            `, [marketHashName]);
+            await new Promise((r) => setTimeout(r, 1500));
+          } else {
+            await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
+
+            // Store sales — derive condition from each sale's float value
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              for (const sale of sales) {
+                if (sale.state !== "sold") continue;
+                if (sale.item.is_stattrak) continue;
+                const fv = sale.item.float_value;
+                if (!fv || fv <= 0) continue; // Skip sales with no float data
+                const cond = CONDITION_FROM_FLOAT.find(c => fv >= c.min && fv < c.max);
+                if (!cond) continue;
+
+                await client.query(`
+                  INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
+                  VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
+                  ON CONFLICT DO NOTHING
+                `, [sale.id, skin.name, cond.name, sale.price, fv, sale.created_at]);
+                await recordSaleObservation(pool, skin.name, fv, sale.price, sale.created_at);
+                totalSales++;
+              }
+              await client.query('COMMIT');
+            } catch (txErr) {
+              await client.query('ROLLBACK');
+              throw txErr;
+            } finally {
+              client.release();
+            }
+
+            // Vanilla knives: save single ref price (condition-agnostic, pricing ignores float)
+            if (sales[0]?.reference?.base_price) {
+              await pool.query(`
+                INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+                VALUES ($1, 'Field-Tested', $2, $3, $4, $5, 'csfloat_ref', NOW())
+                ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+                  avg_price_cents = $2, median_price_cents = $3, min_price_cents = $4, volume = $5, updated_at = NOW()
+              `, [
+                skin.name,
+                sales[0].reference.base_price, sales[0].reference.base_price, sales[0].reference.base_price,
+                sales[0].reference.quantity ?? 0,
+              ]);
+              pricesUpdated++;
+            }
+
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        } catch (err: any) {
+          console.log(`    Error fetching ${marketHashName}: ${err.message}`);
+          if (err.status !== 429) totalFetched++;
+          if (err.status === 403 || err.status === 404) {
+            await pool.query(`
+              INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+              VALUES ($1, $2)
+              ON CONFLICT(market_hash_name) DO UPDATE SET
+                error_count = sale_fetch_errors.error_count + 1,
+                last_seen_at = NOW()
+            `, [marketHashName, err.status]);
+          }
+          await new Promise((r) => setTimeout(r, 2000));
         }
+      }
+    } else {
+      // Regular skins: fetch each condition separately
+      for (const cond of validConditions) {
+        if (totalFetched >= options.maxCalls) break;
+        if (consecutiveRateLimits >= 2) break;
 
-        totalFetched++;
+        const marketHashName = `${skin.name} (${cond.name})`;
 
-        if (sales.length === 0) {
-          skipSet.add(marketHashName);
-          await pool.query(`
-            INSERT INTO sale_fetch_errors (market_hash_name, error_code)
-            VALUES ($1, 0)
-            ON CONFLICT(market_hash_name) DO UPDATE SET
-              error_count = sale_fetch_errors.error_count + 1,
-              last_seen_at = NOW()
-          `, [marketHashName]);
-          await new Promise((r) => setTimeout(r, 1500));
+        // Skip if returned empty on this loop
+        if (skipSet.has(marketHashName)) {
+          skipped++;
           continue;
         }
 
-        // Clear previous empty-result tracking
-        await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
+        // Skip persistent errors
+        if (errorSkins.has(marketHashName)) {
+          skipped++;
+          continue;
+        }
 
-        // Store individual sales
-        const client = await pool.connect();
         try {
-          await client.query('BEGIN');
-          for (const sale of sales) {
-            if (sale.state !== "sold") continue;
-            if (sale.item.is_stattrak) continue;
-
-            await client.query(`
-              INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-              VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-              ON CONFLICT DO NOTHING
-            `, [sale.id, skin.name, cond.name, sale.price, sale.item.float_value, sale.created_at]);
-            await recordSaleObservation(pool, skin.name, sale.item.float_value, sale.price, sale.created_at);
-            totalSales++;
+          let sales: CSFloatSaleEntry[];
+          let retries = 0;
+          while (true) {
+            try {
+              sales = await fetchSaleHistory(marketHashName, options.apiKey);
+              consecutiveRateLimits = 0;
+              break;
+            } catch (err: any) {
+              if (err.status === 429 && retries < 1) {
+                console.log(`    Rate limited, waiting 15s...`);
+                await new Promise((r) => setTimeout(r, 15000));
+                retries++;
+              } else if (err.status === 429) {
+                consecutiveRateLimits++;
+                throw err;
+              } else {
+                throw err;
+              }
+            }
           }
-          await client.query('COMMIT');
-        } catch (txErr) {
-          await client.query('ROLLBACK');
-          throw txErr;
-        } finally {
-          client.release();
-        }
 
-        // Save reference price if available
-        if (sales[0]?.reference?.base_price) {
-          await pool.query(`
-            INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_ref', NOW())
-            ON CONFLICT (skin_name, condition, source) DO UPDATE SET
-              avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
-          `, [
-            skin.name, cond.name,
-            sales[0].reference.base_price, sales[0].reference.base_price, sales[0].reference.base_price,
-            sales[0].reference.quantity ?? 0,
-          ]);
-        }
+          totalFetched++;
 
-        // Calculate median sale price and store in price_data
-        const validPrices = sales
-          .filter(s => s.state === "sold" && !s.item.is_stattrak)
-          .map(s => s.price)
-          .sort((a, b) => a - b);
+          if (sales.length === 0) {
+            skipSet.add(marketHashName);
+            console.log(`    Empty: ${marketHashName} (0 sales)`);
+            await pool.query(`
+              INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+              VALUES ($1, 0)
+              ON CONFLICT(market_hash_name) DO UPDATE SET
+                error_count = sale_fetch_errors.error_count + 1,
+                last_seen_at = NOW()
+            `, [marketHashName]);
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
 
-        if (validPrices.length >= 2) {
-          const median = validPrices.length % 2 === 0
-            ? Math.round((validPrices[validPrices.length / 2 - 1] + validPrices[validPrices.length / 2]) / 2)
-            : validPrices[Math.floor(validPrices.length / 2)];
-          const avg = Math.round(validPrices.reduce((s, p) => s + p, 0) / validPrices.length);
-          const min = validPrices[0];
-          await pool.query(`
-            INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_sales', NOW())
-            ON CONFLICT (skin_name, condition, source) DO UPDATE SET
-              avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
-          `, [skin.name, cond.name, avg, median, min, validPrices.length]);
-          pricesUpdated++;
-        }
+          // Clear previous empty-result tracking
+          await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
 
-        await new Promise((r) => setTimeout(r, 1500));
-      } catch (err: any) {
-        console.log(`    Error fetching ${marketHashName}: ${err.message}`);
-        if (err.status !== 429) totalFetched++;
-        if (err.status === 403 || err.status === 404) {
-          await pool.query(`
-            INSERT INTO sale_fetch_errors (market_hash_name, error_code)
-            VALUES ($1, $2)
-            ON CONFLICT(market_hash_name) DO UPDATE SET
-              error_count = sale_fetch_errors.error_count + 1,
-              last_seen_at = NOW()
-          `, [marketHashName, err.status]);
+          // Store individual sales
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            for (const sale of sales) {
+              if (sale.state !== "sold") continue;
+              if (sale.item.is_stattrak) continue;
+
+              await client.query(`
+                INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
+                VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
+                ON CONFLICT DO NOTHING
+              `, [sale.id, skin.name, cond.name, sale.price, sale.item.float_value, sale.created_at]);
+              await recordSaleObservation(pool, skin.name, sale.item.float_value, sale.price, sale.created_at);
+              totalSales++;
+            }
+            await client.query('COMMIT');
+          } catch (txErr) {
+            await client.query('ROLLBACK');
+            throw txErr;
+          } finally {
+            client.release();
+          }
+
+          // Save reference price if available
+          if (sales[0]?.reference?.base_price) {
+            await pool.query(`
+              INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_ref', NOW())
+              ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+                avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
+            `, [
+              skin.name, cond.name,
+              sales[0].reference.base_price, sales[0].reference.base_price, sales[0].reference.base_price,
+              sales[0].reference.quantity ?? 0,
+            ]);
+          }
+
+          // Calculate median sale price and store in price_data
+          const validPrices = sales
+            .filter(s => s.state === "sold" && !s.item.is_stattrak)
+            .map(s => s.price)
+            .sort((a, b) => a - b);
+
+          if (validPrices.length >= 2) {
+            const median = validPrices.length % 2 === 0
+              ? Math.round((validPrices[validPrices.length / 2 - 1] + validPrices[validPrices.length / 2]) / 2)
+              : validPrices[Math.floor(validPrices.length / 2)];
+            const avg = Math.round(validPrices.reduce((s, p) => s + p, 0) / validPrices.length);
+            const min = validPrices[0];
+            await pool.query(`
+              INSERT INTO price_data (skin_name, condition, avg_price_cents, median_price_cents, min_price_cents, volume, source, updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, 'csfloat_sales', NOW())
+              ON CONFLICT (skin_name, condition, source) DO UPDATE SET
+                avg_price_cents = $3, median_price_cents = $4, min_price_cents = $5, volume = $6, updated_at = NOW()
+            `, [skin.name, cond.name, avg, median, min, validPrices.length]);
+            pricesUpdated++;
+          }
+
+          await new Promise((r) => setTimeout(r, 1500));
+        } catch (err: any) {
+          console.log(`    Error fetching ${marketHashName}: ${err.message}`);
+          if (err.status !== 429) totalFetched++;
+          if (err.status === 403 || err.status === 404) {
+            await pool.query(`
+              INSERT INTO sale_fetch_errors (market_hash_name, error_code)
+              VALUES ($1, $2)
+              ON CONFLICT(market_hash_name) DO UPDATE SET
+                error_count = sale_fetch_errors.error_count + 1,
+                last_seen_at = NOW()
+            `, [marketHashName, err.status]);
+          }
+          await new Promise((r) => setTimeout(r, 2000));
         }
-        await new Promise((r) => setTimeout(r, 2000));
       }
     }
 

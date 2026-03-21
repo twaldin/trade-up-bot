@@ -435,7 +435,29 @@ export async function lookupOutputPrice(
  * Returns the lower of the two (conservative).
  */
 async function getVanillaKnifePrice(pool: pg.Pool, skinName: string): Promise<number> {
-  // Listing floor: cheapest active listing across CSFloat + DMarket (require 2+)
+  // Primary: CSFloat ref price (condition-agnostic — float has no value on vanilla knives)
+  const { rows: refRows } = await pool.query(`
+    SELECT median_price_cents FROM price_data
+    WHERE skin_name = $1 AND source = 'csfloat_ref' AND median_price_cents > 0
+    LIMIT 1
+  `, [skinName]);
+  if (refRows[0]?.median_price_cents > 0) return refRows[0].median_price_cents;
+
+  // Fallback: recent sale median (condition-agnostic)
+  const { rows: saleRows } = await pool.query(`
+    SELECT price_cents FROM sale_history
+    WHERE skin_name = $1 AND price_cents > 0
+      AND sold_at > NOW() - INTERVAL '14 days'
+    ORDER BY price_cents
+  `, [skinName]);
+  if (saleRows.length >= 2) {
+    const mid = Math.floor(saleRows.length / 2);
+    return saleRows.length % 2 === 0
+      ? Math.round((saleRows[mid - 1].price_cents + saleRows[mid].price_cents) / 2)
+      : saleRows[mid].price_cents;
+  }
+
+  // Last resort: listing floor (cheapest active listing, require 2+)
   const { rows: listingRows } = await pool.query(`
     SELECT MIN(CASE WHEN l.source = 'dmarket' THEN CAST(ROUND(l.price_cents * 1.025) AS INTEGER) ELSE l.price_cents END) as floor_price,
       COUNT(*) as cnt
@@ -444,20 +466,7 @@ async function getVanillaKnifePrice(pool: pg.Pool, skinName: string): Promise<nu
       AND l.source IN ('csfloat', 'dmarket')
       AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
   `, [skinName]);
-  const listingFloor = (listingRows[0]?.cnt >= 2 && listingRows[0]?.floor_price > 0) ? listingRows[0].floor_price : 0;
-
-  // Recent sale floor: cheapest sale in last 7 days
-  const { rows: saleRows } = await pool.query(`
-    SELECT MIN(price_cents) as floor_price, COUNT(*) as cnt
-    FROM sale_history
-    WHERE skin_name = $1 AND price_cents > 0
-      AND sold_at > NOW() - INTERVAL '7 days'
-  `, [skinName]);
-  const saleFloor = (saleRows[0]?.cnt >= 1 && saleRows[0]?.floor_price > 0) ? saleRows[0].floor_price : 0;
-
-  // Use the lower of the two, or whichever is available
-  if (listingFloor > 0 && saleFloor > 0) return Math.min(listingFloor, saleFloor);
-  return listingFloor || saleFloor;
+  return (listingRows[0]?.cnt >= 2 && listingRows[0]?.floor_price > 0) ? listingRows[0].floor_price : 0;
 }
 
 export async function getConditionPrices(
