@@ -192,13 +192,18 @@ export async function fetchBuffSales(
     const goodsInfo = (data as any).goods_infos?.[String(item.goods_id)] ?? {};
     const hashName = goodsInfo.market_hash_name ?? "";
 
+    // Sale ID from buff is a per-page sequential index (0, 1, 2...) — not globally unique.
+    // Compose a unique ID from goods_id + transact_time + price to avoid cross-skin dedup.
+    const txTime = item.transact_time ?? item.created_at ?? 0;
+    const saleId = `buff:${item.goods_id}:${txTime}:${priceCents}`;
+
     items.push({
-      id: String(item.id),
+      id: saleId,
       priceCents,
       goodsId: item.goods_id,
       floatValue: isNaN(floatValue) ? -1 : floatValue,
       paintSeed: item.asset_info?.info?.paintseed ?? 0,
-      transactTime: item.transact_time ?? item.created_at ?? 0,
+      transactTime: txTime,
       marketHashName: hashName,
     });
   }
