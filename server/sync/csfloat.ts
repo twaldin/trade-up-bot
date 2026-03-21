@@ -971,15 +971,27 @@ export async function syncListingsRoundRobin(
     onProgress?: (msg: string) => void;
   }
 ): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; loopCount: number }> {
-  // Build sorted list of all non-stattrak skins (deterministic order)
+  // Build skin list sorted by coverage: skins with fewest covered conditions first.
+  // This ensures uncovered skins get priority until full coverage is achieved.
   const { rows: allSkins } = await pool.query(`
-    SELECT id, name, min_float, max_float
-    FROM skins
-    WHERE stattrak = false
-    ORDER BY name
-  `) as { rows: { id: string; name: string; min_float: number; max_float: number }[] };
+    SELECT s.id, s.name, s.min_float, s.max_float,
+      COUNT(DISTINCT CASE
+        WHEN l.float_value < 0.07 THEN 'FN'
+        WHEN l.float_value < 0.15 THEN 'MW'
+        WHEN l.float_value < 0.38 THEN 'FT'
+        WHEN l.float_value < 0.45 THEN 'WW'
+        ELSE 'BS'
+      END) FILTER (WHERE l.id IS NOT NULL) as covered_conditions
+    FROM skins s
+    LEFT JOIN listings l ON l.skin_id = s.id AND l.stattrak = false
+    WHERE s.stattrak = false
+    GROUP BY s.id, s.name, s.min_float, s.max_float
+    ORDER BY covered_conditions ASC, s.name
+  `) as { rows: { id: string; name: string; min_float: number; max_float: number; covered_conditions: string }[] };
 
   if (allSkins.length === 0) return { apiCalls: 0, inserted: 0, skinsFetched: 0, loopCount: 0 };
+
+  const uncoveredCount = allSkins.filter(s => Number(s.covered_conditions) === 0).length;
 
   // Load cursor from sync_meta
   const rawCursor = await getSyncMeta(pool, "listing_round_robin_cursor");
@@ -987,8 +999,10 @@ export async function syncListingsRoundRobin(
     ? JSON.parse(rawCursor)
     : { index: 0, loopCount: 0, lastUpdated: new Date().toISOString() };
 
-  // Clamp cursor if skin list changed
-  if (cursor.index >= allSkins.length) {
+  // If uncovered skins exist, always start from 0 (they sort first)
+  if (uncoveredCount > 0) {
+    cursor.index = 0;
+  } else if (cursor.index >= allSkins.length) {
     cursor.index = 0;
     cursor.loopCount++;
   }
@@ -998,7 +1012,7 @@ export async function syncListingsRoundRobin(
   let skinsFetched = 0;
   let consecutiveRateLimits = 0;
 
-  console.log(`  Round-robin listings: ${allSkins.length} skins, starting at index ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls`);
+  console.log(`  Round-robin listings: ${allSkins.length} skins (${uncoveredCount} with zero coverage), starting at index ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls`);
 
   while (totalApiCalls < options.maxCalls) {
     if (consecutiveRateLimits >= 2) {
@@ -1027,7 +1041,6 @@ export async function syncListingsRoundRobin(
       } else {
         console.log(`    Error: ${skin.name}: ${err.message}`);
       }
-      // Still advance cursor — don't get stuck on one skin
     }
 
     // Advance cursor
@@ -1045,11 +1058,14 @@ export async function syncListingsRoundRobin(
     }
   }
 
-  // Save cursor
+  // Save cursor (only meaningful when no uncovered skins — otherwise resets to 0 each cycle)
   cursor.lastUpdated = new Date().toISOString();
-  await setSyncMeta(pool, "listing_round_robin_cursor", JSON.stringify(cursor));
+  if (uncoveredCount === 0) {
+    await setSyncMeta(pool, "listing_round_robin_cursor", JSON.stringify(cursor));
+  }
 
-  const msg = `Round-robin listings done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount}, next index ${cursor.index}/${allSkins.length})`;
+  const coverageNote = uncoveredCount > 0 ? `, ${uncoveredCount} uncovered skins remaining` : "";
+  const msg = `Round-robin listings done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount}, next index ${cursor.index}/${allSkins.length}${coverageNote})`;
   options.onProgress?.(msg);
   console.log(`  ${msg}`);
 
