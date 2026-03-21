@@ -268,6 +268,25 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
+      // Buff.market stats (admin-only, read from sync_meta)
+      let buffStats = null;
+      try {
+        const rawBuffStatus = await getSyncMeta(pool, "buff_fetcher_status");
+        if (rawBuffStatus) {
+          const parsed = JSON.parse(rawBuffStatus);
+          buffStats = {
+            cookieHealthy: parsed.cookieHealthy ?? false,
+            totalListingsStored: parsed.totalListingsStored ?? 0,
+            totalSalesStored: parsed.totalSalesStored ?? 0,
+            totalObservationsStored: parsed.totalObservationsStored ?? 0,
+            lastSuccessAt: parsed.lastSuccessAt ?? null,
+            lastError: parsed.lastError ?? null,
+            cycleCount: parsed.cycleCount ?? 0,
+            updatedAt: parsed.updatedAt ?? null,
+          };
+        }
+      } catch { /* malformed JSON or no data */ }
+
       // Listing staleness stats
       let stalenessStats = null;
       try {
@@ -293,9 +312,9 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
-      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats });
+      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats, buffStats });
     } catch (err) {
-      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null });
+      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null });
     }
   }));
 

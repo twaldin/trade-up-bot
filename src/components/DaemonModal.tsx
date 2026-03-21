@@ -44,6 +44,16 @@ interface DaemonLogData {
     checked_24h: number;
     total_listings: number;
   } | null;
+  buffStats: {
+    cookieHealthy: boolean;
+    totalListingsStored: number;
+    totalSalesStored: number;
+    totalObservationsStored: number;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+    cycleCount: number;
+    updatedAt: string | null;
+  } | null;
 }
 
 interface CycleRow {
@@ -226,7 +236,7 @@ function CycleHistory() {
 }
 
 export function DaemonModal({ onClose }: { onClose: () => void }) {
-  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null });
+  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null });
   const logEndRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -343,6 +353,39 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
                     {logData.dmarketStats.listingsStored.toLocaleString()} listings
                     {logData.dmarketStats.lastFetchAt && (
                       <span className="text-muted-foreground/40"> · {timeAgo(logData.dmarketStats.lastFetchAt)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Buff.market (observe mode) */}
+            {logData.buffStats && (
+              <div className="mt-5 pt-4 border-t border-border">
+                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">Buff.market</h3>
+                <div className="mb-2">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-xs text-muted-foreground">Cookie</span>
+                    <Badge
+                      variant={logData.buffStats.cookieHealthy ? "secondary" : "destructive"}
+                      className={`text-[0.6rem] px-1.5 py-0 h-4 ${logData.buffStats.cookieHealthy ? "text-green-500" : ""}`}
+                    >
+                      {logData.buffStats.cookieHealthy ? "Healthy" : "Expired"}
+                    </Badge>
+                  </div>
+                  {!logData.buffStats.cookieHealthy && (
+                    <div className="text-[0.62rem] text-red-400/80 mt-1 mb-1.5">
+                      Paste new cookie via Redis
+                    </div>
+                  )}
+                  <div className="text-[0.68rem] text-muted-foreground/60 space-y-0.5">
+                    <div>{logData.buffStats.totalListingsStored.toLocaleString()} listings</div>
+                    <div>{logData.buffStats.totalSalesStored.toLocaleString()} sales · {logData.buffStats.totalObservationsStored.toLocaleString()} obs</div>
+                    {logData.buffStats.lastSuccessAt && (
+                      <div className="text-muted-foreground/40">last: {timeAgo(logData.buffStats.lastSuccessAt)}</div>
+                    )}
+                    {logData.buffStats.lastError && !logData.buffStats.cookieHealthy && (
+                      <div className="text-red-400/60 text-[0.6rem]">{logData.buffStats.lastError}</div>
                     )}
                   </div>
                 </div>
