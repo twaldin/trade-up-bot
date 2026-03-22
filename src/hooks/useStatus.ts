@@ -9,7 +9,7 @@ export interface StatusDiffs {
 }
 
 // Poll /api/status for updates and detect changes.
-export function useStatus(pollInterval = 60_000) {
+export function useStatus(enabled = true, pollInterval = 60_000) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [diffs, setDiffs] = useState<StatusDiffs>({ knife_trade_ups: 0, knife_profitable: 0, covert_trade_ups: 0, covert_profitable: 0 });
   const [newDataHint, setNewDataHint] = useState(false);
@@ -17,6 +17,7 @@ export function useStatus(pollInterval = 60_000) {
   const prevStatus = useRef<SyncStatus | null>(null);
 
   const fetchStatus = useCallback(async () => {
+    if (!enabled) return null;
     try {
       const res = await fetch("/api/status");
       const data: SyncStatus = await res.json();
@@ -36,15 +37,16 @@ export function useStatus(pollInterval = 60_000) {
     } catch {
       return null;
     }
-  }, []);
+  }, [enabled]);
 
   // Initial fetch
   useEffect(() => {
-    fetchStatus();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (enabled) fetchStatus();
+  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Background polling for new data hints
   useEffect(() => {
+    if (!enabled) return;
     const checkInterval = setInterval(async () => {
       const data = await fetchStatus();
       if (data && data.trade_ups_count !== prevCount.current) {
@@ -53,7 +55,7 @@ export function useStatus(pollInterval = 60_000) {
     }, pollInterval);
 
     return () => { clearInterval(checkInterval); };
-  }, [fetchStatus, pollInterval]);
+  }, [enabled, fetchStatus, pollInterval]);
 
   useEffect(() => {
     if (status) prevCount.current = status.trade_ups_count;

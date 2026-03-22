@@ -110,6 +110,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       previous_inputs TEXT,
       outcomes_json TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      ,input_sources TEXT[] NOT NULL DEFAULT '{}'
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (

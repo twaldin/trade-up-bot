@@ -198,6 +198,13 @@ async function reviveStaleGeneric(
           inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat"]);
       }
 
+      // Recompute input_sources after replacing inputs
+      await client.query(`
+        UPDATE trade_ups SET input_sources = COALESCE((
+          SELECT ARRAY_AGG(DISTINCT source ORDER BY source) FROM trade_up_inputs WHERE trade_up_id = $1
+        ), '{}') WHERE id = $1
+      `, [tu.id]);
+
       revived++;
       if (result.profit_cents > tu.profit_cents) improved++;
 
