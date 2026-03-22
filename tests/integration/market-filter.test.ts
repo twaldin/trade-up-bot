@@ -214,5 +214,13 @@ describe("market filter", () => {
       expect(res.status).toBe(200);
       expect(res.body.trade_ups.length).toBe(4);
     });
+
+    it("returns total count for filtered queries", async () => {
+      // With only 4 seeded trade-ups, count should be exact (under 10001 cap)
+      const res = await request(apiCtx.app).get("/api/trade-ups?min_profit=1&sort=profit&order=desc&page=1&per_page=50");
+      expect(res.status).toBe(200);
+      expect(typeof res.body.total).toBe("number");
+      expect(res.body.total).toBeLessThan(10001);
+    });
   });
 });
