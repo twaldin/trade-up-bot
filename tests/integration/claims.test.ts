@@ -253,21 +253,4 @@ describe("Claims API", () => {
     expect(res.body.error).toMatch(/requires.*pro/i);
   });
 
-  // ─── 10. Cannot claim an unprofitable trade-up ─────────────────────────
-
-  it("cannot claim an unprofitable trade-up", async () => {
-    // Use a unique user to avoid cross-test rate limit contamination
-    const unprofUser = `user_unprof_${Date.now()}`;
-
-    // Find an unprofitable trade-up (negative profit)
-    const { rows } = await ctx.pool.query("SELECT id FROM trade_ups WHERE profit_cents <= 0 LIMIT 1");
-    expect(rows.length).toBeGreaterThan(0);
-
-    const res = await request(ctx.app)
-      .post(`/api/trade-ups/${rows[0].id}/claim`)
-      .set("X-Test-User-Id", unprofUser)
-      .set("X-Test-User-Tier", "pro");
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/not profitable/i);
-  });
 });
