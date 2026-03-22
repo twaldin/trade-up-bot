@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import request from "supertest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { saveTradeUps, mergeTradeUps } from "../../server/engine/db-save.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
@@ -150,6 +151,68 @@ describe("market filter", () => {
       );
       // This will FAIL until we add the recomputation to db-revive
       expect(stale.input_sources.sort()).toEqual(["csfloat", "dmarket"]);
+    });
+  });
+
+  describe("GET /api/trade-ups?markets=", () => {
+    // This needs its own context since it seeds specific data
+    let apiCtx: TestContext;
+
+    beforeAll(async () => {
+      apiCtx = await createTestApp();
+      // Seed required reference data
+      await apiCtx.pool.query("INSERT INTO collections (id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING", ["col-test-1", "Test Collection Alpha"]);
+      await apiCtx.pool.query("INSERT INTO skins (id, name, weapon, rarity, min_float, max_float) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING", ["skin-classified-1", "AK-47 | Test Skin", "AK-47", "Classified", 0.0, 1.0]);
+      await apiCtx.pool.query("INSERT INTO skin_collections (skin_id, collection_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", ["skin-classified-1", "col-test-1"]);
+
+      // Seed: 2 csfloat-only, 1 dmarket-only, 1 mixed
+      const sources = [
+        ["csfloat", "csfloat"],
+        ["csfloat", "csfloat"],
+        ["dmarket", "dmarket"],
+        ["csfloat", "dmarket"],
+      ];
+
+      for (const srcs of sources) {
+        const tu = makeMarketTradeUp(srcs);
+        for (const inp of tu.inputs) {
+          await apiCtx.pool.query(
+            "INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            [inp.listing_id, inp.skin_id, inp.price_cents, inp.float_value, inp.source]
+          );
+        }
+        await saveTradeUps(apiCtx.pool, [tu], false, "classified_covert", false, "discovery");
+      }
+      // Set sync_meta for free tier delay
+      await apiCtx.pool.query("INSERT INTO sync_meta (key, value) VALUES ('last_calculation', NOW()::text) ON CONFLICT (key) DO UPDATE SET value = NOW()::text");
+    });
+
+    afterAll(async () => {
+      await apiCtx.cleanup();
+    });
+
+    it("no markets param returns all trade-ups", async () => {
+      const res = await request(apiCtx.app).get("/api/trade-ups?sort=profit&order=desc&page=1&per_page=50");
+      expect(res.status).toBe(200);
+      expect(res.body.trade_ups.length).toBe(4);
+    });
+
+    it("markets=csfloat returns only csfloat-only trade-ups", async () => {
+      const res = await request(apiCtx.app).get("/api/trade-ups?markets=csfloat&sort=profit&order=desc&page=1&per_page=50");
+      expect(res.status).toBe(200);
+      expect(res.body.trade_ups.length).toBe(2);
+    });
+
+    it("markets=dmarket returns only dmarket-only trade-ups", async () => {
+      const res = await request(apiCtx.app).get("/api/trade-ups?markets=dmarket&sort=profit&order=desc&page=1&per_page=50");
+      expect(res.status).toBe(200);
+      expect(res.body.trade_ups.length).toBe(1);
+    });
+
+    it("markets=csfloat,dmarket returns all (pure + mixed)", async () => {
+      const res = await request(apiCtx.app).get("/api/trade-ups?markets=csfloat,dmarket&sort=profit&order=desc&page=1&per_page=50");
+      expect(res.status).toBe(200);
+      expect(res.body.trade_ups.length).toBe(4);
     });
   });
 });

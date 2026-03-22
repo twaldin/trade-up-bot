@@ -620,7 +620,10 @@ export async function main() {
       const { rows: inputSkins } = await pool.query("SELECT DISTINCT skin_name as name FROM trade_up_inputs");
       const skinMap = inputSkins.map(s => ({ name: s.name, input: true, output: false }));
       const { rows: collections } = await pool.query("SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC");
-      await cacheSet("filter_opts", { skins: skinMap, collections }, 600);
+      const { rows: marketRows } = await pool.query(
+        "SELECT source as name, COUNT(DISTINCT trade_up_id) as count FROM trade_up_inputs GROUP BY source ORDER BY count DESC"
+      );
+      await cacheSet("filter_opts", { skins: skinMap, collections, markets: marketRows }, 600);
 
       // Invalidate stale trade-up list cache so API shows fresh counts
       const { cacheInvalidatePrefix } = await import("../redis.js");
