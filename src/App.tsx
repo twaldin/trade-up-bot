@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
 import { useStatus } from "./hooks/useStatus.js";
@@ -230,23 +230,32 @@ function UserMenu({ user }: { user: AuthUser }) {
 
 function AppShell({ user }: { user?: AuthUser | null }) {
   const userIsAdmin = user?.is_admin === true;
-  const { status, newDataHint, refresh } = useStatus();
+  const { status, newDataHint: statusHint, refresh } = useStatus(userIsAdmin);
   const [showDaemonModal, setShowDaemonModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const prevTotalRef = useRef(0);
+  const [globalNewData, setGlobalNewData] = useState(false);
 
   // Fetch global stats on mount and every 60s
   useEffect(() => {
-    const fetchStats = () => {
+    const fetchStats = () =>
       fetch("/api/global-stats", { credentials: "include" })
         .then(r => r.json())
-        .then(data => setGlobalStats(data))
+        .then((data: GlobalStats) => {
+          setGlobalStats(data);
+          if (prevTotalRef.current > 0 && data.total_trade_ups !== prevTotalRef.current) {
+            setGlobalNewData(true);
+          }
+          prevTotalRef.current = data.total_trade_ups;
+        })
         .catch(() => {});
-    };
     fetchStats();
     const interval = setInterval(fetchStats, 60_000);
     return () => clearInterval(interval);
   }, []);
+
+  const newDataHint = statusHint || globalNewData;
 
   // Prefetch data + collections pages on mount to warm Redis cache
   // Responses are discarded — when user navigates, the Redis cache serves instantly
@@ -275,7 +284,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             variant={newDataHint ? "default" : "outline"}
             size="sm"
             className="h-8 px-2.5 text-xs"
-            onClick={() => { refresh(); setRefreshKey(k => k + 1); }}
+            onClick={() => { refresh(); setGlobalNewData(false); setRefreshKey(k => k + 1); }}
           >
             <span className="hidden sm:inline">{newDataHint ? "Refresh" : "Refresh"}</span>
             <span className="sm:hidden">↻</span>
