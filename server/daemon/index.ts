@@ -634,6 +634,16 @@ export async function main() {
       console.error(`  Redis pre-populate failed: ${(e as Error).message}`);
     }
 
+    // Pre-compute /api/status data
+    try {
+      const { buildStatusData } = await import("../routes/status-helpers.js");
+      const statusData = await buildStatusData(pool);
+      await cacheSet("status", statusData, 1800);
+      console.log("  Status cache pre-warmed");
+    } catch (e) {
+      console.error(`  Status pre-compute failed: ${(e as Error).message}`);
+    }
+
     // Save cycle stats
     const cycleDuration = Date.now() - cycleStarted;
     const cycleStats: CycleStats = {
