@@ -248,6 +248,13 @@ function AppShell({ user }: { user?: AuthUser | null }) {
     return () => clearInterval(interval);
   }, []);
 
+  // Prefetch data + collections pages on mount to warm Redis cache
+  // Responses are discarded — when user navigates, the Redis cache serves instantly
+  useEffect(() => {
+    fetch("/api/collections").catch(() => {});
+    fetch("/api/skin-data?rarity=all&limit=200").catch(() => {});
+  }, []);
+
   // Apply app-shell constraint (landing page is full-width)
   useEffect(() => {
     document.getElementById("root")?.classList.add("app-shell");

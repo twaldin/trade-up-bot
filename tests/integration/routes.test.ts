@@ -502,15 +502,19 @@ describe("Collections route with knife pool data", () => {
     const baseCtx = await createTestApp();
     await createAdditionalTables(baseCtx.pool);
 
-    const knifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>();
+    const knifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>();
     knifePool.set("Test Collection Alpha", {
       knifeTypes: ["Karambit", "Butterfly Knife"],
+      knifeFinishes: ["Fade", "Doppler", "Tiger Tooth"],
       gloveTypes: [],
+      gloveFinishes: [],
       finishCount: 12,
     });
     knifePool.set("Test Collection Beta", {
       knifeTypes: [],
+      knifeFinishes: [],
       gloveTypes: ["Sport Gloves", "Specialist Gloves"],
+      gloveFinishes: ["Hedge Maze", "Superconductor", "Crimson Kimono"],
       finishCount: 8,
     });
 

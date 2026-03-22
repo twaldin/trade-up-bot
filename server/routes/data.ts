@@ -2,7 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { cachedRoute } from "../redis.js";
 
-type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>;
+type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>;
 type KnifeTypeToCases = Map<string, string[]>;
 
 export function dataRouter(
@@ -14,7 +14,7 @@ export function dataRouter(
 
   // Skin browser: list all Covert skins with listing stats and pricing
 
-  router.get("/api/skin-data", cachedRoute((req) => `skins:${req.query.rarity}:${req.query.collection || ""}:${req.query.outputCollection || ""}:${req.query.page || 1}:${req.query.stattrak || 0}`, 120, async (req, res) => {
+  router.get("/api/skin-data", cachedRoute((req) => `skins:${req.query.rarity}:${req.query.collection || ""}:${req.query.outputCollection || ""}:${req.query.page || 1}:${req.query.stattrak || 0}:${req.query.search || ""}`, 120, async (req, res) => {
     const search = (req.query.search as string) || "";
     const rarity = (req.query.rarity as string) || "all";
     const collection = (req.query.collection as string) || "";
@@ -41,16 +41,37 @@ export function dataRouter(
     }
 
     // Output collection filter: find knives/gloves from a specific case's pool
+    // Filters by BOTH weapon type AND finish to show only collection-specific skins
     let outputWeaponFilter = "";
     if (outputCollection) {
       const poolData = collectionKnifePool.get(outputCollection);
       if (poolData) {
         const weapons = [...poolData.knifeTypes, ...poolData.gloveTypes];
         if (weapons.length > 0) {
-          const placeholders = weapons.map((_, i) => `s.weapon = $${paramIndex + i}`).join(" OR ");
-          outputWeaponFilter = `AND s.name LIKE '★%' AND (${placeholders})`;
+          const weaponPlaceholders = weapons.map((_, i) => `s.weapon = $${paramIndex + i}`).join(" OR ");
           params.push(...weapons);
           paramIndex += weapons.length;
+
+          // Filter by finish names to show only this collection's specific finishes
+          const finishes = [...poolData.knifeFinishes, ...poolData.gloveFinishes]
+            .filter(f => f !== "Vanilla"); // Vanilla handled separately (no " | " in name)
+          const hasVanilla = poolData.knifeFinishes.includes("Vanilla");
+
+          let finishFilter = "";
+          if (finishes.length > 0) {
+            const finishPlaceholders = finishes.map((_, i) => `$${paramIndex + i}`).join(",");
+            params.push(...finishes);
+            paramIndex += finishes.length;
+            if (hasVanilla) {
+              finishFilter = `AND (split_part(s.name, ' | ', 2) IN (${finishPlaceholders}) OR s.name NOT LIKE '%|%')`;
+            } else {
+              finishFilter = `AND split_part(s.name, ' | ', 2) IN (${finishPlaceholders})`;
+            }
+          } else if (hasVanilla) {
+            finishFilter = `AND s.name NOT LIKE '%|%'`;
+          }
+
+          outputWeaponFilter = `AND s.name LIKE '★%' AND (${weaponPlaceholders}) ${finishFilter}`;
           rarityFilter = ""; // override rarity filter for output skins
         }
       }
@@ -70,12 +91,6 @@ export function dataRouter(
       params.push(`%${search}%`);
       paramIndex++;
     }
-
-    // Get the last cycle start time for (+N) counts
-    const { rows: cycleRows } = await pool.query(`
-      SELECT started_at FROM daemon_cycle_stats ORDER BY id DESC LIMIT 1
-    `);
-    const cycleStart = cycleRows[0]?.started_at || new Date(Date.now() - 600000).toISOString();
 
     // Pagination
     const page = parseInt(req.query.page as string) || 1;
@@ -110,35 +125,32 @@ export function dataRouter(
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `, params);
 
-    // Batch load price_data for all returned skins in one query
+    // Batch load price_data + sale counts in parallel (was sequential)
     const skinNames = skins.map((s: any) => s.name);
     const priceMap = new Map<string, Record<string, Record<string, number>>>();
+    const saleCountMap = new Map<string, number>();
     if (skinNames.length > 0) {
       const placeholders = skinNames.map((_: any, i: number) => `$${i + 1}`).join(",");
-      const { rows: allPrices } = await pool.query(`
-        SELECT skin_name, source, condition, avg_price_cents
-        FROM price_data WHERE skin_name IN (${placeholders}) AND avg_price_cents > 0
-      `, skinNames);
+      const ph2 = skinNames.map((_: any, i: number) => `$${skinNames.length + i + 1}`).join(",");
+      const [{ rows: allPrices }, { rows: saleCounts }] = await Promise.all([
+        pool.query(`
+          SELECT skin_name, source, condition, avg_price_cents
+          FROM price_data WHERE skin_name IN (${placeholders}) AND avg_price_cents > 0
+        `, skinNames),
+        pool.query(`
+          SELECT skin_name, COUNT(*) as cnt FROM (
+            SELECT skin_name FROM sale_history WHERE skin_name IN (${placeholders})
+            UNION ALL
+            SELECT skin_name FROM price_observations WHERE skin_name IN (${ph2}) AND source = 'sale'
+          ) sub GROUP BY skin_name
+        `, [...skinNames, ...skinNames]),
+      ]);
       for (const p of allPrices) {
         if (!priceMap.has(p.skin_name)) priceMap.set(p.skin_name, {});
         const byC = priceMap.get(p.skin_name)!;
         if (!byC[p.condition]) byC[p.condition] = {};
         byC[p.condition][p.source] = p.avg_price_cents;
       }
-    }
-
-    // Batch load sale counts (sale_history + price_observations)
-    const saleCountMap = new Map<string, number>();
-    if (skinNames.length > 0) {
-      const ph = skinNames.map((_: any, i: number) => `$${i + 1}`).join(",");
-      const ph2 = skinNames.map((_: any, i: number) => `$${skinNames.length + i + 1}`).join(",");
-      const { rows: saleCounts } = await pool.query(`
-        SELECT skin_name, COUNT(*) as cnt FROM (
-          SELECT skin_name FROM sale_history WHERE skin_name IN (${ph})
-          UNION ALL
-          SELECT skin_name FROM price_observations WHERE skin_name IN (${ph2}) AND source = 'sale'
-        ) sub GROUP BY skin_name
-      `, [...skinNames, ...skinNames]);
       for (const r of saleCounts) saleCountMap.set(r.skin_name, parseInt(r.cnt));
     }
 
@@ -157,98 +169,106 @@ export function dataRouter(
 
   // Detailed skin data: listings, float price buckets, price observations
 
-  router.get("/api/skin-data/:name", cachedRoute((req) => `skin_detail:${req.params.name}`, 60, async (req, res) => {
+  router.get("/api/skin-data/:name", cachedRoute((req) => `skin_detail:${req.params.name}:${req.query.stattrak || 0}`, 60, async (req, res) => {
     const skinName = decodeURIComponent(req.params.name as string);
     const stattrak = parseInt(req.query.stattrak as string || "0", 10) === 1;
+    const isDoppler = skinName.includes("Doppler");
 
-    // Listings (individual data points for scatter plot)
-    const { rows: listings } = await pool.query(`
-      SELECT l.id, l.price_cents, l.float_value, l.created_at, l.staleness_checked_at, l.phase, l.source
-      FROM listings l
-      JOIN skins s ON l.skin_id = s.id
-      WHERE s.name = $1 AND l.stattrak = $2
-      ORDER BY l.price_cents ASC
-    `, [skinName, stattrak]);
+    // Run ALL independent queries in parallel (was 5-8 sequential round-trips)
+    const queries: Promise<pg.QueryResult>[] = [
+      // 0: Listings (bounded to 200 — client only renders 25 at a time)
+      pool.query(`
+        SELECT l.id, l.price_cents, l.float_value, l.created_at, l.staleness_checked_at, l.phase, l.source
+        FROM listings l JOIN skins s ON l.skin_id = s.id
+        WHERE s.name = $1 AND l.stattrak = $2
+        ORDER BY l.price_cents ASC LIMIT 200
+      `, [skinName, stattrak]),
+      // 1: Float price buckets
+      pool.query(`
+        SELECT float_min, float_max, avg_price_cents, listing_count, last_checked
+        FROM float_price_data WHERE skin_name = $1 ORDER BY float_min
+      `, [skinName]),
+      // 2: Price sources
+      pool.query(`
+        SELECT source, condition, avg_price_cents, volume
+        FROM price_data WHERE skin_name = $1 AND avg_price_cents > 0
+        ORDER BY CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'listing' THEN 2 WHEN 'csfloat_ref' THEN 3 WHEN 'skinport' THEN 4 ELSE 5 END
+      `, [skinName]),
+      // 3: Sale history (UNION deduplicates — same CSFloat sales exist in both tables)
+      pool.query(`
+        SELECT price_cents, float_value, sold_at FROM sale_history
+        WHERE skin_name = $1 AND price_cents > 0
+        UNION
+        SELECT price_cents, float_value, observed_at as sold_at FROM price_observations
+        WHERE skin_name = $1 AND source IN ('sale', 'listing', 'listing_dmarket', 'listing_skinport') AND price_cents > 0
+        ORDER BY sold_at DESC LIMIT 300
+      `, [skinName]),
+      // 4: Skin metadata
+      pool.query(`
+        SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, c.name as collection_name
+        FROM skins s LEFT JOIN skin_collections sc ON s.id = sc.skin_id
+        LEFT JOIN collections c ON sc.collection_id = c.id
+        WHERE s.name = $1 AND s.stattrak = $2 LIMIT 1
+      `, [skinName, stattrak]),
+      // 5: Total sale count
+      pool.query(`
+        SELECT (SELECT COUNT(*) FROM sale_history WHERE skin_name = $1)
+             + (SELECT COUNT(*) FROM price_observations WHERE skin_name = $1 AND source = 'sale') as cnt
+      `, [skinName]),
+    ];
 
-    // Float price buckets (theory pricing)
-    const { rows: floatBuckets } = await pool.query(`
-      SELECT float_min, float_max, avg_price_cents, listing_count, last_checked
-      FROM float_price_data
-      WHERE skin_name = $1
-      ORDER BY float_min
-    `, [skinName]);
+    // Doppler-specific queries (added conditionally)
+    if (isDoppler) {
+      queries.push(
+        // 6: Phase prices
+        pool.query(`
+          SELECT skin_name, source, condition, avg_price_cents, volume
+          FROM price_data WHERE skin_name LIKE $1 AND skin_name != $2 AND avg_price_cents > 0
+          ORDER BY skin_name, CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'csfloat_ref' THEN 2 ELSE 3 END
+        `, [`${skinName}%`, skinName]),
+        // 7: Phase sales
+        pool.query(`
+          SELECT skin_name, price_cents, float_value, observed_at as sold_at FROM price_observations
+          WHERE skin_name LIKE $1 AND skin_name != $2 AND price_cents > 0
+          ORDER BY observed_at DESC LIMIT 1000
+        `, [`${skinName}%`, skinName]),
+      );
+    }
 
-    // Price data (all sources)
-    const { rows: priceSourceRows } = await pool.query(`
-      SELECT source, condition, avg_price_cents, volume
-      FROM price_data
-      WHERE skin_name = $1 AND avg_price_cents > 0
-      ORDER BY CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'listing' THEN 2 WHEN 'csfloat_ref' THEN 3 WHEN 'skinport' THEN 4 ELSE 5 END
-    `, [skinName]);
+    const results = await Promise.all(queries);
+    const [listingsRes, floatBucketsRes, priceSourcesRes, saleHistoryRes, skinRes, saleCountRes] = results;
+    const listings = listingsRes.rows;
+    const floatBuckets = floatBucketsRes.rows;
+    const priceSourceRows = priceSourcesRes.rows;
+    const saleHistory = saleHistoryRes.rows;
+    const skin = skinRes.rows[0];
+    const totalSaleCount = parseInt(saleCountRes.rows[0]?.cnt ?? "0");
 
-    // Doppler phase-specific prices (Phase 1-4 + gems)
-    let phasePrices: Record<string, typeof priceSourceRows> | undefined;
-    if (skinName.includes("Doppler")) {
+    if (!skin) {
+      res.status(404).json({ error: "Skin not found" });
+      return;
+    }
+
+    // Process Doppler phase data (indices 6 & 7 only present when isDoppler)
+    let phasePrices: Record<string, { source: string; condition: string; avg_price_cents: number; volume: number }[]> | undefined;
+    let phaseSales: Record<string, { price_cents: number; float_value: number; sold_at: string }[]> | undefined;
+    if (isDoppler) {
       phasePrices = {};
-      const { rows: phaseRows } = await pool.query(`
-        SELECT skin_name, source, condition, avg_price_cents, volume
-        FROM price_data
-        WHERE skin_name LIKE $1 AND skin_name != $2 AND avg_price_cents > 0
-        ORDER BY skin_name, CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'csfloat_ref' THEN 2 ELSE 3 END
-      `, [`${skinName}%`, skinName]);
-      for (const r of phaseRows) {
-        // Extract phase from name: "★ Bayonet | Doppler Phase 2" → "Phase 2"
+      for (const r of results[6].rows) {
         const phase = r.skin_name.replace(skinName, "").trim();
         if (phase) {
           if (!phasePrices[phase]) phasePrices[phase] = [];
           phasePrices[phase].push({ source: r.source, condition: r.condition, avg_price_cents: r.avg_price_cents, volume: r.volume });
         }
       }
-    }
-
-    // Sale history: combine CSFloat sales + sold listings + listing observations (deduplicated)
-    const { rows: saleHistory } = await pool.query(`
-      SELECT price_cents, float_value, sold_at FROM sale_history
-      WHERE skin_name = $1 AND price_cents > 0
-      UNION
-      SELECT price_cents, float_value, observed_at as sold_at FROM price_observations
-      WHERE skin_name = $1 AND source IN ('sale', 'listing', 'listing_dmarket', 'listing_skinport') AND price_cents > 0
-      ORDER BY sold_at DESC
-      LIMIT 300
-    `, [skinName]);
-
-    // Doppler: also collect phase-specific observations for per-phase scatter plots
-    let phaseSales: Record<string, typeof saleHistory> | undefined;
-    if (skinName.includes("Doppler")) {
       phaseSales = {};
-      const { rows: phaseObs } = await pool.query(`
-        SELECT skin_name, price_cents, float_value, observed_at as sold_at FROM price_observations
-        WHERE skin_name LIKE $1 AND skin_name != $2 AND price_cents > 0
-        ORDER BY observed_at DESC LIMIT 1000
-      `, [`${skinName}%`, skinName]);
-      for (const r of phaseObs) {
+      for (const r of results[7].rows) {
         const phase = r.skin_name.replace(skinName, "").trim();
         if (phase) {
           if (!phaseSales[phase]) phaseSales[phase] = [];
           phaseSales[phase].push({ price_cents: r.price_cents, float_value: r.float_value, sold_at: r.sold_at });
         }
       }
-    }
-
-    // Skin metadata
-    const { rows: [skin] } = await pool.query(`
-      SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float,
-        c.name as collection_name
-      FROM skins s
-      LEFT JOIN skin_collections sc ON s.id = sc.skin_id
-      LEFT JOIN collections c ON sc.collection_id = c.id
-      WHERE s.name = $1 AND s.stattrak = $2
-      LIMIT 1
-    `, [skinName, stattrak]);
-
-    if (!skin) {
-      res.status(404).json({ error: "Skin not found" });
-      return;
     }
 
     // Resolve knife/glove collection from CASE_KNIFE_MAP
@@ -260,14 +280,6 @@ export function dataRouter(
         resolvedCollectionName = cases.join(", ");
       }
     }
-
-    // Actual total sale count (not limited by the 300-row fetch)
-    const { rows: [saleCountRow] } = await pool.query(`
-      SELECT (SELECT COUNT(*) FROM sale_history WHERE skin_name = $1)
-           + (SELECT COUNT(*) FROM price_observations WHERE skin_name = $1 AND source = 'sale')
-           as cnt
-    `, [skinName]);
-    const totalSaleCount = parseInt(saleCountRow.cnt);
 
     res.json({
       skin: { ...skin, collection_name: resolvedCollectionName },

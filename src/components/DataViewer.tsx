@@ -49,13 +49,15 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
       if (collectionFilter) params.set("collection", collectionFilter);
       if (outputCollection) params.set("outputCollection", outputCollection);
       if (stattrak) params.set("stattrak", "1");
-      params.set("limit", "200"); // Paginated — fast even for "all" tab
-      const res = await fetch(`/api/skin-data?${params}`);
-      const data = await res.json();
+      params.set("limit", "200");
       const fp = new URLSearchParams({ since: lastViewedAt });
       if (rarity) fp.set("tab", rarity);
-      const fr = await fetch(`/api/data-freshness?${fp}`);
-      const fd = await fr.json();
+      // Fetch skin data + freshness in parallel (was sequential)
+      const [res, fr] = await Promise.all([
+        fetch(`/api/skin-data?${params}`),
+        fetch(`/api/data-freshness?${fp}`),
+      ]);
+      const [data, fd] = await Promise.all([res.json(), fr.json()]);
       const nl = fd.newListings || 0;
       const ns = fd.newSales || 0;
       cacheRef.current.set(cacheKey, { skins: data, newListings: nl, newSales: ns });

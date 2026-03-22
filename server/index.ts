@@ -36,17 +36,22 @@ for (const [caseName, mapping] of Object.entries(CASE_KNIFE_MAP)) {
   }
 }
 
-// Build forward map: collection name → knife/glove pool
-const collectionKnifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; finishCount: number }>();
+// Build forward map: collection name → knife/glove pool (with finish data for filtering)
+const collectionKnifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>();
 for (const [collectionName, mapping] of Object.entries(CASE_KNIFE_MAP)) {
-  const knPool: { knifeTypes: string[]; gloveTypes: string[]; finishCount: number } = {
+  const knPool: { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number } = {
     knifeTypes: [...mapping.knifeTypes],
+    knifeFinishes: [...(mapping.knifeFinishes || [])],
     gloveTypes: [],
+    gloveFinishes: [],
     finishCount: mapping.knifeFinishes?.length ?? 0,
   };
   if (mapping.gloveGen) {
     const genSkins = GLOVE_GEN_SKINS[mapping.gloveGen];
-    if (genSkins) knPool.gloveTypes = Object.keys(genSkins);
+    if (genSkins) {
+      knPool.gloveTypes = Object.keys(genSkins);
+      knPool.gloveFinishes = Object.values(genSkins).flat();
+    }
   }
   collectionKnifePool.set(collectionName, knPool);
 }
