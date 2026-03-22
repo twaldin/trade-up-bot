@@ -54,6 +54,17 @@ interface DaemonLogData {
     cycleCount: number;
     updatedAt: string | null;
   } | null;
+  bitskinsStats: {
+    totalListingsStored: number;
+    totalSalesStored: number;
+    totalObservationsStored: number;
+    totalFloatsEnriched: number;
+    wsConnected: boolean;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+    cycleCount: number;
+    updatedAt: string | null;
+  } | null;
 }
 
 interface CycleRow {
@@ -236,7 +247,7 @@ function CycleHistory() {
 }
 
 export function DaemonModal({ onClose }: { onClose: () => void }) {
-  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null });
+  const [logData, setLogData] = useState<DaemonLogData>({ lines: [], currentPhase: "Unknown", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null, bitskinsStats: null });
   const logEndRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -386,6 +397,34 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
                     )}
                     {logData.buffStats.lastError && !logData.buffStats.cookieHealthy && (
                       <div className="text-red-400/60 text-[0.6rem]">{logData.buffStats.lastError}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* BitSkins (observe mode) */}
+            {logData.bitskinsStats && (
+              <div className="mt-5 pt-4 border-t border-border">
+                <h3 className="text-[0.72rem] uppercase tracking-wider text-muted-foreground mb-2.5">BitSkins</h3>
+                <div className="mb-2">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-xs text-muted-foreground">WebSocket</span>
+                    <Badge
+                      variant={logData.bitskinsStats.wsConnected ? "secondary" : "outline"}
+                      className={`text-[0.6rem] px-1.5 py-0 h-4 ${logData.bitskinsStats.wsConnected ? "text-green-500" : "text-muted-foreground/60"}`}
+                    >
+                      {logData.bitskinsStats.wsConnected ? "Connected" : "Disconnected"}
+                    </Badge>
+                  </div>
+                  <div className="text-[0.68rem] text-muted-foreground/60 space-y-0.5">
+                    <div>{logData.bitskinsStats.totalListingsStored.toLocaleString()} listings ({logData.bitskinsStats.totalFloatsEnriched.toLocaleString()} with float)</div>
+                    <div>{logData.bitskinsStats.totalSalesStored.toLocaleString()} sales · {logData.bitskinsStats.totalObservationsStored.toLocaleString()} obs</div>
+                    {logData.bitskinsStats.lastSuccessAt && (
+                      <div className="text-muted-foreground/40">last: {timeAgo(logData.bitskinsStats.lastSuccessAt)}</div>
+                    )}
+                    {logData.bitskinsStats.lastError && (
+                      <div className="text-red-400/60 text-[0.6rem]">{logData.bitskinsStats.lastError}</div>
                     )}
                   </div>
                 </div>
