@@ -180,7 +180,7 @@ export function DemoAnimation() {
   }, [moveTo, click, showTip, hideTip]);
 
   return (
-    <div ref={screenRef} className="relative w-full overflow-hidden rounded-lg border border-border bg-[#111]" style={{ height: 520 }}>
+    <div ref={screenRef} className="relative w-full overflow-hidden rounded-lg border border-border bg-[#111]" style={{ height: 580 }}>
       <style>{`
         .demo-cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:100;transition:left .8s cubic-bezier(.4,0,.2,1),top .8s cubic-bezier(.4,0,.2,1);left:600px;top:300px}
         .demo-cursor svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
@@ -195,8 +195,8 @@ export function DemoAnimation() {
         .demo-pill-knife{border-color:rgba(234,179,8,.4);background:rgba(234,179,8,.1);color:#eab308;font-weight:600}
         .demo-row-hl{background:#1a1a1a}
         .demo-green{color:#22c55e}
-        .demo-pos{color:#22c55e;font-weight:600}
-        .demo-neg{color:#ef4444;font-weight:600}
+        .demo-tbl td.demo-pos,.demo-pos{color:#22c55e;font-weight:600}
+        .demo-tbl td.demo-neg,.demo-neg{color:#ef4444;font-weight:600}
         .demo-roi{display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:12.5px;background:rgba(34,197,94,.15);color:#22c55e}
         .demo-ch{display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:12.5px}
         .demo-ch-md{background:rgba(245,158,11,.15);color:#fbbf24}
@@ -263,7 +263,7 @@ export function DemoAnimation() {
       <div data-stats className="px-4 py-1 text-[11px] text-[#525252]">592,938 found (<span className="demo-green">28,493 profitable</span>)</div>
 
       {/* Table */}
-      <div className="overflow-hidden" style={{ maxHeight: 400 }}>
+      <div className="overflow-hidden" style={{ maxHeight: 460 }}>
         <table className="demo-tbl">
           <thead><tr>
             <th style={{ width: 24 }} /><th>Inputs</th><th>Profit ↓</th><th>ROI</th><th>Chance</th><th>Cost</th><th>EV</th><th>Best</th><th>Worst</th>
@@ -362,6 +362,10 @@ export function DemoAnimation() {
               { inputs: '5× M4A4 | Buzz Kill', profit: '$296.58', roi: '20.3%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,463.87', ev: '$1,760.45', best: '$4,634.58', worst: '-$1,248.91', age: '1h' },
               { inputs: '5× M4A4 | Buzz Kill', profit: '$296.03', roi: '20.2%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,463.87', ev: '$1,759.90', best: '$4,634.58', worst: '-$1,254.30', age: '1h' },
               { inputs: '3× M4A4 | Buzz Kill, 2× SSG 08 | Dragonfire', profit: '$295.73', roi: '20.2%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,464.38', ev: '$1,760.11', best: '$4,631.07', worst: '-$1,253.98', age: '3h' },
+              { inputs: '4× M4A4 | Buzz Kill, 1× AK-47 | Neon Rider', profit: '$289.15', roi: '19.8%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,458.92', ev: '$1,748.07', best: '$4,580.22', worst: '-$1,240.16', age: '1h' },
+              { inputs: '5× SSG 08 | Dragonfire', profit: '$284.90', roi: '19.5%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,462.50', ev: '$1,747.40', best: '$4,631.58', worst: '-$1,262.50', age: '4h' },
+              { inputs: '3× M4A4 | Buzz Kill, 2× AK-47 | Neon Rider', profit: '$281.33', roi: '19.3%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,455.44', ev: '$1,736.77', best: '$4,580.22', worst: '-$1,235.80', age: '2h' },
+              { inputs: '4× SSG 08 | Dragonfire, 1× M4A4 | Buzz Kill', profit: '$278.62', roi: '19.1%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,461.25', ev: '$1,739.87', best: '$4,631.07', worst: '-$1,258.73', age: '3h' },
             ].map((r, i) => (
               <tr key={i}>
                 <td className="text-[#525252] text-[10px] w-6 text-center">▶</td>
