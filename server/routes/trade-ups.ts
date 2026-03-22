@@ -96,7 +96,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    const params: (string | number)[] = [];
+    const params: (string | number | string[])[] = [];
     let paramIndex = 1;
     if (includeStale) {
       where = `WHERE t.is_theoretical = false AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
