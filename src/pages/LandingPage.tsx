@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { DemoAnimation } from '../components/DemoAnimation.js';
 import { SiteNav } from '../components/SiteNav.js';
 import { blogPosts } from '../data/blog-posts.js';
 
@@ -115,8 +116,8 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               </div>
             )}
 
-            {/* Screenshot */}
-            <img src="/tradeuptable.png" alt="Trade-Up Bot" className="rounded-lg border border-border shadow-2xl w-full" />
+            {/* Interactive Demo */}
+            <DemoAnimation />
           </div>
         </section>
 
