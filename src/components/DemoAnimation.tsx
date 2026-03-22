@@ -180,7 +180,7 @@ export function DemoAnimation() {
   }, [moveTo, click, showTip, hideTip]);
 
   return (
-    <div ref={screenRef} className="relative w-full overflow-hidden rounded-lg border border-border bg-[#111]" style={{ height: 580 }}>
+    <div ref={screenRef} className="relative w-full overflow-hidden rounded-lg border border-border bg-[#111]" style={{ height: 520 }}>
       <style>{`
         .demo-cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:100;transition:left .8s cubic-bezier(.4,0,.2,1),top .8s cubic-bezier(.4,0,.2,1);left:600px;top:300px}
         .demo-cursor svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
@@ -263,7 +263,7 @@ export function DemoAnimation() {
       <div data-stats className="px-4 py-1 text-[11px] text-[#525252]">592,938 found (<span className="demo-green">28,493 profitable</span>)</div>
 
       {/* Table */}
-      <div className="overflow-hidden" style={{ maxHeight: 460 }}>
+      <div className="overflow-hidden" style={{ maxHeight: 400 }}>
         <table className="demo-tbl">
           <thead><tr>
             <th style={{ width: 24 }} /><th>Inputs</th><th>Profit ↓</th><th>ROI</th><th>Chance</th><th>Cost</th><th>EV</th><th>Best</th><th>Worst</th>
