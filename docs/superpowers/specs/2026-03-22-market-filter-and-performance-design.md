@@ -1,7 +1,7 @@
 # Market Filter & API Performance Optimization
 
 **Date:** 2026-03-22
-**Status:** Draft
+**Status:** Reviewed
 
 ## Overview
 
@@ -41,11 +41,13 @@ Stores the distinct sorted sources for each trade-up (e.g., `{'csfloat'}` or `{'
 #### Backfill migration (one-time)
 
 ```sql
-UPDATE trade_ups t SET input_sources = (
+UPDATE trade_ups t SET input_sources = COALESCE((
   SELECT ARRAY_AGG(DISTINCT source ORDER BY source)
   FROM trade_up_inputs WHERE trade_up_id = t.id
-);
+), '{}');
 ```
+
+Note: `COALESCE` handles orphaned trade-ups with no inputs (ARRAY_AGG returns NULL for empty sets, which would violate the NOT NULL constraint).
 
 #### New partial indexes
 
@@ -80,6 +82,8 @@ CREATE INDEX idx_tui_source ON trade_up_inputs(source);
 
 Old full-table indexes (`idx_trade_ups_profit`, `idx_trade_ups_roi`, etc.) can be dropped after new partial indexes are verified.
 
+**Note:** The `include_stale` query path uses `WHERE is_theoretical = false AND (listing_status = 'active' OR preserved_at IS NOT NULL)`, which does not match these partial index predicates. This is acceptable — `include_stale` is a rarely-used checkbox and will fall back to the existing full-table indexes (or a sequential scan). The hot path (default, no stale) benefits from the partial indexes.
+
 ### 2. Backend — Market Filter
 
 #### Query parameter
@@ -105,17 +109,18 @@ Maintained at every mutation point in the db-ops barrel:
 
 | Mutation | File | Action |
 |----------|------|--------|
-| Trade-up creation | `db-save.ts` | Compute from inputs being inserted, include in INSERT |
+| Trade-up creation (`saveTradeUps`) | `db-save.ts` | Compute from inputs being inserted, include in INSERT |
+| Trade-up creation (`mergeTradeUps`) | `db-save.ts` | Same — compute `input_sources` from inputs at insert time. Update path only touches `trade_ups` columns (not inputs), so `input_sources` stays correct. |
 | Input replacement (revival) | `db-revive.ts` | Recompute after replacing inputs |
 | Status cascade (input swap) | `db-status.ts` | Recompute if inputs are modified |
 | Staleness deletion | `db-status.ts` | No action — row is deleted |
 
 Each recomputation is one query:
 ```sql
-UPDATE trade_ups SET input_sources = (
+UPDATE trade_ups SET input_sources = COALESCE((
   SELECT ARRAY_AGG(DISTINCT source ORDER BY source)
   FROM trade_up_inputs WHERE trade_up_id = $1
-) WHERE id = $1
+), '{}') WHERE id = $1
 ```
 
 #### Filter options extension
@@ -133,12 +138,13 @@ FROM trade_up_inputs GROUP BY source
 Replace unbounded COUNT(*) (which scans all 535K rows) with a capped subquery:
 
 ```sql
-SELECT COUNT(*) as c,
-       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as profitable
-FROM (SELECT profit_cents as profit FROM trade_ups t {WHERE} LIMIT 10001) sub
+SELECT COUNT(*) as c
+FROM (SELECT 1 FROM trade_ups t {WHERE} LIMIT 10001) sub
 ```
 
 Stops scanning after 10,001 rows. Frontend shows "10,000+" when total equals 10,001.
+
+The `profitable` count is dropped from the capped query — an arbitrary subset of 10,001 rows (no ORDER BY in the subquery) would produce a meaningless profitable count. The unfiltered path still uses Redis-cached type counts which include accurate profitable numbers. For filtered queries, the total count is sufficient.
 
 #### Daemon pre-warms common queries
 
@@ -168,23 +174,9 @@ The `newDataHint` feature (detects when `trade_ups_count` changes) can use the a
 
 For the rare Redis miss (admin user, daemon hasn't written yet), parallelize all independent queries via `Promise.all` instead of sequential awaits.
 
-#### Consolidate queries
+#### Keep separate queries, parallelize them
 
-Merge the 5 separate skins/listings COUNT queries into 1:
-
-```sql
-SELECT
-  COUNT(DISTINCT s.name) FILTER (WHERE s.stattrak = false) as total_skins,
-  COUNT(DISTINCT s.name) FILTER (WHERE s.name LIKE '★%' AND s.stattrak = false) as knife_glove_skins,
-  COUNT(DISTINCT CASE WHEN l.id IS NOT NULL AND s.name LIKE '★%' AND s.stattrak = false
-    THEN s.name END) as knife_glove_with_listings,
-  COUNT(l.id) FILTER (WHERE s.name LIKE '★%' AND s.stattrak = false) as knife_glove_listings,
-  COUNT(DISTINCT c.id) as collection_count
-FROM skins s
-LEFT JOIN listings l ON s.id = l.skin_id
-LEFT JOIN skin_collections sc ON s.id = sc.skin_id
-LEFT JOIN collections c ON sc.collection_id = c.id
-```
+The 5 separate skins/listings COUNT queries (lines 116-139 in `status.ts`) should stay as separate queries rather than consolidated into one multi-JOIN. Consolidating into a single `skins LEFT JOIN listings LEFT JOIN skin_collections LEFT JOIN collections` produces a cartesian explosion (a skin with 2 collections and 5 listings = 10 intermediate rows), making it potentially slower than the originals. Instead, run all 5 in parallel via `Promise.all`.
 
 #### Daemon pre-computes status to Redis
 
