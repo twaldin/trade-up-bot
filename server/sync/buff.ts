@@ -77,15 +77,14 @@ interface BuffApiResponse {
   error?: string;
 }
 
-function parseResponse(json: BuffApiResponse): { ok: boolean; data: BuffApiResponse["data"]; loginRequired: boolean } {
+function parseResponse(json: BuffApiResponse): { ok: boolean; data: BuffApiResponse["data"]; loginRequired: boolean; responseCode: string } {
   if (json.code === "OK" && json.data) {
-    return { ok: true, data: json.data, loginRequired: false };
+    return { ok: true, data: json.data, loginRequired: false, responseCode: json.code };
   }
   const loginRequired = json.code === "Login Required"
     || json.code === "Captcha Validate Required"
-    || json.error?.includes("login")
-    || json.code !== "OK";
-  return { ok: false, data: undefined, loginRequired };
+    || (json.error?.includes("login") === true);
+  return { ok: false, data: undefined, loginRequired, responseCode: json.code ?? "unknown" };
 }
 
 function usdStringToCents(price: string): number {
@@ -114,8 +113,8 @@ export async function fetchBuffListings(
   if (!res.ok) throw new Error(`Buff API ${res.status}`);
 
   const json: BuffApiResponse = await res.json();
-  const { ok, data, loginRequired } = parseResponse(json);
-  if (loginRequired) throw new Error("Buff login required");
+  const { ok, data, loginRequired, responseCode } = parseResponse(json);
+  if (loginRequired) throw new Error(`Buff login required (HTTP ${res.status}, code: ${responseCode}, msg: ${json.msg ?? "none"})`);
   if (!ok || !data) return { items: [], totalPages: 0, totalCount: 0 };
 
   const goodsInfos = data.goods_infos ?? {};
@@ -175,8 +174,8 @@ export async function fetchBuffSales(
   if (!res.ok) throw new Error(`Buff API ${res.status}`);
 
   const json: BuffApiResponse = await res.json();
-  const { ok, data, loginRequired } = parseResponse(json);
-  if (loginRequired) throw new Error("Buff login required");
+  const { ok, data, loginRequired, responseCode } = parseResponse(json);
+  if (loginRequired) throw new Error(`Buff login required (HTTP ${res.status}, code: ${responseCode}, msg: ${json.msg ?? "none"})`);
   if (!ok || !data) return { items: [], totalPages: 0, totalCount: 0 };
 
   const items: BuffSale[] = [];

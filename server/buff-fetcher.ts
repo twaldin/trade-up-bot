@@ -559,10 +559,10 @@ async function main() {
       } catch (err) {
         const msg = (err as Error).message;
         if (msg.includes("login required") || msg.includes("Login Required")) {
-          log(`  Cookie expired/invalid — entering sleep mode`);
+          log(`  Cookie expired/invalid — entering sleep mode (${msg})`);
           stats.cookieHealthy = false;
           stats.lastErrorAt = new Date().toISOString();
-          stats.lastError = "Login required — cookie expired";
+          stats.lastError = msg;
           // Invalidate cached cookie so we re-read from Redis
           _cachedCookie = null;
           _cookieFetchedAt = 0;
