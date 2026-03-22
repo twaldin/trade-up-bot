@@ -43,15 +43,14 @@ export function calculatorRouter(pool: pg.Pool): Router {
 
     const pattern = `%${q}%`;
     const { rows: results } = await pool.query(`
-      SELECT DISTINCT s.name, s.weapon, s.rarity, s.min_float, s.max_float, c.name as collection_name
+      SELECT s.name, s.weapon, s.rarity, s.min_float, s.max_float, c.name as collection_name,
+        MIN(CASE WHEN s.name LIKE $2 THEN 0 ELSE 1 END) as prefix_rank
       FROM skins s
       JOIN skin_collections sc ON s.id = sc.skin_id
       JOIN collections c ON sc.collection_id = c.id
       WHERE s.name LIKE $1 AND s.stattrak = false
-      ORDER BY
-        CASE WHEN s.name LIKE $2 THEN 0 ELSE 1 END,
-        s.rarity DESC,
-        s.name ASC
+      GROUP BY s.name, s.weapon, s.rarity, s.min_float, s.max_float, c.name
+      ORDER BY prefix_rank, s.rarity DESC, s.name ASC
       LIMIT 20
     `, [pattern, `${q}%`]);
 
