@@ -4,139 +4,98 @@ import fs from "fs";
 import { getSyncMeta } from "../db.js";
 import { CASE_KNIFE_MAP } from "../engine.js";
 import { cachedRoute } from "../redis.js";
-import type { SyncStatus } from "../../shared/types.js";
+import type { SyncStatus, DaemonStatus } from "../../shared/types.js";
 
 export function statusRouter(pool: pg.Pool): Router {
   const router = Router();
 
   router.get("/api/status", cachedRoute("status", 60, async (_req, res) => {
-    const listingStats = async (rarity: string, excludeKnives = false) => {
-      const knifeFilter = excludeKnives ? "AND s.name NOT LIKE '★%'" : "";
-      const { rows: [r] } = await pool.query(`
-        SELECT COUNT(l.id) as total_listings, COUNT(DISTINCT s.name) as skins_with_listings
-        FROM listings l JOIN skins s ON l.skin_id = s.id
-        WHERE s.rarity = $1 AND s.stattrak = false ${knifeFilter}
-      `, [rarity]);
-      const knifeFilterNoAlias = excludeKnives ? "AND name NOT LIKE '★%'" : "";
-      const { rows: [totalRow] } = await pool.query(
-        `SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = $1 AND stattrak = false ${knifeFilterNoAlias}`,
-        [rarity]
-      );
-      return { listings: parseInt(r.total_listings), skins: parseInt(r.skins_with_listings), total: parseInt(totalRow.c) };
-    };
-
-    const classified = await listingStats("Classified");
-    const covert = await listingStats("Covert", true);
-
-    const { rows: [covertPrices] } = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_sales') as sale_prices,
+    // Run ALL independent queries in parallel (was 10+ sequential round-trips)
+    const [
+      classifiedListings, classifiedTotal,
+      covertListings, covertTotal,
+      covertPricesResult, tuStatsResult, knifeTuResult,
+      topCollectionsResult, lastCalc, daemonStatusRaw, explorationRaw,
+      totalSkinsResult, totalListingsResult,
+      kgSkinsResult, kgWithListingsResult, kgListingsResult, collCountResult,
+    ] = await Promise.all([
+      pool.query(`SELECT COUNT(l.id) as total_listings, COUNT(DISTINCT s.name) as skins_with_listings
+        FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.rarity = 'Classified' AND s.stattrak = false`, []),
+      pool.query(`SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = 'Classified' AND stattrak = false`, []),
+      pool.query(`SELECT COUNT(l.id) as total_listings, COUNT(DISTINCT s.name) as skins_with_listings
+        FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.rarity = 'Covert' AND s.stattrak = false AND s.name NOT LIKE '★%'`, []),
+      pool.query(`SELECT COUNT(DISTINCT name) as c FROM skins WHERE rarity = 'Covert' AND stattrak = false AND name NOT LIKE '★%'`, []),
+      pool.query(`SELECT (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_sales') as sale_prices,
         (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as ref_prices,
-        (SELECT COUNT(*) FROM sale_history) as total_sales
-    `);
+        (SELECT COUNT(*) FROM sale_history) as total_sales`),
+      pool.query(`SELECT type, COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups GROUP BY type`),
+      pool.query(`SELECT COUNT(*) as cnt, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable,
+        SUM(CASE WHEN listing_status = 'active' THEN 1 ELSE 0 END) as active,
+        SUM(CASE WHEN listing_status = 'partial' THEN 1 ELSE 0 END) as partial,
+        SUM(CASE WHEN listing_status = 'stale' THEN 1 ELSE 0 END) as stale
+        FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = false`).catch(() => ({ rows: [{ cnt: "0", profitable: "0", active: "0", partial: "0", stale: "0" }] })),
+      pool.query(`SELECT collection_name, priority_score, profitable_count, avg_profit_cents FROM collection_scores ORDER BY priority_score DESC LIMIT 5`).catch(() => ({ rows: [] })),
+      getSyncMeta(pool, "last_calculation"),
+      getSyncMeta(pool, "daemon_status"),
+      getSyncMeta(pool, "exploration_stats"),
+      pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = false"),
+      pool.query("SELECT COUNT(*) as c FROM listings"),
+      pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = false"),
+      pool.query("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = false"),
+      pool.query("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = false"),
+      pool.query("SELECT COUNT(DISTINCT c.id) as c FROM collections c JOIN skin_collections sc ON c.id = sc.collection_id"),
+    ]);
 
-    const { rows: tuStats } = await pool.query(`
-      SELECT type,
-        COUNT(*) as cnt,
-        SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-      FROM trade_ups GROUP BY type
-    `);
-
-    // Real knife trade-ups (exclude theories which share type='covert_knife')
-    const knifeTu = await (async () => {
-      try {
-        const { rows: [row] } = await pool.query(`
-          SELECT COUNT(*) as cnt,
-            SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable,
-            SUM(CASE WHEN listing_status = 'active' THEN 1 ELSE 0 END) as active,
-            SUM(CASE WHEN listing_status = 'partial' THEN 1 ELSE 0 END) as partial,
-            SUM(CASE WHEN listing_status = 'stale' THEN 1 ELSE 0 END) as stale
-          FROM trade_ups WHERE type = 'covert_knife' AND is_theoretical = false
-        `);
-        return {
-          cnt: parseInt(row.cnt) || 0,
-          profitable: parseInt(row.profitable) || 0,
-          active: parseInt(row.active) || 0,
-          partial: parseInt(row.partial) || 0,
-          stale: parseInt(row.stale) || 0,
-        };
-      } catch { /* DB may be locked */ return { cnt: 0, profitable: 0, active: 0, partial: 0, stale: 0 }; }
-    })();
+    const classified = { listings: parseInt(classifiedListings.rows[0].total_listings), skins: parseInt(classifiedListings.rows[0].skins_with_listings), total: parseInt(classifiedTotal.rows[0].c) };
+    const covert = { listings: parseInt(covertListings.rows[0].total_listings), skins: parseInt(covertListings.rows[0].skins_with_listings), total: parseInt(covertTotal.rows[0].c) };
+    const covertPrices = covertPricesResult.rows[0];
+    const tuStats = tuStatsResult.rows;
+    const knifeTuRow = knifeTuResult.rows[0];
+    const knifeTu = {
+      cnt: parseInt(knifeTuRow.cnt) || 0, profitable: parseInt(knifeTuRow.profitable) || 0,
+      active: parseInt(knifeTuRow.active) || 0, partial: parseInt(knifeTuRow.partial) || 0, stale: parseInt(knifeTuRow.stale) || 0,
+    };
     const covertTu = tuStats.find((r: any) => r.type === "classified_covert");
     const totalTu = tuStats.reduce((s: number, r: any) => s + parseInt(r.cnt), 0);
     const totalProfitable = tuStats.reduce((s: number, r: any) => s + parseInt(r.profitable), 0);
 
-    const { rows: topCollections } = await pool.query(`
-      SELECT collection_name, priority_score, profitable_count, avg_profit_cents
-      FROM collection_scores ORDER BY priority_score DESC LIMIT 5
-    `);
+    let daemonStatus: SyncStatus["daemon_status"];
+    try {
+      if (!daemonStatusRaw) { daemonStatus = { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
+      else {
+        const parsed = JSON.parse(daemonStatusRaw) as DaemonStatus;
+        const statusAge = Date.now() - new Date(parsed.timestamp).getTime();
+        daemonStatus = statusAge > 25 * 60 * 1000
+          ? { phase: "idle" as const, detail: "Daemon inactive", timestamp: parsed.timestamp }
+          : parsed;
+      }
+    } catch { daemonStatus = { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
+
+    let explorationStats = null;
+    try { if (explorationRaw) explorationStats = JSON.parse(explorationRaw); } catch {}
 
     const result = ({
-      classified_listings: classified.listings,
-      classified_skins: classified.skins,
-      classified_total: classified.total,
-      covert_listings: covert.listings,
-      covert_skins: covert.skins,
-      covert_total: covert.total,
+      classified_listings: classified.listings, classified_skins: classified.skins, classified_total: classified.total,
+      covert_listings: covert.listings, covert_skins: covert.skins, covert_total: covert.total,
       covert_sale_prices: parseInt(covertPrices.sale_prices),
       covert_ref_prices: parseInt(covertPrices.ref_prices),
       total_sales: parseInt(covertPrices.total_sales),
-      knife_trade_ups: knifeTu?.cnt ?? 0,
-      knife_profitable: knifeTu?.profitable ?? 0,
-      knife_active: knifeTu?.active ?? 0,
-      knife_partial: knifeTu?.partial ?? 0,
-      knife_stale: knifeTu?.stale ?? 0,
+      knife_trade_ups: knifeTu.cnt, knife_profitable: knifeTu.profitable,
+      knife_active: knifeTu.active, knife_partial: knifeTu.partial, knife_stale: knifeTu.stale,
       covert_trade_ups: covertTu ? parseInt(covertTu.cnt) : 0,
       covert_profitable: covertTu ? parseInt(covertTu.profitable) : 0,
-      trade_ups_count: totalTu,
-      profitable_count: totalProfitable,
-      last_calculation: await getSyncMeta(pool, "last_calculation"),
-      daemon_status: await (async () => {
-        try {
-          const raw = await getSyncMeta(pool, "daemon_status");
-          if (!raw) return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() };
-          const parsed = JSON.parse(raw);
-          // Check if daemon status is stale (>25 min old = likely crashed/stopped)
-          // Was 5 min but cooldown phase alone is 20 min — need more headroom
-          const statusAge = Date.now() - new Date(parsed.timestamp).getTime();
-          if (statusAge > 25 * 60 * 1000) {
-            return { phase: "idle" as const, detail: "Daemon inactive", timestamp: parsed.timestamp };
-          }
-          return parsed;
-        } catch { /* malformed JSON */ return { phase: "idle" as const, detail: "Daemon not running", timestamp: new Date().toISOString() }; }
-      })(),
-      top_collections: topCollections,
-      exploration_stats: await (async () => {
-        try {
-          const raw = await getSyncMeta(pool, "exploration_stats");
-          return raw ? JSON.parse(raw) : null;
-        } catch { /* malformed JSON */ return null; }
-      })(),
+      trade_ups_count: totalTu, profitable_count: totalProfitable,
+      last_calculation: lastCalc,
+      daemon_status: daemonStatus,
+      top_collections: topCollectionsResult.rows,
+      exploration_stats: explorationStats,
       ref_coverage: null,
-      total_skins: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE stattrak = false");
-        return parseInt(r.c);
-      })(),
-      total_listings: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings");
-        return parseInt(r.c);
-      })(),
-      knife_glove_skins: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT name) as c FROM skins WHERE name LIKE '★%' AND stattrak = false");
-        return parseInt(r.c);
-      })(),
-      knife_glove_with_listings: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT s.name) as c FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.name LIKE '★%' AND s.stattrak = false");
-        return parseInt(r.c);
-      })(),
-      knife_glove_listings: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(*) as c FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name LIKE '★%' AND s.stattrak = false");
-        return parseInt(r.c);
-      })(),
-      collection_count: await (async () => {
-        const { rows: [r] } = await pool.query("SELECT COUNT(DISTINCT c.id) as c FROM collections c JOIN skin_collections sc ON c.id = sc.collection_id");
-        return parseInt(r.c);
-      })(),
+      total_skins: parseInt(totalSkinsResult.rows[0].c),
+      total_listings: parseInt(totalListingsResult.rows[0].c),
+      knife_glove_skins: parseInt(kgSkinsResult.rows[0].c),
+      knife_glove_with_listings: parseInt(kgWithListingsResult.rows[0].c),
+      knife_glove_listings: parseInt(kgListingsResult.rows[0].c),
+      collection_count: parseInt(collCountResult.rows[0].c),
       collections_with_knives: Object.keys(CASE_KNIFE_MAP).length,
     } satisfies SyncStatus);
 
