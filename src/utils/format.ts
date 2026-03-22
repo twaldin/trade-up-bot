@@ -65,19 +65,16 @@ export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinp
 export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number): string {
   const source = listingSource(listingId);
   if (source === "dmarket") {
-    // DMarket: float precision is 3 digits, tight ±0.002 range to find the exact listing
+    // DMarket: skip price filter (prices change frequently).
+    // Float has 3-digit precision — floor/ceil at 3rd decimal to bracket the exact listing.
+    // e.g. float 0.2819 → floatValueFrom=0.281, floatValueTo=0.282
     const params = new URLSearchParams({ title: skinName ?? "" });
     params.set("category_0", "not_stattrak_tm");
     if (floatValue !== undefined && floatValue > 0) {
-      params.set("floatValueFrom", Math.max(0, floatValue - 0.002).toFixed(3));
-      params.set("floatValueTo", Math.min(1, floatValue + 0.002).toFixed(3));
-    }
-    if (priceCents !== undefined && priceCents > 0) {
-      // Reverse DMarket 2.5% buyer fee to get original listing price
-      const originalCents = Math.round(priceCents / 1.025);
-      const priceDollars = originalCents / 100;
-      params.set("price-from", Math.floor(priceDollars).toString());
-      params.set("price-to", Math.ceil(priceDollars).toString());
+      const lower = Math.floor(floatValue * 1000) / 1000;
+      const upper = lower + 0.001;
+      params.set("floatValueFrom", lower.toFixed(3));
+      params.set("floatValueTo", upper.toFixed(3));
     }
     return `https://dmarket.com/ingame-items/item-list/csgo-skins?${params.toString()}`;
   }
