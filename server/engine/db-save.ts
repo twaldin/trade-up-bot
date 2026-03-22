@@ -214,11 +214,12 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
         for (const tu of batch) {
           const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
           const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+          const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
           const { rows } = await client.query(`
-            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9)
+            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10)
             RETURNING id
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes)]);
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources]);
           const tradeUpId = rows[0].id;
           if (tu.profit_cents > 0) {
             await client.query("UPDATE trade_ups SET peak_profit_cents = $1 WHERE id = $2", [tu.profit_cents, tradeUpId]);
