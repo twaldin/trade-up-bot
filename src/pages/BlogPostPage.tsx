@@ -1,3 +1,4 @@
+import { Helmet } from "react-helmet-async";
 import { Link, useParams } from "react-router-dom";
 import { getPostBySlug, blogPosts } from "../data/blog-posts.js";
 import { SiteNav } from "../components/SiteNav.js";
@@ -24,6 +25,27 @@ export function BlogPostPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
+      <Helmet>
+        <title>{post.title} | TradeUpBot Blog</title>
+        <meta name="description" content={post.excerpt} />
+        <link rel="canonical" href={`https://tradeupbot.app/blog/${post.slug}`} />
+        <meta property="og:title" content={`${post.title} | TradeUpBot Blog`} />
+        <meta property="og:description" content={post.excerpt} />
+        <meta property="og:url" content={`https://tradeupbot.app/blog/${post.slug}`} />
+        <meta property="og:type" content="article" />
+        <meta property="article:published_time" content={post.publishedAt} />
+        <meta property="article:author" content={post.author} />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          "headline": post.title,
+          "description": post.excerpt,
+          "datePublished": post.publishedAt,
+          "author": { "@type": "Organization", "name": post.author },
+          "publisher": { "@type": "Organization", "name": "TradeUpBot", "url": "https://tradeupbot.app" },
+          "mainEntityOfPage": `https://tradeupbot.app/blog/${post.slug}`
+        })}</script>
+      </Helmet>
       <SiteNav />
 
       <main className="pt-24 pb-16">

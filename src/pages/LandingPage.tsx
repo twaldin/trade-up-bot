@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { DemoAnimation } from '../components/DemoAnimation.js';
 import { SiteNav } from '../components/SiteNav.js';
 import { blogPosts } from '../data/blog-posts.js';
@@ -63,6 +64,43 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
+      <Helmet>
+        <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
+        <meta name="description" content="Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, and Skinport." />
+        <link rel="canonical" href="https://tradeupbot.app/" />
+        <meta property="og:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
+        <meta property="og:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
+        <meta property="og:url" content="https://tradeupbot.app/" />
+        <meta property="og:type" content="website" />
+        <meta property="og:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
+        <meta name="twitter:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
+        <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "WebSite",
+              "name": "TradeUpBot",
+              "url": "https://tradeupbot.app",
+              "description": "Real-time CS2 trade-up contract analyzer. Find profitable trade-ups from real marketplace listings.",
+              "potentialAction": {
+                "@type": "SearchAction",
+                "target": "https://tradeupbot.app/data?search={search_term_string}",
+                "query-input": "required name=search_term_string"
+              }
+            },
+            {
+              "@type": "Organization",
+              "name": "TradeUpBot",
+              "url": "https://tradeupbot.app",
+              "logo": "https://tradeupbot.app/favicon.svg",
+              "description": "CS2 trade-up contract analysis platform using real marketplace data from CSFloat, DMarket, and Skinport."
+            }
+          ]
+        })}</script>
+      </Helmet>
 
       <SiteNav centerLinks={[
         { href: "#features", label: "Features" },
