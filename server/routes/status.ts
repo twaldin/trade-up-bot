@@ -287,6 +287,26 @@ export function statusRouter(pool: pg.Pool): Router {
         }
       } catch { /* malformed JSON or no data */ }
 
+      // BitSkins stats (admin-only, read from sync_meta)
+      let bitskinsStats = null;
+      try {
+        const rawBsStatus = await getSyncMeta(pool, "bitskins_fetcher_status");
+        if (rawBsStatus) {
+          const parsed = JSON.parse(rawBsStatus);
+          bitskinsStats = {
+            totalListingsStored: parsed.totalListingsStored ?? 0,
+            totalSalesStored: parsed.totalSalesStored ?? 0,
+            totalObservationsStored: parsed.totalObservationsStored ?? 0,
+            totalFloatsEnriched: parsed.totalFloatsEnriched ?? 0,
+            wsConnected: parsed.wsConnected ?? false,
+            lastSuccessAt: parsed.lastSuccessAt ?? null,
+            lastError: parsed.lastError ?? null,
+            cycleCount: parsed.cycleCount ?? 0,
+            updatedAt: parsed.updatedAt ?? null,
+          };
+        }
+      } catch { /* malformed JSON or no data */ }
+
       // Listing staleness stats
       let stalenessStats = null;
       try {
@@ -312,9 +332,9 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
-      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats, buffStats });
+      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats, buffStats, bitskinsStats });
     } catch (err) {
-      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null });
+      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null, bitskinsStats: null });
     }
   }));
 
