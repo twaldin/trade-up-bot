@@ -1,9 +1,19 @@
+import { Helmet } from "react-helmet-async";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
 export function FeaturesPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
+      <Helmet>
+        <title>Features — TradeUpBot CS2 Trade-Up Analyzer</title>
+        <meta name="description" content="Real marketplace listings, multi-market pricing, float calculations, profit analysis, and more. See how TradeUpBot finds profitable CS2 trade-up contracts." />
+        <link rel="canonical" href="https://tradeupbot.app/features" />
+        <meta property="og:title" content="Features — TradeUpBot CS2 Trade-Up Analyzer" />
+        <meta property="og:description" content="Real marketplace listings, multi-market pricing, float calculations, profit analysis, and more." />
+        <meta property="og:url" content="https://tradeupbot.app/features" />
+        <meta property="og:type" content="website" />
+      </Helmet>
       <SiteNav />
 
       <main className="pt-24 pb-16">
