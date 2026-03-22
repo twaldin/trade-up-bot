@@ -299,13 +299,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         totalProfitable = counts[type]?.profitable ?? 0;
       }
     } else {
-      // Extra filters: must COUNT from DB (accurate count for filtered results)
+      // Capped COUNT: stop scanning after 10,001 rows for filtered queries
       const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c, SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups t ${where}`,
+        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${where} LIMIT 10001) sub`,
         params
       );
       total = parseInt(countRow?.c) || 0;
-      totalProfitable = parseInt(countRow?.profitable) || 0;
+      totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
     }
 
     const rows = (await dataPromise).rows;
