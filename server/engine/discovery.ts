@@ -675,11 +675,17 @@ export async function randomExplore(
               await client.query("DELETE FROM trade_up_inputs WHERE trade_up_id = $1", [existing.id]);
               for (const input of bestSwapResult.inputs) {
                 await client.query(`
-                  INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
-                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                  INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 `, [existing.id, input.listing_id, input.skin_id, input.skin_name,
-                  input.collection_name, input.price_cents, input.float_value, input.condition]);
+                  input.collection_name, input.price_cents, input.float_value, input.condition, input.source ?? "csfloat"]);
               }
+              // Recompute input_sources after replacing inputs
+              await client.query(`
+                UPDATE trade_ups SET input_sources = COALESCE((
+                  SELECT ARRAY_AGG(DISTINCT source ORDER BY source) FROM trade_up_inputs WHERE trade_up_id = $1
+                ), '{}') WHERE id = $1
+              `, [existing.id]);
               await client.query('COMMIT');
             } catch (err) {
               await client.query('ROLLBACK');
@@ -782,22 +788,23 @@ export async function randomExplore(
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        const inputSources = [...new Set(result.inputs.map(i => i.source ?? "csfloat"))].sort();
         const { rows: infoRows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9, $10)
           RETURNING id
         `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes)
+          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes), inputSources
         ]);
         const tuId = infoRows[0].id;
         for (const input of result.inputs) {
           await client.query(`
-            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `, [tuId, input.listing_id, input.skin_id, input.skin_name,
-            input.collection_name, input.price_cents, input.float_value, input.condition]);
+            input.collection_name, input.price_cents, input.float_value, input.condition, input.source ?? "csfloat"]);
         }
         await client.query('COMMIT');
       } catch (err) {
