@@ -431,6 +431,29 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_claims_active ON trade_up_claims(trade_up_id) WHERE released_at IS NULL;
   `);
 
+  // Partial indexes for API hot path (active, non-theoretical trade-ups)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_tu_active_profit ON trade_ups(profit_cents DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_roi ON trade_ups(roi_percentage DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_chance ON trade_ups(chance_to_profit DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_cost ON trade_ups(total_cost_cents ASC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_ev ON trade_ups(expected_value_cents DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_created ON trade_ups(created_at DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_best ON trade_ups(best_case_cents DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_worst ON trade_ups(worst_case_cents DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_sources ON trade_ups USING GIN(input_sources)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tui_source ON trade_up_inputs(source);
+  `);
+
   // Unique index for price_observations dedup
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents);
