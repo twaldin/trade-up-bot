@@ -21,7 +21,9 @@ async function main() {
         FROM trade_up_inputs WHERE trade_up_id = trade_ups.id
       ), '{}')
       WHERE id IN (
-        SELECT id FROM trade_ups WHERE input_sources = '{}' LIMIT $1
+        SELECT id FROM trade_ups WHERE input_sources = '{}'
+          AND EXISTS (SELECT 1 FROM trade_up_inputs WHERE trade_up_id = trade_ups.id)
+          LIMIT $1
       )
     `, [BATCH]);
 
