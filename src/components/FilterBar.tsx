@@ -21,6 +21,7 @@ export interface Filters {
   maxChance: string;
   maxLoss: string;
   minWin: string;
+  markets: string[];
 }
 
 export const EMPTY_FILTERS: Filters = {
@@ -36,7 +37,13 @@ export const EMPTY_FILTERS: Filters = {
   maxChance: "",
   maxLoss: "",
   minWin: "",
+  markets: [],
 };
+
+const AVAILABLE_MARKETS = [
+  { value: "csfloat", label: "CSFloat" },
+  { value: "dmarket", label: "DMarket" },
+] as const;
 
 export function filtersToParams(f: Filters): URLSearchParams {
   const params = new URLSearchParams();
@@ -52,11 +59,12 @@ export function filtersToParams(f: Filters): URLSearchParams {
   if (f.maxChance) params.set("max_chance", f.maxChance);
   if (f.maxLoss) params.set("max_loss", String(Math.round(parseFloat(f.maxLoss) * 100)));
   if (f.minWin) params.set("min_win", String(Math.round(parseFloat(f.minWin) * 100)));
+  if (f.markets.length) params.set("markets", f.markets.join(","));
   return params;
 }
 
 export function hasActiveFilters(f: Filters): boolean {
-  return f.skins.length > 0 || f.collections.length > 0 ||
+  return f.markets.length > 0 || f.skins.length > 0 || f.collections.length > 0 ||
     !!(f.minProfit || f.maxProfit || f.minRoi || f.maxRoi ||
        f.minCost || f.maxCost || f.minChance || f.maxChance ||
        f.maxLoss || f.minWin);
@@ -207,6 +215,16 @@ export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate:
   for (const c of filters.collections) {
     chips.push({ label: `Collection: ${c}`, onRemove: () => onUpdate({ ...filters, collections: filters.collections.filter(x => x !== c) }) });
   }
+  if (filters.markets.length > 0) {
+    const labels = filters.markets.map(m => {
+      const found = AVAILABLE_MARKETS.find(am => am.value === m);
+      return found ? found.label : m;
+    });
+    chips.push({
+      label: `Markets: ${labels.join(", ")}`,
+      onRemove: () => onUpdate({ ...filters, markets: [] }),
+    });
+  }
   if (filters.minProfit || filters.maxProfit) {
     const lbl = `Profit: ${filters.minProfit ? `$${filters.minProfit}` : "any"} – ${filters.maxProfit ? `$${filters.maxProfit}` : "any"}`;
     chips.push({ label: lbl, onRemove: () => onUpdate({ ...filters, minProfit: "", maxProfit: "" }) });
@@ -309,6 +327,25 @@ export function FilterBar({ filters, onFiltersChange }: {
             onAdd={(c) => update({ collections: [...filters.collections, c] })}
             onRemove={(c) => update({ collections: filters.collections.filter(x => x !== c) })}
           />
+        </div>
+
+        <div className="flex gap-2.5 items-center shrink-0">
+          {AVAILABLE_MARKETS.map(m => (
+            <label key={m.value} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={filters.markets.includes(m.value)}
+                onChange={(e) => {
+                  const next = e.target.checked
+                    ? [...filters.markets, m.value]
+                    : filters.markets.filter(x => x !== m.value);
+                  update({ markets: next });
+                }}
+                className="rounded border-border"
+              />
+              {m.label}
+            </label>
+          ))}
         </div>
 
         <div className="flex gap-1.5 flex-wrap flex-1">

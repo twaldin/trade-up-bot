@@ -33,8 +33,11 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       const { rows: collections } = await pool.query(
         `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
       );
+      const { rows: marketRows } = await pool.query(
+        "SELECT source as name, COUNT(DISTINCT trade_up_id) as count FROM trade_up_inputs GROUP BY source ORDER BY count DESC"
+      );
 
-      const result = { skins: skinMap, collections };
+      const result = { skins: skinMap, collections, markets: marketRows };
 
       const { cacheSet } = await import("../redis.js");
       await cacheSet("filter_opts", result, 600).catch(() => {});
@@ -42,7 +45,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       res.setHeader("X-Cache", "MISS");
       res.json(result);
     } catch {
-      res.json({ skins: [], collections: [] });
+      res.json({ skins: [], collections: [], markets: [] });
     }
   });
 
@@ -71,6 +74,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       max_loss,
       min_win,
       my_claims,
+      markets,
     } = req.query as Record<string, string>;
 
     // Internal API bypass: bot/daemon calls with INTERNAL_API_TOKEN get pro-level access
@@ -92,7 +96,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    const params: (string | number)[] = [];
+    const params: (string | number | string[])[] = [];
     let paramIndex = 1;
     if (includeStale) {
       where = `WHERE t.is_theoretical = false AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
@@ -139,6 +143,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     } else if (type) {
       where += ` AND t.type = $${paramIndex++}`;
       params.push(type);
+    }
+
+    // Market filter: input_sources must be subset of selected markets
+    if (markets) {
+      const marketList = (markets as string).split(",").map(m => m.trim()).filter(Boolean);
+      if (marketList.length > 0) {
+        where += ` AND t.input_sources <@ $${paramIndex++}::text[]`;
+        params.push(marketList);
+      }
     }
 
     if (min_profit) {
@@ -240,7 +253,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Fast path: for default queries (type filter only, no extra filters), use Redis-cached
     // counts per type. The daemon pre-populates these every cycle. Avoids COUNT on 300K-664K rows.
     const hasExtraFilters = !!(min_profit || max_profit || min_roi || max_roi || max_cost || min_cost ||
-      min_chance || max_chance || max_outcomes || skin || collection || max_loss || min_win || my_claims === "true");
+      min_chance || max_chance || max_outcomes || skin || collection || max_loss || min_win || my_claims === "true" || markets);
 
     const limitParam = paramIndex++;
     const offsetParam = paramIndex++;
@@ -286,13 +299,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         totalProfitable = counts[type]?.profitable ?? 0;
       }
     } else {
-      // Extra filters: must COUNT from DB (accurate count for filtered results)
+      // Capped COUNT: stop scanning after 10,001 rows for filtered queries
       const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c, SUM(CASE WHEN t.profit_cents > 0 THEN 1 ELSE 0 END) as profitable FROM trade_ups t ${where}`,
+        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${where} LIMIT 10001) sub`,
         params
       );
       total = parseInt(countRow?.c) || 0;
-      totalProfitable = parseInt(countRow?.profitable) || 0;
+      totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
     }
 
     const rows = (await dataPromise).rows;

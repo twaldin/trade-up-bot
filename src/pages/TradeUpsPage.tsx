@@ -76,6 +76,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     if (searchParams.get("max_chance")) f.maxChance = searchParams.get("max_chance")!;
     if (searchParams.get("max_loss")) f.maxLoss = String(parseInt(searchParams.get("max_loss")!) / 100);
     if (searchParams.get("min_win")) f.minWin = String(parseInt(searchParams.get("min_win")!) / 100);
+    const marketsParam = searchParams.get("markets");
+    if (marketsParam) f.markets = marketsParam.split(",");
     return f;
   });
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -242,7 +244,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <div className="flex items-center gap-2 flex-wrap mb-1.5 min-h-[20px]">
         {total > 0 && (
           <span className={`text-xs text-muted-foreground whitespace-nowrap ${loading ? "opacity-50" : ""}`}>
-            {total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}
+            {total >= 10001 ? "10,000+" : total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}
           </span>
         )}
         {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
