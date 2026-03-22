@@ -106,5 +106,50 @@ describe("market filter", () => {
       );
       expect(rows[0].input_sources.sort()).toEqual(["csfloat", "dmarket"]);
     });
+
+    it("input_sources is recomputed after manual input replacement", async () => {
+      // Create trade-up with csfloat-only inputs
+      const tu = makeMarketTradeUp(["csfloat", "csfloat", "csfloat"]);
+      for (const inp of tu.inputs) {
+        await ctx.pool.query(
+          "INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+          [inp.listing_id, inp.skin_id, inp.price_cents, inp.float_value, inp.source]
+        );
+      }
+      await saveTradeUps(ctx.pool, [tu], false, "classified_covert", false, "discovery");
+
+      const { rows: [saved] } = await ctx.pool.query(
+        "SELECT id, input_sources FROM trade_ups ORDER BY id DESC LIMIT 1"
+      );
+      expect(saved.input_sources).toEqual(["csfloat"]);
+
+      // Replace inputs with mixed sources (simulating what db-revive does)
+      await ctx.pool.query("DELETE FROM trade_up_inputs WHERE trade_up_id = $1", [saved.id]);
+      const newSources = ["dmarket", "dmarket", "csfloat"];
+      for (let i = 0; i < newSources.length; i++) {
+        const lid = `revival-${Date.now()}-${Math.random().toString(36).slice(2)}-${i}`;
+        await ctx.pool.query(
+          "INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+          [lid, "skin-classified-1", 1000, 0.15, newSources[i]]
+        );
+        await ctx.pool.query(
+          "INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          [saved.id, lid, "skin-classified-1", "AK-47 | Test Skin", "Test Collection Alpha", 1000, 0.15, "Field-Tested", newSources[i]]
+        );
+      }
+
+      // After replacing inputs, recompute (this is what db-revive will do)
+      await ctx.pool.query(`
+        UPDATE trade_ups SET input_sources = COALESCE((
+          SELECT ARRAY_AGG(DISTINCT source ORDER BY source) FROM trade_up_inputs WHERE trade_up_id = $1
+        ), '{}') WHERE id = $1
+      `, [saved.id]);
+
+      const { rows: [stale] } = await ctx.pool.query(
+        "SELECT input_sources FROM trade_ups WHERE id = $1", [saved.id]
+      );
+      // This will FAIL until we add the recomputation to db-revive
+      expect(stale.input_sources.sort()).toEqual(["csfloat", "dmarket"]);
+    });
   });
 });
