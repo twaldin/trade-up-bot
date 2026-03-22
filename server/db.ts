@@ -130,6 +130,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       previous_inputs TEXT,
       outcomes_json TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      ,input_sources TEXT[] NOT NULL DEFAULT '{}'
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (
@@ -376,6 +377,11 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   `);
 
   } // end if (!tablesExist)
+
+  // Migrations for existing databases
+  await pool.query(`
+    ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS input_sources TEXT[] NOT NULL DEFAULT '{}';
+  `);
 
   // Create indexes
   await pool.query(`
