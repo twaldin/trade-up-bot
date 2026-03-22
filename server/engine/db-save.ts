@@ -64,10 +64,11 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
       for (const tu of tradeUps) {
         const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
         const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+        const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
 
         const { rows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           RETURNING id
         `, [
           tu.total_cost_cents,
@@ -80,7 +81,8 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
           worstCase,
           isTheoretical,
           source,
-          JSON.stringify(tu.outcomes)
+          JSON.stringify(tu.outcomes),
+          inputSources
         ]);
         const tradeUpId = rows[0].id;
 
