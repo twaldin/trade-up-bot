@@ -51,7 +51,9 @@ export async function seedPriceObservations(pool: pg.Pool): Promise<number> {
 
   const sales = await pool.query(`
     INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-    SELECT skin_name, float_value, price_cents, 'sale', sold_at
+    SELECT skin_name, float_value, price_cents,
+      CASE WHEN source = 'buff' THEN 'buff_sale' ELSE 'sale' END,
+      sold_at
     FROM sale_history WHERE float_value > 0 AND price_cents > 0
     ON CONFLICT DO NOTHING
   `);
