@@ -204,9 +204,9 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
               <DataViewer
                 key={`${collectionName}-${skinRarity}`}
                 onNavigateCollection={onNavigateCollection}
-                collectionFilter={skinRarity === "knife_glove" ? undefined : collectionName}
+                collectionFilter={collectionName}
                 outputCollection={skinRarity === "knife_glove" ? collectionName : undefined}
-                initialRarity={skinRarity === "all" || skinRarity === "knife_glove" ? "" : skinRarity}
+                initialRarity={skinRarity === "all" ? "" : skinRarity === "knife_glove" ? "knife_glove" : skinRarity}
               />
             </>
           )}

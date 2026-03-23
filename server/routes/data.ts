@@ -74,6 +74,10 @@ export function dataRouter(
           outputWeaponFilter = `AND s.name LIKE '★%' AND (${weaponPlaceholders}) ${finishFilter}`;
           rarityFilter = ""; // override rarity filter for output skins
         }
+      } else {
+        console.warn(`outputCollection "${outputCollection}" not found in collectionKnifePool`);
+        res.json([]);
+        return;
       }
     }
 
@@ -125,13 +129,66 @@ export function dataRouter(
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `, params);
 
+    // Merge knives from collection's case pool into "all" tab
+    let allSkins = skins;
+    if (collection && (!rarity || rarity === "all" || rarity === "")) {
+      const poolData = collectionKnifePool.get(collection);
+      if (poolData) {
+        const weapons = [...poolData.knifeTypes, ...poolData.gloveTypes];
+        if (weapons.length > 0) {
+          // Build a separate knife query
+          const knifeParams: (string | number | boolean)[] = [stattrak, stattrak, stattrak];
+          let kpi = 4;
+          const weaponPlaceholders = weapons.map((_, i) => `s.weapon = $${kpi + i}`).join(" OR ");
+          knifeParams.push(...weapons);
+          kpi += weapons.length;
+
+          const finishes = [...poolData.knifeFinishes, ...poolData.gloveFinishes].filter(f => f !== "Vanilla");
+          const hasVanilla = poolData.knifeFinishes.includes("Vanilla");
+          let finishFilter = "";
+          if (finishes.length > 0) {
+            const fp = finishes.map((_, i) => `$${kpi + i}`).join(",");
+            knifeParams.push(...finishes);
+            kpi += finishes.length;
+            finishFilter = hasVanilla
+              ? `AND (split_part(s.name, ' | ', 2) IN (${fp}) OR s.name NOT LIKE '%|%')`
+              : `AND split_part(s.name, ' | ', 2) IN (${fp})`;
+          } else if (hasVanilla) {
+            finishFilter = `AND s.name NOT LIKE '%|%'`;
+          }
+
+          const { rows: knifeSkins } = await pool.query(`
+            SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, $1::boolean as stattrak,
+              STRING_AGG(DISTINCT c.name, ',') as collection_names,
+              COUNT(DISTINCT l.id) as listing_count,
+              MIN(l.price_cents) as min_price,
+              ROUND(AVG(l.price_cents)) as avg_price,
+              MAX(l.price_cents) as max_price,
+              MIN(l.float_value) as min_float_seen,
+              MAX(l.float_value) as max_float_seen
+            FROM skins s
+            LEFT JOIN skin_collections sc ON s.id = sc.skin_id
+            LEFT JOIN collections c ON sc.collection_id = c.id
+            LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = $2::boolean
+            WHERE s.stattrak = $3::boolean AND s.name LIKE '★%'
+              AND (${weaponPlaceholders}) ${finishFilter}
+            GROUP BY s.name, s.rarity, s.weapon, s.min_float, s.max_float
+            ORDER BY listing_count DESC
+          `, knifeParams);
+
+          // Knives first, then regular skins
+          allSkins = [...knifeSkins, ...skins];
+        }
+      }
+    }
+
     // Batch load price_data + sale counts in parallel (was sequential)
-    const skinNames = skins.map((s: any) => s.name);
+    const skinNames = allSkins.map((s: { name: string }) => s.name);
     const priceMap = new Map<string, Record<string, Record<string, number>>>();
     const saleCountMap = new Map<string, number>();
     if (skinNames.length > 0) {
-      const placeholders = skinNames.map((_: any, i: number) => `$${i + 1}`).join(",");
-      const ph2 = skinNames.map((_: any, i: number) => `$${skinNames.length + i + 1}`).join(",");
+      const placeholders = skinNames.map((_: string, i: number) => `$${i + 1}`).join(",");
+      const ph2 = skinNames.map((_: string, i: number) => `$${skinNames.length + i + 1}`).join(",");
       const [{ rows: allPrices }, { rows: saleCounts }] = await Promise.all([
         pool.query(`
           SELECT skin_name, source, condition, avg_price_cents
@@ -154,7 +211,7 @@ export function dataRouter(
       for (const r of saleCounts) saleCountMap.set(r.skin_name, parseInt(r.cnt));
     }
 
-    const result = skins.map((s: any) => {
+    const result = allSkins.map((s: { name: string; collection_names: string; weapon: string; listing_count: string }) => {
       let collectionName = s.collection_names;
       if (!collectionName && s.name.startsWith("★")) {
         const weapon = s.weapon || s.name.replace(/^★\s*/, "").split(" | ")[0];
