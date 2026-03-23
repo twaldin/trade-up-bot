@@ -375,6 +375,28 @@ async function getFloatCeiling(
 }
 
 /**
+ * Cross-condition monotonicity guard: clamp grossPrice if it exceeds
+ * the next better condition's price. BS should never cost more than WW, etc.
+ * Returns the clamped price, or grossPrice unchanged if no clamping needed.
+ */
+export function applyMonotonicityGuard(
+  grossPrice: number,
+  skinName: string,
+  predictedFloat: number
+): number {
+  const condition = floatToCondition(predictedFloat);
+  const condIdx = CONDITION_BOUNDS.findIndex(c => c.name === condition);
+  if (condIdx <= 0) return grossPrice; // FN or not found — no better condition
+
+  const betterCondition = CONDITION_BOUNDS[condIdx - 1].name;
+  const betterPrice = priceCache.get(`${skinName}:${betterCondition}`);
+  if (betterPrice && betterPrice > 0 && grossPrice > betterPrice) {
+    return betterPrice;
+  }
+  return grossPrice;
+}
+
+/**
  * Look up best output price across all marketplaces.
  * Architecture: KNN-primary for all skins → condition-level fallback → float ceiling guard rail.
  * Vanilla knives (no finish): listing floor / recent sale floor.
@@ -414,6 +436,10 @@ export async function lookupOutputPrice(
   }
 
   if (grossPrice <= 0) return zeroResult;
+
+  // 2b. Cross-condition monotonicity guard: worse condition should never
+  // exceed better condition's price (catches sticker-inflated KNN results)
+  grossPrice = applyMonotonicityGuard(grossPrice, skinName, predictedFloat);
 
   // 3. Apply float-monotonicity ceiling from listings + sales at equal-or-lower floats
   const ceiling = await getFloatCeiling(pool, skinName, predictedFloat);
