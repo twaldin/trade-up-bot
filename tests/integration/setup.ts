@@ -12,6 +12,9 @@ import type { Request, Response, NextFunction } from "express";
 import pg from "pg";
 import { claimsRouter } from "../../server/routes/claims.js";
 import { tradeUpsRouter } from "../../server/routes/trade-ups.js";
+import { dataRouter } from "../../server/routes/data.js";
+import { statusRouter } from "../../server/routes/status.js";
+import { collectionsRouter } from "../../server/routes/collections.js";
 import type { User } from "../../server/auth.js";
 
 const { Pool } = pg;
@@ -165,6 +168,25 @@ async function createSchema(bootstrapPool: pg.Pool) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents);
 
+    CREATE TABLE IF NOT EXISTS sale_history (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      skin_name TEXT NOT NULL,
+      condition TEXT NOT NULL DEFAULT '',
+      price_cents INTEGER NOT NULL,
+      float_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+      sold_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS float_price_data (
+      skin_name TEXT NOT NULL,
+      float_min DOUBLE PRECISION NOT NULL,
+      float_max DOUBLE PRECISION NOT NULL,
+      avg_price_cents INTEGER NOT NULL DEFAULT 0,
+      listing_count INTEGER NOT NULL DEFAULT 0,
+      last_checked TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (skin_name, float_min, float_max)
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       steam_id TEXT PRIMARY KEY,
       display_name TEXT,
@@ -245,12 +267,28 @@ export async function seedTestData(pool: pg.Pool, opts: SeedOptions = {}) {
   await pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
     ["skin-covert-1", "AK-47 | Fire Serpent", "AK-47", "Covert", 0.0, 1.0]);
 
+  // Knife skins (not in skin_collections — mapped via CASE_KNIFE_MAP)
+  await pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+    ["skin-knife-1", "★ Bayonet | Fade", "Bayonet", "Covert", 0.0, 0.08]);
+  await pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+    ["skin-knife-2", "★ Flip Knife | Doppler", "Flip Knife", "Covert", 0.0, 0.08]);
+  await pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+    ["skin-knife-3", "★ Karambit | Fade", "Karambit", "Covert", 0.0, 0.08]);
+
   await pool.query(`INSERT INTO skin_collections (skin_id, collection_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     ["skin-classified-1", "col-test-1"]);
   await pool.query(`INSERT INTO skin_collections (skin_id, collection_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     ["skin-classified-2", "col-test-2"]);
   await pool.query(`INSERT INTO skin_collections (skin_id, collection_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     ["skin-covert-1", "col-test-1"]);
+
+  // Knife listings
+  await pool.query(`INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+    ["listing-knife-1", "skin-knife-1", 50000, 0.01, "csfloat"]);
+  await pool.query(`INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+    ["listing-knife-2", "skin-knife-2", 30000, 0.03, "csfloat"]);
+  await pool.query(`INSERT INTO listings (id, skin_id, price_cents, float_value, source) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+    ["listing-knife-3", "skin-knife-3", 80000, 0.02, "csfloat"]);
 
   const inputCount = type === "covert_knife" ? 5 : 10;
   let tuId = 0;
@@ -469,4 +507,57 @@ export async function createOverlappingTradeUps(pool: pg.Pool, type = "covert_kn
   }
 
   return { tuIdA, tuIdB, sharedListingIds };
+}
+
+// ─── Expanded Test App ────────────────────────────────────────────────────
+// Mounts status + collections + data routers alongside the base claims + trade-ups.
+
+export async function createExpandedApp(opts: TestAppOptions = {}): Promise<TestContext> {
+  const ctx = await createTestApp(opts);
+
+  // Additional tables needed by status/collections routers
+  await ctx.pool.query(`
+    CREATE TABLE IF NOT EXISTS collection_scores (
+      collection_id TEXT PRIMARY KEY, collection_name TEXT NOT NULL,
+      profitable_count INTEGER NOT NULL DEFAULT 0,
+      avg_profit_cents INTEGER NOT NULL DEFAULT 0,
+      priority_score DOUBLE PRECISION NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS daemon_cycle_stats (
+      id SERIAL PRIMARY KEY, daemon_version TEXT, cycle INTEGER,
+      started_at TIMESTAMPTZ, duration_ms INTEGER, api_calls_used INTEGER,
+      api_limit_detected INTEGER, api_available INTEGER,
+      knife_tradeups_total INTEGER, knife_profitable INTEGER,
+      theories_generated INTEGER, theories_profitable INTEGER, gaps_filled INTEGER,
+      cooldown_passes INTEGER, cooldown_new_found INTEGER, cooldown_improved INTEGER,
+      top_profit_cents INTEGER, avg_profit_cents INTEGER,
+      classified_total INTEGER DEFAULT 0, classified_profitable INTEGER DEFAULT 0,
+      classified_theories INTEGER DEFAULT 0, classified_theories_profitable INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS daemon_events (
+      id SERIAL PRIMARY KEY, event_type TEXT NOT NULL,
+      summary TEXT, detail TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // Test knife pool: "Test Collection Alpha" has Bayonet + Flip Knife
+  const collectionKnifePool = new Map([
+    ["Test Collection Alpha", {
+      knifeTypes: ["Bayonet", "Flip Knife"],
+      gloveTypes: [],
+      knifeFinishes: ["Fade", "Doppler", "Vanilla"],
+      gloveFinishes: [],
+      finishCount: 3,
+    }],
+  ]);
+  const knifeTypeToCases = new Map([
+    ["Bayonet", ["Test Collection Alpha"]],
+    ["Flip Knife", ["Test Collection Alpha"]],
+  ]);
+
+  ctx.app.use(statusRouter(ctx.pool));
+  ctx.app.use(collectionsRouter(ctx.pool, collectionKnifePool));
+  ctx.app.use(dataRouter(ctx.pool, knifeTypeToCases, collectionKnifePool));
+
+  return ctx;
 }
