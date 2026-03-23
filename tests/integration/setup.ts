@@ -15,6 +15,7 @@ import { tradeUpsRouter } from "../../server/routes/trade-ups.js";
 import { dataRouter } from "../../server/routes/data.js";
 import { statusRouter } from "../../server/routes/status.js";
 import { collectionsRouter } from "../../server/routes/collections.js";
+import myTradeUpsRouter from "../../server/routes/my-trade-ups.js";
 import type { User } from "../../server/auth.js";
 
 const { Pool } = pg;
@@ -466,6 +467,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestCont
   // Mount routers
   app.use(claimsRouter(pool));
   app.use(tradeUpsRouter(pool));
+  app.use(myTradeUpsRouter(pool));
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

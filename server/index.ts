@@ -17,6 +17,7 @@ import { calculatorRouter } from "./routes/calculator.js";
 import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
+import myTradeUpsRouter from "./routes/my-trade-ups.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -126,6 +127,7 @@ app.use((req, res, next) => {
   app.use(snapshotsRouter(pool));
   app.use(calculatorRouter(pool));
   app.use(claimsRouter(pool));
+  app.use(myTradeUpsRouter(pool));
   app.use(stripeRouter(pool));
   app.use(discordRouter(pool));
 
