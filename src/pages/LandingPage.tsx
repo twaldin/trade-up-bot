@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { DemoAnimation } from '../components/DemoAnimation.js';
+import { DemoAnimationMobile } from '../components/DemoAnimationMobile.js';
 import { SiteNav } from '../components/SiteNav.js';
 import { blogPosts } from '../data/blog-posts.js';
 
@@ -155,7 +156,12 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             )}
 
             {/* Interactive Demo */}
-            <DemoAnimation />
+            <div className="hidden md:block">
+              <DemoAnimation />
+            </div>
+            <div className="md:hidden">
+              <DemoAnimationMobile />
+            </div>
           </div>
         </section>
 
