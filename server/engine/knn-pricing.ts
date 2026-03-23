@@ -237,6 +237,33 @@ const KNN_MAX_FLOAT_DIST = 0.04;
 const KNN_MAX_NEAREST_DIST = 0.012;
 
 /**
+ * Compute MAD-based clamping bounds for a set of prices.
+ * Returns { upper, lower } thresholds. Prices outside these bounds
+ * should be clamped (not removed) to preserve neighbor count.
+ *
+ * If MAD = 0 (all prices identical), returns null (no clamping needed).
+ * Uses 1.4826 normalization constant (MAD → σ for normal distributions).
+ */
+export function computeMADClampBounds(
+  prices: number[]
+): { upper: number; lower: number } | null {
+  if (prices.length === 0) return null;
+  const sorted = [...prices].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  const deviations = prices.map(p => Math.abs(p - median)).sort((a, b) => a - b);
+  const mad = deviations[Math.floor(deviations.length / 2)];
+
+  if (mad === 0) return null; // All identical — no outliers possible
+
+  const scale = 3 * mad * 1.4826;
+  return {
+    upper: median + scale,
+    lower: Math.max(0, median - scale),
+  };
+}
+
+/**
  * KNN price lookup with Gaussian kernel weighting and linear interpolation fallback.
  *
  * 3-tier pricing chain:
