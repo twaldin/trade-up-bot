@@ -3,6 +3,7 @@ import pg from "pg";
 import { requireTier, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
 import { cascadeTradeUpStatuses, deleteListings } from "../engine.js";
+import { buildSnapshot } from "../build-snapshot.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
@@ -255,6 +256,25 @@ export function claimsRouter(pool: pg.Pool): Router {
     // Verify input listings still exist in DB (fast, no API calls) — outside transaction
     const verification = await verifyInputs(tradeUpId);
 
+    // Attempt full external verify (best-effort — falls back to DB-presence check above)
+    let fullVerifyResults: { listing_id: string; status: string; current_price?: number }[] | null = null;
+    const apiKey = process.env.CSFLOAT_API_KEY;
+    if (apiKey && verification.status === "all_active") {
+      try {
+        const { verifyTradeUpListings } = await import("../verify-listings.js");
+        fullVerifyResults = await verifyTradeUpListings(pool, tradeUpId, apiKey);
+
+        // If full verify shows all gone, reject
+        const activeCount = fullVerifyResults.filter(r => r.status === "active").length;
+        if (activeCount === 0) {
+          res.status(400).json({ error: "All listings are stale — cannot claim" });
+          return;
+        }
+      } catch {
+        // Full verify failed — proceed with DB-presence check (already passed)
+      }
+    }
+
     // All claim checks + insert happen inside a single transaction with FOR UPDATE
     // to serialize concurrent claims on the same trade-up.
     const expiresAt = new Date(Date.now() + CLAIM_DURATION_MINUTES * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
@@ -457,6 +477,21 @@ export function claimsRouter(pool: pg.Pool): Router {
     try {
       await client.query('BEGIN');
 
+      // Load full trade-up data for snapshot
+      const { rows: [tuData] } = await client.query(
+        "SELECT total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, best_case_cents, worst_case_cents, type, outcomes_json FROM trade_ups WHERE id = $1",
+        [tradeUpId]
+      );
+
+      // Load full inputs (with all fields needed for snapshot)
+      const { rows: fullInputs } = await client.query(
+        "SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source FROM trade_up_inputs WHERE trade_up_id = $1",
+        [tradeUpId]
+      );
+
+      // Parse outcomes from JSON
+      const outcomes = tuData?.outcomes_json ? JSON.parse(tuData.outcomes_json) : [];
+
       // Delete confirmed listings (auto-correct treats as missing on next read)
       for (const id of confirmed) {
         await client.query("DELETE FROM listings WHERE id = $1", [id]);
@@ -484,6 +519,41 @@ export function claimsRouter(pool: pg.Pool): Router {
         );
       }
       // Partial confirm: auto-correct handles status on next read
+
+      // Snapshot into user_trade_ups (inside transaction)
+      if (tuData && confirmed.length > 0) {
+        const snapshot = buildSnapshot(fullInputs, outcomes, {
+          trade_up_id: tradeUpId,
+          total_cost_cents: tuData.total_cost_cents,
+          expected_value_cents: tuData.expected_value_cents,
+          roi_percentage: tuData.roi_percentage,
+          chance_to_profit: tuData.chance_to_profit,
+          best_case_cents: tuData.best_case_cents,
+          worst_case_cents: tuData.worst_case_cents,
+          type: tuData.type,
+        }, confirmed);
+
+        await client.query(`
+          INSERT INTO user_trade_ups (user_id, trade_up_id, status, snapshot_inputs, snapshot_outcomes, total_cost_cents, expected_value_cents, roi_percentage, chance_to_profit, best_case_cents, worst_case_cents, type)
+          VALUES ($1, $2, 'purchased', $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ON CONFLICT (user_id, trade_up_id) DO UPDATE SET
+            status = 'purchased', purchased_at = NOW(),
+            snapshot_inputs = EXCLUDED.snapshot_inputs, snapshot_outcomes = EXCLUDED.snapshot_outcomes,
+            total_cost_cents = EXCLUDED.total_cost_cents, expected_value_cents = EXCLUDED.expected_value_cents,
+            roi_percentage = EXCLUDED.roi_percentage, chance_to_profit = EXCLUDED.chance_to_profit,
+            best_case_cents = EXCLUDED.best_case_cents, worst_case_cents = EXCLUDED.worst_case_cents,
+            type = EXCLUDED.type,
+            executed_at = NULL, sold_at = NULL,
+            outcome_skin_id = NULL, outcome_skin_name = NULL, outcome_condition = NULL, outcome_float = NULL,
+            sold_price_cents = NULL, sold_marketplace = NULL, actual_profit_cents = NULL
+        `, [
+          userId, tradeUpId,
+          JSON.stringify(snapshot.snapshot_inputs), JSON.stringify(snapshot.snapshot_outcomes),
+          snapshot.total_cost_cents, snapshot.expected_value_cents,
+          snapshot.roi_percentage, snapshot.chance_to_profit,
+          snapshot.best_case_cents, snapshot.worst_case_cents, snapshot.type,
+        ]);
+      }
 
       await client.query('COMMIT');
     } catch (err) {

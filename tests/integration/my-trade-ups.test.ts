@@ -258,6 +258,85 @@ describe("My Trade-Ups", () => {
     expect(rows.length).toBe(0);
   });
 
+  // ── Confirm creates user_trade_up snapshot ─────────────────────────────
+
+  describe("Confirm creates user_trade_up snapshot", () => {
+    it("creates user_trade_ups entry on confirm", async () => {
+      const claimRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/claim`)
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(claimRes.status).toBe(200);
+
+      const { rows: inputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [profitableId]
+      );
+      const listingIds = inputs.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+
+      const confirmRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/confirm`)
+        .send({ listing_ids: listingIds })
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(confirmRes.status).toBe(200);
+
+      const { rows } = await ctx.pool.query(
+        "SELECT * FROM user_trade_ups WHERE user_id = $1 AND trade_up_id = $2",
+        ["user_pro", profitableId]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe("purchased");
+      expect(rows[0].snapshot_inputs).toHaveLength(listingIds.length);
+      expect(rows[0].snapshot_outcomes.length).toBeGreaterThan(0);
+      expect(rows[0].total_cost_cents).toBeGreaterThan(0);
+      expect(rows[0].type).toBeDefined();
+    });
+
+    it("partial confirm snapshots only confirmed listings", async () => {
+      const claimRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/claim`)
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(claimRes.status).toBe(200);
+
+      const { rows: inputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [profitableId]
+      );
+      const allIds = inputs.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+      const partialIds = allIds.slice(0, 2);
+
+      const confirmRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/confirm`)
+        .send({ listing_ids: partialIds })
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(confirmRes.status).toBe(200);
+
+      const { rows } = await ctx.pool.query(
+        "SELECT * FROM user_trade_ups WHERE user_id = $1 AND trade_up_id = $2",
+        ["user_pro", profitableId]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].snapshot_inputs).toHaveLength(2);
+    });
+  });
+
+  // ── Claim with auto-verify ───────────────────────────────────────────
+
+  describe("Claim with auto-verify", () => {
+    it("claim still succeeds for active trade-ups (DB-presence verify)", async () => {
+      const res = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/claim`)
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(res.status).toBe(200);
+      expect(res.body.claim).toBeDefined();
+      expect(res.body.verification).toBeDefined();
+    });
+  });
+
   // ── GET /api/my-trade-ups/stats ────────────────────────────────────────
 
   it("GET stats returns zeros when no sold entries", async () => {
