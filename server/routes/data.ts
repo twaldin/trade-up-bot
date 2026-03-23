@@ -253,11 +253,13 @@ export function dataRouter(
       `, [skinName]),
       // 3: Sale history (UNION deduplicates — same CSFloat sales exist in both tables)
       pool.query(`
-        SELECT price_cents, float_value, sold_at FROM sale_history
+        SELECT price_cents, float_value, sold_at,
+          CASE WHEN source = 'buff' THEN 'buff_sale' ELSE source END as source
+        FROM sale_history
         WHERE skin_name = $1 AND price_cents > 0
         UNION
-        SELECT price_cents, float_value, observed_at as sold_at FROM price_observations
-        WHERE skin_name = $1 AND source IN ('sale', 'listing', 'listing_dmarket', 'listing_skinport') AND price_cents > 0
+        SELECT price_cents, float_value, observed_at as sold_at, source FROM price_observations
+        WHERE skin_name = $1 AND source IN ('sale', 'skinport_sale', 'buff_sale', 'listing', 'listing_dmarket', 'listing_skinport') AND price_cents > 0
         ORDER BY sold_at DESC LIMIT 300
       `, [skinName]),
       // 4: Skin metadata
@@ -270,7 +272,7 @@ export function dataRouter(
       // 5: Total sale count
       pool.query(`
         SELECT (SELECT COUNT(*) FROM sale_history WHERE skin_name = $1)
-             + (SELECT COUNT(*) FROM price_observations WHERE skin_name = $1 AND source = 'sale') as cnt
+             + (SELECT COUNT(*) FROM price_observations WHERE skin_name = $1 AND source IN ('sale', 'skinport_sale', 'buff_sale')) as cnt
       `, [skinName]),
     ];
 
