@@ -5,6 +5,7 @@
 
 import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "../../server/engine/types.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
+import type { UserTradeUp, SnapshotInput, SnapshotOutcome } from "../../shared/my-trade-ups-types.js";
 
 export function makeListing(overrides: Partial<ListingWithCollection> = {}): ListingWithCollection {
   return {
@@ -128,5 +129,41 @@ export function makeObservation(overrides: {
     price: overrides.price ?? 5000,
     source: overrides.source ?? "sale",
     ageDays: overrides.ageDays ?? 1,
+  };
+}
+
+export function makeUserTradeUp(overrides: Partial<UserTradeUp> = {}): UserTradeUp {
+  const inputs: SnapshotInput[] = [
+    { skin_name: "AK-47 | Redline", collection_name: "Test Collection", price_cents: 500, float_value: 0.15, condition: "Field-Tested", source: "csfloat", stattrak: false },
+  ];
+  const outcomes: SnapshotOutcome[] = [
+    { skin_name: "AK-47 | Fire Serpent", skin_id: "out-1", probability: 1.0, price_cents: 10000, condition: "Field-Tested", predicted_float: 0.15 },
+  ];
+
+  return {
+    id: 1,
+    user_id: "user_pro",
+    trade_up_id: 1,
+    status: "purchased",
+    snapshot_inputs: inputs,
+    snapshot_outcomes: outcomes,
+    total_cost_cents: 2500,
+    expected_value_cents: 10000,
+    roi_percentage: 300,
+    chance_to_profit: 1.0,
+    best_case_cents: 7500,
+    worst_case_cents: 7500,
+    type: "classified_covert",
+    purchased_at: new Date().toISOString(),
+    executed_at: null,
+    sold_at: null,
+    outcome_skin_id: null,
+    outcome_skin_name: null,
+    outcome_condition: null,
+    outcome_float: null,
+    sold_price_cents: null,
+    sold_marketplace: null,
+    actual_profit_cents: null,
+    ...overrides,
   };
 }
