@@ -139,12 +139,12 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           {([
             { value: "all", label: "All", color: "" },
+            { value: "knife_glove", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
             { value: "Covert", label: "Covert", color: "border-red-500/40 bg-red-500/10 text-red-500" },
             { value: "Classified", label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
             { value: "Restricted", label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
             { value: "Mil-Spec", label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
             { value: "Industrial Grade", label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
-            { value: "knife_glove", label: "Knife/Glove", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
           ]).map(t => (
             <button
               key={t.value}
