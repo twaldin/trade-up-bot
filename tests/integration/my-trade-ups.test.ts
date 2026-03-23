@@ -350,6 +350,75 @@ describe("My Trade-Ups", () => {
     expect(res.body.avg_roi).toBe(0);
   });
 
+  // ── Full lifecycle: claim → confirm → execute → sell ───────────────────
+
+  describe("Full lifecycle: claim → confirm → execute → sell", () => {
+    it("completes the full lifecycle and writes price observation", async () => {
+      // 1. Claim
+      const claimRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/claim`)
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(claimRes.status).toBe(200);
+
+      // 2. Confirm (all listings)
+      const { rows: inputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [profitableId]
+      );
+      const listingIds = inputs.map((r: { listing_id: string }) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+
+      const confirmRes = await request(ctx.app)
+        .post(`/api/trade-ups/${profitableId}/confirm`)
+        .send({ listing_ids: listingIds })
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(confirmRes.status).toBe(200);
+
+      // 3. Find the user_trade_up
+      const { rows: [ut] } = await ctx.pool.query(
+        "SELECT * FROM user_trade_ups WHERE user_id = $1 AND trade_up_id = $2",
+        ["user_pro", profitableId]
+      );
+      expect(ut.status).toBe("purchased");
+
+      // 4. Execute (pick first outcome)
+      const execRes = await request(ctx.app)
+        .post(`/api/my-trade-ups/${ut.id}/execute`)
+        .send({ outcome_index: 0 })
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(execRes.status).toBe(200);
+      expect(execRes.body.status).toBe("executed");
+
+      // 5. Sell
+      const sellRes = await request(ctx.app)
+        .post(`/api/my-trade-ups/${ut.id}/sell`)
+        .send({ price_cents: 15000, marketplace: "csfloat" })
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(sellRes.status).toBe(200);
+      expect(sellRes.body.status).toBe("sold");
+      expect(sellRes.body.actual_profit_cents).toBe(15000 - ut.total_cost_cents);
+
+      // 6. Verify price observation
+      const { rows: obs } = await ctx.pool.query(
+        "SELECT * FROM price_observations WHERE source = 'user_report'"
+      );
+      expect(obs.length).toBeGreaterThanOrEqual(1);
+
+      // 7. Verify stats
+      const statsRes = await request(ctx.app)
+        .get("/api/my-trade-ups/stats")
+        .set("X-Test-User-Id", "user_pro")
+        .set("X-Test-User-Tier", "pro");
+      expect(statsRes.status).toBe(200);
+      expect(statsRes.body.total_sold).toBe(1);
+      expect(statsRes.body.win_count).toBe(1);
+      expect(statsRes.body.all_time_profit_cents).toBe(15000 - ut.total_cost_cents);
+    });
+  });
+
   it("GET stats computes correctly from sold entries only", async () => {
     // Insert a sold entry with profit
     await insertUserTradeUp(ctx.pool, {
