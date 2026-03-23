@@ -23,8 +23,17 @@ Fix broken skin/collection filtering across FilterBar, DataViewer, and collectio
 
 **`/api/trade-ups` filter logic** (`server/routes/trade-ups.ts`):
 - Wire format unchanged: skins joined by `||`, collections by `|` in URL params. Backend parsing changes from OR to AND semantics.
-- Multiple skins: AND logic. Each selected skin generates its own subquery checking both `trade_up_inputs.skin_name` and `outcomes_json LIKE`. Trade-up must match ALL selected skins.
-- Multiple collections: AND logic. Each selected collection generates its own `trade_up_inputs.collection_name` subquery. Trade-up must involve ALL selected collections.
+- Multiple skins: AND logic. Each selected skin generates its own clause. SQL pattern for 2 skins:
+  ```sql
+  AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $A) OR t.outcomes_json LIKE $B)
+  AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $C) OR t.outcomes_json LIKE $D)
+  ```
+  The OR-within-AND ensures a trade-up matches if a skin appears as either input or output. Trade-up must match ALL selected skins.
+- Multiple collections: AND logic. Each selected collection generates its own subquery:
+  ```sql
+  AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $A)
+  AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $B)
+  ```
 - Single skin/collection: unchanged behavior (matches inputs or outputs).
 - Note: this is a semantic change. Bookmarked URLs with multiple skins will go from OR to AND, which may return fewer/zero results. This is the intended behavior per requirements.
 
@@ -38,7 +47,7 @@ Fix broken skin/collection filtering across FilterBar, DataViewer, and collectio
 
 **New endpoint `GET /api/skin-suggestions`** (`server/routes/data.ts`):
 - Query param: `q` (min 2 chars).
-- Query: `SELECT s.name, s.weapon, s.rarity, STRING_AGG(DISTINCT c.name, ',') as collection_name FROM skins s LEFT JOIN skin_collections sc ON s.id = sc.skin_id LEFT JOIN collections c ON sc.collection_id = c.id WHERE <normalized_match> AND s.stattrak = false GROUP BY s.name, s.weapon, s.rarity ORDER BY s.rarity DESC, s.name ASC LIMIT 15`. The LEFT JOINs are lightweight since the result set is small (LIMIT 15). Sort by rarity descending (Covert first) then alphabetical — avoids the expensive listing count subquery while keeping results useful.
+- Query: `SELECT s.name, s.weapon, s.rarity, STRING_AGG(DISTINCT c.name, ',') as collection_name FROM skins s LEFT JOIN skin_collections sc ON s.id = sc.skin_id LEFT JOIN collections c ON sc.collection_id = c.id WHERE <normalized_match> AND s.stattrak = false GROUP BY s.name, s.weapon, s.rarity ORDER BY CASE s.rarity WHEN 'Extraordinary' THEN 6 WHEN 'Covert' THEN 5 WHEN 'Classified' THEN 4 WHEN 'Restricted' THEN 3 WHEN 'Mil-Spec' THEN 2 WHEN 'Industrial Grade' THEN 1 WHEN 'Consumer Grade' THEN 0 ELSE -1 END DESC, s.name ASC LIMIT 15`. The LEFT JOINs are lightweight since the result set is small (LIMIT 15). Sort by rarity rank descending (Covert/Extraordinary first) then alphabetical — uses explicit CASE ordering since `rarity` is a text column and alphabetical DESC does not match rarity hierarchy.
 - Search normalization: strip `★` and `|` from matching. User types "bayonet fade" → matches "★ Bayonet | Fade".
 - For knife/glove skins (no `skin_collections` rows), `collection_name` will be null — the frontend can handle this gracefully.
 - Response: `{ results: [{ name, weapon, rarity, collection_name }] }`.
@@ -104,3 +113,43 @@ Fix broken skin/collection filtering across FilterBar, DataViewer, and collectio
 - `/api/skin-data`: audit `STRING_AGG(DISTINCT)` and `COUNT(DISTINCT)` cost. Consider pre-computed listing counts if needed.
 - `/api/trade-ups` outcome matching: `outcomes_json LIKE` cannot use indexes. Acceptable short-term since other WHERE clauses narrow the scan. Long-term: consider `trade_up_outcomes` table.
 - General: run `EXPLAIN ANALYZE` on heaviest paths, add missing indexes.
+
+## 6. VPS Testing Plan
+
+After deploying changes, verify both functionality and performance on VPS using `/vps` skill commands.
+
+### Functionality tests (via curl on VPS):
+
+**FilterBar autocomplete**:
+- `curl localhost:3001/api/filter-options` — verify response contains both input and output skins with correct `input`/`output` booleans. Verify collections have counts.
+- `curl 'localhost:3001/api/trade-ups?skin=AK-47+%7C+Redline'` — single skin filter returns results.
+- `curl 'localhost:3001/api/trade-ups?skin=AK-47+%7C+Redline||M4A4+%7C+Howl'` — multi-skin AND filter returns only trade-ups containing both.
+- `curl 'localhost:3001/api/trade-ups?collection=The+Chroma+Collection|The+Phoenix+Collection'` — multi-collection AND filter.
+
+**DataViewer search**:
+- `curl 'localhost:3001/api/skin-suggestions?q=bayonet'` — returns knife results without needing `★`.
+- `curl 'localhost:3001/api/skin-suggestions?q=phantom'` — matches skins with "Phantom" in finish name.
+- `curl 'localhost:3001/api/skin-data?search=bayonet&limit=20'` — full search returns matching skins.
+
+**Collection knife/glove display**:
+- `curl 'localhost:3001/api/skin-data?collection=The+Chroma+Collection&limit=200'` — "all" tab: should include both regular skins AND Chroma knives, knives sorted first.
+- `curl 'localhost:3001/api/skin-data?outputCollection=The+Chroma+Collection'` — knife/glove tab: should return ONLY Chroma-specific knives (Bayonet, Flip, etc. with Chroma finishes), NOT all knives.
+- `curl 'localhost:3001/api/skin-data?outputCollection=The+Inferno+Collection'` — non-knife collection: should return empty array.
+
+### Performance baselines (measure before and after):
+
+Record response times for each endpoint using `curl -w '%{time_total}s'`:
+- `GET /api/filter-options` — target: <200ms (from Redis cache), <2s (DB fallback)
+- `GET /api/skin-data?rarity=Covert&limit=200` — target: <500ms
+- `GET /api/skin-data?collection=The+Chroma+Collection&limit=200` — target: <500ms
+- `GET /api/skin-suggestions?q=ak` — target: <100ms
+- `GET /api/trade-ups?sort=profit&order=desc&per_page=50` — target: <500ms
+- `GET /api/trade-ups?skin=AK-47+%7C+Redline` — target: <500ms
+- `GET /api/trade-ups?collection=The+Chroma+Collection` — target: <500ms
+
+### Index verification (via psql on VPS):
+
+Run `EXPLAIN ANALYZE` on the heaviest queries before and after adding indexes to confirm they're being used:
+- `EXPLAIN ANALYZE SELECT DISTINCT skin_name FROM trade_up_inputs;`
+- `EXPLAIN ANALYZE SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = 'AK-47 | Redline';`
+- `EXPLAIN ANALYZE SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = 'The Chroma Collection';`
