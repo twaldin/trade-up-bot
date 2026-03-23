@@ -70,6 +70,11 @@ export function hasActiveFilters(f: Filters): boolean {
        f.maxLoss || f.minWin);
 }
 
+/** Strip ★ and | for search matching — user types "bayonet fade" to match "★ Bayonet | Fade" */
+function normalizeForSearch(text: string): string {
+  return text.replace(/★/g, "").replace(/\|/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, renderItem }: {
   placeholder: string;
   items: { label: string; sublabel?: string }[];
@@ -93,9 +98,13 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
   const filtered = useMemo(() => {
     const available = items.filter(i => !selected.includes(i.label));
     if (!query) return available.slice(0, 50);
-    const q = query.toLowerCase();
+    const q = normalizeForSearch(query);
+    const words = q.split(" ").filter(Boolean);
     return available
-      .filter(i => i.label.toLowerCase().includes(q))
+      .filter(i => {
+        const normalized = normalizeForSearch(i.label);
+        return words.every(w => normalized.includes(w));
+      })
       .slice(0, 50);
   }, [items, query, selected]);
 
@@ -206,6 +215,79 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
   );
 }
 
+function MarketFilter({ selected, onChange }: {
+  selected: string[];
+  onChange: (markets: string[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const hasValue = selected.length > 0;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setExpanded(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [expanded]);
+
+  const summary = hasValue
+    ? selected.map(m => AVAILABLE_MARKETS.find(am => am.value === m)?.label || m).join(", ")
+    : "any";
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border whitespace-nowrap transition-colors cursor-pointer ${
+          hasValue
+            ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+            : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+        }`}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <span className="font-medium">Market</span>
+        <span className={`text-[0.72rem] ${hasValue ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
+      </button>
+      {expanded && (
+        <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[180px] shadow-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-foreground">Market</span>
+            <button
+              className="text-muted-foreground hover:text-foreground text-sm cursor-pointer leading-none px-1"
+              onClick={() => setExpanded(false)}
+            >×</button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {AVAILABLE_MARKETS.map(m => (
+              <label key={m.value} className="flex items-center gap-2 text-xs text-popover-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(m.value)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...selected, m.value]
+                      : selected.filter(x => x !== m.value);
+                    onChange(next);
+                  }}
+                  className="rounded border-border"
+                />
+                {m.label}
+              </label>
+            ))}
+          </div>
+          {hasValue && (
+            <button
+              className="mt-2 text-[0.68rem] text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={() => onChange([])}
+            >Clear</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Filters) => void }) {
   const chips: { label: string; onRemove: () => void }[] = [];
 
@@ -214,16 +296,6 @@ export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate:
   }
   for (const c of filters.collections) {
     chips.push({ label: `Collection: ${c}`, onRemove: () => onUpdate({ ...filters, collections: filters.collections.filter(x => x !== c) }) });
-  }
-  if (filters.markets.length > 0) {
-    const labels = filters.markets.map(m => {
-      const found = AVAILABLE_MARKETS.find(am => am.value === m);
-      return found ? found.label : m;
-    });
-    chips.push({
-      label: `Markets: ${labels.join(", ")}`,
-      onRemove: () => onUpdate({ ...filters, markets: [] }),
-    });
   }
   if (filters.minProfit || filters.maxProfit) {
     const lbl = `Profit: ${filters.minProfit ? `$${filters.minProfit}` : "any"} – ${filters.maxProfit ? `$${filters.maxProfit}` : "any"}`;
@@ -329,26 +401,8 @@ export function FilterBar({ filters, onFiltersChange }: {
           />
         </div>
 
-        <div className="flex gap-2.5 items-center shrink-0">
-          {AVAILABLE_MARKETS.map(m => (
-            <label key={m.value} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={filters.markets.includes(m.value)}
-                onChange={(e) => {
-                  const next = e.target.checked
-                    ? [...filters.markets, m.value]
-                    : filters.markets.filter(x => x !== m.value);
-                  update({ markets: next });
-                }}
-                className="rounded border-border"
-              />
-              {m.label}
-            </label>
-          ))}
-        </div>
-
         <div className="flex gap-1.5 flex-wrap flex-1">
+          <MarketFilter selected={filters.markets} onChange={(m) => update({ markets: m })} />
           <RangeFilter label="Profit" unit="$" step={1}
             minVal={filters.minProfit} maxVal={filters.maxProfit}
             onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })} />

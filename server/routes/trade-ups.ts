@@ -26,10 +26,31 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     // Redis miss: fall back to DB
     try {
+      // Input skins
       const { rows: inputSkins } = await pool.query(
         `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
       );
-      const skinMap = inputSkins.map((s: any) => ({ name: s.name, input: true, output: false }));
+      // Output skins from outcomes_json
+      const { rows: outputSkins } = await pool.query(
+        `SELECT DISTINCT elem->>'skin_name' as name
+         FROM trade_ups t, json_array_elements(t.outcomes_json::json) AS elem
+         WHERE t.listing_status = 'active' AND t.is_theoretical = false
+           AND t.outcomes_json IS NOT NULL AND t.outcomes_json != '[]'`
+      );
+
+      // Merge: build map of name → { input, output }
+      const skinFlags = new Map<string, { input: boolean; output: boolean }>();
+      for (const s of inputSkins) {
+        skinFlags.set(s.name, { input: true, output: false });
+      }
+      for (const s of outputSkins) {
+        const existing = skinFlags.get(s.name);
+        if (existing) existing.output = true;
+        else skinFlags.set(s.name, { input: false, output: true });
+      }
+      const skinMap = [...skinFlags.entries()].map(([name, flags]) => ({
+        name, input: flags.input, output: flags.output,
+      }));
       const { rows: collections } = await pool.query(
         `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
       );
@@ -196,11 +217,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         params.push(skinNames[0], `%"skin_name":"${skinNames[0].replace(/"/g, '\\"')}"%`);
         paramIndex += 2;
       } else if (skinNames.length > 1) {
-        // Multiple exact skin names (OR) — check inputs + outcomes_json LIKE for each
-        const inputPlaceholders = skinNames.map(() => `$${paramIndex++}`).join(",");
-        const outcomeLikes = skinNames.map(() => `t.outcomes_json LIKE $${paramIndex++}`).join(" OR ");
-        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name IN (${inputPlaceholders})) OR ${outcomeLikes})`;
-        params.push(...skinNames, ...skinNames.map(s => `%"skin_name":"${s.replace(/"/g, '\\"')}"%`));
+        // Multiple exact skin names (AND) — each skin gets its own clause
+        for (const skinName of skinNames) {
+          where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
+          params.push(skinName, `%"skin_name":"${skinName.replace(/"/g, '\\"')}"%`);
+          paramIndex += 2;
+        }
       } else {
         where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name LIKE $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
         const pattern = `%${skin}%`;
@@ -212,11 +234,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Collection filter
     if (collection) {
       const collNames = collection.split("|").map(s => s.trim()).filter(Boolean);
-      const placeholders = collNames.map(() => `$${paramIndex++}`).join(",");
-      where += ` AND t.id IN (
-        SELECT trade_up_id FROM trade_up_inputs WHERE collection_name IN (${placeholders})
-      )`;
-      params.push(...collNames);
+      for (const collName of collNames) {
+        where += ` AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++})`;
+        params.push(collName);
+      }
     }
 
     // Max outcomes filter — count from outcomes_json array

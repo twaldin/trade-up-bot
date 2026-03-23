@@ -29,7 +29,30 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
   const [newListings, setNewListings] = useState(0);
   const [newSales, setNewSales] = useState(0);
 
+  const [suggestions, setSuggestions] = useState<{ name: string; weapon: string; rarity: string; collection_name: string | null }[]>([]);
+  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cacheRef = useRef<Map<string, { skins: SkinSummary[]; newListings: number; newSales: number }>>(new Map());
+
+  // Debounced server-side search suggestions
+  useEffect(() => {
+    if (search.length < 2 || !showSuggestions) {
+      setSuggestions([]);
+      return;
+    }
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    suggestTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/skin-suggestions?q=${encodeURIComponent(search)}`);
+        const data = await res.json();
+        setSuggestions(data.results || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 250);
+    return () => {
+      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    };
+  }, [search, showSuggestions]);
 
   const fetchSkins = useCallback(async () => {
     const cacheKey = `${rarity}|${appliedSearch}|${collectionFilter || ""}|${outputCollection || ""}|${stattrak}`;
@@ -45,7 +68,7 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
     try {
       const params = new URLSearchParams();
       if (appliedSearch) params.set("search", appliedSearch);
-      if (rarity && !outputCollection) params.set("rarity", rarity);
+      if (rarity) params.set("rarity", rarity);
       if (collectionFilter) params.set("collection", collectionFilter);
       if (outputCollection) params.set("outputCollection", outputCollection);
       if (stattrak) params.set("stattrak", "1");
@@ -149,27 +172,20 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
-          {showSuggestions && search.length >= 2 && (() => {
-            const q = search.toLowerCase();
-            const matches = skins
-              .filter(s => s.name.toLowerCase().includes(q) || (s.collection_name && s.collection_name.toLowerCase().includes(q)))
-              .slice(0, 8);
-            if (matches.length === 0) return null;
-            return (
-              <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border rounded-b-md max-h-48 overflow-y-auto shadow-lg">
-                {matches.map(s => (
-                  <div
-                    key={s.name}
-                    className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors"
-                    onMouseDown={e => { e.preventDefault(); setSearch(s.name); setAppliedSearch(s.name); setSelectedSkin(s.name); setShowSuggestions(false); }}
-                  >
-                    <span className="text-foreground">{s.name}</span>
-                    {s.collection_name && <span className="text-muted-foreground ml-2 text-[0.65rem]">{s.collection_name}</span>}
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border rounded-b-md max-h-48 overflow-y-auto shadow-lg">
+              {suggestions.map(s => (
+                <div
+                  key={s.name}
+                  className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors"
+                  onMouseDown={e => { e.preventDefault(); setSearch(s.name); setAppliedSearch(s.name); setSelectedSkin(s.name); setShowSuggestions(false); }}
+                >
+                  <span className="text-foreground">{s.name}</span>
+                  {s.collection_name && <span className="text-muted-foreground ml-2 text-[0.65rem]">{s.collection_name}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <Button variant="outline" size="default" onClick={() => { applySearch(); setShowSuggestions(false); }}>Search</Button>
         <div className="flex gap-1 items-center text-[0.8rem] text-muted-foreground">
