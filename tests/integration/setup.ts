@@ -218,6 +218,9 @@ async function createSchema(bootstrapPool: pg.Pool) {
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_collection_tuid ON trade_up_inputs(collection_name, trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_profit ON trade_ups(type, profit_cents DESC);
     CREATE INDEX IF NOT EXISTS idx_claims_active ON trade_up_claims(trade_up_id) WHERE released_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin_tuid ON trade_up_inputs(skin_name, trade_up_id);
+    CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak ON listings(skin_id, stattrak);
+    CREATE INDEX IF NOT EXISTS idx_skin_collections_skin ON skin_collections(skin_id);
   `);
 
   return schema;
