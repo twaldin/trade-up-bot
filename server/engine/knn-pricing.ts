@@ -237,6 +237,33 @@ const KNN_MAX_FLOAT_DIST = 0.04;
 const KNN_MAX_NEAREST_DIST = 0.012;
 
 /**
+ * Compute MAD-based clamping bounds for a set of prices.
+ * Returns { upper, lower } thresholds. Prices outside these bounds
+ * should be clamped (not removed) to preserve neighbor count.
+ *
+ * If MAD = 0 (all prices identical), returns null (no clamping needed).
+ * Uses 1.4826 normalization constant (MAD → σ for normal distributions).
+ */
+export function computeMADClampBounds(
+  prices: number[]
+): { upper: number; lower: number } | null {
+  if (prices.length === 0) return null;
+  const sorted = [...prices].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  const deviations = prices.map(p => Math.abs(p - median)).sort((a, b) => a - b);
+  const mad = deviations[Math.floor(deviations.length / 2)];
+
+  if (mad === 0) return null; // All identical — no outliers possible
+
+  const scale = 3 * mad * 1.4826;
+  return {
+    upper: median + scale,
+    lower: Math.max(0, median - scale),
+  };
+}
+
+/**
  * KNN price lookup with Gaussian kernel weighting and linear interpolation fallback.
  *
  * 3-tier pricing chain:
@@ -275,41 +302,44 @@ export async function knnOutputPriceAtFloat(
       if (withDist[0].dist <= KNN_MAX_NEAREST_DIST) {
         const neighbors = withDist.slice(0, KNN_K);
 
-        // Outlier filtering: remove prices >3x or <0.3x the median
-        const prices = neighbors.map(n => n.price).sort((a, b) => a - b);
-        const median = prices[Math.floor(prices.length / 2)];
-        const filtered = neighbors.filter(n => n.price <= median * 3 && n.price >= median * 0.3);
+        // MAD-based outlier clamping: robust to clustered sticker-premium sales.
+        // Clamps (not removes) to preserve neighbor count for confidence scoring.
+        const madBounds = computeMADClampBounds(neighbors.map(n => n.price));
 
-        if (filtered.length >= KNN_MIN_OBS) {
-          // Range-normalized sigma: scale by condition float width so KNN is
-          // equally selective across conditions (0.015 = 21% of FN but 7% of FT)
-          const condBounds = CONDITION_BOUNDS.find(c => c.name === targetCondition);
-          const condWidth = condBounds ? condBounds.max - condBounds.min : 0.23;
-          const sigma = filtered.length >= 6
-            ? Math.max(filtered[Math.floor(filtered.length / 2)].dist, condWidth * 0.05)
-            : condWidth * 0.15;
+        const clamped = neighbors.map(n => {
+          if (!madBounds) return n; // MAD=0: all identical, no clamping needed
+          const clampedPrice = Math.min(Math.max(n.price, madBounds.lower), madBounds.upper);
+          return { ...n, price: clampedPrice };
+        });
 
-          // Gaussian-weighted mean: weight = source_weight * age_decay * exp(-dist²/σ²)
-          let totalWeight = 0;
-          let weightedSum = 0;
-          for (const n of filtered) {
-            const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
-            const w = n.weight * gaussWeight;
-            totalWeight += w;
-            weightedSum += n.price * w;
-          }
+        // Range-normalized sigma: scale by condition float width so KNN is
+        // equally selective across conditions (0.015 = 21% of FN but 7% of FT)
+        const condBounds = CONDITION_BOUNDS.find(c => c.name === targetCondition);
+        const condWidth = condBounds ? condBounds.max - condBounds.min : 0.23;
+        const sigma = clamped.length >= 6
+          ? Math.max(clamped[Math.floor(clamped.length / 2)].dist, condWidth * 0.05)
+          : condWidth * 0.15;
 
-          const avgDist = filtered.reduce((s, n) => s + n.dist, 0) / filtered.length;
-          const countFactor = Math.min(filtered.length / 8, 1.0);
-          const distFactor = 1 - Math.min(avgDist / KNN_MAX_FLOAT_DIST, 1.0);
-          const confidence = countFactor * 0.6 + distFactor * 0.4;
-
-          return {
-            priceCents: Math.round(weightedSum / totalWeight),
-            confidence,
-            observationCount: filtered.length,
-          };
+        // Gaussian-weighted mean: weight = source_weight * age_decay * exp(-dist²/σ²)
+        let totalWeight = 0;
+        let weightedSum = 0;
+        for (const n of clamped) {
+          const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
+          const w = n.weight * gaussWeight;
+          totalWeight += w;
+          weightedSum += n.price * w;
         }
+
+        const avgDist = clamped.reduce((s, n) => s + n.dist, 0) / clamped.length;
+        const countFactor = Math.min(clamped.length / 8, 1.0);
+        const distFactor = 1 - Math.min(avgDist / KNN_MAX_FLOAT_DIST, 1.0);
+        const confidence = countFactor * 0.6 + distFactor * 0.4;
+
+        return {
+          priceCents: Math.round(weightedSum / totalWeight),
+          confidence,
+          observationCount: clamped.length,
+        };
       }
     }
   }
