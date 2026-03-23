@@ -1,0 +1,98 @@
+# API Filtering & Search Fixes Design
+
+## Overview
+
+Fix broken skin/collection filtering across FilterBar, DataViewer, and collection pages. Redesign market filter UX. Optimize slow SQL queries.
+
+## 1. FilterBar Autocomplete Fix
+
+**Root cause**: `/api/filter-options` silently returns empty arrays when Redis misses and the DB fallback fails. `AutocompleteInput` has no items to render.
+
+### Changes
+
+**`/api/filter-options` endpoint** (`server/routes/trade-ups.ts`):
+- Add output skins: parse `outcomes_json` from active trade-ups, extract `skin_name`, merge with input skins.
+- Each skin entry: `{ name: string, input: boolean, output: boolean }`. A skin appearing as both gets `input: true, output: true`.
+- Ensure daemon pre-populates `filter_opts` Redis cache every cycle.
+- DB fallback must handle errors gracefully (currently swallows silently).
+
+**`AutocompleteInput` component** (`src/components/FilterBar.tsx`):
+- Search normalization: strip `★` and `|` from both query and item labels before matching. Display original full names.
+- Dropdown selection only — no Enter key behavior. Enter does nothing.
+- Sublabels: skins show "input", "output", or "input & output". Collections show trade-up count.
+
+**`/api/trade-ups` filter logic** (`server/routes/trade-ups.ts`):
+- Multiple skins: AND logic. Each selected skin generates its own subquery checking both `trade_up_inputs.skin_name` and `outcomes_json LIKE`. Trade-up must match ALL selected skins.
+- Multiple collections: AND logic. Each selected collection generates its own `trade_up_inputs.collection_name` subquery. Trade-up must involve ALL selected collections.
+- Single skin/collection: unchanged behavior (matches inputs or outputs).
+
+## 2. DataViewer Server-Side Search
+
+**Root cause**: Autocomplete only searches 200 skins loaded in memory. Skins outside that set are invisible to autocomplete.
+
+### Changes
+
+**New endpoint `GET /api/skin-suggestions`** (`server/routes/data.ts`):
+- Query param: `q` (min 2 chars).
+- Lightweight query: `SELECT name, weapon, rarity FROM skins WHERE <normalized_match> LIMIT 15`, sorted by listing count (via a subquery or pre-computed column).
+- Search normalization: strip `★` and `|` from matching. User types "bayonet fade" → matches "★ Bayonet | Fade".
+- Response: `{ results: [{ name, weapon, rarity, collection_name }] }`.
+- Redis cached 60s by query.
+
+**DataViewer search** (`src/components/DataViewer.tsx`):
+- Replace client-side suggestion filtering with debounced (250ms) server calls to `/api/skin-suggestions?q=X`.
+- Min 2 chars to trigger.
+- On selecting a suggestion: set as `appliedSearch` → triggers full `/api/skin-data?search=X` fetch.
+- Remove the `skins.filter(...)` suggestion logic entirely.
+
+## 3. Collection Knife/Glove Display
+
+**Root cause**: Knives aren't in `skin_collections` table. `outputCollection` lookup in `collectionKnifePool` fails silently when collection names don't match `CASE_KNIFE_MAP` keys → unfiltered query returns all skins.
+
+### Changes
+
+**All tab includes knives** (`server/routes/data.ts`):
+- When `rarity` is "all" (or empty) and `collectionFilter` is set: run two queries — the existing `skin_collections` query for regular skins, plus an `outputCollection`-style query for the collection's knife/glove pool. Merge results.
+- All skins on the collection page must belong to that collection/case. No unfiltered leakage.
+
+**Knife/Glove tab fix**:
+- When `outputCollection` lookup returns no `poolData`, return empty array instead of running unfiltered query.
+- Add server-side logging when a collection claims knives but isn't in `CASE_KNIFE_MAP`.
+
+**Sort order**:
+- Knives/gloves (`★` prefix) sorted first descending in API responses and frontend `SkinList`.
+
+**Collection name matching**:
+- Verify DB collection names match `CASE_KNIFE_MAP` keys exactly. Fix any mismatches.
+
+## 4. Market Filter Redesign
+
+**Current**: Inline checkboxes next to autocomplete inputs.
+
+### Changes
+
+**New `MarketFilter` component** (`src/components/FilterBar.tsx`):
+- Pill/popover matching RangeFilter pattern.
+- Default: pill shows "Market any".
+- Active: "Market CSFloat" or "Market CSFloat, DMarket" with blue highlight.
+- Popover: checkboxes for each market + Clear button.
+- Click outside to dismiss.
+
+## 5. Performance Optimization
+
+### Index additions (verify via `EXPLAIN ANALYZE`):
+- `trade_up_inputs(skin_name)` — for DISTINCT and filter queries.
+- `trade_up_inputs(collection_name)` — for GROUP BY and filter queries.
+- `trade_up_inputs(trade_up_id, skin_name)` — for AND-logic multi-skin subqueries.
+- `listings(skin_id, stattrak)` — for skin-data JOIN.
+- `skin_collections(skin_id)` — for collection filter subquery.
+
+### Cache tuning:
+- `/api/skin-data` Redis TTL: 120s → 300s.
+- `/api/filter-options`: ensure daemon pre-populates every cycle. DB fallback is safety net only.
+- `/api/skin-suggestions`: 60s TTL.
+
+### Query optimization:
+- `/api/skin-data`: audit `STRING_AGG(DISTINCT)` and `COUNT(DISTINCT)` cost. Consider pre-computed listing counts if needed.
+- `/api/trade-ups` outcome matching: `outcomes_json LIKE` cannot use indexes. Acceptable short-term since other WHERE clauses narrow the scan. Long-term: consider `trade_up_outcomes` table.
+- General: run `EXPLAIN ANALYZE` on heaviest paths, add missing indexes.
