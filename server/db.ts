@@ -383,6 +383,36 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS input_sources TEXT[] NOT NULL DEFAULT '{}';
   `);
 
+  // User trade-up lifecycle tracking (My Trade-Ups)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_trade_ups (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(steam_id),
+      trade_up_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'purchased',
+      snapshot_inputs JSONB NOT NULL,
+      snapshot_outcomes JSONB NOT NULL,
+      total_cost_cents INTEGER NOT NULL,
+      expected_value_cents INTEGER NOT NULL,
+      roi_percentage DOUBLE PRECISION NOT NULL,
+      chance_to_profit DOUBLE PRECISION NOT NULL,
+      best_case_cents INTEGER NOT NULL,
+      worst_case_cents INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      executed_at TIMESTAMPTZ,
+      sold_at TIMESTAMPTZ,
+      outcome_skin_id TEXT,
+      outcome_skin_name TEXT,
+      outcome_condition TEXT,
+      outcome_float DOUBLE PRECISION,
+      sold_price_cents INTEGER,
+      sold_marketplace TEXT,
+      actual_profit_cents INTEGER,
+      UNIQUE(user_id, trade_up_id)
+    );
+  `);
+
   // Create indexes
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_skins_rarity ON skins(rarity);
@@ -429,6 +459,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_snapshot_tradeups_combo ON snapshot_tradeups(combo_key, snapshot_id);
     CREATE INDEX IF NOT EXISTS idx_staircase_trade_up ON staircase_trade_ups(trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_claims_active ON trade_up_claims(trade_up_id) WHERE released_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_user_trade_ups_user ON user_trade_ups(user_id, status);
   `);
 
   // Partial indexes for API hot path (active, non-theoretical trade-ups)
