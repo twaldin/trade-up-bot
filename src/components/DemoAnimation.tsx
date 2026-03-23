@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 
-// Self-contained animated product demo for the landing page
-// Replaces the static tradeuptable.png screenshot
+// Fast variant — animated product demo for the landing page (desktop)
 
 export function DemoAnimation() {
   const screenRef = useRef<HTMLDivElement>(null);
@@ -21,7 +20,7 @@ export function DemoAnimation() {
     return { x: er.left - sr.left + er.width / 2, y: er.top - sr.top + er.height / 2 };
   }, []);
 
-  const moveTo = useCallback(async (el: HTMLElement, d = 800) => {
+  const moveTo = useCallback(async (el: HTMLElement, d = 500) => {
     const p = getElPos(el);
     const cur = cursorRef.current!;
     const ring = ringRef.current!;
@@ -30,7 +29,7 @@ export function DemoAnimation() {
     cur.style.top = p.y + 'px';
     ring.style.left = (p.x + 4) + 'px';
     ring.style.top = (p.y + 4) + 'px';
-    await sleep(d + 80);
+    await sleep(d + 50);
   }, [getElPos]);
 
   const click = useCallback(async () => {
@@ -38,7 +37,7 @@ export function DemoAnimation() {
     ring.classList.remove('demo-pop');
     void ring.offsetWidth;
     ring.classList.add('demo-pop');
-    await sleep(350);
+    await sleep(250);
   }, []);
 
   const showTip = useCallback((html: string, el: HTMLElement) => {
@@ -66,7 +65,7 @@ export function DemoAnimation() {
         const screen = screenRef.current;
         if (!screen) return;
 
-        await sleep(1200);
+        await sleep(700);
         if (!runningRef.current) return;
 
         const knifePill = screen.querySelector<HTMLElement>('[data-pill="knife"]')!;
@@ -82,81 +81,114 @@ export function DemoAnimation() {
         const confBtn = screen.querySelector<HTMLElement>('[data-confirm]')!;
         const firstInput = screen.querySelector<HTMLElement>('[data-input]')!;
         const thirdInput = screen.querySelectorAll<HTMLElement>('[data-input]')[2]!;
+        const allInputCards = screen.querySelectorAll<HTMLElement>('[data-input]');
         const expRow = screen.querySelector<HTMLElement>('[data-expanded]')!;
         const statline = screen.querySelector<HTMLElement>('[data-stats]')!;
+        const tableRows = Array.from(screen.querySelectorAll<HTMLElement>('[data-row]'));
+
+        const hoverRow = (row: HTMLElement) => row.classList.add('demo-hover-hl');
+        const unhoverRow = (row: HTMLElement) => row.classList.remove('demo-hover-hl');
+        const clearAllHovers = () => tableRows.forEach(r => r.classList.remove('demo-hover-hl'));
 
         // Step 1: Search
         await moveTo(knifePill);
         showTip('<span class="demo-step-num">1</span> <em>Search</em> for the perfect trade-up — filter by rarity, sort by profit', knifePill);
-        await sleep(2000); if (!runningRef.current) return;
-        hideTip(); await sleep(200); await click();
+        await sleep(1200); if (!runningRef.current) return;
+        hideTip(); await sleep(100); await click();
         allPill.className = 'demo-pill';
         knifePill.className = 'demo-pill demo-pill-knife';
         statline.innerHTML = '8,421 found (<span class="demo-green">2,847 profitable</span>)';
-        await sleep(800);
+        await sleep(400);
 
-        await moveTo(profitCell);
+        // Sweep down through rows with hover highlights
+        for (let i = 1; i <= 3; i++) {
+          const row = tableRows.find(r => r.getAttribute('data-row') === String(i));
+          if (!row) continue;
+          hoverRow(row);
+          await moveTo(row, 200);
+          await sleep(80);
+          if (i !== 3) unhoverRow(row);
+        }
+        clearAllHovers();
+
+        // Hover profit on row 0
+        await moveTo(profitCell, 350);
         showTip('<span class="demo-step-num">1</span> Sorted by <em>profit</em> — $306 on a $1,467 investment at <em>20.9% ROI</em>', profitCell);
         r0.classList.add('demo-row-hl');
-        await sleep(3000); if (!runningRef.current) return;
+        await sleep(1500); if (!runningRef.current) return;
         hideTip();
 
-        await moveTo(expandIcon); await sleep(200); await click();
+        // Expand
+        await moveTo(expandIcon, 300); await sleep(100); await click();
         expRow.style.display = 'table-row';
         expandIcon.textContent = '▼';
-        await sleep(600);
+        await sleep(300);
 
-        await moveTo(oc0);
+        // Outcomes
+        await moveTo(oc0, 400);
         showTip('<span class="demo-step-num">1</span> <em>24 possible glove outcomes</em> — Hedge Maze +$4,631, Pandora\'s Box +$4,116', oc0);
         oc0.classList.add('demo-ocard-hl');
-        await sleep(3500); if (!runningRef.current) return;
+        await sleep(1500); if (!runningRef.current) return;
         oc0.classList.remove('demo-ocard-hl');
         hideTip();
 
         // Step 2: Verify
-        await moveTo(vb);
+        await moveTo(vb, 400);
         showTip('<span class="demo-step-num">2</span> <em>Verify</em> all listings are still available before buying', vb);
-        await sleep(500); await click();
+        await sleep(300); await click();
         vb.textContent = 'Checking...';
         vb.className = 'demo-verify demo-verify-checking';
-        await sleep(1500);
-        vb.textContent = 'All listed ✓';
+        await sleep(800);
+        vb.textContent = 'All listed \u2713';
         vb.className = 'demo-verify demo-verify-done';
-        await sleep(2000); if (!runningRef.current) return;
+        await sleep(1200); if (!runningRef.current) return;
         hideTip();
 
         // Step 3: Claim
-        await moveTo(cb);
+        await moveTo(cb, 400);
         showTip('<span class="demo-step-num">3</span> <em>Claim</em> to lock all 5 listings for 30 min — nobody else can take them', cb);
-        await sleep(1500); await click();
+        await sleep(800); await click();
         cb.style.display = 'none';
         ct.innerHTML = '<span style="color:#c084fc;font-weight:500">You claimed this trade-up</span> — confirm purchase or release';
         ca.style.display = 'flex';
-        await sleep(2500); if (!runningRef.current) return;
+        await sleep(1200); if (!runningRef.current) return;
         hideTip();
 
-        // Step 4: Purchase
-        await moveTo(firstInput);
+        // Step 4: Purchase — sweep through input cards
+        await moveTo(firstInput, 350);
+        firstInput.classList.add('demo-icard-hl');
         showTip('<span class="demo-step-num">4</span> <em>Purchase</em> — click any input to go directly to the marketplace listing', firstInput);
-        await sleep(2000); await click();
-        await sleep(500); hideTip();
+        await sleep(800); await click();
+        firstInput.classList.remove('demo-icard-hl');
+        await sleep(200); hideTip();
 
-        await moveTo(thirdInput);
+        // Quick sweep across input cards
+        for (let i = 1; i < allInputCards.length; i++) {
+          allInputCards[i].classList.add('demo-icard-hl');
+          await moveTo(allInputCards[i], 180);
+          await sleep(80);
+          allInputCards[i].classList.remove('demo-icard-hl');
+        }
+
+        await moveTo(thirdInput, 300);
+        thirdInput.classList.add('demo-icard-hl');
         showTip('<span class="demo-step-num">4</span> Buy all 5 inputs on <em>DMarket</em> and <em>CSFloat</em> — total: <em>$1,466.87</em>', thirdInput);
-        await sleep(3000); if (!runningRef.current) return;
+        await sleep(1500); if (!runningRef.current) return;
+        thirdInput.classList.remove('demo-icard-hl');
         hideTip();
 
         // Step 5: Confirm
-        await moveTo(confBtn);
+        await moveTo(confBtn, 400);
         showTip('<span class="demo-step-num">5</span> <em>Confirm purchase</em> and complete your trade-up — good luck!', confBtn);
-        await sleep(3500); if (!runningRef.current) return;
+        await sleep(1500); if (!runningRef.current) return;
         hideTip();
 
         // Reset
-        await sleep(1500);
+        await sleep(600);
         expRow.style.display = 'none';
         expandIcon.textContent = '▶';
         r0.classList.remove('demo-row-hl');
+        clearAllHovers();
         cb.style.display = '';
         cb.textContent = 'Claim (8/10)';
         cb.className = 'demo-claim-btn';
@@ -168,10 +200,10 @@ export function DemoAnimation() {
         allPill.className = 'demo-pill demo-pill-all';
         statline.innerHTML = '592,938 found (<span class="demo-green">28,493 profitable</span>)';
         const cur = cursorRef.current!;
-        cur.style.transitionDuration = '400ms';
+        cur.style.transitionDuration = '300ms';
         cur.style.left = '600px';
         cur.style.top = '300px';
-        await sleep(2500);
+        await sleep(1000);
       }
     }
 
@@ -182,18 +214,20 @@ export function DemoAnimation() {
   return (
     <div ref={screenRef} className="relative w-full overflow-hidden rounded-lg border border-border bg-[#111]" style={{ height: 580 }}>
       <style>{`
-        .demo-cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:100;transition:left .8s cubic-bezier(.4,0,.2,1),top .8s cubic-bezier(.4,0,.2,1);left:600px;top:300px}
+        .demo-cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:100;transition:left .5s cubic-bezier(.4,0,.2,1),top .5s cubic-bezier(.4,0,.2,1);left:600px;top:300px}
         .demo-cursor svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
         .demo-ring{position:absolute;width:26px;height:26px;border-radius:50%;border:2px solid #22c55e;opacity:0;pointer-events:none;z-index:99}
-        .demo-pop{animation:demoPop .5s ease-out}
+        .demo-pop{animation:demoPop .4s ease-out}
         @keyframes demoPop{0%{opacity:.7;transform:scale(0)}100%{opacity:0;transform:scale(2)}}
-        .demo-tip{position:absolute;background:#161616;border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:10px 16px;color:#d4d4d4;font-size:12px;line-height:1.5;max-width:300px;opacity:0;transition:opacity .4s;z-index:90;pointer-events:none}
+        .demo-tip{position:absolute;background:#161616;border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:10px 16px;color:#d4d4d4;font-size:12px;line-height:1.5;max-width:300px;opacity:0;transition:opacity .25s;z-index:90;pointer-events:none}
         .demo-tip em{color:#22c55e;font-style:normal;font-weight:600}
         .demo-step-num{display:inline-block;background:#22c55e;color:#000;font-weight:700;font-size:10px;width:18px;height:18px;border-radius:50%;text-align:center;line-height:18px;margin-right:6px}
         .demo-pill{font-size:12px;padding:4px 14px;border-radius:999px;border:1px solid transparent;color:#737373;font-weight:500}
         .demo-pill-all{border-color:rgba(229,229,229,.25);background:rgba(229,229,229,.06);color:#e5e5e5}
         .demo-pill-knife{border-color:rgba(234,179,8,.4);background:rgba(234,179,8,.1);color:#eab308;font-weight:600}
         .demo-row-hl{background:#1a1a1a}
+        .demo-hover-hl{background:rgba(255,255,255,.025)}
+        .demo-hover-hl td{color:#e5e5e5}
         .demo-green{color:#22c55e}
         .demo-tbl td.demo-pos,.demo-pos{color:#22c55e;font-weight:600}
         .demo-tbl td.demo-neg,.demo-neg{color:#ef4444;font-weight:600}
@@ -217,7 +251,8 @@ export function DemoAnimation() {
         .demo-bar-loss{background:rgba(127,29,29,.6);border:1px solid rgba(153,27,27,.4);border-bottom:0}
         .demo-bar-win{background:rgba(20,83,45,.6);border:1px solid rgba(22,101,52,.4);border-bottom:0}
         .demo-bar .pct{position:absolute;top:1px;left:50%;transform:translateX(-50%);font-size:8px;color:rgba(229,229,229,.6);white-space:nowrap}
-        .demo-icard{background:rgba(163,163,163,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px 7px}
+        .demo-icard{background:rgba(163,163,163,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px 7px;transition:border-color .2s,background .2s}
+        .demo-icard-hl{border-color:rgba(96,165,250,.2)!important;background:rgba(96,165,250,.03)!important}
         .demo-src{display:inline-block;font-size:7px;font-weight:700;padding:0 3px;border-radius:2px;color:#fff;margin-right:2px}
         .demo-src-dm{background:#4f8cff}
         .demo-src-cs{background:#6366f1}
@@ -367,7 +402,7 @@ export function DemoAnimation() {
               { inputs: '3× M4A4 | Buzz Kill, 2× AK-47 | Neon Rider', profit: '$281.33', roi: '19.3%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,455.44', ev: '$1,736.77', best: '$4,580.22', worst: '-$1,235.80', age: '2h' },
               { inputs: '4× SSG 08 | Dragonfire, 1× M4A4 | Buzz Kill', profit: '$278.62', roi: '19.1%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,461.25', ev: '$1,739.87', best: '$4,631.07', worst: '-$1,258.73', age: '3h' },
             ].map((r, i) => (
-              <tr key={i}>
+              <tr key={i} data-row={i + 1}>
                 <td className="text-[#525252] text-[10px] w-6 text-center">▶</td>
                 <td><span className="demo-inp"><a>{r.inputs}</a></span> <span className="demo-colb">Glove</span> <span className="demo-age">({r.age})</span></td>
                 <td className="demo-pos">{r.profit}</td>
