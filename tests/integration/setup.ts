@@ -211,6 +211,33 @@ async function createSchema(bootstrapPool: pg.Pool) {
       combo_type TEXT NOT NULL DEFAULT 'knife'
     );
 
+    CREATE TABLE IF NOT EXISTS user_trade_ups (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(steam_id),
+      trade_up_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'purchased',
+      snapshot_inputs JSONB NOT NULL,
+      snapshot_outcomes JSONB NOT NULL,
+      total_cost_cents INTEGER NOT NULL,
+      expected_value_cents INTEGER NOT NULL,
+      roi_percentage DOUBLE PRECISION NOT NULL,
+      chance_to_profit DOUBLE PRECISION NOT NULL,
+      best_case_cents INTEGER NOT NULL,
+      worst_case_cents INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      executed_at TIMESTAMPTZ,
+      sold_at TIMESTAMPTZ,
+      outcome_skin_id TEXT,
+      outcome_skin_name TEXT,
+      outcome_condition TEXT,
+      outcome_float DOUBLE PRECISION,
+      sold_price_cents INTEGER,
+      sold_marketplace TEXT,
+      actual_profit_cents INTEGER,
+      UNIQUE(user_id, trade_up_id)
+    );
+
     -- Indexes needed by trade-ups router
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_trade ON trade_up_inputs(trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
@@ -221,6 +248,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin_tuid ON trade_up_inputs(skin_name, trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak ON listings(skin_id, stattrak);
     CREATE INDEX IF NOT EXISTS idx_skin_collections_skin ON skin_collections(skin_id);
+    CREATE INDEX IF NOT EXISTS idx_user_trade_ups_user ON user_trade_ups(user_id, status);
   `);
 
   return schema;
