@@ -150,12 +150,14 @@ export async function getInterpolatedPrice(
 
 const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   sale: 3.0,              // CSFloat verified transactions — ground truth
+  buff_sale: 2.0,         // Buff verified transactions — near-parity with CSFloat (-2.1% median)
   skinport_sale: 0.5,     // Skinport confirmed transactions — downweighted due to platform premium bias
 };
 
 const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
 const _knnFreshnessCache = new Map<string, number>(); // skin_name → count of observations < 14 days old
 const _knnHasCsfloatSales = new Set<string>(); // skins with at least 1 CSFloat sale (source='sale')
+const _knnHasBuffSales = new Set<string>(); // skins with at least 1 Buff sale (source='buff_sale')
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
 const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 days
@@ -178,6 +180,7 @@ async function ensureKnnCache(pool: pg.Pool) {
   _knnCache.clear();
   _knnFreshnessCache.clear();
   _knnHasCsfloatSales.clear();
+  _knnHasBuffSales.clear();
 
   // Sales-only for output pricing: listings are ask prices (not transaction prices)
   // and inflate estimates for expensive skins where sellers list at collector premiums.
@@ -186,7 +189,7 @@ async function ensureKnnCache(pool: pg.Pool) {
       EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
     FROM price_observations
     WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 <= $1
-      AND source IN ('sale', 'skinport_sale')
+      AND source IN ('sale', 'skinport_sale', 'buff_sale')
     ORDER BY skin_name, float_value
   `, [KNN_MAX_OBS_AGE_DAYS]);
 
@@ -204,6 +207,7 @@ async function ensureKnnCache(pool: pg.Pool) {
     const arr: { float: number; price: number; weight: number; condition: string }[] = [];
     let recentCount = 0;
     let hasCsfloat = false;
+    let hasBuff = false;
     for (const row of skinRows) {
       const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
       const ageDecay = 1 / (1 + (row.age_days || 0) / halfLife);
@@ -215,10 +219,12 @@ async function ensureKnnCache(pool: pg.Pool) {
       });
       if ((row.age_days || 0) < 14) recentCount++;
       if (row.source === "sale") hasCsfloat = true;
+      if (row.source === "buff_sale") hasBuff = true;
     }
     _knnCache.set(skinName, arr);
     _knnFreshnessCache.set(skinName, recentCount);
     if (hasCsfloat) _knnHasCsfloatSales.add(skinName);
+    if (hasBuff) _knnHasBuffSales.add(skinName);
   }
   _knnCacheLoadedAt = Date.now();
 }
@@ -227,6 +233,7 @@ export function clearKnnCache() {
   _knnCache.clear();
   _knnFreshnessCache.clear();
   _knnHasCsfloatSales.clear();
+  _knnHasBuffSales.clear();
   _knnCacheLoadedAt = 0;
 }
 
@@ -284,9 +291,8 @@ export async function knnOutputPriceAtFloat(
   const recentCount = _knnFreshnessCache.get(skinName) ?? 0;
   if (recentCount < KNN_FRESHNESS_MIN) return null;
 
-  // CSFloat gate: skins with only Skinport sales (no CSFloat sales) have unreliable
-  // KNN data due to platform-specific inflation. Fall through to condition-level ref.
-  if (!_knnHasCsfloatSales.has(skinName)) return null;
+  // Require CSFloat OR Buff sales — Skinport-only skins have unreliable pricing
+  if (!_knnHasCsfloatSales.has(skinName) && !_knnHasBuffSales.has(skinName)) return null;
 
   const targetCondition = floatToCondition(float);
   const sameCondition = obs.filter(o => o.condition === targetCondition);
