@@ -46,7 +46,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const [loading, setLoading] = useState(true);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({
-    csfloat: true, dmarket: true, skinport: true, sales: true, buckets: true,
+    csfloat: true, dmarket: true, skinport: true, csfloat_sales: true, skinport_sales: true, buff_sales: true, buckets: true,
   });
   const [sourceFilters, setSourceFilters] = useState<Record<string, boolean>>({
     csfloat: true, dmarket: true, skinport: true,
@@ -166,11 +166,17 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const dmarketCount = listings.filter(l => l.source === "dmarket").length;
   const skinportCount = listings.filter(l => l.source === "skinport").length;
 
+  const csfloatSaleCount = (saleHistory || []).filter(s => !s.source || s.source === "sale" || s.source === "listing" || s.source === "listing_dmarket" || s.source === "listing_skinport").length;
+  const skinportSaleCount = (saleHistory || []).filter(s => s.source === "skinport_sale").length;
+  const buffSaleCount = (saleHistory || []).filter(s => s.source === "buff_sale").length;
+
   const legendItems: { key: SeriesKey; label: string; color: string; shape: "dot" | "diamond" | "line"; count: number }[] = [
     { key: "csfloat", label: "CSFloat", color: SERIES_COLORS.csfloat, shape: "dot", count: csfloatCount },
     ...(dmarketCount > 0 ? [{ key: "dmarket" as SeriesKey, label: "DMarket", color: SERIES_COLORS.dmarket, shape: "dot" as const, count: dmarketCount }] : []),
     ...(skinportCount > 0 ? [{ key: "skinport" as SeriesKey, label: "Skinport", color: SERIES_COLORS.skinport, shape: "dot" as const, count: skinportCount }] : []),
-    { key: "sales", label: "Sales", color: SERIES_COLORS.sales, shape: "diamond", count: (saleHistory || []).length },
+    { key: "csfloat_sales", label: "CSFloat Sales", color: SERIES_COLORS.csfloat_sales, shape: "diamond", count: csfloatSaleCount },
+    ...(skinportSaleCount > 0 ? [{ key: "skinport_sales" as SeriesKey, label: "Skinport Sales", color: SERIES_COLORS.skinport_sales, shape: "diamond" as const, count: skinportSaleCount }] : []),
+    ...(buffSaleCount > 0 ? [{ key: "buff_sales" as SeriesKey, label: "Buff Sales", color: SERIES_COLORS.buff_sales, shape: "diamond" as const, count: buffSaleCount }] : []),
     { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
   ];
 
