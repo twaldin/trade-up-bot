@@ -12,6 +12,9 @@ tradeup.db
 # Claude Code config
 .claude/
 
+# Monitoring logs
+.monitoring/
+
 # Personal notes / internal docs (keep README.md only)
 improvements.md
 overnight_tracking.md
@@ -36,5 +39,7 @@ prelaunch-checklist.md
 user_acquisition.md
 scaling.md
 
-# Directory-scoped CLAUDE.md files
+# CLAUDE.md and docs
+CLAUDE.md
 server/**/CLAUDE.md
+docs/
