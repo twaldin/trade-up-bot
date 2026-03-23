@@ -82,8 +82,10 @@ export function dataRouter(
     }
 
     // Collection filter — use WHERE subquery instead of JOIN to keep param order correct
+    // Skip when outputCollection is set: knives/gloves aren't in skin_collections,
+    // they're linked via collectionKnifePool, and outputWeaponFilter already handles filtering.
     let collectionWhere = "";
-    if (collection) {
+    if (collection && !outputCollection) {
       collectionWhere = `AND s.id IN (SELECT scf.skin_id FROM skin_collections scf JOIN collections cf ON scf.collection_id = cf.id WHERE cf.name = $${paramIndex})`;
       params.push(collection);
       paramIndex++;
