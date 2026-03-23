@@ -375,6 +375,7 @@ export function claimsRouter(pool: pg.Pool): Router {
     // so the next request sees fresh data — fire-and-forget caused claims to not show up)
     await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
+    await cacheInvalidatePrefix("tu_inputs:" + tradeUpId);
 
     res.json({
       claim: {
@@ -428,6 +429,7 @@ export function claimsRouter(pool: pg.Pool): Router {
     // Await Redis updates before responding
     await refreshClaimsCache(pool);
     await cacheInvalidatePrefix("tu:");
+    await cacheInvalidatePrefix("tu_inputs:" + tradeUpId);
 
     res.json({ released: true, trade_up_id: tradeUpId });
   });
