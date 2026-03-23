@@ -166,7 +166,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       source TEXT NOT NULL DEFAULT 'listing',
       observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents, source);
 
     CREATE TABLE IF NOT EXISTS sale_history (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

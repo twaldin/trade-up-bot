@@ -456,7 +456,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
 
   // Unique index for price_observations dedup
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(skin_name, float_value, price_cents, source);
   `);
 
   // Partial index for listings with price_updated_at
