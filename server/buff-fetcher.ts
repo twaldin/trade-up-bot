@@ -250,6 +250,15 @@ async function insertBuffSale(
     saleInserted = (rowCount ?? 0) > 0;
   } catch { /* duplicate or constraint violation */ }
 
+  // Dual-write to main sale_history
+  try {
+    await pool.query(`
+      INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
+      VALUES ($1, $2, $3, $4, $5, to_timestamp($6), 'buff')
+      ON CONFLICT (id) DO NOTHING
+    `, [sale.id, skinName, condition, sale.priceCents, sale.floatValue >= 0 ? sale.floatValue : null, sale.transactTime]);
+  } catch { /* duplicate */ }
+
   // Observation (only if float is valid and NOT a vanilla knife — vanilla knives have no float-price relationship)
   if (!isVanilla && sale.floatValue >= 0 && sale.floatValue <= 1) {
     try {
@@ -259,6 +268,15 @@ async function insertBuffSale(
         ON CONFLICT (skin_name, float_value, price_cents) DO NOTHING
       `, [skinName, sale.floatValue, sale.priceCents, sale.transactTime]);
       obsInserted = (rowCount ?? 0) > 0;
+    } catch { /* duplicate */ }
+
+    // Dual-write to main price_observations
+    try {
+      await pool.query(`
+        INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+        VALUES ($1, $2, $3, 'buff_sale', to_timestamp($4))
+        ON CONFLICT (skin_name, float_value, price_cents, source) DO NOTHING
+      `, [skinName, sale.floatValue, sale.priceCents, sale.transactTime]);
     } catch { /* duplicate */ }
   }
 
