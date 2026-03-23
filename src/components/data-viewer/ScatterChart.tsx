@@ -31,7 +31,14 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
       return false;
     });
     p.push(...visibleListings.map(l => l.price_cents));
-    if (visible.sales) p.push(...(saleHistory || []).map(s => s.price_cents));
+    const visibleSales = (saleHistory || []).filter(s => {
+      const src = s.source || "sale";
+      if ((src === "sale" || src === "listing" || src === "listing_dmarket" || src === "listing_skinport") && visible.csfloat_sales) return true;
+      if (src === "skinport_sale" && visible.skinport_sales) return true;
+      if (src === "buff_sale" && visible.buff_sales) return true;
+      return false;
+    });
+    p.push(...visibleSales.map(s => s.price_cents));
     if (visible.buckets) p.push(...floatBuckets.map(b => b.avg_price_cents));
     return p.filter(v => v > 0).sort((a, b) => a - b);
   }, [listings, saleHistory, floatBuckets, visible]);
@@ -107,11 +114,33 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
         );
       })}
 
-      {/* Sales (green triangles/diamonds) */}
-      {visible.sales && (saleHistory || []).map((s, i) => (
-        <g key={`sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
-          <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.sales} opacity={0.45} />
-          <title>{`Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+      {/* CSFloat Sales */}
+      {visible.csfloat_sales && (saleHistory || [])
+        .filter(s => !s.source || s.source === "sale" || s.source === "listing" || s.source === "listing_dmarket" || s.source === "listing_skinport")
+        .map((s, i) => (
+        <g key={`csf-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
+          <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.csfloat_sales} opacity={0.45} />
+          <title>{`CSFloat Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+        </g>
+      ))}
+
+      {/* Skinport Sales */}
+      {visible.skinport_sales && (saleHistory || [])
+        .filter(s => s.source === "skinport_sale")
+        .map((s, i) => (
+        <g key={`sp-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
+          <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.skinport_sales} opacity={0.45} />
+          <title>{`Skinport Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+        </g>
+      ))}
+
+      {/* Buff Sales */}
+      {visible.buff_sales && (saleHistory || [])
+        .filter(s => s.source === "buff_sale")
+        .map((s, i) => (
+        <g key={`buff-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
+          <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.buff_sales} opacity={0.45} />
+          <title>{`Buff Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
         </g>
       ))}
 
