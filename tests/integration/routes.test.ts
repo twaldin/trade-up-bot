@@ -3,85 +3,7 @@ import request from "supertest";
 import pg from "pg";
 import { statusRouter } from "../../server/routes/status.js";
 import { collectionsRouter } from "../../server/routes/collections.js";
-import { createTestApp, seedTestData, type TestContext } from "./setup.js";
-
-// ─── Additional Tables ──────────────────────────────────────────────────────
-// The status and global-stats routes query tables not present in setup.ts.
-// We create them here after the base schema is ready.
-
-async function createAdditionalTables(pool: pg.Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sale_history (
-      id TEXT PRIMARY KEY,
-      skin_name TEXT NOT NULL,
-      condition TEXT NOT NULL,
-      price_cents INTEGER NOT NULL,
-      float_value DOUBLE PRECISION NOT NULL,
-      sold_at TIMESTAMPTZ NOT NULL,
-      source TEXT NOT NULL DEFAULT 'csfloat'
-    );
-
-    CREATE TABLE IF NOT EXISTS collection_scores (
-      collection_id TEXT PRIMARY KEY,
-      collection_name TEXT NOT NULL,
-      profitable_count INTEGER NOT NULL DEFAULT 0,
-      avg_profit_cents INTEGER NOT NULL DEFAULT 0,
-      max_profit_cents INTEGER NOT NULL DEFAULT 0,
-      avg_roi DOUBLE PRECISION NOT NULL DEFAULT 0,
-      total_tradeups INTEGER NOT NULL DEFAULT 0,
-      priority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      FOREIGN KEY (collection_id) REFERENCES collections(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS daemon_cycle_stats (
-      id SERIAL PRIMARY KEY,
-      daemon_version TEXT NOT NULL DEFAULT 'knife-v2',
-      cycle INTEGER,
-      started_at TIMESTAMPTZ,
-      duration_ms INTEGER,
-      api_calls_used INTEGER,
-      api_limit_detected INTEGER,
-      api_available INTEGER,
-      knife_tradeups_total INTEGER,
-      knife_profitable INTEGER,
-      theories_generated INTEGER,
-      theories_profitable INTEGER,
-      gaps_filled INTEGER,
-      cooldown_passes INTEGER,
-      cooldown_new_found INTEGER,
-      cooldown_improved INTEGER,
-      top_profit_cents INTEGER,
-      avg_profit_cents INTEGER,
-      classified_total INTEGER,
-      classified_profitable INTEGER,
-      classified_theories INTEGER,
-      classified_theories_profitable INTEGER
-    );
-
-    CREATE TABLE IF NOT EXISTS daemon_events (
-      id SERIAL PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      detail TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-}
-
-// ─── Expanded Test App ──────────────────────────────────────────────────────
-// Mounts status + collections routers alongside the base claims + trade-ups.
-
-async function createExpandedApp(): Promise<TestContext> {
-  const ctx = await createTestApp();
-  await createAdditionalTables(ctx.pool);
-
-  // Mount additional routers on the existing Express app
-  ctx.app.use(statusRouter(ctx.pool));
-  ctx.app.use(collectionsRouter(ctx.pool, new Map()));
-
-  return ctx;
-}
+import { createExpandedApp, createTestApp, seedTestData, type TestContext } from "./setup.js";
 
 // ─── Seed extra data for status/global-stats routes ─────────────────────────
 
@@ -201,8 +123,8 @@ describe("Status route integration tests", () => {
     // Collections linked to skins
     expect(body.collection_count).toBeGreaterThanOrEqual(2);
 
-    // Total skins (3 non-stattrak skins seeded)
-    expect(body.total_skins).toBe(3);
+    // Total skins (3 regular + 3 knife skins seeded, all non-stattrak)
+    expect(body.total_skins).toBe(6);
 
     // last_calculation was seeded by seedTestData
     expect(body.last_calculation).toBeTruthy();
@@ -236,10 +158,10 @@ describe("Status route integration tests", () => {
     const res = await request(ctx.app).get("/api/status");
 
     expect(res.status).toBe(200);
-    // No knife skins seeded (names don't start with star), so counts should be 0
-    expect(body(res).knife_glove_skins).toBe(0);
-    expect(body(res).knife_glove_with_listings).toBe(0);
-    expect(body(res).knife_glove_listings).toBe(0);
+    // 3 knife skins seeded (★ Bayonet, ★ Flip Knife, ★ Karambit), each with 1 listing
+    expect(body(res).knife_glove_skins).toBe(3);
+    expect(body(res).knife_glove_with_listings).toBe(3);
+    expect(body(res).knife_glove_listings).toBe(3);
   });
 
   // ─── GET /api/global-stats ──────────────────────────────────────────────
@@ -456,31 +378,41 @@ describe("Collections route integration tests", () => {
     }
   });
 
-  it("GET /api/collections reports no knives/gloves with empty pool", async () => {
+  it("GET /api/collections reports knife data from collectionKnifePool", async () => {
     const res = await request(ctx.app).get("/api/collections");
 
     expect(res.status).toBe(200);
 
-    // We passed an empty Map for collectionKnifePool
-    for (const col of res.body) {
-      expect(col.knife_type_count).toBe(0);
-      expect(col.glove_type_count).toBe(0);
-      expect(col.finish_count).toBe(0);
-      expect(col.has_knives).toBe(false);
-      expect(col.has_gloves).toBe(false);
-    }
+    // createExpandedApp passes collectionKnifePool with "Test Collection Alpha" having Bayonet + Flip Knife
+    const alpha = res.body.find((c: { name: string }) => c.name === "Test Collection Alpha");
+    const beta = res.body.find((c: { name: string }) => c.name === "Test Collection Beta");
+
+    expect(alpha.knife_type_count).toBe(2);
+    expect(alpha.glove_type_count).toBe(0);
+    expect(alpha.finish_count).toBe(3);
+    expect(alpha.has_knives).toBe(true);
+    expect(alpha.has_gloves).toBe(false);
+
+    // Beta has no entry in the knife pool
+    expect(beta.knife_type_count).toBe(0);
+    expect(beta.glove_type_count).toBe(0);
+    expect(beta.finish_count).toBe(0);
+    expect(beta.has_knives).toBe(false);
+    expect(beta.has_gloves).toBe(false);
   });
 
   // ─── GET /api/collection/:name ──────────────────────────────────────────
 
-  it("GET /api/collection/:name returns collection detail", async () => {
+  it("GET /api/collection/:name returns collection detail with knife pool", async () => {
     const res = await request(ctx.app).get(
       `/api/collection/${encodeURIComponent("Test Collection Alpha")}`,
     );
 
     expect(res.status).toBe(200);
     expect(res.body.collection).toBe("Test Collection Alpha");
-    expect(res.body.knifePool).toBeNull(); // empty map passed
+    expect(res.body.knifePool).toBeDefined();
+    expect(res.body.knifePool.knifeTypes).toEqual(["Bayonet", "Flip Knife"]);
+    expect(res.body.knifePool.finishCount).toBe(3);
   });
 
   it("GET /api/collection/:name returns null knifePool for unknown collection", async () => {
@@ -500,7 +432,31 @@ describe("Collections route with knife pool data", () => {
   beforeAll(async () => {
     // Create a custom app with a populated collectionKnifePool
     const baseCtx = await createTestApp();
-    await createAdditionalTables(baseCtx.pool);
+
+    // Additional tables needed by status/collections routers
+    await baseCtx.pool.query(`
+      CREATE TABLE IF NOT EXISTS collection_scores (
+        collection_id TEXT PRIMARY KEY, collection_name TEXT NOT NULL,
+        profitable_count INTEGER NOT NULL DEFAULT 0,
+        avg_profit_cents INTEGER NOT NULL DEFAULT 0,
+        priority_score DOUBLE PRECISION NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS daemon_cycle_stats (
+        id SERIAL PRIMARY KEY, daemon_version TEXT, cycle INTEGER,
+        started_at TIMESTAMPTZ, duration_ms INTEGER, api_calls_used INTEGER,
+        api_limit_detected INTEGER, api_available INTEGER,
+        knife_tradeups_total INTEGER, knife_profitable INTEGER,
+        theories_generated INTEGER, theories_profitable INTEGER, gaps_filled INTEGER,
+        cooldown_passes INTEGER, cooldown_new_found INTEGER, cooldown_improved INTEGER,
+        top_profit_cents INTEGER, avg_profit_cents INTEGER,
+        classified_total INTEGER DEFAULT 0, classified_profitable INTEGER DEFAULT 0,
+        classified_theories INTEGER DEFAULT 0, classified_theories_profitable INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS daemon_events (
+        id SERIAL PRIMARY KEY, event_type TEXT NOT NULL,
+        summary TEXT, detail TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
 
     const knifePool = new Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>();
     knifePool.set("Test Collection Alpha", {
