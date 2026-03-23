@@ -45,7 +45,7 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
     try {
       const params = new URLSearchParams();
       if (appliedSearch) params.set("search", appliedSearch);
-      if (rarity && !outputCollection) params.set("rarity", rarity);
+      if (rarity) params.set("rarity", rarity);
       if (collectionFilter) params.set("collection", collectionFilter);
       if (outputCollection) params.set("outputCollection", outputCollection);
       if (stattrak) params.set("stattrak", "1");
