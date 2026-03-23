@@ -44,8 +44,9 @@ describe("computeMADClampBounds", () => {
 
   it("lower bound floors at 0", () => {
     // Prices where MAD-based lower bound would go negative without the floor:
-    // median=5, deviations=[0,0,95,195,295], MAD=95, scale=3*95*1.4826=422.54
-    // lower = 5 - 422.54 = -417.54 → floored to 0
+    // sorted=[5,5,100,200,300], median=100 (floor-index),
+    // deviations=[95,95,0,100,200], sorted=[0,95,95,100,200], MAD=95
+    // scale=3*95*1.4826=422.54, lower=100-422.54=-322.54 → floored to 0
     const bounds = computeMADClampBounds([5, 5, 100, 200, 300]);
     expect(bounds).not.toBeNull();
     expect(bounds!.lower).toBe(0);
