@@ -299,6 +299,54 @@ export function dataRouter(
     });
   }));
 
+  // Skin name autocomplete for search inputs
+
+  router.get("/api/skin-suggestions", cachedRoute(
+    (req) => `skin_suggest:${(req.query.q as string || "").toLowerCase()}`,
+    60,
+    async (req, res) => {
+      const q = ((req.query.q as string) || "").trim();
+      if (q.length < 2) {
+        res.json({ results: [] });
+        return;
+      }
+
+      // Normalize: strip star and pipe from query, split into words for matching
+      const normalized = q.replace(/\u2605/g, "").replace(/\|/g, "").replace(/\s+/g, " ").trim();
+      const words = normalized.toLowerCase().split(" ").filter(Boolean);
+      if (words.length === 0) {
+        res.json({ results: [] });
+        return;
+      }
+
+      const params: string[] = [];
+      let paramIndex = 1;
+      const conditions = words.map(w => {
+        params.push(`%${w}%`);
+        return `LOWER(REPLACE(REPLACE(s.name, '\u2605', ''), '|', '')) LIKE $${paramIndex++}`;
+      });
+
+      const { rows } = await pool.query(`
+        SELECT s.name, s.weapon, s.rarity,
+          STRING_AGG(DISTINCT c.name, ',') as collection_name
+        FROM skins s
+        LEFT JOIN skin_collections sc ON s.id = sc.skin_id
+        LEFT JOIN collections c ON sc.collection_id = c.id
+        WHERE ${conditions.join(" AND ")} AND s.stattrak = false
+        GROUP BY s.name, s.weapon, s.rarity
+        ORDER BY CASE s.rarity
+          WHEN 'Extraordinary' THEN 6 WHEN 'Covert' THEN 5
+          WHEN 'Classified' THEN 4 WHEN 'Restricted' THEN 3
+          WHEN 'Mil-Spec' THEN 2 WHEN 'Industrial Grade' THEN 1
+          WHEN 'Consumer Grade' THEN 0 ELSE -1
+        END DESC, s.name ASC
+        LIMIT 15
+      `, params);
+
+      res.json({ results: rows });
+    },
+  ));
+
   router.get("/api/data-freshness", cachedRoute((req) => `freshness:${req.query.since || ""}:${req.query.rarity || ""}:${req.query.stattrak || 0}`, 15, async (req, res) => {
     try {
       const since = req.query.since as string | undefined;
