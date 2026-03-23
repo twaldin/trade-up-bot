@@ -26,10 +26,31 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     // Redis miss: fall back to DB
     try {
+      // Input skins
       const { rows: inputSkins } = await pool.query(
         `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
       );
-      const skinMap = inputSkins.map((s: any) => ({ name: s.name, input: true, output: false }));
+      // Output skins from outcomes_json
+      const { rows: outputSkins } = await pool.query(
+        `SELECT DISTINCT elem->>'skin_name' as name
+         FROM trade_ups t, json_array_elements(t.outcomes_json::json) AS elem
+         WHERE t.listing_status = 'active' AND t.is_theoretical = false
+           AND t.outcomes_json IS NOT NULL AND t.outcomes_json != '[]'`
+      );
+
+      // Merge: build map of name → { input, output }
+      const skinFlags = new Map<string, { input: boolean; output: boolean }>();
+      for (const s of inputSkins) {
+        skinFlags.set(s.name, { input: true, output: false });
+      }
+      for (const s of outputSkins) {
+        const existing = skinFlags.get(s.name);
+        if (existing) existing.output = true;
+        else skinFlags.set(s.name, { input: false, output: true });
+      }
+      const skinMap = [...skinFlags.entries()].map(([name, flags]) => ({
+        name, input: flags.input, output: flags.output,
+      }));
       const { rows: collections } = await pool.query(
         `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
       );
