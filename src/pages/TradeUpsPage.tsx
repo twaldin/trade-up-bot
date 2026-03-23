@@ -45,7 +45,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     if (typeof window !== "undefined") return localStorage.getItem("user_tier") || "free";
     return "free";
   });
-  const [myClaimCount, setMyClaimCount] = useState(0);
   const [claimLimit, setClaimLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
   const [verifyLimit, setVerifyLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
 
@@ -57,8 +56,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [sort, setSort] = useState(() => searchParams.get("sort") || "profit");
   const [order, setOrder] = useState<"asc" | "desc">(() => (searchParams.get("order") as "asc" | "desc") || "desc");
   const [includeStale, setIncludeStale] = useState(() => searchParams.get("stale") === "true");
-  const [showMyClaims, setShowMyClaims] = useState(false);
-
   // Filters from URL
   const [filters, setFilters] = useState<Filters>(() => {
     const f = { ...EMPTY_FILTERS };
@@ -119,9 +116,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       params.set("order", order);
       params.set("page", String(page));
       params.set("per_page", String(perPage));
-      if (showMyClaims) {
-        params.set("my_claims", "true");
-      } else if (type !== "all") {
+      if (type !== "all") {
         params.set("type", type);
       }
       if (includeStale) params.set("include_stale", "true");
@@ -137,7 +132,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       const newTier = data.tier || "free";
       setTier(newTier);
       try { localStorage.setItem("user_tier", newTier); } catch {}
-      setMyClaimCount(data.my_claim_count ?? 0);
       if (data.claim_limit) setClaimLimit(data.claim_limit);
       if (data.verify_limit) setVerifyLimit(data.verify_limit);
     } catch (err) {
@@ -146,7 +140,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     } finally {
       if (!controller.signal.aborted && !silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey, showMyClaims]);
+  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey]);
 
   useEffect(() => {
     fetchTradeUps();
@@ -169,19 +163,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const handleTypeChange = (newType: TradeUpType) => {
     // Batch state updates: set loading with type change so old data
     // stays dimmed (no flash of empty state between renders)
-    setShowMyClaims(false);
     setType(newType);
     setPage(1);
     setLoading(true);
   };
 
   const handleClaimChange = useCallback((delta: number) => {
-    setMyClaimCount(c => {
-      const next = Math.max(0, c + delta);
-      // Auto-navigate back to "all" when last claim released
-      if (next === 0) setShowMyClaims(false);
-      return next;
-    });
+    // no-op tracking; claims page is now separate
   }, []);
 
   const totalPages = Math.ceil(total / perPage);
@@ -192,7 +180,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       {types.length > 1 && (
         <div className="flex items-center gap-1.5 md:gap-2 mb-3 flex-wrap">
           {types.map((t) => {
-            const isActive = !showMyClaims && type === t.value;
+            const isActive = type === t.value;
             return (
               <button
                 key={t.value}
@@ -207,18 +195,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
               </button>
             );
           })}
-          {(isPro || isBasic) && myClaimCount > 0 && (
-            <button
-              className={`px-3 md:px-4 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-full border transition-colors cursor-pointer ${
-                showMyClaims
-                  ? "border-purple-500/40 bg-purple-500/10 text-purple-500"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => { setShowMyClaims(!showMyClaims); setPage(1); setLoading(true); }}
-            >
-              Your Claims ({myClaimCount})
-            </button>
-          )}
         </div>
       )}
 
@@ -254,12 +230,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       {/* Empty state — only when not loading AND no data */}
       {!loading && tradeUps.length === 0 ? (
         <div className="text-center py-16 px-5 text-muted-foreground">
-          {showMyClaims ? (
-            <>
-              <p className="mb-2">No active claims.</p>
-              <p className="text-sm text-muted-foreground/70">Expand a profitable trade-up and click Claim to lock its listings for 30 minutes.</p>
-            </>
-          ) : status?.daemon_status?.phase === "calculating" ? (
+          {status?.daemon_status?.phase === "calculating" ? (
             <>
               <div className="text-4xl mb-3 opacity-50">&#9881;</div>
               <p className="mb-2">Calculating trade-ups...</p>
@@ -290,7 +261,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onNavigateCollection={onNavigateCollection}
             onClaimChange={(isPro || isBasic) ? handleClaimChange : undefined}
             tier={tier}
-            showMyClaims={showMyClaims}
             claimLimit={claimLimit}
             verifyLimit={verifyLimit}
             onClaimLimitUpdate={setClaimLimit}

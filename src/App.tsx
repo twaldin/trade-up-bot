@@ -10,6 +10,7 @@ import { TermsPage } from "./pages/TermsPage.js";
 import { PrivacyPage } from "./pages/PrivacyPage.js";
 import { FeaturesPage } from "./pages/FeaturesPage.js";
 import { PricingPage } from "./pages/PricingPage.js";
+import MyTradeUpsPage from "./pages/MyTradeUpsPage.js";
 import { BlogPage } from "./pages/BlogPage.js";
 import { BlogPostPage } from "./pages/BlogPostPage.js";
 import { SiteFooter } from "./components/SiteFooter.js";
@@ -312,6 +313,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
         {[
           { to: "/dashboard", label: "Trade-Ups", end: true },
+          ...(user && (user.tier === "pro" || user.tier === "basic" || user.is_admin) ? [{ to: "/my-trade-ups", label: "My Trade-Ups" }] : []),
           { to: "/data", label: "Data" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
@@ -343,6 +345,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             <CalculatorPage />
           </Suspense>
         } />
+        <Route path="/my-trade-ups" element={<MyTradeUpsPage />} />
       </Routes>
       </div>
       <SiteFooter />
