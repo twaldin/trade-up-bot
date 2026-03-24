@@ -29,7 +29,7 @@ interface GlobalStats {
 }
 
 function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
-  if (!stats) return null;
+  if (!stats || stats.total_trade_ups == null) return null;
 
   // Total analysis time = cycles * 20min target
   const totalMinutes = stats.total_cycles * 20;
