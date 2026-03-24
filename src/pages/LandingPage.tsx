@@ -141,7 +141,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             </div>
 
             {/* Stats */}
-            {stats && (
+            {stats && stats.total_trade_ups != null && (
               <div className="flex gap-8 mb-12 text-sm">
                 <div><span className="text-foreground font-semibold tabular-nums">{stats.total_trade_ups.toLocaleString()}</span> <span className="text-muted-foreground">trade-ups</span></div>
                 <div><span className="text-green-500 font-semibold tabular-nums">{stats.profitable_trade_ups.toLocaleString()}</span> <span className="text-muted-foreground">profitable</span></div>

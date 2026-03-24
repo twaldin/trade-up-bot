@@ -59,7 +59,7 @@ export function statusRouter(pool: pg.Pool): Router {
       res.setHeader("X-Cache", "MISS");
       res.json(data);
     } catch {
-      res.json({});
+      res.json({ total_trade_ups: 0, profitable_trade_ups: 0, total_data_points: 0, total_cycles: 0 });
     }
   });
 
