@@ -707,6 +707,24 @@ export async function main() {
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
     await printPerformanceComparison(pool);
 
+    // Generate trade-up sitemap for SEO (profitable active trade-ups only)
+    try {
+      const { rows: tuRows } = await pool.query(`
+        SELECT id FROM trade_ups
+        WHERE is_theoretical = false AND profit_cents > 0 AND listing_status = 'active'
+        ORDER BY profit_cents DESC LIMIT 50000
+      `);
+      const lastmod = new Date().toISOString().split("T")[0];
+      const urls = tuRows.map((r: { id: number }) =>
+        `  <url><loc>https://tradeupbot.app/trade-ups/${r.id}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.5</priority></url>`
+      ).join("\n");
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`;
+      fs.writeFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "public", "sitemap-tradeups.xml"), xml);
+      console.log(`  Sitemap: wrote ${tuRows.length} trade-up URLs to sitemap-tradeups.xml`);
+    } catch (e) {
+      console.error("  Sitemap generation failed:", e instanceof Error ? e.message : e);
+    }
+
     // Check for queued restart — exit cleanly so PM2 auto-restarts
     if (restartQueued) {
       console.log(`\n[${timestamp()}] Queued restart: exiting after cycle ${cycleCount}`);

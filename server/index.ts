@@ -158,8 +158,7 @@ app.use((req, res, next) => {
     }
   });
 
-  // Dynamic OG tags for shareable trade-up pages (social media bots)
-  const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot/i;
+  // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
   const TYPE_LABELS: Record<string, string> = {
     covert_knife: "Knife/Glove", classified_covert: "Covert",
     restricted_classified: "Classified", milspec_restricted: "Restricted",
@@ -168,33 +167,37 @@ app.use((req, res, next) => {
   };
   app.get("/trade-ups/:id", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
-    if (!SOCIAL_BOTS.test(ua)) return next(); // normal browser → SPA fallback
+    if (!isCrawler(ua)) return next();
     try {
-      const { rows: [row] } = await pool.query("SELECT type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit FROM trade_ups WHERE id = $1", [req.params.id]);
+      const { rows: [row] } = await pool.query(
+        "SELECT type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at FROM trade_ups WHERE id = $1",
+        [req.params.id]
+      );
       if (!row) return next();
       const typeLabel = TYPE_LABELS[row.type] || row.type;
       const profit = (row.profit_cents / 100).toFixed(2);
       const cost = (row.total_cost_cents / 100).toFixed(2);
       const chance = Math.round((row.chance_to_profit ?? 0) * 100);
       const roi = row.roi_percentage?.toFixed(1) ?? "0";
-      const title = `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance)`;
-      const desc = `$${cost} cost, ${roi}% ROI. Found on TradeUpBot.`;
-      const url = `https://tradeupbot.app/trade-ups/${req.params.id}`;
-      const ogImage = `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`;
-      res.send(`<!DOCTYPE html><html><head>
-<meta property="og:title" content="${title}" />
-<meta property="og:description" content="${desc}" />
-<meta property="og:image" content="${ogImage}" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:url" content="${url}" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
-<meta name="twitter:description" content="${desc}" />
-<meta name="twitter:image" content="${ogImage}" />
-<title>${title}</title>
-</head><body></body></html>`);
+
+      // Noindex stale or old preserved trade-ups
+      const isStale = row.listing_status === "stale"
+        || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
+
+      const { rows: inputs } = await pool.query(
+        "SELECT skin_name, condition FROM trade_up_inputs WHERE trade_up_id = $1 LIMIT 3",
+        [row.id ?? req.params.id]
+      );
+      const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name).join(", ");
+
+      res.send(buildSeoHtml({
+        title: `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`,
+        description: `$${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
+        url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
+        ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
+        robots: isStale ? "noindex, follow" : "index, follow",
+        bodyText: `${typeLabel} Trade-Up: $${profit} profit, ${roi}% ROI, ${chance}% chance to profit. Cost: $${cost}. Inputs: ${inputNames}.`,
+      }));
     } catch { next(); }
   });
 
