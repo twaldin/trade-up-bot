@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { Helmet } from "react-helmet-async";
 import type { TradeUp } from "../../shared/types.js";
 import { formatDollars, condAbbr } from "../utils/format.js";
 import { OutcomeChart } from "../components/trade-up/OutcomeChart.js";
@@ -378,6 +379,25 @@ export function CalculatorPage() {
 
   return (
     <div>
+      <Helmet>
+        <title>CS2 Trade-Up Calculator — Float, Probability & Profit | TradeUpBot</title>
+        <meta name="description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit. Free online tool." />
+        <link rel="canonical" href="https://tradeupbot.app/calculator" />
+        <meta property="og:title" content="CS2 Trade-Up Calculator | TradeUpBot" />
+        <meta property="og:description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
+        <meta property="og:url" content="https://tradeupbot.app/calculator" />
+        <meta property="og:type" content="website" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "CS2 Trade-Up Calculator",
+          "url": "https://tradeupbot.app/calculator",
+          "applicationCategory": "GameApplication",
+          "operatingSystem": "Web",
+          "description": "Calculate CS2 trade-up contract outcomes including float prediction, output probabilities, expected value, and profit analysis.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        })}</script>
+      </Helmet>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -505,6 +525,26 @@ export function CalculatorPage() {
           </div>
         </div>
       )}
+
+      <section className="mt-12 pt-8 border-t border-border max-w-2xl">
+        <h2 className="text-lg font-semibold mb-3">How CS2 Trade-Up Math Works</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+          CS2 trade-up contracts take 10 skins of one rarity and produce 1 skin of the next
+          higher rarity. The output is randomly selected from all next-tier skins in the input
+          collections, weighted by how many inputs came from each collection.
+        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+          The output float is calculated using the adjusted float formula:
+          <code className="text-xs bg-muted px-1.5 py-0.5 rounded mx-1">
+            output = avg_adjusted × (max - min) + min
+          </code>
+          where each input's adjusted float normalizes it within that skin's float range.
+        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          This calculator computes all possible outcomes, their probabilities, predicted floats
+          and conditions, and estimated output prices from CSFloat, DMarket, and Skinport market data.
+        </p>
+      </section>
     </div>
   );
 }

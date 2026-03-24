@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
@@ -176,6 +177,24 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   return (
     <>
+      <Helmet>
+        <title>CS2 Trade-Ups — Profitable Contracts Updated Live | TradeUpBot</title>
+        <meta name="description" content="Browse profitable CS2 trade-up contracts. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
+        <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
+        <meta property="og:title" content="CS2 Trade-Ups — Profitable Contracts | TradeUpBot" />
+        <meta property="og:description" content="Browse profitable CS2 trade-up contracts. Filter by profit, ROI, cost, and rarity." />
+        <meta property="og:url" content="https://tradeupbot.app/trade-ups" />
+        <meta property="og:type" content="website" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "TradeUpBot — CS2 Trade-Up Finder",
+          "url": "https://tradeupbot.app/trade-ups",
+          "applicationCategory": "GameApplication",
+          "operatingSystem": "Web",
+          "description": "Find profitable CS2 trade-up contracts using real marketplace listings."
+        })}</script>
+      </Helmet>
       {/* Type selector + Your Claims button */}
       {types.length > 1 && (
         <div className="flex items-center gap-1.5 md:gap-2 mb-3 flex-wrap">
