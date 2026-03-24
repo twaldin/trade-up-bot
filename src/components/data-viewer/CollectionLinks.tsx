@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 
 interface CollectionLinksProps {
   collectionName: string | null;
@@ -26,10 +27,11 @@ export function CollectionLinks({ collectionName, onNavigate, compact }: Collect
   const renderLink = (name: string, key: number) => (
     <span key={key}>
       {key > 0 && ", "}
-      <span
-        className={`text-muted-foreground ${onNavigate ? "cursor-pointer underline decoration-dotted underline-offset-2 hover:text-blue-400" : ""}`}
-        onClick={onNavigate ? (e) => { e.stopPropagation(); onNavigate(name); } : undefined}
-      >{name}</span>
+      <Link
+        to={`/collections/${encodeURIComponent(name)}`}
+        className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-blue-400 transition-colors"
+        onClick={(e) => { e.stopPropagation(); if (onNavigate) onNavigate(name); }}
+      >{name}</Link>
     </span>
   );
 
@@ -46,11 +48,12 @@ export function CollectionLinks({ collectionName, onNavigate, compact }: Collect
       {open && (
         <div className="absolute top-full left-0 z-[100] bg-secondary border border-border rounded-md py-1 min-w-[220px] max-h-[300px] overflow-y-auto shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
           {cols.map((c, i) => (
-            <div
+            <Link
               key={i}
-              className="px-3 py-1.5 cursor-pointer text-foreground/80 text-[0.8rem] whitespace-nowrap hover:bg-accent hover:text-blue-400"
+              to={`/collections/${encodeURIComponent(c)}`}
+              className="block px-3 py-1.5 text-foreground/80 text-[0.8rem] whitespace-nowrap hover:bg-accent hover:text-blue-400 no-underline"
               onClick={(e) => { e.stopPropagation(); if (onNavigate) onNavigate(c); setOpen(false); }}
-            >{c}</div>
+            >{c}</Link>
           ))}
         </div>
       )}

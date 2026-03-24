@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
 import { formatDollars, condAbbr, timeAgo, csfloatSearchUrl, listingUrl, listingSource, sourceLabel, sourceColor } from "../../utils/format.js";
 import { Badge } from "../../../shared/components/ui/badge.js";
+import { toSlug } from "../../../shared/slugs.js";
 
 interface VerifyResult {
   trade_up_id: number;
@@ -50,13 +52,12 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
         >
           {input.skin_name}
         </a>
-        {onNavigateSkin && (
-          <button
-            className="text-muted-foreground/50 text-[0.6rem] cursor-pointer shrink-0 hover:text-blue-400 transition-colors"
-            title={`View ${input.skin_name} data`}
-            onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
-          >View data</button>
-        )}
+        <Link
+          to={`/skins/${toSlug(input.skin_name)}`}
+          className="text-muted-foreground/50 text-[0.6rem] shrink-0 hover:text-blue-400 transition-colors"
+          title={`View ${input.skin_name}`}
+          onClick={(e) => e.stopPropagation()}
+        >View data</Link>
       </div>
       {/* Row 2: Source + condition + float */}
       <div className="flex items-center gap-1 mb-0.5">
@@ -177,13 +178,12 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
         </span>
       </div>
       {/* Row 3: View data link */}
-      {onNavigateSkin && (
-        <button
-          className="mt-0.5 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
-          title={`View ${input.skin_name} data`}
-          onClick={(e) => { e.stopPropagation(); onNavigateSkin(input.skin_name); }}
-        >View data &rarr;</button>
-      )}
+      <Link
+        to={`/skins/${toSlug(input.skin_name)}`}
+        className="mt-0.5 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
+        title={`View ${input.skin_name}`}
+        onClick={(e) => e.stopPropagation()}
+      >View data &rarr;</Link>
     </div>
   );
 }

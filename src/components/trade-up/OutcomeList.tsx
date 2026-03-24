@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import { formatDollars, condAbbr, csfloatSearchUrl } from "../../utils/format.js";
 import { PriceDetailsPanel } from "./PriceDetailsPanel.js";
+import { toSlug } from "../../../shared/slugs.js";
 
 interface OutcomeListProps {
   tu: TradeUp;
@@ -103,14 +105,13 @@ export function OutcomeList({ tu, priceDetailKey, onTogglePriceDetail, onNavigat
               )}
 
               {/* Navigate button */}
-              {onNavigateSkin && (
-                <button
-                  className="mt-1 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); onNavigateSkin(outcome.skin_name); }}
-                >
-                  View data →
-                </button>
-              )}
+              <Link
+                to={`/skins/${toSlug(outcome.skin_name)}`}
+                className="mt-1 text-[0.65rem] text-muted-foreground/50 hover:text-blue-400 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                View data →
+              </Link>
 
               {/* Price details panel */}
               {showDetails && (
