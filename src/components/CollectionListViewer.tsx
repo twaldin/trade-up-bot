@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { Helmet } from "react-helmet-async";
 import { formatDollars } from "../utils/format.js";
 import { Input } from "@shared/components/ui/input.js";
 import { Badge } from "@shared/components/ui/badge.js";
@@ -63,6 +64,11 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
 
   return (
     <div className="mt-4">
+      <Helmet>
+        <title>CS2 Collections — Browse All Trade-Up Collections | TradeUpBot</title>
+        <meta name="description" content="Browse all CS2 weapon collections. See skin counts, listing data, and profitable trade-up opportunities for every collection." />
+        <link rel="canonical" href="https://tradeupbot.app/collections" />
+      </Helmet>
       <div className="flex gap-2 items-center mb-3 flex-wrap">
         <div className="flex gap-0 w-fit">
           {FILTER_OPTIONS.map(([val, label], i) => (

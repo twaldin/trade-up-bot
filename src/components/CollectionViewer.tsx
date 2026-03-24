@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Helmet } from "react-helmet-async";
 import { DataViewer } from "./DataViewer.js";
 import { TradeUpTable } from "./TradeUpTable.js";
 import { FilterBar, EMPTY_FILTERS, filtersToParams } from "./FilterBar.js";
@@ -94,6 +95,15 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
 
   return (
     <div>
+      <Helmet>
+        <title>{collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot</title>
+        <meta name="description" content={`${collectionName} collection: browse skins and find profitable trade-ups.`} />
+        <link rel="canonical" href={`https://tradeupbot.app/collections/${encodeURIComponent(collectionName)}`} />
+        <meta property="og:title" content={`${collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`} />
+        <meta property="og:description" content={`Browse skins and find profitable trade-ups from the ${collectionName} collection.`} />
+        <meta property="og:url" content={`https://tradeupbot.app/collections/${encodeURIComponent(collectionName)}`} />
+        <meta property="og:type" content="website" />
+      </Helmet>
       {/* Header */}
       <div className="flex items-center gap-3 mb-3">
         <Button variant="outline" size="sm" onClick={onBack}>← Back</Button>
