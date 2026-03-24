@@ -46,6 +46,108 @@ export function FaqPage() {
         <meta property="og:description" content="Common questions about TradeUpBot and CS2 trade-up contracts." />
         <meta property="og:url" content="https://tradeupbot.app/faq" />
         <meta property="og:type" content="website" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is a CS2 trade-up contract?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "A trade-up contract is an in-game mechanic in Counter-Strike 2 where you exchange 10 weapon skins of the same rarity tier for 1 skin of the next higher rarity tier. The output skin comes from the same collection(s) as your inputs. The float value (wear) of the output is determined by a formula based on the float values of all 10 inputs. For Knife/Glove trade-ups, you exchange 5 Covert-rarity skins for 1 Knife or Glove from the matching case collections."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How does TradeUpBot find profitable trade-ups?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Unlike other tools that use theoretical calculations with idealized float values, TradeUpBot builds every trade-up from real, buyable listings on CSFloat, DMarket, and Skinport. Our engine continuously scans marketplace listings, tests thousands of input combinations across 45+ float targets, and evaluates the expected profit and probability of each outcome. Every trade-up you see on the platform links to actual listings you can purchase right now, with exact floats, exact prices, and deterministic outcomes."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What does \"chance to profit\" mean?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "A trade-up contract can produce different output skins depending on which collections your inputs come from. Each possible output has a probability based on the proportion of inputs from its collection. \"Chance to profit\" is the summed probability of all outcomes where the output value exceeds the total input cost. For example, a trade-up with 70% chance to profit means that 70% of the possible outcomes (weighted by probability) would result in a net gain. TradeUpBot keeps trade-ups with over 25% chance to profit, even if the overall expected value is slightly negative."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How accurate are the prices?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Prices are estimates based on real marketplace data. Output prices are primarily derived from CSFloat sale history (the most reliable source), with DMarket and Skinport listing data used as gap-fill when CSFloat data is unavailable. Input prices are the actual listing prices on each marketplace, including applicable buyer fees. Prices can change between when you view a trade-up and when you purchase the listings. Always verify a trade-up before buying to check current availability and pricing."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What does \"Verify\" do?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Verify checks whether all the input listings for a trade-up are still available on their respective marketplaces and at what price. This gives you up-to-the-moment confirmation before you commit to buying. If a listing has been sold or delisted, verification will flag it so you know the trade-up may no longer be viable."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What does \"Claim\" do?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Claiming a trade-up (Pro tier only) hides its listings from other TradeUpBot users for 30 minutes, giving you time to purchase the inputs without competition. You can have up to 5 active claims at once. Claims expire automatically after 30 minutes if not completed."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How often is data updated?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Data is updated continuously. The discovery engine runs in approximately 20-minute cycles, scanning for new listings and recalculating trade-ups each cycle. DMarket listings are fetched continuously at 2 requests per second in a separate process. Skinport data streams in via a live WebSocket connection."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What marketplaces are supported?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "TradeUpBot sources input listings from three marketplaces: CSFloat (primary source for Covert skins and sale-based pricing), DMarket (broad coverage across all rarity tiers at 2 req/s), and Skinport (passive WebSocket feed, no rate limits). Each marketplace has different buyer fees which are factored into the total input cost calculations."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Why are some trade-ups marked as stale or partial?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Listings on marketplaces are constantly being bought and delisted. When one or more inputs in a trade-up are no longer available, the trade-up is marked as partial (some inputs missing) or stale (not updated in recent cycles). The engine attempts to find replacement listings each cycle, but availability depends on market conditions."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What's the difference between Free, Basic, and Pro?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Free — Unlimited trade-ups with full filters, search, sorting, listing links, and outcome details. 3-hour data delay. No verification or claims. Basic ($5/mo) — Everything in Free plus a 30-minute data delay, availability verification (10/hr), and claims (5/day, up to 5 active). Pro ($15/mo) — Everything in Basic plus real-time data (no delay), more verifications (20/hr), and more claims (10/hr)."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I lose money on a trade-up?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. While TradeUpBot identifies trade-ups with favorable expected values, there is always risk involved: prices are estimates and can change before you sell the output; items purchased from marketplaces have trade lock periods during which prices may shift; you may receive a lower-value outcome (especially on trade-ups with less than 100% chance to profit); and marketplace fees reduce your effective return. TradeUpBot is an analysis tool, not financial advice. Never invest more than you can afford to lose."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What are the rate limits?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Rate limits vary by tier and action. Verify: Basic 10/hour, Pro 20/hour. Claim: Basic 5/day, Pro 10/hour (up to 5 active claims). These limits exist to ensure fair access and prevent abuse of marketplace APIs."
+              }
+            }
+          ]
+        })}</script>
       </Helmet>
       <SiteNav />
 
