@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation, Navigate } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
 import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
@@ -117,7 +117,7 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
       defaultType="all"
       status={status}
       refreshKey={refreshKey}
-      onNavigateSkin={(name) => navigate(`/data?search=${encodeURIComponent(name)}`)}
+      onNavigateSkin={(name) => navigate(`/skins?search=${encodeURIComponent(name)}`)}
       onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
     />
   );
@@ -303,7 +303,17 @@ function AppShell({ user }: { user?: AuthUser | null }) {
               return `C${cycle}`;
             })()}
           </Button>}
-          {user && <UserMenu user={user} />}
+          {user ? (
+            <UserMenu user={user} />
+          ) : (
+            <a
+              href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
+              Sign In
+            </a>
+          )}
         </div>
       </div>
 
@@ -312,9 +322,9 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       {/* Navigation */}
       <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
         {[
-          { to: "/dashboard", label: "Trade-Ups", end: true },
+          { to: "/trade-ups", label: "Trade-Ups", end: true },
           ...(user && (user.tier === "pro" || user.tier === "basic" || user.is_admin) ? [{ to: "/my-trade-ups", label: "My Trade-Ups" }] : []),
-          { to: "/data", label: "Data" },
+          { to: "/skins", label: "Skins" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
         ].map(({ to, label, end }) => (
@@ -336,8 +346,8 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       </nav>
 
       <Routes>
-        <Route path="/dashboard" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
-        <Route path="/data" element={<DataPage />} />
+        <Route path="/trade-ups" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
+        <Route path="/skins" element={<DataPage />} />
         <Route path="/collections" element={<CollectionListPage />} />
         <Route path="/collections/:name" element={<CollectionPage />} />
         <Route path="/calculator" element={
@@ -346,6 +356,9 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           </Suspense>
         } />
         <Route path="/my-trade-ups" element={<MyTradeUpsPage />} />
+        {/* Legacy redirects */}
+        <Route path="/dashboard" element={<Navigate to="/trade-ups" replace />} />
+        <Route path="/data" element={<Navigate to="/skins" replace />} />
       </Routes>
       </div>
       <SiteFooter />
@@ -364,14 +377,12 @@ interface AuthUser {
 }
 
 function AuthGatedApp() {
-  // Initialize from localStorage to avoid blocking "Loading..." screen.
-  // If cached user exists, show UI immediately. Background fetch refreshes.
   const [user, setUser] = useState<AuthUser | null | undefined>(() => {
     try {
       const cached = localStorage.getItem("site_nav_user");
       if (cached) return JSON.parse(cached) as AuthUser;
     } catch {}
-    return undefined; // no cache = show loading briefly
+    return undefined;
   });
   const location = useLocation();
 
@@ -390,24 +401,21 @@ function AuthGatedApp() {
       .catch(() => setUser(null));
   }, []);
 
-  // Only show loading if no cached user (first visit ever)
-  if (user === undefined) {
-    return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
-  }
-
-  // Landing page: always accessible (logged in or not)
-  // Logged-in users who navigate to / see landing page with "Dashboard" button
+  // Landing page always accessible
   if (location.pathname === "/" || location.pathname === "") {
+    return <LandingPage user={user ?? undefined} />;
+  }
+
+  // Auth-required routes: redirect to landing if not logged in
+  if (location.pathname === "/my-trade-ups") {
+    if (user === undefined) {
+      return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
+    }
     if (!user) return <LandingPage />;
-    return <LandingPage user={user} />;
   }
 
-  // All other app routes require login
-  if (!user) {
-    return <LandingPage />;
-  }
-
-  return <AppShell user={user} />;
+  // All other app routes: render publicly. Pass user (may be null/undefined).
+  return <AppShell user={user ?? null} />;
 }
 
 export default function App() {
