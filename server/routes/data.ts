@@ -1,6 +1,7 @@
 import { Router } from "express";
 import pg from "pg";
-import { cachedRoute } from "../redis.js";
+import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
+import { toSlug } from "../../shared/slugs.js";
 
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>;
 type KnifeTypeToCases = Map<string, string[]>;
@@ -447,5 +448,27 @@ export function dataRouter(
     }
   }));
 
+  router.get("/api/skin-by-slug/:slug", async (req, res) => {
+    try {
+      const slugMap = await getSlugMap(pool);
+      const name = slugMap.get(req.params.slug);
+      if (!name) { res.status(404).json({ error: "Skin not found" }); return; }
+      res.json({ name });
+    } catch {
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   return router;
+}
+
+export async function getSlugMap(pool: pg.Pool): Promise<Map<string, string>> {
+  const cached = await cacheGet<Record<string, string>>("slug_map");
+  if (cached) return new Map(Object.entries(cached));
+
+  const { rows } = await pool.query("SELECT name FROM skins WHERE stattrak = false ORDER BY name");
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(toSlug(r.name), r.name);
+  await cacheSet("slug_map", Object.fromEntries(map), 600);
+  return map;
 }

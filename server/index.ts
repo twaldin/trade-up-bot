@@ -19,6 +19,7 @@ import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
+import { buildSeoHtml, isCrawler } from "./seo.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -194,6 +195,37 @@ app.use((req, res, next) => {
 <meta name="twitter:image" content="${ogImage}" />
 <title>${title}</title>
 </head><body></body></html>`);
+    } catch { next(); }
+  });
+
+  // SEO: crawler handler for /skins/:slug pages
+  app.get("/skins/:slug", async (req, res, next) => {
+    const ua = req.headers["user-agent"] || "";
+    if (!isCrawler(ua)) return next();
+    try {
+      const { getSlugMap } = await import("./routes/data.js");
+      const slugMap = await getSlugMap(pool);
+      const skinName = slugMap.get(req.params.slug);
+      if (!skinName) return next();
+
+      const { rows: [stats] } = await pool.query(`
+        SELECT COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price, MAX(l.price_cents) as max_price
+        FROM skins s JOIN listings l ON s.id = l.skin_id
+        WHERE s.name = $1 AND s.stattrak = false
+      `, [skinName]);
+
+      const listingCount = stats?.listing_count || 0;
+      const minPrice = stats?.min_price ? (stats.min_price / 100).toFixed(2) : "N/A";
+      const maxPrice = stats?.max_price ? (stats.max_price / 100).toFixed(2) : "N/A";
+      const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
+
+      res.send(buildSeoHtml({
+        title: `${skinName} Price & Float Data — CS2 | TradeUpBot`,
+        description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} active listings across CSFloat, DMarket, and Skinport.`,
+        url: `https://tradeupbot.app/skins/${req.params.slug}`,
+        robots,
+        bodyText: `${skinName} — ${listingCount} listings, $${minPrice} to $${maxPrice}. View price charts, float data, and trade-up opportunities on TradeUpBot.`,
+      }));
     } catch { next(); }
   });
 
