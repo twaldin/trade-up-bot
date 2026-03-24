@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 2560px;
+    height: 1440px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  }
+  .title {
+    font-size: 120px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 2px;
+    margin-bottom: 30px;
+  }
+  .subtitle {
+    font-size: 48px;
+    font-weight: 500;
+    color: #a0a0b0;
+    margin-bottom: 20px;
+  }
+  .schedule {
+    font-size: 32px;
+    font-weight: 400;
+    color: #707080;
+  }
+  /* YouTube safe area indicator (1546x423 center) — remove for final */
+  .safe-area {
+    position: absolute;
+    width: 1546px;
+    height: 423px;
+    border: 2px dashed rgba(255,255,255,0.1);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div class="safe-area"></div>
+  <div class="title">TradeUpBot</div>
+  <div class="subtitle">CS2 Trade-Ups From Real Listings</div>
+  <div class="schedule">New video every Thursday</div>
+</body>
+</html>

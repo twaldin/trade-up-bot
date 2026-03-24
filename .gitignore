@@ -43,3 +43,9 @@ scaling.md
 CLAUDE.md
 server/**/CLAUDE.md
 docs/
+
+# Content production (raw footage, edited video, screenshots)
+content/raw/
+content/edited/
+content/thumbnails/
+content/screenshots/
