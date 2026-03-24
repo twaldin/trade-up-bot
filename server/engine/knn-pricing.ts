@@ -650,9 +650,8 @@ export async function bootstrapLearnedPrices(pool: pg.Pool): Promise<number> {
         WHEN 'csfloat_sales' THEN 1
         WHEN 'listing' THEN 2
         WHEN 'csfloat_ref' THEN 3
-        WHEN 'steam' THEN 4
-        WHEN 'skinport' THEN 5
-        ELSE 6
+        WHEN 'skinport' THEN 4
+        ELSE 5
       END as priority
     FROM price_data
     WHERE avg_price_cents > 0
