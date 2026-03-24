@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { toSlug } from "../../shared/slugs.js";
+import { toSlug, collectionToSlug } from "../../shared/slugs.js";
 
 // Blog post slugs inlined to avoid importing from src/ (frontend module boundary)
 const BLOG_SLUGS = [
@@ -56,7 +56,7 @@ ${urls}
 
 export function buildCollectionSitemap(base: string, collections: { name: string }[], lastmod: string): string {
   const urls = collections.map(c =>
-    `  <url><loc>${base}/collections/${encodeURIComponent(c.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>`
+    `  <url><loc>${base}/collections/${collectionToSlug(c.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>`
   ).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>

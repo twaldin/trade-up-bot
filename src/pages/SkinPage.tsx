@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
+import { collectionToSlug } from "../../shared/slugs.js";
 
 const DataViewer = lazy(() => import("../components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 
@@ -42,8 +43,8 @@ export function SkinPage() {
       </Helmet>
       <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
         <DataViewer
-          initialSearch={skinName}
-          onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+          initialSelectedSkin={skinName}
+          onNavigateCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
         />
       </Suspense>
     </>

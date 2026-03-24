@@ -22,3 +22,20 @@ export function toSlug(skinName: string): string {
 export function fromSlug(_slug: string): string | null {
   return null;
 }
+
+/**
+ * Convert a CS2 collection name to a URL-safe slug.
+ * "The Dreams & Nightmares Collection" → "dreams-nightmares"
+ * "The Fracture Collection" → "fracture"
+ */
+export function collectionToSlug(collectionName: string): string {
+  return collectionName
+    .replace(/^The\s+/i, "")
+    .replace(/\s+Collection$/i, "")
+    .replace(/[^a-zA-Z0-9\s-]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+}

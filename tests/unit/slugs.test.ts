@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toSlug, fromSlug } from "../../shared/slugs.js";
+import { toSlug, fromSlug, collectionToSlug } from "../../shared/slugs.js";
 
 describe("toSlug", () => {
   it("converts standard skin name", () => {
@@ -40,5 +40,26 @@ describe("toSlug", () => {
 describe("fromSlug", () => {
   it("is the inverse lookup — tested in integration with DB", () => {
     expect(typeof fromSlug).toBe("function");
+  });
+});
+
+describe("collectionToSlug", () => {
+  it("strips The prefix and Collection suffix", () => {
+    expect(collectionToSlug("The Dreams & Nightmares Collection")).toBe("dreams-nightmares");
+  });
+  it("handles simple collection names", () => {
+    expect(collectionToSlug("The Fracture Collection")).toBe("fracture");
+  });
+  it("handles names without The/Collection", () => {
+    expect(collectionToSlug("Bravo Collection")).toBe("bravo");
+  });
+  it("handles The Bravo Collection", () => {
+    expect(collectionToSlug("The Bravo Collection")).toBe("bravo");
+  });
+  it("handles The Recoil Collection", () => {
+    expect(collectionToSlug("The Recoil Collection")).toBe("recoil");
+  });
+  it("handles The Revolution Collection", () => {
+    expect(collectionToSlug("The Revolution Collection")).toBe("revolution");
   });
 });
