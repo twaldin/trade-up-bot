@@ -285,7 +285,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-              0 as outcome_count
+              0 as outcome_count,
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND (l.id IS NULL OR l.claimed_by IS NOT NULL)) as missing_inputs
        FROM trade_ups t ${where}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
@@ -392,7 +393,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         worst_case_cents: row.worst_case_cents ?? 0,
         outcome_count: row.outcome_count ?? 0,
         listing_status: (row.listing_status ?? 'active') as TradeUp['listing_status'],
-        missing_inputs: 0,
+        missing_inputs: row.missing_inputs ?? 0,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
         preserved_at: row.preserved_at ?? null,
@@ -427,7 +428,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
   router.get("/api/trade-ups/:id", async (req, res) => {
     const { rows: [row] } = await pool.query(
-      "SELECT * FROM trade_ups WHERE id = $1",
+      `SELECT t.*,
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND (l.id IS NULL OR l.claimed_by IS NOT NULL)) as missing_inputs
+       FROM trade_ups t WHERE t.id = $1`,
       [req.params.id]
     );
 

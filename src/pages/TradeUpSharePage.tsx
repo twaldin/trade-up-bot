@@ -78,7 +78,7 @@ export function TradeUpSharePage() {
           worst_case_cents: data.worst_case_cents ?? 0,
           outcome_count: outcomes.length,
           listing_status: data.listing_status ?? "active",
-          missing_inputs: 0,
+          missing_inputs: data.missing_inputs ?? 0,
           profit_streak: data.profit_streak ?? 0,
           peak_profit_cents: data.peak_profit_cents ?? 0,
           preserved_at: data.preserved_at ?? null,
