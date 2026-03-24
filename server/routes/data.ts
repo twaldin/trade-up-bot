@@ -200,7 +200,7 @@ export function dataRouter(
           SELECT skin_name, COUNT(*) as cnt FROM (
             SELECT skin_name FROM sale_history WHERE skin_name IN (${placeholders})
             UNION ALL
-            SELECT skin_name FROM price_observations WHERE skin_name IN (${ph2}) AND source = 'sale'
+            SELECT skin_name FROM price_observations WHERE skin_name IN (${ph2}) AND source IN ('sale', 'skinport_sale', 'buff_sale')
           ) sub GROUP BY skin_name
         `, [...skinNames, ...skinNames]),
       ]);
@@ -235,12 +235,12 @@ export function dataRouter(
 
     // Run ALL independent queries in parallel (was 5-8 sequential round-trips)
     const queries: Promise<pg.QueryResult>[] = [
-      // 0: Listings (bounded to 200 — client only renders 25 at a time)
+      // 0: All listings for this skin (frontend paginates 25 at a time)
       pool.query(`
         SELECT l.id, l.price_cents, l.float_value, l.created_at, l.staleness_checked_at, l.phase, l.source
         FROM listings l JOIN skins s ON l.skin_id = s.id
         WHERE s.name = $1 AND l.stattrak = $2
-        ORDER BY l.price_cents ASC LIMIT 200
+        ORDER BY l.price_cents ASC
       `, [skinName, stattrak]),
       // 1: Float price buckets
       pool.query(`

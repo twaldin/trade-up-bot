@@ -156,12 +156,6 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   // Price sources for the table — uses phase-specific when available
   const priceSources = activePriceSources;
 
-  const condDist: Record<string, number> = {};
-  for (const l of listings) {
-    const c = conditionLabel(l.float_value);
-    condDist[c] = (condDist[c] || 0) + 1;
-  }
-
   const csfloatCount = listings.filter(l => !l.source || l.source === "csfloat").length;
   const dmarketCount = listings.filter(l => l.source === "dmarket").length;
   const skinportCount = listings.filter(l => l.source === "skinport").length;
@@ -299,15 +293,6 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         </div>
       )}
 
-      {/* Condition distribution */}
-      <div className="flex gap-3 mb-4 flex-wrap">
-        {["FN", "MW", "FT", "WW", "BS"].map(c => (
-          <span key={c} className="text-[0.8rem] text-foreground/70 flex items-center gap-1" style={{ opacity: condDist[c] ? 1 : 0.3 }}>
-            {c}: {condDist[c] || 0}
-          </span>
-        ))}
-      </div>
-
       {/* Scatter chart */}
       <div className="mb-5">
         <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">Float vs Price</h3>
@@ -333,6 +318,10 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
               { key: "price", label: "Price", render: r => formatDollars(r.price_cents), sortValue: r => r.price_cents },
               { key: "float", label: "Float", render: r => <span style={{ color: conditionColor(r.float_value) }}>{r.float_value.toFixed(6)}</span>, sortValue: r => r.float_value },
               { key: "cond", label: "Cond", render: r => conditionLabel(r.float_value), sortValue: r => r.float_value },
+              { key: "source", label: "Source", render: r => {
+                const labels: Record<string, string> = { sale: "CSFloat", skinport_sale: "Skinport", buff_sale: "Buff", listing: "CSFloat", listing_dmarket: "DMarket", listing_skinport: "Skinport", csfloat: "CSFloat" };
+                return <span className="text-muted-foreground text-[0.75rem]">{labels[r.source || "sale"] || r.source || "CSFloat"}</span>;
+              }, sortValue: r => r.source || "sale" },
               { key: "sold_at", label: "Sold", render: r => <span className="text-muted-foreground text-[0.8rem]">{new Date(r.sold_at).toLocaleDateString()}</span>, sortValue: r => new Date(r.sold_at).getTime() },
             ]}
           />
