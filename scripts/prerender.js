@@ -26,6 +26,7 @@ const PORT = 45678;
 const ROUTES = [
   "/",
   "/faq",
+  "/calculator",
   "/blog",
   "/blog/how-cs2-trade-ups-work",
   "/blog/profitable-trade-ups-theory-vs-reality",
