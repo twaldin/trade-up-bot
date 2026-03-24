@@ -10,16 +10,17 @@ interface DataViewerProps {
   onNavigateCollection?: (name: string) => void;
   collectionFilter?: string;
   initialSearch?: string;
+  initialSelectedSkin?: string;
   outputCollection?: string;
   initialRarity?: string;
 }
 
-export function DataViewer({ onNavigateCollection, collectionFilter, initialSearch, outputCollection, initialRarity }: DataViewerProps) {
+export function DataViewer({ onNavigateCollection, collectionFilter, initialSearch, initialSelectedSkin, outputCollection, initialRarity }: DataViewerProps) {
   const [skins, setSkins] = useState<SkinSummary[]>([]);
   const [search, setSearch] = useState(initialSearch || "");
   const [appliedSearch, setAppliedSearch] = useState(initialSearch || "");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedSkin, setSelectedSkin] = useState<string | null>(initialSearch || null);
+  const [selectedSkin, setSelectedSkin] = useState<string | null>(initialSearch || initialSelectedSkin || null);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<"listing_count" | "sale_count" | "min_price" | "name">("listing_count");
   const [rarity, setRarity] = useState<string>(initialRarity ?? (collectionFilter ? "" : "all"));

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { collectionToSlug } from "../../../shared/slugs.js";
 
 interface CollectionLinksProps {
   collectionName: string | null;
@@ -28,7 +29,7 @@ export function CollectionLinks({ collectionName, onNavigate, compact }: Collect
     <span key={key}>
       {key > 0 && ", "}
       <Link
-        to={`/collections/${encodeURIComponent(name)}`}
+        to={`/collections/${collectionToSlug(name)}`}
         className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-blue-400 transition-colors"
         onClick={(e) => { e.stopPropagation(); if (onNavigate) onNavigate(name); }}
       >{name}</Link>
@@ -50,7 +51,7 @@ export function CollectionLinks({ collectionName, onNavigate, compact }: Collect
           {cols.map((c, i) => (
             <Link
               key={i}
-              to={`/collections/${encodeURIComponent(c)}`}
+              to={`/collections/${collectionToSlug(c)}`}
               className="block px-3 py-1.5 text-foreground/80 text-[0.8rem] whitespace-nowrap hover:bg-accent hover:text-blue-400 no-underline"
               onClick={(e) => { e.stopPropagation(); if (onNavigate) onNavigate(c); setOpen(false); }}
             >{c}</Link>

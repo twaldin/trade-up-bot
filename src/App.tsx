@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation, Navigate } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
+import { collectionToSlug } from "../shared/slugs.js";
 import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
 import { TradeUpsPage } from "./pages/TradeUpsPage.js";
@@ -69,15 +70,32 @@ const TRADE_UP_TYPES = [
 function CollectionPage() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
+  const [collectionName, setCollectionName] = useState<string | null>(null);
 
-  if (!name) return null;
+  useEffect(() => {
+    if (!name) return;
+    fetch(`/api/collection-by-slug/${encodeURIComponent(name)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.name) {
+          setCollectionName(data.name);
+        } else {
+          setCollectionName(decodeURIComponent(name));
+        }
+      })
+      .catch(() => setCollectionName(decodeURIComponent(name)));
+  }, [name]);
+
+  if (!collectionName) {
+    return <div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>;
+  }
 
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <CollectionViewer
-        collectionName={decodeURIComponent(name)}
+        collectionName={collectionName}
         onBack={() => navigate("/collections")}
-        onNavigateCollection={(n) => navigate(`/collections/${encodeURIComponent(n)}`)}
+        onNavigateCollection={(n) => navigate(`/collections/${collectionToSlug(n)}`)}
       />
     </Suspense>
   );
@@ -88,7 +106,7 @@ function CollectionListPage() {
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <CollectionListViewer
-        onSelectCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+        onSelectCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
       />
     </Suspense>
   );
@@ -103,7 +121,7 @@ function DataPage() {
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <DataViewer
         key={initialSearch || "data"}
-        onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+        onNavigateCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
         initialSearch={initialSearch}
       />
     </Suspense>
@@ -119,7 +137,7 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
       status={status}
       refreshKey={refreshKey}
       onNavigateSkin={(name) => navigate(`/skins?search=${encodeURIComponent(name)}`)}
-      onNavigateCollection={(name) => navigate(`/collections/${encodeURIComponent(name)}`)}
+      onNavigateCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
     />
   );
 }

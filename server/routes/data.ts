@@ -1,7 +1,7 @@
 import { Router } from "express";
 import pg from "pg";
 import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
-import { toSlug } from "../../shared/slugs.js";
+import { toSlug, collectionToSlug } from "../../shared/slugs.js";
 
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>;
 type KnifeTypeToCases = Map<string, string[]>;
@@ -448,6 +448,17 @@ export function dataRouter(
     }
   }));
 
+  router.get("/api/collection-by-slug/:slug", async (req, res) => {
+    try {
+      const slugMap = await getCollectionSlugMap(pool);
+      const name = slugMap.get(req.params.slug);
+      if (!name) { res.status(404).json({ error: "Collection not found" }); return; }
+      res.json({ name });
+    } catch {
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   router.get("/api/skin-by-slug/:slug", async (req, res) => {
     try {
       const slugMap = await getSlugMap(pool);
@@ -460,6 +471,17 @@ export function dataRouter(
   });
 
   return router;
+}
+
+export async function getCollectionSlugMap(pool: pg.Pool): Promise<Map<string, string>> {
+  const cached = await cacheGet<Record<string, string>>("collection_slug_map");
+  if (cached) return new Map(Object.entries(cached));
+
+  const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(collectionToSlug(r.name), r.name);
+  await cacheSet("collection_slug_map", Object.fromEntries(map), 600);
+  return map;
 }
 
 export async function getSlugMap(pool: pg.Pool): Promise<Map<string, string>> {

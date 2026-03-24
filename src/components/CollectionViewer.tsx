@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
+import { collectionToSlug } from "../../shared/slugs.js";
 import { DataViewer } from "./DataViewer.js";
 import { TradeUpTable } from "./TradeUpTable.js";
 import { FilterBar, EMPTY_FILTERS, filtersToParams } from "./FilterBar.js";
@@ -51,7 +52,7 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/collection/${encodeURIComponent(collectionName)}`)
+    fetch(`/api/collection/${collectionToSlug(collectionName)}`)
       .then(r => r.json())
       .then(data => setKnifePool(data.knifePool || null))
       .catch(() => {})
@@ -98,10 +99,10 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
       <Helmet>
         <title>{collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot</title>
         <meta name="description" content={`${collectionName} collection: browse skins and find profitable trade-ups.`} />
-        <link rel="canonical" href={`https://tradeupbot.app/collections/${encodeURIComponent(collectionName)}`} />
+        <link rel="canonical" href={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
         <meta property="og:title" content={`${collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`} />
         <meta property="og:description" content={`Browse skins and find profitable trade-ups from the ${collectionName} collection.`} />
-        <meta property="og:url" content={`https://tradeupbot.app/collections/${encodeURIComponent(collectionName)}`} />
+        <meta property="og:url" content={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
         <meta property="og:type" content="website" />
       </Helmet>
       {/* Header */}

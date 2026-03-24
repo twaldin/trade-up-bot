@@ -201,6 +201,25 @@ app.use((req, res, next) => {
     } catch { next(); }
   });
 
+  // SEO: crawler handler for /collections/:slug pages
+  app.get("/collections/:slug", async (req, res, next) => {
+    const ua = req.headers["user-agent"] || "";
+    if (!isCrawler(ua)) return next();
+    try {
+      const { getCollectionSlugMap } = await import("./routes/data.js");
+      const slugMap = await getCollectionSlugMap(pool);
+      const collectionName = slugMap.get(req.params.slug);
+      if (!collectionName) return next();
+
+      res.send(buildSeoHtml({
+        title: `${collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`,
+        description: `Browse skins and find profitable trade-ups from the ${collectionName} collection.`,
+        url: `https://tradeupbot.app/collections/${req.params.slug}`,
+        bodyText: `${collectionName} collection — browse skins and find profitable trade-ups on TradeUpBot.`,
+      }));
+    } catch { next(); }
+  });
+
   // SEO: crawler handler for /skins/:slug pages
   app.get("/skins/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";

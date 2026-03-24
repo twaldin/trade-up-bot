@@ -26,14 +26,14 @@ describe("buildStaticSitemap", () => {
 });
 
 describe("buildCollectionSitemap", () => {
-  it("generates URLs for collections", () => {
+  it("generates URLs for collections using slugs", () => {
     const collections = [
-      { name: "Dreams & Nightmares" },
-      { name: "Fracture" },
+      { name: "The Dreams & Nightmares Collection" },
+      { name: "The Fracture Collection" },
     ];
     const xml = buildCollectionSitemap("https://tradeupbot.app", collections, "2026-03-24");
-    expect(xml).toContain("tradeupbot.app/collections/Dreams%20%26%20Nightmares");
-    expect(xml).toContain("tradeupbot.app/collections/Fracture");
+    expect(xml).toContain("tradeupbot.app/collections/dreams-nightmares");
+    expect(xml).toContain("tradeupbot.app/collections/fracture");
   });
 });
 
