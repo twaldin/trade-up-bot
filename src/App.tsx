@@ -20,6 +20,7 @@ const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").t
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 const TradeUpSharePage = lazy(() => import("./pages/TradeUpSharePage.js").then(m => ({ default: m.TradeUpSharePage })));
+const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
 
 interface GlobalStats {
   total_trade_ups: number;
@@ -347,6 +348,11 @@ function AppShell({ user }: { user?: AuthUser | null }) {
 
       <Routes>
         <Route path="/trade-ups" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
+        <Route path="/skins/:slug" element={
+          <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+            <SkinPage />
+          </Suspense>
+        } />
         <Route path="/skins" element={<DataPage />} />
         <Route path="/collections" element={<CollectionListPage />} />
         <Route path="/collections/:name" element={<CollectionPage />} />
