@@ -1,7 +1,9 @@
+import { Link } from "react-router-dom";
 import { formatDollars } from "../../utils/format.js";
 import type { SkinSummary } from "./types.js";
 import { CONDITION_ORDER } from "./types.js";
 import { CollectionLinks } from "./CollectionLinks.js";
+import { toSlug } from "../../../shared/slugs.js";
 
 interface SkinListProps {
   skins: SkinSummary[];
@@ -57,7 +59,11 @@ export function SkinList({ skins, selectedSkin, onSelectSkin, loading, onNavigat
           className={`px-3 py-2.5 border-b border-border/70 cursor-pointer transition-colors hover:bg-muted ${selectedSkin === skin.name ? "!bg-secondary border-l-[3px] border-l-blue-400" : ""}`}
           onClick={() => onSelectSkin(skin.name)}
         >
-          <div className="text-[0.9rem] font-medium text-foreground mb-0.5">{skin.name}</div>
+          <Link
+            to={`/skins/${toSlug(skin.name)}`}
+            className="text-[0.9rem] font-medium text-foreground mb-0.5 hover:text-blue-400 transition-colors no-underline"
+            onClick={(e) => e.stopPropagation()}
+          >{skin.name}</Link>
           <div className="flex gap-2.5 text-xs text-muted-foreground">
             <CollectionLinks collectionName={skin.collection_name} onNavigate={onNavigateCollection} compact />
             <span className="text-blue-400">
