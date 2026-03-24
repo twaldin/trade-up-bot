@@ -60,7 +60,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
   }, []);
 
   const login = () => { window.location.href = '/auth/steam'; };
-  const goToDashboard = () => { window.location.href = '/dashboard'; };
+  const goToDashboard = () => { window.location.href = '/trade-ups'; };
   const logout = () => { window.location.href = '/auth/logout'; };
 
   return (
@@ -131,10 +131,10 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   </Btn>
                 ) : (
                   <>
-                    <Btn onClick={login} className="px-6 py-3">
-                      <IconSteam /> Sign in with Steam
+                    <Btn onClick={() => { window.location.href = '/trade-ups'; }} className="px-6 py-3">
+                      View Trade-Ups
                     </Btn>
-                    <span className="text-xs text-muted-foreground">Free to start</span>
+                    <span className="text-xs text-muted-foreground">Free — no account needed</span>
                   </>
                 )}
               </div>
@@ -282,7 +282,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No verification</li>
                   <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No claims</li>
                 </ul>
-                <Btn variant="outline" onClick={login} className="w-full">Get started</Btn>
+                <Btn variant="outline" onClick={() => { window.location.href = '/trade-ups'; }} className="w-full">Start browsing</Btn>
               </div>
 
               {/* Basic */}
