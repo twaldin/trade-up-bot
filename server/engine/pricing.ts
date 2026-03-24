@@ -423,12 +423,20 @@ export async function lookupOutputPrice(
 
   if (knn && knn.confidence >= 0.3) {
     grossPrice = knn.priceCents;
-    // Sanity cap: if KNN is >5x condition-level ref, KNN is probably wrong
-    // (pattern premiums, Skinport platform bias, sparse-data interpolation artifacts).
-    // 98.5% of real sales are within 2x ref; >5x are pattern items KNN can't price.
+    // Observation-count-dependent sanity cap: low-count KNN (especially Tier 2
+    // interpolation between 2 points) is unreliable for pattern-based skins where
+    // a single rare-pattern sale can 5-10x the normal price. Scale the cap:
+    //   ≤3 obs → 2x ref (sparse data, interpolation is noise)
+    //   4-5 obs → 3x ref (thin data, MAD clamping has marginal effect)
+    //   6+ obs  → 5x ref (enough data for KNN to be meaningful)
     const refPrice = lookupPrice(pool, skinName, predictedFloat);
-    if (refPrice > 0 && grossPrice > refPrice * 5) {
-      grossPrice = refPrice;
+    if (refPrice > 0) {
+      const maxMultiplier = knn.observationCount <= 3 ? 2.0
+        : knn.observationCount <= 5 ? 3.0
+        : 5.0;
+      if (grossPrice > refPrice * maxMultiplier) {
+        grossPrice = refPrice;
+      }
     }
   } else {
     // 2. Fallback: condition-level pricing from csfloat_ref + listing floors
