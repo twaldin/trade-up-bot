@@ -210,12 +210,13 @@ app.use((req, res, next) => {
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
       if (!collectionName) return next();
+      const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
 
       res.send(buildSeoHtml({
-        title: `${collectionName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`,
-        description: `Browse skins and find profitable trade-ups from the ${collectionName} collection.`,
+        title: `${displayName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`,
+        description: `Browse skins and find profitable trade-ups from the ${displayName} collection.`,
         url: `https://tradeupbot.app/collections/${req.params.slug}`,
-        bodyText: `${collectionName} collection — browse skins and find profitable trade-ups on TradeUpBot.`,
+        bodyText: `${displayName} collection — browse skins and find profitable trade-ups on TradeUpBot.`,
       }));
     } catch { next(); }
   });
