@@ -3,6 +3,7 @@
 **Week 1 manifesto video. Sets the channel narrative.**
 **Target length:** 10-12 minutes spoken (~1500-1800 words voiceover)
 **Upload:** Thursday
+**Data source:** Production trade-ups and real price observations from DMarket/CSFloat/Skinport.
 
 ---
 
@@ -10,127 +11,119 @@
 
 ### HOOK (0:00–0:30)
 
-*(Screen: a theoretical calculator showing a Classified → Covert trade-up with ~50% ROI)*
+*(Screen: a theoretical calculator showing a Restricted → Classified trade-up with ~40% ROI)*
 
-"This trade-up claims fifty-one percent profit. Ten Classified inputs, about thirty-five hundred bucks, outputs a Factory New M4A1-S Welcome to the Jungle worth over five thousand. I'm going to try to actually buy the inputs and execute it."
+"This trade-up claims forty percent profit. Twenty-five bucks in, eighty percent chance at an AWP The End worth forty-one dollars. I'm going to try to actually buy the inputs and execute it."
 
 *(pause)*
 
-"Spoiler — it doesn't go the way the calculator says."
+"The real ROI? Not forty percent. And there's a twenty percent chance the calculator didn't tell you about."
 
 ---
 
 ### THE SETUP (0:30–2:30)
 
-*(Screen: walk through the theoretical trade-up in detail — show the calculator interface)*
+*(Screen: walk through the theoretical trade-up in detail)*
 
-"So here's what the calculator shows us. Ten Classified inputs from a mix of collections. AK-47 Redline, AWP Asiimov, Desert Eagle Kumicho Dragon, M4A1-S Golden Coil, a few others. Average price around three-fifty each. Total cost — about thirty-five hundred dollars."
+"Here's what the calculator shows. A Restricted to Classified trade-up from the Achroma and Dreams & Nightmares collections. Eight Glock-18 Trace Locks at about three dollars each, plus two XM1014 Zombie Offensives at seventy cents. Total cost: about twenty-five dollars."
 
 *(Screen: show the output prediction)*
 
-"The output? M4A1-S Welcome to the Jungle. The calculator says at these input floats, we'll get a Factory New output — float around point zero six nine. And a Factory New Welcome to the Jungle is worth about fifty-three hundred."
+"The output? Eighty percent chance at AWP The End in Field-Tested. That skin sells for about forty-one bucks. So the calculator says: twenty-five in, forty-one out, eighty percent of the time. Forty percent ROI."
 
-"That's eighteen hundred dollars profit. Fifty-one percent ROI. And we have a pretty decent chance of hitting it."
-
-*(lean back)*
-
-"One problem. These aren't real listings. These are average prices and idealized floats. Let's see what actually happens when I try to buy them."
+"Sounds like free money. Let's go buy the inputs."
 
 ---
 
-### THE SOURCING ATTEMPT (2:30–7:00)
+### THE SOURCING ATTEMPT (2:30–6:00)
 
-*(Screen: switch to CSFloat / DMarket marketplace)*
+*(Screen: switch to DMarket marketplace)*
 
-"Alright, input number one. AK-47 Redline, Minimal Wear. Calculator says about two hundred bucks. Let's see..."
+"Alright, Glock-18 Trace Lock, Field-Tested. Calculator says three dollars. Let's see what's actually for sale."
 
-*(Screen: search CSFloat for AK-47 Redline MW)*
+*(Screen: DMarket listings for Glock-18 Trace Lock)*
 
-"Cheapest listing — two thirty-three. Already thirty-three bucks over the 'average' price. Fine. We'll take it."
+"First listing — two ninety-six. Okay, actually below average. Second one — three sixty-nine. Wait, that's twenty-three percent more. Third — three-oh-one."
 
-*(Show on-screen running tally: Calculator $200 → Real $233)*
+*(Show on-screen running tally)*
 
-"Input two. AWP Asiimov, Well-Worn. Calculator says around two-ten."
+"Now here's why that three sixty-nine listing matters. The Trace Lock has a massive price swing across conditions. Look at this:"
 
-*(Screen: search marketplace)*
+*(Screen: show price comparison)*
 
-"Two thirty-one on Skinport. Twenty bucks over. Running total is already fifty-three dollars over budget and we're two inputs in."
+"Factory New Trace Lock: twenty-six dollars average. Minimal Wear: eight sixty-three. Field-Tested: three seventy-two. The calculator used the FT average of three-seventy-two, but the specific float I need costs more because lower floats within FT are rarer."
 
-*(Continue through inputs 3-5, showing each price discrepancy. Keep the energy conversational, not angry — "well, that's more than expected" tone.)*
+*(Continue through remaining inputs)*
 
-"Input four. This is where it gets interesting. Desert Eagle Kumicho Dragon, Field-Tested. The calculator assumed a float around point one-eight. The cheapest listing at that float? There isn't one. The closest I can find is at point two-four-three, and it's five eighty-two."
+"The XM1014 Zombie Offensives are straightforward — seventy-six cents each. My total comes out to twenty-six oh-two."
 
-*(Screen: show the listing at 0.243 float)*
-
-"And here's why that matters. The output float is calculated from the average of your input floats. When I swap in this higher float, it changes the math."
-
-*(Input 6-7 show more price discrepancies. Input 8-9 available but at different floats. Running tally growing.)*
-
-"So I'm eight inputs in, and my real cost is already four thousand forty-two dollars versus the calculator's thirty-five hundred. But here's the real problem — it's not the cost. It's the floats."
-
-*(Screen: show a float calculation)*
-
-"When I plug in the actual floats of the listings I can buy — not the idealized floats the calculator assumed — the average input float comes out higher. And the output float? Zero point zero eight five."
-
-*(pause for emphasis)*
-
-"Zero point zero eight five. The Factory New boundary is zero point zero seven. We're past it. The output is Minimal Wear."
+"Pretty close to the calculator's estimate, right? Dollar sixty-two over. But the cost isn't the real problem."
 
 ---
 
-### THE MATH (7:00–9:30)
+### THE HIDDEN RISK (6:00–8:00)
 
-*(Screen: side-by-side comparison — two columns)*
+*(Screen: show the full outcome table)*
 
-"Let's put this side by side."
+"The calculator said forty percent ROI. But look at what it didn't emphasize — the other twenty percent."
 
-*(Left column: "Calculator" / Right column: "Reality")*
+*(Screen: outcome breakdown)*
 
-"Total input cost: thirty-five hundred versus four thousand forty-two. Five hundred forty-two dollars more than planned."
+"Eighty percent of the time, I get AWP The End at thirty-nine ninety. That's a profit of thirteen eighty-eight. Great."
 
-"Output float: point zero six nine versus point zero eight five. One crossed the Factory New boundary. The other didn't."
+"But six-point-seven percent of the time, I get a Dual Berettas Melondrama worth six-eighty. That's a loss of nineteen twenty-two on a twenty-six dollar bet."
 
-"Output condition: Factory New versus Minimal Wear."
+"Same odds for FAMAS Rapid Eye Movement — six eighty-three. And MP7 Abyssal Apparition — six-eighty."
 
-*(show prices)*
+"So twenty percent of the time, I lose nineteen dollars. The calculator showed this as forty percent ROI, but the real expected value — accounting for the actual listing prices and the downside — is twenty-seven point nine percent."
 
-"Output value: Factory New Welcome to the Jungle — fifty-three twenty. Minimal Wear? Sixteen thirty-two."
+*(Screen: side by side)*
 
-*(pause)*
-
-"The calculator said eighteen hundred dollars profit. Reality? Negative twenty-four hundred. That's a swing of over four thousand dollars."
-
-*(Screen: highlight the three reasons)*
-
-"The profit was killed by three things. First — real prices are higher than averages. Steam Market averages include historical sales at prices that don't exist anymore. The cheapest listing you can actually buy today is almost always more."
-
-"Second — float values determine everything. A point zero six nine output is Factory New, worth fifty-three hundred. A point zero eight five output is Minimal Wear, worth sixteen thirty-two. That point zero one six difference wiped out thirty-six hundred dollars of value. And the calculator never checked whether listings at the right floats actually exist."
-
-"Third — availability is fleeting. The specific float-value listings you need might not exist. And by the time you've sourced seven or eight inputs, the first ones might have sold."
+"Still profitable! But twenty-eight percent is not forty percent. And on this specific trade-up, the gap is manageable because we're talking twenty-six bucks."
 
 ---
 
-### WHY THIS HAPPENS (9:30–11:00)
+### SCALING UP (8:00–10:00)
 
-*(Screen: transition to TradeUpBot showing a real trade-up)*
+*(Screen: transition to higher-tier trade-ups)*
 
-"This is the fundamental problem with every theoretical trade-up calculator. They compute what should work in an ideal world. They don't check what's actually available."
+"Now let's see what happens when you scale this to real money."
 
-"So I built something that does."
+*(Screen: show Covert → Knife/Glove trade-up on TradeUpBot)*
 
-*(Screen: TradeUpBot table view — scroll through trade-ups)*
+"Here's a Covert to Gloves trade-up I found today. Five inputs — M4A4 Buzz Kill and SSG 08 Dragonfire, both Field-Tested. About two ninety-three each. Total cost: fourteen sixty-five."
 
-"TradeUpBot scans real listings on CSFloat, DMarket, and Skinport. Every trade-up you see here is built from actual listings you can purchase right now — with exact prices, exact floats, and calculated outcomes based on those real numbers."
+"The Dragonfire alone has this price spread:"
 
-*(Screen: expand a trade-up — show inputs with source badges, marketplace links)*
+*(Screen: show price data)*
 
-"Each input links to a real listing. You can see the exact float, the exact price, which marketplace it's on. The outcome calculation uses these real floats, not averages."
+"Factory New: five twenty-six average. Field-Tested: three twenty-four average. But individual listings range from two sixty-five to three eighty-plus."
 
-*(Screen: show the outcome chart and verify button)*
+"A calculator that uses the three twenty-four average when the listing you can actually buy costs two ninety-three? That's thirty bucks off per input. On five inputs, that's a hundred fifty dollars. Could be the difference between profit and loss."
 
-"You can verify that all inputs are still listed before you buy. And Pro users can claim a trade-up to lock the listings for thirty minutes while they make the purchases."
+"This glove trade-up has twenty-four possible outcomes. Forty-six percent chance to profit. Best case: Sport Gloves Hedge Maze at fifty-nine seventy-six — that's a forty-five hundred dollar profit. Worst case: Bloodhound Gloves Guerrilla at two seventeen — twelve forty-eight loss."
 
-*(Keep this section to ~60 seconds. Quick tour, not a full tutorial.)*
+"The expected value is seventeen thirty-two on a fourteen sixty-five input. Eighteen percent ROI — but only if you're using real listing prices and real floats."
+
+---
+
+### WHY THIS ALWAYS HAPPENS (10:00–11:00)
+
+*(Screen: TradeUpBot table view)*
+
+"Every trade-up calculator has the same fundamental problem. They compute what should work in an ideal world. They don't check what's actually available."
+
+"Three things always eat the margin:"
+
+"One — real prices differ from averages. Averages include old sales at prices that don't exist anymore."
+
+"Two — float values determine everything. An AK-47 Asiimov at point-zero-six-nine is Factory New, worth seven hundred thirteen dollars. At point-zero-seven-one, it's Minimal Wear — sixty-one dollars. Eleven-point-seven-x difference for point-zero-zero-two of float."
+
+"Three — availability changes. By the time you source five inputs, the first one might have sold."
+
+"So I built TradeUpBot. Every trade-up on the site is built from actual marketplace listings — real prices, real floats, real availability."
+
+*(Screen: quick tour — table, expand a trade-up, show inputs with source badges, outcome chart)*
 
 ---
 
@@ -138,7 +131,7 @@
 
 "If you want to find trade-ups that actually work with real listings, check out tradeupbot.app — link in the description. You can browse every trade-up for free, no account required."
 
-"And if you want to go deeper on how trade-ups actually work — float math, condition boundaries, marketplace fees — I'm breaking down a new profitable trade-up every week on this channel. Subscribe if that's useful."
+"I break down a new trade-up every week on this channel. Subscribe if you want to stop losing money to theoretical calculators."
 
 ---
 
@@ -149,39 +142,44 @@
 **Description:**
 ```
 CS2 trade-up calculators show you profitable contracts — but can you
-actually buy the inputs? I tested a "51% ROI" Classified → Covert
-trade-up and tried to source real listings on CSFloat and DMarket.
-Here's what happened.
+actually buy the inputs at those prices?
 
-The M4A1-S Welcome to the Jungle trade-up promised $1,800 profit.
-Real listings told a different story: $2,400 loss.
+I tested a "40% ROI" trade-up and priced every input from real DMarket
+listings. The real ROI was 28% — and the calculator hid a 20% chance
+of losing $19.
+
+Then I scaled it up to a $1,465 Covert → Gloves trade-up where the
+price gaps get serious.
 
 TradeUpBot (free): https://tradeupbot.app
 Find trade-ups built from real CSFloat, DMarket, and Skinport listings.
 
 Chapters:
-0:00 The "profitable" trade-up
+0:00 The "40% profit" trade-up
 0:30 What the calculator says
-2:30 Trying to buy real inputs
-7:00 Theory vs reality side-by-side
-9:30 Why every calculator gets this wrong
-11:00 How to find trade-ups that actually work
+2:30 Buying real inputs on DMarket
+6:00 The 20% the calculator hid
+8:00 Scaling to $1,465 glove trade-ups
+10:00 Why every calculator gets this wrong
+11:00 How to find real-listing trade-ups
 
 #cs2 #tradeup #csgo #cs2skins #tradeupcontract #csfloat #dmarket
 
 Tags: cs2 trade up, cs2 trade up calculator, cs2 trade up profit,
 trade up contract cs2, csgo trade up, cs2 float values, tradeupbot,
-cs2 trade up guide, cs2 skins, factory new, minimal wear,
-condition boundary, m4a1-s welcome to the jungle
+cs2 trade up guide, cs2 skins, factory new, minimal wear, gloves,
+condition boundary, awp the end, dragonfire, buzz kill
 ```
 
 **Pinned comment:**
 ```
-Every trade-up in this video uses real marketplace data. The "profitable"
-trade-up from the calculator turned into a $2,400 loss with real listings.
+Every number in this video uses real marketplace data from DMarket,
+CSFloat, and Skinport.
 
-If you want to find trade-ups from actual listings (not theory):
-https://tradeupbot.app — free to browse everything.
+The "40% ROI" trade-up was actually 28%. The glove trade-up's $267
+expected profit only works with real listing prices, not averages.
+
+Find trade-ups from actual listings (free): https://tradeupbot.app
 ```
 
 ---
@@ -191,23 +189,24 @@ https://tradeupbot.app — free to browse everything.
 **Total recording time:** ~20-25 minutes (will be cut to 10-12)
 
 **Screens to prepare before recording:**
-1. A theoretical calculator showing a Classified → Covert trade-up (use Pricempire, CSDelta, or CSFloat calculator — find one targeting M4A1-S Welcome to the Jungle or similar high-value Covert output)
-2. CSFloat and DMarket marketplace tabs open — ready to search for each input
-3. TradeUpBot showing trade-up #19 (or any active Classified → Covert trade-up)
+1. A theoretical calculator showing a Restricted → Classified trade-up (use Pricempire, CSDelta, or CSFloat calculator — find one targeting AWP The End from Achroma/Dreams & Nightmares collections)
+2. DMarket marketplace — Glock-18 Trace Lock FT listings page open
+3. TradeUpBot showing trade-up #755175804 (the glove trade-up) OR current best Covert → Knife/Gloves trade-up
 4. TradeUpBot table view for the quick tour section
+5. Optionally: a second marketplace tab with SSG 08 Dragonfire listings showing the $265-$380 price range
 
 **Recording flow:**
-1. Open calculator, walk through the theoretical trade-up (~3 min)
-2. Switch to marketplace, try sourcing inputs one by one, react to prices/floats (~8 min)
-3. Show the side-by-side math — can use two browser windows or a text doc (~3 min)
-4. Switch to TradeUpBot, quick tour: table → expand trade-up → inputs → outcomes → verify button (~2 min)
-5. CTA: look at camera or stay on screen (~30s)
+1. Open calculator, walk through the Trace Lock → AWP The End trade-up (~3 min)
+2. Switch to DMarket, show real Trace Lock listings and price variation (~3 min)
+3. Show the outcome breakdown — emphasize the 20% downside (~2 min)
+4. Switch to TradeUpBot, show the glove trade-up, walk through the Dragonfire price spread (~3 min)
+5. Quick TradeUpBot tour: table → expand → inputs → outcomes → verify (~1.5 min)
+6. CTA (~30s)
 
-**Voice tone:** Conversational, analytical, slightly incredulous when numbers don't match. Not angry, not hype. "Well, that's interesting..." energy. You're a scientist observing, not a salesman pitching.
-
-**Don't worry about:** Mistakes, pauses, stumbles, restarts. Keep recording. I'll cut everything in edit. If a section feels off, just say "let me redo that" and do it again — I'll use the best take.
+**Voice tone:** Conversational, analytical, slightly amused when numbers don't match. Not angry, not hype. "Well that's interesting" energy. You're showing people something they've been missing.
 
 **Key moments to emphasize (these become TikTok clips):**
-- The moment you realize the output float crosses the MW boundary
-- The side-by-side comparison reveal ($1,800 profit → $2,400 loss)
-- The running tally going over budget input by input
+- The $3.69 Trace Lock listing (23% over average)
+- The outcome breakdown reveal (20% chance of -$19)
+- The AK-47 Asiimov 11.7x price difference stat
+- The glove trade-up best/worst case ($4,511 vs -$1,248)

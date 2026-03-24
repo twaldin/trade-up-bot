@@ -3,12 +3,13 @@
 **Target:** r/cs2 (cross-post to r/GlobalOffensiveTrade)
 **Pillar:** Myth-Busting
 **Rule:** DO NOT mention TradeUpBot. Pure value. If people ask how you figured this out, answer naturally in comments.
+**Data source:** Real production prices. AK-47 Redline FT avg $48.56 (min $31.09), MW avg $304.03. AWP Asiimov FT avg $135.23, WW avg $96.86.
 
 ---
 
 ## Post
 
-**Title:** I found a Classified → Covert trade-up that "should" be profitable. Then I tried to actually source the inputs.
+**Title:** I found a Restricted → Classified trade-up that "should" be 40% profit. Then I tried to actually buy the inputs.
 
 **Body:**
 
@@ -18,51 +19,64 @@ Here's yesterday's example.
 
 **The theory**
 
-I found a Classified → Covert trade-up targeting the M4A1-S | Welcome to the Jungle. The calculator said:
+I found a Restricted → Classified trade-up on a calculator targeting the AWP | The End. The calculator said:
 
-- 10 Classified inputs at ~$350-400 average each
-- Total cost: ~$3,500
-- Output: M4A1-S | Welcome to the Jungle in Factory New (float ~0.069)
-- Expected value: ~$5,300
-- Profit: ~$1,800 (51% ROI)
+- 10 inputs: 8x Glock-18 Trace Lock (FT) at ~$3.00 average + 2x XM1014 Zombie Offensive (MW) at ~$0.70 each
+- Total cost: ~$25.40
+- 80% chance the output is AWP The End (FT), worth ~$41
+- Expected profit: ~$10 (40% ROI)
 
-Factory New Welcome to the Jungle at a 0.069 float? That's worth $5,319. Sounds amazing. Let's go buy the inputs.
+Sounds solid — 80% chance at 40% profit with only $25 on the line. So I went to buy the inputs.
 
 **What actually happened**
 
-First three inputs — AK-47 Redline, AWP Asiimov, M4A1-S Golden Coil — I found real listings, but they cost 8-15% more than the "average" price the calculator used. The Redline was $233 instead of $200. The Golden Coil was $776 instead of $650. Running total already $180 over budget.
+First five Glock-18 Trace Locks — the calculator used the $3.00 average. But the cheapest listings on DMarket with the float ranges I need? $2.96, $3.69, $3.01, $2.97, $2.97. The $3.69 one hurt — that one listing at a slightly lower float costs 23% more than the "average."
 
-Then input 4: Desert Eagle Kumicho Dragon. The calculator assumed a specific float range that would keep the average low enough to hit Factory New output. The cheapest listing at the float I needed? $582 — almost $100 more than the average price assumed. And it's at float 0.2435, which is higher than what the calculator modeled.
+But here's the real issue. The Trace Lock has a massive price swing across conditions. The calculator uses an FT average of $3.72. But here's what the marketplace actually looks like:
 
-This is the critical part. The output float in a trade-up is calculated from your input floats. When I plugged in the actual floats of the listings I could buy — not the idealized floats the calculator assumed — the output float came out to 0.085.
-
-0.085 is Minimal Wear. Not Factory New.
-
-That Welcome to the Jungle in MW instead of FN? It's worth $1,632. Not $5,319.
-
-**The final math**
-
-| | Calculator said | What I could actually buy |
+| Condition | Avg Price | Price Range |
 |---|---|---|
-| Total input cost | ~$3,500 | $4,042 |
-| Output float | 0.069 (Factory New) | 0.085 (Minimal Wear) |
-| Output value | $5,319 | $1,632 |
-| Profit | +$1,800 | **-$2,410** |
-| ROI | +51% | **-60%** |
+| Factory New | $25.85 | $14.23 – $35.00+ |
+| Minimal Wear | $8.63 | $4.60 – $12.00+ |
+| Field-Tested | $3.72 | $2.31 – $5.00+ |
 
-That "51% profit" was actually a 60% loss. The entire margin — and then some — was eaten by three things:
+If the calculator assumed even slightly different input floats — pushing the average up — my output float could land in a different condition bracket. An AWP The End in FT is $41. In MW? $66. In FN? $232.
 
-1. **Real prices are higher than averages.** The calculator uses historical Steam Market averages that include old sales at prices that no longer exist. The cheapest listing you can actually buy today is almost always more.
+But going the other direction — if my inputs are worse than the calculator assumed — the output could hit WW ($35) or BS ($37). On a $26 input cost, that's a loss.
 
-2. **Float values determine everything.** A 0.069 output is Factory New ($5,319). A 0.085 output is Minimal Wear ($1,632). That 0.016 difference wiped out $3,687 of value. And the calculator didn't check whether listings at the right floats actually exist.
+**The actual spread**
 
-3. **You can't control what's available.** The floats you need might not have listings. The ones that do might be priced higher. And by the time you've sourced 7 inputs, the first ones might have sold.
+When I priced out every input with real listings (not averages), the total came to $26.02 — close to the estimate, but the devil is in the float details. The 80% chance at the AWP The End is real, but:
+
+- 80% → AWP The End FT ($39.90): profit of $13.88
+- 6.7% → Dual Berettas Melondrama FT ($6.80): loss of $19.22
+- 6.7% → FAMAS Rapid Eye Movement FT ($6.83): loss of $19.19
+- 6.7% → MP7 Abyssal Apparition FT ($6.80): loss of $19.22
+
+That 20% downside? You lose $19 on a $26 bet. The calculator's "40% ROI" assumed you'd always hit the AWP. Reality: your expected value is $33.28 on a $26.02 input, which is 27.9% ROI — still profitable, but that's not what the calculator advertised.
+
+**The bigger problem**
+
+This is a cheap trade-up where the difference is manageable. But scale this up to Covert → Knife/Glove trade-ups at $1,500+, and the gap between theoretical and real pricing is where people lose serious money.
+
+On the knife/glove tier, an input like SSG 08 Dragonfire has this price spread:
+
+| Condition | Avg Price |
+|---|---|
+| Factory New | $526 |
+| Field-Tested | $324 |
+| Battle-Scarred | $305 |
+
+A calculator that uses "average" FT price of $324 when the cheapest real listing is $265? That's $59 off per input. On 5 inputs, you're $295 over budget before you even check floats.
 
 **Bottom line**
 
-If a trade-up tool doesn't show you actual listings with exact floats and exact prices — if it's just computing averages and ideal floats — the profit number it shows you is fiction. The gap between theoretical profit and what you can actually execute is usually the entire margin.
+If a trade-up tool shows you profit based on average prices and ideal floats, check the real listings before committing money. The gap between theory and execution is usually larger than you expect — sometimes it's the entire margin.
 
-Before you commit real money to any trade-up, try sourcing the inputs yourself. Look at real listings. Check the floats. Run the output float calculation with the actual numbers. You might save yourself a lot of money.
+Three things to watch:
+1. Real listing prices vs the "average" the calculator uses
+2. Available float values vs the floats the calculator assumed
+3. Whether the inputs still exist by the time you source all 10
 
 ---
 
