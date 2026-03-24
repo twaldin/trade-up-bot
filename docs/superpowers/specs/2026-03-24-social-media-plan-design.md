@@ -5,7 +5,7 @@
 Organic social media strategy to acquire users for TradeUpBot (tradeupbot.app), a CS2 trade-up contract analyzer that differentiates from competitors by using real marketplace listings instead of theoretical prices.
 
 **Budget:** $0 (pure organic)
-**Cadence:** Aggressive — daily text posts, 2-3 videos/week
+**Cadence:** Aggressive — daily text posts, 1 video/week + 4 short clips
 **Launch:** Immediate — product is live
 **Content creator:** Tim (screen capture + mic voiceover)
 **Production workflow:** Claude writes scripts/posts, Tim records, Claude edits
@@ -79,7 +79,7 @@ No competitor combines: (a) automated discovery of profitable trade-ups + (b) re
 ### TikTok — Top-of-Funnel Reach
 - **Role:** Hook new people who don't know trade-ups can be profitable
 - **Format:** 30-60s clips
-- **Cadence:** 4 clips/week (2 from YouTube, 2 standalone)
+- **Cadence:** 4 clips/week (1 from YouTube, 1 education tip, 2 from Sunday recording session). Also cross-post to YouTube Shorts.
 - **Three clip formats:**
   1. Quick myth-bust: "This trade-up looks like 40% profit... *cut* ...it's actually -12%"
   2. Daily alpha: scroll through TradeUpBot, highlight one trade-up, text overlays with dollar amounts
@@ -121,7 +121,7 @@ No competitor combines: (a) automated discovery of profitable trade-ups + (b) re
 - **Channels:** #daily-alpha (automated later), #trade-up-help, tier-gated roles
 - **Tactics:** Tim answers questions personally early on to build loyalty. Invite link in every bio, description, and post.
 
-**Priority order:** Reddit > YouTube > TikTok > X > Discord (automated) > Instagram (repurposed)
+**Priority order:** Reddit > YouTube > TikTok > X > Discord (manual in Phase 1, automated in Phase 2+) > Instagram (repurposed)
 
 ---
 
@@ -218,7 +218,7 @@ Functional editing: cuts, text overlays, reformatting, captions, thumbnails. Not
 | Sat | — | — | — | Daily alpha | Carousel (week's best) |
 | Sun | **Batch recording** | — | — | Daily alpha | — |
 
-**Weekly totals:** Reddit 4 + YouTube 1 + TikTok 4 + X 7 + Instagram 3 + Discord automated
+**Weekly totals:** Reddit 4 + YouTube 1 + YouTube Shorts 4 (cross-posted from TikTok) + TikTok 4 + X 7 + Instagram 3 + Discord manual engagement
 
 ---
 
@@ -226,12 +226,14 @@ Functional editing: cuts, text overlays, reformatting, captions, thumbnails. Not
 
 ### Week 0 (Prep)
 - Create accounts on X, TikTok, Instagram, YouTube — @tradeupbot or closest
+- Set up Discord server: channels (#daily-alpha, #trade-up-help, #general), tier roles, invite link
 - Consistent bios: "CS2 trade-ups from real listings. No theory." + tradeupbot.app link
 - YouTube channel art, about section, thumbnail template
+- Define video production conventions: directory structure for raw/edited files, target resolutions (YouTube 1920x1080, TikTok/Reels 1080x1920, YouTube Shorts 1080x1920), thumbnail template spec
 - Draft first week's content batch
 
-### Week 1 — Establish Presence
-- Reddit: 3 posts (1 myth-bust flagship, 1 education, 1 daily alpha)
+### Week 1 — Establish Presence (reduced cadence — ramp up)
+- Reddit: 3 posts (1 myth-bust flagship, 1 education, 1 daily alpha) — intentionally below steady-state 4 while establishing presence
 - YouTube: First video — "Why Every CS2 Trade-Up Calculator Is Wrong" (manifesto)
 - TikTok: 4 clips (2 from YouTube, 2 standalone)
 - X: Daily alpha starts + 1 thread version of Reddit myth-bust
@@ -242,7 +244,7 @@ Functional editing: cuts, text overlays, reformatting, captions, thumbnails. Not
 - YouTube: "I Tried to Execute TradeUpLab's Top Trade-Up With Real Listings"
 - TikTok: Full cadence (4 clips)
 - X: Daily + engage with CS2 creator/marketplace accounts
-- DM 5-10 mid-tier creators offering free lifetime Pro
+- DM 5-10 mid-tier creators (CS2 YouTubers with 5K-50K subs who have made trade-up content) offering free lifetime Pro
 
 ### Week 3 — Double Down on What Works
 - Review metrics: which Reddit posts got traction? TikTok views? X engagement?
