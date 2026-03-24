@@ -1,6 +1,7 @@
 # X/Twitter Posts — Week 1
 
-7 daily alpha posts (1 per day) + 1 Monday thread + 3 commentary posts for opportunistic use.
+7 daily alpha posts (1 per day) + 1 Monday thread + 4 commentary posts.
+All data from production.
 
 ---
 
@@ -11,27 +12,45 @@ Copy this template each day. Fill in brackets with today's best trade-up from tr
 ```
 Today's best real-listing trade-up:
 
-[Skin Name] | [Collection]
+[Skin Name / Type] | [Rarity Tier]
 Input cost: $[XX.XX]
 Expected profit: $[XX.XX] ([XX]% ROI)
 Chance to profit: [XX]%
-All [10] listings verified on [CSFloat/DMarket/Skinport]
-
-[attach screenshot from TradeUpBot]
+All [X] listings verified on [DMarket/CSFloat/Skinport]
 
 tradeupbot.app
+
+[attach screenshot from TradeUpBot]
 ```
 
-### Example (using trade-up #11 data):
+### Example (using production trade-up #755175804):
 
 ```
 Today's best real-listing trade-up:
 
-AWP Dragon Lore / AWP The Prince | Classified → Covert
-Input cost: $4,031.04
-Expected profit: $1,232.37 (30.6% ROI)
-Chance to profit: 100%
-All 10 listings verified on CSFloat, DMarket, Skinport
+Covert → Gloves | Buzz Kill + Dragonfire inputs
+Input cost: $1,464.69
+Expected profit: $267.37 (18.2% ROI)
+Chance to profit: 45.8%
+All 5 listings verified on DMarket
+
+Best hit: Sport Gloves Hedge Maze (+$4,511)
+
+tradeupbot.app
+```
+
+### Example 2 (using production trade-up #755589526):
+
+```
+Today's best real-listing trade-up:
+
+AWP The End | Restricted → Classified
+Input cost: $26.02
+Expected profit: $7.26 (27.9% ROI)
+Chance to profit: 80%
+All 10 listings verified on DMarket
+
+$26 in, 80% chance at a $40 AWP The End.
 
 tradeupbot.app
 ```
@@ -40,69 +59,70 @@ tradeupbot.app
 
 ## Monday Thread
 
-Post as a thread (each numbered item is a separate tweet):
-
 ```
-1/ I found a "51% ROI" trade-up on a calculator.
+1/ I found a "40% ROI" trade-up on a calculator.
 
 Then I tried to actually buy the inputs. Here's what happened.
 
-2/ The calculator says: 10 Classified inputs at ~$350 each = $3,500 total.
-Output: Factory New M4A1-S Welcome to the Jungle, worth $5,320.
-That's $1,800 profit.
+2/ The calculator says: 8x Glock-18 Trace Lock (FT) at ~$3.00 each +
+2x XM1014 Zombie Offensive (MW) at ~$0.70. Total: ~$25.
 
-Sounds great. Let's buy them.
+80% chance at AWP The End (FT) worth $41. That's 40% profit.
 
-3/ Problem 1: Real listings cost more than "averages."
-First 3 inputs: $53 over budget already.
-By input 8: total cost is $4,042 — $542 over the calculator's number.
+3/ Problem 1: Real listings aren't $3.00 flat.
 
-4/ Problem 2: The floats available aren't the floats the calculator assumed.
-The cheapest listings at the floats I need either don't exist or cost way more.
-And different input floats = different output float.
+Actual prices: $2.96, $3.69, $3.01, $2.97, $2.97, $2.97, $2.97, $2.96.
 
-5/ Problem 3: The output float calculation.
-Calculator assumed: 0.069 → Factory New ($5,320)
-Real floats available: 0.085 → Minimal Wear ($1,632)
+That $3.69 one? 23% more than the "average." Because it has a lower
+float that the calculator needs but didn't price correctly.
 
-That 0.016 difference? $3,688 in lost value.
+4/ Problem 2: The calculator's "40% ROI" hides a 20% chance of losing $19.
 
-6/ Final result:
+80% → AWP The End FT ($39.90): +$13.88
+6.7% → Dual Berettas Melondrama ($6.80): -$19.22
+6.7% → FAMAS Rapid Eye Movement ($6.83): -$19.19
+6.7% → MP7 Abyssal Apparition ($6.80): -$19.22
 
-Calculator: +$1,800 profit (51% ROI)
-Reality: -$2,410 loss (-60% ROI)
+5/ Real ROI after pricing every input from actual listings: 27.9%.
 
-Three things killed it:
-• Real prices > average prices
-• Available floats ≠ ideal floats
-• Condition boundary crossed (FN → MW)
+Still profitable. But the calculator said 40%.
 
-7/ This is why I built TradeUpBot — every trade-up uses real listings from CSFloat, DMarket, and Skinport with exact prices and exact floats.
+That 12% gap? It's the difference between theoretical averages and
+what you can actually buy on DMarket right now.
+
+6/ Now scale this up.
+
+SSG 08 Dragonfire (FT) — calculator says ~$324 average.
+Cheapest real listing? $265. Most expensive? $380+.
+
+On a 5-input glove trade-up at $293 each, a $59/input error = $295 gone.
+
+7/ This is why I built @tradeupbot — every trade-up uses real listings
+from CSFloat, DMarket, and Skinport with exact prices and exact floats.
 
 Free to browse: tradeupbot.app
 ```
 
 ---
 
-## Commentary Posts (use opportunistically, 1-2 per week)
+## Commentary Posts (use 1-2 per week, opportunistically)
 
 ### Commentary 1: The core insight
 ```
-The gap between a "profitable" trade-up on paper and one you can actually
-execute is usually the entire profit margin.
+The gap between a "profitable" trade-up on paper and one you can
+actually execute is usually the entire profit margin.
 
-Real prices > averages. Every time.
+Real listing prices > Steam Market averages. Every time.
 ```
 
 ### Commentary 2: Float education
 ```
-Biggest misconception in CS2 trade-ups: a 0.069 float and a 0.071 float
-are basically the same.
+AK-47 Asiimov at float 0.069: $713 (Factory New)
+AK-47 Asiimov at float 0.071: $61 (Minimal Wear)
 
-One is Factory New ($5,320). The other is Minimal Wear ($1,632).
+11.7x price difference for 0.002 of float.
 
-That 0.002 difference is $3,688. Your calculator doesn't check which one
-you can actually buy.
+Your trade-up calculator doesn't check which one you can actually buy.
 ```
 
 ### Commentary 3: Origin story
@@ -116,16 +136,18 @@ and Skinport — exact prices, exact floats, verified availability.
 tradeupbot.app — free to browse everything.
 ```
 
-### Commentary 4: Market observation (use when relevant)
+### Commentary 4: The glove dream
 ```
-Every time there's a CS2 skin market dip, the trade-up calculators
-show huge theoretical profits.
+Today's glove trade-up:
 
-But theoretical profits assume you can buy at dip prices at specific
-floats. By the time you find 10 real listings, prices have already
-moved.
+$1,465 in. 24 possible gloves.
+45.8% chance to profit.
+Best hit: Sport Gloves Hedge Maze (+$4,511).
 
-The tools that work are the ones checking real listings in real time.
+Every input is a real DMarket listing you can buy right now.
+Not theory. Not averages.
+
+tradeupbot.app
 ```
 
 ---
@@ -142,12 +164,12 @@ The tools that work are the ones checking real listings in real time.
 | Saturday | Daily alpha |
 | Sunday | Daily alpha |
 
-**Thursday bonus:** When posting the daily alpha, also tweet:
+**Thursday bonus tweet:**
 ```
 New video: Why Every CS2 Trade-Up Calculator Is Wrong
 
-I tested a "51% ROI" trade-up with real listings. It was actually a
-60% loss.
+I tested a "40% ROI" trade-up with real listings. The real ROI was 28%
+— and the calculator hid a 20% chance of losing $19.
 
 [YouTube link]
 ```
