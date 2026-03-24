@@ -18,6 +18,7 @@ import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
+import { sitemapRouter } from "./routes/sitemap.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -130,6 +131,7 @@ app.use((req, res, next) => {
   app.use(myTradeUpsRouter(pool));
   app.use(stripeRouter(pool));
   app.use(discordRouter(pool));
+  app.use(sitemapRouter(pool));
 
   // Dynamic OG image for shareable trade-up pages
   const { generateOgImage } = await import("./og-image.js");
