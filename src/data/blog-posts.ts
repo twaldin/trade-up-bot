@@ -82,8 +82,8 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "profitable-trade-ups-theory-vs-reality",
-    title: "Finding Profitable Trade-Ups: Theory vs Reality",
-    excerpt: "Why theoretical trade-up calculators overstate profits, and what actually matters when you're putting real money on the line.",
+    title: "Why Most CS2 Trade-Up Calculators Are Wrong — Theory vs. Real Listings",
+    excerpt: "Theoretical calculators promise big profits — then reality hits. Here's the exact reason theory-only tools consistently overstate returns, and why checking real marketplace listings before you commit changes everything.",
     publishedAt: "2026-03-16",
     readTime: "7 min read",
     author: "TradeUpBot Team",
@@ -159,8 +159,8 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "cs2-trade-up-float-values-guide",
-    title: "The Complete Guide to CS2 Trade-Up Float Values",
-    excerpt: "Deep dive into float mechanics: the adjusted float formula, why different skins with the same condition have different trade-up value, and float targeting strategies.",
+    title: "CS2 Trade-Up Float Formula Explained — How Adjusted Floats Actually Work",
+    excerpt: "Learn exactly how the adjusted float formula determines your output float — and why two Factory New inputs at the same price can produce wildly different results. Includes float targeting strategies you can apply immediately.",
     publishedAt: "2026-03-17",
     readTime: "7 min read",
     author: "TradeUpBot Team",
@@ -399,8 +399,8 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   },
   {
     slug: "best-cs2-collections-knife-trade-ups-2026",
-    title: "Best CS2 Collections for Knife Trade-Ups in 2026",
-    excerpt: "Which collections produce knife and glove outputs, how collection structure affects your odds, and the specific cases worth targeting.",
+    title: "7 Best CS2 Collections for Knife Trade-Ups in 2026 (With Real Profit Data)",
+    excerpt: "Not all knife trade-up collections are equal. We ranked the top 7 using real listing data — profit margins, knife pool size, and input availability — so you know which cases are actually worth building around right now.",
     publishedAt: "2026-03-20",
     readTime: "6 min read",
     author: "TradeUpBot Team",
