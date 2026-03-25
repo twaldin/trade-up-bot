@@ -582,7 +582,6 @@ export async function main() {
     // Post-engine: update collection scores + global trim
     await updateCollectionScores(pool);
     await trimGlobalExcess(pool, 5_000_000);
-    freshness.markCalcDone();
 
     console.log(`\n[${timestamp()}] Engine done: ${superBatchCount} super-batches, ${totalKnifeResults} knife + ${totalClassifiedResults} classified, ${totalRevived} revived`);
 

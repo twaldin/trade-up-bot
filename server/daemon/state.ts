@@ -213,9 +213,6 @@ export class BudgetTracker {
 
 export class FreshnessTracker {
   private lastListingChange = 0;
-  private lastCalcRun = 0;
 
   markListingsChanged() { this.lastListingChange = Date.now(); }
-  markCalcDone() { this.lastCalcRun = Date.now(); }
-  needsRecalc() { return this.lastListingChange > this.lastCalcRun; }
 }
