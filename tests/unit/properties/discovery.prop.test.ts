@@ -11,6 +11,7 @@ import { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "../..
 import { calculateOutputFloat, calculateOutcomeProbabilities } from "../../../server/engine/core.js";
 import { CONDITION_BOUNDS } from "../../../server/engine/types.js";
 import { listingSig } from "../../../server/engine/utils.js";
+import { shouldUseValueRatio } from "../../../server/engine/curve-classification.js";
 import { makeTradeUp, makeListing, makeListings, makeOutcome } from "../../helpers/fixtures.js";
 import type { AdjustedListing, ListingWithCollection, DbSkinOutcome } from "../../../server/engine/types.js";
 
@@ -455,5 +456,19 @@ describe("Output float boundary invariants", () => {
       ),
       { numRuns: 200 }
     );
+  });
+});
+
+// ─── Curve-aware strategy selection ──────────────────────────────────────────
+
+describe("curve-aware strategy selection", () => {
+  it("shouldUseValueRatio returns true for high intra-condition CV", () => {
+    expect(shouldUseValueRatio({ conditionRatio: 5, intraConditionCV: 50 })).toBe(true);
+  });
+  it("shouldUseValueRatio returns false for staircase", () => {
+    expect(shouldUseValueRatio({ conditionRatio: 8, intraConditionCV: 15 })).toBe(false);
+  });
+  it("shouldUseValueRatio returns null for no data", () => {
+    expect(shouldUseValueRatio(null)).toBeNull();
   });
 });

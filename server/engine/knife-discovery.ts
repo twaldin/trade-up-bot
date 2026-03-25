@@ -3,11 +3,12 @@ import { floatToCondition, type TradeUp, type TradeUpInput } from "../../shared/
 import type { ListingWithCollection, AdjustedListing } from "./types.js";
 import { CONDITION_BOUNDS } from "./types.js";
 import { CASE_KNIFE_MAP, KNIFE_WEAPONS } from "./knife-data.js";
-import { buildPriceCache } from "./pricing.js";
+import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { loadDiscoveryData, buildWeightedPool } from "./data-load.js";
 import { selectForFloatTarget, selectLowestFloat } from "./selection.js";
 import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
+import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 
 /**
  * Discover profitable knife trade-ups.
@@ -33,7 +34,7 @@ export async function findProfitableKnifeTradeUps(
   await buildPriceCache(pool);
 
   // Get all Covert gun listings (knife trade-up inputs)
-  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+  const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
     pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
   );
 
@@ -324,7 +325,7 @@ export async function randomKnifeExplore(
   const iterations = options.iterations ?? 500;
   await buildPriceCache(pool);
 
-  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+  const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
     pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
   );
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
@@ -384,8 +385,8 @@ export async function randomKnifeExplore(
           const countA = 1 + Math.floor(Math.random() * 4);
           const countB = 5 - countA;
           if (listA.length < countA || listB.length < countB) break;
-          const maxOffA = Math.min(listA.length - countA, 20);
-          const maxOffB = Math.min(listB.length - countB, 20);
+          const maxOffA = Math.min(listA.length - countA, 200);
+          const maxOffB = Math.min(listB.length - countB, 200);
           const offA = Math.floor(Math.random() * (maxOffA + 1));
           const offB = Math.floor(Math.random() * (maxOffB + 1));
           inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
@@ -396,7 +397,7 @@ export async function randomKnifeExplore(
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 5) break;
-          const maxOff = Math.min(list.length - 5, 30);
+          const maxOff = Math.min(list.length - 5, 300);
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = list.slice(off, off + 5);
           break;
@@ -461,7 +462,7 @@ export async function randomKnifeExplore(
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 5) break;
-          const off = Math.floor(Math.random() * Math.min(condListings.length - 5 + 1, 10));
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 5 + 1, 100));
           inputs = condListings.slice(off, off + 5);
           break;
         }
@@ -469,7 +470,7 @@ export async function randomKnifeExplore(
         case 5: {
           const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
           const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 5, 100);
+          const maxOff = Math.min(sorted.length - 5, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = sorted.slice(off, off + 5);
@@ -686,7 +687,7 @@ export async function exploreKnifeWithBudget(
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
 
-  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+  const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
     pool, "Covert", "collection_name", { excludeWeapons: KNIFE_WEAPONS }
   );
   if (allListings.length === 0) return [];
@@ -717,9 +718,9 @@ export async function exploreKnifeWithBudget(
     }
   }
 
-  // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8) get 2x
-  const KNIFE_FLOAT_BIASED = [5, 7, 8];
-  const KNIFE_TOTAL_STRATEGIES = 10;
+  // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
+  const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
+  const KNIFE_TOTAL_STRATEGIES = 13;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -744,8 +745,8 @@ export async function exploreKnifeWithBudget(
           const countA = 1 + Math.floor(Math.random() * 4);
           const countB = 5 - countA;
           if (listA.length < countA || listB.length < countB) break;
-          const maxOffA = Math.min(listA.length - countA, 20);
-          const maxOffB = Math.min(listB.length - countB, 20);
+          const maxOffA = Math.min(listA.length - countA, 200);
+          const maxOffB = Math.min(listB.length - countB, 200);
           const offA = Math.floor(Math.random() * (maxOffA + 1));
           const offB = Math.floor(Math.random() * (maxOffB + 1));
           inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
@@ -756,7 +757,7 @@ export async function exploreKnifeWithBudget(
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 5) break;
-          const maxOff = Math.min(list.length - 5, 30);
+          const maxOff = Math.min(list.length - 5, 300);
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = list.slice(off, off + 5);
           break;
@@ -769,7 +770,7 @@ export async function exploreKnifeWithBudget(
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 5) break;
-          const off = Math.floor(Math.random() * Math.min(condListings.length - 5 + 1, 10));
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 5 + 1, 100));
           inputs = condListings.slice(off, off + 5);
           break;
         }
@@ -792,7 +793,7 @@ export async function exploreKnifeWithBudget(
         case 4: {
           const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
           const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 5, 100);
+          const maxOff = Math.min(sorted.length - 5, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = sorted.slice(off, off + 5);
@@ -891,6 +892,88 @@ export async function exploreKnifeWithBudget(
           if (filler.length < 5 - newCount) break;
           inputs = [...picked, ...filler.slice(0, 5 - newCount)];
           break;
+        }
+
+        case 10: {
+          // Value-ratio single: pick collection, use most underpriced listings
+          const col = pick(weightedPool);
+          const valueList = byColValue.get(col) ?? [];
+          if (valueList.length < 5) break;
+          const maxOff = Math.min(valueList.length - 5, 200);
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = valueList.slice(off, off + 5);
+          break;
+        }
+
+        case 11: {
+          // Value-ratio pair: underpriced listings from two collections
+          const colA = pick(weightedPool);
+          const colB = pick(knifeCollections.filter(c => c !== colA));
+          const valA = byColValue.get(colA) ?? [];
+          const valB = byColValue.get(colB) ?? [];
+          const countA = 1 + Math.floor(Math.random() * 4);
+          const countB = 5 - countA;
+          if (valA.length < countA || valB.length < countB) break;
+          const maxOffA = Math.min(valA.length - countA, 200);
+          const maxOffB = Math.min(valB.length - countB, 200);
+          const offA = Math.floor(Math.random() * (maxOffA + 1));
+          const offB = Math.floor(Math.random() * (maxOffB + 1));
+          inputs = [...valA.slice(offA, offA + countA), ...valB.slice(offB, offB + countB)];
+          break;
+        }
+
+        case 12: {
+          // Value-ratio + float: underpriced listings near condition boundary
+          const col = pick(weightedPool);
+          const valueList = byColValue.get(col) ?? [];
+          if (valueList.length < 5) break;
+          // Filter to listings with adjustedFloat < 0.3 (lower half, better output condition)
+          const lowFloat = valueList.filter(l => {
+            const range = l.max_float - l.min_float;
+            const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
+            return adj < 0.3;
+          });
+          if (lowFloat.length < 5) break;
+          inputs = lowFloat.slice(0, 5);
+          break;
+        }
+      }
+
+      // Curve-aware override: swap listing source based on output curve shape
+      if (inputs && inputs.length === 5) {
+        const usedCols = [...new Set(inputs.map(l => l.collection_name))];
+        const curveOutcomes: ComboOutcome[] = [];
+        for (const colName of usedCols) {
+          const m = CASE_KNIFE_MAP[colName];
+          if (!m) continue;
+          for (const kt of m.knifeTypes) {
+            curveOutcomes.push({
+              skinName: kt,
+              probability: 1 / (m.knifeTypes.length || 1),
+              estimatedPrice: globalPriceCache.get(`${kt}:Field-Tested`) ?? 0,
+            });
+          }
+        }
+        if (curveOutcomes.length > 0) {
+          const score = comboCurveScore(curveOutcomes);
+          const useValue = shouldUseValueRatio(score);
+
+          // If curve says value-ratio but we used price-sort, re-pick from byColValue
+          if (useValue === true && strategy < 10) {
+            const repicked = usedCols.flatMap(c => (byColValue.get(c) ?? []).slice(0, 3));
+            if (repicked.length >= 5) {
+              repicked.sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1));
+              inputs = repicked.slice(0, 5);
+            }
+          }
+          // If curve says price-sort but we used value-ratio, re-pick from byCollection
+          if (useValue === false && strategy >= 10) {
+            const repicked = usedCols.flatMap(c => (byCollection.get(c) ?? []).slice(0, 3));
+            if (repicked.length >= 5) {
+              repicked.sort((a, b) => a.price_cents - b.price_cents);
+              inputs = repicked.slice(0, 5);
+            }
+          }
         }
       }
 
