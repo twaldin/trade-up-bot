@@ -41,11 +41,11 @@ describe("applyMonotonicityGuard", () => {
     expect(result).toBe(800);
   });
 
-  it("does not walk up chain — only checks immediate better condition", () => {
-    // BS with no WW price, but FT price exists — should NOT use FT
+  it("walks up chain to find nearest priced better condition", () => {
+    // BS with no WW price, but FT price exists — should clamp to FT
     priceCache.set("Some Skin:Field-Tested", 1000);
     // No WW entry
     const result = applyMonotonicityGuard(5000, "Some Skin", 0.55);
-    expect(result).toBe(5000); // unchanged — WW not found, stop
+    expect(result).toBe(1000); // clamped to FT price
   });
 });

@@ -427,10 +427,14 @@ export function applyMonotonicityGuard(
   const condIdx = CONDITION_BOUNDS.findIndex(c => c.name === condition);
   if (condIdx <= 0) return grossPrice; // FN or not found — no better condition
 
-  const betterCondition = CONDITION_BOUNDS[condIdx - 1].name;
-  const betterPrice = priceCache.get(`${skinName}:${betterCondition}`);
-  if (betterPrice && betterPrice > 0 && grossPrice > betterPrice) {
-    return betterPrice;
+  // Walk up the condition chain to find the nearest priced better condition.
+  // WW with no FT price should still clamp against MW or FN.
+  for (let i = condIdx - 1; i >= 0; i--) {
+    const betterPrice = priceCache.get(`${skinName}:${CONDITION_BOUNDS[i].name}`);
+    if (betterPrice && betterPrice > 0) {
+      if (grossPrice > betterPrice) return betterPrice;
+      break; // found a priced better condition, no need to check further
+    }
   }
   return grossPrice;
 }
