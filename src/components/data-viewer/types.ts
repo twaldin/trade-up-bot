@@ -71,6 +71,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   csfloat_ref: "CSFloat Ref",
   listing: "Listing Floor",
   skinport: "Skinport",
+  buff_sale: "Buff Sales",
 };
 
 export const CONDITION_ORDER = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
