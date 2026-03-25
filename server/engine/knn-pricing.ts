@@ -177,6 +177,7 @@ function dynamicHalfLife(observationCount: number): number {
 
 async function ensureKnnCache(pool: pg.Pool) {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
+  const t0 = Date.now();
   _knnCache.clear();
   _knnFreshnessCache.clear();
   _knnHasCsfloatSales.clear();
@@ -192,6 +193,7 @@ async function ensureKnnCache(pool: pg.Pool) {
       AND source IN ('sale', 'skinport_sale', 'buff_sale')
     ORDER BY skin_name, float_value
   `, [KNN_MAX_OBS_AGE_DAYS]);
+  const tQuery = Date.now();
 
   // Group raw observations by skin
   const rawBySkin = new Map<string, typeof rows>();
@@ -227,6 +229,7 @@ async function ensureKnnCache(pool: pg.Pool) {
     if (hasBuff) _knnHasBuffSales.add(skinName);
   }
   _knnCacheLoadedAt = Date.now();
+  console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
 }
 
 export function clearKnnCache() {

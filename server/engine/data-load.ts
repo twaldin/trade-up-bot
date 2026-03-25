@@ -89,7 +89,9 @@ export async function loadDiscoveryData(
   groupKey: "collection_id" | "collection_name",
   options?: { maxInputCost?: number; stattrak?: boolean; excludeWeapons?: readonly string[] }
 ): Promise<DiscoveryData> {
+  const t0 = Date.now();
   let allListings = await getListingsForRarity(pool, rarity, options?.maxInputCost, options?.stattrak);
+  const tQuery = Date.now();
 
   if (options?.excludeWeapons) {
     const excluded = options.excludeWeapons;
@@ -99,6 +101,7 @@ export async function loadDiscoveryData(
   // KNN-based input value scoring: identify underpriced listings at their specific float
   const { batchInputValueRatios } = await import("./knn-pricing.js");
   const valueRatios = await batchInputValueRatios(pool, allListings);
+  const tKnn = Date.now();
   for (const l of allListings) {
     l.valueRatio = valueRatios.get(l.id);
   }
@@ -127,6 +130,9 @@ export async function loadDiscoveryData(
   for (const [key, list] of byCollection) {
     byColValue.set(key, [...list].sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1)));
   }
+  const tSort = Date.now();
+
+  console.log(`  [loadDiscoveryData ${rarity}] ${allListings.length} listings — query ${tQuery - t0}ms, KNN ${tKnn - tQuery}ms, sort ${tSort - tKnn}ms, total ${tSort - t0}ms`);
 
   return { allListings, allAdjusted, byCollection, byColAdj, byColValue };
 }
