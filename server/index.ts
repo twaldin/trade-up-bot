@@ -19,7 +19,7 @@ import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
-import { buildSeoHtml, isCrawler } from "./seo.js";
+import { buildSeoHtml, isCrawler, injectMetaIntoSpa } from "./seo.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -252,58 +252,42 @@ app.use((req, res, next) => {
     } catch { next(); }
   });
 
-  // SEO: crawler handlers for list pages (no pre-rendered HTML exists for these)
-  app.get("/trade-ups", async (req, res, next) => {
-    const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
-    try {
-      const { rows: [stats] } = await pool.query(
-        "SELECT COUNT(*)::int as total, COUNT(*) FILTER (WHERE profit_cents > 0)::int as profitable FROM trade_ups WHERE listing_status = 'active' AND is_theoretical = false"
-      );
-      const total = stats?.total || 0;
-      const profitable = stats?.profitable || 0;
-      res.send(buildSeoHtml({
-        title: "CS2 Trade-Up Contracts — Live Profitable Deals | TradeUpBot",
-        description: `${profitable.toLocaleString()} profitable trade-ups found from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport updated every 30 minutes.`,
-        url: "https://tradeupbot.app/trade-ups",
-        bodyText: `Browse ${total.toLocaleString()} active CS2 trade-up contracts. ${profitable.toLocaleString()} are currently profitable. Filter by rarity tier, ROI, profit, and more. All trade-ups use real, buyable listings from CSFloat, DMarket, and Skinport.`,
-      }));
-    } catch { next(); }
-  });
-
-  app.get("/collections", async (req, res, next) => {
-    const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
-    try {
-      const { rows: [stats] } = await pool.query("SELECT COUNT(*)::int as total FROM collections");
-      const total = stats?.total || 0;
-      res.send(buildSeoHtml({
-        title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
-        description: `Browse ${total} CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.`,
-        url: "https://tradeupbot.app/collections",
-        bodyText: `Browse all ${total} CS2 collections on TradeUpBot. View skins, price data, float ranges, and find profitable trade-up contracts for every weapon case and collection.`,
-      }));
-    } catch { next(); }
-  });
-
-  app.get("/skins", async (req, res, next) => {
-    const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
-    try {
-      const { rows: [stats] } = await pool.query("SELECT COUNT(DISTINCT s.id)::int as total FROM skins s JOIN listings l ON s.id = l.skin_id WHERE s.stattrak = false");
-      const total = stats?.total || 0;
-      res.send(buildSeoHtml({
-        title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
-        description: `Browse ${total.toLocaleString()} CS2 skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential.`,
-        url: "https://tradeupbot.app/skins",
-        bodyText: `Browse ${total.toLocaleString()} CS2 skins with live market prices and float data. Compare prices across CSFloat, DMarket, and Skinport. Find trade-up opportunities for every skin.`,
-      }));
-    } catch { next(); }
-  });
-
   // Serve built frontend in production (Vite handles this in dev via proxy)
   const distPath = path.join(__dirname, "..", "dist");
   if (fs.existsSync(distPath)) {
+    // Read index.html once for meta injection on list pages
+    const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf-8");
+
+    // List pages: inject correct meta tags into the SPA template for ALL requests.
+    // Google's WRS re-renders pages in Chrome, so crawler-only handlers don't work —
+    // the meta tags must be correct in the HTML that Chrome renders.
+    app.get("/trade-ups", (_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(injectMetaIntoSpa(indexHtml, {
+        title: "CS2 Trade-Up Contracts — Live Profitable Deals | TradeUpBot",
+        description: "Find profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
+        url: "https://tradeupbot.app/trade-ups",
+      }));
+    });
+
+    app.get("/collections", (_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(injectMetaIntoSpa(indexHtml, {
+        title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
+        description: "Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.",
+        url: "https://tradeupbot.app/collections",
+      }));
+    });
+
+    app.get("/skins", (_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(injectMetaIntoSpa(indexHtml, {
+        title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
+        description: "Browse CS2 skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential.",
+        url: "https://tradeupbot.app/skins",
+      }));
+    });
+
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
