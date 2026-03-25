@@ -89,7 +89,7 @@ if (fs.existsSync(envPath)) {
 }
 
 /** Minimum worker time limit in ms. Workers do structured + exploration within this budget. */
-const MIN_WORKER_TIME = 120_000; // 2 min minimum
+const MIN_WORKER_TIME = 180_000; // 3 min minimum (data loading overhead is ~18s with 126K+ listings)
 
 /** Maximum worker time limit in ms. First super-batch gets more time. */
 const MAX_WORKER_TIME = 300_000; // 5 min maximum
