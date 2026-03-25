@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, type ReactNode } from "react";
 import type { TradeUp, TradeUpInput } from "../../shared/types.js";
 import { formatDollars, condAbbr, csfloatSearchUrl } from "../utils/format.js";
 import { Badge } from "../../shared/components/ui/badge.js";
@@ -43,6 +43,7 @@ interface Props {
   verifyLimit?: RateLimitInfo | null;
   onClaimLimitUpdate?: (limit: RateLimitInfo) => void;
   onVerifyLimitUpdate?: (limit: RateLimitInfo) => void;
+  renderActions?: (tu: TradeUp) => ReactNode;
 }
 
 function SortIndicator({ column, sort, order }: { column: string; sort: string; order: string }) {
@@ -153,7 +154,7 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate, renderActions }: Props) {
   const isFree = tier === "free";
   const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
@@ -172,8 +173,14 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     return ids;
   });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
-  // Claim expiry times — populated when a claim is created
-  const [claimExpiries, setClaimExpiries] = useState<Map<number, string>>(new Map());
+  // Claim expiry times — seeded from API data + updated on new claims
+  const [claimExpiries, setClaimExpiries] = useState<Map<number, string>>(() => {
+    const map = new Map<number, string>();
+    for (const tu of tradeUps) {
+      if (tu.claim_expires_at) map.set(tu.id, tu.claim_expires_at);
+    }
+    return map;
+  });
   const handleClaimExpiry = useCallback((tuId: number, expiresAt: string) => {
     setClaimExpiries(prev => new Map(prev).set(tuId, expiresAt));
   }, []);
@@ -185,10 +192,18 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // When new trade-ups data arrives (tab switch, refresh), reset from API flags
   useEffect(() => {
     const ids = new Set<number>();
+    const expiries = new Map<number, string>();
     for (const tu of tradeUps) {
       if (tu.claimed_by_me) ids.add(tu.id);
+      if (tu.claim_expires_at) expiries.set(tu.id, tu.claim_expires_at);
     }
     setClaimedIds(ids);
+    setClaimExpiries(prev => {
+      // Merge: keep locally-set expiries (from fresh claims), add/update from API
+      const merged = new Map(prev);
+      for (const [id, exp] of expiries) merged.set(id, exp);
+      return merged;
+    });
   }, [tradeUps]);
   // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
@@ -261,7 +276,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Shared expanded content renderer
   const renderExpanded = (tu: TradeUp) => (
     <div className="bg-card">
-      {tu.profit_cents > 0 && (() => {
+      {renderActions ? (
+        <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
+          {renderActions(tu)}
+        </div>
+      ) : tu.profit_cents > 0 && (() => {
         const myClaimLocal = claimedIds.has(tu.id);
         const otherClaim = !myClaimLocal && tu.claimed_by_other;
         const showUpgradeLocal = upgradeMsg === tu.id;
@@ -374,6 +393,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
         </div>);
       })()}
       <OutcomeChart tu={tu} />
+
       {((tu.peak_profit_cents ?? 0) > 0 || tu.listing_status !== 'active') && (
         <VerifyResults tu={tu} />
       )}

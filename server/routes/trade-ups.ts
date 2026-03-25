@@ -139,10 +139,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const activeClaims = await getActiveClaims(pool);
     const claimedByOthers = new Set<number>();
     const claimedByMe = new Set<number>();
+    const claimExpiryMap = new Map<number, string>(); // trade_up_id → expires_at for user's claims
     const claimedListingIds = new Set<string>(); // all listing IDs locked by other users' claims
     for (const c of activeClaims) {
       if (c.user_id === userId) {
         claimedByMe.add(c.trade_up_id);
+        claimExpiryMap.set(c.trade_up_id, c.expires_at);
       } else {
         claimedByOthers.add(c.trade_up_id);
         // Collect all listing IDs from other users' claims — trade-ups sharing these are hidden
@@ -400,7 +402,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         previous_inputs: row.previous_inputs ? JSON.parse(row.previous_inputs) : null,
       };
 
-      return { ...tu, claimed_by_me: claimedByMe.has(row.id), claimed_by_other: claimedByOthers.has(row.id) };
+      return {
+        ...tu,
+        claimed_by_me: claimedByMe.has(row.id),
+        claimed_by_other: claimedByOthers.has(row.id),
+        claim_expires_at: claimExpiryMap.get(row.id),
+      };
     });
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)

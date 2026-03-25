@@ -146,6 +146,7 @@ export interface TradeUp {
   preserved_at?: string | null; // when this trade-up was first marked stale
   claimed_by_me?: boolean;
   claimed_by_other?: boolean;
+  claim_expires_at?: string;
   previous_inputs?: {
     old_profit_cents: number;
     old_cost_cents: number;
