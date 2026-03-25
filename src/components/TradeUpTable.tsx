@@ -85,13 +85,14 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
-function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitUpdate }: {
+function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitUpdate, onClaimExpiry }: {
   tuId: number;
   claimed: Set<number>;
   setClaimed: (fn: (prev: Set<number>) => Set<number>) => void;
   onClaimChange?: (delta: number) => void;
   limit?: RateLimitInfo | null;
   onLimitUpdate?: (limit: RateLimitInfo) => void;
+  onClaimExpiry?: (tuId: number, expiresAt: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   if (claimed.has(tuId)) return null;
@@ -115,6 +116,7 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitU
           } else {
             setClaimed(prev => new Set(prev).add(tuId));
             onClaimChange?.(1);
+            if (data.claim?.expires_at) onClaimExpiry?.(tuId, data.claim.expires_at);
           }
         } catch {
           alert("Failed to claim");
@@ -125,6 +127,29 @@ function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitU
     >
       {loading ? "..." : atLimit ? `Limit (${resetMin}m)` : `Claim${limit ? ` (${limit.remaining}/${limit.total})` : ""}`}
     </button>
+  );
+}
+
+function ClaimTimer({ expiresAt }: { expiresAt: string }) {
+  const [minsLeft, setMinsLeft] = useState(() => {
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / 60000));
+  });
+
+  useEffect(() => {
+    const tick = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      setMinsLeft(Math.max(0, Math.ceil(diff / 60000)));
+    };
+    const id = setInterval(tick, 15000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  if (minsLeft <= 0) return <span className="text-[0.65rem] text-red-400">Expired</span>;
+  return (
+    <span className={`text-[0.65rem] ${minsLeft <= 5 ? "text-red-400" : "text-muted-foreground"}`}>
+      {minsLeft}m left
+    </span>
   );
 }
 
@@ -147,6 +172,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     return ids;
   });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
+  // Claim expiry times — populated when a claim is created
+  const [claimExpiries, setClaimExpiries] = useState<Map<number, string>>(new Map());
+  const handleClaimExpiry = useCallback((tuId: number, expiresAt: string) => {
+    setClaimExpiries(prev => new Map(prev).set(tuId, expiresAt));
+  }, []);
   // Confirm mode: which trade-up is in confirm mode, and which listings are selected
   const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
   const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
@@ -257,7 +287,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             <div className="flex items-center gap-2 shrink-0">
               {!myClaimLocal && !otherClaim && (
                 (isPro || isBasic)
-                  ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} />
+                  ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} onClaimExpiry={handleClaimExpiry} />
                   : <button
                       className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
                       onClick={(e) => { e.stopPropagation(); setUpgradeMsg(tu.id); }}
@@ -267,6 +297,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               )}
               {myClaimLocal && confirmModeId !== tu.id && (
                 <>
+                  {claimExpiries.has(tu.id) && <ClaimTimer expiresAt={claimExpiries.get(tu.id)!} />}
                   <button
                     className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 hover:border-green-400 cursor-pointer transition-colors"
                     onClick={(e) => {

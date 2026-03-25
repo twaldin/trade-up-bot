@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
 import { formatDollars, condAbbr, timeAgo, csfloatSearchUrl, listingUrl, listingSource, sourceLabel, sourceColor } from "../../utils/format.js";
@@ -232,6 +232,14 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
 
 export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSkin, showListingLinks = true, showVerify = true, verifyLimit, confirmMode = false, confirmSelected, onConfirmToggle, onUnauthLinkClick, showShare = false }: InputListProps) {
   const [shareCopied, setShareCopied] = useState(false);
+  const [verifySlowMsg, setVerifySlowMsg] = useState(false);
+
+  useEffect(() => {
+    if (!verifying) { setVerifySlowMsg(false); return; }
+    const timer = setTimeout(() => setVerifySlowMsg(true), 2000);
+    return () => clearTimeout(timer);
+  }, [verifying]);
+
   return (
     <div>
       <h4 className="text-[0.8rem] text-muted-foreground mb-2 uppercase tracking-wide">
@@ -248,7 +256,7 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
               disabled={verifying || !!atLimit}
               title="Check if all inputs are still listed"
             >
-              {verifying ? "Checking..." : atLimit ? `Limit (${resetMin}m)` : `Verify${verifyLimit ? ` (${verifyLimit.remaining}/${verifyLimit.total})` : ""}`}
+              {verifying ? (verifySlowMsg ? "Still checking..." : "Checking...") : atLimit ? `Limit (${resetMin}m)` : `Verify${verifyLimit ? ` (${verifyLimit.remaining}/${verifyLimit.total})` : ""}`}
             </button>
           );
         })()}
