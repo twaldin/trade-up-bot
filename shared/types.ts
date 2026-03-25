@@ -111,6 +111,7 @@ export interface TradeUpInput {
   float_value: number;
   condition: Condition;
   source: string;
+  marketplace_id?: string;
   stattrak?: boolean;
   missing?: boolean;
   claimed_by_other?: boolean;

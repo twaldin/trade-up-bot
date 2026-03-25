@@ -46,10 +46,10 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const [loading, setLoading] = useState(true);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({
-    csfloat: true, dmarket: true, skinport: true, csfloat_sales: true, skinport_sales: true, buff_sales: true, buckets: true,
+    csfloat: true, dmarket: true, skinport: true, buff: true, csfloat_sales: true, skinport_sales: true, buff_sales: true, buckets: true,
   });
   const [sourceFilters, setSourceFilters] = useState<Record<string, boolean>>({
-    csfloat: true, dmarket: true, skinport: true,
+    csfloat: true, dmarket: true, skinport: true, buff: true,
   });
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
@@ -159,6 +159,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const csfloatCount = listings.filter(l => !l.source || l.source === "csfloat").length;
   const dmarketCount = listings.filter(l => l.source === "dmarket").length;
   const skinportCount = listings.filter(l => l.source === "skinport").length;
+  const buffCount = listings.filter(l => l.source === "buff").length;
 
   const csfloatSaleCount = (saleHistory || []).filter(s => !s.source || s.source === "sale" || s.source === "listing" || s.source === "listing_dmarket" || s.source === "listing_skinport").length;
   const skinportSaleCount = (saleHistory || []).filter(s => s.source === "skinport_sale").length;
@@ -168,6 +169,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     { key: "csfloat", label: "CSFloat", color: SERIES_COLORS.csfloat, shape: "dot", count: csfloatCount },
     ...(dmarketCount > 0 ? [{ key: "dmarket" as SeriesKey, label: "DMarket", color: SERIES_COLORS.dmarket, shape: "dot" as const, count: dmarketCount }] : []),
     ...(skinportCount > 0 ? [{ key: "skinport" as SeriesKey, label: "Skinport", color: SERIES_COLORS.skinport, shape: "dot" as const, count: skinportCount }] : []),
+    ...(buffCount > 0 ? [{ key: "buff" as SeriesKey, label: "Buff", color: SERIES_COLORS.buff, shape: "dot" as const, count: buffCount }] : []),
     { key: "csfloat_sales", label: "CSFloat Sales", color: SERIES_COLORS.csfloat_sales, shape: "diamond", count: csfloatSaleCount },
     ...(skinportSaleCount > 0 ? [{ key: "skinport_sales" as SeriesKey, label: "Skinport Sales", color: SERIES_COLORS.skinport_sales, shape: "diamond" as const, count: skinportSaleCount }] : []),
     ...(buffSaleCount > 0 ? [{ key: "buff_sales" as SeriesKey, label: "Buff Sales", color: SERIES_COLORS.buff_sales, shape: "diamond" as const, count: buffSaleCount }] : []),
@@ -185,6 +187,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     { key: "csfloat", label: "CSFloat", count: csfloatCount, colorClass: "text-blue-500 bg-blue-500/10" },
     ...(dmarketCount > 0 ? [{ key: "dmarket", label: "DMarket", count: dmarketCount, colorClass: "text-purple-400 bg-purple-400/10" }] : []),
     ...(skinportCount > 0 ? [{ key: "skinport", label: "Skinport", count: skinportCount, colorClass: "text-yellow-500 bg-yellow-500/10" }] : []),
+    ...(buffCount > 0 ? [{ key: "buff", label: "Buff", count: buffCount, colorClass: "text-orange-500 bg-orange-500/10" }] : []),
   ];
 
   const chartContent = (fs: boolean) => (
@@ -388,6 +391,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
                 csfloat: "text-blue-500 bg-blue-500/10",
                 dmarket: "text-purple-400 bg-purple-400/10",
                 skinport: "text-yellow-500 bg-yellow-500/10",
+                buff: "text-orange-500 bg-orange-500/10",
               };
               return <span className={`text-[9px] font-semibold px-1.5 py-px rounded uppercase ${colors[src] || ""}`}>{src.toUpperCase()}</span>;
             }, sortValue: r => r.source || "csfloat" },

@@ -52,8 +52,9 @@ export function csfloatSearchUrl(skinName: string, condition?: string): string {
   return `https://csfloat.com/search?market_hash_name=${encodeURIComponent(query)}`;
 }
 
-/** Get the marketplace source from a listing ID (prefixed format) */
-export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinport" {
+/** Get the marketplace source from a listing ID (prefixed format) or explicit source field */
+export function listingSource(listingId: string, source?: string): "csfloat" | "dmarket" | "skinport" | "buff" {
+  if (source === "buff") return "buff";
   if (listingId.startsWith("dmarket:")) return "dmarket";
   if (listingId.startsWith("skinport:")) return "skinport";
   return "csfloat";
@@ -62,8 +63,13 @@ export function listingSource(listingId: string): "csfloat" | "dmarket" | "skinp
 /** Source-aware listing URL — routes to the correct marketplace with float/price filters.
  *  priceCents is the EFFECTIVE cost (with buyer fees). The URL uses the ORIGINAL listing
  *  price (without fees) so price filters target the exact listing on the marketplace. */
-export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number): string {
-  const source = listingSource(listingId);
+export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number, sourceHint?: string, marketplaceId?: string): string {
+  const source = listingSource(listingId, sourceHint);
+  if (source === "buff") {
+    // Buff can't deep-link to a specific listing — link to the goods page
+    if (marketplaceId) return `https://buff.market/market/goods/${marketplaceId}`;
+    return `https://buff.market/market/csgo`;
+  }
   if (source === "dmarket") {
     // DMarket: skip price filter (prices change frequently).
     // Float has 3-digit precision — floor/ceil at 3rd decimal to bracket the exact listing.
@@ -100,6 +106,7 @@ export function listingUrl(listingId: string, skinName?: string, condition?: str
 export function sourceLabel(source: string): string {
   if (source === "dmarket") return "DM";
   if (source === "skinport") return "SP";
+  if (source === "buff") return "BUFF";
   return "CF";
 }
 
@@ -107,6 +114,7 @@ export function sourceLabel(source: string): string {
 export function sourceColor(source: string): string {
   if (source === "dmarket") return "#4f8cff";
   if (source === "skinport") return "#f5a623";
+  if (source === "buff") return "#e85d04";
   return "#22c55e";
 }
 
