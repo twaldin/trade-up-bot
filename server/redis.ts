@@ -209,6 +209,10 @@ export function cachedRoute(
       return originalJson(data);
     } as typeof res.json;
 
-    return handler(req, res, next);
+    try {
+      return await handler(req, res, next);
+    } catch (err) {
+      next(err);
+    }
   };
 }
