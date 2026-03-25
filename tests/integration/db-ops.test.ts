@@ -390,10 +390,163 @@ describe("DB Operations", () => {
       const { rows } = await ctx.pool.query(`
         SELECT column_name, data_type
         FROM information_schema.columns
-        WHERE table_name = 'listings' AND column_name = 'marketplace_id'
-      `);
+        WHERE table_schema = $1 AND table_name = 'listings' AND column_name = 'marketplace_id'
+      `, [ctx.schema]);
       expect(rows).toHaveLength(1);
       expect(rows[0].data_type).toBe("text");
+    });
+  });
+
+  // ─── Buff listings in main listings table ──────────────────────────────────
+
+  describe("buff listings in main listings table", () => {
+    it("buff listing inserted into main listings table with correct source and marketplace_id", async () => {
+      // Insert prerequisite skin
+      await ctx.pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+        VALUES ('test-buff-skin', 'Test Buff Skin', 'AK-47', 'Classified', 0.0, 1.0, false)
+        ON CONFLICT DO NOTHING`);
+
+      // Insert a buff listing into main listings table
+      await ctx.pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, source, listing_type, staleness_checked_at, marketplace_id)
+        VALUES ('buff-test-1', 'test-buff-skin', 1000, 0.15, 42, false, 'buff', 'buy_now', NOW(), '12345')
+      `);
+
+      // Verify it's in listings with correct fields
+      const { rows: before } = await ctx.pool.query("SELECT * FROM listings WHERE id = 'buff-test-1'");
+      expect(before).toHaveLength(1);
+      expect(before[0].source).toBe("buff");
+      expect(before[0].marketplace_id).toBe("12345");
+      expect(before[0].listing_type).toBe("buy_now");
+      expect(before[0].price_cents).toBe(1000);
+      expect(before[0].float_value).toBeCloseTo(0.15);
+      expect(before[0].paint_seed).toBe(42);
+    });
+
+    it("buff listing upsert updates price and staleness_checked_at", async () => {
+      await ctx.pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+        VALUES ('test-buff-skin-2', 'Test Buff Skin 2', 'AK-47', 'Classified', 0.0, 1.0, false)
+        ON CONFLICT DO NOTHING`);
+
+      // Insert initial listing
+      await ctx.pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source, listing_type, staleness_checked_at, marketplace_id, price_updated_at)
+        VALUES ('buff-upsert-1', 'test-buff-skin-2', 1000, 0.15, false, 'buff', 'buy_now', NOW() - INTERVAL '1 hour', '99999', NOW() - INTERVAL '1 hour')
+      `);
+
+      // Upsert with new price
+      await ctx.pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, source, listing_type, staleness_checked_at, marketplace_id)
+        VALUES ('buff-upsert-1', 'test-buff-skin-2', 1500, 0.15, null, false, 'buff', 'buy_now', NOW(), '99999')
+        ON CONFLICT (id) DO UPDATE SET
+          price_cents = EXCLUDED.price_cents,
+          float_value = EXCLUDED.float_value,
+          paint_seed = EXCLUDED.paint_seed,
+          staleness_checked_at = NOW(),
+          price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
+          marketplace_id = EXCLUDED.marketplace_id
+      `);
+
+      const { rows } = await ctx.pool.query("SELECT * FROM listings WHERE id = 'buff-upsert-1'");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].price_cents).toBe(1500);
+      expect(rows[0].marketplace_id).toBe("99999");
+      // price_updated_at should have been updated since price changed
+      expect(rows[0].price_updated_at).not.toBeNull();
+    });
+
+    it("staleness diff removes buff listings scoped by source and marketplace_id", async () => {
+      await ctx.pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+        VALUES ('test-buff-skin-3', 'Test Buff Skin 3', 'AK-47', 'Classified', 0.0, 1.0, false)
+        ON CONFLICT DO NOTHING`);
+
+      // Insert two buff listings for the same goods_id
+      await ctx.pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source, listing_type, staleness_checked_at, marketplace_id)
+        VALUES ('buff-stale-1', 'test-buff-skin-3', 800, 0.10, false, 'buff', 'buy_now', NOW(), '55555'),
+               ('buff-stale-2', 'test-buff-skin-3', 900, 0.20, false, 'buff', 'buy_now', NOW(), '55555')
+      `);
+
+      // Also insert a csfloat listing for the same skin (should not be touched)
+      await ctx.pool.query(`
+        INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source, listing_type)
+        VALUES ('csfloat-keep', 'test-buff-skin-3', 1100, 0.25, false, 'csfloat', 'buy_now')
+      `);
+
+      // Simulate staleness diff: only buff-stale-1 is still in API response
+      const { rows: stored } = await ctx.pool.query(
+        "SELECT id FROM listings WHERE skin_id = 'test-buff-skin-3' AND source = 'buff' AND marketplace_id = '55555'"
+      );
+      expect(stored).toHaveLength(2);
+
+      const activeBuffIds = new Set(["buff-stale-1"]);
+      const removedIds: string[] = [];
+      for (const s of stored) {
+        if (!activeBuffIds.has(s.id)) {
+          removedIds.push(s.id);
+        }
+      }
+      expect(removedIds).toEqual(["buff-stale-2"]);
+
+      // Delete removed listings
+      await ctx.pool.query("DELETE FROM listings WHERE id = ANY($1)", [removedIds]);
+
+      // Verify: buff-stale-1 still there, buff-stale-2 gone, csfloat untouched
+      const { rows: remaining } = await ctx.pool.query(
+        "SELECT id, source FROM listings WHERE skin_id = 'test-buff-skin-3' ORDER BY id"
+      );
+      expect(remaining).toHaveLength(2);
+      expect(remaining.map((r: { id: string }) => r.id).sort()).toEqual(["buff-stale-1", "csfloat-keep"]);
+    });
+
+    it("cascade works for deleted buff listings", async () => {
+      await ctx.pool.query(`INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+        VALUES ('test-buff-skin-4', 'Test Buff Skin 4', 'AK-47', 'Classified', 0.0, 1.0, false)
+        ON CONFLICT DO NOTHING`);
+
+      // Create buff listings
+      const listingIds: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const lid = `buff-cascade-${i}`;
+        listingIds.push(lid);
+        await ctx.pool.query(`
+          INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source, listing_type, marketplace_id)
+          VALUES ($1, 'test-buff-skin-4', 1000, 0.15, false, 'buff', 'buy_now', '77777')
+        `, [lid]);
+      }
+
+      // Create a trade-up using those buff listings
+      const { rows: tuRows } = await ctx.pool.query(`
+        INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, listing_status, outcomes_json)
+        VALUES (5000, 7000, 2000, 40.0, 0.8, 'covert_knife', 'active', '[]')
+        RETURNING id
+      `);
+      const tuId = tuRows[0].id;
+
+      for (const lid of listingIds) {
+        await ctx.pool.query(`
+          INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+          VALUES ($1, $2, 'test-buff-skin-4', 'Test Buff Skin 4', 'Test Collection Alpha', 1000, 0.15, 'Field-Tested', 'buff')
+        `, [tuId, lid]);
+      }
+
+      // Delete one buff listing and cascade
+      await deleteListings(ctx.pool, ["buff-cascade-0"]);
+
+      // Trade-up should be partial
+      const { rows: tuStatus } = await ctx.pool.query(
+        "SELECT listing_status FROM trade_ups WHERE id = $1", [tuId]
+      );
+      expect(tuStatus[0].listing_status).toBe("partial");
+
+      // Delete all remaining and cascade
+      await deleteListings(ctx.pool, listingIds.slice(1));
+
+      // Trade-up should be deleted (all inputs gone)
+      const { rows: tuGone } = await ctx.pool.query(
+        "SELECT id FROM trade_ups WHERE id = $1", [tuId]
+      );
+      expect(tuGone).toHaveLength(0);
     });
   });
 });

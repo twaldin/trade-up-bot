@@ -2,8 +2,9 @@
  * Continuous buff.market listing + sale fetcher — runs as a separate process.
  *
  * Fetches buff.market listings and sale history at ~15 req/min (4s interval),
- * completely independent of the main daemon process. Writes to isolated
- * buff_listings, buff_sale_history, and buff_observations tables.
+ * completely independent of the main daemon process. Writes listings to the
+ * main listings table (source='buff'), and sale data to buff_sale_history
+ * and buff_observations tables.
  *
  * Strategy (coverage-first):
  *   1. Coverage gaps (skins with fewest buff listings)
@@ -157,14 +158,14 @@ async function getCoverageGaps(
       COALESCE(bl.cnt, 0) as "listingCount"
     FROM skins s
     LEFT JOIN (
-      SELECT skin_id, COUNT(*) as cnt FROM buff_listings GROUP BY skin_id
+      SELECT skin_id, COUNT(*) as cnt FROM listings WHERE source = 'buff' GROUP BY skin_id
     ) bl ON s.id = bl.skin_id
     WHERE s.stattrak = false AND s.souvenir = false
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     ORDER BY COALESCE(bl.cnt, 0) ASC
     LIMIT $1
   `, [limit]);
-  return rows.map((r: any) => ({
+  return rows.map((r: { skinName: string; rarity: string; listingCount: string }) => ({
     skinName: r.skinName,
     marketHashName: "", // will be resolved per-condition via goods ID map
     rarity: r.rarity,
@@ -179,15 +180,15 @@ async function getStaleSkins(
   const { rows } = await pool.query(`
     SELECT s.name
     FROM skins s
-    JOIN buff_listings bl ON s.id = bl.skin_id
+    JOIN listings l ON s.id = l.skin_id AND l.source = 'buff'
     WHERE s.stattrak = false AND s.souvenir = false
       AND s.rarity IN ('Covert', 'Classified', 'Restricted', 'Mil-Spec', 'Extraordinary', 'Industrial Grade', 'Consumer Grade')
     GROUP BY s.id, s.name
-    HAVING MAX(bl.fetched_at) < NOW() - INTERVAL '30 minutes'
-    ORDER BY MAX(bl.fetched_at) ASC
+    HAVING MAX(l.staleness_checked_at) < NOW() - INTERVAL '30 minutes'
+    ORDER BY MAX(l.staleness_checked_at) ASC
     LIMIT $1
   `, [limit]);
-  return rows.map((r: any) => r.name);
+  return rows.map((r: { name: string }) => r.name);
 }
 
 async function buildFetchQueue(pool: pg.Pool): Promise<string[]> {
@@ -221,12 +222,16 @@ async function upsertBuffListing(
   skinId: string,
 ): Promise<boolean> {
   const { rowCount } = await pool.query(`
-    INSERT INTO buff_listings (id, skin_id, price_cents, float_value, paint_seed, paint_index, stattrak, fetched_at, buff_goods_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+    INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, source, listing_type, staleness_checked_at, marketplace_id)
+    VALUES ($1, $2, $3, $4, $5, $6, 'buff', 'buy_now', NOW(), $7)
     ON CONFLICT (id) DO UPDATE SET
-      price_cents = $3, float_value = $4, paint_seed = $5, paint_index = $6,
-      fetched_at = NOW(), buff_goods_id = $8
-  `, [listing.id, skinId, listing.priceCents, listing.floatValue, listing.paintSeed, listing.paintIndex, listing.stattrak, listing.goodsId]);
+      price_cents = EXCLUDED.price_cents,
+      float_value = EXCLUDED.float_value,
+      paint_seed = EXCLUDED.paint_seed,
+      staleness_checked_at = NOW(),
+      price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
+      marketplace_id = EXCLUDED.marketplace_id
+  `, [listing.id, skinId, listing.priceCents, listing.floatValue, listing.paintSeed, listing.stattrak, String(listing.goodsId)]);
   return (rowCount ?? 0) > 0;
 }
 
@@ -415,17 +420,26 @@ async function fetchSkinData(
       }
     }
 
-    // Staleness diff: remove stored buff listings for this goods_id that aren't in API response
+    // Staleness diff: remove buff listings for this goods_id not in API response
     if (activeBuffIds.size > 0) {
       const { rows: stored } = await pool.query(
-        "SELECT id FROM buff_listings WHERE skin_id = $1 AND buff_goods_id = $2",
-        [skinId, entry.goodsId],
+        "SELECT id FROM listings WHERE skin_id = $1 AND source = 'buff' AND marketplace_id = $2",
+        [skinId, String(entry.goodsId)],
       );
+      const removedIds: string[] = [];
       for (const s of stored) {
         if (!activeBuffIds.has(s.id)) {
-          await pool.query("DELETE FROM buff_listings WHERE id = $1", [s.id]);
-          result.listingsRemoved++;
+          removedIds.push(s.id);
         }
+      }
+      if (removedIds.length > 0) {
+        await pool.query("DELETE FROM listings WHERE id = ANY($1)", [removedIds]);
+        // Cascade trade-up statuses for removed listings
+        try {
+          const { cascadeTradeUpStatuses } = await import("./engine.js");
+          await cascadeTradeUpStatuses(pool, removedIds);
+        } catch { /* cascade is best-effort in fetcher context */ }
+        result.listingsRemoved += removedIds.length;
       }
     }
   }
@@ -452,24 +466,8 @@ async function main() {
   // Load goods ID mapping
   const goodsIdMap = loadGoodsIdMapping();
 
-  // Ensure buff tables exist
+  // Ensure buff tables exist (buff_listings no longer used — listings go to main listings table)
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS buff_listings (
-      id TEXT PRIMARY KEY,
-      skin_id TEXT NOT NULL,
-      price_cents INTEGER NOT NULL,
-      float_value DOUBLE PRECISION NOT NULL,
-      paint_seed INTEGER,
-      paint_index INTEGER,
-      stattrak BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      buff_goods_id INTEGER NOT NULL,
-      FOREIGN KEY (skin_id) REFERENCES skins(id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_buff_listings_skin ON buff_listings(skin_id);
-    CREATE INDEX IF NOT EXISTS idx_buff_listings_fetched ON buff_listings(fetched_at);
-
     CREATE TABLE IF NOT EXISTS buff_sale_history (
       id TEXT PRIMARY KEY,
       skin_name TEXT NOT NULL,
@@ -492,7 +490,7 @@ async function main() {
     );
     CREATE INDEX IF NOT EXISTS idx_buff_obs_skin ON buff_observations(skin_name);
   `);
-  log("  Buff tables ready");
+  log("  Buff sale/observation tables ready");
 
   // Check initial cookie
   const initialCookie = await getCookie(redis);
