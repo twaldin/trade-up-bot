@@ -3,6 +3,9 @@
  */
 
 import pg from "pg";
+import { createWriteStream, createReadStream } from "fs";
+import { unlink } from "fs/promises";
+import { createInterface } from "readline";
 import { RARITY_ORDER } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "./types.js";
 import { addAdjustedFloat } from "./selection.js";
@@ -83,6 +86,85 @@ const _discoveryCache = new Map<string, DiscoveryData>();
 
 export function clearDiscoveryCache() {
   _discoveryCache.clear();
+}
+
+/**
+ * Serialize pre-computed DiscoveryData to NDJSON file.
+ * Line 1: header with rarity, groupKey, listing count
+ * Lines 2+: one listing per line (JSON)
+ */
+export async function serializeDiscoveryData(
+  data: DiscoveryData,
+  rarity: string,
+  groupKey: "collection_id" | "collection_name",
+  filePath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ws = createWriteStream(filePath);
+    ws.on("error", reject);
+    ws.write(JSON.stringify({ rarity, groupKey, count: data.allListings.length }) + "\n");
+    for (const l of data.allListings) {
+      ws.write(JSON.stringify(l) + "\n");
+    }
+    ws.end(() => resolve());
+  });
+}
+
+/**
+ * Deserialize NDJSON file into DiscoveryData and populate the process-level cache.
+ * Call this in workers before any discovery function to avoid PG + KNN overhead.
+ */
+export async function loadDiscoveryDataFromFile(filePath: string): Promise<DiscoveryData> {
+  const rl = createInterface({ input: createReadStream(filePath), crlfDelay: Infinity });
+
+  let header: { rarity: string; groupKey: "collection_id" | "collection_name"; count: number } | null = null;
+  const allListings: ListingWithCollection[] = [];
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    if (!header) {
+      header = JSON.parse(line);
+      continue;
+    }
+    allListings.push(JSON.parse(line));
+  }
+
+  if (!header) throw new Error(`Empty NDJSON file: ${filePath}`);
+
+  const groupKey = header.groupKey;
+  const allAdjusted = addAdjustedFloat(allListings);
+
+  const byCollection = new Map<string, ListingWithCollection[]>();
+  const byColAdj = new Map<string, AdjustedListing[]>();
+  for (const l of allAdjusted) {
+    const key = l[groupKey];
+    const list = byCollection.get(key) ?? [];
+    list.push(l);
+    byCollection.set(key, list);
+    const adjList = byColAdj.get(key) ?? [];
+    adjList.push(l);
+    byColAdj.set(key, adjList);
+  }
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+  const byColValue = new Map<string, ListingWithCollection[]>();
+  for (const [key, list] of byCollection) {
+    byColValue.set(key, [...list].sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1)));
+  }
+
+  const result: DiscoveryData = { allListings, allAdjusted, byCollection, byColAdj, byColValue };
+  const cacheKey = `${header.rarity}|${groupKey}`;
+  _discoveryCache.set(cacheKey, result);
+
+  console.log(`  [loadDiscoveryData ${header.rarity}] from file (${allListings.length} listings)`);
+  return result;
+}
+
+/** Clean up temp NDJSON files */
+export async function cleanupDiscoveryFiles(filePaths: string[]): Promise<void> {
+  for (const f of filePaths) {
+    try { await unlink(f); } catch { /* already deleted */ }
+  }
 }
 
 /**

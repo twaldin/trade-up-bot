@@ -129,6 +129,7 @@ function runCalcWorker(
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
   timeLimitMs?: number,
   cycleStartedAt?: number,
+  discoveryFile?: string,
 ): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -148,7 +149,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile }),
       },
     });
 
@@ -333,6 +334,15 @@ export async function main() {
       }
     }
 
+    // Phase 4c: Reprice output values with current KNN + price cache
+    {
+      const { repriceTradeUpOutputs } = await import("../engine.js");
+      const repriceResult = await repriceTradeUpOutputs(pool, 500);
+      if (repriceResult.updated > 0) {
+        console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs`);
+      }
+    }
+
     // --- Phase 5: Time-Bounded Discovery Engine ---
     const engineEnd = cycleStarted + TARGET_CYCLE_MS - 30_000; // 30s reserved for post-engine work
     const engineBudgetMs = Math.max(engineEnd - Date.now(), 60_000);
@@ -342,6 +352,39 @@ export async function main() {
 
     // Build price cache + knife finish cache for main-thread merge/revival
     await buildPriceCache(pool, true);
+
+    // Pre-materialize discovery data: load listings + compute KNN once, write to temp files.
+    // Workers read these files instead of independently querying PG + computing KNN (~15s each).
+    const { loadDiscoveryData: loadDD, serializeDiscoveryData, cleanupDiscoveryFiles } = await import("../engine.js");
+    const discoveryFiles: string[] = [];
+    const RARITY_CONFIGS: Array<{ rarity: string; groupKey: "collection_id" | "collection_name"; excludeWeapons?: readonly string[] }> = [
+      { rarity: "Covert", groupKey: "collection_name", excludeWeapons: (await import("../engine.js")).KNIFE_WEAPONS },
+      { rarity: "Classified", groupKey: "collection_id" },
+      { rarity: "Restricted", groupKey: "collection_id" },
+      { rarity: "Mil-Spec", groupKey: "collection_id" },
+      { rarity: "Industrial Grade", groupKey: "collection_id" },
+      { rarity: "Consumer Grade", groupKey: "collection_id" },
+    ];
+    const preMatStart = Date.now();
+    for (const cfg of RARITY_CONFIGS) {
+      const data = await loadDD(pool, cfg.rarity, cfg.groupKey, { excludeWeapons: cfg.excludeWeapons });
+      const filePath = `/tmp/discovery-data-${cfg.rarity.replace(/\s+/g, "-").toLowerCase()}-${cfg.groupKey}.ndjson`;
+      await serializeDiscoveryData(data, cfg.rarity, cfg.groupKey, filePath);
+      discoveryFiles.push(filePath);
+    }
+    console.log(`  Pre-materialized ${RARITY_CONFIGS.length} discovery files (${((Date.now() - preMatStart) / 1000).toFixed(1)}s)`);
+    // Clear main-process cache — workers use their own files, main process doesn't need this data
+    clearDiscoveryCache();
+
+    // Map worker task names to their pre-materialized file paths
+    const taskDiscoveryFile: Record<string, string> = {
+      knife: `/tmp/discovery-data-covert-collection_name.ndjson`,
+      classified: `/tmp/discovery-data-classified-collection_id.ndjson`,
+      restricted: `/tmp/discovery-data-restricted-collection_id.ndjson`,
+      milspec: `/tmp/discovery-data-mil-spec-collection_id.ndjson`,
+      industrial: `/tmp/discovery-data-industrial-grade-collection_id.ndjson`,
+      consumer: `/tmp/discovery-data-consumer-grade-collection_id.ndjson`,
+    };
     const revivalKnifeCache = new Map<string, FinishData[]>();
     {
       const itemTypes = new Set<string>();
@@ -394,10 +437,10 @@ export async function main() {
         await setDaemonStatus(pool, "calculating", statusDetail);
 
         const workers: Promise<WorkerResult>[] = [
-          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted),
+          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA]),
         ];
         if (taskB) {
-          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted));
+          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB]));
         }
         const results = await Promise.allSettled(workers);
 
@@ -582,6 +625,9 @@ export async function main() {
       const batchMs = Date.now() - batchStart;
       console.log(`    Super-batch ${superBatchCount} done (${(batchMs / 1000).toFixed(1)}s)`);
     }
+
+    // Clean up pre-materialized discovery files
+    await cleanupDiscoveryFiles(discoveryFiles);
 
     // Post-engine: update collection scores + global trim
     await updateCollectionScores(pool);

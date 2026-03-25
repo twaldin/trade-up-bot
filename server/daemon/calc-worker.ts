@@ -28,10 +28,11 @@ interface WorkerInput {
   task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer";
   timeLimitMs?: number;
   cycleStartedAt?: number;
+  discoveryFile?: string;
 }
 
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
-const { task, timeLimitMs, cycleStartedAt } = input;
+const { task, timeLimitMs, cycleStartedAt, discoveryFile } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
 
 // Create own PG pool — worker needs its own connection
@@ -94,6 +95,12 @@ const rarityMap: Record<string, string> = {
 (async () => {
   try {
     const workerStart = Date.now();
+
+    // Pre-load discovery data from NDJSON file if available (avoids PG query + KNN scoring)
+    if (discoveryFile) {
+      const { loadDiscoveryDataFromFile } = await import("../engine.js");
+      await loadDiscoveryDataFromFile(discoveryFile);
+    }
 
     // Load existing listing signatures so discovery skips combos already in DB
     const tradeUpType = typeMap[task] ?? "classified_covert";
