@@ -11,6 +11,7 @@ import { getConditionTransitions, selectForFloatTarget, selectLowestFloat } from
 import { TradeUpStore } from "./store.js";
 import { evaluateTradeUp } from "./evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
+import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 
 /**
  * Per-collection output opportunity profile.
@@ -135,7 +136,7 @@ export async function findProfitableTradeUps(
 
     options.onProgress?.(`Loading ${inputRarity}...`, 0, 100);
 
-    const { allListings, allAdjusted, byCollection, byColAdj } = await loadDiscoveryData(
+    const { allListings, allAdjusted, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
       pool, inputRarity, "collection_id",
       { maxInputCost: options.maxInputCost, stattrak }
     );
@@ -433,7 +434,7 @@ export async function randomExplore(
   if (!outputRarity) return { found: 0, explored: 0, improved: 0 };
   await buildPriceCache(pool);
 
-  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+  const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
     pool, inputRarity, "collection_id", { stattrak }
   );
   if (allListings.length === 0) return { found: 0, explored: 0, improved: 0 };
@@ -537,8 +538,8 @@ export async function randomExplore(
           const countA = 1 + Math.floor(Math.random() * 9);
           const countB = 10 - countA;
           if (listA.length < countA || listB.length < countB) break;
-          const maxOffA = Math.min(listA.length - countA, 20);
-          const maxOffB = Math.min(listB.length - countB, 20);
+          const maxOffA = Math.min(listA.length - countA, 200);
+          const maxOffB = Math.min(listB.length - countB, 200);
           const offA = Math.floor(Math.random() * (maxOffA + 1));
           const offB = Math.floor(Math.random() * (maxOffB + 1));
           inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
@@ -550,7 +551,7 @@ export async function randomExplore(
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 10) break;
-          const maxOff = Math.min(list.length - 10, 30);
+          const maxOff = Math.min(list.length - 10, 300);
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = list.slice(off, off + 10);
           break;
@@ -564,7 +565,7 @@ export async function randomExplore(
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 10) break;
-          const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 10));
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 100));
           inputs = condListings.slice(off, off + 10);
           break;
         }
@@ -594,7 +595,7 @@ export async function randomExplore(
           // Global cheapest pool
           const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
           const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 10, 100);
+          const maxOff = Math.min(sorted.length - 10, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = sorted.slice(off, off + 10);
@@ -846,7 +847,7 @@ export async function exploreWithBudget(
   if (!outputRarity) return [];
   await buildPriceCache(pool);
 
-  const { allListings, byCollection, byColAdj } = await loadDiscoveryData(
+  const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
     pool, inputRarity, "collection_id", { stattrak }
   );
   if (allListings.length === 0) return [];
@@ -985,8 +986,8 @@ export async function exploreWithBudget(
 
   // Low-float bias: strategies 5 (float-targeted pair), 7 (output-value-aware), 8 (ultra-low-float)
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
-  const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8];
-  const TOTAL_STRATEGIES = 12;
+  const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13];
+  const TOTAL_STRATEGIES = 15;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -1011,8 +1012,8 @@ export async function exploreWithBudget(
           const countA = 1 + Math.floor(Math.random() * 9);
           const countB = 10 - countA;
           if (listA.length < countA || listB.length < countB) break;
-          const maxOffA = Math.min(listA.length - countA, 20);
-          const maxOffB = Math.min(listB.length - countB, 20);
+          const maxOffA = Math.min(listA.length - countA, 200);
+          const maxOffB = Math.min(listB.length - countB, 200);
           const offA = Math.floor(Math.random() * (maxOffA + 1));
           const offB = Math.floor(Math.random() * (maxOffB + 1));
           inputs = [...listA.slice(offA, offA + countA), ...listB.slice(offB, offB + countB)];
@@ -1023,7 +1024,7 @@ export async function exploreWithBudget(
           const col = pick(weightedPool);
           const list = byCollection.get(col) ?? [];
           if (list.length < 10) break;
-          const maxOff = Math.min(list.length - 10, 30);
+          const maxOff = Math.min(list.length - 10, 300);
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = list.slice(off, off + 10);
           break;
@@ -1036,7 +1037,7 @@ export async function exploreWithBudget(
           const cond = pick(conditions);
           const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
           if (condListings.length < 10) break;
-          const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 10));
+          const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 100));
           inputs = condListings.slice(off, off + 10);
           break;
         }
@@ -1064,7 +1065,7 @@ export async function exploreWithBudget(
         case 4: {
           const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
           const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 10, 100);
+          const maxOff = Math.min(sorted.length - 10, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
           inputs = sorted.slice(off, off + 10);
@@ -1231,6 +1232,82 @@ export async function exploreWithBudget(
           // Try cheapest listings from both collections
           inputs = [...listA.slice(0, countA), ...listB.slice(0, countB)];
           break;
+        }
+
+        case 12: {
+          // Value-ratio single: pick collection, use most underpriced listings
+          const col = pick(weightedPool);
+          const valueList = byColValue.get(col) ?? [];
+          if (valueList.length < 10) break;
+          const maxOff = Math.min(valueList.length - 10, 200);
+          const off = Math.floor(Math.random() * (maxOff + 1));
+          inputs = valueList.slice(off, off + 10);
+          break;
+        }
+
+        case 13: {
+          // Value-ratio pair: underpriced listings from two collections
+          const colA = pick(weightedPool);
+          const colB = pick(eligibleCollections.filter(c => c !== colA));
+          const valA = byColValue.get(colA) ?? [];
+          const valB = byColValue.get(colB) ?? [];
+          const countA = 1 + Math.floor(Math.random() * 9);
+          const countB = 10 - countA;
+          if (valA.length < countA || valB.length < countB) break;
+          const maxOffA = Math.min(valA.length - countA, 200);
+          const maxOffB = Math.min(valB.length - countB, 200);
+          const offA = Math.floor(Math.random() * (maxOffA + 1));
+          const offB = Math.floor(Math.random() * (maxOffB + 1));
+          inputs = [...valA.slice(offA, offA + countA), ...valB.slice(offB, offB + countB)];
+          break;
+        }
+
+        case 14: {
+          // Value-ratio + float: underpriced listings near condition boundary
+          const col = pick(weightedPool);
+          const valueList = byColValue.get(col) ?? [];
+          if (valueList.length < 10) break;
+          // Filter to listings with adjustedFloat < 0.3 (lower half, better output condition)
+          const lowFloat = valueList.filter(l => {
+            const range = l.max_float - l.min_float;
+            const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
+            return adj < 0.3;
+          });
+          if (lowFloat.length < 10) break;
+          inputs = lowFloat.slice(0, 10);
+          break;
+        }
+      }
+
+      // Curve-aware override: swap listing source based on output curve shape
+      if (inputs && inputs.length === 10) {
+        const usedCols = [...new Set(inputs.map(l => l.collection_id))];
+        const curveOutcomes = outcomesForCols(...usedCols);
+        if (curveOutcomes.length > 0) {
+          const comboOutcomes: ComboOutcome[] = curveOutcomes.map(o => ({
+            skinName: o.name,
+            probability: 1 / curveOutcomes.length,
+            estimatedPrice: globalPriceCache.get(`${o.name}:Field-Tested`) ?? 0,
+          }));
+          const score = comboCurveScore(comboOutcomes);
+          const useValue = shouldUseValueRatio(score);
+
+          // If curve says value-ratio but we used price-sort, re-pick from byColValue
+          if (useValue === true && strategy < 12) {
+            const repicked = usedCols.flatMap(c => (byColValue.get(c) ?? []).slice(0, 5));
+            if (repicked.length >= 10) {
+              repicked.sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1));
+              inputs = repicked.slice(0, 10);
+            }
+          }
+          // If curve says price-sort but we used value-ratio, re-pick from byCollection
+          if (useValue === false && strategy >= 12) {
+            const repicked = usedCols.flatMap(c => (byCollection.get(c) ?? []).slice(0, 5));
+            if (repicked.length >= 10) {
+              repicked.sort((a, b) => a.price_cents - b.price_cents);
+              inputs = repicked.slice(0, 10);
+            }
+          }
         }
       }
 
