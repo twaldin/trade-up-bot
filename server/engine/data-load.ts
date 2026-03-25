@@ -76,9 +76,20 @@ export interface DiscoveryData {
   byColValue: Map<string, ListingWithCollection[]>;
 }
 
+// Process-level cache: in workers (short-lived fork() processes) this avoids the duplicate
+// loadDiscoveryData call when structured discovery and exploration both load the same rarity.
+// In the main daemon process, call clearDiscoveryCache() between cycles.
+const _discoveryCache = new Map<string, DiscoveryData>();
+
+export function clearDiscoveryCache() {
+  _discoveryCache.clear();
+}
+
 /**
  * Load listings for a rarity, compute adjusted floats, and group by collection.
  * Replaces the duplicated 20-30 line data-loading block in discovery functions.
+ *
+ * Results are cached per rarity+groupKey within the process lifetime.
  *
  * @param groupKey - "collection_id" for gun discovery, "collection_name" for knife discovery
  * @param options.excludeWeapons - filter out listings whose weapon is in this set (e.g. KNIFE_WEAPONS)
@@ -89,6 +100,13 @@ export async function loadDiscoveryData(
   groupKey: "collection_id" | "collection_name",
   options?: { maxInputCost?: number; stattrak?: boolean; excludeWeapons?: readonly string[] }
 ): Promise<DiscoveryData> {
+  const cacheKey = `${rarity}|${groupKey}`;
+  const cached = _discoveryCache.get(cacheKey);
+  if (cached) {
+    console.log(`  [loadDiscoveryData ${rarity}] cached (${cached.allListings.length} listings)`);
+    return cached;
+  }
+
   const t0 = Date.now();
   let allListings = await getListingsForRarity(pool, rarity, options?.maxInputCost, options?.stattrak);
   const tQuery = Date.now();
@@ -134,7 +152,9 @@ export async function loadDiscoveryData(
 
   console.log(`  [loadDiscoveryData ${rarity}] ${allListings.length} listings — query ${tQuery - t0}ms, KNN ${tKnn - tQuery}ms, sort ${tSort - tKnn}ms, total ${tSort - t0}ms`);
 
-  return { allListings, allAdjusted, byCollection, byColAdj, byColValue };
+  const result = { allListings, allAdjusted, byCollection, byColAdj, byColValue };
+  _discoveryCache.set(cacheKey, result);
+  return result;
 }
 
 /**
