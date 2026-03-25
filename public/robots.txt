@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /api/
 Disallow: /auth/
 
 Sitemap: https://tradeupbot.app/sitemap.xml
