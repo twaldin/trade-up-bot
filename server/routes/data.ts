@@ -250,17 +250,19 @@ export function dataRouter(
       `, [skinName]),
       // 2: Price sources (price_data + buff sale aggregates from price_observations)
       pool.query(`
-        SELECT source, condition, avg_price_cents, volume
-        FROM price_data WHERE skin_name = $1 AND avg_price_cents > 0
-        UNION ALL
-        SELECT 'buff_sale' as source,
-          CASE WHEN float_value < 0.07 THEN 'Factory New' WHEN float_value < 0.15 THEN 'Minimal Wear'
-               WHEN float_value < 0.38 THEN 'Field-Tested' WHEN float_value < 0.45 THEN 'Well-Worn' ELSE 'Battle-Scarred' END as condition,
-          ROUND(AVG(price_cents))::int as avg_price_cents, COUNT(*) as volume
-        FROM price_observations
-        WHERE skin_name = $1 AND source = 'buff_sale' AND price_cents > 0 AND float_value > 0
-        GROUP BY 2
-        HAVING COUNT(*) >= 2
+        SELECT source, condition, avg_price_cents, volume FROM (
+          SELECT source, condition, avg_price_cents, volume
+          FROM price_data WHERE skin_name = $1 AND avg_price_cents > 0
+          UNION ALL
+          SELECT 'buff_sale' as source,
+            CASE WHEN float_value < 0.07 THEN 'Factory New' WHEN float_value < 0.15 THEN 'Minimal Wear'
+                 WHEN float_value < 0.38 THEN 'Field-Tested' WHEN float_value < 0.45 THEN 'Well-Worn' ELSE 'Battle-Scarred' END as condition,
+            ROUND(AVG(price_cents))::int as avg_price_cents, COUNT(*) as volume
+          FROM price_observations
+          WHERE skin_name = $1 AND source = 'buff_sale' AND price_cents > 0 AND float_value > 0
+          GROUP BY 2
+          HAVING COUNT(*) >= 2
+        ) sub
         ORDER BY CASE source WHEN 'csfloat_sales' THEN 1 WHEN 'listing' THEN 2 WHEN 'csfloat_ref' THEN 3 WHEN 'skinport' THEN 4 WHEN 'buff_sale' THEN 5 ELSE 6 END
       `, [skinName]),
       // 3: Sale history (UNION deduplicates — same CSFloat sales exist in both tables)
