@@ -138,43 +138,55 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
-      // Buff.market stats (admin-only, read from sync_meta)
+      // Buff.market stats: DB counts (survive restarts) + fetcher health from sync_meta
       let buffStats = null;
       try {
-        const rawBuffStatus = await getSyncMeta(pool, "buff_fetcher_status");
-        if (rawBuffStatus) {
-          const parsed = JSON.parse(rawBuffStatus);
-          buffStats = {
-            cookieHealthy: parsed.cookieHealthy ?? false,
-            totalListingsStored: parsed.totalListingsStored ?? 0,
-            totalSalesStored: parsed.totalSalesStored ?? 0,
-            totalObservationsStored: parsed.totalObservationsStored ?? 0,
-            lastSuccessAt: parsed.lastSuccessAt ?? null,
-            lastError: parsed.lastError ?? null,
-            cycleCount: parsed.cycleCount ?? 0,
-            updatedAt: parsed.updatedAt ?? null,
-          };
-        }
+        const [rawBuffStatus, { rows: [buffCounts] }] = await Promise.all([
+          getSyncMeta(pool, "buff_fetcher_status"),
+          pool.query(`
+            SELECT
+              (SELECT COUNT(*) FROM buff_listings) as listings,
+              (SELECT COUNT(*) FROM buff_sale_history) as sales,
+              (SELECT COUNT(*) FROM buff_observations) as observations
+          `),
+        ]);
+        const parsed = rawBuffStatus ? JSON.parse(rawBuffStatus) : {};
+        buffStats = {
+          cookieHealthy: parsed.cookieHealthy ?? false,
+          totalListingsStored: parseInt(buffCounts.listings, 10),
+          totalSalesStored: parseInt(buffCounts.sales, 10),
+          totalObservationsStored: parseInt(buffCounts.observations, 10),
+          lastSuccessAt: parsed.lastSuccessAt ?? null,
+          lastError: parsed.lastError ?? null,
+          cycleCount: parsed.cycleCount ?? 0,
+          updatedAt: parsed.updatedAt ?? null,
+        };
       } catch { /* malformed JSON or no data */ }
 
-      // BitSkins stats (admin-only, read from sync_meta)
+      // BitSkins stats: DB counts (survive restarts) + fetcher health from sync_meta
       let bitskinsStats = null;
       try {
-        const rawBsStatus = await getSyncMeta(pool, "bitskins_fetcher_status");
-        if (rawBsStatus) {
-          const parsed = JSON.parse(rawBsStatus);
-          bitskinsStats = {
-            totalListingsStored: parsed.totalListingsStored ?? 0,
-            totalSalesStored: parsed.totalSalesStored ?? 0,
-            totalObservationsStored: parsed.totalObservationsStored ?? 0,
-            totalFloatsEnriched: parsed.totalFloatsEnriched ?? 0,
-            wsConnected: parsed.wsConnected ?? false,
-            lastSuccessAt: parsed.lastSuccessAt ?? null,
-            lastError: parsed.lastError ?? null,
-            cycleCount: parsed.cycleCount ?? 0,
-            updatedAt: parsed.updatedAt ?? null,
-          };
-        }
+        const [rawBsStatus, { rows: [bsCounts] }] = await Promise.all([
+          getSyncMeta(pool, "bitskins_fetcher_status"),
+          pool.query(`
+            SELECT
+              (SELECT COUNT(*) FROM bitskins_listings) as listings,
+              (SELECT COUNT(*) FROM bitskins_sale_history) as sales,
+              (SELECT COUNT(*) FROM bitskins_observations) as observations
+          `),
+        ]);
+        const parsed = rawBsStatus ? JSON.parse(rawBsStatus) : {};
+        bitskinsStats = {
+          totalListingsStored: parseInt(bsCounts.listings, 10),
+          totalSalesStored: parseInt(bsCounts.sales, 10),
+          totalObservationsStored: parseInt(bsCounts.observations, 10),
+          totalFloatsEnriched: parsed.totalFloatsEnriched ?? 0,
+          wsConnected: parsed.wsConnected ?? false,
+          lastSuccessAt: parsed.lastSuccessAt ?? null,
+          lastError: parsed.lastError ?? null,
+          cycleCount: parsed.cycleCount ?? 0,
+          updatedAt: parsed.updatedAt ?? null,
+        };
       } catch { /* malformed JSON or no data */ }
 
       // Listing staleness stats
