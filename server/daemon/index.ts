@@ -335,11 +335,11 @@ export async function main() {
     }
 
     // Phase 4c: Reprice output values with current KNN + price cache
-    // 5000/cycle covers all ~265K trade-ups in ~53 cycles (~26 hours)
+    // 20000/cycle at ~7ms each = ~140s. Covers new discovery + works through backlog.
     {
       const t4c = Date.now();
       const { repriceTradeUpOutputs } = await import("../engine.js");
-      const repriceResult = await repriceTradeUpOutputs(pool, 5000);
+      const repriceResult = await repriceTradeUpOutputs(pool, 20000);
       const repriceMs = Date.now() - t4c;
       if (repriceResult.checked > 0) {
         console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s)`);
