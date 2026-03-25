@@ -39,7 +39,7 @@ export {
 } from "./engine/observations.js";
 
 // === Data Loading ===
-export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./engine/data-load.js";
+export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache } from "./engine/data-load.js";
 
 // === Selection ===
 export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./engine/selection.js";

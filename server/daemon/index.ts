@@ -295,6 +295,10 @@ export async function main() {
     console.log(`[${timestamp()}] Cycle ${cycleCount}`);
     console.log("=".repeat(60));
 
+    // Clear per-cycle caches (discovery data may have changed since last cycle)
+    const { clearDiscoveryCache } = await import("../engine.js");
+    clearDiscoveryCache();
+
     // Phase 1: Housekeeping
     await phase1Housekeeping(pool, cycleCount);
 
