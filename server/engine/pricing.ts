@@ -5,6 +5,7 @@ import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
 import { knnOutputPriceAtFloat } from "./knn-pricing.js";
+import { buildCurveCache } from "./curve-classification.js";
 
 const CONDITION_MIDPOINTS = CONDITION_BOUNDS.map(b => ({
   name: b.name,
@@ -233,9 +234,11 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   const knifeExtrapolated = extrapolateKnifeConditions();
   await buildSourceFloorCaches(pool);
 
+  const curveCount = await buildCurveCache(pool);
+
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
-  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, 0 steam, 0 skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size})`);
+  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, 0 steam, 0 skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size}, curves: ${curveCount})`);
 }
 
 async function buildSourceFloorCaches(pool: pg.Pool) {

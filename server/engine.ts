@@ -28,6 +28,10 @@ export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/co
 export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
 export { clearKnnCache, knnOutputPriceAtFloat, batchInputValueRatios, clearLearnedCache } from "./engine/knn-pricing.js";
 
+// === Curve Classification ===
+export { classifySkinCurve, curveCache, buildCurveCache, comboCurveScore, shouldUseValueRatio } from "./engine/curve-classification.js";
+export type { CurveData, CurveScore, ComboOutcome } from "./engine/curve-classification.js";
+
 // === Observation Management ===
 export {
   seedKnifeSaleObservations, seedPriceObservations,
