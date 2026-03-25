@@ -528,6 +528,53 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
+    // Pre-fetch Buff listings by goods_id (match by float value since Buff has no stable listing IDs across fetches)
+    const buffInputsByGoodsId = new Map<string, typeof inputs>();
+    for (const input of inputs) {
+      if (input.source === "buff") {
+        // Look up marketplace_id (goods_id) from listings table
+        const { rows: [listing] } = await pool.query(
+          "SELECT marketplace_id FROM listings WHERE id = $1",
+          [input.listing_id]
+        );
+        const goodsId = listing?.marketplace_id;
+        if (goodsId) {
+          const list = buffInputsByGoodsId.get(goodsId) ?? [];
+          list.push(input);
+          buffInputsByGoodsId.set(goodsId, list);
+        }
+      }
+    }
+    // Fetch all buff listings for each goods_id and build float→price+id map
+    const buffActiveByFloat = new Map<string, { id: string; priceCents: number; floatValue: number }[]>(); // goodsId → listings
+    if (buffInputsByGoodsId.size > 0) {
+      try {
+        const { fetchBuffListings } = await import("../sync/buff.js");
+        const { getRedis } = await import("../redis.js");
+        const cookie = await getRedis()?.get("buff_session_cookie") ?? "";
+        if (cookie) {
+          for (const goodsId of buffInputsByGoodsId.keys()) {
+            const allItems: { id: string; priceCents: number; floatValue: number }[] = [];
+            let page = 1;
+            let totalPages = 1;
+            while (page <= totalPages) {
+              try {
+                const result = await fetchBuffListings(parseInt(goodsId, 10), page, cookie);
+                totalPages = result.totalPages;
+                for (const item of result.items) {
+                  allItems.push({ id: String(item.id), priceCents: item.priceCents, floatValue: item.floatValue });
+                }
+                page++;
+              } catch {
+                break; // Rate limited or error — stop paginating this goods_id
+              }
+            }
+            buffActiveByFloat.set(goodsId, allItems);
+          }
+        }
+      } catch { /* Buff unavailable */ }
+    }
+
     for (const input of inputs) {
       // Skip theoretical inputs
       if (input.listing_id === "theoretical" || input.listing_id.startsWith("theory")) {
@@ -537,6 +584,65 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           status: "theoretical",
           original_price: input.price_cents,
         });
+        continue;
+      }
+
+      // Buff listings — match by float value against pre-fetched active listings
+      if (input.source === "buff") {
+        const { rows: [listing] } = await pool.query(
+          "SELECT marketplace_id FROM listings WHERE id = $1",
+          [input.listing_id]
+        );
+        const goodsId = listing?.marketplace_id;
+        const activeItems = goodsId ? buffActiveByFloat.get(goodsId) : undefined;
+
+        if (!activeItems) {
+          // Buff fetch failed or no cookie
+          results.push({
+            listing_id: input.listing_id,
+            skin_name: input.skin_name,
+            status: "error",
+            original_price: input.price_cents,
+          });
+          continue;
+        }
+
+        // Match by float value (exact match within epsilon)
+        const FLOAT_EPSILON = 0.0000001;
+        const match = activeItems.find(item =>
+          Math.abs(item.floatValue - input.float_value) < FLOAT_EPSILON
+        );
+
+        if (match) {
+          const priceChanged = match.priceCents !== input.price_cents;
+          // Update listing in DB
+          if (priceChanged) {
+            await pool.query(
+              "UPDATE listings SET price_cents = $1, price_updated_at = NOW(), staleness_checked_at = NOW() WHERE id = $2",
+              [match.priceCents, input.listing_id]
+            );
+          } else {
+            await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
+          }
+          results.push({
+            listing_id: input.listing_id,
+            skin_name: input.skin_name,
+            status: "active",
+            current_price: match.priceCents,
+            original_price: input.price_cents,
+            price_changed: priceChanged,
+          });
+        } else {
+          // No float match — listing is gone
+          await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
+          deletedListingIds.push(input.listing_id);
+          results.push({
+            listing_id: input.listing_id,
+            skin_name: input.skin_name,
+            status: "delisted",
+            original_price: input.price_cents,
+          });
+        }
         continue;
       }
 
