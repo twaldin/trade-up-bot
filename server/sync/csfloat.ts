@@ -220,7 +220,7 @@ export async function syncListingsDiversified(
 export async function syncListingsForSkin(
   pool: pg.Pool,
   skin: { id: string; name: string; min_float: number; max_float: number },
-  options: { apiKey?: string; conditions?: string[]; maxFloat?: number } = {}
+  options: { apiKey?: string; conditions?: string[]; maxFloat?: number; sortBy?: string } = {}
 ): Promise<{ apiCalls: number; inserted: number }> {
   const conditions = options.conditions ?? getValidConditions(skin.min_float, skin.max_float);
 
@@ -238,7 +238,7 @@ export async function syncListingsForSkin(
         try {
           listings = await fetchCSFloatListings({
             skinName: marketHashName,
-            sortBy: "lowest_price",
+            sortBy: options.sortBy ?? "lowest_price",
             limit: 50,
             apiKey: options.apiKey,
             maxFloat: options.maxFloat,
@@ -957,11 +957,11 @@ export async function syncCovertOutputListings(
 
 /**
  * Round-robin listing search: cycles through ALL valid skin+condition pairs
- * deterministically, fetching listings for each skin across all its valid conditions.
+ * deterministically (1 API call per pair), with a stable cursor that persists
+ * across daemon cycles.
  *
- * State is persisted in sync_meta as a cursor (skin index + loop count).
- * Each skin costs 1-5 API calls depending on valid conditions.
- * Achieves full coverage in ~2 days at 4,800 calls/day.
+ * Pairs are sorted by (skin name, condition order) for deterministic cursor indexing.
+ * At ~180 calls/cycle and ~9,200 pairs, a full pass takes ~51 cycles (~25.5 hours).
  */
 export async function syncListingsRoundRobin(
   pool: pg.Pool,
@@ -971,48 +971,53 @@ export async function syncListingsRoundRobin(
     onProgress?: (msg: string) => void;
   }
 ): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; loopCount: number }> {
-  // Build skin list sorted by coverage: skins with fewest covered conditions first.
-  // This ensures uncovered skins get priority until full coverage is achieved.
+  // Deterministic sort by name — keeps cursor position stable across cycles
   const { rows: allSkins } = await pool.query(`
-    SELECT s.id, s.name, s.min_float, s.max_float,
-      COUNT(DISTINCT CASE
-        WHEN l.float_value < 0.07 THEN 'FN'
-        WHEN l.float_value < 0.15 THEN 'MW'
-        WHEN l.float_value < 0.38 THEN 'FT'
-        WHEN l.float_value < 0.45 THEN 'WW'
-        ELSE 'BS'
-      END) FILTER (WHERE l.id IS NOT NULL) as covered_conditions
+    SELECT s.id, s.name, s.min_float, s.max_float
     FROM skins s
-    LEFT JOIN listings l ON l.skin_id = s.id AND l.stattrak = false
     WHERE s.stattrak = false
-    GROUP BY s.id, s.name, s.min_float, s.max_float
-    ORDER BY covered_conditions ASC, s.name
-  `) as { rows: { id: string; name: string; min_float: number; max_float: number; covered_conditions: string }[] };
+    ORDER BY s.name
+  `) as { rows: { id: string; name: string; min_float: number; max_float: number }[] };
 
   if (allSkins.length === 0) return { apiCalls: 0, inserted: 0, skinsFetched: 0, loopCount: 0 };
 
-  const uncoveredCount = allSkins.filter(s => Number(s.covered_conditions) === 0).length;
+  // Expand to all valid (skin, condition) pairs in deterministic order
+  const conditionOrder = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+  const pairs: Array<{ id: string; name: string; min_float: number; max_float: number; condition: string }> = [];
+  for (const skin of allSkins) {
+    const valid = getValidConditions(skin.min_float, skin.max_float);
+    for (const cond of conditionOrder) {
+      if (valid.includes(cond)) {
+        pairs.push({ ...skin, condition: cond });
+      }
+    }
+  }
 
-  // Load cursor from sync_meta
+  if (pairs.length === 0) return { apiCalls: 0, inserted: 0, skinsFetched: 0, loopCount: 0 };
+
+  // Load cursor — always persisted, index into pairs list
   const rawCursor = await getSyncMeta(pool, "listing_round_robin_cursor");
   let cursor: { index: number; loopCount: number; lastUpdated: string } = rawCursor
     ? JSON.parse(rawCursor)
     : { index: 0, loopCount: 0, lastUpdated: new Date().toISOString() };
 
-  // If uncovered skins exist, always start from 0 (they sort first)
-  if (uncoveredCount > 0) {
-    cursor.index = 0;
-  } else if (cursor.index >= allSkins.length) {
+  // Clamp if skins table changed size between runs
+  if (cursor.index >= pairs.length) {
     cursor.index = 0;
     cursor.loopCount++;
   }
 
   let totalApiCalls = 0;
   let totalInserted = 0;
-  let skinsFetched = 0;
   let consecutiveRateLimits = 0;
+  const skinsProcessed = new Set<string>();
 
-  console.log(`  Round-robin listings: ${allSkins.length} skins (${uncoveredCount} with zero coverage), starting at index ${cursor.index} (loop ${cursor.loopCount}), budget ${options.maxCalls} calls`);
+  // best_deal: CSFloat's deal-score sort — surfaces listings underpriced relative to
+  // market value. Gives natural float diversity (deals exist across all float ranges)
+  // and directly targets what trade-ups care about: value relative to market.
+  const sortBy = "best_deal";
+
+  console.log(`  Round-robin listings: ${pairs.length} pairs (${allSkins.length} skins), starting at index ${cursor.index} (loop ${cursor.loopCount}), sort=${sortBy}, budget ${options.maxCalls} calls`);
 
   while (totalApiCalls < options.maxCalls) {
     if (consecutiveRateLimits >= 2) {
@@ -1020,56 +1025,51 @@ export async function syncListingsRoundRobin(
       break;
     }
 
-    const skin = allSkins[cursor.index];
-    const validConditions = getValidConditions(skin.min_float, skin.max_float);
-    const callsNeeded = validConditions.length;
-
-    // If not enough budget for this skin's conditions, stop
-    if (totalApiCalls + callsNeeded > options.maxCalls + 2) break; // +2 grace for partial
+    const pair = pairs[cursor.index];
 
     try {
-      const result = await syncListingsForSkin(pool, skin, {
+      const result = await syncListingsForSkin(pool, pair, {
         apiKey: options.apiKey,
+        conditions: [pair.condition],
+        sortBy,
       });
       totalApiCalls += result.apiCalls;
       totalInserted += result.inserted;
-      skinsFetched++;
+      skinsProcessed.add(pair.name);
       consecutiveRateLimits = 0;
     } catch (err: any) {
       if (err.message?.includes("429")) {
         consecutiveRateLimits++;
       } else {
-        console.log(`    Error: ${skin.name}: ${err.message}`);
+        console.log(`    Error: ${pair.name} (${pair.condition}): ${err.message}`);
       }
     }
 
     // Advance cursor
     cursor.index++;
-    if (cursor.index >= allSkins.length) {
+    if (cursor.index >= pairs.length) {
       cursor.index = 0;
       cursor.loopCount++;
       console.log(`  Round-robin: completed loop ${cursor.loopCount - 1}, wrapping to start`);
     }
 
-    if (skinsFetched % 20 === 0 && skinsFetched > 0) {
-      const msg = `Round-robin listings: ${skinsFetched} skins, ${totalApiCalls}/${options.maxCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount})`;
+    const pairsDone = skinsProcessed.size > 0 ? totalApiCalls : 0; // proxy for pairs fetched
+    if (totalApiCalls % 20 === 0 && totalApiCalls > 0) {
+      const msg = `Round-robin listings: ${totalApiCalls}/${options.maxCalls} calls, ${skinsProcessed.size} skins, ${totalInserted} listings (loop ${cursor.loopCount})`;
       options.onProgress?.(msg);
       console.log(`  ${msg}`);
     }
   }
 
-  // Save cursor (only meaningful when no uncovered skins — otherwise resets to 0 each cycle)
+  // Always persist cursor
   cursor.lastUpdated = new Date().toISOString();
-  if (uncoveredCount === 0) {
-    await setSyncMeta(pool, "listing_round_robin_cursor", JSON.stringify(cursor));
-  }
+  await setSyncMeta(pool, "listing_round_robin_cursor", JSON.stringify(cursor));
 
-  const coverageNote = uncoveredCount > 0 ? `, ${uncoveredCount} uncovered skins remaining` : "";
-  const msg = `Round-robin listings done: ${skinsFetched} skins, ${totalApiCalls} calls, ${totalInserted} listings (loop ${cursor.loopCount}, next index ${cursor.index}/${allSkins.length}${coverageNote})`;
+  const msg = `Round-robin listings done: ${totalApiCalls} calls, ${skinsProcessed.size} skins, ${totalInserted} listings (loop ${cursor.loopCount}, next index ${cursor.index}/${pairs.length})`;
   options.onProgress?.(msg);
   console.log(`  ${msg}`);
 
-  return { apiCalls: totalApiCalls, inserted: totalInserted, skinsFetched, loopCount: cursor.loopCount };
+  return { apiCalls: totalApiCalls, inserted: totalInserted, skinsFetched: skinsProcessed.size, loopCount: cursor.loopCount };
 }
 
 /**
