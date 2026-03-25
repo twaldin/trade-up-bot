@@ -316,6 +316,12 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE l.source = 'dmarket' AND l.stattrak = false
         AND l.float_value > 0 AND l.price_cents > 0
+      UNION ALL
+      -- Active Buff listings (no buyer fee)
+      SELECT s.name, l.float_value, l.price_cents
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE l.source = 'buff' AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
     ) combined
     ORDER BY skin_name, float_value
   `);
@@ -375,6 +381,36 @@ async function getFloatCeiling(
   const bottom5Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 
   return bottom5Avg;
+}
+
+/**
+ * Listing floor: bottom-3 average of nearby listings at similar floats within
+ * the same condition. Used as a price estimate when KNN has no sale data.
+ * Requires 3+ listings (lower threshold than ceiling since this is a fallback).
+ */
+async function getListingFloor(
+  pool: pg.Pool,
+  skinName: string,
+  predictedFloat: number
+): Promise<number | null> {
+  await ensureFloatCeilingCache(pool);
+  const data = _floatCeilingCache.get(skinName);
+  if (!data || data.length < 3) return null;
+
+  const condFloor = conditionFloor(predictedFloat);
+  const condCeiling = CONDITION_BOUNDARIES.find(b => b > condFloor) ?? 1.0;
+
+  // Find all listings within the same condition, within ±0.05 float
+  const nearby = data.filter(d =>
+    d.float >= condFloor &&
+    d.float < condCeiling &&
+    Math.abs(d.float - predictedFloat) <= 0.05
+  );
+  if (nearby.length < 3) return null;
+
+  const sorted = nearby.map(d => d.price).sort((a, b) => a - b);
+  const n = Math.min(3, sorted.length);
+  return Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 }
 
 /**
@@ -442,8 +478,14 @@ export async function lookupOutputPrice(
       }
     }
   } else {
-    // 2. Fallback: condition-level pricing from csfloat_ref + listing floors
-    grossPrice = lookupPrice(pool, skinName, predictedFloat);
+    // 2. Fallback: lower of condition-level ref vs listing floor at this float
+    const refPrice = lookupPrice(pool, skinName, predictedFloat);
+    const listingFloor = await getListingFloor(pool, skinName, predictedFloat);
+    if (listingFloor && refPrice > 0) {
+      grossPrice = Math.min(refPrice, listingFloor);
+    } else {
+      grossPrice = listingFloor ?? refPrice;
+    }
   }
 
   if (grossPrice <= 0) return zeroResult;

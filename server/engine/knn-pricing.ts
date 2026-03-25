@@ -161,7 +161,10 @@ const _knnHasBuffSales = new Set<string>(); // skins with at least 1 Buff sale (
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
 const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 days
-export const KNN_MAX_OBS_AGE_DAYS = 45;
+// Extended window: rare skins (★ items) trade infrequently and need longer history.
+// The dynamic half-life already downweights old observations — extending the window
+// just lets them participate instead of being excluded entirely.
+export const KNN_MAX_OBS_AGE_DAYS = 180;
 
 /**
  * Dynamic half-life based on observation density:
@@ -290,9 +293,12 @@ export async function knnOutputPriceAtFloat(
   const obs = _knnCache.get(skinName);
   if (!obs || obs.length < KNN_MIN_INTERP) return null;
 
-  // Freshness gate: require recent observations to avoid stale pricing
+  // Freshness gate: require recent observations to avoid stale pricing.
+  // Relaxed for rare skins (★ items) — they trade infrequently but older sale
+  // data with age-decay weighting is still better than condition-level averages.
   const recentCount = _knnFreshnessCache.get(skinName) ?? 0;
-  if (recentCount < KNN_FRESHNESS_MIN) return null;
+  const isRare = skinName.startsWith("★");
+  if (!isRare && recentCount < KNN_FRESHNESS_MIN) return null;
 
   // Require CSFloat OR Buff sales — Skinport-only skins have unreliable pricing
   if (!_knnHasCsfloatSales.has(skinName) && !_knnHasBuffSales.has(skinName)) return null;
