@@ -1,5 +1,4 @@
 /**
- * Phase 5b: Classified→Covert Calc — discovery.
  * Phase 5e/5f: Generic rarity tier calc (Restricted→Classified, Mil-Spec→Restricted).
  * Phase 5c: Staircase evaluation.
  */
@@ -11,93 +10,13 @@ import {
   randomExplore,
   saveTradeUps,
   mergeTradeUps,
-  updateCollectionScores,
-  reviveStaleGunTradeUps,
   getTierById,
   findStaircaseTradeUps,
 } from "../../engine.js";
 import { type Condition } from "../../../shared/types.js";
 import type { TradeUp } from "../../../shared/types.js";
 
-import { FreshnessTracker } from "../state.js";
 import { timestamp, setDaemonStatus } from "../utils.js";
-
-export interface ClassifiedCalcResult {
-  total: number;
-  profitable: number;
-  topProfit: number;
-  avgProfit: number;
-}
-
-export async function phase5ClassifiedCalc(
-  pool: pg.Pool,
-  freshness: FreshnessTracker,
-  force: boolean = false,
-  discoveryResults?: TradeUp[],
-): Promise<ClassifiedCalcResult> {
-  console.log(`\n[${timestamp()}] Phase 5b: Classified→Covert Calc${discoveryResults ? ' (worker)' : ''}`);
-  await setDaemonStatus(pool, "calculating", "Phase 5b: Classified→Covert discovery");
-  await emitEvent(pool, "phase", "Phase 5b: Classified Calc");
-
-  try {
-    const tradeUps = discoveryResults ?? await findProfitableTradeUps(pool, {
-      onProgress: async (msg) => {
-        process.stdout.write(`\r  ${msg}                    `);
-        await setDaemonStatus(pool, "calculating", msg);
-      },
-    });
-    if (!discoveryResults) console.log("");
-
-    const profitable = tradeUps.filter(t => t.profit_cents > 0);
-    console.log(`  Found ${tradeUps.length} classified→covert trade-ups (${profitable.length} profitable)`);
-
-    // Random exploration — uses CPU time saved from theory removal
-    await setDaemonStatus(pool, "calculating", "Phase 5b: Random exploration");
-    const exploreResult = await randomExplore(pool, {
-      iterations: 500,
-      onProgress: async (msg) => setDaemonStatus(pool, "calculating", msg),
-    });
-    if (exploreResult.found > 0) {
-      console.log(`  Classified explore: ${exploreResult.explored} iterations, +${exploreResult.found} new, ${exploreResult.improved} improved`);
-    }
-
-    // Re-sort and save
-    tradeUps.sort((a, b) => b.profit_cents - a.profit_cents);
-    if (tradeUps.length > 0) {
-      await mergeTradeUps(pool, tradeUps);
-      console.log(`  Saved ${tradeUps.length} classified→covert trade-ups`);
-
-      const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
-      if (allProfitable.length > 0) {
-        console.log("  Top classified trade-ups:");
-        for (const tu of allProfitable.slice(0, 3)) {
-          const inputNames = [...new Set(tu.inputs.map(i => i.skin_name))].join(", ");
-          console.log(`    $${(tu.profit_cents / 100).toFixed(2)} profit (${tu.roi_percentage.toFixed(0)}% ROI) | ${inputNames}`);
-        }
-        await emitEvent(pool, "classified_calc", `${allProfitable.length} profitable, best +$${(allProfitable[0].profit_cents / 100).toFixed(2)}`);
-      }
-    }
-
-    // Revive stale/partial classified trade-ups with replacement listings
-    const classifiedRevival = await reviveStaleGunTradeUps(pool, 500);
-    if (classifiedRevival.revived > 0) {
-      console.log(`  Classified revival: checked ${classifiedRevival.checked}, revived ${classifiedRevival.revived} (${classifiedRevival.improved} improved)`);
-    }
-
-    await updateCollectionScores(pool);
-
-    const allProfitable = tradeUps.filter(t => t.profit_cents > 0);
-    const topProfit = allProfitable.length > 0 ? allProfitable[0].profit_cents : 0;
-    const avgProfit = allProfitable.length > 0
-      ? Math.round(allProfitable.reduce((s, t) => s + t.profit_cents, 0) / allProfitable.length)
-      : 0;
-
-    return { total: tradeUps.length, profitable: allProfitable.length, topProfit, avgProfit };
-  } catch (err) {
-    console.error(`  Classified calc error: ${(err as Error).message}`);
-    return { total: 0, profitable: 0, topProfit: 0, avgProfit: 0 };
-  }
-}
 
 /**
  * Generic Phase 5 calc for any rarity tier (restricted→classified, milspec→restricted).
