@@ -145,7 +145,7 @@ export function statusRouter(pool: pg.Pool): Router {
           getSyncMeta(pool, "buff_fetcher_status"),
           pool.query(`
             SELECT
-              (SELECT COUNT(*) FROM buff_listings) as listings,
+              (SELECT COUNT(*) FROM listings WHERE source = 'buff') as listings,
               (SELECT COUNT(*) FROM buff_sale_history) as sales,
               (SELECT COUNT(*) FROM buff_observations) as observations
           `),
