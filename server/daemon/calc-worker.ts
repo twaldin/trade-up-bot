@@ -93,6 +93,8 @@ const rarityMap: Record<string, string> = {
 // Wrap in async IIFE since we need await for PG queries
 (async () => {
   try {
+    const workerStart = Date.now();
+
     // Load existing listing signatures so discovery skips combos already in DB
     const tradeUpType = typeMap[task] ?? "classified_covert";
     const existingSigs = new Set<string>();
@@ -105,7 +107,8 @@ const rarityMap: Record<string, string> = {
     for (const row of sigRows) {
       existingSigs.add(row.ids.split(",").sort().join(","));
     }
-    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task}`);
+    const sigMs = Date.now() - workerStart;
+    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms)`);
 
     // Phase 1: Structured discovery
     const structuredStart = Date.now();
