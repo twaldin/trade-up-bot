@@ -49,6 +49,18 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Purged ${ids.length} DMarket listings (>24h old)`);
   }
 
+  // Purge Buff listings older than 24h (not refreshed by buff-fetcher)
+  const { rows: buffPurgedRows } = await pool.query(`
+    SELECT id FROM listings WHERE source = 'buff'
+      AND EXTRACT(EPOCH FROM NOW() - COALESCE(staleness_checked_at, created_at)) / 86400.0 > 1
+  `);
+  if (buffPurgedRows.length > 0) {
+    const ids = buffPurgedRows.map((r: { id: string }) => r.id);
+    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
+    await cascadeTradeUpStatuses(pool, ids);
+    console.log(`  Purged ${ids.length} Buff listings (>24h since last refresh)`);
+  }
+
   // Prune observations every 10 cycles
   if (cycleCount % 10 === 0) {
     try {

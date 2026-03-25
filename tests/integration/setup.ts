@@ -79,7 +79,8 @@ async function createSchema(bootstrapPool: pg.Pool) {
       staleness_checked_at TIMESTAMPTZ,
       claimed_by TEXT,
       claimed_at TIMESTAMPTZ,
-      price_updated_at TIMESTAMPTZ
+      price_updated_at TIMESTAMPTZ,
+      marketplace_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS price_data (

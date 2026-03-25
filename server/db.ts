@@ -94,6 +94,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       claimed_by TEXT,
       claimed_at TIMESTAMPTZ,
       price_updated_at TIMESTAMPTZ,
+      marketplace_id TEXT,
       FOREIGN KEY (skin_id) REFERENCES skins(id)
     );
 
@@ -381,6 +382,10 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   // Migrations for existing databases
   await pool.query(`
     ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS input_sources TEXT[] NOT NULL DEFAULT '{}';
+  `);
+
+  await pool.query(`
+    ALTER TABLE listings ADD COLUMN IF NOT EXISTS marketplace_id TEXT;
   `);
 
   // User trade-up lifecycle tracking (My Trade-Ups)

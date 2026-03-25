@@ -382,4 +382,18 @@ describe("DB Operations", () => {
       expect(rows).toHaveLength(1);
     });
   });
+
+  // ─── Schema: marketplace_id column ────────────────────────────────────────
+
+  describe("listings table schema", () => {
+    it("has marketplace_id column", async () => {
+      const { rows } = await ctx.pool.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = 'listings' AND column_name = 'marketplace_id'
+      `);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].data_type).toBe("text");
+    });
+  });
 });
