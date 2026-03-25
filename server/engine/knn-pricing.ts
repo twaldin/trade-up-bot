@@ -379,8 +379,11 @@ export async function knnOutputPriceAtFloat(
       interpolated = Math.round(a.price + tClamped * (b.price - a.price));
     }
 
+    // Negative/zero interpolation means data is too sparse or contradictory — fall back
+    if (interpolated <= 0) return null;
+
     return {
-      priceCents: Math.max(interpolated, 0),
+      priceCents: interpolated,
       confidence: 0.3,
       observationCount: sameCondition.length,
     };
