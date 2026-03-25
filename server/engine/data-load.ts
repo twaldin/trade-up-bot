@@ -135,14 +135,15 @@ export async function loadDiscoveryData(
  * Build a profit-weighted collection pool for randomized exploration.
  * Collections with more historically profitable trade-ups get higher weight (sqrt-scaled).
  *
- * NOTE: Gun discovery passes collection_id values as eligibleCollections, but the
- * profitWeights query is keyed by collection_name. These never match, so gun discovery
- * always falls back to weight=1. This is preserved existing behavior.
+ * @param byCollection - when provided, builds a collection_id → collection_name mapping
+ *   so that gun discovery (which passes collection_id values as eligibleCollections)
+ *   can resolve IDs to names for the profit weight lookup.
  */
 export async function buildWeightedPool(
   pool: pg.Pool,
   eligibleCollections: string[],
-  tradeUpType: string
+  tradeUpType: string,
+  byCollection?: Map<string, ListingWithCollection[]>,
 ): Promise<string[]> {
   const profitWeights = new Map<string, number>();
   const { rows: profitRows } = await pool.query(`
@@ -153,9 +154,20 @@ export async function buildWeightedPool(
   `, [tradeUpType]);
   for (const r of profitRows) profitWeights.set(r.collection_name, parseInt(r.cnt, 10));
 
+  // Build ID → name mapping from byCollection listings (gun discovery passes IDs)
+  const nameMap = new Map<string, string>();
+  if (byCollection) {
+    for (const [key, listings] of byCollection) {
+      if (listings.length > 0) {
+        nameMap.set(key, listings[0].collection_name);
+      }
+    }
+  }
+
   const weightedPool: string[] = [];
   for (const col of eligibleCollections) {
-    const w = Math.max(1, profitWeights.get(col) ?? 0);
+    const resolvedName = nameMap.get(col) ?? col;
+    const w = Math.max(1, profitWeights.get(resolvedName) ?? 0);
     for (let i = 0; i < Math.min(10, Math.ceil(Math.sqrt(w))); i++) weightedPool.push(col);
   }
   return weightedPool;

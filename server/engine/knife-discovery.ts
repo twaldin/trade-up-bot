@@ -339,7 +339,7 @@ export async function randomKnifeExplore(
   if (knifeCollections.length === 0) return { found: 0, explored: 0, improved: 0 };
 
   // Profit-guided weighted pool
-  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife");
+  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife", byCollection);
 
   // Load existing trade-up signatures to avoid duplicates
   const existingSignatures = new Set<string>();
@@ -701,7 +701,7 @@ export async function exploreKnifeWithBudget(
   if (knifeCollections.length === 0) return [];
 
   // Profit-guided weighted pool
-  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife");
+  const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife", byCollection);
 
   // Build new-listing pool for new-listing priority strategy
   const newListingsByCol = new Map<string, ListingWithCollection[]>();

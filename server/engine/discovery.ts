@@ -457,7 +457,7 @@ export async function randomExplore(
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
   // Profit-guided: weight toward collections in recent profitable trade-ups
-  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType);
+  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType, byCollection);
 
   // Index outcomes by collection
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
@@ -866,7 +866,7 @@ export async function exploreWithBudget(
   };
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
-  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType);
+  const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType, byCollection);
 
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
   for (const o of allOutcomes) {
