@@ -264,7 +264,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           ) : (
             <>
               <div className="text-4xl mb-3 opacity-50">&#128200;</div>
-              <p className="mb-2">No trade-ups found matching your filters.</p>
+              <p className="mb-2">No trade-ups match the current filters.</p>
               <p className="text-sm text-muted-foreground/70">Try adjusting the filters above, or wait for the daemon to collect more data.</p>
             </>
           )}

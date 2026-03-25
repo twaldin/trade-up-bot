@@ -52,11 +52,16 @@ export function isCrawler(userAgent: string): boolean {
 }
 
 /**
- * Inject route-specific meta tags into the SPA index.html template.
- * Preserves the React JS/CSS bundles so the app loads normally,
- * but replaces title, description, canonical, and OG tags.
+ * Inject route-specific meta tags AND server-rendered body content into
+ * the SPA index.html template. Preserves JS/CSS bundles so the React app
+ * loads normally and replaces the initial body content on mount.
+ *
+ * The body content prevents Google's soft 404 detection — WRS renders the
+ * page with Chrome, and if the API call fails or times out during the
+ * render window, React shows an empty state. The server-rendered content
+ * ensures Google always sees meaningful page content regardless.
  */
-export function injectMetaIntoSpa(html: string, meta: Omit<SeoMeta, "bodyText" | "jsonLd">): string {
+export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
@@ -72,6 +77,11 @@ export function injectMetaIntoSpa(html: string, meta: Omit<SeoMeta, "bodyText" |
     .replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/g, "");
 
   // Inject correct tags before </head>
+  let jsonLdTag = "";
+  if (meta.jsonLd) {
+    jsonLdTag = `\n<script type="application/ld+json">${JSON.stringify(meta.jsonLd)}</script>`;
+  }
+
   const tags = `<title>${title}</title>
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
@@ -84,8 +94,19 @@ export function injectMetaIntoSpa(html: string, meta: Omit<SeoMeta, "bodyText" |
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${desc}" />
-<meta name="twitter:image" content="${ogImage}" />`;
+<meta name="twitter:image" content="${ogImage}" />${jsonLdTag}`;
 
   result = result.replace("</head>", tags + "\n</head>");
+
+  // Replace pre-rendered body inside #root with server-rendered content.
+  // React's createRoot().render() replaces #root children on mount, so
+  // this content is only visible until JS loads (acts as SSR fallback).
+  if (meta.bodyText) {
+    result = result.replace(
+      /<div id="root"[^>]*>[\s\S]*?<\/div>\s*(?=<\/body>)/,
+      `<div id="root"><main><h1>${title}</h1><p>${escapeHtml(meta.bodyText)}</p></main></div>`
+    );
+  }
+
   return result;
 }

@@ -267,6 +267,7 @@ app.use((req, res, next) => {
         title: "CS2 Trade-Up Contracts — Live Profitable Deals | TradeUpBot",
         description: "Find profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
         url: "https://tradeupbot.app/trade-ups",
+        bodyText: "Browse profitable CS2 trade-up contracts updated every 30 minutes. Filter by rarity tier, ROI, profit, cost, and chance to profit. All trade-ups use real, buyable listings from CSFloat, DMarket, and Skinport. Covers every rarity tier: Knife/Glove, Covert, Classified, Restricted, Mil-Spec, and Industrial grade trade-ups.",
       }));
     });
 
@@ -276,6 +277,7 @@ app.use((req, res, next) => {
         title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
         description: "Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.",
         url: "https://tradeupbot.app/collections",
+        bodyText: "Browse all CS2 weapon collections on TradeUpBot. View skins, price data, float ranges, and discover profitable trade-up contracts for every weapon case and collection. Includes all active CS2 cases, operations, and collections.",
       }));
     });
 
@@ -285,6 +287,7 @@ app.use((req, res, next) => {
         title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
         description: "Browse CS2 skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential.",
         url: "https://tradeupbot.app/skins",
+        bodyText: "Browse CS2 skins with live market prices and float data. Compare prices across CSFloat, DMarket, and Skinport. View price history charts, float value distributions, and trade-up potential for every CS2 skin.",
       }));
     });
 
