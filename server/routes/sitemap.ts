@@ -96,22 +96,32 @@ export function sitemapRouter(pool: pg.Pool): Router {
 
   router.get("/sitemap-collections.xml", async (_req, res) => {
     const lastmod = new Date().toISOString().split("T")[0];
-    const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
     res.setHeader("Content-Type", "application/xml");
-    res.send(buildCollectionSitemap(BASE, rows, lastmod));
+    try {
+      const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
+      res.send(buildCollectionSitemap(BASE, rows, lastmod));
+    } catch (e) {
+      console.error("Sitemap collections error:", e instanceof Error ? e.message : e);
+      res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
+    }
   });
 
   router.get("/sitemap-skins.xml", async (_req, res) => {
     const lastmod = new Date().toISOString().split("T")[0];
-    const { rows } = await pool.query(`
-      SELECT s.name, COUNT(l.id)::int as listing_count
-      FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
-      WHERE s.stattrak = false
-      GROUP BY s.name
-      ORDER BY s.name
-    `);
     res.setHeader("Content-Type", "application/xml");
-    res.send(buildSkinSitemap(BASE, rows, lastmod));
+    try {
+      const { rows } = await pool.query(`
+        SELECT s.name, COUNT(l.id)::int as listing_count
+        FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
+        WHERE s.stattrak = false
+        GROUP BY s.name
+        ORDER BY s.name
+      `);
+      res.send(buildSkinSitemap(BASE, rows, lastmod));
+    } catch (e) {
+      console.error("Sitemap skins error:", e instanceof Error ? e.message : e);
+      res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
+    }
   });
 
   router.get("/sitemap-tradeups.xml", (_req, res) => {
