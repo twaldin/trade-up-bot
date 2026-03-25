@@ -1,7 +1,7 @@
 # Buff Integration + Discovery Engine Improvements
 
 **Date**: 2026-03-25
-**Scope**: Integrate Buff.market listings into discovery pipeline + fix weighted pool bug + remove freshness gate + overhaul exploration strategies
+**Scope**: Integrate Buff.market listings into discovery pipeline + fix weighted pool bug + clean up dead freshness gate code + overhaul exploration strategies
 
 ---
 
@@ -11,8 +11,8 @@
 
 The buff-fetcher currently writes to `buff_listings` (isolated table). Change it to write directly to the main `listings` table with `source = 'buff'`, mirroring DMarket's existing pattern:
 
-- Upsert with `ON CONFLICT (id) DO UPDATE` — update `price_cents`, `staleness_checked_at = NOW()`, and `price_updated_at` (only when price changes)
-- After upserting all active listings for a skin+condition, delete any stored `source = 'buff'` listings for that skin_id + goods_id that weren't in the API response
+- Upsert with `ON CONFLICT (id) DO UPDATE` — update `price_cents`, `staleness_checked_at = NOW()`, and `price_updated_at` (only when price changes). On INSERT, also set `staleness_checked_at = NOW()` to avoid the 3-day unchecked purge in housekeeping
+- After upserting all active listings for a skin+condition, delete any stored `source = 'buff' AND marketplace_id = $goods_id` listings for that skin_id that weren't in the API response
 - Call `cascadeTradeUpStatuses` on deleted listing IDs (same as DMarket)
 - Buff listing IDs are already unique strings (e.g., `1074459393-BC38-137104913`) — no collision risk
 
@@ -29,7 +29,8 @@ The buff-fetcher currently writes to `buff_listings` (isolated table). Change it
 | `source` | `'buff'` | |
 | `listing_type` | `'buy_now'` | All Buff listings are buy-now |
 | `phase` | Not extracted yet | Investigate extracting from `paint_index` during implementation; null for now |
-| `staleness_checked_at` | Set to `NOW()` on each re-fetch | |
+| `staleness_checked_at` | Set to `NOW()` on both INSERT and UPDATE | Prevents 3-day unchecked purge |
+| `marketplace_id` | `buff_goods_id` as text | Many listings share the same goods_id (it's per skin+condition) |
 | `claimed_by` / `claimed_at` | NULL | Claims work identically — our DB flag, not marketplace-dependent |
 | `price_updated_at` | Set when price changes | |
 
@@ -70,12 +71,21 @@ Add Buff to the daemon's housekeeping phase: purge `source = 'buff'` listings ol
 - Link destination: `https://buff.market/market/goods/{marketplace_id}`
 - Since Buff has no deep-link to a specific listing, show a tooltip/popover on click before redirect: "Look for float **{float_value}** at **${price}**" — gives the user the exact float and price to find on the Buff goods page
 
-### 1.7 Migration
+### 1.7 Data Viewer Integration
 
-After confirming data flows correctly through `listings`:
+Add Buff as a data source in the skin data viewer (the `/skins/:id` detail page):
+- **Chart**: Buff listings as a new series (distinct color/marker alongside CSFloat and DMarket dots)
+- **Sidebar sums**: Include Buff listing count in the source summary
+- **Price data table**: Add `buff` as a source column/filter
+- **Buff sales**: Add `buff_sale` observations to the chart and tables (alongside CSFloat Sales, Skinport Sales)
+
+### 1.8 Migration
+
+After confirming data flows correctly through `listings` (minimum 2 full buff-fetcher cycles with no errors):
 - Drop `buff_listings` table
 - Keep `buff_sale_history` and `buff_observations` unchanged (they serve KNN pricing)
-- Remove `buff_goods_id` FK and indexes from old table
+- Remove old table indexes
+- Buff fetcher queue-building queries (`getCoverageGaps`, `getStaleSkins`) must be migrated atomically — they currently query `buff_listings` for coverage decisions, must switch to `listings WHERE source = 'buff'`
 
 ---
 
@@ -105,23 +115,19 @@ No behavior change for knife discovery — it already passes `collection_name`.
 
 ---
 
-## 3. Remove Freshness Gate
+## 3. Dead Code Cleanup: FreshnessTracker
 
-### Problem
+### Context
 
-`FreshnessTracker.markListingsChanged()` is only called when CSFloat listings are inserted in Phase 4b. If CSFloat inserts 0 listings (rate limited), Phase 5 is skipped — even if DMarket/Buff updated thousands of listings.
+The spec review confirmed that `FreshnessTracker.needsRecalc()` is **not checked** in the current production code path. Phase 5 already always runs. The old `phase5KnifeCalc` and `phase5ClassifiedCalc` functions that checked `needsRecalc()` are dead code — exported from `phases.ts` but never imported into the daemon main loop.
 
-### Fix
+### Cleanup
 
-Remove the freshness gate entirely. Phase 5 always runs. Rationale:
-- Discovery is time-bounded — no runaway cost
-- Signature skipping makes "no new data" cycles cheap (structured discovery finishes instantly when all sigs exist)
-- Exploration benefits from more iterations even on unchanged data (random strategies find combos previous cycles missed)
-- With Buff + DMarket providing 95%+ of listings, gating on CSFloat inserts is architecturally wrong
+- Remove dead `phase5KnifeCalc` and `phase5ClassifiedCalc` exports from `phases.ts` and their implementations
+- Remove `needsRecalc()` and `markCalcDone()` from `FreshnessTracker` (keep `markListingsChanged()` if used for logging)
+- Remove any stale references in `index.ts`
 
-### Implementation
-
-Remove the `if (!freshness.needsRecalc()) skip` check before Phase 5 in `server/daemon/index.ts`. Keep `FreshnessTracker` for any other uses (e.g., logging whether data changed), but don't gate engine execution on it.
+This is housekeeping, not a behavioral change.
 
 ---
 
@@ -144,7 +150,9 @@ This is purely constant changes — how deep into sorted arrays the random offse
 - **Value-ratio pair** — pick two collections, take top N most underpriced from each, combine with random split
 - **Value-ratio + float-targeted hybrid** — from `byColValue`, select listings that are both underpriced AND near a condition boundary
 
-These get ~30-40% of explore iterations via the weighted strategy selector. Existing price-sorted strategies keep ~60-70%.
+These are added as new strategy cases in the explore switch. The curve-aware gate (4.4) determines which listing pool each strategy draws from — so a "value-ratio pair" strategy hitting a staircase combo will still use price-sorted listings. The ~30-40% allocation means 30-40% of iterations *attempt* value-aware selection; the curve gate may override to price-sort for staircase-dominant combos.
+
+All callers of `loadDiscoveryData` (`randomExplore`, `exploreWithBudget`, `exploreKnifeWithBudget`) must add `byColValue` to their destructuring — currently only `{ allListings, byCollection, byColAdj }` is destructured.
 
 ### 4.3 Output Curve Classification
 
@@ -166,7 +174,7 @@ Live data shows: 46% staircase, 24% mixed, 23% steep+wide, 6% flat, 1% smooth.
 - Skins with insufficient data → default to MIXED (balanced strategy)
 - Narrow float range skins (FN-only like Dopplers) → skip classification, use condition-threshold by default
 
-**Storage:** Computed alongside price cache in `buildPriceCache` step, refreshed every 5 minutes. Map of `skinName → curveScore` (float 0-1, where 0 = pure staircase, 1 = pure smooth).
+**Storage:** Computed alongside price cache in `buildPriceCache` step, refreshed every 5 minutes. Two-value map: `skinName → { conditionRatio: number, intraConditionCV: number }`. The two dimensions distinguish FLAT (low ratio, low CV → pure cost-minimize) from STAIRCASE (high ratio, low CV → condition-threshold targeting) from SMOOTH/STEEP+WIDE (high CV → float precision matters). A single scalar would conflate FLAT and STAIRCASE.
 
 ### 4.4 Curve-Aware Strategy Selection
 
@@ -225,5 +233,7 @@ The assumption that "all knife outputs are staircases" is wrong for gloves — t
 - **Value-ratio strategies**: Unit test — verify `byColValue` listings are used when curve score indicates smooth
 - **Curve classification**: Unit test with fixture observations — verify staircase/smooth/flat classification. Property test — skins with uniform intra-condition prices always classify as staircase
 - **Buff in listings**: Integration test — insert buff listing, verify discovery finds it, verify claim works, verify cascade on delete
-- **Freshness gate removal**: Integration test — verify Phase 5 runs even when no CSFloat listings inserted
+- **Dead code cleanup**: Verify removed functions have no remaining imports
 - **Strategy selection**: Unit test — verify curve score gates price-sort vs value-ratio correctly per combo
+- **Data viewer**: Verify Buff listings appear in chart, sidebar sums, and price data table
+- **Marketplace badges + links**: Verify CSF/DM/BUFF badges render, Buff link includes tooltip with float+price
