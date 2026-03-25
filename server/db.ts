@@ -388,6 +388,10 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     ALTER TABLE listings ADD COLUMN IF NOT EXISTS marketplace_id TEXT;
   `);
 
+  await pool.query(`
+    ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS output_repriced_at TIMESTAMPTZ;
+  `);
+
   // User trade-up lifecycle tracking (My Trade-Ups)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_trade_ups (

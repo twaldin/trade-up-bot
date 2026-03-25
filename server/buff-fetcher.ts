@@ -466,7 +466,8 @@ async function main() {
   // Load goods ID mapping
   const goodsIdMap = loadGoodsIdMapping();
 
-  // Ensure buff tables exist (buff_listings no longer used — listings go to main listings table)
+  // Clean up legacy table + ensure buff tables exist
+  await pool.query(`DROP TABLE IF EXISTS buff_listings`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS buff_sale_history (
       id TEXT PRIMARY KEY,

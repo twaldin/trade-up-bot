@@ -206,14 +206,12 @@ describe("My Trade-Ups", () => {
     expect(res.body.sold_price_cents).toBe(15000);
     expect(res.body.actual_profit_cents).toBe(5000); // 15000 - 10000
 
-    // Verify price observation was written
+    // User reports no longer written to price_observations (unverified data)
     const { rows: obs } = await ctx.pool.query(
       "SELECT * FROM price_observations WHERE skin_name = $1 AND source = 'user_report'",
       ["AK-47 | Fire Serpent"]
     );
-    expect(obs.length).toBe(1);
-    expect(obs[0].price_cents).toBe(15000);
-    expect(obs[0].float_value).toBeCloseTo(0.15);
+    expect(obs.length).toBe(0);
   });
 
   it("POST sell rejects non-executed entry", async () => {
@@ -401,11 +399,11 @@ describe("My Trade-Ups", () => {
       expect(sellRes.body.status).toBe("sold");
       expect(sellRes.body.actual_profit_cents).toBe(15000 - ut.total_cost_cents);
 
-      // 6. Verify price observation
+      // 6. User reports no longer written to price_observations
       const { rows: obs } = await ctx.pool.query(
         "SELECT * FROM price_observations WHERE source = 'user_report'"
       );
-      expect(obs.length).toBeGreaterThanOrEqual(1);
+      expect(obs.length).toBe(0);
 
       // 7. Verify stats
       const statsRes = await request(ctx.app)

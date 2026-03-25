@@ -39,7 +39,7 @@ export {
 } from "./engine/observations.js";
 
 // === Data Loading ===
-export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache } from "./engine/data-load.js";
+export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache, serializeDiscoveryData, loadDiscoveryDataFromFile, cleanupDiscoveryFiles } from "./engine/data-load.js";
 
 // === Selection ===
 export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./engine/selection.js";
@@ -54,7 +54,7 @@ export { findProfitableKnifeTradeUps, randomKnifeExplore, exploreKnifeWithBudget
 export { findStaircaseTradeUps } from "./engine/staircase.js";
 
 // === DB Operations ===
-export { saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, trimGlobalExcess } from "./engine/db-ops.js";
+export { saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess } from "./engine/db-ops.js";
 export {
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
   cascadeTradeUpStatuses, deleteListings,

@@ -176,15 +176,9 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
         [utId, price_cents, marketplace, actualProfit]
       );
 
-      // Write price observation for KNN
-      if (entry.outcome_skin_name && entry.outcome_float != null) {
-        await client.query(
-          `INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-           VALUES ($1, $2, $3, 'user_report', NOW())
-           ON CONFLICT (skin_name, float_value, price_cents, source) DO NOTHING`,
-          [entry.outcome_skin_name, entry.outcome_float, price_cents]
-        );
-      }
+      // User-reported sale price stored in user_trade_ups (sold_price_cents) only.
+      // Not written to price_observations — user reports are unverified and can
+      // contain outliers that pollute KNN pricing.
 
       await client.query("COMMIT");
     } catch (err) {

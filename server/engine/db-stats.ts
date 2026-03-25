@@ -4,6 +4,8 @@
 
 import pg from "pg";
 import { withRetry, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
+import { lookupOutputPrice, buildPriceCache } from "./pricing.js";
+import type { TradeUpOutcome } from "../../shared/types.js";
 
 export async function updateCollectionScores(pool: pg.Pool) {
   const { rows: scores } = await pool.query(`
@@ -167,4 +169,97 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   }
 
   return { updated };
+}
+
+/**
+ * Batch re-evaluate output pricing for trade-ups using current price cache + KNN.
+ * Picks the oldest-repriced active trade-ups, re-lookups each outcome's price
+ * at its predicted float, and updates EV/profit/ROI if changed.
+ */
+export async function repriceTradeUpOutputs(
+  pool: pg.Pool,
+  limit: number = 500
+): Promise<{ updated: number; checked: number }> {
+  await buildPriceCache(pool);
+
+  const { rows } = await pool.query(`
+    SELECT id, type, total_cost_cents, expected_value_cents, outcomes_json, output_repriced_at
+    FROM trade_ups
+    WHERE is_theoretical = false AND listing_status = 'active'
+      AND outcomes_json IS NOT NULL
+      AND (output_repriced_at IS NULL OR output_repriced_at < NOW() - INTERVAL '2 hours')
+    ORDER BY output_repriced_at ASC NULLS FIRST
+    LIMIT $1
+  `, [limit]);
+
+  if (rows.length === 0) return { updated: 0, checked: 0 };
+
+  let updated = 0;
+  const BATCH = 100;
+
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      for (const tu of batch) {
+        const outcomes: TradeUpOutcome[] = JSON.parse(tu.outcomes_json);
+        if (outcomes.length === 0) {
+          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
+          continue;
+        }
+
+        let newEv = 0;
+        let priceable = true;
+        const newOutcomes: TradeUpOutcome[] = [];
+
+        for (const o of outcomes) {
+          const output = await lookupOutputPrice(pool, o.skin_name, o.predicted_float);
+          if (output.priceCents <= 0) { priceable = false; break; }
+          newEv += o.probability * output.priceCents;
+          newOutcomes.push({
+            ...o,
+            estimated_price_cents: output.priceCents,
+            sell_marketplace: output.marketplace,
+          });
+        }
+
+        if (!priceable) {
+          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
+          continue;
+        }
+
+        const newEvCents = Math.round(newEv);
+        const cost = tu.total_cost_cents;
+        const profit = newEvCents - cost;
+        const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
+        const chance = computeChanceToProfit(newOutcomes as { estimated_price_cents: number; probability: number }[], cost);
+        const { bestCase: best, worstCase: worst } = computeBestWorstCase(newOutcomes as { estimated_price_cents: number; probability: number }[], cost);
+
+        // Only write if EV changed by more than 1%
+        if (Math.abs(newEvCents - tu.expected_value_cents) > tu.expected_value_cents * 0.01) {
+          await client.query(`
+            UPDATE trade_ups SET
+              expected_value_cents = $1, profit_cents = $2, roi_percentage = $3,
+              chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6,
+              outcomes_json = $7, output_repriced_at = NOW()
+            WHERE id = $8
+          `, [newEvCents, profit, roi, chance, best, worst, JSON.stringify(newOutcomes), tu.id]);
+          updated++;
+        } else {
+          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
+        }
+      }
+
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  return { updated, checked: rows.length };
 }
