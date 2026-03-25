@@ -64,7 +64,7 @@ export interface SaleRow {
 
 export type SortDir = "asc" | "desc";
 
-export type SeriesKey = "csfloat" | "dmarket" | "skinport" | "csfloat_sales" | "skinport_sales" | "buff_sales" | "buckets";
+export type SeriesKey = "csfloat" | "dmarket" | "skinport" | "buff" | "csfloat_sales" | "skinport_sales" | "buff_sales" | "buckets";
 
 export const SOURCE_LABELS: Record<string, string> = {
   csfloat_sales: "CSFloat Sales",
@@ -80,6 +80,7 @@ export const SERIES_COLORS = {
   csfloat: "#3b82f6",        // blue
   dmarket: "#a855f7",        // purple
   skinport: "#f59e0b",       // orange
+  buff: "#e85d04",           // burnt orange
   csfloat_sales: "#22c55e",  // green (was "sales")
   skinport_sales: "#f87171", // coral/red
   buff_sales: "#eab308",     // gold/yellow

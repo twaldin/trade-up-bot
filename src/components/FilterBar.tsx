@@ -43,6 +43,7 @@ export const EMPTY_FILTERS: Filters = {
 const AVAILABLE_MARKETS = [
   { value: "csfloat", label: "CSFloat" },
   { value: "dmarket", label: "DMarket" },
+  { value: "buff", label: "Buff" },
 ] as const;
 
 export function filtersToParams(f: Filters): URLSearchParams {

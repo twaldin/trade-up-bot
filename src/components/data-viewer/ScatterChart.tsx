@@ -28,6 +28,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
       if (src === "csfloat" && visible.csfloat) return true;
       if (src === "dmarket" && visible.dmarket) return true;
       if (src === "skinport" && visible.skinport) return true;
+      if (src === "buff" && visible.buff) return true;
       return false;
     });
     p.push(...visibleListings.map(l => l.price_cents));
@@ -180,6 +181,18 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           opacity={0.7}
         >
           <title>{`Skinport: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
+        </circle>
+      ))}
+
+      {/* Buff listings (burnt orange dots) */}
+      {visible.buff && listings.filter(l => l.source === "buff").map((l, i) => (
+        <circle
+          key={`buff-${i}`}
+          cx={x(l.float_value)} cy={y(l.price_cents)}
+          r={dotR} fill={SERIES_COLORS.buff}
+          opacity={0.7}
+        >
+          <title>{`Buff: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
         </circle>
       ))}
 

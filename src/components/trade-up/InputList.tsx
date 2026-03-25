@@ -37,18 +37,34 @@ interface InputListProps {
   showShare?: boolean;
 }
 
+function handleBuffLink(e: React.MouseEvent, input: TradeUpInput) {
+  e.preventDefault();
+  const url = listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id);
+  const msg = `Look for float ${input.float_value.toFixed(6)} at ${formatDollars(input.price_cents)}\n\nBuff cannot link to a specific listing. You will be taken to the item page.`;
+  if (window.confirm(msg)) {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+function inputHref(input: TradeUpInput, isTheory: boolean): string {
+  if (isTheory) return csfloatSearchUrl(input.skin_name, input.condition);
+  return listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id);
+}
+
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
+  const isBuff = !isTheory && input.source === "buff";
   return (
     <div className="rounded-md border border-border/50 bg-muted/50 px-2 py-1.5 text-[0.75rem]">
       {/* Row 1: Skin name */}
       <div className="flex items-start justify-between gap-1 mb-0.5">
         <a
-          href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents)}
+          href={inputHref(input, isTheory)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate"
           title={input.skin_name}
+          onClick={isBuff ? (e) => handleBuffLink(e, input) : undefined}
         >
           {input.skin_name}
         </a>
@@ -90,6 +106,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
   onUnauthLinkClick?: () => void;
 }) {
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
+  const isBuff = !isTheory && input.source === "buff";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
   const isSoldOrDelisted = inputStatus?.status === "sold" || inputStatus?.status === "delisted";
   const isMissing = input.missing === true;
@@ -115,11 +132,12 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
       <div className="flex items-start justify-between gap-1 mb-1">
         {showListingLinks && input.listing_id !== "hidden" ? (
           <a
-            href={isTheory ? csfloatSearchUrl(input.skin_name, input.condition) : listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents)}
+            href={inputHref(input, isTheory)}
             target="_blank"
             rel="noopener noreferrer"
             className={`no-underline hover:text-blue-400 leading-tight text-[0.75rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
             title={input.skin_name}
+            onClick={isBuff ? (e) => handleBuffLink(e, input) : undefined}
           >
             {input.skin_name}
           </a>

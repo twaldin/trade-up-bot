@@ -440,7 +440,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     const { rows: inputs } = await pool.query(
-      "SELECT * FROM trade_up_inputs WHERE trade_up_id = $1",
+      `SELECT tui.*, l.marketplace_id FROM trade_up_inputs tui
+       LEFT JOIN listings l ON tui.listing_id = l.id
+       WHERE tui.trade_up_id = $1`,
       [row.id]
     );
     const outcomes = JSON.parse(row.outcomes_json || '[]') as TradeUpOutcome[];
@@ -790,7 +792,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   router.get("/api/trade-up/:id/inputs", cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-    const { rows: inputs } = await pool.query("SELECT * FROM trade_up_inputs WHERE trade_up_id = $1", [id]);
+    const { rows: inputs } = await pool.query(
+      `SELECT tui.*, l.marketplace_id FROM trade_up_inputs tui
+       LEFT JOIN listings l ON tui.listing_id = l.id
+       WHERE tui.trade_up_id = $1`,
+      [id]
+    );
     if (inputs.length === 0) {
       // Check if trade-up exists
       const { rows: [exists] } = await pool.query("SELECT id FROM trade_ups WHERE id = $1", [id]);
