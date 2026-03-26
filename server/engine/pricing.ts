@@ -303,22 +303,22 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
   // Historical sales excluded — they introduce noise from below-market transactions
   // and Skinport fee differentials. KNN already handles sale history for estimation.
   const { rows } = await pool.query(`
-    SELECT skin_name, float_value, price_cents FROM (
+    SELECT skin_name, float_value, price_cents, source FROM (
       -- Active CSFloat listings
-      SELECT s.name as skin_name, l.float_value, l.price_cents
+      SELECT s.name as skin_name, l.float_value, l.price_cents, 'csfloat' as source
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE (l.source = 'csfloat' OR l.source IS NULL) AND l.stattrak = false
         AND l.float_value > 0 AND l.price_cents > 0
         AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
       UNION ALL
       -- Active DMarket listings (normalized with 2.5% buyer fee)
-      SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER)
+      SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'dmarket'
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE l.source = 'dmarket' AND l.stattrak = false
         AND l.float_value > 0 AND l.price_cents > 0
       UNION ALL
       -- Active Buff listings (no buyer fee)
-      SELECT s.name, l.float_value, l.price_cents
+      SELECT s.name, l.float_value, l.price_cents, 'buff'
       FROM listings l JOIN skins s ON l.skin_id = s.id
       WHERE l.source = 'buff' AND l.stattrak = false
         AND l.float_value > 0 AND l.price_cents > 0
@@ -326,11 +326,23 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
     ORDER BY skin_name, float_value
   `);
 
+  let buffFiltered = 0;
   for (const row of rows) {
+    // Filter Buff outliers: sticker/pattern premiums can be 10-100x market price.
+    // Use _refPrice (built by overrideWithListingFloors) as the reference.
+    if (row.source === 'buff') {
+      const condition = floatToCondition(row.float_value);
+      const ref = _refPrice.get(`${row.skin_name}:${condition}`);
+      if (!ref || row.price_cents > ref * 5) {
+        buffFiltered++;
+        continue;
+      }
+    }
     let arr = _floatCeilingCache.get(row.skin_name);
     if (!arr) { arr = []; _floatCeilingCache.set(row.skin_name, arr); }
     arr.push({ float: row.float_value, price: row.price_cents });
   }
+  if (buffFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff outlier listings (>5x ref or no ref)`);
   _floatCeilingCacheBuiltAt = Date.now();
 }
 
