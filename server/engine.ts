@@ -54,8 +54,8 @@ export { findProfitableKnifeTradeUps, randomKnifeExplore, exploreKnifeWithBudget
 export { findStaircaseTradeUps } from "./engine/staircase.js";
 
 // === DB Operations ===
-export { saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess } from "./engine/db-ops.js";
 export {
+  saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
   cascadeTradeUpStatuses, deleteListings,
 } from "./engine/db-ops.js";
