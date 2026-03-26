@@ -26,6 +26,8 @@ const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // Module-level ref price map shared between loadCsfloatRefPrices and overrideWithListingFloors/fillKnifeLastResort
 let _refPrice = new Map<string, number>();
+// Skinport median cache for listing floor sanity cap (skinName:condition → median cents)
+let _skinportMedianCache = new Map<string, number>();
 
 /** Step 1: Load CSFloat ref prices (conservative condition-level averages, high volume).
  *  Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
@@ -92,9 +94,11 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
     SELECT skin_name, condition, median_price_cents as ref
     FROM price_data WHERE median_price_cents > 0 AND source = 'skinport'
   `);
+  _skinportMedianCache.clear();
   let spFills = 0;
   for (const r of spRows) {
     const key = `${r.skin_name}:${r.condition}`;
+    if (r.ref > 0) _skinportMedianCache.set(key, r.ref);
     if (!_refPrice.has(key) && r.ref > 0) {
       _refPrice.set(key, r.ref);
       spFills++;
@@ -238,6 +242,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   priceSources.clear();
   dmarketFloorCache.clear();
   skinportFloorCache.clear();
+  _skinportMedianCache.clear();
   conditionPricesCache.clear();
   _floatCeilingCache.clear();
   _floatCeilingCacheBuiltAt = 0;
@@ -452,7 +457,15 @@ async function getListingFloor(
 
   const sorted = nearby.map(d => d.price).sort((a, b) => a - b);
   const n = Math.min(3, sorted.length);
-  return Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
+  const bottom3Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
+
+  // Skinport median sanity cap: catch inflated floors when outlier listings
+  // slip through (e.g. no _refPrice for BS/WW → >5x filter can't exclude them)
+  const condition = floatToCondition(predictedFloat);
+  const spMedian = _skinportMedianCache.get(`${skinName}:${condition}`);
+  if (spMedian && bottom3Avg > spMedian * 3) return spMedian;
+
+  return bottom3Avg;
 }
 
 /**
