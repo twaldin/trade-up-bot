@@ -1,6 +1,7 @@
 
 import pg from "pg";
-import { MAX_LISTING_AGE_DAYS, CONDITIONS_LIST } from "./types.js";
+import { MAX_LISTING_AGE_DAYS } from "./types.js";
+import { CONDITION_BOUNDS } from "../engine/types.js";
 import type { CSFloatListing } from "./types.js";
 
 export function isListingTooOld(createdAt: string): boolean {
@@ -95,7 +96,7 @@ export function getValidConditions(
   minFloat: number,
   maxFloat: number
 ): string[] {
-  return CONDITIONS_LIST
+  return CONDITION_BOUNDS
     .filter((c) => minFloat < c.max && maxFloat > c.min)
     .map((c) => c.name);
 }

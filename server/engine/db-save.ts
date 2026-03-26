@@ -253,43 +253,6 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
  * Trim trade-ups for a type down to maxKeep, scored by profit + chance-to-profit.
  * Profitable and high-chance trade-ups are kept; low-value unprofitable ones are purged.
  */
-async function trimExcessTradeUps(pool: pg.Pool, type: string, maxKeep: number) {
-  const { rows: countRows } = await pool.query(
-    "SELECT COUNT(*) as cnt FROM trade_ups WHERE type = $1 AND is_theoretical = false",
-    [type]
-  );
-  const count = parseInt(countRows[0].cnt, 10);
-
-  if (count <= maxKeep) return;
-
-  const toDelete = count - maxKeep;
-  // Delete lowest-scored: sort by (profit + chance_bonus) ascending, delete the bottom N
-  // Profitable trade-ups and high-chance ones are preserved
-  await pool.query(`
-    DELETE FROM trade_up_inputs WHERE trade_up_id IN (
-      SELECT id FROM trade_ups
-      WHERE type = $1 AND is_theoretical = false
-      ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) ASC
-      LIMIT $2
-    )
-  `, [type, toDelete]);
-
-  const deleted2 = await pool.query(`
-    DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = false
-      AND id NOT IN (
-        SELECT id FROM trade_ups
-        WHERE type = $1 AND is_theoretical = false
-        ORDER BY (profit_cents + CAST(chance_to_profit * 5000 AS INTEGER)) DESC
-        LIMIT $2
-      )
-  `, [type, maxKeep]);
-
-  if ((deleted2.rowCount ?? 0) > 0) {
-    console.log(`  Trimmed ${deleted2.rowCount} excess ${type} trade-ups (kept top ${maxKeep})`);
-  }
-}
-
-
 /**
  * Global trade-up cap: trim the worst trade-ups across ALL types when total exceeds maxTotal.
  * Deletes by worst ROI (most negative first). Keeps profitable + high-chance ones.

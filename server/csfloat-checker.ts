@@ -167,7 +167,7 @@ async function main() {
   }
 
   const connectionString = process.env.DATABASE_URL
-    || "postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot";
+    || "postgresql://localhost:5432/tradeupbot";
   const pool = new Pool({
     connectionString,
     max: 5,

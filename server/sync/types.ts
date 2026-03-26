@@ -9,7 +9,7 @@ export const SKINS_URL = "https://raw.githubusercontent.com/ByMykel/CSGO-API/mai
 
 import { CONDITION_BOUNDS } from "../engine/types.js";
 
-export const CONDITIONS_LIST = CONDITION_BOUNDS;
+/** @deprecated Use CONDITION_BOUNDS directly from engine/types.js */
 export const CONDITION_FROM_FLOAT = CONDITION_BOUNDS;
 
 // High-value single-Covert collections — their Classified inputs are always worth fetching
