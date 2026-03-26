@@ -139,11 +139,20 @@ export async function pruneObservations(pool: pg.Pool, maxPerSkin: number = 500)
 
   for (const { skin_name, cnt } of overLimit) {
     const excess = parseInt(cnt, 10) - maxPerSkin;
+    // Prune lowest-value observations first: listings before sales, oldest first.
+    // Source priority (keep longer): sale > buff_sale > listing_skinport > listing_dmarket > listing
     const result = await pool.query(`
       DELETE FROM price_observations WHERE id IN (
         SELECT id FROM price_observations
         WHERE skin_name = $1
-        ORDER BY source ASC, observed_at ASC
+        ORDER BY CASE source
+          WHEN 'listing' THEN 0
+          WHEN 'listing_dmarket' THEN 1
+          WHEN 'listing_skinport' THEN 2
+          WHEN 'buff_sale' THEN 3
+          WHEN 'sale' THEN 4
+          ELSE 0
+        END ASC, observed_at ASC
         LIMIT $2
       )
     `, [skin_name, excess]);
