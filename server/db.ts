@@ -43,6 +43,11 @@ export function initDb(): pg.Pool {
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts). */
 export async function createTables(pool: pg.Pool): Promise<void> {
+  // Serialize concurrent startup calls to prevent CREATE INDEX deadlocks when multiple
+  // processes start simultaneously. Session advisory lock is released in finally.
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query("SELECT pg_advisory_lock(1)");
   // Fast check: if trade_ups table exists, schema is already set up — skip CREATE but still run migrations
   const { rows } = await pool.query(
     "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' LIMIT 1"
@@ -544,6 +549,10 @@ export async function createTables(pool: pg.Pool): Promise<void> {
         await pool.query(newDef);
       }
     }
+  }
+  } finally {
+    await lockClient.query("SELECT pg_advisory_unlock(1)");
+    lockClient.release();
   }
 }
 
