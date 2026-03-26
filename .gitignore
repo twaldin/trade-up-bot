@@ -15,13 +15,18 @@ tradeup.db
 # Monitoring logs
 .monitoring/
 
-# Personal notes / internal docs (keep README.md only)
+# Personal notes / internal docs
 improvements.md
 overnight_tracking.md
 notes.md
 RESEARCH.md
 CLAUDE.md
 deployment.md
+optimizations.md
+overnight-notes.md
+prelaunch-checklist.md
+user_acquisition.md
+scaling.md
 
 # Logs
 *.log
@@ -31,16 +36,7 @@ deployment.md
 .DS_Store
 Thumbs.db
 
-# Notes/docs not for repo
-optimizations.md
-overnight-notes.md
-deployment.md
-prelaunch-checklist.md
-user_acquisition.md
-scaling.md
-
 # CLAUDE.md and docs
-CLAUDE.md
 server/**/CLAUDE.md
 docs/
 
