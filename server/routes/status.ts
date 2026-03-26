@@ -163,32 +163,6 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* malformed JSON or no data */ }
 
-      // BitSkins stats: DB counts (survive restarts) + fetcher health from sync_meta
-      let bitskinsStats = null;
-      try {
-        const [rawBsStatus, { rows: [bsCounts] }] = await Promise.all([
-          getSyncMeta(pool, "bitskins_fetcher_status"),
-          pool.query(`
-            SELECT
-              (SELECT COUNT(*) FROM bitskins_listings) as listings,
-              (SELECT COUNT(*) FROM bitskins_sale_history) as sales,
-              (SELECT COUNT(*) FROM bitskins_observations) as observations
-          `),
-        ]);
-        const parsed = rawBsStatus ? JSON.parse(rawBsStatus) : {};
-        bitskinsStats = {
-          totalListingsStored: parseInt(bsCounts.listings, 10),
-          totalSalesStored: parseInt(bsCounts.sales, 10),
-          totalObservationsStored: parseInt(bsCounts.observations, 10),
-          totalFloatsEnriched: parsed.totalFloatsEnriched ?? 0,
-          wsConnected: parsed.wsConnected ?? false,
-          lastSuccessAt: parsed.lastSuccessAt ?? null,
-          lastError: parsed.lastError ?? null,
-          cycleCount: parsed.cycleCount ?? 0,
-          updatedAt: parsed.updatedAt ?? null,
-        };
-      } catch { /* malformed JSON or no data */ }
-
       // Listing staleness stats
       let stalenessStats = null;
       try {
@@ -214,9 +188,9 @@ export function statusRouter(pool: pg.Pool): Router {
         };
       } catch { /* DB may be locked */ }
 
-      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats, buffStats, bitskinsStats });
+      res.json({ lines, currentPhase, rateLimits, csfloatStats, dmarketStats, stalenessStats, buffStats });
     } catch (err) {
-      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null, bitskinsStats: null });
+      res.json({ lines: [`Error reading log: ${err}`], currentPhase: "Error", rateLimits: null, csfloatStats: null, dmarketStats: null, stalenessStats: null, buffStats: null });
     }
   }));
 
