@@ -16,6 +16,8 @@ export async function recordProfitableCombo(pool: pg.Pool | pg.PoolClient, tu: T
     `${i.skin_name}|${i.condition}|${i.collection_name}`
   ).sort().join(";");
 
+  // Serialize concurrent upserts for the same combo_key to prevent index-level deadlocks
+  await pool.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [comboKey]);
   await pool.query(`
     INSERT INTO profitable_combos (combo_key, collections, best_profit_cents, best_roi,
       times_profitable, last_profitable_at, last_cost_cents, input_recipe)

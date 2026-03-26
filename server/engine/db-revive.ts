@@ -72,12 +72,13 @@ async function reviveStaleGeneric(
     existingSigs.add(listingSig(row.ids.split(",")));
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    for (const tu of stale) {
-      checked++;
+  for (const tu of stale) {
+    checked++;
+    const client = await pool.connect();
+    let txOpen = false;
+    try {
+      await client.query('BEGIN');
+      txOpen = true;
       const { rows: inputs } = await client.query(`
         SELECT listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
         FROM trade_up_inputs WHERE trade_up_id = $1
@@ -205,22 +206,22 @@ async function reviveStaleGeneric(
         ), '{}') WHERE id = $1
       `, [tu.id]);
 
-      revived++;
-      if (result.profit_cents > tu.profit_cents) improved++;
-
       // Record if newly profitable (knife revive does this, gun revive doesn't)
       if (recordCombos && result.profit_cents > 0) {
         const comboKey = [...new Set(result.inputs.map(i => i.collection_name))].sort().join("|");
         await recordProfitableCombo(client, result, comboKey);
       }
-    }
 
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
+      await client.query('COMMIT');
+      txOpen = false;
+      revived++;
+      if (result.profit_cents > tu.profit_cents) improved++;
+    } catch (err) {
+      console.warn(`reviveStaleGeneric: error on trade-up ${tu.id}: ${(err as Error).message}`);
+    } finally {
+      if (txOpen) { try { await client.query('ROLLBACK'); } catch {} }
+      client.release();
+    }
   }
 
   return { checked, revived, improved };
