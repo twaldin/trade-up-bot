@@ -960,7 +960,9 @@ export async function syncCovertOutputListings(
  * deterministically (1 API call per pair), with a stable cursor that persists
  * across daemon cycles.
  *
- * Pairs are sorted by (skin name, condition order) for deterministic cursor indexing.
+ * Pairs are sorted by priority: Covert/Extraordinary first, then by trade-up usage
+ * count (most-used inputs fetched first), then alphabetically. Full coverage is
+ * preserved — every pair is visited exactly once per loop.
  * At ~180 calls/cycle and ~9,200 pairs, a full pass takes ~51 cycles (~25.5 hours).
  */
 export async function syncListingsRoundRobin(
@@ -971,12 +973,22 @@ export async function syncListingsRoundRobin(
     onProgress?: (msg: string) => void;
   }
 ): Promise<{ apiCalls: number; inserted: number; skinsFetched: number; loopCount: number }> {
-  // Deterministic sort by name — keeps cursor position stable across cycles
+  // Priority sort: Covert/Extraordinary skins first (trade-up outputs), then by
+  // trade-up usage count descending (most-used inputs fetched soonest), then name
+  // as tiebreaker for determinism.
   const { rows: allSkins } = await pool.query(`
     SELECT s.id, s.name, s.min_float, s.max_float
     FROM skins s
+    LEFT JOIN (
+      SELECT skin_id, COUNT(DISTINCT trade_up_id) AS usage_count
+      FROM trade_up_inputs
+      GROUP BY skin_id
+    ) tui ON tui.skin_id = s.id
     WHERE s.stattrak = false
-    ORDER BY s.name
+    ORDER BY
+      CASE WHEN s.rarity IN ('Covert', 'Extraordinary') THEN 0 ELSE 1 END,
+      COALESCE(tui.usage_count, 0) DESC,
+      s.name
   `) as { rows: { id: string; name: string; min_float: number; max_float: number }[] };
 
   if (allSkins.length === 0) return { apiCalls: 0, inserted: 0, skinsFetched: 0, loopCount: 0 };
