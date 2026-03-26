@@ -423,12 +423,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
-      claim_limit: (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin"
+      claim_limit: effectiveTier === "pro" || effectiveTier === "admin"
         ? await getRateLimit(userId, "claim", 10)
-        : (effectiveTier as string) === "basic"
+        : effectiveTier === "basic"
           ? await getRateLimit(userId, "claim", 5)
           : null,
-      verify_limit: (effectiveTier as string) === "free" ? null : await getRateLimit(userId, "verify", (effectiveTier as string) === "pro" || (effectiveTier as string) === "admin" ? 20 : 10),
+      verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", effectiveTier === "pro" || effectiveTier === "admin" ? 20 : 10),
     };
     res.json(result);
   }));
