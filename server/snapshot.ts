@@ -57,20 +57,20 @@ export async function takeSnapshot(pool: pg.Pool, opts: SnapshotOptions = {}): P
   `, [
     opts.cycle ?? null,
     type,
-    Number(stats.total) ?? 0,
-    Number(stats.profitable) ?? 0,
-    Number(stats.best_profit) ?? 0,
-    Math.round(Number(stats.avg_profit) ?? 0),
-    Number(stats.best_roi) ?? 0,
-    Math.round(Number(stats.avg_cost) ?? 0),
-    Number(stats.avg_chance) ?? 0,
-    Number(coverage.skins) ?? 0,
-    Number(coverage.listings) ?? 0,
-    Number(stats.theories) ?? 0,
-    Number(stats.theory_profitable) ?? 0,
-    Number(nearMiss.cnt) ?? 0,
+    Number(stats.total) || 0,
+    Number(stats.profitable) || 0,
+    Number(stats.best_profit) || 0,
+    Math.round(Number(stats.avg_profit) || 0),
+    Number(stats.best_roi) || 0,
+    Math.round(Number(stats.avg_cost) || 0),
+    Number(stats.avg_chance) || 0,
+    Number(coverage.skins) || 0,
+    Number(coverage.listings) || 0,
+    Number(stats.theories) || 0,
+    Number(stats.theory_profitable) || 0,
+    Number(nearMiss.cnt) || 0,
     nearMiss.closest ?? null,
-    Number(cooldowns.cnt) ?? 0,
+    Number(cooldowns.cnt) || 0,
     opts.apiRemaining?.listing ?? null,
     opts.apiRemaining?.sale ?? null,
     opts.apiRemaining?.individual ?? null,
@@ -135,14 +135,9 @@ export async function takeSnapshot(pool: pg.Pool, opts: SnapshotOptions = {}): P
   return snapshotId;
 }
 
-/** Purge snapshots older than maxDays (default 30) */
+/** Purge snapshots older than maxDays (default 30).
+ *  snapshot_tradeups has ON DELETE CASCADE, so only the parent delete is needed. */
 export async function purgeOldSnapshots(pool: pg.Pool, maxDays = 30) {
-  await pool.query(`
-    DELETE FROM snapshot_tradeups WHERE snapshot_id IN (
-      SELECT id FROM market_snapshots
-      WHERE EXTRACT(EPOCH FROM NOW() - snapshot_at) / 86400.0 > $1
-    )
-  `, [maxDays]);
   await pool.query(
     "DELETE FROM market_snapshots WHERE EXTRACT(EPOCH FROM NOW() - snapshot_at) / 86400.0 > $1",
     [maxDays]

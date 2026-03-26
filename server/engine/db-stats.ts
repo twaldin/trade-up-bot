@@ -92,8 +92,8 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     [sinceTimestamp]
   );
   if (changedListings.length === 0) return { updated: 0 };
-  const changedIds = changedListings.map((r: any) => r.id);
-  const ph = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+  const changedIds = changedListings.map((r: { id: string }) => r.id);
+  const ph = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
   const { rows: staleInputRows } = await pool.query(`
     SELECT DISTINCT tui.trade_up_id
     FROM trade_up_inputs tui
@@ -102,7 +102,7 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   `, changedIds);
   if (staleInputRows.length === 0) {
     // No actual price mismatches in this batch — clear their flags
-    const clearPh = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+    const clearPh = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
     await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
     return { updated: 0 };
   }
@@ -164,7 +164,7 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   // Clear price_updated_at only on the listings we actually processed (not all changed ones).
   // Remaining listings keep their flag and get picked up next cycle.
   if (changedIds.length > 0) {
-    const clearPh = changedIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+    const clearPh = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
     await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
   }
 

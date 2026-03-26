@@ -1,6 +1,7 @@
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import type { ReactNode } from "react";
+import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
 // Fetch fonts once at startup (satori needs ttf/otf, not woff/woff2)
 let fontsLoaded: { regular: ArrayBuffer; bold: ArrayBuffer } | null = null;
@@ -20,16 +21,6 @@ async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }>
 
 // Pre-load fonts immediately
 loadFonts().catch(e => console.error("Font load failed:", e));
-
-const TYPE_LABELS: Record<string, string> = {
-  covert_knife: "Knife / Gloves",
-  classified_covert: "Covert",
-  restricted_classified: "Classified",
-  milspec_restricted: "Restricted",
-  industrial_milspec: "Mil-Spec",
-  consumer_industrial: "Industrial",
-  staircase: "Staircase",
-};
 
 const TYPE_COLORS: Record<string, string> = {
   covert_knife: "#eab308",
@@ -82,7 +73,7 @@ function buildCollections(inputs: TradeUpData["inputs"]): string[] {
 }
 
 export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
-  const typeLabel = TYPE_LABELS[data.type] || data.type;
+  const typeLabel = TRADE_UP_TYPE_LABELS[data.type] || data.type;
   const typeColor = TYPE_COLORS[data.type] || "#888";
   const inputSummary = buildInputSummary(data.inputs);
   const collections = buildCollections(data.inputs);

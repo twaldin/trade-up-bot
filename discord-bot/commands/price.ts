@@ -1,27 +1,14 @@
 import { type ChatInputCommandInteraction, type AutocompleteInteraction, EmbedBuilder } from "discord.js";
-import { API_BASE, INTERNAL_API_TOKEN, EMBED_COLORS } from "../constants.js";
-import { CONDITIONS } from "../../shared/types.js";
-
-const CONDITION_BOUNDS: Record<string, [number, number]> = Object.fromEntries(
-  CONDITIONS.map(c => [c.abbr, [c.min, c.max] as [number, number]])
-);
+import { API_BASE, INTERNAL_API_TOKEN, EMBED_COLORS, formatDollars } from "../constants.js";
+import { CONDITIONS, floatToCondition } from "../../shared/types.js";
 
 const CONDITION_NAMES: Record<string, string> = Object.fromEntries(
   CONDITIONS.map(c => [c.abbr, c.name])
 );
 
-function floatToCondition(float: number): string {
-  if (float < 0.07) return "FN";
-  if (float < 0.15) return "MW";
-  if (float < 0.38) return "FT";
-  if (float < 0.45) return "WW";
-  return "BS";
-}
-
-function formatDollars(cents: number): string {
-  const abs = Math.abs(cents);
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(abs / 100).toFixed(2)}`;
+function floatToConditionAbbr(float: number): string {
+  const condition = floatToCondition(float);
+  return CONDITIONS.find(c => c.name === condition)?.abbr ?? "BS";
 }
 
 // Cache filter options for autocomplete (refreshed every 10 min)
@@ -65,7 +52,7 @@ export async function handlePrice(interaction: ChatInputCommandInteraction): Pro
     return;
   }
 
-  const condition = conditionInput || (float != null ? floatToCondition(float) : "FT");
+  const condition = conditionInput || (float != null ? floatToConditionAbbr(float) : "FT");
   const conditionFull = CONDITION_NAMES[condition] || condition;
 
   try {

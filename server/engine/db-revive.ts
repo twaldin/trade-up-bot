@@ -27,7 +27,7 @@ interface ReviveConfig {
  */
 const FULL_LISTING_SELECT = `
   SELECT l.id, l.skin_id, s.name as skin_name, s.weapon, l.price_cents,
-         l.float_value, l.paint_seed, l.stattrak, s.min_float, s.max_float,
+         l.float_value, l.paint_seed, l.stattrak, l.source, s.min_float, s.max_float,
          s.rarity, sc.collection_id, c.name as collection_name
   FROM listings l
   JOIN skins s ON l.skin_id = s.id

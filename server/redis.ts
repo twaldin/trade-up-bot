@@ -1,6 +1,6 @@
 /**
  * Redis cache layer — provides sub-millisecond reads for API routes.
- * Falls back gracefully to SQLite if Redis is unavailable.
+ * Falls back gracefully to in-memory storage if Redis is unavailable.
  */
 
 import Redis from "ioredis";

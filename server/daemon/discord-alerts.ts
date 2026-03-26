@@ -3,6 +3,7 @@
 
 import type pg from "pg";
 import type Redis from "ioredis";
+import { TRADE_UP_TYPE_LABELS } from "../../shared/types.js";
 
 const METRICS = ["profit_cents", "roi_percentage", "chance_to_profit"] as const;
 type Metric = typeof METRICS[number];
@@ -45,15 +46,6 @@ const TYPE_ALERT_ROLE: Record<string, string> = {
   milspec_restricted: "restricted-alerts",
   industrial_milspec: "milspec-alerts",
   consumer_industrial: "industrial-alerts",
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  covert_knife: "Knife/Gloves",
-  classified_covert: "Covert",
-  restricted_classified: "Classified",
-  milspec_restricted: "Restricted",
-  industrial_milspec: "Mil-Spec",
-  consumer_industrial: "Industrial",
 };
 
 const TYPE_COLORS: Record<string, number> = {
@@ -218,7 +210,7 @@ export async function checkAndFireAlerts(
   const webhookUrl = webhookEnvKey ? process.env[webhookEnvKey] : undefined;
   if (!webhookUrl) return;
 
-  const tierLabel = TYPE_LABELS[tradeUpType] || tradeUpType;
+  const tierLabel = TRADE_UP_TYPE_LABELS[tradeUpType] || tradeUpType;
   const alertRoleName = TYPE_ALERT_ROLE[tradeUpType];
   const roleId = alertRoleName ? await redis.get(`discord:role:${alertRoleName}`).catch(() => null) : null;
 

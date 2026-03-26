@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import type { TradeUp } from "../../shared/types.js";
+import { TRADE_UP_TYPE_LABELS } from "../../shared/types.js";
 import { formatDollars } from "../utils/format.js";
 import { OutcomeChart } from "../components/trade-up/OutcomeChart.js";
 import { InputList } from "../components/trade-up/InputList.js";
@@ -8,16 +9,6 @@ import { OutcomeList } from "../components/trade-up/OutcomeList.js";
 import { VerifyResults } from "../components/trade-up/VerifyResults.js";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
-
-const TYPE_LABELS: Record<string, string> = {
-  covert_knife: "Knife / Gloves",
-  classified_covert: "Covert",
-  restricted_classified: "Classified",
-  milspec_restricted: "Restricted",
-  industrial_milspec: "Mil-Spec",
-  consumer_industrial: "Industrial",
-  staircase: "Staircase",
-};
 
 const TYPE_COLORS: Record<string, string> = {
   covert_knife: "text-yellow-500 border-yellow-500/30 bg-yellow-500/10",
@@ -125,7 +116,7 @@ export function TradeUpSharePage() {
   }
 
   const tuType = tu.type || "";
-  const typeLabel = TYPE_LABELS[tuType] || tuType;
+  const typeLabel = TRADE_UP_TYPE_LABELS[tuType] || tuType;
   const typeColor = TYPE_COLORS[tuType] || "text-foreground border-border bg-muted";
   const isAuthenticated = !!user;
   const isBasicPlus = user?.tier === "basic" || user?.tier === "pro" || user?.tier === "admin";
