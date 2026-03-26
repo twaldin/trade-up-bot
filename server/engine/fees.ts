@@ -10,7 +10,6 @@ export const MARKETPLACE_FEES = {
   dmarket:  { buyerFeePct: 0.025, buyerFeeFlat: 0,  sellerFee: 0.02 },
   skinport: { buyerFeePct: 0,     buyerFeeFlat: 0,  sellerFee: 0.08 },  // 8% seller fee (reduced from 12%, July 2025)
   buff:     { buyerFeePct: 0.035, buyerFeeFlat: 15, sellerFee: 0.025 }, // 3.5% + $0.15 deposit, 2.5% seller fee
-  bitskins: { buyerFeePct: 0,     buyerFeeFlat: 0,  sellerFee: 0.0475 }, // 0% buyer, 4.75% min seller
 } as const;
 
 /** Effective cost of a listing, including marketplace buyer fees (deposit/wallet fees) */
