@@ -423,12 +423,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
-      claim_limit: effectiveTier === "pro" || effectiveTier === "admin"
+      claim_limit: effectiveTier === "pro"
         ? await getRateLimit(userId, "claim", 10)
         : effectiveTier === "basic"
           ? await getRateLimit(userId, "claim", 5)
           : null,
-      verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", effectiveTier === "pro" || effectiveTier === "admin" ? 20 : 10),
+      verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", effectiveTier === "pro" ? 20 : 10),
     };
     res.json(result);
   }));
@@ -479,7 +479,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     // Rate limit: basic 10/hr, pro 20/hr
-    const verifyMax = userTier === "pro" || userTier === "admin" ? 20 : 10;
+    const verifyMax = userTier === "pro" ? 20 : 10;
     const { checkRateLimit: checkRL } = await import("../redis.js");
     const verifyRateLimit = await checkRL(userId, "verify", verifyMax, 3600);
     if (!verifyRateLimit.allowed) {
