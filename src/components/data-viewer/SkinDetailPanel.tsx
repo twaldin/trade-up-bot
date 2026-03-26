@@ -7,6 +7,8 @@ import { ScatterChart } from "./ScatterChart.js";
 import { PriceSourceTable } from "./PriceSourceTable.js";
 import { SortableTable } from "./SortableTable.js";
 import { CollectionLinks } from "./CollectionLinks.js";
+import { FilterBar } from "./FilterBar.js";
+import { filterByFloatRange, filterByTimeRange, filterBucketsByFloatRange } from "./filter-utils.js";
 
 interface SkinDetailPanelProps {
   skinName: string;
@@ -52,6 +54,8 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     csfloat: true, dmarket: true, skinport: true, buff: true,
   });
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
+  const [floatRange, setFloatRange] = useState<{ min: number | null; max: number | null }>({ min: null, max: null });
+  const [timeRange, setTimeRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
 
   useEffect(() => {
     setLoading(true);
@@ -62,6 +66,11 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [skinName, stattrak]);
+
+  useEffect(() => {
+    setFloatRange({ min: null, max: null });
+    setTimeRange({ from: null, to: null });
+  }, [skinName]);
 
   const toggleSeries = (key: SeriesKey) => {
     setVisible(v => ({ ...v, [key]: !v[key] }));
@@ -143,6 +152,28 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     return phaseSaleData ?? [];
   }, [allSaleHistory, selectedPhase, detail]);
 
+  const hasTimeFilter = timeRange.from !== null || timeRange.to !== null;
+
+  const { filteredListings, filteredSaleHistory, filteredBuckets } = useMemo(() => {
+    let fl = listings;
+    let fs = saleHistory;
+    let fb = bucketFloors;
+
+    // Float range filter
+    fl = filterByFloatRange(fl, floatRange.min, floatRange.max);
+    fs = filterByFloatRange(fs, floatRange.min, floatRange.max);
+    fb = filterBucketsByFloatRange(fb, floatRange.min, floatRange.max);
+
+    // Time range filter
+    fl = filterByTimeRange(fl, "created_at", timeRange.from, timeRange.to);
+    fs = filterByTimeRange(fs, "sold_at", timeRange.from, timeRange.to);
+    if (hasTimeFilter) {
+      fb = [];
+    }
+
+    return { filteredListings: fl, filteredSaleHistory: fs, filteredBuckets: fb };
+  }, [listings, saleHistory, bucketFloors, floatRange, timeRange, hasTimeFilter]);
+
   if (loading) return <LoadingSkeleton />;
   if (!detail) {
     return (
@@ -156,14 +187,14 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   // Price sources for the table — uses phase-specific when available
   const priceSources = activePriceSources;
 
-  const csfloatCount = listings.filter(l => !l.source || l.source === "csfloat").length;
-  const dmarketCount = listings.filter(l => l.source === "dmarket").length;
-  const skinportCount = listings.filter(l => l.source === "skinport").length;
-  const buffCount = listings.filter(l => l.source === "buff").length;
+  const csfloatCount = filteredListings.filter(l => !l.source || l.source === "csfloat").length;
+  const dmarketCount = filteredListings.filter(l => l.source === "dmarket").length;
+  const skinportCount = filteredListings.filter(l => l.source === "skinport").length;
+  const buffCount = filteredListings.filter(l => l.source === "buff").length;
 
-  const csfloatSaleCount = (saleHistory || []).filter(s => !s.source || s.source === "sale" || s.source === "listing" || s.source === "listing_dmarket" || s.source === "listing_skinport").length;
-  const skinportSaleCount = (saleHistory || []).filter(s => s.source === "skinport_sale").length;
-  const buffSaleCount = (saleHistory || []).filter(s => s.source === "buff_sale").length;
+  const csfloatSaleCount = filteredSaleHistory.filter(s => !s.source || s.source === "sale" || s.source === "listing" || s.source === "listing_dmarket" || s.source === "listing_skinport").length;
+  const skinportSaleCount = filteredSaleHistory.filter(s => s.source === "skinport_sale").length;
+  const buffSaleCount = filteredSaleHistory.filter(s => s.source === "buff_sale").length;
 
   const legendItems: { key: SeriesKey; label: string; color: string; shape: "dot" | "diamond" | "line"; count: number }[] = [
     { key: "csfloat", label: "CSFloat", color: SERIES_COLORS.csfloat, shape: "dot", count: csfloatCount },
@@ -173,11 +204,11 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     { key: "csfloat_sales", label: "CSFloat Sales", color: SERIES_COLORS.csfloat_sales, shape: "diamond", count: csfloatSaleCount },
     ...(skinportSaleCount > 0 ? [{ key: "skinport_sales" as SeriesKey, label: "Skinport Sales", color: SERIES_COLORS.skinport_sales, shape: "diamond" as const, count: skinportSaleCount }] : []),
     ...(buffSaleCount > 0 ? [{ key: "buff_sales" as SeriesKey, label: "Buff Sales", color: SERIES_COLORS.buff_sales, shape: "diamond" as const, count: buffSaleCount }] : []),
-    { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
+    { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: filteredBuckets.filter(b => b.avg_price_cents > 0).length },
   ];
 
-  // Unified listings filtered by source checkboxes
-  const filteredListings = listings.filter(l => {
+  // Unified listings filtered by source checkboxes (applied on top of float/time filters)
+  const tableListings = filteredListings.filter(l => {
     const src = l.source || "csfloat";
     return sourceFilters[src] !== false;
   });
@@ -196,7 +227,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         {legendItems.map(item => (
           <span
             key={item.key}
-            className={`cursor-pointer inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-[opacity,background] select-none hover:bg-accent ${visible[item.key] ? "" : "opacity-35 line-through"}`}
+            className={`cursor-pointer inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-[opacity,background] select-none hover:bg-accent ${visible[item.key] ? "" : "opacity-35 line-through"} ${item.key === "buckets" && hasTimeFilter ? "opacity-35 pointer-events-none" : ""}`}
             onClick={() => toggleSeries(item.key)}
           >
             {item.shape === "dot" && (
@@ -221,13 +252,13 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         )}
       </div>
       <ScatterChart
-        listings={listings}
-        saleHistory={saleHistory || []}
-        floatBuckets={bucketFloors}
+        listings={filteredListings}
+        saleHistory={filteredSaleHistory}
+        floatBuckets={filteredBuckets}
         minFloat={skin.min_float}
         maxFloat={skin.max_float}
         fullscreen={fs}
-        visible={visible}
+        visible={hasTimeFilter ? { ...visible, buckets: false } : visible}
       />
     </>
   );
@@ -296,6 +327,16 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         </div>
       )}
 
+      {/* Data filters */}
+      <FilterBar
+        floatRange={floatRange}
+        timeRange={timeRange}
+        onFloatRangeChange={setFloatRange}
+        onTimeRangeChange={setTimeRange}
+        skinMinFloat={skin.min_float}
+        skinMaxFloat={skin.max_float}
+      />
+
       {/* Scatter chart */}
       <div className="mb-5">
         <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">Float vs Price</h3>
@@ -309,12 +350,12 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       </div>
 
       {/* Recent Sales */}
-      {saleHistory && saleHistory.length > 0 && (
+      {filteredSaleHistory.length > 0 && (
         <div className="mb-5">
-          <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">Sale History ({stats.saleCount || saleHistory.length})</h3>
+          <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">Sale History ({filteredSaleHistory.length})</h3>
           <SortableTable<SaleRow>
             id="sales"
-            data={saleHistory}
+            data={filteredSaleHistory}
             defaultSort={{ key: "sold_at", dir: "desc" }}
             defaultLimit={25}
             columns={[
@@ -332,12 +373,12 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       )}
 
       {/* Float bucket detail */}
-      {bucketFloors.length > 0 && (
+      {filteredBuckets.length > 0 && (
         <div className="mb-5">
           <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">CSFloat Ref Prices</h3>
           <SortableTable<FloatBucket>
             id="buckets"
-            data={bucketFloors}
+            data={filteredBuckets}
             defaultLimit={10}
             columns={[
               { key: "range", label: "Range", render: b => `${b.float_min.toFixed(2)} \u2013 ${b.float_max.toFixed(2)}`, sortValue: b => b.float_min },
@@ -351,7 +392,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       {/* Unified Listings table */}
       <div className="mb-5">
         <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">
-          Listings ({filteredListings.length}{filteredListings.length !== listings.length ? ` of ${listings.length}` : ""})
+          Listings ({tableListings.length}{tableListings.length !== filteredListings.length ? ` of ${filteredListings.length}` : ""})
         </h3>
 
         {/* Source filter checkboxes */}
@@ -378,7 +419,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
 
         <SortableTable<ListingRow>
           id="listings"
-          data={filteredListings}
+          data={tableListings}
           defaultSort={{ key: "price", dir: "asc" }}
           defaultLimit={25}
           columns={[
