@@ -25,7 +25,7 @@ export { pick, shuffle, listingSig, parseSig, computeChanceToProfit, computeBest
 export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/core.js";
 
 // === Pricing ===
-export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
+export { buildPriceCache, populateSkinportMedianCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
 export { clearKnnCache, knnOutputPriceAtFloat, batchInputValueRatios, clearLearnedCache } from "./engine/knn-pricing.js";
 
 // === Curve Classification ===

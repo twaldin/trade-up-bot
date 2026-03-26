@@ -20,6 +20,7 @@ import {
   findProfitableTradeUps,
   exploreWithBudget,
   exploreKnifeWithBudget,
+  populateSkinportMedianCache,
 } from "../engine.js";
 
 const { Pool } = pg;
@@ -101,6 +102,12 @@ const rarityMap: Record<string, string> = {
       const { loadDiscoveryDataFromFile } = await import("../engine.js");
       await loadDiscoveryDataFromFile(discoveryFile);
     }
+
+    // Populate Skinport median cache for listing floor sanity cap.
+    // Workers are child processes and don't share main-process memory, so
+    // _skinportMedianCache (used by getListingFloor) is always empty here
+    // unless we explicitly load it.
+    await populateSkinportMedianCache(pool);
 
     // Load existing listing signatures so discovery skips combos already in DB
     const tradeUpType = typeMap[task] ?? "classified_covert";

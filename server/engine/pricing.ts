@@ -233,6 +233,21 @@ function extrapolateKnifeConditions(): number {
   return knifeExtrapolated;
 }
 
+/**
+ * Populate _skinportMedianCache from price_data. Called by workers that skip
+ * buildPriceCache but still need the Skinport median sanity cap in getListingFloor.
+ */
+export async function populateSkinportMedianCache(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query(`
+    SELECT skin_name, condition, median_price_cents
+    FROM price_data WHERE median_price_cents > 0 AND source = 'skinport'
+  `);
+  _skinportMedianCache.clear();
+  for (const r of rows) {
+    if (r.median_price_cents > 0) _skinportMedianCache.set(`${r.skin_name}:${r.condition}`, r.median_price_cents);
+  }
+}
+
 /** Rebuild price cache. Skips if already built within TTL unless force=true. */
 export async function buildPriceCache(pool: pg.Pool, force = false) {
   if (!force && priceCacheBuilt && Date.now() - priceCacheBuiltAt < PRICE_CACHE_TTL_MS) {
