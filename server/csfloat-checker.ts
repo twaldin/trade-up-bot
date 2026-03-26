@@ -42,7 +42,7 @@ const MIN_INTERVAL_MS = 1000;  // Never faster than 1/s
 const MAX_INTERVAL_MS = 5000;  // Slowest pace when pool is low
 const DEFAULT_INTERVAL_MS = 1700; // ~35/min
 const QUEUE_SIZE = 2000;
-const QUEUE_REBUILD_INTERVAL_MS = 30 * 60 * 1000; // 30 min
+const QUEUE_REBUILD_INTERVAL_MS = 90 * 60 * 1000; // 90 min — allow full 2000-item batch to complete at ~35/min
 const VERIFY_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min
 const CASCADE_BATCH_SIZE = 1; // Cascade immediately — no window where listing is gone but trade-up still 'active'
 
@@ -114,6 +114,7 @@ async function buildCheckQueue(pool: pg.Pool, maxSize: number): Promise<QueueLis
     JOIN skins s ON l.skin_id = s.id
     LEFT JOIN profitable_listings pl ON l.id = pl.listing_id
     WHERE l.source = 'csfloat'
+      AND (l.staleness_checked_at IS NULL OR l.staleness_checked_at < NOW() - INTERVAL '1 hour')
     ORDER BY
       CASE WHEN pl.listing_id IS NOT NULL THEN 0 ELSE 1 END,
       COALESCE(l.staleness_checked_at, '2000-01-01'::timestamptz) ASC
