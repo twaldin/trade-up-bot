@@ -20,6 +20,17 @@ export const RARITY_ORDER: Record<string, number> = {
   Extraordinary: 6,
 };
 
+// Trade-up type labels (DB type → user-facing name)
+export const TRADE_UP_TYPE_LABELS: Record<string, string> = {
+  covert_knife: "Knife/Glove",
+  classified_covert: "Covert",
+  restricted_classified: "Classified",
+  milspec_restricted: "Restricted",
+  industrial_milspec: "Mil-Spec",
+  consumer_industrial: "Industrial",
+  staircase: "Staircase",
+};
+
 // Float value -> condition mapping
 export const CONDITIONS = [
   { name: "Factory New", abbr: "FN", min: 0.0, max: 0.07 },

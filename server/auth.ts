@@ -244,8 +244,11 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
 
     // Auth routes
     app.get("/auth/steam", (req, res, next) => {
-      // Save return URL so we can redirect back after auth
-      if (req.query.return) req.session.returnTo = req.query.return as string;
+      // Save return URL so we can redirect back after auth (only allow relative paths)
+      const returnTo = req.query.return as string | undefined;
+      if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        req.session.returnTo = returnTo;
+      }
       passport.authenticate("steam")(req, res, next);
     });
     app.get("/auth/steam/callback", (req, res, next) => {
