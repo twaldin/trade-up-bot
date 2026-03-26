@@ -11,9 +11,11 @@ interface ScatterChartProps {
   maxFloat: number;
   fullscreen?: boolean;
   visible: Record<SeriesKey, boolean>;
+  xDomainMin?: number;
+  xDomainMax?: number;
 }
 
-export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, maxFloat, fullscreen, visible }: ScatterChartProps) {
+export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, maxFloat, fullscreen, visible, xDomainMin, xDomainMax }: ScatterChartProps) {
   const W = fullscreen ? 1200 : 700;
   const H = fullscreen ? 600 : 300;
   const PAD = { top: 25, right: 25, bottom: 40, left: 70 };
@@ -52,8 +54,8 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
   const maxPrice = Math.min(p95 * 1.2, allPrices[allPrices.length - 1]);
   const minPrice = 0;
 
-  const floatMin = Math.max(0, minFloat - 0.01);
-  const floatMax = Math.min(1, maxFloat + 0.01);
+  const floatMin = xDomainMin !== undefined ? xDomainMin : Math.max(0, minFloat - 0.01);
+  const floatMax = xDomainMax !== undefined ? xDomainMax : Math.min(1, maxFloat + 0.01);
 
   const x = (f: number) => PAD.left + ((f - floatMin) / (floatMax - floatMin)) * plotW;
   const y = (p: number) => PAD.top + plotH - ((Math.min(p, maxPrice) - minPrice) / (maxPrice - minPrice)) * plotH;

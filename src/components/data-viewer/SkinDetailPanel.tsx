@@ -56,6 +56,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [floatRange, setFloatRange] = useState<{ min: number | null; max: number | null }>({ min: null, max: null });
   const [timeRange, setTimeRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -70,6 +71,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   useEffect(() => {
     setFloatRange({ min: null, max: null });
     setTimeRange({ from: null, to: null });
+    setFiltersOpen(false);
   }, [skinName]);
 
   const toggleSeries = (key: SeriesKey) => {
@@ -164,12 +166,12 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     fs = filterByFloatRange(fs, floatRange.min, floatRange.max);
     fb = filterBucketsByFloatRange(fb, floatRange.min, floatRange.max);
 
-    // Time range filter
-    fl = filterByTimeRange(fl, "created_at", timeRange.from, timeRange.to);
-    fs = filterByTimeRange(fs, "sold_at", timeRange.from, timeRange.to);
+    // Time range filter — listings are ephemeral (no meaningful timestamp), hide when time filter active
     if (hasTimeFilter) {
+      fl = [];
       fb = [];
     }
+    fs = filterByTimeRange(fs, "sold_at", timeRange.from, timeRange.to);
 
     return { filteredListings: fl, filteredSaleHistory: fs, filteredBuckets: fb };
   }, [listings, saleHistory, bucketFloors, floatRange, timeRange, hasTimeFilter]);
@@ -259,7 +261,34 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
         maxFloat={skin.max_float}
         fullscreen={fs}
         visible={hasTimeFilter ? { ...visible, buckets: false } : visible}
+        xDomainMin={floatRange.min !== null ? floatRange.min : undefined}
+        xDomainMax={floatRange.max !== null ? floatRange.max : undefined}
       />
+      {/* Filter toggle pill + panel */}
+      <div className="mt-2">
+        <button
+          onClick={() => setFiltersOpen(o => !o)}
+          className={`text-xs px-3 py-1 rounded-full border transition-colors cursor-pointer ${
+            hasFloatFilter || hasTimeFilter
+              ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+              : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+          }`}
+        >
+          Filters{hasFloatFilter || hasTimeFilter ? " \u25CF" : ""}
+        </button>
+        {filtersOpen && (
+          <div className="mt-2 p-3 border border-border rounded-md bg-card">
+            <FilterBar
+              floatRange={floatRange}
+              timeRange={timeRange}
+              onFloatRangeChange={setFloatRange}
+              onTimeRangeChange={setTimeRange}
+              skinMinFloat={skin.min_float}
+              skinMaxFloat={skin.max_float}
+            />
+          </div>
+        )}
+      </div>
     </>
   );
 
@@ -326,16 +355,6 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
           })}
         </div>
       )}
-
-      {/* Data filters */}
-      <FilterBar
-        floatRange={floatRange}
-        timeRange={timeRange}
-        onFloatRangeChange={setFloatRange}
-        onTimeRangeChange={setTimeRange}
-        skinMinFloat={skin.min_float}
-        skinMaxFloat={skin.max_float}
-      />
 
       {/* Scatter chart */}
       <div className="mb-5">
