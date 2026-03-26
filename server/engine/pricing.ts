@@ -246,6 +246,7 @@ export async function populateSkinportMedianCache(pool: pg.Pool): Promise<void> 
   for (const r of rows) {
     if (r.median_price_cents > 0) _skinportMedianCache.set(`${r.skin_name}:${r.condition}`, r.median_price_cents);
   }
+  console.log(`  Skinport median cache: ${_skinportMedianCache.size} entries loaded`);
 }
 
 /** Rebuild price cache. Skips if already built within TTL unless force=true. */
