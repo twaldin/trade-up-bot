@@ -19,6 +19,7 @@ import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
+import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
@@ -135,6 +136,7 @@ app.use((req, res, next) => {
   app.use(stripeRouter(pool));
   app.use(discordRouter(pool));
   app.use(sitemapRouter(pool));
+  app.use(listingSniperRouter(pool));
 
   // Dynamic OG image for shareable trade-up pages
   const { generateOgImage } = await import("./og-image.js");

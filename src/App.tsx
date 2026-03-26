@@ -12,6 +12,7 @@ import { PrivacyPage } from "./pages/PrivacyPage.js";
 import { FeaturesPage } from "./pages/FeaturesPage.js";
 import { PricingPage } from "./pages/PricingPage.js";
 import MyTradeUpsPage from "./pages/MyTradeUpsPage.js";
+import { ListingSniperPage } from "./pages/ListingSniperPage.js";
 import { BlogPage } from "./pages/BlogPage.js";
 import { BlogPostPage } from "./pages/BlogPostPage.js";
 import { SiteFooter } from "./components/SiteFooter.js";
@@ -339,6 +340,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           { to: "/skins", label: "Skins" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
+          { to: "/listing-sniper", label: "Listing Sniper" },
         ].map(({ to, label, end }) => (
           <NavLink
             key={to}
@@ -373,6 +375,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           </Suspense>
         } />
         <Route path="/my-trade-ups" element={<MyTradeUpsPage />} />
+        <Route path="/listing-sniper" element={<ListingSniperPage />} />
         {/* Legacy redirects */}
         <Route path="/dashboard" element={<Navigate to="/trade-ups" replace />} />
         <Route path="/data" element={<Navigate to="/skins" replace />} />
