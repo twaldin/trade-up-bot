@@ -16,14 +16,6 @@ export function toSlug(skinName: string): string {
 }
 
 /**
- * Look up a skin by slug. Needs DB access — implemented in server/routes/data.ts.
- * This stub exists so the module can be imported from shared code.
- */
-export function fromSlug(_slug: string): string | null {
-  return null;
-}
-
-/**
  * Convert a CS2 collection name to a URL-safe slug.
  * "The Dreams & Nightmares Collection" → "dreams-nightmares"
  * "The Fracture Collection" → "fracture"
