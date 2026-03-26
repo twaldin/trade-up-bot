@@ -373,12 +373,12 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
       )}
 
       {/* Float bucket detail */}
-      {bucketFloors.length > 0 && (
+      {filteredBuckets.length > 0 && (
         <div className="mb-5">
           <h3 className="text-[0.9rem] text-foreground/70 mb-2 pb-1 border-b border-border/70">CSFloat Ref Prices</h3>
           <SortableTable<FloatBucket>
             id="buckets"
-            data={bucketFloors}
+            data={filteredBuckets}
             defaultLimit={10}
             columns={[
               { key: "range", label: "Range", render: b => `${b.float_min.toFixed(2)} \u2013 ${b.float_max.toFixed(2)}`, sortValue: b => b.float_min },

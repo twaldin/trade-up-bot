@@ -63,6 +63,9 @@ export function FilterBar({
   useEffect(() => {
     setMinInput(floatRange.min !== null ? String(floatRange.min) : "");
     setMaxInput(floatRange.max !== null ? String(floatRange.max) : "");
+    if (floatRange.min === null && floatRange.max === null) {
+      setConditionKey("any");
+    }
   }, [floatRange.min, floatRange.max]);
 
   function handleConditionChange(e: React.ChangeEvent<HTMLSelectElement>) {
