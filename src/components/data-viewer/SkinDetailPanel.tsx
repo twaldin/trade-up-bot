@@ -204,7 +204,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     { key: "csfloat_sales", label: "CSFloat Sales", color: SERIES_COLORS.csfloat_sales, shape: "diamond", count: csfloatSaleCount },
     ...(skinportSaleCount > 0 ? [{ key: "skinport_sales" as SeriesKey, label: "Skinport Sales", color: SERIES_COLORS.skinport_sales, shape: "diamond" as const, count: skinportSaleCount }] : []),
     ...(buffSaleCount > 0 ? [{ key: "buff_sales" as SeriesKey, label: "Buff Sales", color: SERIES_COLORS.buff_sales, shape: "diamond" as const, count: buffSaleCount }] : []),
-    { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: bucketFloors.filter(b => b.avg_price_cents > 0).length },
+    { key: "buckets", label: "CSFloat Ref", color: SERIES_COLORS.buckets, shape: "line", count: filteredBuckets.filter(b => b.avg_price_cents > 0).length },
   ];
 
   // Unified listings filtered by source checkboxes (applied on top of float/time filters)
