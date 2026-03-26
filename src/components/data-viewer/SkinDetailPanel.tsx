@@ -154,6 +154,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
     return phaseSaleData ?? [];
   }, [allSaleHistory, selectedPhase, detail]);
 
+  const hasFloatFilter = floatRange.min !== null || floatRange.max !== null;
   const hasTimeFilter = timeRange.from !== null || timeRange.to !== null;
 
   const { filteredListings, filteredSaleHistory, filteredBuckets } = useMemo(() => {
