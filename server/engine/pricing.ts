@@ -74,8 +74,10 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
   let overrides = 0;
   let fills = 0;
 
-  // Build per-condition reference price from price_data to detect outlier listings
-  // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150)
+  // Build per-condition reference price from price_data to detect outlier listings.
+  // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150).
+  // CSFloat sales/ref first (most reliable), then Skinport median to fill gaps —
+  // many skins only have CSFloat data for FN, leaving BS/WW/FT without a reference.
   _refPrice = new Map<string, number>();
   const { rows: refRows } = await pool.query(`
     SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE median_price_cents END) as ref
@@ -84,6 +86,21 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
     GROUP BY skin_name, condition
   `);
   for (const r of refRows) if (r.ref > 0) _refPrice.set(`${r.skin_name}:${r.condition}`, r.ref);
+
+  // Fill gaps with Skinport median (broader condition coverage than CSFloat)
+  const { rows: spRows } = await pool.query(`
+    SELECT skin_name, condition, median_price_cents as ref
+    FROM price_data WHERE median_price_cents > 0 AND source = 'skinport'
+  `);
+  let spFills = 0;
+  for (const r of spRows) {
+    const key = `${r.skin_name}:${r.condition}`;
+    if (!_refPrice.has(key) && r.ref > 0) {
+      _refPrice.set(key, r.ref);
+      spFills++;
+    }
+  }
+  if (spFills > 0) console.log(`  Ref price map: ${refRows.length} from CSFloat, ${spFills} gaps filled from Skinport`);
 
   for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`
@@ -327,22 +344,35 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
   `);
 
   let buffFiltered = 0;
+  let dmarketFiltered = 0;
   for (const row of rows) {
-    // Filter Buff outliers: sticker/pattern premiums can be 10-100x market price.
-    // Use _refPrice (built by overrideWithListingFloors) as the reference.
-    if (row.source === 'buff') {
+    // Filter outlier listings from Buff and DMarket: sticker/pattern premiums
+    // can be 10-100x market price. CSFloat listings are trusted (verified buy-now).
+    // Use _refPrice (built by overrideWithListingFloors, includes Skinport fallback).
+    if (row.source === 'buff' || row.source === 'dmarket') {
       const condition = floatToCondition(row.float_value);
       const ref = _refPrice.get(`${row.skin_name}:${condition}`);
-      if (!ref || row.price_cents > ref * 5) {
-        buffFiltered++;
-        continue;
+      if (row.source === 'buff') {
+        // Buff: filter if no ref OR >5x ref (conservative — Buff has many sticker premiums)
+        if (!ref || row.price_cents > ref * 5) {
+          buffFiltered++;
+          continue;
+        }
+      } else {
+        // DMarket: filter only if >5x ref (DMarket data is generally reliable,
+        // but pattern premiums still exist). Don't filter when no ref — DMarket
+        // is a primary data source.
+        if (ref && row.price_cents > ref * 5) {
+          dmarketFiltered++;
+          continue;
+        }
       }
     }
     let arr = _floatCeilingCache.get(row.skin_name);
     if (!arr) { arr = []; _floatCeilingCache.set(row.skin_name, arr); }
     arr.push({ float: row.float_value, price: row.price_cents });
   }
-  if (buffFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff outlier listings (>5x ref or no ref)`);
+  if (buffFiltered > 0 || dmarketFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff + ${dmarketFiltered} DMarket outlier listings (>5x ref)`);
   _floatCeilingCacheBuiltAt = Date.now();
 }
 
