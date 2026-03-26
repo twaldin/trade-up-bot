@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import { TYPE_COLORS, TYPE_LABELS, EMBED_COLORS } from "../constants.js";
+import { TYPE_COLORS, TYPE_LABELS, EMBED_COLORS, formatDollars } from "../constants.js";
 
 interface TradeUpData {
   id: number;
@@ -12,12 +12,6 @@ interface TradeUpData {
   best_case_cents?: number;
   worst_case_cents?: number;
   input_summary?: { skins: { name: string; count: number }[]; collections: string[]; input_count: number };
-}
-
-function formatDollars(cents: number): string {
-  const abs = Math.abs(cents);
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(abs / 100).toFixed(2)}`;
 }
 
 function formatPct(value: number): string {

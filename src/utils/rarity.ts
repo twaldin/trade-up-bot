@@ -38,6 +38,17 @@ export function pillClass(isActive: boolean, style: RarityStyle): string {
   return `px-4 py-1.5 text-sm font-medium rounded-full border transition-colors cursor-pointer ${isActive ? style.active : style.inactive}`;
 }
 
+/** Simple trade-up type tabs — { value, label, color } shape for App and CollectionViewer */
+export const TRADE_UP_TYPE_TABS = [
+  { value: "all" as const, label: "All", color: "" },
+  { value: "covert_knife" as const, label: "Knife/Gloves", color: "border-yellow-500/40 bg-yellow-500/10 text-yellow-500" },
+  { value: "classified_covert" as const, label: "Covert", color: "border-red-500/40 bg-red-500/10 text-red-500" },
+  { value: "restricted_classified" as const, label: "Classified", color: "border-pink-500/40 bg-pink-500/10 text-pink-500" },
+  { value: "milspec_restricted" as const, label: "Restricted", color: "border-purple-500/40 bg-purple-500/10 text-purple-500" },
+  { value: "industrial_milspec" as const, label: "Mil-Spec", color: "border-blue-500/40 bg-blue-500/10 text-blue-500" },
+  { value: "consumer_industrial" as const, label: "Industrial", color: "border-sky-400/40 bg-sky-400/10 text-sky-400" },
+];
+
 /** Claims pill */
 export const CLAIMS_PILL = {
   active: "border-purple-500/40 bg-purple-500/10 text-purple-500",

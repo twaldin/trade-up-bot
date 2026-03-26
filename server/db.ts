@@ -1,5 +1,4 @@
 import pg from "pg";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -24,7 +23,7 @@ export function initDb(): pg.Pool {
   if (_pool) return _pool;
 
   const connectionString = process.env.DATABASE_URL
-    || "postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot";
+    || "postgresql://localhost:5432/tradeupbot";
 
   _pool = new Pool({
     connectionString,
@@ -453,7 +452,6 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin ON trade_up_inputs(skin_name);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_skin_tuid ON trade_up_inputs(skin_name, trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_collection_tuid ON trade_up_inputs(collection_name, trade_up_id);
-    CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
     CREATE INDEX IF NOT EXISTS idx_listings_stattrak_type_price ON listings(stattrak, listing_type, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak_price ON listings(skin_id, stattrak, price_cents);
     CREATE INDEX IF NOT EXISTS idx_listings_float_stattrak ON listings(float_value, stattrak);

@@ -19,12 +19,9 @@ import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
-import { buildSeoHtml, isCrawler, injectMetaIntoSpa } from "./seo.js";
+import { buildSeoHtml, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
+import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
@@ -70,7 +67,7 @@ const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
     const match = line.match(/^(\w+)=(.*)$/);
-    if (match) process.env[match[1]] = match[2].trim();
+    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
   }
 }
 
@@ -164,12 +161,6 @@ app.use((req, res, next) => {
   });
 
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
-  const TYPE_LABELS: Record<string, string> = {
-    covert_knife: "Knife/Glove", classified_covert: "Covert",
-    restricted_classified: "Classified", milspec_restricted: "Restricted",
-    industrial_milspec: "Mil-Spec", consumer_industrial: "Industrial",
-    staircase: "Staircase",
-  };
   app.get("/trade-ups/:id", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     if (!isCrawler(ua)) return next();
@@ -179,7 +170,7 @@ app.use((req, res, next) => {
         [req.params.id]
       );
       if (!row) return next();
-      const typeLabel = TYPE_LABELS[row.type] || row.type;
+      const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;
       const profit = (row.profit_cents / 100).toFixed(2);
       const cost = (row.total_cost_cents / 100).toFixed(2);
       const chance = Math.round((row.chance_to_profit ?? 0) * 100);
@@ -290,9 +281,8 @@ app.use((req, res, next) => {
         `);
         const total = stats?.total || 0;
         const profitable = stats?.profitable || 0;
-        const typeLabels: Record<string, string> = { covert_knife: "Knife/Glove", classified_covert: "Covert", restricted_classified: "Classified", milspec_restricted: "Restricted", industrial_milspec: "Mil-Spec", consumer_industrial: "Industrial" };
         const rows = topTradeUps.map((t: { id: number; type: string; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
-          `<tr><td><a href="/trade-ups/${t.id}">${typeLabels[t.type] || t.type}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+          `<tr><td><a href="/trade-ups/${t.id}">${TRADE_UP_TYPE_LABELS[t.type] || t.type}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
         ).join("");
         res.setHeader("Content-Type", "text/html");
         res.send(buildSeoHtml({

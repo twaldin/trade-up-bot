@@ -1,6 +1,7 @@
 // Channel, role, and type definitions for the Discord bot.
 
 import type { ColorResolvable } from "discord.js";
+import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
 // ---------------------------------------------------------------------------
 // Channel / category definitions
@@ -95,15 +96,8 @@ export const TRADE_UP_TYPE_MAP: Record<string, string> = {
   industrial: "consumer_industrial",
 };
 
-/** Maps DB trade-up type → user-facing label */
-export const TYPE_LABELS: Record<string, string> = {
-  covert_knife: "Knife/Gloves",
-  classified_covert: "Covert",
-  restricted_classified: "Classified",
-  milspec_restricted: "Restricted",
-  industrial_milspec: "Mil-Spec",
-  consumer_industrial: "Industrial",
-};
+/** Maps DB trade-up type → user-facing label (re-export from shared) */
+export const TYPE_LABELS = TRADE_UP_TYPE_LABELS;
 
 /** Maps DB trade-up type → webhook env var key */
 export const TYPE_WEBHOOK_KEY: Record<string, string> = {
@@ -147,6 +141,16 @@ export const TYPE_COLORS: Record<string, number> = {
   industrial_milspec: EMBED_COLORS.blue,
   consumer_industrial: 0x5dade2,
 };
+
+// ---------------------------------------------------------------------------
+// Shared formatting
+// ---------------------------------------------------------------------------
+
+export function formatDollars(cents: number): string {
+  const abs = Math.abs(cents);
+  const sign = cents < 0 ? "-" : "";
+  return `${sign}$${(abs / 100).toFixed(2)}`;
+}
 
 // ---------------------------------------------------------------------------
 // API

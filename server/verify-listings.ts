@@ -21,7 +21,7 @@ export async function verifyTradeUpListings(
   const results: VerifyResult[] = [];
 
   for (const input of inputs) {
-    if (input.listing_id.startsWith("theor") || input.listing_id.startsWith("theory")) {
+    if (input.listing_id.startsWith("theor")) {
       results.push({ listing_id: input.listing_id, status: "active", original_price: input.price_cents });
       continue;
     }
