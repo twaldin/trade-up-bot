@@ -6,9 +6,10 @@ import pg from "pg";
 import { createWriteStream, createReadStream } from "fs";
 import { unlink } from "fs/promises";
 import { createInterface } from "readline";
-import { RARITY_ORDER } from "../../shared/types.js";
+import { RARITY_ORDER, floatToCondition } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "./types.js";
 import { addAdjustedFloat } from "./selection.js";
+import { refPriceCache } from "./pricing.js";
 
 export async function getListingsForRarity(
   pool: pg.Pool,
@@ -196,6 +197,22 @@ export async function loadDiscoveryData(
   if (options?.excludeWeapons) {
     const excluded = options.excludeWeapons;
     allListings = allListings.filter(l => !(excluded as readonly string[]).includes(l.weapon));
+  }
+
+  // Outlier filter: reject input listings priced >20x the per-condition reference price.
+  // Catches sticker-premium listings (e.g. $15 on a $0.01 skin) that would inflate EV/profit.
+  // Only applies when refPriceCache is populated (i.e. buildPriceCache has run).
+  if (refPriceCache.size > 0) {
+    const before = allListings.length;
+    allListings = allListings.filter(l => {
+      const cond = floatToCondition(l.float_value);
+      const ref = refPriceCache.get(`${l.skin_name}:${cond}`);
+      return !ref || l.price_cents <= ref * 20;
+    });
+    const filtered = before - allListings.length;
+    if (filtered > 0) {
+      console.log(`  [loadDiscoveryData ${rarity}] filtered ${filtered} outlier input listings (>20x ref price)`);
+    }
   }
 
   // KNN-based input value scoring: identify underpriced listings at their specific float

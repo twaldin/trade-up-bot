@@ -24,8 +24,9 @@ const conditionPricesCache = new Map<string, PriceAnchor[]>();
 let priceCacheBuiltAt = 0;
 const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Module-level ref price map shared between loadCsfloatRefPrices and overrideWithListingFloors/fillKnifeLastResort
-let _refPrice = new Map<string, number>();
+// Module-level ref price map shared between loadCsfloatRefPrices and overrideWithListingFloors/fillKnifeLastResort.
+// Exported so data-load.ts can filter outlier input listings before discovery.
+export let refPriceCache = new Map<string, number>();
 // Skinport median cache for listing floor sanity cap (skinName:condition → median cents)
 let _skinportMedianCache = new Map<string, number>();
 
@@ -80,14 +81,14 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
   // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150).
   // CSFloat sales/ref first (most reliable), then Skinport median to fill gaps —
   // many skins only have CSFloat data for FN, leaving BS/WW/FT without a reference.
-  _refPrice = new Map<string, number>();
+  refPriceCache = new Map<string, number>();
   const { rows: refRows } = await pool.query(`
     SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE median_price_cents END) as ref
     FROM price_data WHERE (min_price_cents > 0 OR median_price_cents > 0)
       AND source IN ('csfloat_sales', 'csfloat_ref')
     GROUP BY skin_name, condition
   `);
-  for (const r of refRows) if (r.ref > 0) _refPrice.set(`${r.skin_name}:${r.condition}`, r.ref);
+  for (const r of refRows) if (r.ref > 0) refPriceCache.set(`${r.skin_name}:${r.condition}`, r.ref);
 
   // Fill gaps with Skinport median (broader condition coverage than CSFloat)
   const { rows: spRows } = await pool.query(`
@@ -99,8 +100,8 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
   for (const r of spRows) {
     const key = `${r.skin_name}:${r.condition}`;
     if (r.ref > 0) _skinportMedianCache.set(key, r.ref);
-    if (!_refPrice.has(key) && r.ref > 0) {
-      _refPrice.set(key, r.ref);
+    if (!refPriceCache.has(key) && r.ref > 0) {
+      refPriceCache.set(key, r.ref);
       spFills++;
     }
   }
@@ -119,7 +120,7 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
       // Filter out outlier listings: >5x the per-condition reference price
-      const ref = _refPrice.get(`${row.name}:${cond.name}`);
+      const ref = refPriceCache.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
@@ -162,7 +163,7 @@ async function fillKnifeLastResort(pool: pg.Pool): Promise<{ lastResort: number;
 
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
-      const ref = _refPrice.get(`${row.name}:${cond.name}`);
+      const ref = refPriceCache.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
@@ -353,10 +354,11 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
   for (const row of rows) {
     // Filter outlier listings from Buff and DMarket: sticker/pattern premiums
     // can be 10-100x market price. CSFloat listings are trusted (verified buy-now).
-    // Use _refPrice (built by overrideWithListingFloors, includes Skinport fallback).
+    // Use refPriceCache (built by overrideWithListingFloors, includes Skinport fallback).
+    // Same filter applied to CSFloat input listings in data-load.ts.
     if (row.source === 'buff' || row.source === 'dmarket') {
       const condition = floatToCondition(row.float_value);
-      const ref = _refPrice.get(`${row.skin_name}:${condition}`);
+      const ref = refPriceCache.get(`${row.skin_name}:${condition}`);
       if (row.source === 'buff') {
         // Buff: filter if no ref OR >5x ref (conservative — Buff has many sticker premiums)
         if (!ref || row.price_cents > ref * 5) {
@@ -460,7 +462,7 @@ async function getListingFloor(
   const bottom3Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 
   // Skinport median sanity cap: catch inflated floors when outlier listings
-  // slip through (e.g. no _refPrice for BS/WW → >5x filter can't exclude them)
+  // slip through (e.g. no refPriceCache for BS/WW → >5x filter can't exclude them)
   const condition = floatToCondition(predictedFloat);
   const spMedian = _skinportMedianCache.get(`${skinName}:${condition}`);
   if (spMedian && bottom3Avg > spMedian * 3) return spMedian;
