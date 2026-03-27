@@ -29,7 +29,7 @@ import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
-  cascadeTradeUpStatuses,
+  cascadeTradeUpStatuses, withRetry,
   type FinishData,
 } from "../engine.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
@@ -301,8 +301,8 @@ export async function main() {
     const { clearDiscoveryCache } = await import("../engine.js");
     clearDiscoveryCache();
 
-    // Phase 1: Housekeeping
-    await phase1Housekeeping(pool, cycleCount);
+    // Phase 1: Housekeeping — withRetry handles transient DB restarts (57P01 admin_shutdown)
+    await withRetry(() => phase1Housekeeping(pool, cycleCount), 3, "Phase 1 Housekeeping");
 
     // Refresh Discord alert tops (re-validate cached tops are still active)
     try {
