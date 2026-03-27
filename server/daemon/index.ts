@@ -202,11 +202,12 @@ function runCalcWorker(
     child.on("error", (err) => {
       if (!settled) { settled = true; cleanup(); reject(err); }
     });
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
       if (!settled) {
         settled = true;
         cleanup();
-        if (code !== 0) reject(new Error(`Worker ${task} exited with code ${code}`));
+        const reason = signal ? `signal ${signal}` : `code ${code}`;
+        if (code !== 0 || signal) reject(new Error(`Worker ${task} exited with ${reason}`));
         else reject(new Error(`Worker ${task} exited without sending results`));
       }
     });

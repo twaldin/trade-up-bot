@@ -102,20 +102,36 @@ const rarityMap: Record<string, string> = {
       await loadDiscoveryDataFromFile(discoveryFile);
     }
 
-    // Load existing listing signatures so discovery skips combos already in DB
+    // Log memory before heavy signature load (helps diagnose OOM — see GH #22)
+    const memBefore = process.memoryUsage();
+    console.log(`  [${task}] pre-sig rss=${(memBefore.rss / 1024 / 1024).toFixed(0)}MB heap=${(memBefore.heapUsed / 1024 / 1024).toFixed(0)}MB`);
+
+    // Load existing listing signatures so discovery skips combos already in DB.
+    // Uses a dedicated client with statement_timeout to prevent runaway queries (GH #22:
+    // knife sig load took 174s vs normal 8s, likely due to DB pressure with no escape hatch).
     const tradeUpType = typeMap[task] ?? "classified_covert";
     const existingSigs = new Set<string>();
-    const { rows: sigRows } = await pool.query(`
-      SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
-      FROM trade_up_inputs WHERE trade_up_id IN (
-        SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
-      ) GROUP BY trade_up_id
-    `, [tradeUpType]);
-    for (const row of sigRows) {
-      existingSigs.add(row.ids.split(",").sort().join(","));
+    const sigClient = await pool.connect();
+    try {
+      await sigClient.query("SET statement_timeout = '30000'");
+      const { rows: sigRows } = await sigClient.query(`
+        SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
+        FROM trade_up_inputs WHERE trade_up_id IN (
+          SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
+        ) GROUP BY trade_up_id
+      `, [tradeUpType]);
+      for (const row of sigRows) {
+        existingSigs.add(row.ids.split(",").sort().join(","));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`  [${task}] sig load failed (${Date.now() - workerStart}ms): ${msg} — skipping dedup`);
+    } finally {
+      sigClient.release();
     }
     const sigMs = Date.now() - workerStart;
-    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms)`);
+    const memAfter = process.memoryUsage();
+    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
 
     // Phase 1: Structured discovery
     const structuredStart = Date.now();
