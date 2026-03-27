@@ -9,7 +9,7 @@ import { createInterface } from "readline";
 import { RARITY_ORDER, floatToCondition } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "./types.js";
 import { addAdjustedFloat } from "./selection.js";
-import { refPriceCache } from "./pricing.js";
+import { refPriceCache, skinportMedianCache } from "./pricing.js";
 
 export async function getListingsForRarity(
   pool: pg.Pool,
@@ -199,19 +199,25 @@ export async function loadDiscoveryData(
     allListings = allListings.filter(l => !(excluded as readonly string[]).includes(l.weapon));
   }
 
-  // Outlier filter: reject input listings priced >20x the per-condition reference price.
+  // Outlier filter: reject input listings priced >5x the per-condition reference price.
   // Catches sticker-premium listings (e.g. $15 on a $0.01 skin) that would inflate EV/profit.
+  // Uses min(CSFloat ref, Skinport median) so sticker-inflated CSFloat sales don't raise the bar
+  // (penny skins where all CSFloat trades carry sticker premiums would otherwise escape the filter).
   // Only applies when refPriceCache is populated (i.e. buildPriceCache has run).
   if (refPriceCache.size > 0) {
     const before = allListings.length;
     allListings = allListings.filter(l => {
       const cond = floatToCondition(l.float_value);
       const ref = refPriceCache.get(`${l.skin_name}:${cond}`);
-      return !ref || l.price_cents <= ref * 20;
+      const spRef = skinportMedianCache.get(`${l.skin_name}:${cond}`);
+      // Conservative anchor: use lower of CSFloat ref and Skinport median.
+      // If only one source is available, use that.
+      const effectiveRef = ref && spRef ? Math.min(ref, spRef) : (spRef ?? ref);
+      return !effectiveRef || l.price_cents <= effectiveRef * 5;
     });
     const filtered = before - allListings.length;
     if (filtered > 0) {
-      console.log(`  [loadDiscoveryData ${rarity}] filtered ${filtered} outlier input listings (>20x ref price)`);
+      console.log(`  [loadDiscoveryData ${rarity}] filtered ${filtered} outlier input listings (>5x ref price)`);
     }
   }
 
