@@ -107,6 +107,35 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
   }
   if (spFills > 0) console.log(`  Ref price map: ${refRows.length} from CSFloat, ${spFills} gaps filled from Skinport`);
 
+  // Final fallback: derive median from Buff listings for skins still missing a ref price.
+  // Cheap skins (e.g. Desert Eagle | Mudder FT ~$0.03) may have no CSFloat sales/ref or
+  // Skinport data, so refPriceCache is empty for them. Without a ref, the 20x outlier
+  // guard in data-load.ts passes all listings through — including $400 sticker-premiums.
+  // Buff has near-complete coverage and its listings are bulk market prices, not sticker picks.
+  const { rows: buffRows } = await pool.query(`
+    SELECT s.name as skin_name,
+      CASE
+        WHEN l.float_value < 0.07 THEN 'Factory New'
+        WHEN l.float_value < 0.15 THEN 'Minimal Wear'
+        WHEN l.float_value < 0.38 THEN 'Field-Tested'
+        WHEN l.float_value < 0.45 THEN 'Well-Worn'
+        ELSE 'Battle-Scarred'
+      END as condition,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY l.price_cents) as median
+    FROM listings l JOIN skins s ON l.skin_id = s.id
+    WHERE l.source = 'buff' AND l.price_cents > 0
+    GROUP BY s.name, condition
+  `);
+  let buffFills = 0;
+  for (const r of buffRows) {
+    const key = `${r.skin_name}:${r.condition}`;
+    if (!refPriceCache.has(key) && r.median > 0) {
+      refPriceCache.set(key, Math.round(r.median));
+      buffFills++;
+    }
+  }
+  if (buffFills > 0) console.log(`  Ref price map: ${buffFills} gaps filled from Buff listings median`);
+
   for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`
       SELECT s.name, s.rarity, MIN(l.price_cents) as lowest_price, COUNT(*) as cnt
