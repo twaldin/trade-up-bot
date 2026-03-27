@@ -550,6 +550,25 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       }
     }
   }
+  // Purge trade-ups with sticker-premium input listings that pre-dated the outlier filter.
+  // Removes any trade-up where an input is priced >20x the Skinport median for that skin/condition.
+  // Idempotent: no-op once bad rows are gone. Cascades to trade_up_inputs automatically.
+  const { rowCount: purgedCount } = await pool.query(`
+    DELETE FROM trade_ups tu
+    WHERE EXISTS (
+      SELECT 1 FROM trade_up_inputs ti
+      JOIN price_data pd ON pd.skin_name = ti.skin_name
+        AND pd.condition = ti.condition
+        AND pd.source = 'skinport'
+      WHERE ti.trade_up_id = tu.id
+        AND pd.median_price_cents > 0
+        AND ti.price_cents > pd.median_price_cents * 20
+    )
+  `);
+  if ((purgedCount ?? 0) > 0) {
+    console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >20x Skinport median)`);
+  }
+
   } finally {
     await lockClient.query("SELECT pg_advisory_unlock(1)");
     lockClient.release();
