@@ -431,8 +431,9 @@ export async function main() {
 
         const isFirstBatch = superBatchCount === 1;
         const remainingMs = engineEnd - Date.now();
+        const remainingRounds = WORKER_ROUNDS.length - roundIdx;
         const workerTimeLimit = isFirstBatch
-          ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / WORKER_ROUNDS.length))
+          ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / remainingRounds))
           : MIN_WORKER_TIME;
 
         const statusDetail = taskB
