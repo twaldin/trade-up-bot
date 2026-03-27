@@ -581,6 +581,15 @@ export async function lookupOutputPrice(
         grossPrice = refPrice;
       }
     }
+    // Skinport median sanity cap: KNN extrapolates from CSFloat observations which can be
+    // biased by sticker-premium sales on low-volume skins. If KNN > 3x Skinport median,
+    // cap to Skinport median — consistent with getFloatCeiling's cap and catches cases
+    // where refPrice is itself sticker-inflated (e.g. Sawed-Off Serenity BS: KNN $34.79 vs SP $2.89).
+    const spCondition = floatToCondition(predictedFloat);
+    const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`);
+    if (spMedian && grossPrice > spMedian * 3) {
+      grossPrice = spMedian;
+    }
   } else {
     // 2. Fallback: lower of condition-level ref vs listing floor at this float
     const refPrice = lookupPrice(pool, skinName, predictedFloat);
