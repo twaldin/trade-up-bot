@@ -495,6 +495,14 @@ export function applyMonotonicityGuard(
 }
 
 /**
+ * Min KNN observations required before trusting KNN for ★ items (knives/gloves).
+ * Below this threshold, ★ skins fall back to listing floor: illiquid gloves/knives
+ * have too few sale points for KNN to avoid extrapolating above the observed max.
+ * Non-★ skins (guns) have abundant CSFloat data so no threshold is needed.
+ */
+const MIN_STAR_KNN_OBS = 10;
+
+/**
  * Look up best output price across all marketplaces.
  * Architecture: KNN-primary for all skins → condition-level fallback → float ceiling guard rail.
  * Vanilla knives (no finish): listing floor / recent sale floor.
@@ -519,7 +527,12 @@ export async function lookupOutputPrice(
   const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
   let grossPrice = 0;
 
-  if (knn && knn.confidence >= 0.3) {
+  // ★ skins (knives/gloves) trade infrequently — thin KNN data (<MIN_STAR_KNN_OBS obs)
+  // can extrapolate above the observed price range. Skip KNN and use listing floor instead,
+  // which reflects real current market bids rather than sparse historical inference.
+  const knnThin = knn !== null && skinName.startsWith("★") && knn.observationCount < MIN_STAR_KNN_OBS;
+
+  if (knn && knn.confidence >= 0.3 && !knnThin) {
     grossPrice = knn.priceCents;
     // Observation-count-dependent sanity cap: low-count KNN (especially Tier 2
     // interpolation between 2 points) is unreliable for pattern-based skins where
