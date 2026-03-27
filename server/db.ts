@@ -551,8 +551,9 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
   // Purge trade-ups with sticker-premium input listings that pre-dated the outlier filter.
-  // Removes any trade-up where an input is priced >20x the Skinport median for that skin/condition.
-  // Idempotent: no-op once bad rows are gone. Cascades to trade_up_inputs automatically.
+  // Removes any trade-up where an input is priced >5x the Skinport median for that skin/condition.
+  // Threshold matches the active discovery filter (PR #35). Idempotent: no-op once clean.
+  // Cascades to trade_up_inputs automatically.
   const { rowCount: purgedCount } = await pool.query(`
     DELETE FROM trade_ups tu
     WHERE EXISTS (
@@ -562,11 +563,11 @@ export async function createTables(pool: pg.Pool): Promise<void> {
         AND pd.source = 'skinport'
       WHERE ti.trade_up_id = tu.id
         AND pd.median_price_cents > 0
-        AND ti.price_cents > pd.median_price_cents * 20
+        AND ti.price_cents > pd.median_price_cents * 5
     )
   `);
   if ((purgedCount ?? 0) > 0) {
-    console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >20x Skinport median)`);
+    console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >5x Skinport median)`);
   }
 
   } finally {
