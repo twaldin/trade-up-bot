@@ -574,6 +574,13 @@ export async function lookupOutputPrice(
     grossPrice = ceiling;
   }
 
+  // 4. Hard Skinport median cap: never output more than 3x Skinport median for this condition.
+  // Catches KNN extrapolation above market reality when no nearby listings exist to form a ceiling.
+  const spMedianCap = _skinportMedianCache.get(`${skinName}:${floatToCondition(predictedFloat)}`);
+  if (spMedianCap && grossPrice > spMedianCap * 3) {
+    grossPrice = spMedianCap * 3;
+  }
+
   const netPrice = effectiveSellProceeds(grossPrice, "csfloat");
   return {
     priceCents: netPrice,
