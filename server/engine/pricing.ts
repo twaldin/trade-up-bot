@@ -28,7 +28,8 @@ const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 // Exported so data-load.ts can filter outlier input listings before discovery.
 export let refPriceCache = new Map<string, number>();
 // Skinport median cache for listing floor sanity cap (skinName:condition → median cents)
-let _skinportMedianCache = new Map<string, number>();
+// Exported so data-load.ts can use it to cap the outlier-filter reference price.
+export let skinportMedianCache = new Map<string, number>();
 
 /** Step 1: Load CSFloat ref prices (conservative condition-level averages, high volume).
  *  Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
@@ -95,11 +96,11 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
     SELECT skin_name, condition, median_price_cents as ref
     FROM price_data WHERE median_price_cents > 0 AND source = 'skinport'
   `);
-  _skinportMedianCache.clear();
+  skinportMedianCache.clear();
   let spFills = 0;
   for (const r of spRows) {
     const key = `${r.skin_name}:${r.condition}`;
-    if (r.ref > 0) _skinportMedianCache.set(key, r.ref);
+    if (r.ref > 0) skinportMedianCache.set(key, r.ref);
     if (!refPriceCache.has(key) && r.ref > 0) {
       refPriceCache.set(key, r.ref);
       spFills++;
@@ -243,7 +244,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   priceSources.clear();
   dmarketFloorCache.clear();
   skinportFloorCache.clear();
-  _skinportMedianCache.clear();
+  skinportMedianCache.clear();
   conditionPricesCache.clear();
   _floatCeilingCache.clear();
   _floatCeilingCacheBuiltAt = 0;
@@ -464,7 +465,7 @@ async function getListingFloor(
   // Skinport median sanity cap: catch inflated floors when outlier listings
   // slip through (e.g. no refPriceCache for BS/WW → >5x filter can't exclude them)
   const condition = floatToCondition(predictedFloat);
-  const spMedian = _skinportMedianCache.get(`${skinName}:${condition}`);
+  const spMedian = skinportMedianCache.get(`${skinName}:${condition}`);
   if (spMedian && bottom3Avg > spMedian * 3) return spMedian;
 
   return bottom3Avg;
