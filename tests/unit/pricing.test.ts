@@ -1,6 +1,64 @@
-import { describe, it, expect } from "vitest";
-import { buildAnchors, interpolatePrice } from "../../server/engine/pricing.js";
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  buildAnchors, interpolatePrice, resolveOutputCapBounds,
+  priceCache, refPriceCache, skinportMedianCache,
+} from "../../server/engine/pricing.js";
 import type { PriceAnchor } from "../../server/engine/types.js";
+
+// ─── resolveOutputCapBounds ──────────────────────────────────────────────────
+
+describe("resolveOutputCapBounds", () => {
+  beforeEach(() => {
+    priceCache.clear();
+    refPriceCache.clear();
+    skinportMedianCache.clear();
+  });
+
+  it("returns null when no data exists for skin+condition", () => {
+    expect(resolveOutputCapBounds("Unknown Skin", "Battle-Scarred")).toBeNull();
+  });
+
+  it("uses Skinport median: trigger=3x, knnCap=1x, hardCap=3x", () => {
+    skinportMedianCache.set("Sawed-Off Serenity:Battle-Scarred", 289);
+    const result = resolveOutputCapBounds("Sawed-Off Serenity", "Battle-Scarred");
+    expect(result).toEqual({ trigger: 867, knnCap: 289, hardCap: 867 });
+  });
+
+  it("falls back to CSFloat ref when Skinport absent: same multipliers", () => {
+    priceCache.set("Skin:Battle-Scarred", 300);
+    const result = resolveOutputCapBounds("Skin", "Battle-Scarred");
+    expect(result).toEqual({ trigger: 900, knnCap: 300, hardCap: 900 });
+  });
+
+  it("falls back to 5x cheapest obs when both medians absent", () => {
+    refPriceCache.set("Skin:Battle-Scarred", 200);
+    const result = resolveOutputCapBounds("Skin", "Battle-Scarred");
+    expect(result).toEqual({ trigger: 1000, knnCap: 1000, hardCap: 1000 });
+  });
+
+  it("Skinport takes priority over CSFloat ref", () => {
+    skinportMedianCache.set("Skin:Field-Tested", 500);
+    priceCache.set("Skin:Field-Tested", 300);
+    const result = resolveOutputCapBounds("Skin", "Field-Tested");
+    expect(result?.knnCap).toBe(500);
+  });
+
+  it("CSFloat ref takes priority over cheapest obs", () => {
+    priceCache.set("Skin:Field-Tested", 300);
+    refPriceCache.set("Skin:Field-Tested", 100);
+    const result = resolveOutputCapBounds("Skin", "Field-Tested");
+    expect(result?.knnCap).toBe(300);
+  });
+
+  it("ignores zero-value cache entries", () => {
+    skinportMedianCache.set("Skin:Battle-Scarred", 0);
+    priceCache.set("Skin:Battle-Scarred", 0);
+    refPriceCache.set("Skin:Battle-Scarred", 400);
+    const result = resolveOutputCapBounds("Skin", "Battle-Scarred");
+    // Falls through to cheapest obs
+    expect(result?.trigger).toBe(2000);
+  });
+});
 
 // ─── buildAnchors ────────────────────────────────────────────────────────────
 
