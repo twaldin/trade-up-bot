@@ -4,8 +4,9 @@ import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor, type FallbackParams, type FallbackResult } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
-import { knnOutputPriceAtFloat, computeConditionConfidence } from "./knn-pricing.js";
+import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCount } from "./knn-pricing.js";
 import { buildCurveCache } from "./curve-classification.js";
+import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
 
 const CONDITION_MIDPOINTS = CONDITION_BOUNDS.map(b => ({
   name: b.name,
@@ -288,6 +289,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   await buildSourceFloorCaches(pool);
 
   const curveCount = await buildCurveCache(pool);
+  await buildConditionMultipliers(pool);
 
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
@@ -531,12 +533,29 @@ export function applyMonotonicityGuard(
 }
 
 /**
- * Min KNN observations required before trusting KNN for ★ items (knives/gloves).
- * Below this threshold, ★ skins fall back to listing floor: illiquid gloves/knives
- * have too few sale points for KNN to avoid extrapolating above the observed max.
- * Non-★ skins (guns) have abundant CSFloat data so no threshold is needed.
+ * Estimate target-condition price from an adjacent condition price.
+ * Uses priceCache + conditionMultiplierCache (both loaded at cache build time).
+ * Returns null if no adjacent condition has both a cached price and a multiplier.
  */
-const MIN_STAR_KNN_OBS = 10;
+export function computeCrossConditionEstimate(skinName: string, predictedFloat: number): number | null {
+  const targetCond = floatToCondition(predictedFloat);
+  const targetIdx = CONDITION_BOUNDS.findIndex(c => c.name === targetCond);
+  if (targetIdx < 0) return null;
+
+  // Try adjacent conditions: closest first (±1), then ±2
+  const order = [targetIdx + 1, targetIdx - 1, targetIdx + 2, targetIdx - 2]
+    .filter(i => i >= 0 && i < CONDITION_BOUNDS.length);
+
+  for (const adjIdx of order) {
+    const adjCond = CONDITION_BOUNDS[adjIdx].name;
+    const adjPrice = priceCache.get(`${skinName}:${adjCond}`) ?? 0;
+    if (adjPrice <= 0) continue;
+    const multiplier = conditionMultiplierCache.get(`${adjCond}→${targetCond}`);
+    if (!multiplier) continue;
+    return Math.round(adjPrice * multiplier);
+  }
+  return null;
+}
 
 /**
  * Pure pricing resolver — no DB calls.
@@ -553,11 +572,15 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
 
   let grossPrice = 0;
   let source = "none";
-  const conditionConfidence = 1.0;
+  let conditionConfidence = 1.0;
 
-  // knnThin: existing binary threshold (will be replaced with conditionConfidence in Task 11)
-  const knnThin = knn !== null && isStarSkin && knn.observationCount < 10;
-  const knnUsable = knn !== null && knn.confidence >= 0.3 && !knnThin;
+  // Continuous confidence scoring for ★ skins
+  if (isStarSkin && knn !== null) {
+    conditionConfidence = computeConditionConfidence(knn);
+  }
+  const knnUsable = knn !== null
+    && knn.confidence >= 0.3
+    && (!isStarSkin || conditionConfidence >= 0.1);
 
   if (knnUsable && knn !== null) {
     grossPrice = knn.priceCents;
@@ -580,9 +603,25 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
       grossPrice = initialCapRef;
       source = "knn (sp-capped)";
     }
+
+    // Confidence-weighted attractor blend for ★ sparse skins
+    if (isStarSkin && conditionConfidence < 1.0) {
+      const attractor =
+        spMedian != null && spMedian > 0 ? spMedian :
+        refPrice > 0 ? refPrice :
+        listingFloor != null && listingFloor > 0 ? listingFloor :
+        null;
+      if (attractor !== null) {
+        grossPrice = Math.round(conditionConfidence * grossPrice + (1 - conditionConfidence) * attractor);
+        source = `knn-blend(conf=${conditionConfidence.toFixed(2)})`;
+      }
+    }
   } else {
-    // Fallback: min(ref, floor)
-    if (listingFloor != null && listingFloor > 0 && refPrice > 0) {
+    // Cross-condition extrapolation for ★ zero-obs skins
+    if (crossConditionEstimate != null && crossConditionEstimate > 0 && isStarSkin) {
+      grossPrice = crossConditionEstimate;
+      source = "cross-condition";
+    } else if (listingFloor != null && listingFloor > 0 && refPrice > 0) {
       grossPrice = Math.min(refPrice, listingFloor);
       source = "min(ref, floor)";
     } else if (listingFloor != null && listingFloor > 0) {
@@ -642,8 +681,13 @@ export async function lookupOutputPrice(
   const spCondition = floatToCondition(predictedFloat);
   const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`) ?? null;
 
-  // Cross-condition extrapolation placeholder — populated in Task 13
-  const crossConditionEstimate: number | null = null;
+  let crossConditionEstimate: number | null = null;
+  if (isStarSkin) {
+    const knnCondObs = await getKnnConditionObsCount(pool, skinName, predictedFloat);
+    if (knnCondObs === 0) {
+      crossConditionEstimate = computeCrossConditionEstimate(skinName, predictedFloat);
+    }
+  }
 
   const result = resolvePriceWithFallbacks({
     knn, refPrice, listingFloor, spMedian, floatCeiling,
