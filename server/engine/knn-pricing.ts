@@ -360,12 +360,16 @@ export async function knnOutputPriceAtFloat(
   }
 
   // === Tier 2: Linear interpolation between 2 nearest same-condition obs ===
-  if (sameCondition.length >= KNN_MIN_INTERP) {
-    const sorted = sameCondition
-      .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
-      .sort((a, b) => a.dist - b.dist);
-    const a = sorted[0];
-    const b = sorted[1];
+  // Condition-boundary guard: apply KNN_MAX_FLOAT_DIST so boundary-adjacent
+  // same-condition observations (e.g. MW floats near 0.07 with FN-proximity premiums)
+  // cannot skew interpolation for targets deeper in the condition range.
+  const tier2Candidates = sameCondition
+    .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
+    .filter(o => o.dist <= KNN_MAX_FLOAT_DIST)
+    .sort((a, b) => a.dist - b.dist);
+  if (tier2Candidates.length >= KNN_MIN_INTERP) {
+    const a = tier2Candidates[0];
+    const b = tier2Candidates[1];
 
     let interpolated: number;
     if (Math.abs(a.float - b.float) < 0.0001) {
