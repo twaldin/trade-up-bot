@@ -537,6 +537,33 @@ export function applyMonotonicityGuard(
 const MIN_STAR_KNN_OBS = 10;
 
 /**
+ * Resolves price cap bounds for output pricing, ensuring KNN is never uncapped.
+ * Priority: Skinport median → CSFloat ref median (priceCache) → 5x cheapest obs (refPriceCache).
+ * Returns null only when no market reference exists for this skin+condition (genuinely unpriced).
+ *
+ * Fixes #49: `skinportMedianCache` silently skips when Skinport has no data for a condition,
+ * allowing KNN to extrapolate unchecked (e.g. Sawed-Off Serenity BS: $34.79 vs actual $2.89).
+ */
+export function resolveOutputCapBounds(
+  skinName: string,
+  condition: string
+): { trigger: number; knnCap: number; hardCap: number } | null {
+  const sp = skinportMedianCache.get(`${skinName}:${condition}`);
+  if (sp && sp > 0) return { trigger: sp * 3, knnCap: sp, hardCap: sp * 3 };
+
+  const cf = priceCache.get(`${skinName}:${condition}`);
+  if (cf && cf > 0) return { trigger: cf * 3, knnCap: cf, hardCap: cf * 3 };
+
+  const cheapest = refPriceCache.get(`${skinName}:${condition}`);
+  if (cheapest && cheapest > 0) {
+    const cap = cheapest * 5;
+    return { trigger: cap, knnCap: cap, hardCap: cap };
+  }
+
+  return null;
+}
+
+/**
  * Look up best output price across all marketplaces.
  * Architecture: KNN-primary for all skins → condition-level fallback → float ceiling guard rail.
  * Vanilla knives (no finish): listing floor / recent sale floor.
@@ -588,9 +615,9 @@ export async function lookupOutputPrice(
     // cap to Skinport median — consistent with getFloatCeiling's cap and catches cases
     // where refPrice is itself sticker-inflated (e.g. Sawed-Off Serenity BS: KNN $34.79 vs SP $2.89).
     const spCondition = floatToCondition(predictedFloat);
-    const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`);
-    if (spMedian && grossPrice > spMedian * 3) {
-      grossPrice = spMedian;
+    const knnCapBounds = resolveOutputCapBounds(skinName, spCondition);
+    if (knnCapBounds && grossPrice > knnCapBounds.trigger) {
+      grossPrice = knnCapBounds.knnCap;
     }
   } else {
     // 2. Fallback: lower of condition-level ref vs listing floor at this float
@@ -615,11 +642,12 @@ export async function lookupOutputPrice(
     grossPrice = ceiling;
   }
 
-  // 4. Hard Skinport median cap: never output more than 3x Skinport median for this condition.
+  // 4. Hard cap: never output more than 3x Skinport/CSFloat median (or 5x cheapest obs).
   // Catches KNN extrapolation above market reality when no nearby listings exist to form a ceiling.
-  const spMedianCap = skinportMedianCache.get(`${skinName}:${floatToCondition(predictedFloat)}`);
-  if (spMedianCap && grossPrice > spMedianCap * 3) {
-    grossPrice = spMedianCap * 3;
+  // Falls back to CSFloat ref then cheapest observation when Skinport median is absent (#49).
+  const hardCapBounds = resolveOutputCapBounds(skinName, floatToCondition(predictedFloat));
+  if (hardCapBounds && grossPrice > hardCapBounds.trigger) {
+    grossPrice = hardCapBounds.hardCap;
   }
 
   const netPrice = effectiveSellProceeds(grossPrice, "csfloat");
