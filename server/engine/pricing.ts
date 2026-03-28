@@ -496,8 +496,10 @@ async function getListingFloor(
   // Skinport median sanity cap: catch inflated floors when outlier listings
   // slip through (e.g. no refPriceCache for BS/WW → >5x filter can't exclude them)
   const condition = floatToCondition(predictedFloat);
-  const spMedian = skinportMedianCache.get(`${skinName}:${condition}`);
-  if (spMedian && bottom3Avg > spMedian * 3) return spMedian;
+  const spMedianForFloor = skinportMedianCache.get(`${skinName}:${condition}`) ?? 0;
+  const refForFloor = refPriceCache.get(`${skinName}:${condition}`) ?? 0;
+  const floorCapRef = spMedianForFloor > 0 ? spMedianForFloor : refForFloor > 0 ? refForFloor : 0;
+  if (floorCapRef > 0 && bottom3Avg > floorCapRef * 3) return floorCapRef;
 
   return bottom3Avg;
 }
@@ -572,9 +574,10 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
       }
     }
 
-    // SP median cap (NOTE: old behavior — silent bypass when spMedian null/0, fixed in Task 10)
-    if (spMedian != null && spMedian > 0 && grossPrice > spMedian * 3) {
-      grossPrice = spMedian;
+    const initialCapRef = spMedian != null && spMedian > 0 ? spMedian
+                        : refPrice > 0 ? refPrice : 0;
+    if (initialCapRef > 0 && grossPrice > initialCapRef * 3) {
+      grossPrice = initialCapRef;
       source = "knn (sp-capped)";
     }
   } else {
@@ -600,9 +603,10 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
     source = `${source} (ceiling)`;
   }
 
-  // Hard SP cap (NOTE: old behavior — silent bypass, fixed in Task 10)
-  if (spMedian != null && spMedian > 0 && grossPrice > spMedian * 3) {
-    grossPrice = Math.round(spMedian * 3);
+  const hardCapRef = spMedian != null && spMedian > 0 ? spMedian
+                   : refPrice > 0 ? refPrice : 0;
+  if (hardCapRef > 0 && grossPrice > hardCapRef * 3) {
+    grossPrice = Math.round(hardCapRef * 3);
     source = `${source} (hard-capped)`;
   }
 
