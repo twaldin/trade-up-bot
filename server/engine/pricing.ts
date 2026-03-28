@@ -575,6 +575,8 @@ export async function lookupOutputPrice(
     //   4-5 obs → 3x ref (thin data, MAD clamping has marginal effect)
     //   6+ obs  → 5x ref (enough data for KNN to be meaningful)
     const refPrice = lookupPrice(pool, skinName, predictedFloat);
+    const spCondition = floatToCondition(predictedFloat);
+    const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`);
     if (refPrice > 0) {
       const maxMultiplier = knn.observationCount <= 3 ? 2.0
         : knn.observationCount <= 5 ? 3.0
@@ -582,13 +584,19 @@ export async function lookupOutputPrice(
       if (grossPrice > refPrice * maxMultiplier) {
         grossPrice = refPrice;
       }
+    } else if (spMedian && knn.observationCount <= 5) {
+      // No CSFloat ref for this condition (e.g. sparse BS) — sparse KNN data can
+      // extrapolate above market reality when observations are Skinport-biased or
+      // clustered away from the target float. Cap to Skinport median (1×) so
+      // cheap skins with few BS observations don't generate phantom high-ROI TUs.
+      if (grossPrice > spMedian) {
+        grossPrice = spMedian;
+      }
     }
     // Skinport median sanity cap: KNN extrapolates from CSFloat observations which can be
     // biased by sticker-premium sales on low-volume skins. If KNN > 3x Skinport median,
     // cap to Skinport median — consistent with getFloatCeiling's cap and catches cases
     // where refPrice is itself sticker-inflated (e.g. Sawed-Off Serenity BS: KNN $34.79 vs SP $2.89).
-    const spCondition = floatToCondition(predictedFloat);
-    const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`);
     if (spMedian && grossPrice > spMedian * 3) {
       grossPrice = spMedian;
     }
