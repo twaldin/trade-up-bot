@@ -180,7 +180,11 @@ describe("MAPE benchmark", () => {
 
     // Sanity: data-rich MAPE should be reasonable (hard guard is in next describe block)
     expect(mape.dataRich).toBeLessThan(0.20);
-    // Sparse and zero-obs will improve with later tasks — log but don't assert hard yet
+    // Sparse MAPE guard: synthetic test cases show ~32% with pre-computed KNN inputs.
+    // Live MAPE is lower (~5%) because computeKnnEstimate's exponential extrapolation
+    // produces better estimates than the hardcoded synthetic KNN results in these tests.
+    // Tighten this threshold as synthetic test data is updated to reflect actual KNN behavior.
+    expect(mape.sparse).toBeLessThan(0.35);
   });
 });
 
