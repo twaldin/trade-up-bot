@@ -64,3 +64,50 @@ export const CONDITION_BOUNDS = [
   { name: "Battle-Scarred", min: 0.45, max: 1.0 },
 ] as const;
 
+/** A single observation in the KNN cache (pre-weighted by source and age). */
+export interface KnnObservation {
+  float: number;
+  price: number;
+  weight: number;   // source_weight × age_decay, already applied
+  condition: string;
+}
+
+/** Result returned by computeKnnEstimate. All fields always populated. */
+export interface KnnEstimate {
+  priceCents: number;
+  confidence: number;
+  observationCount: number;    // neighbors actually used (≤ k for Tier 1, ≤ 2 for Tier 2)
+  avgDistance: number;         // mean float distance of neighbors
+  conditionObsCount: number;   // total same-condition obs regardless of float distance
+  floatCoverage: number;       // fraction of condition's float range covered by obs
+}
+
+/** Tunable parameters for KNN — defaults live in knn-pricing.ts. */
+export interface KnnConfig {
+  k: number;
+  minObs: number;
+  minInterp: number;
+  maxFloatDist: number;
+  maxNearestDist: number;
+}
+
+/** All inputs to the pure pricing resolver. Pre-computed before calling resolvePriceWithFallbacks. */
+export interface FallbackParams {
+  knn: KnnEstimate | null;
+  refPrice: number;                      // priceCache lookup (CSFloat ref/sales)
+  listingFloor: number | null;           // from getListingFloor
+  spMedian: number | null;               // from skinportMedianCache
+  floatCeiling: number | null;           // from getFloatCeiling
+  crossConditionEstimate: number | null; // from cross-condition extrapolation
+  skinName: string;
+  predictedFloat: number;
+  isStarSkin: boolean;
+}
+
+/** Result from resolvePriceWithFallbacks. */
+export interface FallbackResult {
+  grossPrice: number;
+  source: string;              // diagnostic label (e.g. "knn", "knn-blend", "ref")
+  conditionConfidence: number; // 0–1; 1.0 for non-★ or data-rich ★
+}
+
