@@ -653,6 +653,33 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
 }
 
 /**
+ * Resolves price cap bounds for output pricing, ensuring KNN is never uncapped.
+ * Priority: Skinport median → CSFloat ref median (priceCache) → 5x cheapest obs (refPriceCache).
+ * Returns null only when no market reference exists for this skin+condition (genuinely unpriced).
+ *
+ * Fixes #49: `skinportMedianCache` silently skips when Skinport has no data for a condition,
+ * allowing KNN to extrapolate unchecked (e.g. Sawed-Off Serenity BS: $34.79 vs actual $2.89).
+ */
+export function resolveOutputCapBounds(
+  skinName: string,
+  condition: string
+): { trigger: number; knnCap: number; hardCap: number } | null {
+  const sp = skinportMedianCache.get(`${skinName}:${condition}`);
+  if (sp && sp > 0) return { trigger: sp * 3, knnCap: sp, hardCap: sp * 3 };
+
+  const cf = priceCache.get(`${skinName}:${condition}`);
+  if (cf && cf > 0) return { trigger: cf * 3, knnCap: cf, hardCap: cf * 3 };
+
+  const cheapest = refPriceCache.get(`${skinName}:${condition}`);
+  if (cheapest && cheapest > 0) {
+    const cap = cheapest * 5;
+    return { trigger: cap, knnCap: cap, hardCap: cap };
+  }
+
+  return null;
+}
+
+/**
  * Look up best output price across all marketplaces.
  * Architecture: KNN-primary for all skins → condition-level fallback → float ceiling guard rail.
  * Vanilla knives (no finish): listing floor / recent sale floor.
