@@ -179,3 +179,60 @@ describe("confidence-weighted attractor blend", () => {
     expect(r.grossPrice).toBeLessThanOrEqual(6000);
   });
 });
+
+// ── Sparse-condition cap (GH #54) ─────────────────────────────────────────
+
+describe("sparse-condition cap (GH #54)", () => {
+  it("caps to spMedian when conditionObsCount < 10 and no CSFloat ref", () => {
+    // Nova | Ocular BS scenario: 4 obs, KNN extrapolates to $3.68 vs spMedian $2.45
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 368, observationCount: 2, conditionObsCount: 4, floatCoverage: 0.1 }),
+      refPrice: 0,
+      spMedian: 245,
+    }));
+    expect(r.grossPrice).toBe(245);
+    expect(r.source).toBe("knn (sparse-capped)");
+  });
+
+  it("caps to spMedian when conditionObsCount is 0 and no CSFloat ref", () => {
+    // Sawed-Off | Serenity BS scenario: 0 obs, KNN extrapolates to $34.79 vs spMedian $2.89
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 3479, observationCount: 2, conditionObsCount: 0, floatCoverage: 0 }),
+      refPrice: 0,
+      spMedian: 289,
+    }));
+    expect(r.grossPrice).toBe(289);
+    expect(r.source).toBe("knn (sparse-capped)");
+  });
+
+  it("does not cap when KNN price is already at or below spMedian", () => {
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 200, observationCount: 2, conditionObsCount: 4, floatCoverage: 0.1 }),
+      refPrice: 0,
+      spMedian: 245,
+    }));
+    expect(r.grossPrice).toBe(200);
+  });
+
+  it("does not sparse-cap when conditionObsCount >= 10", () => {
+    // Dense data — normal 3x cap applies, not sparse cap
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 600, observationCount: 12, conditionObsCount: 15, floatCoverage: 0.6 }),
+      refPrice: 0,
+      spMedian: 245,
+    }));
+    // 600 > 245 but conditionObsCount=15 ≥ 10 → sparse cap does NOT fire
+    // 600 < 3×245=735 → 3x cap also doesn't fire → returns KNN price
+    expect(r.grossPrice).toBe(600);
+  });
+
+  it("does not sparse-cap when refPrice > 0 (obs-count cap covers this case)", () => {
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 600, observationCount: 2, conditionObsCount: 4, floatCoverage: 0.1 }),
+      refPrice: 250,
+      spMedian: 245,
+    }));
+    // refPrice>0 → uses obs-count cap (2×refPrice=500), not sparse cap
+    expect(r.grossPrice).toBe(250); // 600 > 2×250=500 → ref-capped
+  });
+});

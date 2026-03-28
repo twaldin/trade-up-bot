@@ -8,6 +8,9 @@ import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCo
 import { buildCurveCache } from "./curve-classification.js";
 import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
 
+// KNN same-condition obs below this threshold → treat as sparse, apply tighter cap
+const SPARSE_CONDITION_OBS_THRESHOLD = 10;
+
 const CONDITION_MIDPOINTS = CONDITION_BOUNDS.map(b => ({
   name: b.name,
   mid: (b.min + b.max) / 2,
@@ -595,6 +598,15 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
         grossPrice = refPrice;
         source = "knn (ref-capped)";
       }
+    }
+
+    // Sparse-condition cap: if same-condition obs < 10 and no CSFloat ref for this
+    // condition, KNN Tier 2 extrapolation can produce prices far above market reality
+    // (e.g. Nova | Ocular BS: 4 obs → $3.68 vs $0.60–1.94 actual). Cap to Skinport
+    // median (1×) — cheap skins with sparse BS data don't command float premiums.
+    if (knn.conditionObsCount < SPARSE_CONDITION_OBS_THRESHOLD && refPrice === 0 && spMedian != null && spMedian > 0 && grossPrice > spMedian) {
+      grossPrice = spMedian;
+      source = "knn (sparse-capped)";
     }
 
     const initialCapRef = spMedian != null && spMedian > 0 ? spMedian
