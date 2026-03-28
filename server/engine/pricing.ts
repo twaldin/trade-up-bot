@@ -453,13 +453,15 @@ async function getFloatCeiling(
   );
   if (nearbyLower.length < 5) return null;
 
-  // Sort by price ascending, take bottom-5 average as ceiling
-  // Requires 5+ listings for consensus — prevents single outlier listings from capping
+  // Sort by price ascending
   const sorted = nearbyLower.map(d => d.price).sort((a, b) => a - b);
   const n = Math.min(5, sorted.length);
   const bottom5Avg = Math.round(sorted.slice(0, n).reduce((s, p) => s + p, 0) / n);
 
-  return bottom5Avg;
+  // Also consider the cheapest single listing — if one listing at a better float
+  // is cheaper than our estimate, our worse-float output can't be worth more.
+  // Takes min(cheapest, bottom5Avg) for a conservative, correct ceiling.
+  return Math.min(sorted[0], bottom5Avg);
 }
 
 /**
