@@ -12,6 +12,7 @@
 
 import pg from "pg";
 import { io, Socket } from "socket.io-client";
+import { dopplerPhaseFromPaintIndex } from "./doppler-phases.js";
 
 // socket.io-msgpack-parser is a CJS module, use dynamic import
 let msgpackParser: any = null;
@@ -123,12 +124,22 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
       const skinName = nameMatch ? nameMatch[1].trim() : item.marketHashName;
       if (!skinName) continue;
 
+      // Re-key Doppler sales by phase using paint_index (item finish)
+      let finalSkinName = skinName;
+      if (item.finish != null &&
+          (skinName.includes("| Doppler") || skinName.includes("| Gamma Doppler"))) {
+        const phase = dopplerPhaseFromPaintIndex(item.finish, skinName);
+        if (phase !== null) {
+          finalSkinName = `${skinName} ${phase}`;
+        }
+      }
+
       try {
         await pool.query(`
           INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
           VALUES ($1, $2, $3, 'skinport_sale', NOW())
           ON CONFLICT DO NOTHING
-        `, [skinName, item.wear, item.salePrice]);
+        `, [finalSkinName, item.wear, item.salePrice]);
         stats.totalSaleObservations++;
       } catch {
         // DB errors in WS handler are non-critical
