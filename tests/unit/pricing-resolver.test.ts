@@ -87,13 +87,14 @@ describe("fallback path (KNN null or thin)", () => {
     expect(resolvePriceWithFallbacks(p()).grossPrice).toBe(0);
   });
 
-  it("★ skin knnThin (<10 obs) bypasses KNN and uses fallback", () => {
+  it("★ skin with conditionConfidence < 0.1 bypasses KNN and uses fallback", () => {
+    // conditionObsCount=0, floatCoverage=0 → conditionConfidence=0 < 0.1 → bypass
     const r = resolvePriceWithFallbacks(p({
-      knn: knn({ priceCents: 9000, observationCount: 5 }),
+      knn: knn({ priceCents: 9000, observationCount: 5, conditionObsCount: 0, floatCoverage: 0.0 }),
       refPrice: 3000,
       isStarSkin: true,
     }));
-    expect(r.grossPrice).toBe(3000); // knnThin → uses refPrice
+    expect(r.grossPrice).toBe(3000); // conditionConfidence=0 → uses refPrice
   });
 });
 
