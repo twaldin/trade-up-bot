@@ -368,7 +368,7 @@ export function computeKnnEstimate(
   // === Tier 2: Linear interpolation between 2 nearest same-condition obs ===
   const tier2 = sameCondition
     .map(o => ({ ...o, dist: Math.abs(o.float - targetFloat) }))
-    .filter(o => o.dist <= config.maxFloatDist)
+    .filter(o => o.dist <= config.maxFloatDist + 1e-9) // IEEE 754 epsilon: 0.13-0.09 = 0.04+ε
     .sort((a, b) => a.dist - b.dist);
 
   if (tier2.length >= config.minInterp) {
@@ -379,7 +379,18 @@ export function computeKnnEstimate(
       interpolated = Math.round((a.price * a.weight + b.price * b.weight) / (a.weight + b.weight));
     } else {
       const t = (targetFloat - a.float) / (b.float - a.float);
-      interpolated = Math.round(a.price + Math.max(-0.5, Math.min(1.5, t)) * (b.price - a.price));
+      const logRatio = Math.abs(Math.log(b.price / a.price));
+      // Exponential extrapolation for backward extrapolation (t < -0.3) or
+      // steep-gradient interpolation (log-ratio > 0.3): preserves price ratios
+      // where linear interpolation would produce negative or wildly off estimates
+      if ((t < -0.3 || logRatio > 0.3) && a.price > 0 && b.price > 0) {
+        const logA = Math.log(a.price);
+        const logB = Math.log(b.price);
+        const tClamped = Math.max(-0.5, Math.min(1.5, t));
+        interpolated = Math.round(Math.exp(logA + tClamped * (logB - logA)));
+      } else {
+        interpolated = Math.round(a.price + Math.max(-0.5, Math.min(1.5, t)) * (b.price - a.price));
+      }
     }
     if (interpolated <= 0) return null;
     return {
