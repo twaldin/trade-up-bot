@@ -126,9 +126,9 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
 
       // Re-key Doppler sales by phase using paint_index (item finish)
       let finalSkinName = skinName;
-      if (item.finish != null &&
+      if (item.pattern != null &&
           (skinName.includes("| Doppler") || skinName.includes("| Gamma Doppler"))) {
-        const phase = dopplerPhaseFromPaintIndex(item.finish, skinName);
+        const phase = dopplerPhaseFromPaintIndex(item.pattern, skinName);
         if (phase !== null) {
           finalSkinName = `${skinName} ${phase}`;
         }
