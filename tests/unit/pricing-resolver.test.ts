@@ -1,0 +1,181 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { resolvePriceWithFallbacks, priceCache } from "../../server/engine/pricing.js";
+import type { FallbackParams, KnnEstimate } from "../../server/engine/types.js";
+
+function knn(overrides: Partial<KnnEstimate> = {}): KnnEstimate {
+  return {
+    priceCents: 1000, confidence: 0.8, observationCount: 12,
+    avgDistance: 0.015, conditionObsCount: 12, floatCoverage: 0.8,
+    ...overrides,
+  };
+}
+
+function p(overrides: Partial<FallbackParams> = {}): FallbackParams {
+  return {
+    knn: null, refPrice: 0, listingFloor: null, spMedian: null,
+    floatCeiling: null, crossConditionEstimate: null,
+    skinName: "AK-47 | Redline", predictedFloat: 0.25, isStarSkin: false,
+    ...overrides,
+  };
+}
+
+beforeEach(() => { priceCache.clear(); });
+
+// ── KNN path ───────────────────────────────────────────────────────────────
+
+describe("KNN usable path", () => {
+  it("returns KNN price when high confidence", () => {
+    expect(resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 5000 }) })).grossPrice).toBe(5000);
+  });
+
+  it("applies 2x ref cap when ≤3 obs", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 10000, observationCount: 2 }), refPrice: 3000 }));
+    expect(r.grossPrice).toBe(3000); // 10000 > 2×3000 → capped to refPrice
+  });
+
+  it("applies 3x ref cap when 4–5 obs", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 10000, observationCount: 5 }), refPrice: 3000 }));
+    expect(r.grossPrice).toBe(3000); // 10000 > 3×3000 → capped
+  });
+
+  it("applies 5x ref cap when 6+ obs", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 12000, observationCount: 8 }), refPrice: 2000 }));
+    expect(r.grossPrice).toBe(2000); // 12000 > 5×2000 → capped
+  });
+
+  it("does not cap when within 5x limit", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 5000, observationCount: 8 }), refPrice: 2000 }));
+    expect(r.grossPrice).toBe(5000); // 5000 < 5×2000
+  });
+
+  it("SP median cap fires when KNN > 3× spMedian", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 5000 }), spMedian: 1000 }));
+    expect(r.grossPrice).toBeLessThanOrEqual(3000);
+  });
+});
+
+// ── SP bypass regression (GH #51) ─────────────────────────────────────────
+
+describe("SP median silent bypass regression (GH #51)", () => {
+  it("hard cap uses refPrice when spMedian is null — WILL FAIL until Task 10", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 50000 }), spMedian: null, refPrice: 5000 }));
+    expect(r.grossPrice).toBeLessThanOrEqual(5000 * 3);
+  });
+
+  it("hard cap uses refPrice when spMedian is 0 — WILL FAIL until Task 10", () => {
+    const r = resolvePriceWithFallbacks(p({ knn: knn({ priceCents: 50000 }), spMedian: 0, refPrice: 5000 }));
+    expect(r.grossPrice).toBeLessThanOrEqual(15000);
+  });
+});
+
+// ── Fallback path ──────────────────────────────────────────────────────────
+
+describe("fallback path (KNN null or thin)", () => {
+  it("uses min(ref, floor) when both present", () => {
+    expect(resolvePriceWithFallbacks(p({ refPrice: 1500, listingFloor: 1200 })).grossPrice).toBe(1200);
+  });
+
+  it("uses listing floor when ref is 0", () => {
+    expect(resolvePriceWithFallbacks(p({ listingFloor: 800 })).grossPrice).toBe(800);
+  });
+
+  it("uses refPrice when floor is null", () => {
+    expect(resolvePriceWithFallbacks(p({ refPrice: 1000 })).grossPrice).toBe(1000);
+  });
+
+  it("returns 0 when no price data at all", () => {
+    expect(resolvePriceWithFallbacks(p()).grossPrice).toBe(0);
+  });
+
+  it("★ skin with conditionConfidence < 0.1 bypasses KNN and uses fallback", () => {
+    // conditionObsCount=0, floatCoverage=0 → conditionConfidence=0 < 0.1 → bypass
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 9000, observationCount: 5, conditionObsCount: 0, floatCoverage: 0.0 }),
+      refPrice: 3000,
+      isStarSkin: true,
+    }));
+    expect(r.grossPrice).toBe(3000); // conditionConfidence=0 → uses refPrice
+  });
+});
+
+// ── Float ceiling ──────────────────────────────────────────────────────────
+
+describe("float ceiling", () => {
+  it("caps at ceiling when grossPrice > ceiling", () => {
+    expect(resolvePriceWithFallbacks(p({ refPrice: 5000, floatCeiling: 3000 })).grossPrice).toBe(3000);
+  });
+
+  it("no cap when grossPrice ≤ ceiling", () => {
+    expect(resolvePriceWithFallbacks(p({ refPrice: 2000, floatCeiling: 3000 })).grossPrice).toBe(2000);
+  });
+});
+
+// ── Monotonicity guard ─────────────────────────────────────────────────────
+
+describe("monotonicity guard", () => {
+  it("clamps BS price when WW is in priceCache", () => {
+    priceCache.set("AK-47 | Redline:Well-Worn", 2000);
+    const r = resolvePriceWithFallbacks(p({
+      refPrice: 5000,
+      skinName: "AK-47 | Redline",
+      predictedFloat: 0.55,
+    }));
+    expect(r.grossPrice).toBeLessThanOrEqual(2000);
+  });
+});
+
+// ── Cross-condition estimate (step 6 — will fail until Task 13) ────────────
+
+describe("cross-condition estimate", () => {
+  it("uses crossConditionEstimate for ★ when KNN null — WILL FAIL until Task 13", () => {
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      crossConditionEstimate: 8000,
+      isStarSkin: true,
+      skinName: "★ Sport Gloves | Emerald Web",
+      predictedFloat: 0.25,
+    }));
+    expect(r.grossPrice).toBe(8000);
+  });
+
+  it("ignores crossConditionEstimate for non-★ skins — WILL FAIL until Task 13", () => {
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      crossConditionEstimate: 8000,
+      isStarSkin: false,
+      refPrice: 1000,
+    }));
+    expect(r.grossPrice).toBe(1000); // uses refPrice
+  });
+});
+
+// ── Confidence blend (step 5 — will fail until Task 12) ──────────────────
+
+describe("confidence-weighted attractor blend", () => {
+  it("blends KNN with SP median for ★ sparse — WILL FAIL until Task 12", () => {
+    // conditionObsCount=5, floatCoverage=0 → conditionConfidence = 5/10*0.6 + 0 = 0.30
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 4000, observationCount: 5, conditionObsCount: 5, floatCoverage: 0 }),
+      spMedian: 8000,
+      isStarSkin: true,
+      skinName: "★ Sport Gloves | Spearmint",
+      predictedFloat: 0.25,
+    }));
+    // blend = 0.30*4000 + 0.70*8000 = 1200 + 5600 = 6800
+    expect(r.grossPrice).toBeGreaterThan(4000);
+    expect(r.grossPrice).toBeLessThan(8000);
+  });
+
+  it("uses refPrice as attractor when spMedian missing — WILL FAIL until Task 12", () => {
+    const r = resolvePriceWithFallbacks(p({
+      knn: knn({ priceCents: 4000, observationCount: 3, conditionObsCount: 3, floatCoverage: 0 }),
+      spMedian: null,
+      refPrice: 6000,
+      isStarSkin: true,
+      skinName: "★ Moto Gloves | Spearmint",
+      predictedFloat: 0.25,
+    }));
+    expect(r.grossPrice).toBeGreaterThan(4000);
+    expect(r.grossPrice).toBeLessThanOrEqual(6000);
+  });
+});

@@ -13,6 +13,7 @@
 import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS } from "./types.js";
+import type { KnnObservation, KnnEstimate, KnnConfig } from "./types.js";
 
 export const FLOAT_BUCKETS = [
   { min: 0.00, max: 0.03, label: "FN-low" },
@@ -276,6 +277,152 @@ export function computeMADClampBounds(
   };
 }
 
+export const DEFAULT_KNN_CONFIG: KnnConfig = {
+  k: KNN_K,
+  minObs: KNN_MIN_OBS,
+  minInterp: KNN_MIN_INTERP,
+  maxFloatDist: KNN_MAX_FLOAT_DIST,
+  maxNearestDist: KNN_MAX_NEAREST_DIST,
+};
+
+/** Fraction of the condition's float range covered by observations (bucket-based). */
+function computeFloatCoverage(obs: KnnObservation[], condition: string): number {
+  if (obs.length === 0) return 0;
+  const condBounds = CONDITION_BOUNDS.find(c => c.name === condition);
+  if (!condBounds) return 0;
+  const bucketSize = 0.04;
+  const totalBuckets = Math.ceil((condBounds.max - condBounds.min) / bucketSize);
+  const filledBuckets = new Set(
+    obs.map(o => Math.floor((o.float - condBounds.min) / bucketSize))
+  ).size;
+  return totalBuckets > 0 ? filledBuckets / totalBuckets : 0;
+}
+
+/**
+ * Pure KNN price estimator — no DB calls.
+ * Implements Tier 1 (Gaussian KNN) and Tier 2 (linear interpolation).
+ * Returns null when there is insufficient data to produce any estimate.
+ */
+export function computeKnnEstimate(
+  obs: KnnObservation[],
+  targetFloat: number,
+  config: KnnConfig
+): KnnEstimate | null {
+  if (obs.length < config.minInterp) return null;
+
+  const targetCondition = floatToCondition(targetFloat);
+  const sameCondition = obs.filter(o => o.condition === targetCondition);
+
+  const conditionObsCount = sameCondition.length;
+  const floatCoverage = computeFloatCoverage(sameCondition, targetCondition);
+
+  // === Tier 1: Gaussian-weighted KNN ===
+  if (sameCondition.length >= config.minObs) {
+    const withDist = sameCondition
+      .map(o => ({ ...o, dist: Math.abs(o.float - targetFloat) }))
+      .filter(o => o.dist <= config.maxFloatDist);
+
+    if (withDist.length >= config.minObs) {
+      withDist.sort((a, b) => a.dist - b.dist);
+      if (withDist[0].dist <= config.maxNearestDist) {
+        const neighbors = withDist.slice(0, config.k);
+
+        const madBounds = computeMADClampBounds(neighbors.map(n => n.price));
+        const clamped = neighbors.map(n => {
+          if (!madBounds) return n;
+          return { ...n, price: Math.min(Math.max(n.price, madBounds.lower), madBounds.upper) };
+        });
+
+        const condBounds = CONDITION_BOUNDS.find(c => c.name === targetCondition);
+        const condWidth = condBounds ? condBounds.max - condBounds.min : 0.23;
+        const sigma = clamped.length >= 6
+          ? Math.max(clamped[Math.floor(clamped.length / 2)].dist, condWidth * 0.05)
+          : condWidth * 0.15;
+
+        let totalWeight = 0;
+        let weightedSum = 0;
+        for (const n of clamped) {
+          const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
+          const w = n.weight * gaussWeight;
+          totalWeight += w;
+          weightedSum += n.price * w;
+        }
+
+        const avgDist = clamped.reduce((s, n) => s + n.dist, 0) / clamped.length;
+        const countFactor = Math.min(clamped.length / 8, 1.0);
+        const distFactor = 1 - Math.min(avgDist / config.maxFloatDist, 1.0);
+        const confidence = countFactor * 0.6 + distFactor * 0.4;
+
+        return {
+          priceCents: Math.round(weightedSum / totalWeight),
+          confidence,
+          observationCount: clamped.length,
+          avgDistance: avgDist,
+          conditionObsCount,
+          floatCoverage,
+        };
+      }
+    }
+  }
+
+  // === Tier 2: Linear interpolation between 2 nearest same-condition obs ===
+  const tier2 = sameCondition
+    .map(o => ({ ...o, dist: Math.abs(o.float - targetFloat) }))
+    .filter(o => o.dist <= config.maxFloatDist)
+    .sort((a, b) => a.dist - b.dist);
+
+  if (tier2.length >= config.minInterp) {
+    const a = tier2[0];
+    const b = tier2[1];
+    let interpolated: number;
+    if (Math.abs(a.float - b.float) < 0.0001) {
+      interpolated = Math.round((a.price * a.weight + b.price * b.weight) / (a.weight + b.weight));
+    } else {
+      const t = (targetFloat - a.float) / (b.float - a.float);
+      interpolated = Math.round(a.price + Math.max(-0.5, Math.min(1.5, t)) * (b.price - a.price));
+    }
+    if (interpolated <= 0) return null;
+    return {
+      priceCents: interpolated,
+      confidence: 0.3,
+      observationCount: sameCondition.length,
+      avgDistance: (a.dist + b.dist) / 2,
+      conditionObsCount,
+      floatCoverage,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Continuous confidence score for ★ skins: combines per-condition obs count
+ * and float coverage within the condition range.
+ * Returns 0.0 (no data) to 1.0 (well-covered with 10+ obs).
+ */
+export function computeConditionConfidence(knn: KnnEstimate): number {
+  const countFactor = Math.min(knn.conditionObsCount / 10, 1.0);
+  const coverageFactor = Math.min(knn.floatCoverage / 0.5, 1.0);
+  return countFactor * 0.6 + coverageFactor * 0.4;
+}
+
+/**
+ * Returns the number of same-condition observations for a skin.
+ * Used to decide whether cross-condition extrapolation is needed.
+ * Cheap: uses the in-memory KNN cache (no additional DB query).
+ */
+export async function getKnnConditionObsCount(
+  pool: pg.Pool,
+  skinName: string,
+  predictedFloat: number
+): Promise<number> {
+  await ensureKnnCache(pool);
+  const skinObs = _knnCache.get(skinName);
+  if (!skinObs) return 0;
+  const condition = floatToCondition(predictedFloat);
+  return skinObs.filter(o => o.condition === condition).length;
+}
+
 /**
  * KNN price lookup with Gaussian kernel weighting and linear interpolation fallback.
  *
@@ -288,10 +435,10 @@ export async function knnOutputPriceAtFloat(
   pool: pg.Pool,
   skinName: string,
   float: number
-): Promise<{ priceCents: number; confidence: number; observationCount: number } | null> {
+): Promise<KnnEstimate | null> {
   await ensureKnnCache(pool);
-  const obs = _knnCache.get(skinName);
-  if (!obs || obs.length < KNN_MIN_INTERP) return null;
+  const skinObs = _knnCache.get(skinName);
+  if (!skinObs || skinObs.length < KNN_MIN_INTERP) return null;
 
   // Freshness gate: require recent observations to avoid stale pricing.
   // Relaxed for rare skins (★ items) — they trade infrequently but older sale
@@ -303,98 +450,7 @@ export async function knnOutputPriceAtFloat(
   // Require CSFloat OR Buff sales — Skinport-only skins have unreliable pricing
   if (!_knnHasCsfloatSales.has(skinName) && !_knnHasBuffSales.has(skinName)) return null;
 
-  const targetCondition = floatToCondition(float);
-  const sameCondition = obs.filter(o => o.condition === targetCondition);
-
-  // === Tier 1: KNN with Gaussian kernel ===
-  if (sameCondition.length >= KNN_MIN_OBS) {
-    const withDist = sameCondition
-      .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
-      .filter(o => o.dist <= KNN_MAX_FLOAT_DIST);
-
-    if (withDist.length >= KNN_MIN_OBS) {
-      withDist.sort((a, b) => a.dist - b.dist);
-      if (withDist[0].dist <= KNN_MAX_NEAREST_DIST) {
-        const neighbors = withDist.slice(0, KNN_K);
-
-        // MAD-based outlier clamping: robust to clustered sticker-premium sales.
-        // Clamps (not removes) to preserve neighbor count for confidence scoring.
-        const madBounds = computeMADClampBounds(neighbors.map(n => n.price));
-
-        const clamped = neighbors.map(n => {
-          if (!madBounds) return n; // MAD=0: all identical, no clamping needed
-          const clampedPrice = Math.min(Math.max(n.price, madBounds.lower), madBounds.upper);
-          return { ...n, price: clampedPrice };
-        });
-
-        // Range-normalized sigma: scale by condition float width so KNN is
-        // equally selective across conditions (0.015 = 21% of FN but 7% of FT)
-        const condBounds = CONDITION_BOUNDS.find(c => c.name === targetCondition);
-        const condWidth = condBounds ? condBounds.max - condBounds.min : 0.23;
-        const sigma = clamped.length >= 6
-          ? Math.max(clamped[Math.floor(clamped.length / 2)].dist, condWidth * 0.05)
-          : condWidth * 0.15;
-
-        // Gaussian-weighted mean: weight = source_weight * age_decay * exp(-dist²/σ²)
-        let totalWeight = 0;
-        let weightedSum = 0;
-        for (const n of clamped) {
-          const gaussWeight = Math.exp(-(n.dist * n.dist) / (sigma * sigma));
-          const w = n.weight * gaussWeight;
-          totalWeight += w;
-          weightedSum += n.price * w;
-        }
-
-        const avgDist = clamped.reduce((s, n) => s + n.dist, 0) / clamped.length;
-        const countFactor = Math.min(clamped.length / 8, 1.0);
-        const distFactor = 1 - Math.min(avgDist / KNN_MAX_FLOAT_DIST, 1.0);
-        const confidence = countFactor * 0.6 + distFactor * 0.4;
-
-        return {
-          priceCents: Math.round(weightedSum / totalWeight),
-          confidence,
-          observationCount: clamped.length,
-        };
-      }
-    }
-  }
-
-  // === Tier 2: Linear interpolation between 2 nearest same-condition obs ===
-  // Condition-boundary guard: apply KNN_MAX_FLOAT_DIST so boundary-adjacent
-  // same-condition observations (e.g. MW floats near 0.07 with FN-proximity premiums)
-  // cannot skew interpolation for targets deeper in the condition range.
-  const tier2Candidates = sameCondition
-    .map(o => ({ ...o, dist: Math.abs(o.float - float) }))
-    .filter(o => o.dist <= KNN_MAX_FLOAT_DIST)
-    .sort((a, b) => a.dist - b.dist);
-  if (tier2Candidates.length >= KNN_MIN_INTERP) {
-    const a = tier2Candidates[0];
-    const b = tier2Candidates[1];
-
-    let interpolated: number;
-    if (Math.abs(a.float - b.float) < 0.0001) {
-      // Same float — average their prices (weighted by source/age)
-      interpolated = Math.round((a.price * a.weight + b.price * b.weight) / (a.weight + b.weight));
-    } else {
-      // Linear interpolation between the two nearest
-      const t = (float - a.float) / (b.float - a.float);
-      // Clamp t to [-0.5, 1.5] to allow slight extrapolation but not wild
-      const tClamped = Math.max(-0.5, Math.min(1.5, t));
-      interpolated = Math.round(a.price + tClamped * (b.price - a.price));
-    }
-
-    // Negative/zero interpolation means data is too sparse or contradictory — fall back
-    if (interpolated <= 0) return null;
-
-    return {
-      priceCents: interpolated,
-      confidence: 0.3,
-      observationCount: sameCondition.length,
-    };
-  }
-
-  // === Tier 3: Not enough data → return null (caller falls back to condition-level) ===
-  return null;
+  return computeKnnEstimate(skinObs, float, DEFAULT_KNN_CONFIG);
 }
 
 /**

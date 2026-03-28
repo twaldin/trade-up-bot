@@ -2,10 +2,11 @@
 
 import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
-import { CONDITION_BOUNDS, type PriceAnchor } from "./types.js";
+import { CONDITION_BOUNDS, type PriceAnchor, type FallbackParams, type FallbackResult } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
-import { knnOutputPriceAtFloat } from "./knn-pricing.js";
+import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCount } from "./knn-pricing.js";
 import { buildCurveCache } from "./curve-classification.js";
+import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
 
 const CONDITION_MIDPOINTS = CONDITION_BOUNDS.map(b => ({
   name: b.name,
@@ -288,6 +289,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   await buildSourceFloorCaches(pool);
 
   const curveCount = await buildCurveCache(pool);
+  await buildConditionMultipliers(pool);
 
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
@@ -496,8 +498,10 @@ async function getListingFloor(
   // Skinport median sanity cap: catch inflated floors when outlier listings
   // slip through (e.g. no refPriceCache for BS/WW → >5x filter can't exclude them)
   const condition = floatToCondition(predictedFloat);
-  const spMedian = skinportMedianCache.get(`${skinName}:${condition}`);
-  if (spMedian && bottom3Avg > spMedian * 3) return spMedian;
+  const spMedianForFloor = skinportMedianCache.get(`${skinName}:${condition}`) ?? 0;
+  const refForFloor = refPriceCache.get(`${skinName}:${condition}`) ?? 0;
+  const floorCapRef = spMedianForFloor > 0 ? spMedianForFloor : refForFloor > 0 ? refForFloor : 0;
+  if (floorCapRef > 0 && bottom3Avg > floorCapRef * 3) return floorCapRef;
 
   return bottom3Avg;
 }
@@ -529,12 +533,124 @@ export function applyMonotonicityGuard(
 }
 
 /**
- * Min KNN observations required before trusting KNN for ★ items (knives/gloves).
- * Below this threshold, ★ skins fall back to listing floor: illiquid gloves/knives
- * have too few sale points for KNN to avoid extrapolating above the observed max.
- * Non-★ skins (guns) have abundant CSFloat data so no threshold is needed.
+ * Estimate target-condition price from an adjacent condition price.
+ * Uses priceCache + conditionMultiplierCache (both loaded at cache build time).
+ * Returns null if no adjacent condition has both a cached price and a multiplier.
  */
-const MIN_STAR_KNN_OBS = 10;
+export function computeCrossConditionEstimate(skinName: string, predictedFloat: number): number | null {
+  const targetCond = floatToCondition(predictedFloat);
+  const targetIdx = CONDITION_BOUNDS.findIndex(c => c.name === targetCond);
+  if (targetIdx < 0) return null;
+
+  // Try adjacent conditions: closest first (±1), then ±2
+  const order = [targetIdx + 1, targetIdx - 1, targetIdx + 2, targetIdx - 2]
+    .filter(i => i >= 0 && i < CONDITION_BOUNDS.length);
+
+  for (const adjIdx of order) {
+    const adjCond = CONDITION_BOUNDS[adjIdx].name;
+    const adjPrice = priceCache.get(`${skinName}:${adjCond}`) ?? 0;
+    if (adjPrice <= 0) continue;
+    const multiplier = conditionMultiplierCache.get(`${adjCond}→${targetCond}`);
+    if (!multiplier) continue;
+    return Math.round(adjPrice * multiplier);
+  }
+  return null;
+}
+
+/**
+ * Pure pricing resolver — no DB calls.
+ * All async lookups (KNN, ref, floor, ceiling) are pre-computed by the caller.
+ *
+ * NOTE: Calls applyMonotonicityGuard which reads the priceCache module global.
+ * Populate priceCache before calling in tests.
+ */
+export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResult {
+  const {
+    knn, refPrice, listingFloor, spMedian, floatCeiling,
+    crossConditionEstimate, skinName, predictedFloat, isStarSkin,
+  } = params;
+
+  let grossPrice = 0;
+  let source = "none";
+  let conditionConfidence = 1.0;
+
+  // Continuous confidence scoring for ★ skins
+  if (isStarSkin && knn !== null) {
+    conditionConfidence = computeConditionConfidence(knn);
+  }
+  const knnUsable = knn !== null
+    && knn.confidence >= 0.3
+    && (!isStarSkin || conditionConfidence >= 0.1);
+
+  if (knnUsable && knn !== null) {
+    grossPrice = knn.priceCents;
+    source = "knn";
+
+    // Obs-count cap against ref price
+    if (refPrice > 0) {
+      const maxMultiplier = knn.observationCount <= 3 ? 2.0
+        : knn.observationCount <= 5 ? 3.0
+        : 5.0;
+      if (grossPrice > refPrice * maxMultiplier) {
+        grossPrice = refPrice;
+        source = "knn (ref-capped)";
+      }
+    }
+
+    const initialCapRef = spMedian != null && spMedian > 0 ? spMedian
+                        : refPrice > 0 ? refPrice : 0;
+    if (initialCapRef > 0 && grossPrice > initialCapRef * 3) {
+      grossPrice = initialCapRef;
+      source = "knn (sp-capped)";
+    }
+
+    // Confidence-weighted attractor blend for ★ sparse skins
+    if (isStarSkin && conditionConfidence < 1.0) {
+      const attractor =
+        spMedian != null && spMedian > 0 ? spMedian :
+        refPrice > 0 ? refPrice :
+        listingFloor != null && listingFloor > 0 ? listingFloor :
+        null;
+      if (attractor !== null) {
+        grossPrice = Math.round(conditionConfidence * grossPrice + (1 - conditionConfidence) * attractor);
+        source = `knn-blend(conf=${conditionConfidence.toFixed(2)})`;
+      }
+    }
+  } else {
+    // Cross-condition extrapolation for ★ zero-obs skins
+    if (crossConditionEstimate != null && crossConditionEstimate > 0 && isStarSkin) {
+      grossPrice = crossConditionEstimate;
+      source = "cross-condition";
+    } else if (listingFloor != null && listingFloor > 0 && refPrice > 0) {
+      grossPrice = Math.min(refPrice, listingFloor);
+      source = "min(ref, floor)";
+    } else if (listingFloor != null && listingFloor > 0) {
+      grossPrice = listingFloor;
+      source = "listing floor";
+    } else if (refPrice > 0) {
+      grossPrice = refPrice;
+      source = "ref";
+    }
+  }
+
+  if (grossPrice <= 0) return { grossPrice: 0, source: "none", conditionConfidence };
+
+  grossPrice = applyMonotonicityGuard(grossPrice, skinName, predictedFloat);
+
+  if (floatCeiling !== null && floatCeiling < grossPrice) {
+    grossPrice = floatCeiling;
+    source = `${source} (ceiling)`;
+  }
+
+  const hardCapRef = spMedian != null && spMedian > 0 ? spMedian
+                   : refPrice > 0 ? refPrice : 0;
+  if (hardCapRef > 0 && grossPrice > hardCapRef * 3) {
+    grossPrice = Math.round(hardCapRef * 3);
+    source = `${source} (hard-capped)`;
+  }
+
+  return { grossPrice, source, conditionConfidence };
+}
 
 /**
  * Resolves price cap bounds for output pricing, ensuring KNN is never uncapped.
@@ -584,79 +700,30 @@ export async function lookupOutputPrice(
     return { priceCents: netPrice, marketplace: "csfloat", grossPrice: vanillaPrice, feePct: MARKETPLACE_FEES.csfloat.sellerFee };
   }
 
-  // 1. Try KNN float-specific pricing for ALL skins (not just ★)
+  const isStarSkin = skinName.startsWith("★");
   const knn = await knnOutputPriceAtFloat(pool, skinName, predictedFloat);
-  let grossPrice = 0;
+  const refPrice = lookupPrice(pool, skinName, predictedFloat);
+  const listingFloor = await getListingFloor(pool, skinName, predictedFloat);
+  const floatCeiling = await getFloatCeiling(pool, skinName, predictedFloat);
+  const spCondition = floatToCondition(predictedFloat);
+  const spMedian = skinportMedianCache.get(`${skinName}:${spCondition}`) ?? null;
 
-  // ★ skins (knives/gloves) trade infrequently — thin KNN data (<MIN_STAR_KNN_OBS obs)
-  // can extrapolate above the observed price range. Skip KNN and use listing floor instead,
-  // which reflects real current market bids rather than sparse historical inference.
-  const knnThin = knn !== null && skinName.startsWith("★") && knn.observationCount < MIN_STAR_KNN_OBS;
-
-  if (knn && knn.confidence >= 0.3 && !knnThin) {
-    grossPrice = knn.priceCents;
-    // Observation-count-dependent sanity cap: low-count KNN (especially Tier 2
-    // interpolation between 2 points) is unreliable for pattern-based skins where
-    // a single rare-pattern sale can 5-10x the normal price. Scale the cap:
-    //   ≤3 obs → 2x ref (sparse data, interpolation is noise)
-    //   4-5 obs → 3x ref (thin data, MAD clamping has marginal effect)
-    //   6+ obs  → 5x ref (enough data for KNN to be meaningful)
-    const refPrice = lookupPrice(pool, skinName, predictedFloat);
-    if (refPrice > 0) {
-      const maxMultiplier = knn.observationCount <= 3 ? 2.0
-        : knn.observationCount <= 5 ? 3.0
-        : 5.0;
-      if (grossPrice > refPrice * maxMultiplier) {
-        grossPrice = refPrice;
-      }
-    }
-    // Skinport median sanity cap: KNN extrapolates from CSFloat observations which can be
-    // biased by sticker-premium sales on low-volume skins. If KNN > 3x Skinport median,
-    // cap to Skinport median — consistent with getFloatCeiling's cap and catches cases
-    // where refPrice is itself sticker-inflated (e.g. Sawed-Off Serenity BS: KNN $34.79 vs SP $2.89).
-    const spCondition = floatToCondition(predictedFloat);
-    const knnCapBounds = resolveOutputCapBounds(skinName, spCondition);
-    if (knnCapBounds && grossPrice > knnCapBounds.trigger) {
-      grossPrice = knnCapBounds.knnCap;
-    }
-  } else {
-    // 2. Fallback: lower of condition-level ref vs listing floor at this float
-    const refPrice = lookupPrice(pool, skinName, predictedFloat);
-    const listingFloor = await getListingFloor(pool, skinName, predictedFloat);
-    if (listingFloor && refPrice > 0) {
-      grossPrice = Math.min(refPrice, listingFloor);
-    } else {
-      grossPrice = listingFloor ?? refPrice;
+  let crossConditionEstimate: number | null = null;
+  if (isStarSkin) {
+    const knnCondObs = await getKnnConditionObsCount(pool, skinName, predictedFloat);
+    if (knnCondObs === 0) {
+      crossConditionEstimate = computeCrossConditionEstimate(skinName, predictedFloat);
     }
   }
 
-  if (grossPrice <= 0) return zeroResult;
+  const result = resolvePriceWithFallbacks({
+    knn, refPrice, listingFloor, spMedian, floatCeiling,
+    crossConditionEstimate, skinName, predictedFloat, isStarSkin,
+  });
 
-  // 2b. Cross-condition monotonicity guard: worse condition should never
-  // exceed better condition's price (catches sticker-inflated KNN results)
-  grossPrice = applyMonotonicityGuard(grossPrice, skinName, predictedFloat);
-
-  // 3. Apply float-monotonicity ceiling from listings + sales at equal-or-lower floats
-  const ceiling = await getFloatCeiling(pool, skinName, predictedFloat);
-  if (ceiling !== null && ceiling < grossPrice) {
-    grossPrice = ceiling;
-  }
-
-  // 4. Hard cap: never output more than 3x Skinport/CSFloat median (or 5x cheapest obs).
-  // Catches KNN extrapolation above market reality when no nearby listings exist to form a ceiling.
-  // Falls back to CSFloat ref then cheapest observation when Skinport median is absent (#49).
-  const hardCapBounds = resolveOutputCapBounds(skinName, floatToCondition(predictedFloat));
-  if (hardCapBounds && grossPrice > hardCapBounds.trigger) {
-    grossPrice = hardCapBounds.hardCap;
-  }
-
-  const netPrice = effectiveSellProceeds(grossPrice, "csfloat");
-  return {
-    priceCents: netPrice,
-    marketplace: "csfloat",
-    grossPrice,
-    feePct: MARKETPLACE_FEES.csfloat.sellerFee,
-  };
+  if (result.grossPrice <= 0) return zeroResult;
+  const netPrice = effectiveSellProceeds(result.grossPrice, "csfloat");
+  return { priceCents: netPrice, marketplace: "csfloat", grossPrice: result.grossPrice, feePct: MARKETPLACE_FEES.csfloat.sellerFee };
 }
 
 /**
