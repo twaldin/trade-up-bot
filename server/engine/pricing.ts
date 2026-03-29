@@ -637,8 +637,14 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
       grossPrice = Math.min(refPrice, listingFloor);
       source = "min(ref, floor)";
     } else if (listingFloor != null && listingFloor > 0) {
-      grossPrice = listingFloor;
-      source = "listing floor";
+      const capBounds = resolveOutputCapBounds(skinName, floatToCondition(predictedFloat));
+      if (capBounds && listingFloor > capBounds.knnCap) {
+        grossPrice = capBounds.knnCap;
+        source = "cap-bounded (listing floor)";
+      } else {
+        grossPrice = listingFloor;
+        source = "listing floor";
+      }
     } else if (refPrice > 0) {
       grossPrice = refPrice;
       source = "ref";
