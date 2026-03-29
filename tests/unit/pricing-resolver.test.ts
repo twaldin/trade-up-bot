@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { resolvePriceWithFallbacks, priceCache } from "../../server/engine/pricing.js";
+import { resolvePriceWithFallbacks, priceCache, skinportMedianCache, refPriceCache } from "../../server/engine/pricing.js";
 import type { FallbackParams, KnnEstimate } from "../../server/engine/types.js";
 
 function knn(overrides: Partial<KnnEstimate> = {}): KnnEstimate {
@@ -19,7 +19,7 @@ function p(overrides: Partial<FallbackParams> = {}): FallbackParams {
   };
 }
 
-beforeEach(() => { priceCache.clear(); });
+beforeEach(() => { priceCache.clear(); skinportMedianCache.clear(); refPriceCache.clear(); });
 
 // ── KNN path ───────────────────────────────────────────────────────────────
 
@@ -234,5 +234,65 @@ describe("sparse-condition cap (GH #54)", () => {
     }));
     // refPrice>0 → uses obs-count cap (2×refPrice=500), not sparse cap
     expect(r.grossPrice).toBe(250); // 600 > 2×250=500 → ref-capped
+  });
+});
+
+// ── Listing floor cap bounds (GH #61) ────────────────────────────────────────
+
+describe("listing floor cap bounds (GH #61)", () => {
+  it("caps inflated listing floor to skinportMedianCache knnCap when KNN null and refPrice 0", () => {
+    // Sawed-Off | Serenity BS: stale listing at 3479¢, but spMedian=289¢
+    // Bug: listing floor was used uncapped → 3479¢. Fix: cap to spMedian (289¢).
+    skinportMedianCache.set("Sawed-Off | Serenity:Battle-Scarred", 289);
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 3479,
+      skinName: "Sawed-Off | Serenity",
+      predictedFloat: 0.55, // Battle-Scarred
+    }));
+    expect(r.grossPrice).toBe(289);
+    expect(r.source).toBe("cap-bounded (listing floor)");
+  });
+
+  it("caps inflated listing floor to refPriceCache (5x cheapest) when spMedian also missing", () => {
+    // No spMedian, but refPriceCache has cheapest obs → cap = 5× cheapest
+    refPriceCache.set("Sawed-Off | Serenity:Battle-Scarred", 100);
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 3479,
+      skinName: "Sawed-Off | Serenity",
+      predictedFloat: 0.55,
+    }));
+    expect(r.grossPrice).toBe(500); // 5× cheapest = 5×100
+    expect(r.source).toBe("cap-bounded (listing floor)");
+  });
+
+  it("does not cap listing floor when it is within the knnCap", () => {
+    // Listing floor is already below spMedian → use it as-is
+    skinportMedianCache.set("AK-47 | Redline:Field-Tested", 500);
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 400,
+      skinName: "AK-47 | Redline",
+      predictedFloat: 0.25, // Field-Tested
+    }));
+    expect(r.grossPrice).toBe(400);
+    expect(r.source).toBe("listing floor");
+  });
+
+  it("does not cap listing floor when resolveOutputCapBounds returns null (no market reference)", () => {
+    // skinportMedianCache, priceCache, refPriceCache all empty → no cap available
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 3479,
+      skinName: "Some Rare Skin | With No Data",
+      predictedFloat: 0.55,
+    }));
+    expect(r.grossPrice).toBe(3479);
+    expect(r.source).toBe("listing floor");
   });
 });
