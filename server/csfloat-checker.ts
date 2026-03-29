@@ -98,7 +98,7 @@ interface QueueListing {
 /**
  * Build a prioritized check queue:
  * 1. Listings in profitable trade-ups (oldest-checked first)
- * 2. Never-checked listings
+ * 2. Never-checked listings (oldest-created first — avoids 3-day purge threshold)
  * 3. General staleness sweep (oldest-checked first)
  */
 async function buildCheckQueue(pool: pg.Pool, maxSize: number): Promise<QueueListing[]> {
@@ -117,7 +117,8 @@ async function buildCheckQueue(pool: pg.Pool, maxSize: number): Promise<QueueLis
       AND (l.staleness_checked_at IS NULL OR l.staleness_checked_at < NOW() - INTERVAL '1 hour')
     ORDER BY
       CASE WHEN pl.listing_id IS NOT NULL THEN 0 ELSE 1 END,
-      COALESCE(l.staleness_checked_at, '2000-01-01'::timestamptz) ASC
+      CASE WHEN l.staleness_checked_at IS NULL THEN 0 ELSE 1 END,
+      COALESCE(l.staleness_checked_at, l.created_at) ASC
     LIMIT $1
   `, [maxSize]);
   return rows;
