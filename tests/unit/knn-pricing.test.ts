@@ -1,5 +1,34 @@
 import { describe, it, expect } from "vitest";
-import { getFloatBucket, FLOAT_BUCKETS } from "../../server/engine/knn-pricing.js";
+import { getFloatBucket, FLOAT_BUCKETS, knnTimeDecay } from "../../server/engine/knn-pricing.js";
+
+// ─── knnTimeDecay ────────────────────────────────────────────────────────────
+
+describe("knnTimeDecay", () => {
+  it("fresh observation (0 days) has weight 1.0", () => {
+    expect(knnTimeDecay(0)).toBe(1.0);
+  });
+
+  it("30-day-old observation has weight 0.5 (one half-life)", () => {
+    expect(knnTimeDecay(30)).toBeCloseTo(0.5, 5);
+  });
+
+  it("60-day-old observation has weight 0.25 (two half-lives)", () => {
+    expect(knnTimeDecay(60)).toBeCloseTo(0.25, 5);
+  });
+
+  it("185-day stale outlier has weight < 0.02 (neutralized)", () => {
+    // Nova Ocular Sep 2025 obs (float 0.326, 500 cents) poisoned KNN for a
+    // normally 84–140 cent skin. At 185 days: 2^(-185/30) ≈ 0.014.
+    expect(knnTimeDecay(185)).toBeLessThan(0.02);
+    expect(knnTimeDecay(185)).toBeGreaterThan(0);
+  });
+
+  it("monotonically decreasing with age", () => {
+    expect(knnTimeDecay(10)).toBeGreaterThan(knnTimeDecay(30));
+    expect(knnTimeDecay(30)).toBeGreaterThan(knnTimeDecay(90));
+    expect(knnTimeDecay(90)).toBeGreaterThan(knnTimeDecay(185));
+  });
+});
 
 // ─── getFloatBucket ──────────────────────────────────────────────────────────
 
