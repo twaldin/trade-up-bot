@@ -188,7 +188,9 @@ export async function repriceTradeUpOutputs(
     WHERE is_theoretical = false AND listing_status = 'active'
       AND outcomes_json IS NOT NULL
       AND (output_repriced_at IS NULL OR output_repriced_at < NOW() - INTERVAL '2 hours')
-    ORDER BY output_repriced_at ASC NULLS FIRST, roi_percentage DESC
+    ORDER BY
+      CASE WHEN profit_cents > 500 THEN 0 ELSE 1 END,
+      output_repriced_at ASC NULLS FIRST
     LIMIT $1
   `, [limit]);
 

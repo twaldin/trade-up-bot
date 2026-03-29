@@ -114,6 +114,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       profit_streak INTEGER NOT NULL DEFAULT 0,
       previous_inputs TEXT,
       outcomes_json TEXT,
+      output_repriced_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       ,input_sources TEXT[] NOT NULL DEFAULT '{}'
     );
