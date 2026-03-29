@@ -278,6 +278,7 @@ export async function findProfitableTradeUps(
     for (let i = 0; i < colIds.length; i++) {
       if (pastDeadline()) break;
       for (let j = i + 1; j < colIds.length; j++) {
+        if (pastDeadline()) break;
         pairsProcessed++;
         const colA = colIds[i];
         const colB = colIds[j];
