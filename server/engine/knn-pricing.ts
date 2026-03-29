@@ -167,15 +167,12 @@ const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 day
 export const KNN_MAX_OBS_AGE_DAYS = 180;
 
 /**
- * Dynamic half-life based on observation density:
- * - < 10 observations in 45 days → 30 days (rare skins need longer memory)
- * - > 50 observations → 10 days (liquid skins can use fresh data)
- * - Linear interpolation between
+ * Exponential time-decay weight for a KNN observation.
+ * Uses a fixed 30-day half-life: weight = 2^(-ageDays/30).
+ * Fresh obs (0d) → 1.0, 30d → 0.5, 185d → ~0.014.
  */
-function dynamicHalfLife(observationCount: number): number {
-  if (observationCount <= 10) return 30;
-  if (observationCount >= 50) return 10;
-  return Math.round(30 - (observationCount - 10) * (30 - 10) / (50 - 10));
+export function knnTimeDecay(ageDays: number): number {
+  return Math.pow(2, -ageDays / 30);
 }
 
 async function ensureKnnCache(pool: pg.Pool) {
@@ -206,16 +203,15 @@ async function ensureKnnCache(pool: pg.Pool) {
     arr.push(row);
   }
 
-  // Build cache with per-skin dynamic half-life + track freshness + CSFloat sale presence
+  // Build cache with exponential time-decay + track freshness + CSFloat sale presence
   for (const [skinName, skinRows] of rawBySkin) {
-    const halfLife = dynamicHalfLife(skinRows.length);
     const arr: { float: number; price: number; weight: number; condition: string }[] = [];
     let recentCount = 0;
     let hasCsfloat = false;
     let hasBuff = false;
     for (const row of skinRows) {
       const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
-      const ageDecay = 1 / (1 + (row.age_days || 0) / halfLife);
+      const ageDecay = knnTimeDecay(row.age_days || 0);
       arr.push({
         float: row.float_value,
         price: row.price_cents,
