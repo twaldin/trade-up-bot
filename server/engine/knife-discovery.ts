@@ -215,6 +215,7 @@ export async function findProfitableKnifeTradeUps(
   for (let i = 0; i < knifeCollections.length; i++) {
     if (pastDeadline()) break;
     for (let j = i + 1; j < knifeCollections.length; j++) {
+      if (pastDeadline()) break;
       const colA = knifeCollections[i];
       const colB = knifeCollections[j];
       const listingsA = byCollection.get(colA)!;
