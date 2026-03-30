@@ -182,10 +182,11 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
  * Purge preserved trade-ups older than maxDays.
  */
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
-  // Use listing_status equality + preserved_at range to leverage composite index
+  // Use listing_status IN + preserved_at range to leverage composite index
   // idx_trade_ups_listing_status(listing_status, preserved_at) instead of EXTRACT() function scan.
-  // Preserved TUs are always listing_status='partial' (stale TUs are deleted immediately in cascade).
-  const condition = "listing_status = 'partial' AND preserved_at < NOW() - ($1 * INTERVAL '1 day')";
+  // Both 'partial' (cascadeTradeUpStatuses) and 'stale' (refreshListingStatuses, claims) can have
+  // preserved_at set and must be purged together.
+  const condition = "listing_status IN ('partial', 'stale') AND preserved_at < NOW() - ($1 * INTERVAL '1 day')";
 
   // Delete inputs first (trade_up_inputs.trade_up_id FK has ON DELETE CASCADE but explicit
   // batch delete is faster than row-by-row trigger for large counts), then trade-ups.
