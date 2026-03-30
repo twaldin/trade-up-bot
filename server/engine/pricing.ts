@@ -637,7 +637,12 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
       grossPrice = Math.min(refPrice, listingFloor);
       source = "min(ref, floor)";
     } else if (listingFloor != null && listingFloor > 0) {
-      const capBounds = resolveOutputCapBounds(skinName, floatToCondition(predictedFloat));
+      // ★ skins: skip Skinport-median cap. Skinport prices run 10-20% below CSFloat
+      // for knives/gloves, so capping a CSFloat listing floor at Skinport median
+      // under-values knife outputs in the no-KNN/no-refPrice fallback path.
+      // getListingFloor already rejects 3× outliers internally, so extreme sticker
+      // premiums are already filtered before we get here.
+      const capBounds = resolveOutputCapBounds(skinName, floatToCondition(predictedFloat), { skipSkinport: isStarSkin });
       if (capBounds && listingFloor > capBounds.knnCap) {
         grossPrice = capBounds.knnCap;
         source = "cap-bounded (listing floor)";
@@ -677,13 +682,19 @@ export function resolvePriceWithFallbacks(params: FallbackParams): FallbackResul
  *
  * Fixes #49: `skinportMedianCache` silently skips when Skinport has no data for a condition,
  * allowing KNN to extrapolate unchecked (e.g. Sawed-Off Serenity BS: $34.79 vs actual $2.89).
+ *
+ * opts.skipSkinport: skip the Skinport-median branch (used for ★ skins where Skinport prices
+ * run 10-20% below CSFloat market rates, making the SP cap too conservative for knife outputs).
  */
 export function resolveOutputCapBounds(
   skinName: string,
-  condition: string
+  condition: string,
+  opts?: { skipSkinport?: boolean }
 ): { trigger: number; knnCap: number; hardCap: number } | null {
-  const sp = skinportMedianCache.get(`${skinName}:${condition}`);
-  if (sp && sp > 0) return { trigger: sp * 3, knnCap: sp, hardCap: sp * 3 };
+  if (!opts?.skipSkinport) {
+    const sp = skinportMedianCache.get(`${skinName}:${condition}`);
+    if (sp && sp > 0) return { trigger: sp * 3, knnCap: sp, hardCap: sp * 3 };
+  }
 
   const cf = priceCache.get(`${skinName}:${condition}`);
   if (cf && cf > 0) return { trigger: cf * 3, knnCap: cf, hardCap: cf * 3 };
