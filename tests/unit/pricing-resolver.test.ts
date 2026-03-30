@@ -295,4 +295,37 @@ describe("listing floor cap bounds (GH #61)", () => {
     expect(r.grossPrice).toBe(3479);
     expect(r.source).toBe("listing floor");
   });
+
+  it("does not cap ★ skin listing floor at Skinport median (GH #67)", () => {
+    // ★ Karambit | Fade FT: CSFloat listing floor $200, Skinport median $170.
+    // Bug (PR #62): listing floor was capped at spMedian ($170) for all skins.
+    // Fix: skip Skinport cap for ★ skins — CSFloat knife prices run above Skinport.
+    skinportMedianCache.set("★ Karambit | Fade:Field-Tested", 17000);
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 20000,
+      skinName: "★ Karambit | Fade",
+      predictedFloat: 0.20, // Field-Tested
+      isStarSkin: true,
+    }));
+    expect(r.grossPrice).toBe(20000);
+    expect(r.source).toBe("listing floor");
+  });
+
+  it("non-★ skin listing floor is still capped at Skinport median (regression guard)", () => {
+    // Sawed-Off | Serenity BS: stale listing at 3479¢, but spMedian=289¢.
+    // Non-★ skins must still apply the Skinport cap (PR #62 fix preserved).
+    skinportMedianCache.set("Sawed-Off | Serenity:Battle-Scarred", 289);
+    const r = resolvePriceWithFallbacks(p({
+      knn: null,
+      refPrice: 0,
+      listingFloor: 3479,
+      skinName: "Sawed-Off | Serenity",
+      predictedFloat: 0.55,
+      isStarSkin: false,
+    }));
+    expect(r.grossPrice).toBe(289);
+    expect(r.source).toBe("cap-bounded (listing floor)");
+  });
 });
