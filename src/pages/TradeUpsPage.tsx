@@ -177,12 +177,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
   return (
     <>
+      <h1 className="sr-only">Profitable CS2 Trade-Up Contracts</h1>
       <Helmet>
-        <title>CS2 Trade-Ups — Profitable Contracts Updated Live | TradeUpBot</title>
-        <meta name="description" content="Browse profitable CS2 trade-up contracts. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
+        <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
+        <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
         <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
-        <meta property="og:title" content="CS2 Trade-Ups — Profitable Contracts | TradeUpBot" />
-        <meta property="og:description" content="Browse profitable CS2 trade-up contracts. Filter by profit, ROI, cost, and rarity." />
+        <meta property="og:title" content="Profitable CS2 Trade-Ups — Live Contracts | TradeUpBot" />
+        <meta property="og:description" content="Browse profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity." />
         <meta property="og:url" content="https://tradeupbot.app/trade-ups" />
         <meta property="og:type" content="website" />
         <script type="application/ld+json">{JSON.stringify({

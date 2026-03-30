@@ -380,8 +380,8 @@ export function CalculatorPage() {
   return (
     <div>
       <Helmet>
-        <title>CS2 Trade-Up Calculator — Float, Probability & Profit | TradeUpBot</title>
-        <meta name="description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit. Free online tool." />
+        <title>CS2 Trade-Up Calculator — Float & Profit Calculator | TradeUpBot</title>
+        <meta name="description" content="Free CS2 (formerly CS:GO) trade-up calculator. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
         <link rel="canonical" href="https://tradeupbot.app/calculator" />
         <meta property="og:title" content="CS2 Trade-Up Calculator | TradeUpBot" />
         <meta property="og:description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
@@ -401,7 +401,7 @@ export function CalculatorPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Trade-Up Calculator</h2>
+          <h1 className="text-lg font-semibold text-foreground">CS2 Trade-Up Calculator</h1>
           <p className="text-sm text-muted-foreground">
             Add skins to predict trade-up outcomes, EV, profit, and probabilities.
           </p>

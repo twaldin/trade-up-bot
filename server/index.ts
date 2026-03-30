@@ -265,8 +265,8 @@ app.use((req, res, next) => {
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(indexHtml, {
-          title: "CS2 Trade-Up Contracts — Live Profitable Deals | TradeUpBot",
-          description: "Find profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
+          title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
+          description: "Find profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
           url: "https://tradeupbot.app/trade-ups",
         }));
         return;
@@ -288,8 +288,8 @@ app.use((req, res, next) => {
         ).join("");
         res.setHeader("Content-Type", "text/html");
         res.send(buildSeoHtml({
-          title: "CS2 Trade-Up Contracts — Live Profitable Deals | TradeUpBot",
-          description: `${profitable.toLocaleString()} profitable trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
+          title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
+          description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyText: `Browse ${total.toLocaleString()} active CS2 trade-up contracts. ${profitable.toLocaleString()} are currently profitable. Filter by rarity tier, ROI, profit, cost, and more.`,
           jsonLd: { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
@@ -355,6 +355,99 @@ app.use((req, res, next) => {
           bodyText: `Browse CS2 skins with live market prices and float data.`,
         }).replace("</main>", `<ul>${links}</ul></main>`));
       } catch { next(); }
+    });
+
+    // SEO: blog index page
+    app.get("/blog", (req, res) => {
+      const ua = req.headers["user-agent"] || "";
+      const title = "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot";
+      const description = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.";
+      const url = "https://tradeupbot.app/blog";
+      res.setHeader("Content-Type", "text/html");
+      if (isCrawler(ua)) {
+        res.send(buildSeoHtml({
+          title, description, url,
+          bodyText: "CS2 trade-up guides covering float mechanics, trade-up math, marketplace fees, and how to find profitable contracts.",
+        }));
+      } else {
+        res.send(injectMetaIntoSpa(indexHtml, { title, description, url }));
+      }
+    });
+
+    // Blog post metadata inlined to avoid importing from src/ (frontend module boundary)
+    const BLOG_POST_META: Record<string, { title: string; excerpt: string; publishedAt: string; author: string }> = {
+      "how-cs2-trade-ups-work": {
+        title: "How CS2 Trade-Up Contracts Actually Work",
+        excerpt: "The real mechanics behind trade-up contracts: input rules, float calculation formula, condition boundaries, and the mistakes that cost people money.",
+        publishedAt: "2026-03-15",
+        author: "TradeUpBot Team",
+      },
+      "profitable-trade-ups-theory-vs-reality": {
+        title: "Why Most CS2 Trade-Up Calculators Are Wrong — Theory vs. Real Listings",
+        excerpt: "Theoretical calculators promise big profits — then reality hits. Here's the exact reason theory-only tools consistently overstate returns, and why checking real marketplace listings before you commit changes everything.",
+        publishedAt: "2026-03-16",
+        author: "TradeUpBot Team",
+      },
+      "cs2-trade-up-float-values-guide": {
+        title: "CS2 Trade-Up Float Formula Explained — How Adjusted Floats Actually Work",
+        excerpt: "Learn exactly how the adjusted float formula determines your output float — and why two Factory New inputs at the same price can produce wildly different results. Includes float targeting strategies you can apply immediately.",
+        publishedAt: "2026-03-17",
+        author: "TradeUpBot Team",
+      },
+      "how-to-use-tradeupbot": {
+        title: "How to Find Profitable CS2 Trade-Ups with TradeUpBot",
+        excerpt: "A practical walkthrough of TradeUpBot: browsing trade-ups, reading the table, using Verify and Claim, and getting the most out of each subscription tier.",
+        publishedAt: "2026-03-18",
+        author: "TradeUpBot Team",
+      },
+      "cs2-trade-up-marketplace-fees": {
+        title: "CS2 Trade-Up Fees: How Marketplace Costs Eat Your Profits",
+        excerpt: "A breakdown of CSFloat, DMarket, and Skinport fee structures — and why ignoring them turns profitable trade-ups into losses.",
+        publishedAt: "2026-03-19",
+        author: "TradeUpBot Team",
+      },
+      "best-cs2-collections-knife-trade-ups-2026": {
+        title: "7 Best CS2 Collections for Knife Trade-Ups in 2026 (With Real Profit Data)",
+        excerpt: "Not all knife trade-up collections are equal. We ranked the top 7 using real listing data — profit margins, knife pool size, and input availability — so you know which cases are actually worth building around right now.",
+        publishedAt: "2026-03-20",
+        author: "TradeUpBot Team",
+      },
+      "cs2-trade-up-probability-expected-value": {
+        title: "Understanding CS2 Trade-Up Probability and Expected Value",
+        excerpt: "How outcome probabilities are calculated, what expected value actually tells you, and why chance-to-profit matters more than EV for most traders.",
+        publishedAt: "2026-03-21",
+        author: "TradeUpBot Team",
+      },
+    };
+
+    // SEO: individual blog post pages
+    app.get("/blog/:slug", (req, res, next) => {
+      const post = BLOG_POST_META[req.params.slug];
+      if (!post) return next();
+      const ua = req.headers["user-agent"] || "";
+      const title = `${post.title} | TradeUpBot Blog`;
+      const url = `https://tradeupbot.app/blog/${req.params.slug}`;
+      res.setHeader("Content-Type", "text/html");
+      if (isCrawler(ua)) {
+        res.send(buildSeoHtml({
+          title,
+          description: post.excerpt,
+          url,
+          bodyText: post.excerpt,
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@type": "BlogPosting",
+            headline: post.title,
+            description: post.excerpt,
+            datePublished: post.publishedAt,
+            author: { "@type": "Organization", name: post.author },
+            publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
+            mainEntityOfPage: url,
+          },
+        }));
+      } else {
+        res.send(injectMetaIntoSpa(indexHtml, { title, description: post.excerpt, url }));
+      }
     });
 
     app.use(express.static(distPath));
