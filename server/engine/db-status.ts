@@ -66,26 +66,42 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
       totalUpdated += toDelete.length;
     }
 
-    // Update partial/active trade-ups
+    // Update partial/active trade-ups — batched by new status to avoid per-row round-trips
     if (toUpdate.length > 0) {
-      for (const row of toUpdate) {
-        const newStatus = row.missing === 0 ? 'active' : 'partial';
-        const result = await pool.query(`
+      const partialIds = toUpdate.filter(r => r.missing > 0).map(r => r.trade_up_id);
+      const activeIds = toUpdate.filter(r => r.missing === 0).map(r => r.trade_up_id);
+
+      if (partialIds.length > 0) {
+        const r = await pool.query(`
           UPDATE trade_ups SET
-            listing_status = $1,
+            listing_status = 'partial',
             preserved_at = CASE
-              WHEN $2 > 0 AND listing_status = 'active' THEN NOW()
-              WHEN $2 = 0 THEN NULL
+              WHEN listing_status = 'active' THEN NOW()
               ELSE preserved_at
             END
-          WHERE id = $3
-            AND listing_status IS DISTINCT FROM $1
+          WHERE id = ANY($1)
+            AND listing_status IS DISTINCT FROM 'partial'
             AND NOT EXISTS (
               SELECT 1 FROM trade_up_claims tc
-              WHERE tc.trade_up_id = $3 AND tc.released_at IS NULL AND tc.expires_at > NOW()
+              WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
-        `, [newStatus, row.missing, row.trade_up_id]);
-        totalUpdated += result.rowCount ?? 0;
+        `, [partialIds]);
+        totalUpdated += r.rowCount ?? 0;
+      }
+
+      if (activeIds.length > 0) {
+        const r = await pool.query(`
+          UPDATE trade_ups SET
+            listing_status = 'active',
+            preserved_at = NULL
+          WHERE id = ANY($1)
+            AND listing_status IS DISTINCT FROM 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM trade_up_claims tc
+              WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+            )
+        `, [activeIds]);
+        totalUpdated += r.rowCount ?? 0;
       }
     }
   }
@@ -166,9 +182,13 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
  * Purge preserved trade-ups older than maxDays.
  */
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
-  const condition = "preserved_at IS NOT NULL AND EXTRACT(EPOCH FROM NOW() - preserved_at::timestamptz) / 86400.0 > $1";
+  // Use listing_status equality + preserved_at range to leverage composite index
+  // idx_trade_ups_listing_status(listing_status, preserved_at) instead of EXTRACT() function scan.
+  // Preserved TUs are always listing_status='partial' (stale TUs are deleted immediately in cascade).
+  const condition = "listing_status = 'partial' AND preserved_at < NOW() - ($1 * INTERVAL '1 day')";
 
-  // Delete inputs first (no FK cascade), then trade-ups — use subquery to avoid 500K+ placeholder lists
+  // Delete inputs first (trade_up_inputs.trade_up_id FK has ON DELETE CASCADE but explicit
+  // batch delete is faster than row-by-row trigger for large counts), then trade-ups.
   await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE ${condition})`, [maxDays]);
   const { rowCount } = await pool.query(`DELETE FROM trade_ups WHERE ${condition}`, [maxDays]);
   return rowCount ?? 0;
