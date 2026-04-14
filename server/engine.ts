@@ -56,6 +56,6 @@ export { findStaircaseTradeUps } from "./engine/staircase.js";
 // === DB Operations ===
 export {
   saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
-  refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
+  refreshListingStatuses, refreshListingStatusesForType, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
   cascadeTradeUpStatuses, deleteListings,
 } from "./engine/db-ops.js";
