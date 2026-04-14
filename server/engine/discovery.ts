@@ -840,6 +840,7 @@ export async function exploreWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     preferHighFloat?: boolean;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   const inputRarity = options.inputRarity ?? "Classified";
@@ -989,11 +990,14 @@ export async function exploreWithBudget(
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13];
   const TOTAL_STRATEGIES = 15;
+  const maxResults = options.maxResults !== undefined && options.maxResults > 0
+    ? Math.floor(options.maxResults)
+    : Number.POSITIVE_INFINITY;
 
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 1000 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -1330,6 +1334,7 @@ export async function exploreWithBudget(
     }
   }
 
-  options.onProgress?.(`${inputRarity} explore done: ${explored} iters, ${results.length} found`);
+  const capReached = Number.isFinite(maxResults) && results.length >= maxResults;
+  options.onProgress?.(`${inputRarity} explore done: ${explored} iters, ${results.length} found${capReached ? " (cap reached)" : ""}`);
   return results;
 }

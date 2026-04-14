@@ -15,6 +15,7 @@ import pg from "pg";
 import { createWriteStream } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import type { TradeUp } from "../../shared/types.js";
 import {
   findProfitableKnifeTradeUps,
   findProfitableTradeUps,
@@ -47,6 +48,32 @@ const pool = new Pool({
 // IPC has payload limits (~200MB but serialization overhead makes large arrays fail).
 // For results >5000 trade-ups, write to a temp file and send the path instead.
 const LARGE_RESULT_THRESHOLD = 5000;
+// Hard cap to prevent worker memory growth from unbounded discovery + exploration accumulation.
+const MAX_WORKER_TRADEUPS = 30_000;
+// Exploration-specific cap: keeps random-search result growth bounded within worker budget.
+const MAX_EXPLORE_RESULTS = 10_000;
+
+function trimTradeUps(tradeUps: TradeUp[], max: number): TradeUp[] {
+  if (tradeUps.length <= max) return tradeUps;
+
+  const profitable: TradeUp[] = [];
+  const highChance: TradeUp[] = [];
+  const rest: TradeUp[] = [];
+
+  for (const tu of tradeUps) {
+    if (tu.profit_cents > 0) profitable.push(tu);
+    else if ((tu.chance_to_profit ?? 0) >= 0.25) highChance.push(tu);
+    else rest.push(tu);
+  }
+
+  rest.sort((a, b) =>
+    b.profit_cents - a.profit_cents
+    || (b.chance_to_profit ?? 0) - (a.chance_to_profit ?? 0)
+    || b.expected_value_cents - a.expected_value_cents
+  );
+
+  return [...profitable, ...highChance, ...rest].slice(0, max);
+}
 
 async function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: string; stats?: unknown }) {
   await pool.end();
@@ -170,6 +197,11 @@ const rarityMap: Record<string, string> = {
     }
 
     const structuredMs = Date.now() - structuredStart;
+    const rawStructuredCount = tradeUps?.length ?? 0;
+    if (tradeUps && tradeUps.length > MAX_WORKER_TRADEUPS) {
+      tradeUps = trimTradeUps(tradeUps, MAX_WORKER_TRADEUPS);
+      console.log(`  ${task}: trimmed structured results ${rawStructuredCount} -> ${tradeUps.length} (cap ${MAX_WORKER_TRADEUPS})`);
+    }
     const structuredCount = tradeUps?.length ?? 0;
 
     // Add structured results to sig set so exploration doesn't rediscover them
@@ -186,6 +218,7 @@ const rarityMap: Record<string, string> = {
       if (task === "knife") {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
           cycleStartedAt,
+          maxResults: MAX_EXPLORE_RESULTS,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       } else {
@@ -195,6 +228,7 @@ const rarityMap: Record<string, string> = {
           inputRarity,
           cycleStartedAt,
           preferHighFloat,
+          maxResults: MAX_EXPLORE_RESULTS,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       }
@@ -204,7 +238,7 @@ const rarityMap: Record<string, string> = {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s) + explored ${exploreCount} (${(exploreMs / 1000).toFixed(1)}s)`);
 
       // Combine results
-      tradeUps = [...(tradeUps ?? []), ...explored];
+      tradeUps = trimTradeUps([...(tradeUps ?? []), ...explored], MAX_WORKER_TRADEUPS);
     } else {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s), no time for exploration`);
     }
