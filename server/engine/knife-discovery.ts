@@ -684,6 +684,7 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
@@ -722,11 +723,14 @@ export async function exploreKnifeWithBudget(
   // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
   const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
   const KNIFE_TOTAL_STRATEGIES = 13;
+  const maxResults = options.maxResults !== undefined && options.maxResults > 0
+    ? Math.floor(options.maxResults)
+    : Number.POSITIVE_INFINITY;
 
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 500 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -979,7 +983,6 @@ export async function exploreKnifeWithBudget(
       }
 
       if (!inputs || inputs.length !== 5) continue;
-      explored++;
 
       const sig = listingSig(inputs.map(i => i.id));
       if (existingSignatures.has(sig)) continue;
@@ -995,6 +998,7 @@ export async function exploreKnifeWithBudget(
     }
   }
 
-  options.onProgress?.(`Knife explore done: ${explored} iters, ${results.length} found`);
+  const capReached = Number.isFinite(maxResults) && results.length >= maxResults;
+  options.onProgress?.(`Knife explore done: ${explored} iters, ${results.length} found${capReached ? " (cap reached)" : ""}`);
   return results;
 }
