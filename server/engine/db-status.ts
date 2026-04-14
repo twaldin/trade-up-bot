@@ -163,6 +163,47 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
 }
 
 /**
+ * Refresh listing_status for one trade-up type only.
+ * Used as a lightweight fallback when a tier worker fails mid-cycle.
+ */
+export async function refreshListingStatusesForType(pool: pg.Pool, type: string): Promise<number> {
+  const { rowCount } = await pool.query(`
+    UPDATE trade_ups t SET
+      listing_status = s.new_status,
+      preserved_at = CASE
+        WHEN s.new_status = 'active' THEN NULL
+        ELSE COALESCE(t.preserved_at, NOW())
+      END
+    FROM (
+      SELECT tui.trade_up_id,
+        CASE
+          WHEN COUNT(*) FILTER (WHERE l.id IS NULL OR l.claimed_by IS NOT NULL) = 0 THEN 'active'
+          WHEN COUNT(*) FILTER (WHERE l.id IS NOT NULL AND l.claimed_by IS NULL) > 0 THEN 'partial'
+          ELSE 'stale'
+        END as new_status
+      FROM trade_up_inputs tui
+      JOIN trade_ups tu ON tu.id = tui.trade_up_id
+      LEFT JOIN listings l ON tui.listing_id = l.id
+      WHERE tu.type = $1
+        AND tu.is_theoretical = false
+        AND tui.listing_id NOT LIKE 'theor%'
+      GROUP BY tui.trade_up_id
+    ) s
+    WHERE t.id = s.trade_up_id
+      AND t.listing_status IS DISTINCT FROM s.new_status
+      AND NOT EXISTS (
+        SELECT 1 FROM trade_up_claims tc
+        WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+      )
+  `, [type]);
+
+  // Keep API cache consistent with refreshed statuses.
+  const { cacheInvalidatePrefix } = await import("../redis.js");
+  await cacheInvalidatePrefix("tu:");
+  return rowCount ?? 0;
+}
+
+/**
  * Purge preserved trade-ups older than maxDays.
  */
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {

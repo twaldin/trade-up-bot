@@ -29,7 +29,7 @@ import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
-  cascadeTradeUpStatuses, withRetry,
+  cascadeTradeUpStatuses, refreshListingStatusesForType, withRetry,
   type FinishData,
 } from "../engine.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
@@ -125,11 +125,14 @@ interface WorkerResult {
   stats?: { structuredCount: number; exploreCount: number; structuredMs: number };
 }
 
-function runCalcWorker(
-  task: "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer",
+type WorkerTask = "knife" | "classified" | "restricted" | "milspec" | "industrial" | "consumer";
+
+function runCalcWorkerAttempt(
+  task: WorkerTask,
   timeLimitMs?: number,
   cycleStartedAt?: number,
   discoveryFile?: string,
+  safeMode?: boolean,
 ): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -149,7 +152,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile, safeMode: !!safeMode }),
       },
     });
 
@@ -212,6 +215,27 @@ function runCalcWorker(
       }
     });
   });
+}
+
+function isWorkerOomError(message: string): boolean {
+  return /(SIGABRT|code 134|heap out of memory|out of memory|oom)/i.test(message);
+}
+
+async function runCalcWorker(
+  task: WorkerTask,
+  timeLimitMs?: number,
+  cycleStartedAt?: number,
+  discoveryFile?: string,
+): Promise<WorkerResult> {
+  try {
+    return await runCalcWorkerAttempt(task, timeLimitMs, cycleStartedAt, discoveryFile, false);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!isWorkerOomError(msg)) throw err;
+
+    console.warn(`  Worker ${task} OOM/abort detected (${msg}) — retrying in safe mode`);
+    return runCalcWorkerAttempt(task, timeLimitMs, cycleStartedAt, discoveryFile, true);
+  }
 }
 
 export async function main() {
@@ -442,10 +466,10 @@ export async function main() {
         await setDaemonStatus(pool, "calculating", statusDetail);
 
         const workers: Promise<WorkerResult>[] = [
-          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA]),
+          runCalcWorker(taskA as WorkerTask, workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA]),
         ];
         if (taskB) {
-          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB]));
+          workers.push(runCalcWorker(taskB as WorkerTask, workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB]));
         }
         const results = await Promise.allSettled(workers);
 
@@ -500,7 +524,22 @@ export async function main() {
 
             await emitEvent(pool, `${tradeUpType}_calc`, `${profitable.length} profitable, best +$${profitable.length > 0 ? (profitable[0].profit_cents / 100).toFixed(2) : "0.00"}`);
           } else if (r.status === "rejected") {
-            console.error(`    ${taskName} failed: ${r.reason?.message}`);
+            const failMsg = r.reason?.message ?? String(r.reason);
+            console.error(`    ${taskName} failed: ${failMsg}`);
+
+            // Worker failed for this tier (often OOM/SIGABRT). Reconcile statuses for this
+            // type so active/profitable counters don't drift on stale rows.
+            try {
+              const refreshed = await refreshListingStatusesForType(pool, tradeUpType);
+              if (refreshed > 0) {
+                console.log(`      ${taskName}: reconciled ${refreshed} listing statuses after worker failure`);
+              }
+            } catch (statusErr) {
+              const msg = statusErr instanceof Error ? statusErr.message : String(statusErr);
+              console.error(`      ${taskName}: status reconcile failed: ${msg}`);
+            }
+
+            await emitEvent(pool, `${tradeUpType}_worker_fail`, failMsg.slice(0, 240));
           } else {
             console.log(`    ${taskName}: 0 trade-ups`);
           }

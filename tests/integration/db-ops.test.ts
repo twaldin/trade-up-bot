@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createTestApp, seedTestData, type TestContext } from "./setup.js";
-import { cascadeTradeUpStatuses, deleteListings, refreshListingStatuses, purgeExpiredPreserved } from "../../server/engine/db-status.js";
+import {
+  cascadeTradeUpStatuses,
+  deleteListings,
+  refreshListingStatuses,
+  refreshListingStatusesForType,
+  purgeExpiredPreserved,
+} from "../../server/engine/db-status.js";
 import { saveTradeUps, mergeTradeUps } from "../../server/engine/db-save.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
@@ -345,6 +351,65 @@ describe("DB Operations", () => {
         "SELECT listing_status FROM trade_ups WHERE id = $1", [tuId]
       );
       expect(["partial", "stale"]).toContain(rows[0].listing_status);
+    });
+  });
+
+  // ─── refreshListingStatusesForType ───────────────────────────────────────
+
+  describe("refreshListingStatusesForType", () => {
+    it("updates only the requested type", async () => {
+      // Ensure we have one active trade-up in each type.
+      const { rows: knifeRows } = await ctx.pool.query(
+        "SELECT id FROM trade_ups WHERE type = 'covert_knife' AND listing_status = 'active' LIMIT 1"
+      );
+      expect(knifeRows.length).toBeGreaterThan(0);
+      const knifeId = knifeRows[0].id as number;
+
+      const otherType = "classified_covert";
+      const listingIds: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const lid = `typed-refresh-${i}`;
+        listingIds.push(lid);
+        await ctx.pool.query(
+          "INSERT INTO listings (id, skin_id, price_cents, float_value) VALUES ($1, $2, $3, $4)",
+          [lid, "skin-classified-1", 1400 + i, 0.12 + i * 0.01]
+        );
+      }
+      const otherTu = makeDbTradeUp({ listingIds, profit: 1500, collectionName: "Test Collection Beta" });
+      await mergeTradeUps(ctx.pool, [otherTu], otherType);
+
+      const { rows: otherRows } = await ctx.pool.query(
+        "SELECT id FROM trade_ups WHERE type = $1 AND listing_status = 'active' ORDER BY id DESC LIMIT 1",
+        [otherType]
+      );
+      expect(otherRows.length).toBe(1);
+      const otherId = otherRows[0].id as number;
+
+      // Delete one listing used by each trade-up.
+      const { rows: knifeInputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1 LIMIT 1",
+        [knifeId]
+      );
+      const { rows: otherInputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1 LIMIT 1",
+        [otherId]
+      );
+      await ctx.pool.query("DELETE FROM listings WHERE id = ANY($1)", [[knifeInputs[0].listing_id, otherInputs[0].listing_id]]);
+
+      // Refresh only covert_knife.
+      await refreshListingStatusesForType(ctx.pool, "covert_knife");
+
+      const { rows: knifeStatus } = await ctx.pool.query(
+        "SELECT listing_status FROM trade_ups WHERE id = $1",
+        [knifeId]
+      );
+      const { rows: otherStatus } = await ctx.pool.query(
+        "SELECT listing_status FROM trade_ups WHERE id = $1",
+        [otherId]
+      );
+
+      expect(["partial", "stale"]).toContain(knifeStatus[0].listing_status);
+      expect(otherStatus[0].listing_status).toBe("active");
     });
   });
 
