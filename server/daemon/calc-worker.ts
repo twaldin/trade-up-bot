@@ -47,6 +47,8 @@ const pool = new Pool({
 // IPC has payload limits (~200MB but serialization overhead makes large arrays fail).
 // For results >5000 trade-ups, write to a temp file and send the path instead.
 const LARGE_RESULT_THRESHOLD = 5000;
+const MAX_WORKER_RESULTS = 30000;
+const MAX_EXPLORE_RESULTS = 12000;
 
 async function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: string; stats?: unknown }) {
   await pool.end();
@@ -149,7 +151,12 @@ const rarityMap: Record<string, string> = {
         break;
 
       case "classified":
-        tradeUps = await findProfitableTradeUps(pool, { existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, {
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+          preferHighFloat: true,
+          limit: 50000,
+        });
         break;
 
       case "restricted":
@@ -186,6 +193,7 @@ const rarityMap: Record<string, string> = {
       if (task === "knife") {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
           cycleStartedAt,
+          maxResults: MAX_EXPLORE_RESULTS,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       } else {
@@ -195,6 +203,7 @@ const rarityMap: Record<string, string> = {
           inputRarity,
           cycleStartedAt,
           preferHighFloat,
+          maxResults: MAX_EXPLORE_RESULTS,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       }
@@ -203,10 +212,28 @@ const rarityMap: Record<string, string> = {
       const exploreMs = Date.now() - exploreStart;
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s) + explored ${exploreCount} (${(exploreMs / 1000).toFixed(1)}s)`);
 
-      // Combine results
-      tradeUps = [...(tradeUps ?? []), ...explored];
+      // Combine in-place to avoid array-copy peak memory from spread.
+      if (!tradeUps || tradeUps.length === 0) {
+        tradeUps = explored;
+      } else if (explored.length > 0) {
+        for (const tu of explored) tradeUps.push(tu);
+      }
     } else {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s), no time for exploration`);
+    }
+
+    if (tradeUps && tradeUps.length > MAX_WORKER_RESULTS) {
+      tradeUps.sort((a, b) => {
+        const aProfitable = a.profit_cents > 0;
+        const bProfitable = b.profit_cents > 0;
+        const aHighChance = (a.chance_to_profit ?? 0) >= 0.25;
+        const bHighChance = (b.chance_to_profit ?? 0) >= 0.25;
+        if (aProfitable !== bProfitable) return aProfitable ? -1 : 1;
+        if (aHighChance !== bHighChance) return aHighChance ? -1 : 1;
+        return b.profit_cents - a.profit_cents;
+      });
+      tradeUps = tradeUps.slice(0, MAX_WORKER_RESULTS);
+      console.log(`  ${task}: capped worker results at ${MAX_WORKER_RESULTS}`);
     }
 
     await sendAndExit({
