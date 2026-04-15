@@ -13,6 +13,14 @@ import { evaluateTradeUp } from "./evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 
+/** Per-strategy yield stats from exploration. */
+export interface StrategyYieldEntry {
+  strategyId: number;
+  iterations: number;
+  profitableFound: number;
+  totalFound: number;
+}
+
 /**
  * Per-collection output opportunity profile.
  * Precomputed at discovery start to inform strategy selection.
@@ -95,6 +103,8 @@ export async function findProfitableTradeUps(
     existingSignatures?: Set<string>;
     deadlineMs?: number;
     preferHighFloat?: boolean;
+    /** Populated after structured discovery with the sig-skip ratio (0-1). */
+    sigSkipRatio?: { value: number };
   } = {}
 ): Promise<TradeUp[]> {
   const targetRarities = options.rarities ?? ["Classified"];
@@ -122,8 +132,11 @@ export async function findProfitableTradeUps(
   const sigOf = (inputs: { id: string }[]) => listingSig(inputs.map(i => i.id));
 
   /** Evaluate only if this listing combo is new (not in existing signatures). */
+  let _evalAttempts = 0;
+  let _evalSkipped = 0;
   const tryEval = async (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
-    if (store.hasSig(sigOf(inputs))) return;
+    _evalAttempts++;
+    if (store.hasSig(sigOf(inputs))) { _evalSkipped++; return; }
     tryAdd(await evaluateTradeUp(pool, inputs, outcomes));
   };
 
@@ -408,6 +421,11 @@ export async function findProfitableTradeUps(
       options.onFlush(store.getAll(limit), isFirstFlush);
       isFirstFlush = false;
     }
+  }
+
+  // Report sig-skip ratio so caller can adapt structured/explore split
+  if (options.sigSkipRatio && _evalAttempts > 0) {
+    options.sigSkipRatio.value = _evalSkipped / _evalAttempts;
   }
 
   options.onProgress?.("Done", 100, 100);
@@ -837,6 +855,8 @@ export async function exploreWithBudget(
   existingSignatures: Set<string>,
   options: {
     inputRarity?: string;
+    /** Populated with per-strategy yield stats after exploration completes. */
+    strategyYield?: StrategyYieldEntry[];
     stattrak?: boolean;
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
@@ -994,6 +1014,11 @@ export async function exploreWithBudget(
   const results: TradeUp[] = [];
   let explored = 0;
 
+  // Per-strategy yield tracking
+  const stratIters = new Array(TOTAL_STRATEGIES).fill(0);
+  const stratProfitable = new Array(TOTAL_STRATEGIES).fill(0);
+  const stratTotal = new Array(TOTAL_STRATEGIES).fill(0);
+
   while (Date.now() < deadlineMs - 1000) {
     explored++;
     if (explored % 1000 === 0) {
@@ -1003,6 +1028,7 @@ export async function exploreWithBudget(
 
     try {
       const strategy = pickWeightedStrategy(TOTAL_STRATEGIES, FLOAT_BIASED_CASES);
+      stratIters[strategy]++;
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -1326,8 +1352,24 @@ export async function exploreWithBudget(
 
       existingSignatures.add(sig);
       results.push(result);
+      stratTotal[strategy]++;
+      if (result.profit_cents > 0) stratProfitable[strategy]++;
     } catch {
       // Ignore individual iteration errors
+    }
+  }
+
+  // Populate strategy yield stats
+  if (options.strategyYield) {
+    for (let s = 0; s < TOTAL_STRATEGIES; s++) {
+      if (stratIters[s] > 0) {
+        options.strategyYield.push({
+          strategyId: s,
+          iterations: stratIters[s],
+          profitableFound: stratProfitable[s],
+          totalFound: stratTotal[s],
+        });
+      }
     }
   }
 
