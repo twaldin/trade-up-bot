@@ -880,6 +880,8 @@ export async function exploreWithBudget(
     inputRarity?: string;
     /** Populated with per-strategy yield stats after exploration completes. */
     strategyYield?: StrategyYieldEntry[];
+    /** Adaptive weights from yield history. When provided, overrides static float-biased weights. */
+    strategyWeights?: number[];
     stattrak?: boolean;
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
@@ -1049,6 +1051,7 @@ export async function exploreWithBudget(
   // Strategy 15 (underpriced+filler) gets 3x weight via FLOAT_BIASED_CASES
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13, 15, 15];
   const TOTAL_STRATEGIES = 16;
+  const adaptiveWeights = options.strategyWeights?.length === TOTAL_STRATEGIES ? options.strategyWeights : undefined;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -1066,7 +1069,7 @@ export async function exploreWithBudget(
     }
 
     try {
-      const strategy = pickWeightedStrategy(TOTAL_STRATEGIES, FLOAT_BIASED_CASES);
+      const strategy = pickWeightedStrategy(TOTAL_STRATEGIES, FLOAT_BIASED_CASES, adaptiveWeights);
       stratIters[strategy]++;
       let inputs: ListingWithCollection[] | null = null;
 
