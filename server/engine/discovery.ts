@@ -791,14 +791,15 @@ export async function randomExplore(
       try {
         await client.query('BEGIN');
         const inputSources = [...new Set(result.inputs.map(i => i.source ?? "csfloat"))].sort();
+        const outputSkinNames = [...new Set(result.outcomes.map(o => o.skin_name))].sort();
         const { rows: infoRows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9, $10)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources, output_skin_names)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9, $10, $11)
           RETURNING id
         `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes), inputSources
+          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes), inputSources, outputSkinNames
         ]);
         const tuId = infoRows[0].id;
         for (const input of result.inputs) {
