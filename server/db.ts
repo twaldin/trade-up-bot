@@ -577,23 +577,28 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
   // Purge trade-ups with sticker-premium input listings that pre-dated the outlier filter.
-  // Removes any trade-up where an input is priced >5x the Skinport median for that skin/condition.
-  // Threshold matches the active discovery filter (PR #35). Idempotent: no-op once clean.
-  // Cascades to trade_up_inputs automatically.
-  const { rowCount: purgedCount } = await pool.query(`
-    DELETE FROM trade_ups tu
-    WHERE EXISTS (
-      SELECT 1 FROM trade_up_inputs ti
-      JOIN price_data pd ON pd.skin_name = ti.skin_name
-        AND pd.condition = ti.condition
-        AND pd.source = 'skinport'
-      WHERE ti.trade_up_id = tu.id
-        AND pd.median_price_cents > 0
-        AND ti.price_cents > pd.median_price_cents * 5
-    )
-  `);
-  if ((purgedCount ?? 0) > 0) {
-    console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >5x Skinport median)`);
+  // Threshold matches the active discovery filter (PR #35). Skips if it can't acquire lock quickly.
+  try {
+    await pool.query("SET lock_timeout = '5s'");
+    const { rowCount: purgedCount } = await pool.query(`
+      DELETE FROM trade_ups tu
+      WHERE EXISTS (
+        SELECT 1 FROM trade_up_inputs ti
+        JOIN price_data pd ON pd.skin_name = ti.skin_name
+          AND pd.condition = ti.condition
+          AND pd.source = 'skinport'
+        WHERE ti.trade_up_id = tu.id
+          AND pd.median_price_cents > 0
+          AND ti.price_cents > pd.median_price_cents * 5
+      )
+    `);
+    if ((purgedCount ?? 0) > 0) {
+      console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >5x Skinport median)`);
+    }
+  } catch {
+    // Lock timeout or deadlock — skip this cycle, will retry next restart
+  } finally {
+    await pool.query("SET lock_timeout = '0'").catch(() => {});
   }
 
   } finally {
