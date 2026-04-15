@@ -134,13 +134,15 @@ function runCalcWorker(
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
 
-    // Extract tsx loader flags from parent process execArgv
+    // Extract tsx loader flags + memory flags from parent process execArgv
     const execArgv: string[] = [];
     for (let i = 0; i < process.execArgv.length; i++) {
       const arg = process.execArgv[i];
       if ((arg === "--require" || arg === "--import") && i + 1 < process.execArgv.length) {
         execArgv.push(arg, process.execArgv[i + 1]);
         i++;
+      } else if (arg.startsWith("--max-old-space-size") || arg.startsWith("--max_old_space_size")) {
+        execArgv.push(arg);
       }
     }
 

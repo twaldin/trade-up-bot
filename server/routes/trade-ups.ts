@@ -30,12 +30,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       const { rows: inputSkins } = await pool.query(
         `SELECT DISTINCT skin_name as name FROM trade_up_inputs`
       );
-      // Output skins from outcomes_json
+      // Output skins from denormalized output_skin_names array
       const { rows: outputSkins } = await pool.query(
-        `SELECT DISTINCT elem->>'skin_name' as name
-         FROM trade_ups t, json_array_elements(t.outcomes_json::json) AS elem
-         WHERE t.listing_status = 'active' AND t.is_theoretical = false
-           AND t.outcomes_json IS NOT NULL AND t.outcomes_json != '[]'`
+        `SELECT DISTINCT unnest(output_skin_names) as name
+         FROM trade_ups
+         WHERE listing_status = 'active' AND is_theoretical = false
+           AND output_skin_names != '{}'`
       );
 
       // Merge: build map of name → { input, output }
@@ -214,20 +214,21 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     if (skin) {
       const skinNames = skin.split("||").map(s => s.trim()).filter(Boolean);
       if (skinNames.length === 1 && !skinNames[0].includes("%")) {
-        // Exact skin name match — check inputs table + outcomes_json LIKE
-        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
-        params.push(skinNames[0], `%"skin_name":"${skinNames[0].replace(/"/g, '\\"')}"%`);
+        // Exact skin name match — check inputs table + output_skin_names array (GIN indexed)
+        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.output_skin_names && $${paramIndex + 1}::text[])`;
+        params.push(skinNames[0], [skinNames[0]]);
         paramIndex += 2;
       } else if (skinNames.length > 1) {
         // Multiple exact skin names (AND) — each skin gets its own clause
         for (const skinName of skinNames) {
-          where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
-          params.push(skinName, `%"skin_name":"${skinName.replace(/"/g, '\\"')}"%`);
+          where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.output_skin_names && $${paramIndex + 1}::text[])`;
+          params.push(skinName, [skinName]);
           paramIndex += 2;
         }
       } else {
-        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name LIKE $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
+        // Fuzzy search — still needs LIKE for partial matches, but also check output_skin_names
         const pattern = `%${skin}%`;
+        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name LIKE $${paramIndex}) OR t.outcomes_json LIKE $${paramIndex + 1})`;
         params.push(pattern, pattern);
         paramIndex += 2;
       }
