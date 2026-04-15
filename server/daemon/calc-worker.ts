@@ -31,9 +31,58 @@ interface WorkerInput {
   discoveryFile?: string;
 }
 
+type WorkerTask = WorkerInput["task"];
+
+interface WorkerTaskConfig {
+  signatureSeedLimit: number;
+  structuredLimit: number;
+  maxPerSignature: number;
+  exploreResultLimit: number;
+}
+
+const TASK_CONFIG: Record<WorkerTask, WorkerTaskConfig> = {
+  knife: {
+    signatureSeedLimit: 220_000,
+    structuredLimit: 50_000,
+    maxPerSignature: 50,
+    exploreResultLimit: 8_000,
+  },
+  classified: {
+    signatureSeedLimit: 200_000,
+    structuredLimit: 50_000,
+    maxPerSignature: 50,
+    exploreResultLimit: 8_000,
+  },
+  restricted: {
+    signatureSeedLimit: 140_000,
+    structuredLimit: 35_000,
+    maxPerSignature: 35,
+    exploreResultLimit: 6_000,
+  },
+  milspec: {
+    signatureSeedLimit: 60_000,
+    structuredLimit: 15_000,
+    maxPerSignature: 15,
+    exploreResultLimit: 3_000,
+  },
+  industrial: {
+    signatureSeedLimit: 40_000,
+    structuredLimit: 10_000,
+    maxPerSignature: 12,
+    exploreResultLimit: 2_500,
+  },
+  consumer: {
+    signatureSeedLimit: 30_000,
+    structuredLimit: 8_000,
+    maxPerSignature: 10,
+    exploreResultLimit: 2_000,
+  },
+};
+
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
 const { task, timeLimitMs, cycleStartedAt, discoveryFile } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
+const taskConfig = TASK_CONFIG[task];
 
 // Create own PG pool — worker needs its own connection
 const connectionString = process.env.DATABASE_URL
@@ -73,7 +122,7 @@ async function sendAndExit(msg: { ok: boolean; tradeUps?: unknown[]; error?: str
 }
 
 // Map worker task name to trade_ups.type for signature loading
-const typeMap: Record<string, string> = {
+const typeMap: Record<WorkerTask, string> = {
   knife: "covert_knife",
   classified: "classified_covert",
   restricted: "restricted_classified",
@@ -83,7 +132,7 @@ const typeMap: Record<string, string> = {
 };
 
 // Rarity map for gun tiers
-const rarityMap: Record<string, string> = {
+const rarityMap: Partial<Record<WorkerTask, string>> = {
   classified: "Classified",
   restricted: "Restricted",
   milspec: "Mil-Spec",
@@ -109,19 +158,29 @@ const rarityMap: Record<string, string> = {
     // Load existing listing signatures so discovery skips combos already in DB.
     // Uses a dedicated client with statement_timeout to prevent runaway queries (GH #22:
     // knife sig load took 174s vs normal 8s, likely due to DB pressure with no escape hatch).
-    const tradeUpType = typeMap[task] ?? "classified_covert";
+    const tradeUpType = typeMap[task];
     const existingSigs = new Set<string>();
     const sigClient = await pool.connect();
     try {
       await sigClient.query("SET statement_timeout = '30000'");
-      const { rows: sigRows } = await sigClient.query(`
-        SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
-        FROM trade_up_inputs WHERE trade_up_id IN (
-          SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
-        ) GROUP BY trade_up_id
-      `, [tradeUpType]);
+      // Memory guard: seed dedup from top active trade-ups, not entire type history.
+      const { rows: sigRows } = await sigClient.query<{ ids: string }>(`
+        WITH top_tus AS (
+          SELECT id
+          FROM trade_ups
+          WHERE type = $1
+            AND is_theoretical = false
+            AND listing_status = 'active'
+          ORDER BY profit_cents DESC, id DESC
+          LIMIT $2
+        )
+        SELECT STRING_AGG(tui.listing_id::text, ',' ORDER BY tui.listing_id) as ids
+        FROM trade_up_inputs tui
+        JOIN top_tus ON top_tus.id = tui.trade_up_id
+        GROUP BY tui.trade_up_id
+      `, [tradeUpType, taskConfig.signatureSeedLimit]);
       for (const row of sigRows) {
-        existingSigs.add(row.ids.split(",").sort().join(","));
+        if (row.ids) existingSigs.add(row.ids);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -131,7 +190,7 @@ const rarityMap: Record<string, string> = {
     }
     const sigMs = Date.now() - workerStart;
     const memAfter = process.memoryUsage();
-    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
+    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (cap ${taskConfig.signatureSeedLimit.toLocaleString()}, ${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
 
     // Phase 1: Structured discovery
     const structuredStart = Date.now();
@@ -149,23 +208,54 @@ const rarityMap: Record<string, string> = {
         break;
 
       case "classified":
-        tradeUps = await findProfitableTradeUps(pool, { existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, {
+          limit: taskConfig.structuredLimit,
+          maxPerSignature: taskConfig.maxPerSignature,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+          preferHighFloat: true,
+        });
         break;
 
       case "restricted":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Restricted"],
+          limit: taskConfig.structuredLimit,
+          maxPerSignature: taskConfig.maxPerSignature,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+          preferHighFloat: true,
+        });
         break;
 
       case "milspec":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Mil-Spec"],
+          limit: taskConfig.structuredLimit,
+          maxPerSignature: taskConfig.maxPerSignature,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
 
       case "industrial":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Industrial Grade"],
+          limit: taskConfig.structuredLimit,
+          maxPerSignature: taskConfig.maxPerSignature,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
 
       case "consumer":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Consumer Grade"],
+          limit: taskConfig.structuredLimit,
+          maxPerSignature: taskConfig.maxPerSignature,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
     }
 
@@ -186,6 +276,7 @@ const rarityMap: Record<string, string> = {
       if (task === "knife") {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
           cycleStartedAt,
+          maxResults: taskConfig.exploreResultLimit,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       } else {
@@ -195,6 +286,7 @@ const rarityMap: Record<string, string> = {
           inputRarity,
           cycleStartedAt,
           preferHighFloat,
+          maxResults: taskConfig.exploreResultLimit,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       }
