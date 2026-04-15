@@ -840,8 +840,12 @@ export async function exploreWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     preferHighFloat?: boolean;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
+  const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
+  if (maxResults <= 0) return [];
+
   const inputRarity = options.inputRarity ?? "Classified";
   const stattrak = options.stattrak ?? false;
   const outputRarity = getNextRarity(inputRarity);
@@ -993,7 +997,7 @@ export async function exploreWithBudget(
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 1000 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
