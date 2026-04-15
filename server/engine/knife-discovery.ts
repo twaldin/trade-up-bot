@@ -687,6 +687,8 @@ export async function exploreKnifeWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     strategyYield?: StrategyYieldEntry[];
+    /** Adaptive weights from yield history. When provided, overrides static float-biased weights. */
+    strategyWeights?: number[];
   } = {}
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
@@ -725,6 +727,7 @@ export async function exploreKnifeWithBudget(
   // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
   const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
   const KNIFE_TOTAL_STRATEGIES = 13;
+  const adaptiveWeights = options.strategyWeights?.length === KNIFE_TOTAL_STRATEGIES ? options.strategyWeights : undefined;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -742,7 +745,7 @@ export async function exploreKnifeWithBudget(
     }
 
     try {
-      const strategy = pickWeightedStrategy(KNIFE_TOTAL_STRATEGIES, KNIFE_FLOAT_BIASED);
+      const strategy = pickWeightedStrategy(KNIFE_TOTAL_STRATEGIES, KNIFE_FLOAT_BIASED, adaptiveWeights);
       stratIters[strategy]++;
       let inputs: ListingWithCollection[] | null = null;
 

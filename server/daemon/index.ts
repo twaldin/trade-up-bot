@@ -38,6 +38,12 @@ import {
   ensureStatsTable, saveCycleStats, printPerformanceComparison,
   type CycleStats,
 } from "./utils.js";
+import type { StrategyYieldEntry } from "../engine.js";
+import {
+  loadYieldHistory, updateYieldHistory, computeAdaptiveWeights, formatYieldSummary,
+  STRATEGY_COUNTS, FLOAT_BIASED_BY_TIER,
+} from "./adaptive-weights.js";
+import { runCompletenessAudit, logAuditResult } from "./completeness-audit.js";
 
 // ─── Graceful restart queue ──────────────────────────────────────────────────
 // SIGUSR2: queue restart at end of current cycle (PM2 auto-restarts after exit)
@@ -122,7 +128,7 @@ const TASK_TYPE_MAP: Record<string, string> = {
  */
 interface WorkerResult {
   tradeUps: TradeUp[];
-  stats?: { structuredCount: number; exploreCount: number; structuredMs: number };
+  stats?: { structuredCount: number; exploreCount: number; structuredMs: number; strategyYield?: StrategyYieldEntry[]; sigSkipRatio?: number };
 }
 
 function runCalcWorker(
@@ -130,6 +136,7 @@ function runCalcWorker(
   timeLimitMs?: number,
   cycleStartedAt?: number,
   discoveryFile?: string,
+  strategyWeights?: number[],
 ): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -151,7 +158,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights }),
       },
     });
 
@@ -418,6 +425,19 @@ export async function main() {
 
     const dmarketEnabled = isDMarketConfigured();
 
+    // Adaptive strategy weights: load yield history, compute per-tier weights
+    const tierWeights: Record<string, number[]> = {};
+    const cycleYield: Record<string, StrategyYieldEntry[]> = {};
+    for (const tier of Object.keys(STRATEGY_COUNTS)) {
+      cycleYield[tier] = [];
+      const history = await loadYieldHistory(pool, tier);
+      const weights = computeAdaptiveWeights(history, STRATEGY_COUNTS[tier], FLOAT_BIASED_BY_TIER[tier]);
+      tierWeights[tier] = weights;
+      if (history && history.strategies.some(s => s.iterations > 0)) {
+        console.log(`  Adaptive weights [${tier}]: ${formatYieldSummary(history, weights, STRATEGY_COUNTS[tier])}`);
+      }
+    }
+
     // Super-batch loop: runs until cycle time budget is exhausted
     while (Date.now() < engineEnd - 30_000) { // Stop 30s before end
       superBatchCount++;
@@ -444,10 +464,10 @@ export async function main() {
         await setDaemonStatus(pool, "calculating", statusDetail);
 
         const workers: Promise<WorkerResult>[] = [
-          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA]),
+          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA], tierWeights[taskA]),
         ];
         if (taskB) {
-          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB]));
+          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB], tierWeights[taskB]));
         }
         const results = await Promise.allSettled(workers);
 
@@ -491,6 +511,10 @@ export async function main() {
             console.log(`    ${taskName}: ${tradeUps.length} trade-ups (${profitable.length} profitable)`);
             if (wStats) {
               console.log(`      structured ${wStats.structuredCount} (${(wStats.structuredMs / 1000).toFixed(1)}s) + explored ${wStats.exploreCount}`);
+              // Collect strategy yield for adaptive weights
+              if (wStats.strategyYield) {
+                cycleYield[taskName].push(...wStats.strategyYield);
+              }
             }
 
             if (profitable.length > 0 && (taskName === "knife" || taskName === "classified")) {
@@ -635,6 +659,37 @@ export async function main() {
 
     // Clean up pre-materialized discovery files
     await cleanupDiscoveryFiles(discoveryFiles);
+
+    // Persist per-tier yield data for adaptive weights (decay + accumulate)
+    for (const tier of Object.keys(STRATEGY_COUNTS)) {
+      if (cycleYield[tier].length > 0) {
+        // Merge multiple worker runs for same tier (knife runs in 2 rounds)
+        const merged = new Map<number, StrategyYieldEntry>();
+        for (const entry of cycleYield[tier]) {
+          const existing = merged.get(entry.strategyId);
+          if (existing) {
+            existing.iterations += entry.iterations;
+            existing.profitableFound += entry.profitableFound;
+            existing.totalFound += entry.totalFound;
+          } else {
+            merged.set(entry.strategyId, { ...entry });
+          }
+        }
+        await updateYieldHistory(pool, tier, [...merged.values()], STRATEGY_COUNTS[tier]);
+      }
+    }
+
+    // Completeness audit every 10th cycle
+    if (cycleCount % 10 === 0) {
+      console.log(`\n[${timestamp()}] Completeness audit (cycle ${cycleCount})`);
+      await setDaemonStatus(pool, "calculating", "Completeness audit");
+      try {
+        const auditResult = await runCompletenessAudit(pool);
+        logAuditResult(auditResult);
+      } catch (e: unknown) {
+        console.error(`  Completeness audit failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
 
     // Post-engine: update collection scores + global trim
     await updateCollectionScores(pool);

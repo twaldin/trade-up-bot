@@ -20,13 +20,12 @@ export function shuffle<T>(arr: T[]): T[] {
 
 /**
  * Weighted random strategy selection.
- * Strategies in floatBiasedCases get 2x probability.
+ * If customWeights is provided, uses those directly.
+ * Otherwise, strategies in floatBiasedCases get 2x probability.
  */
-export function pickWeightedStrategy(maxStrategy: number, floatBiasedCases: number[]): number {
-  const weights: number[] = [];
-  for (let i = 0; i < maxStrategy; i++) {
-    weights.push(floatBiasedCases.includes(i) ? 2 : 1);
-  }
+export function pickWeightedStrategy(maxStrategy: number, floatBiasedCases: number[], customWeights?: number[]): number {
+  const weights = customWeights
+    ?? Array.from({ length: maxStrategy }, (_, i) => floatBiasedCases.includes(i) ? 2 : 1);
   const total = weights.reduce((s, w) => s + w, 0);
   let r = Math.random() * total;
   for (let i = 0; i < weights.length; i++) {

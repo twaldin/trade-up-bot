@@ -30,10 +30,11 @@ interface WorkerInput {
   timeLimitMs?: number;
   cycleStartedAt?: number;
   discoveryFile?: string;
+  strategyWeights?: number[];
 }
 
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
-const { task, timeLimitMs, cycleStartedAt, discoveryFile } = input;
+const { task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
 
 // Create own PG pool — worker needs its own connection
@@ -196,6 +197,7 @@ const rarityMap: Record<string, string> = {
           cycleStartedAt,
           onProgress: (msg) => console.log(`  ${msg}`),
           strategyYield,
+          strategyWeights,
         });
       } else {
         const inputRarity = rarityMap[task] ?? "Classified";
@@ -206,6 +208,7 @@ const rarityMap: Record<string, string> = {
           preferHighFloat,
           onProgress: (msg) => console.log(`  ${msg}`),
           strategyYield,
+          strategyWeights,
         });
       }
 
