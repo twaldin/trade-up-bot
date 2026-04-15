@@ -27,13 +27,14 @@ export class TradeUpStore {
   private bySignature = new Map<string, TradeUp[]>();
   private seen = new Set<string>();
   private maxPerSignature: number;
+  private maxTotal?: number;
   total = 0;
 
-  constructor(maxPerSignature: number = 20, existingSignatures?: Set<string>) {
+  constructor(maxPerSignature: number = 20, existingSignatures?: Set<string>, maxTotal?: number) {
     this.maxPerSignature = maxPerSignature;
-    if (existingSignatures) {
-      this.seen = new Set(existingSignatures);
-    }
+    this.maxTotal = maxTotal;
+    // Reuse the caller's set when provided to avoid doubling memory in workers.
+    this.seen = existingSignatures ?? new Set<string>();
   }
 
   private getSignature(tu: TradeUp): string {
@@ -55,7 +56,6 @@ export class TradeUpStore {
 
     const key = listingSig(tu.inputs.map(i => i.listing_id));
     if (this.seen.has(key)) return false;
-    this.seen.add(key);
 
     const sig = this.getSignature(tu);
     const bucket = this.bySignature.get(sig) ?? [];
@@ -64,6 +64,7 @@ export class TradeUpStore {
     if (bucket.length >= this.maxPerSignature) {
       const worst = bucket[bucket.length - 1];
       if (score > tradeUpScore(worst)) {
+        this.seen.add(key);
         bucket[bucket.length - 1] = tu;
         bucket.sort((a, b) => tradeUpScore(b) - tradeUpScore(a));
         return true;
@@ -71,6 +72,12 @@ export class TradeUpStore {
       return false;
     }
 
+    // Hard cap protects long-running worker discovery from unbounded heap growth.
+    if (this.maxTotal !== undefined && this.total >= this.maxTotal) {
+      return false;
+    }
+
+    this.seen.add(key);
     bucket.push(tu);
     bucket.sort((a, b) => tradeUpScore(b) - tradeUpScore(a));
     this.bySignature.set(sig, bucket);

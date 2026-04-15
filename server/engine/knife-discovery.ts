@@ -10,6 +10,11 @@ import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 
+function tradeUpScore(tu: TradeUp): number {
+  const ctp = tu.chance_to_profit ?? 0;
+  return tu.profit_cents + (ctp > 0.25 ? ctp * 5000 : 0);
+}
+
 /**
  * Discover profitable knife trade-ups.
  *
@@ -28,6 +33,7 @@ export async function findProfitableKnifeTradeUps(
     extraTransitionPoints?: number[];
     existingSignatures?: Set<string>;
     deadlineMs?: number;
+    limit?: number;
   } = {}
 ): Promise<TradeUp[]> {
   options.onProgress?.("Building price cache for knife trade-ups...");
@@ -55,7 +61,8 @@ export async function findProfitableKnifeTradeUps(
   }
 
   const results: TradeUp[] = [];
-  const seen = new Set<string>(options.existingSignatures);
+  const seen = options.existingSignatures ?? new Set<string>();
+  const maxResults = options.limit ?? Number.POSITIVE_INFINITY;
   let skippedExisting = 0;
 
   const tryAdd = (tu: TradeUp | null) => {
@@ -68,7 +75,28 @@ export async function findProfitableKnifeTradeUps(
       return;
     }
     seen.add(key);
-    results.push(tu);
+
+    if (maxResults <= 0) return;
+
+    if (!Number.isFinite(maxResults) || results.length < maxResults) {
+      results.push(tu);
+      return;
+    }
+
+    // At cap: keep only stronger trade-ups to bound memory growth.
+    const score = tradeUpScore(tu);
+    let worstIdx = 0;
+    let worstScore = tradeUpScore(results[0]);
+    for (let i = 1; i < results.length; i++) {
+      const s = tradeUpScore(results[i]);
+      if (s < worstScore) {
+        worstScore = s;
+        worstIdx = i;
+      }
+    }
+    if (score > worstScore) {
+      results[worstIdx] = tu;
+    }
   };
 
   /** Compute listing-combo signature for pre-evaluation sig-skipping. */
@@ -684,8 +712,12 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
+  const maxResults = Math.max(0, options.maxResults ?? 30000);
+  if (maxResults === 0) return [];
+
   await buildPriceCache(pool);
 
   const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
@@ -989,6 +1021,7 @@ export async function exploreKnifeWithBudget(
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
+      if (results.length >= maxResults) continue;
       results.push(result);
     } catch {
       // Ignore individual iteration errors
