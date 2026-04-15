@@ -840,6 +840,7 @@ export async function exploreWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     preferHighFloat?: boolean;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   const inputRarity = options.inputRarity ?? "Classified";
@@ -899,6 +900,41 @@ export async function exploreWithBudget(
     }
   }
   const outputProfiles = buildOutputProfiles(outcomesByCol, outputPriceMap);
+  const resultLimit = (options.maxResults && options.maxResults > 0)
+    ? options.maxResults
+    : Number.MAX_SAFE_INTEGER;
+  const conditionNames = CONDITION_BOUNDS.map(c => c.name);
+
+  // Pre-compute expensive slices once; avoids repeated large allocations per iteration.
+  const listingById = new Map<string, ListingWithCollection>();
+  const byCondition = new Map<string, Map<string, ListingWithCollection[]>>();
+  const byLowAdjustedValue = new Map<string, ListingWithCollection[]>();
+  const byFloatSorted = new Map<string, ListingWithCollection[]>();
+  for (const [colId, listings] of byCollection) {
+    const perCond = new Map<string, ListingWithCollection[]>();
+    for (const l of listings) {
+      listingById.set(l.id, l);
+      const cond = floatToCondition(l.float_value);
+      const condList = perCond.get(cond) ?? [];
+      condList.push(l);
+      perCond.set(cond, condList);
+    }
+    byCondition.set(colId, perCond);
+    byFloatSorted.set(colId, [...listings].sort((a, b) => a.float_value - b.float_value));
+  }
+  for (const [colId, valueList] of byColValue) {
+    byLowAdjustedValue.set(
+      colId,
+      valueList.filter((l) => {
+        const range = l.max_float - l.min_float;
+        const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
+        return adj < 0.3;
+      }),
+    );
+  }
+  const globalCheapestEligible = allListings
+    .filter(l => collectionsWithOutcomes.has(l.collection_id))
+    .sort((a, b) => a.price_cents - b.price_cents);
 
   // Build new-listing pool: listings fetched this cycle (for new-listing priority strategy)
   const newListingsByCol = new Map<string, ListingWithCollection[]>();
@@ -993,7 +1029,7 @@ export async function exploreWithBudget(
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < resultLimit) {
     explored++;
     if (explored % 1000 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -1033,10 +1069,8 @@ export async function exploreWithBudget(
 
         case 2: {
           const col = pick(weightedPool);
-          const list = byCollection.get(col) ?? [];
-          const conditions = CONDITION_BOUNDS.map(c => c.name);
-          const cond = pick(conditions);
-          const condListings = list.filter(l => floatToCondition(l.float_value) === cond);
+          const cond = pick(conditionNames);
+          const condListings = byCondition.get(col)?.get(cond) ?? [];
           if (condListings.length < 10) break;
           const off = Math.floor(Math.random() * Math.min(condListings.length - 10 + 1, 100));
           inputs = condListings.slice(off, off + 10);
@@ -1064,12 +1098,10 @@ export async function exploreWithBudget(
         }
 
         case 4: {
-          const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
-          const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 10, 300);
+          const maxOff = Math.min(globalCheapestEligible.length - 10, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
-          inputs = sorted.slice(off, off + 10);
+          inputs = globalCheapestEligible.slice(off, off + 10);
           break;
         }
 
@@ -1088,8 +1120,6 @@ export async function exploreWithBudget(
         case 6: {
           const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
-          const listA = byCollection.get(colA) ?? [];
-          const listB = byCollection.get(colB) ?? [];
           const condPairs: [string, string][] = [
             ["Factory New", "Field-Tested"],
             ["Minimal Wear", "Field-Tested"],
@@ -1097,8 +1127,8 @@ export async function exploreWithBudget(
             ["Field-Tested", "Well-Worn"],
           ];
           const [condA, condB] = pick(condPairs);
-          const poolA = listA.filter(l => floatToCondition(l.float_value) === condA);
-          const poolB = listB.filter(l => floatToCondition(l.float_value) === condB);
+          const poolA = byCondition.get(colA)?.get(condA) ?? [];
+          const poolB = byCondition.get(colB)?.get(condB) ?? [];
           const countA = 1 + Math.floor(Math.random() * 9);
           const countB = 10 - countA;
           if (poolA.length >= countA && poolB.length >= countB) {
@@ -1146,8 +1176,7 @@ export async function exploreWithBudget(
           const list = byCollection.get(col) ?? [];
           if (list.length < 10) break;
 
-          // Sort by float to find lowest-float listings
-          const floatSorted = [...list].sort((a, b) => a.float_value - b.float_value);
+          const floatSorted = byFloatSorted.get(col) ?? [];
           const lowFloatCount = 2 + Math.floor(Math.random() * 2); // 2 or 3
           const lowFloats = floatSorted.slice(0, lowFloatCount);
           const lowFloatIds = new Set(lowFloats.map(l => l.id));
@@ -1206,10 +1235,10 @@ export async function exploreWithBudget(
           const inputListings: ListingWithCollection[] = [];
           for (const inp of tu.inputs) {
             if (inp.listing_id === expensiveInput.listing_id) {
-              const found = allListings.find(l => l.id === replacement.id);
+              const found = listingById.get(replacement.id);
               if (found) inputListings.push(found);
             } else {
-              const found = allListings.find(l => l.id === inp.listing_id);
+              const found = listingById.get(inp.listing_id);
               if (found) inputListings.push(found);
             }
           }
@@ -1266,14 +1295,7 @@ export async function exploreWithBudget(
         case 14: {
           // Value-ratio + float: underpriced listings near condition boundary
           const col = pick(weightedPool);
-          const valueList = byColValue.get(col) ?? [];
-          if (valueList.length < 10) break;
-          // Filter to listings with adjustedFloat < 0.3 (lower half, better output condition)
-          const lowFloat = valueList.filter(l => {
-            const range = l.max_float - l.min_float;
-            const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
-            return adj < 0.3;
-          });
+          const lowFloat = byLowAdjustedValue.get(col) ?? [];
           if (lowFloat.length < 10) break;
           inputs = lowFloat.slice(0, 10);
           break;
@@ -1325,6 +1347,7 @@ export async function exploreWithBudget(
 
       existingSignatures.add(sig);
       results.push(result);
+      if (results.length >= resultLimit) break;
     } catch {
       // Ignore individual iteration errors
     }

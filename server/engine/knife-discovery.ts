@@ -684,6 +684,7 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
@@ -722,11 +723,17 @@ export async function exploreKnifeWithBudget(
   // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
   const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
   const KNIFE_TOTAL_STRATEGIES = 13;
+  const resultLimit = (options.maxResults && options.maxResults > 0)
+    ? options.maxResults
+    : Number.MAX_SAFE_INTEGER;
+  const knifeOnlyCheapest = allListings
+    .filter(l => CASE_KNIFE_MAP[l.collection_name])
+    .sort((a, b) => a.price_cents - b.price_cents);
 
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < resultLimit) {
     explored++;
     if (explored % 500 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -792,12 +799,10 @@ export async function exploreKnifeWithBudget(
         }
 
         case 4: {
-          const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
-          const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 5, 300);
+          const maxOff = Math.min(knifeOnlyCheapest.length - 5, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
-          inputs = sorted.slice(off, off + 5);
+          inputs = knifeOnlyCheapest.slice(off, off + 5);
           break;
         }
 
@@ -990,6 +995,7 @@ export async function exploreKnifeWithBudget(
 
       existingSignatures.add(sig);
       results.push(result);
+      if (results.length >= resultLimit) break;
     } catch {
       // Ignore individual iteration errors
     }
