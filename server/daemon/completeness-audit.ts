@@ -293,9 +293,9 @@ export async function runCompletenessAudit(pool: pg.Pool): Promise<AuditResult> 
 /** Log audit results to console. */
 export function logAuditResult(result: AuditResult): void {
   const totalGaps = result.gunGaps.length + result.knifeGaps.length;
-  console.log(`  Completeness audit: ${totalGaps} gaps found (${(result.durationMs / 1000).toFixed(1)}s)`);
+  console.log(`  completeness audit: ${totalGaps} gaps found (${(result.durationMs / 1000).toFixed(1)}s)`);
   console.log(`    Gun: ${result.gunCollectionsAudited} collections, ${result.gunCombosEvaluated} combos → ${result.gunGaps.length} gaps`);
-  console.log(`    Knife: ${result.knifePairsAudited} pairs, ${result.knifeCombosEvaluated} combos → ${result.knifeGaps.length} gaps`);
+  console.log(`  knife audit: ${result.knifePairsAudited} pairs, ${result.knifeCombosEvaluated} combos → ${result.knifeGaps.length} gaps`);
 
   // Log top gaps
   const allGaps = [...result.gunGaps, ...result.knifeGaps].sort((a, b) => b.profitCents - a.profitCents);
