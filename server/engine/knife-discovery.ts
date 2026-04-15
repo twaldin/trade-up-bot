@@ -684,8 +684,12 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
+  const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
+  if (maxResults <= 0) return [];
+
   await buildPriceCache(pool);
 
   const { allListings, byCollection, byColAdj, byColValue } = await loadDiscoveryData(
@@ -726,7 +730,7 @@ export async function exploreKnifeWithBudget(
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 500 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
