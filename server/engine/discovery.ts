@@ -13,6 +13,29 @@ import { evaluateTradeUp } from "./evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 
+/**
+ * Pick a float target biased toward low values (FN/MW outputs) based on condition premium.
+ * premiumRatio: FN/FT price ratio for the most valuable output skin. Higher = more bias toward low floats.
+ * Returns an adjusted float target in [0, 0.5].
+ */
+function biasedFloatTarget(premiumRatio: number): number {
+  // premiumRatio 1-5: uniform [0, 0.5] (no meaningful premium)
+  // premiumRatio 5-20: bias toward [0, 0.3]
+  // premiumRatio 20+: heavy bias toward [0, 0.15] (FN territory)
+  if (premiumRatio >= 20) {
+    // 70% chance of low target, 30% of wider range
+    return Math.random() < 0.7
+      ? Math.random() * 0.15
+      : Math.random() * 0.5;
+  } else if (premiumRatio >= 5) {
+    // 40% chance of low target
+    return Math.random() < 0.4
+      ? Math.random() * 0.2
+      : Math.random() * 0.5;
+  }
+  return Math.random() * 0.5;
+}
+
 /** Per-strategy yield stats from exploration. */
 export interface StrategyYieldEntry {
   strategyId: number;
@@ -921,6 +944,21 @@ export async function exploreWithBudget(
   }
   const outputProfiles = buildOutputProfiles(outcomesByCol, outputPriceMap);
 
+  // Build per-collection condition premium map (max FN/FT ratio among output skins).
+  // Used to bias float targeting toward low floats for collections with high condition premiums.
+  const collectionPremium = new Map<string, number>();
+  for (const [colId, outcomes] of outcomesByCol) {
+    let maxRatio = 1;
+    for (const o of outcomes) {
+      const fnPrice = globalPriceCache.get(`${o.name}:Factory New`) ?? 0;
+      const ftPrice = globalPriceCache.get(`${o.name}:Field-Tested`) ?? 0;
+      if (ftPrice > 0 && fnPrice > ftPrice) {
+        maxRatio = Math.max(maxRatio, fnPrice / ftPrice);
+      }
+    }
+    collectionPremium.set(colId, maxRatio);
+  }
+
   // Build new-listing pool: listings fetched this cycle (for new-listing priority strategy)
   const newListingsByCol = new Map<string, ListingWithCollection[]>();
   if (options.cycleStartedAt) {
@@ -1101,11 +1139,13 @@ export async function exploreWithBudget(
         }
 
         case 5: {
+          // Float-targeted pair — biased toward low floats for collections with high condition premiums
           const colA = pick(weightedPool);
           const colB = pick(eligibleCollections.filter(c => c !== colA));
           const countA = 1 + Math.floor(Math.random() * 9);
           const countB = 10 - countA;
-          const target = Math.random() * 0.5;
+          const premium = Math.max(collectionPremium.get(colA) ?? 1, collectionPremium.get(colB) ?? 1);
+          const target = biasedFloatTarget(premium);
           const quotas = new Map([[colA, countA], [colB, countB]]);
           const selected = selectForFloatTarget(byColAdj, quotas, target);
           if (selected && selected.length === 10) inputs = selected;
