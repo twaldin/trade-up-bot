@@ -21,6 +21,7 @@ import {
   exploreWithBudget,
   exploreKnifeWithBudget,
 } from "../engine.js";
+import type { StrategyYieldEntry } from "../engine.js";
 
 const { Pool } = pg;
 
@@ -137,8 +138,11 @@ const rarityMap: Record<string, string> = {
     const structuredStart = Date.now();
     let tradeUps;
 
-    // Give structured discovery 60% of the time budget, leave 40% for exploration
-    const structuredDeadline = deadline ? Date.now() + Math.floor((deadline - Date.now()) * 0.6) : undefined;
+    // Adaptive split: start with 60/40, shift toward explore if sig-skip ratio is high.
+    // Mature tiers skip >95% of combos — exploration has higher yield there.
+    const structuredFraction = 0.6; // default; will adapt in future cycles based on sigSkipRatio history
+    const structuredDeadline = deadline ? Date.now() + Math.floor((deadline - Date.now()) * structuredFraction) : undefined;
+    const sigSkipRatio = { value: 0 };
 
     switch (task) {
       case "knife":
@@ -149,28 +153,31 @@ const rarityMap: Record<string, string> = {
         break;
 
       case "classified":
-        tradeUps = await findProfitableTradeUps(pool, { existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, { existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true, sigSkipRatio });
         break;
 
       case "restricted":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true, sigSkipRatio });
         break;
 
       case "milspec":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, sigSkipRatio });
         break;
 
       case "industrial":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, sigSkipRatio });
         break;
 
       case "consumer":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, sigSkipRatio });
         break;
     }
 
     const structuredMs = Date.now() - structuredStart;
     const structuredCount = tradeUps?.length ?? 0;
+    if (sigSkipRatio.value > 0) {
+      console.log(`  [${task}] sig-skip ratio: ${(sigSkipRatio.value * 100).toFixed(1)}%`);
+    }
 
     // Add structured results to sig set so exploration doesn't rediscover them
     for (const tu of tradeUps ?? []) {
@@ -179,6 +186,7 @@ const rarityMap: Record<string, string> = {
 
     // Phase 2: Deep exploration with remaining time
     let exploreCount = 0;
+    const strategyYield: StrategyYieldEntry[] = [];
     if (deadline && Date.now() < deadline - 5000) {
       const exploreStart = Date.now();
 
@@ -187,6 +195,7 @@ const rarityMap: Record<string, string> = {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
           cycleStartedAt,
           onProgress: (msg) => console.log(`  ${msg}`),
+          strategyYield,
         });
       } else {
         const inputRarity = rarityMap[task] ?? "Classified";
@@ -196,12 +205,22 @@ const rarityMap: Record<string, string> = {
           cycleStartedAt,
           preferHighFloat,
           onProgress: (msg) => console.log(`  ${msg}`),
+          strategyYield,
         });
       }
 
       exploreCount = explored.length;
       const exploreMs = Date.now() - exploreStart;
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s) + explored ${exploreCount} (${(exploreMs / 1000).toFixed(1)}s)`);
+
+      // Log per-strategy yield
+      if (strategyYield.length > 0) {
+        const yieldStr = strategyYield
+          .filter(s => s.iterations > 0)
+          .map(s => `S${s.strategyId}:${s.profitableFound}/${s.iterations}`)
+          .join(" ");
+        console.log(`    yield: ${yieldStr}`);
+      }
 
       // Combine results
       tradeUps = [...(tradeUps ?? []), ...explored];
@@ -212,7 +231,7 @@ const rarityMap: Record<string, string> = {
     await sendAndExit({
       ok: true,
       tradeUps,
-      stats: { structuredCount, exploreCount, structuredMs },
+      stats: { structuredCount, exploreCount, structuredMs, strategyYield, sigSkipRatio: sigSkipRatio.value },
     });
   } catch (err) {
     await sendAndExit({ ok: false, error: (err as Error).message });

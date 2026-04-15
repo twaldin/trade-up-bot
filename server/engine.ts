@@ -3,7 +3,7 @@
 // === Types ===
 export type { DbListing, DbSkinOutcome, ListingWithCollection, AdjustedListing, PriceAnchor } from "./engine/types.js";
 export type { CaseMapping, FinishData } from "./engine/knife-data.js";
-export type { DiscoveryProgressCallback } from "./engine/discovery.js";
+export type { DiscoveryProgressCallback, StrategyYieldEntry } from "./engine/discovery.js";
 export type { ProgressCallback } from "./engine/types.js";
 export type { OutputPriceResult } from "./engine/pricing.js";
 export type { DiscoveryData } from "./engine/data-load.js";

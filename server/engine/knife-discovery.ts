@@ -9,6 +9,7 @@ import { selectForFloatTarget, selectLowestFloat } from "./selection.js";
 import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
+import type { StrategyYieldEntry } from "./discovery.js";
 
 /**
  * Discover profitable knife trade-ups.
@@ -685,6 +686,7 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    strategyYield?: StrategyYieldEntry[];
   } = {}
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
@@ -727,6 +729,11 @@ export async function exploreKnifeWithBudget(
   const results: TradeUp[] = [];
   let explored = 0;
 
+  // Per-strategy yield tracking
+  const stratIters = new Array(KNIFE_TOTAL_STRATEGIES).fill(0);
+  const stratProfitable = new Array(KNIFE_TOTAL_STRATEGIES).fill(0);
+  const stratTotal = new Array(KNIFE_TOTAL_STRATEGIES).fill(0);
+
   while (Date.now() < deadlineMs - 1000) {
     explored++;
     if (explored % 500 === 0) {
@@ -736,6 +743,7 @@ export async function exploreKnifeWithBudget(
 
     try {
       const strategy = pickWeightedStrategy(KNIFE_TOTAL_STRATEGIES, KNIFE_FLOAT_BIASED);
+      stratIters[strategy]++;
       let inputs: ListingWithCollection[] | null = null;
 
       switch (strategy) {
@@ -991,8 +999,24 @@ export async function exploreKnifeWithBudget(
 
       existingSignatures.add(sig);
       results.push(result);
+      stratTotal[strategy]++;
+      if (result.profit_cents > 0) stratProfitable[strategy]++;
     } catch {
       // Ignore individual iteration errors
+    }
+  }
+
+  // Populate strategy yield stats
+  if (options.strategyYield) {
+    for (let s = 0; s < KNIFE_TOTAL_STRATEGIES; s++) {
+      if (stratIters[s] > 0) {
+        options.strategyYield.push({
+          strategyId: s,
+          iterations: stratIters[s],
+          profitableFound: stratProfitable[s],
+          totalFound: stratTotal[s],
+        });
+      }
     }
   }
 
