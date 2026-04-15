@@ -1044,10 +1044,11 @@ export async function exploreWithBudget(
     }
   }
 
-  // Low-float bias: strategies 5 (float-targeted pair), 7 (output-value-aware), 8 (ultra-low-float)
+  // Low-float bias: strategies 5 (float-targeted pair), 7 (output-value-aware), 8 (ultra-low-float), 15 (underpriced+filler)
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
-  const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13];
-  const TOTAL_STRATEGIES = 15;
+  // Strategy 15 (underpriced+filler) gets 3x weight via FLOAT_BIASED_CASES
+  const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13, 15, 15];
+  const TOTAL_STRATEGIES = 16;
 
   const results: TradeUp[] = [];
   let explored = 0;
@@ -1343,6 +1344,34 @@ export async function exploreWithBudget(
           });
           if (lowFloat.length < 10) break;
           inputs = lowFloat.slice(0, 10);
+          break;
+        }
+
+        case 15: {
+          // Underpriced input + filler: find the most underpriced listing in a high-premium
+          // collection, then fill with cheap listings targeting a low output float.
+          // This is the "how humans find trade-ups" strategy.
+          const col = pick(weightedPool);
+          const valueList = byColValue.get(col) ?? [];
+          if (valueList.length < 10) break;
+
+          // Pick from the most underpriced listings (top 5 by valueRatio)
+          const anchor = valueList[Math.floor(Math.random() * Math.min(5, valueList.length))];
+          if (!anchor || (anchor.valueRatio ?? 1) >= 0.85) break; // not meaningfully underpriced
+
+          // Fill with cheapest remaining listings from same collection
+          const fillers = valueList.filter(l => l.id !== anchor.id).slice(0, 9);
+          if (fillers.length < 9) break;
+          inputs = [anchor, ...fillers];
+
+          // Optionally try cross-collection: anchor from high-premium col, fillers from cheap col
+          if (Math.random() < 0.3) {
+            const fillerCol = pick(eligibleCollections.filter(c => c !== col));
+            const fillerList = byCollection.get(fillerCol) ?? [];
+            if (fillerList.length >= 9) {
+              inputs = [anchor, ...fillerList.slice(0, 9)];
+            }
+          }
           break;
         }
       }
