@@ -514,16 +514,24 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_listings_price_updated ON listings(price_updated_at) WHERE price_updated_at IS NOT NULL;
   `);
 
-  // Backfill output_skin_names for existing trade-ups (one-time, idempotent)
-  const { rowCount: backfilled } = await pool.query(`
-    UPDATE trade_ups SET output_skin_names = (
-      SELECT COALESCE(array_agg(DISTINCT elem->>'skin_name' ORDER BY elem->>'skin_name'), '{}')
-      FROM json_array_elements(outcomes_json::json) AS elem
-    )
-    WHERE outcomes_json IS NOT NULL AND outcomes_json != '[]'
-      AND (output_skin_names = '{}' OR output_skin_names IS NULL)
-  `);
-  if (backfilled && backfilled > 0) console.log(`  Migration: backfilled output_skin_names for ${backfilled} trade-ups`);
+  // Backfill output_skin_names — small batches only during startup to avoid blocking.
+  // New trade-ups get populated on insert. Remaining rows backfill gradually across daemon cycles.
+  const { rows: [{ count: emptyCount }] } = await pool.query(
+    "SELECT COUNT(*) as count FROM trade_ups WHERE output_skin_names = '{}' AND outcomes_json IS NOT NULL AND outcomes_json != '[]' LIMIT 1"
+  );
+  if (parseInt(emptyCount) > 0 && parseInt(emptyCount) <= 5000) {
+    const { rowCount: backfilled } = await pool.query(`
+      UPDATE trade_ups SET output_skin_names = (
+        SELECT COALESCE(array_agg(DISTINCT elem->>'skin_name' ORDER BY elem->>'skin_name'), '{}')
+        FROM json_array_elements(outcomes_json::json) AS elem
+      )
+      WHERE outcomes_json IS NOT NULL AND outcomes_json != '[]'
+        AND (output_skin_names = '{}' OR output_skin_names IS NULL)
+    `);
+    if (backfilled && backfilled > 0) console.log(`  Migration: backfilled output_skin_names for ${backfilled} trade-ups`);
+  } else if (parseInt(emptyCount) > 5000) {
+    console.log(`  Migration: ${emptyCount} trade-ups need output_skin_names backfill — run scripts/backfill-output-skins.sh separately`);
+  }
 
   // Drop unused trade_up_outcomes table (outcomes stored as JSON in trade_ups.outcomes_json)
   await pool.query(`DROP TABLE IF EXISTS trade_up_outcomes;`);
