@@ -233,6 +233,14 @@ describe("TradeUpStore", () => {
       const tu = makeTradeUp({ listingIds: ["a", "b", "c"] });
       expect(store.add(tu)).toBe(false);
     });
+
+    it("reuses existingSignatures set to avoid duplicate memory", () => {
+      const existing = new Set<string>(["a,b,c"]);
+      const store = new TradeUpStore(20, existing);
+      const tu = makeTradeUp({ listingIds: ["d", "e", "f"] });
+      expect(store.add(tu)).toBe(true);
+      expect(existing.has("d,e,f")).toBe(true);
+    });
   });
 
   describe("getAll()", () => {
@@ -272,6 +280,16 @@ describe("TradeUpStore", () => {
       store.add(makeTradeUp({ listingIds: ["b1"], collectionName: "Beta", profit_cents: 100, expected_value_cents: 600 }));
 
       expect(store.getSignatureCount()).toBe(2); // "Alpha" and "Beta"
+    });
+  });
+
+  describe("maxTotal cap", () => {
+    it("caps total stored trade-ups when maxTotal is reached", () => {
+      const store = new TradeUpStore(20, undefined, 2);
+      expect(store.add(makeTradeUp({ listingIds: ["a1"], collectionName: "A", profit_cents: 100 }))).toBe(true);
+      expect(store.add(makeTradeUp({ listingIds: ["b1"], collectionName: "B", profit_cents: 100 }))).toBe(true);
+      expect(store.add(makeTradeUp({ listingIds: ["c1"], collectionName: "C", profit_cents: 100 }))).toBe(false);
+      expect(store.total).toBe(2);
     });
   });
 });

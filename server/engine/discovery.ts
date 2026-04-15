@@ -89,6 +89,7 @@ export async function findProfitableTradeUps(
     rarities?: string[];
     limit?: number;
     maxPerSignature?: number;
+    hardLimit?: number;
     stattrak?: boolean;
     onProgress?: DiscoveryProgressCallback;
     onFlush?: (tradeUps: TradeUp[], isFirst: boolean) => void;
@@ -100,7 +101,8 @@ export async function findProfitableTradeUps(
   const targetRarities = options.rarities ?? ["Classified"];
   const stattrak = options.stattrak ?? false;
   const limit = options.limit ?? 200000;
-  const store = new TradeUpStore(options.maxPerSignature ?? 50, options.existingSignatures);
+  const hardLimit = options.hardLimit ?? limit;
+  const store = new TradeUpStore(options.maxPerSignature ?? 50, options.existingSignatures, hardLimit);
   let isFirstFlush = true;
 
   options.onProgress?.("Building price cache...", 0, 100);
@@ -840,8 +842,12 @@ export async function exploreWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     preferHighFloat?: boolean;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
+  const maxResults = Math.max(0, options.maxResults ?? 30000);
+  if (maxResults === 0) return [];
+
   const inputRarity = options.inputRarity ?? "Classified";
   const stattrak = options.stattrak ?? false;
   const outputRarity = getNextRarity(inputRarity);
@@ -1324,6 +1330,7 @@ export async function exploreWithBudget(
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
+      if (results.length >= maxResults) continue;
       results.push(result);
     } catch {
       // Ignore individual iteration errors
