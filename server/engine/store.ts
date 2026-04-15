@@ -32,7 +32,8 @@ export class TradeUpStore {
   constructor(maxPerSignature: number = 20, existingSignatures?: Set<string>) {
     this.maxPerSignature = maxPerSignature;
     if (existingSignatures) {
-      this.seen = new Set(existingSignatures);
+      // Reuse the caller-provided signature set to avoid duplicating large dedup state.
+      this.seen = existingSignatures;
     }
   }
 

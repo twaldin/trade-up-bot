@@ -840,6 +840,7 @@ export async function exploreWithBudget(
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
     preferHighFloat?: boolean;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   const inputRarity = options.inputRarity ?? "Classified";
@@ -869,6 +870,10 @@ export async function exploreWithBudget(
   const tradeUpType = stattrak ? `${typeMap[inputRarity] ?? "classified_covert"}_st` : (typeMap[inputRarity] ?? "classified_covert");
 
   const weightedPool = await buildWeightedPool(pool, eligibleCollections, tradeUpType, byCollection);
+  const eligibleSortedByPrice = allListings
+    .filter(l => collectionsWithOutcomes.has(l.collection_id))
+    .sort((a, b) => a.price_cents - b.price_cents);
+  const listingById = new Map(allListings.map((l) => [l.id, l]));
 
   const outcomesByCol = new Map<string, DbSkinOutcome[]>();
   for (const o of allOutcomes) {
@@ -989,11 +994,12 @@ export async function exploreWithBudget(
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13];
   const TOTAL_STRATEGIES = 15;
+  const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
 
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 1000 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -1064,12 +1070,10 @@ export async function exploreWithBudget(
         }
 
         case 4: {
-          const eligible = allListings.filter(l => collectionsWithOutcomes.has(l.collection_id));
-          const sorted = [...eligible].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 10, 300);
+          const maxOff = Math.min(eligibleSortedByPrice.length - 10, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
-          inputs = sorted.slice(off, off + 10);
+          inputs = eligibleSortedByPrice.slice(off, off + 10);
           break;
         }
 
@@ -1206,10 +1210,10 @@ export async function exploreWithBudget(
           const inputListings: ListingWithCollection[] = [];
           for (const inp of tu.inputs) {
             if (inp.listing_id === expensiveInput.listing_id) {
-              const found = allListings.find(l => l.id === replacement.id);
+              const found = listingById.get(replacement.id);
               if (found) inputListings.push(found);
             } else {
-              const found = allListings.find(l => l.id === inp.listing_id);
+              const found = listingById.get(inp.listing_id);
               if (found) inputListings.push(found);
             }
           }
