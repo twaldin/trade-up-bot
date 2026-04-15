@@ -21,6 +21,11 @@ import {
   exploreWithBudget,
   exploreKnifeWithBudget,
 } from "../engine.js";
+import {
+  WORKER_MAX_EXISTING_SIGS_BY_TASK,
+  WORKER_MAX_RESULTS_BY_TASK,
+  capWorkerTradeUps,
+} from "./worker-limits.js";
 
 const { Pool } = pg;
 
@@ -34,6 +39,7 @@ interface WorkerInput {
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
 const { task, timeLimitMs, cycleStartedAt, discoveryFile } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
+const maxResults = WORKER_MAX_RESULTS_BY_TASK[task] ?? 30_000;
 
 // Create own PG pool — worker needs its own connection
 const connectionString = process.env.DATABASE_URL
@@ -111,17 +117,24 @@ const rarityMap: Record<string, string> = {
     // knife sig load took 174s vs normal 8s, likely due to DB pressure with no escape hatch).
     const tradeUpType = typeMap[task] ?? "classified_covert";
     const existingSigs = new Set<string>();
+    const maxExistingSigs = WORKER_MAX_EXISTING_SIGS_BY_TASK[task] ?? 100_000;
     const sigClient = await pool.connect();
     try {
       await sigClient.query("SET statement_timeout = '30000'");
       const { rows: sigRows } = await sigClient.query(`
         SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
         FROM trade_up_inputs WHERE trade_up_id IN (
-          SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
+          SELECT id FROM trade_ups
+          WHERE type = $1 AND is_theoretical = false
+          ORDER BY id DESC
+          LIMIT $2
         ) GROUP BY trade_up_id
-      `, [tradeUpType]);
+      `, [tradeUpType, maxExistingSigs]);
       for (const row of sigRows) {
         existingSigs.add(row.ids.split(",").sort().join(","));
+      }
+      if (sigRows.length >= maxExistingSigs) {
+        console.warn(`  [${task}] signature preload hit cap (${maxExistingSigs.toLocaleString()})`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -149,26 +162,53 @@ const rarityMap: Record<string, string> = {
         break;
 
       case "classified":
-        tradeUps = await findProfitableTradeUps(pool, { existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, {
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+          limit: maxResults,
+          preferHighFloat: true,
+        });
         break;
 
       case "restricted":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Restricted"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline, preferHighFloat: true });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Restricted"],
+          limit: maxResults,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+          preferHighFloat: true,
+        });
         break;
 
       case "milspec":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Mil-Spec"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Mil-Spec"],
+          limit: maxResults,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
 
       case "industrial":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Industrial Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Industrial Grade"],
+          limit: maxResults,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
 
       case "consumer":
-        tradeUps = await findProfitableTradeUps(pool, { rarities: ["Consumer Grade"], limit: 50000, existingSignatures: existingSigs, deadlineMs: structuredDeadline });
+        tradeUps = await findProfitableTradeUps(pool, {
+          rarities: ["Consumer Grade"],
+          limit: maxResults,
+          existingSignatures: existingSigs,
+          deadlineMs: structuredDeadline,
+        });
         break;
     }
 
+    tradeUps = capWorkerTradeUps(tradeUps ?? [], maxResults);
     const structuredMs = Date.now() - structuredStart;
     const structuredCount = tradeUps?.length ?? 0;
 
@@ -179,13 +219,15 @@ const rarityMap: Record<string, string> = {
 
     // Phase 2: Deep exploration with remaining time
     let exploreCount = 0;
-    if (deadline && Date.now() < deadline - 5000) {
+    const remainingResultSlots = Math.max(maxResults - structuredCount, 0);
+    if (deadline && Date.now() < deadline - 5000 && remainingResultSlots > 0) {
       const exploreStart = Date.now();
 
       let explored: typeof tradeUps;
       if (task === "knife") {
         explored = await exploreKnifeWithBudget(pool, deadline, existingSigs, {
           cycleStartedAt,
+          maxResults: remainingResultSlots,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
       } else {
@@ -194,6 +236,7 @@ const rarityMap: Record<string, string> = {
         explored = await exploreWithBudget(pool, deadline, existingSigs, {
           inputRarity,
           cycleStartedAt,
+          maxResults: remainingResultSlots,
           preferHighFloat,
           onProgress: (msg) => console.log(`  ${msg}`),
         });
@@ -204,7 +247,7 @@ const rarityMap: Record<string, string> = {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s) + explored ${exploreCount} (${(exploreMs / 1000).toFixed(1)}s)`);
 
       // Combine results
-      tradeUps = [...(tradeUps ?? []), ...explored];
+      tradeUps = capWorkerTradeUps([...(tradeUps ?? []), ...explored], maxResults);
     } else {
       console.log(`  ${task}: structured ${structuredCount} (${(structuredMs / 1000).toFixed(1)}s), no time for exploration`);
     }

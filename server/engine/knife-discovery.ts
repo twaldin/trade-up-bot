@@ -55,7 +55,7 @@ export async function findProfitableKnifeTradeUps(
   }
 
   const results: TradeUp[] = [];
-  const seen = new Set<string>(options.existingSignatures);
+  const seen = options.existingSignatures ?? new Set<string>();
   let skippedExisting = 0;
 
   const tryAdd = (tu: TradeUp | null) => {
@@ -64,7 +64,7 @@ export async function findProfitableKnifeTradeUps(
     if (tu.profit_cents <= 0 && (tu.chance_to_profit ?? 0) < 0.25) return;
     const key = listingSig(tu.inputs.map(i => i.listing_id));
     if (seen.has(key)) {
-      if (options.existingSignatures?.has(key)) skippedExisting++;
+      skippedExisting++;
       return;
     }
     seen.add(key);
@@ -684,6 +684,7 @@ export async function exploreKnifeWithBudget(
   options: {
     cycleStartedAt?: number;
     onProgress?: (msg: string) => void;
+    maxResults?: number;
   } = {}
 ): Promise<TradeUp[]> {
   await buildPriceCache(pool);
@@ -704,6 +705,9 @@ export async function exploreKnifeWithBudget(
 
   // Profit-guided weighted pool
   const weightedPool = await buildWeightedPool(pool, knifeCollections, "covert_knife", byCollection);
+  const knifeOnlySortedByPrice = allListings
+    .filter(l => CASE_KNIFE_MAP[l.collection_name])
+    .sort((a, b) => a.price_cents - b.price_cents);
 
   // Build new-listing pool for new-listing priority strategy
   const newListingsByCol = new Map<string, ListingWithCollection[]>();
@@ -722,11 +726,12 @@ export async function exploreKnifeWithBudget(
   // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
   const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
   const KNIFE_TOTAL_STRATEGIES = 13;
+  const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
 
   const results: TradeUp[] = [];
   let explored = 0;
 
-  while (Date.now() < deadlineMs - 1000) {
+  while (Date.now() < deadlineMs - 1000 && results.length < maxResults) {
     explored++;
     if (explored % 500 === 0) {
       const remaining = Math.round((deadlineMs - Date.now()) / 1000);
@@ -792,12 +797,10 @@ export async function exploreKnifeWithBudget(
         }
 
         case 4: {
-          const knifeOnly = allListings.filter(l => CASE_KNIFE_MAP[l.collection_name]);
-          const sorted = [...knifeOnly].sort((a, b) => a.price_cents - b.price_cents);
-          const maxOff = Math.min(sorted.length - 5, 300);
+          const maxOff = Math.min(knifeOnlySortedByPrice.length - 5, 300);
           if (maxOff < 0) break;
           const off = Math.floor(Math.random() * (maxOff + 1));
-          inputs = sorted.slice(off, off + 5);
+          inputs = knifeOnlySortedByPrice.slice(off, off + 5);
           break;
         }
 
