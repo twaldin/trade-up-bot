@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { toSlug, collectionToSlug } from "../../shared/slugs.js";
+import { cacheGet, cacheSet } from "../redis.js";
 
 // Blog post slugs inlined to avoid importing from src/ (frontend module boundary)
 const BLOG_SLUGS = [
@@ -111,6 +112,12 @@ export function sitemapRouter(pool: pg.Pool): Router {
     const lastmod = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/xml");
     try {
+      const cached = await cacheGet<string>("sitemap_skins_xml").catch(() => null);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.send(cached);
+        return;
+      }
       const { rows } = await pool.query(`
         SELECT s.name, COUNT(l.id)::int as listing_count
         FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
@@ -118,7 +125,9 @@ export function sitemapRouter(pool: pg.Pool): Router {
         GROUP BY s.name
         ORDER BY s.name
       `);
-      res.send(buildSkinSitemap(BASE, rows, lastmod));
+      const xml = buildSkinSitemap(BASE, rows, lastmod);
+      await cacheSet("sitemap_skins_xml", xml, 3600).catch(() => {});
+      res.send(xml);
     } catch (e) {
       console.error("Sitemap skins error:", e instanceof Error ? e.message : e);
       res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');

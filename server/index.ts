@@ -776,6 +776,17 @@ app.use((req, res, next) => {
         }));
         return;
       }
+      const cacheKey = "seo_tradeups_list";
+      try {
+        const { cacheGet, cacheSet } = await import("./redis.js");
+        const cached = await cacheGet<string>(cacheKey);
+        if (cached) {
+          res.setHeader("Content-Type", "text/html");
+          res.setHeader("X-Cache", "HIT");
+          res.send(cached);
+          return;
+        }
+      } catch { }
       try {
         const { rows: [stats] } = await pool.query(
           "SELECT COUNT(*)::int as total, COUNT(*) FILTER (WHERE profit_cents > 0)::int as profitable FROM trade_ups WHERE listing_status = 'active' AND is_theoretical = false"
@@ -791,14 +802,19 @@ app.use((req, res, next) => {
         const rows = topTradeUps.map((t: { id: number; type: string; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
           `<tr><td><a href="/trade-ups/${t.id}">${TRADE_UP_TYPE_LABELS[t.type] || t.type}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
         ).join("");
-        res.setHeader("Content-Type", "text/html");
-        res.send(buildSeoHtml({
+        const html = buildSeoHtml({
           title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
           description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyText: `Browse ${total.toLocaleString()} active CS2 trade-up contracts. ${profitable.toLocaleString()} are currently profitable. Filter by rarity tier, ROI, profit, cost, and more.`,
           jsonLd: { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
-        }).replace("</main>", `<table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table></main>`));
+        }).replace("</main>", `<table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table></main>`);
+        try {
+          const { cacheSet } = await import("./redis.js");
+          await cacheSet(cacheKey, html, 3600).catch(() => {});
+        } catch { }
+        res.setHeader("Content-Type", "text/html");
+        res.send(html);
       } catch { next(); }
     });
 
