@@ -5,7 +5,9 @@ interface SeoMeta {
   robots?: string;
   ogImage?: string;
   bodyText?: string;
-  jsonLd?: Record<string, unknown>;
+  /** Raw HTML body content (trusted, server-generated). Takes precedence over bodyText. */
+  bodyHtml?: string;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 export function escapeHtml(str: string): string {
@@ -24,10 +26,20 @@ export function buildSeoHtml(meta: SeoMeta): string {
 
   let jsonLdTag = "";
   if (meta.jsonLd) {
-    jsonLdTag = `<script type="application/ld+json">${JSON.stringify(meta.jsonLd)}</script>`;
+    const items = Array.isArray(meta.jsonLd) ? meta.jsonLd : [meta.jsonLd];
+    jsonLdTag = items.map(ld => `<script type="application/ld+json">${JSON.stringify(ld)}</script>`).join("\n");
   }
 
-  return `<!DOCTYPE html><html><head>
+  // bodyHtml = trusted raw HTML; bodyText = escaped plain text fallback
+  let bodyContent = "";
+  if (meta.bodyHtml) {
+    bodyContent = `<main>${meta.bodyHtml}</main>`;
+  } else if (meta.bodyText) {
+    bodyContent = `<main>${escapeHtml(meta.bodyText)}</main>`;
+  }
+
+  return `<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8" />
 <title>${title}</title>
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
@@ -36,13 +48,14 @@ export function buildSeoHtml(meta: SeoMeta): string {
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${escapeHtml(meta.url)}" />
 <meta property="og:type" content="website" />
+<meta property="og:site_name" content="TradeUpBot" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${desc}" />
 <meta name="twitter:image" content="${ogImage}" />
 ${jsonLdTag}
-</head><body>${meta.bodyText ? `<main>${escapeHtml(meta.bodyText)}</main>` : ""}</body></html>`;
+</head><body>${bodyContent}</body></html>`;
 }
 
 const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot|bingbot|Baiduspider|YandexBot/i;
