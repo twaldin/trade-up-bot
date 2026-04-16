@@ -18,14 +18,16 @@ export function buildPricingEmbed(): EmbedBuilder {
           "- Collection browser + price analytics",
       },
       {
-        name: "Pro — $6.99/mo",
+        name: "Pro — $6.99/mo · $60/yr · $50 lifetime",
         value:
           "- Everything in Free\n" +
           "- **Real-time data** (no delay)\n" +
           "- **Claim system** (lock listings 30 min)\n" +
           "- Up to 5 active claims\n" +
           "- Verify availability (20/hr)\n" +
-          "- Claims (10/hr)",
+          "- Claims (10/hr)\n" +
+          "- 💰 Save 28% with yearly ($60/yr = $5/mo)\n" +
+          "- ⭐ Best value: $50 lifetime (one-time)",
       },
       {
         name: "Feature Comparison",

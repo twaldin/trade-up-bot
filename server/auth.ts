@@ -56,6 +56,7 @@ export interface User {
   avatar_url: string;
   tier: "free" | "pro";
   is_admin: boolean;
+  lifetime: boolean;
   stripe_customer_id: string | null;
   discord_id: string | null;
   discord_tag: string | null;
@@ -156,6 +157,19 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     }
   } catch (e: unknown) {
     console.error("Discord column migration deferred:", (e as Error).message);
+  }
+
+  // Migration: add lifetime column for lifetime subscribers
+  try {
+    const { rows: cols3 } = await pool.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
+    );
+    if (!cols3.find((c: { column_name: string }) => c.column_name === "lifetime")) {
+      await pool.query("ALTER TABLE users ADD COLUMN lifetime BOOLEAN NOT NULL DEFAULT false");
+      console.log("Migration: added lifetime column to users");
+    }
+  } catch (e: unknown) {
+    console.error("Lifetime column migration deferred:", (e as Error).message);
   }
 
   const store = new SqliteSessionStore(DB_PATH);
@@ -288,6 +302,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
         avatar_url: u.avatar_url,
         tier: u.tier,
         is_admin: isAdmin(u),
+        lifetime: !!u.lifetime,
         discord_id: u.discord_id || null,
         discord_tag: u.discord_tag || null,
       });

@@ -60,11 +60,20 @@ const Btn = ({ children, variant = 'primary', className = '', onClick }: {
   );
 };
 
+type BillingInterval = "monthly" | "yearly" | "lifetime";
+
 export function PricingPage() {
-  const [user, setUser] = useState<{ tier: string } | null>(null);
+  const [user, setUser] = useState<{ tier: string; lifetime?: boolean } | null>(null);
+  const [billing, setBilling] = useState<BillingInterval>("monthly");
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(setUser).catch(() => {});
   }, []);
+
+  const planForInterval: Record<BillingInterval, string> = {
+    monthly: "pro",
+    yearly: "pro-yearly",
+    lifetime: "pro-lifetime",
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
@@ -85,6 +94,35 @@ export function PricingPage() {
           <p className="text-muted-foreground mb-12 text-center">
             Start free. Upgrade when you're ready to act on opportunities.
           </p>
+
+          {/* Billing interval toggle */}
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex items-center gap-1 bg-muted/50 border border-border rounded-lg p-1 text-sm">
+              {(["monthly", "yearly", "lifetime"] as BillingInterval[]).map((interval) => (
+                <button
+                  key={interval}
+                  onClick={() => setBilling(interval)}
+                  className={`relative px-4 py-1.5 rounded-md font-medium transition-all cursor-pointer capitalize ${
+                    billing === interval
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {interval === "yearly" && (
+                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                      Save 28%
+                    </span>
+                  )}
+                  {interval === "lifetime" && (
+                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                      Best value
+                    </span>
+                  )}
+                  {interval.charAt(0).toUpperCase() + interval.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Tier cards */}
           <div className="grid md:grid-cols-2 gap-6 mb-16">
@@ -113,7 +151,17 @@ export function PricingPage() {
             <div className="rounded-xl border border-foreground/20 p-6 flex flex-col bg-foreground/[0.03]">
               <div className="mb-6">
                 <div className="text-sm text-green-500 mb-1">Pro</div>
-                <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                {billing === "monthly" && (
+                  <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                )}
+                {billing === "yearly" && (
+                  <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span>
+                    <span className="ml-2 text-xs text-green-500 font-normal">billed $60/year</span>
+                  </div>
+                )}
+                {billing === "lifetime" && (
+                  <div className="text-3xl font-bold">$50<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
+                )}
                 <p className="text-xs text-muted-foreground mt-2">Real-time data, claim system, and full analytics. The price of one CS2 case key.</p>
               </div>
               <ul className="space-y-2.5 mb-6 flex-1 text-sm">
@@ -124,7 +172,7 @@ export function PricingPage() {
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (20/hr)</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (10/hr)</li>
               </ul>
-              <Btn onClick={() => user ? subscribe("pro") : login()} className="w-full">
+              <Btn onClick={() => user ? subscribe(planForInterval[billing]) : login()} className="w-full">
                 {user?.tier === "pro" ? "Current plan" : "Go Pro"}
               </Btn>
             </div>
