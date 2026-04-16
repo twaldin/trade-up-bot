@@ -1,11 +1,13 @@
 import type { TradeUp } from "../../../shared/types.js";
-import { formatDollars, timeAgo, condAbbr, listingUrl } from "../../utils/format.js";
+import { timeAgo, condAbbr, listingUrl } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 
 interface VerifyResultsProps {
   tu: TradeUp;
 }
 
 export function VerifyResults({ tu }: VerifyResultsProps) {
+  const { formatPrice } = useCurrency();
   // Status info bar for stale/partial/revived trade-ups
   if ((tu.peak_profit_cents ?? 0) <= 0 && tu.listing_status === 'active') return null;
 
@@ -26,12 +28,12 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
       )}
       {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && tu.listing_status === 'active' && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-blue-950/50 border-l-[3px] border-l-blue-500 text-blue-300">
-          <strong className="mr-1">Revived</strong> &mdash; Was {formatDollars(tu.peak_profit_cents!)} profit, now {formatDollars(tu.profit_cents)}. Replacement listings cost {formatDollars(Math.abs(tu.profit_cents))} more than needed to break even.
+          <strong className="mr-1">Revived</strong> &mdash; Was {formatPrice(tu.peak_profit_cents!)} profit, now {formatPrice(tu.profit_cents)}. Replacement listings cost {formatPrice(Math.abs(tu.profit_cents))} more than needed to break even.
         </div>
       )}
       {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents > 0 && tu.peak_profit_cents! > tu.profit_cents && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-violet-950/50 border-l-[3px] border-l-violet-400 text-violet-300">
-          <strong className="mr-1">Declined</strong> &mdash; Peak was {formatDollars(tu.peak_profit_cents!)}, now {formatDollars(tu.profit_cents)}
+          <strong className="mr-1">Declined</strong> &mdash; Peak was {formatPrice(tu.peak_profit_cents!)}, now {formatPrice(tu.profit_cents)}
         </div>
       )}
       {/* Input replacement diff */}
@@ -40,8 +42,8 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
           <div className="mb-1.5 pb-1 border-b border-border">
             <strong>Replaced Inputs</strong>
             <span className="text-muted-foreground">
-              {" "}cost {formatDollars(tu.previous_inputs.old_cost_cents)} &rarr; {formatDollars(tu.total_cost_cents)}
-              {" "}({formatDollars(tu.total_cost_cents - tu.previous_inputs.old_cost_cents)} change)
+              {" "}cost {formatPrice(tu.previous_inputs.old_cost_cents)} &rarr; {formatPrice(tu.total_cost_cents)}
+              {" "}({formatPrice(tu.total_cost_cents - tu.previous_inputs.old_cost_cents)} change)
             </span>
           </div>
           {tu.previous_inputs.replaced.map((r, i) => (
@@ -56,7 +58,7 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
                   onClick={e => e.stopPropagation()}
                 >{r.old.skin_name}</a>
                 <span className="text-muted-foreground text-[0.75rem]">({condAbbr(r.old.condition)}, {r.old.float_value.toFixed(4)})</span>
-                <span className="text-muted-foreground">{formatDollars(r.old.price_cents)}</span>
+                <span className="text-muted-foreground">{formatPrice(r.old.price_cents)}</span>
               </div>
               {r.new && (
                 <div className="flex items-center gap-1.5 pl-1">
@@ -69,9 +71,9 @@ export function VerifyResults({ tu }: VerifyResultsProps) {
                     onClick={e => e.stopPropagation()}
                   >{r.new.skin_name}</a>
                   <span className="text-muted-foreground text-[0.75rem]">({condAbbr(r.new.condition)}, {r.new.float_value.toFixed(4)})</span>
-                  <span className="text-muted-foreground">{formatDollars(r.new.price_cents)}</span>
+                  <span className="text-muted-foreground">{formatPrice(r.new.price_cents)}</span>
                   <span className={r.new.price_cents <= r.old.price_cents ? "text-green-500 text-[0.72rem]" : "text-red-500 text-[0.72rem]"}>
-                    ({r.new.price_cents <= r.old.price_cents ? "" : "+"}{formatDollars(r.new.price_cents - r.old.price_cents)})
+                    ({r.new.price_cents <= r.old.price_cents ? "" : "+"}{formatPrice(r.new.price_cents - r.old.price_cents)})
                   </span>
                 </div>
               )}

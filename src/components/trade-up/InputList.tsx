@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
-import { formatDollars, condAbbr, timeAgo, csfloatSearchUrl, listingUrl, listingSource, sourceLabel, sourceColor } from "../../utils/format.js";
+import { condAbbr, timeAgo, csfloatSearchUrl, listingUrl, listingSource, sourceLabel, sourceColor } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import { Badge } from "../../../shared/components/ui/badge.js";
 import { toSlug } from "../../../shared/slugs.js";
 
@@ -37,10 +38,10 @@ interface InputListProps {
   showShare?: boolean;
 }
 
-function handleBuffLink(e: React.MouseEvent, input: TradeUpInput) {
+function handleBuffLink(e: React.MouseEvent, input: TradeUpInput, formatFn: (cents: number) => string) {
   e.preventDefault();
   const url = listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id);
-  const msg = `Look for float ${input.float_value.toFixed(6)} at ${formatDollars(input.price_cents)}\n\nBuff cannot link to a specific listing. You will be taken to the item page.`;
+  const msg = `Look for float ${input.float_value.toFixed(6)} at ${formatFn(input.price_cents)}\n\nBuff cannot link to a specific listing. You will be taken to the item page.`;
   if (window.confirm(msg)) {
     window.open(url, "_blank", "noopener,noreferrer");
   }
@@ -52,6 +53,7 @@ function inputHref(input: TradeUpInput, isTheory: boolean): string {
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
+  const { formatPrice } = useCurrency();
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const isBuff = !isTheory && input.source === "buff";
   return (
@@ -64,7 +66,7 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
           rel="noopener noreferrer"
           className="text-foreground/90 no-underline hover:text-blue-400 leading-tight text-[0.72rem] truncate"
           title={input.skin_name}
-          onClick={isBuff ? (e) => handleBuffLink(e, input) : undefined}
+          onClick={isBuff ? (e) => handleBuffLink(e, input, formatPrice) : undefined}
         >
           {input.skin_name}
         </a>
@@ -89,7 +91,7 @@ function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateS
       </div>
       {/* Row 3: Price */}
       <div className="text-foreground/80 text-[0.72rem] font-medium">
-        {formatDollars(input.price_cents)}
+        {formatPrice(input.price_cents)}
       </div>
     </div>
   );
@@ -105,6 +107,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
   onConfirmToggle?: () => void;
   onUnauthLinkClick?: () => void;
 }) {
+  const { formatPrice } = useCurrency();
   const isTheory = input.listing_id.startsWith("theory") || input.listing_id === "theoretical";
   const isBuff = !isTheory && input.source === "buff";
   const inputStatus = verifyResult?.inputs.find(v => v.listing_id === input.listing_id);
@@ -137,7 +140,7 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
             rel="noopener noreferrer"
             className={`no-underline hover:text-blue-400 leading-tight text-[0.75rem] truncate ${isMissing || isSoldOrDelisted ? "line-through text-red-400/70" : "text-foreground/90"}`}
             title={input.skin_name}
-            onClick={isBuff ? (e) => handleBuffLink(e, input) : undefined}
+            onClick={isBuff ? (e) => handleBuffLink(e, input, formatPrice) : undefined}
           >
             {input.skin_name}
           </a>
@@ -187,10 +190,10 @@ function RegularInputCard({ input, verifyResult, onNavigateSkin, showListingLink
           </span>
         </div>
         <span className={`text-[0.75rem] ${isMissing || isSoldOrDelisted ? "text-red-400/50 line-through" : "text-foreground/80"}`}>
-          {formatDollars(input.price_cents)}
+          {formatPrice(input.price_cents)}
           {inputStatus && inputStatus.price_changed && inputStatus.current_price && (
-            <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatDollars(inputStatus.original_price)}, now ${formatDollars(inputStatus.current_price)}`}>
-              {formatDollars(inputStatus.current_price)}
+            <span className="text-amber-500 ml-1 text-[0.68rem] font-semibold" title={`Price changed: was ${formatPrice(inputStatus.original_price)}, now ${formatPrice(inputStatus.current_price)}`}>
+              {formatPrice(inputStatus.current_price)}
             </span>
           )}
         </span>
@@ -211,6 +214,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   stageIndex: number;
   onNavigateSkin?: (skinName: string) => void;
 }) {
+  const { formatPrice } = useCurrency();
   const [open, setOpen] = useState(stageIndex === 0);
   const stageCost = stage.reduce((s, inp) => s + inp.price_cents, 0);
   const stageCollections = [...new Set(stage.map(inp => inp.collection_name))];
@@ -218,7 +222,7 @@ function StaircaseStage({ stage, stageIndex, onNavigateSkin }: {
   return (
     <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="text-[0.8rem] font-semibold text-muted-foreground cursor-pointer select-none py-1 pb-1.5 border-b border-border hover:text-foreground transition-colors">
-        Trade-Up #{stageIndex + 1} ({stage.length} inputs) &mdash; {formatDollars(stageCost)}
+        Trade-Up #{stageIndex + 1} ({stage.length} inputs) &mdash; {formatPrice(stageCost)}
         <span className="ml-1.5 font-normal text-[0.72rem] text-muted-foreground/70">{stageCollections.join(" + ")}</span>
       </summary>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5 pt-1.5">

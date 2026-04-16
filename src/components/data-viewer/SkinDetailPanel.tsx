@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { formatDollars, conditionLabel, conditionColor } from "../../utils/format.js";
+import { conditionLabel, conditionColor } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import { Button } from "@shared/components/ui/button.js";
 import type { SkinDetail, SeriesKey, ListingRow, SaleRow, FloatBucket } from "./types.js";
 import { SERIES_COLORS } from "./types.js";
@@ -44,6 +45,7 @@ function LoadingSkeleton() {
 }
 
 export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollection }: SkinDetailPanelProps) {
+  const { formatPrice } = useCurrency();
   const [detail, setDetail] = useState<SkinDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [chartFullscreen, setChartFullscreen] = useState(false);
@@ -379,7 +381,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
             defaultSort={{ key: "sold_at", dir: "desc" }}
             defaultLimit={25}
             columns={[
-              { key: "price", label: "Price", render: r => formatDollars(r.price_cents), sortValue: r => r.price_cents },
+              { key: "price", label: "Price", render: r => formatPrice(r.price_cents), sortValue: r => r.price_cents },
               { key: "float", label: "Float", render: r => <span style={{ color: conditionColor(r.float_value) }}>{r.float_value.toFixed(6)}</span>, sortValue: r => r.float_value },
               { key: "cond", label: "Cond", render: r => conditionLabel(r.float_value), sortValue: r => r.float_value },
               { key: "source", label: "Source", render: r => {
@@ -402,7 +404,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
             defaultLimit={10}
             columns={[
               { key: "range", label: "Range", render: b => `${b.float_min.toFixed(2)} \u2013 ${b.float_max.toFixed(2)}`, sortValue: b => b.float_min },
-              { key: "price", label: "Floor Price", render: b => b.avg_price_cents > 0 ? formatDollars(b.avg_price_cents) : "\u2014", sortValue: b => b.avg_price_cents },
+              { key: "price", label: "Floor Price", render: b => b.avg_price_cents > 0 ? formatPrice(b.avg_price_cents) : "\u2014", sortValue: b => b.avg_price_cents },
               { key: "count", label: "Data Points", render: b => b.listing_count, sortValue: b => b.listing_count },
             ]}
           />
@@ -443,7 +445,7 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
           defaultSort={{ key: "price", dir: "asc" }}
           defaultLimit={25}
           columns={[
-            { key: "price", label: "Price", render: r => formatDollars(r.price_cents), sortValue: r => r.price_cents },
+            { key: "price", label: "Price", render: r => formatPrice(r.price_cents), sortValue: r => r.price_cents },
             { key: "float", label: "Float", render: r => <span style={{ color: conditionColor(r.float_value) }}>{r.float_value.toFixed(6)}</span>, sortValue: r => r.float_value },
             { key: "cond", label: "Cond", render: r => conditionLabel(r.float_value), sortValue: r => r.float_value },
             { key: "source", label: "Source", render: r => {

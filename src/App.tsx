@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { CurrencyPicker } from "./components/CurrencyPicker.js";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation, Navigate } from "react-router-dom";
 import type { SyncStatus } from "../shared/types.js";
 import { collectionToSlug } from "../shared/slugs.js";
@@ -315,6 +316,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
               return `C${cycle}`;
             })()}
           </Button>}
+          <CurrencyPicker />
           {user ? (
             <UserMenu user={user} />
           ) : (

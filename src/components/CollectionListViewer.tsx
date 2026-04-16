@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
-import { formatDollars } from "../utils/format.js";
+import { useCurrency } from "../contexts/CurrencyContext.js";
 import { Input } from "@shared/components/ui/input.js";
 import { Badge } from "@shared/components/ui/badge.js";
 import { Card, CardContent } from "@shared/components/ui/card.js";
@@ -28,6 +28,7 @@ const FILTER_OPTIONS = [
 ] as const;
 
 export function CollectionListViewer({ onSelectCollection }: { onSelectCollection: (name: string) => void }) {
+  const { formatPrice } = useCurrency();
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -190,7 +191,7 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
                     {c.profitable_count} profitable
                   </span>
                   <span className="text-muted-foreground">
-                    best {formatDollars(c.best_profit_cents)}
+                    best {formatPrice(c.best_profit_cents)}
                   </span>
                 </div>
               )}

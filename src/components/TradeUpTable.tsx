@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, type ReactNode } from "react";
 import type { TradeUp, TradeUpInput } from "../../shared/types.js";
-import { formatDollars, condAbbr, csfloatSearchUrl } from "../utils/format.js";
+import { condAbbr, csfloatSearchUrl } from "../utils/format.js";
+import { useCurrency } from "../contexts/CurrencyContext.js";
 import { Badge } from "../../shared/components/ui/badge.js";
 import { OutcomeChart } from "./trade-up/OutcomeChart.js";
 import { InputList } from "./trade-up/InputList.js";
@@ -155,6 +156,7 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
 }
 
 export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate, renderActions }: Props) {
+  const { formatPrice } = useCurrency();
   const isFree = tier === "free";
   const isPro = tier === "pro" || tier === "admin";
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -524,7 +526,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             {/* Metrics row */}
             <div className="px-3.5 pb-3 pt-1.5 flex items-center gap-3 flex-wrap">
               <span className={`text-base font-bold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {formatDollars(tu.profit_cents)}
+                {formatPrice(tu.profit_cents)}
               </span>
               <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${tu.roi_percentage >= 0 ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500"}`}>
                 {tu.roi_percentage.toFixed(1)}%
@@ -533,7 +535,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 const cls = chance >= 0.5 ? "bg-green-500/20 text-green-400" : chance >= 0.3 ? "bg-amber-400/15 text-amber-400" : "bg-red-500/10 text-muted-foreground";
                 return <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${cls}`}>{(chance * 100).toFixed(0)}%</span>;
               })()}
-              <span className="text-xs text-muted-foreground ml-auto">{formatDollars(tu.total_cost_cents)} cost</span>
+              <span className="text-xs text-muted-foreground ml-auto">{formatPrice(tu.total_cost_cents)} cost</span>
             </div>
           </div>
 
@@ -623,8 +625,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                       </Badge>
                     )}
                     {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && (
-                      <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-green-950 text-green-300 border-green-900" title={`Was profitable: ${formatDollars(tu.peak_profit_cents!)}`}>
-                        was {formatDollars(tu.peak_profit_cents!)}
+                      <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-green-950 text-green-300 border-green-900" title={`Was profitable: ${formatPrice(tu.peak_profit_cents!)}`}>
+                        was {formatPrice(tu.peak_profit_cents!)}
                       </Badge>
                     )}
                     {age && <span className="ml-1.5 text-[0.6rem] text-muted-foreground/50">{age}</span>}
@@ -633,7 +635,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatDollars(tu.profit_cents)}
+                    {formatPrice(tu.profit_cents)}
                   </span>
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
@@ -655,16 +657,16 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                     );
                   })()}
                 </td>
-                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatDollars(tu.total_cost_cents)}</td>
-                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatDollars(tu.expected_value_cents)}</td>
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatPrice(tu.total_cost_cents)}</td>
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">{formatPrice(tu.expected_value_cents)}</td>
                 <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${best >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatDollars(best)}
+                    {formatPrice(best)}
                   </span>
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${worst >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatDollars(worst)}
+                    {formatPrice(worst)}
                   </span>
                 </td>
                 {/* Claim status + share icon */}

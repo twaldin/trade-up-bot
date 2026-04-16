@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { formatDollars } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import type { SkinSummary } from "./types.js";
 import { CONDITION_ORDER } from "./types.js";
 import { CollectionLinks } from "./CollectionLinks.js";
@@ -30,6 +30,7 @@ function SkeletonRow({ delay }: { delay: number }) {
 }
 
 export function SkinList({ skins, selectedSkin, onSelectSkin, loading, onNavigateCollection }: SkinListProps) {
+  const { formatPrice } = useCurrency();
   if (loading) {
     return (
       <>
@@ -81,7 +82,7 @@ export function SkinList({ skins, selectedSkin, onSelectSkin, loading, onNavigat
                 if (!price) return null;
                 return (
                   <span key={c} className="text-[0.65rem] bg-secondary px-1.5 py-px rounded text-muted-foreground">
-                    {c.split(" ").map(w => w[0]).join("")}: {formatDollars(price)}
+                    {c.split(" ").map(w => w[0]).join("")}: {formatPrice(price)}
                   </span>
                 );
               })}

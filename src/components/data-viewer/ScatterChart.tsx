@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { formatDollars, conditionLabel } from "../../utils/format.js";
+import { conditionLabel } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import type { ListingRow, SaleRow, FloatBucket, SeriesKey } from "./types.js";
 import { SERIES_COLORS } from "./types.js";
 
@@ -16,6 +17,7 @@ interface ScatterChartProps {
 }
 
 export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, maxFloat, fullscreen, visible, xDomainMin, xDomainMax }: ScatterChartProps) {
+  const { formatPrice } = useCurrency();
   const W = fullscreen ? 1200 : 700;
   const H = fullscreen ? 600 : 300;
   const PAD = { top: 25, right: 25, bottom: 40, left: 70 };
@@ -77,7 +79,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           <g key={`ytick-${i}`}>
             <line x1={PAD.left} y1={y(price)} x2={W - PAD.right} y2={y(price)} className="stroke-border" strokeWidth={1} />
             <text x={PAD.left - 5} y={y(price) + 4} textAnchor="end" className="fill-muted-foreground" fontSize={fullscreen ? 12 : 10}>
-              {formatDollars(price)}
+              {formatPrice(price)}
             </text>
           </g>
         );
@@ -123,7 +125,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
         .map((s, i) => (
         <g key={`csf-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
           <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.csfloat_sales} opacity={0.45} />
-          <title>{`CSFloat Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+          <title>{`CSFloat Sale: ${formatPrice(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
         </g>
       ))}
 
@@ -133,7 +135,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
         .map((s, i) => (
         <g key={`sp-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
           <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.skinport_sales} opacity={0.45} />
-          <title>{`Skinport Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+          <title>{`Skinport Sale: ${formatPrice(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
         </g>
       ))}
 
@@ -143,7 +145,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
         .map((s, i) => (
         <g key={`buff-sale-${i}`} transform={`translate(${x(s.float_value)},${y(s.price_cents)})`}>
           <rect x={-3} y={-3} width={6} height={6} transform="rotate(45)" fill={SERIES_COLORS.buff_sales} opacity={0.45} />
-          <title>{`Buff Sale: ${formatDollars(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
+          <title>{`Buff Sale: ${formatPrice(s.price_cents)} @ ${s.float_value.toFixed(6)} (${s.sold_at})`}</title>
         </g>
       ))}
 
@@ -158,7 +160,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           strokeWidth={0.5}
           opacity={0.8}
         >
-          <title>{`CSFloat: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})${l.staleness_checked_at ? " [verified]" : ""}`}</title>
+          <title>{`CSFloat: ${formatPrice(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})${l.staleness_checked_at ? " [verified]" : ""}`}</title>
         </circle>
       ))}
 
@@ -170,7 +172,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           r={dotR} fill={SERIES_COLORS.dmarket}
           opacity={0.7}
         >
-          <title>{`DMarket: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
+          <title>{`DMarket: ${formatPrice(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
         </circle>
       ))}
 
@@ -182,7 +184,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           r={dotR} fill={SERIES_COLORS.skinport}
           opacity={0.7}
         >
-          <title>{`Skinport: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
+          <title>{`Skinport: ${formatPrice(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
         </circle>
       ))}
 
@@ -194,7 +196,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
           r={dotR} fill={SERIES_COLORS.buff}
           opacity={0.7}
         >
-          <title>{`Buff: ${formatDollars(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
+          <title>{`Buff: ${formatPrice(l.price_cents)} @ ${l.float_value.toFixed(6)} (${conditionLabel(l.float_value)})`}</title>
         </circle>
       ))}
 
@@ -202,7 +204,7 @@ export function ScatterChart({ listings, saleHistory, floatBuckets, minFloat, ma
       {visible.buckets && floatBuckets.filter(b => b.avg_price_cents > 0).map((b, i) => {
         const cx = (x(Math.max(b.float_min, floatMin)) + x(Math.min(b.float_max, floatMax))) / 2;
         const cy = y(b.avg_price_cents) - 5;
-        const label = formatDollars(b.avg_price_cents);
+        const label = formatPrice(b.avg_price_cents);
         const tw = label.length * 5.5 + 6;
         return (
           <g key={`blabel-${i}`}>
