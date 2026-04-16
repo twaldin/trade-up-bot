@@ -91,10 +91,6 @@ export function FeaturesPage() {
               </p>
               <div className="flex gap-6 text-sm">
                 <div>
-                  <span className="text-foreground font-medium">Basic tier:</span>
-                  <span className="text-muted-foreground ml-2">10 verifications/hour</span>
-                </div>
-                <div>
                   <span className="text-foreground font-medium">Pro tier:</span>
                   <span className="text-muted-foreground ml-2">20 verifications/hour</span>
                 </div>
@@ -105,15 +101,11 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Claim system</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Basic and Pro users can claim a trade-up to hide its listings from all other TradeUpBot users for
+                Pro users can claim a trade-up to hide its listings from all other TradeUpBot users for
                 30 minutes. This gives you an uncontested window to purchase each input without worrying
                 about another user buying them first.
               </p>
               <div className="flex gap-6 text-sm flex-wrap">
-                <div>
-                  <span className="text-foreground font-medium">Basic rate:</span>
-                  <span className="text-muted-foreground ml-2">5 claims/day</span>
-                </div>
                 <div>
                   <span className="text-foreground font-medium">Pro rate:</span>
                   <span className="text-muted-foreground ml-2">10 claims/hour</span>

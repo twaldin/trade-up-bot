@@ -285,17 +285,15 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>Outcome distribution chart.</strong> A horizontal bar chart showing every possible output skin, its probability, its estimated value, and whether it's profitable (green) or not (red). This is the core of the trade-up — you can see exactly what you're betting on.</p>
 
-<p><strong>Input listings.</strong> The specific marketplace listings that make up this trade-up. Each input shows the skin name, float value, condition, price, and which marketplace it's listed on. On Basic and Pro tiers, each input links directly to the marketplace listing so you can buy it.</p>
+<p><strong>Input listings.</strong> The specific marketplace listings that make up this trade-up. Each input shows the skin name, float value, condition, price, and which marketplace it's listed on. Each input links directly to the marketplace listing so you can buy it.</p>
 
 <p><strong>Trade-up metadata.</strong> Collection breakdown, output float calculation, and the mathematical details behind the contract.</p>
 
 <h2>Subscription Tiers</h2>
 
-<p><strong>Free tier</strong> gives you 10 sample trade-ups per rarity tier. You can see full outcome details and sort columns, but there are no listing links, no filters, and data has a 3-hour delay. It's enough to explore the platform and understand how trade-ups work, but not enough to act on opportunities before they disappear.</p>
+<p><strong>Free tier</strong> gives you unlimited trade-ups with full filters, search, sorting, and direct listing links. Data has a 3-hour delay — enough to explore the platform and understand how trade-ups work, but not enough to act on opportunities before they disappear.</p>
 
-<p><strong>Basic ($5/mo)</strong> unlocks unlimited trade-ups with a 30-minute delay on new discoveries. You get filters (search by collection, skin name, price range), pagination, direct listing links to buy inputs, and the Verify feature at 10 checks per hour. This is the tier for people who want to do trade-ups regularly but don't need to be first.</p>
-
-<p><strong>Pro ($15/mo)</strong> adds real-time data with no delay — you see trade-ups the moment they're discovered. The Claim system lets you lock a trade-up's listings for 30 minutes so no other TradeUpBot user can see them while you're purchasing. You get 20 verifications per hour, 10 claims per hour, up to 5 active claims at once, the collection browser with knife/glove pool info, and price analytics.</p>
+<p><strong>Pro ($6.99/mo)</strong> adds real-time data with no delay — you see trade-ups the moment they're discovered. The Claim system lets you lock a trade-up's listings for 30 minutes so no other TradeUpBot user can see them while you're purchasing. You get 20 verifications per hour, 10 claims per hour, and up to 5 active claims at once.</p>
 
 <h2>Using Verify</h2>
 
@@ -303,7 +301,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>This matters because marketplace listings are live inventory. A listing that existed 20 minutes ago when the discovery engine found it might already be sold. Verification catches this before you commit money. If a listing is gone, the trade-up is flagged so you know it's no longer executable as shown.</p>
 
-<p>Basic users get 10 verifications per hour. Pro users get 20. Use them on trade-ups you're seriously considering, not as a browsing tool.</p>
+<p>Pro users get 20 verifications per hour. Use them on trade-ups you're seriously considering, not as a browsing tool.</p>
 
 <h2>Using Claim</h2>
 

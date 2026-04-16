@@ -66,12 +66,12 @@ export async function syncDiscordRoles(discordId: string, newTier: string): Prom
     getRoleId("Free"),
   ]);
 
-  // Remove all tier roles
+  // Remove all tier roles (keep basic role fetch for cleanup of grandfathered users)
   const allRoleIds = [proRoleId, basicRoleId, freeRoleId].filter(Boolean) as string[];
   await Promise.all(allRoleIds.map(id => removeGuildMemberRole(discordId, id)));
 
   // Add the correct one
-  const targetRoleId = newTier === "pro" ? proRoleId : newTier === "basic" ? basicRoleId : freeRoleId;
+  const targetRoleId = newTier === "pro" ? proRoleId : freeRoleId;
   if (targetRoleId) {
     await addGuildMemberRole(discordId, targetRoleId);
   }

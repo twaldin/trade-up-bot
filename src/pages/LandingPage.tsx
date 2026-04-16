@@ -266,7 +266,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <h2 className="text-2xl font-bold mb-2 text-center">Pricing</h2>
             <p className="text-muted-foreground text-center mb-12">Start free. Upgrade when you're ready.</p>
 
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6">
               {/* Free */}
               <div className="rounded-xl border border-border p-6 flex flex-col">
                 <div className="mb-6">
@@ -285,33 +285,19 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                 <Btn variant="outline" onClick={() => { window.location.href = '/trade-ups'; }} className="w-full">Start browsing</Btn>
               </div>
 
-              {/* Basic */}
-              <div className="rounded-xl border border-border p-6 flex flex-col">
-                <div className="mb-6">
-                  <div className="text-sm mb-1">Basic</div>
-                  <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
-                </div>
-                <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 30-min delay on new finds</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (10/hr)</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (5/day)</li>
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
-                </ul>
-                <Btn variant="outline" onClick={login} className="w-full">Subscribe</Btn>
-              </div>
-
               {/* Pro */}
               <div className="rounded-xl border border-foreground/20 p-6 flex flex-col bg-foreground/[0.03]">
                 <div className="mb-6">
                   <div className="text-sm text-green-500 mb-1">Pro</div>
-                  <div className="text-3xl font-bold">$15<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                  <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Basic</li>
-                  <li className="flex items-center gap-2"><IconCheck /> Real-time data</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
+                  <li className="flex items-center gap-2"><IconCheck /> Real-time data (no delay)</li>
                   <li className="flex items-center gap-2"><IconCheck /> Claim system (30 min lock)</li>
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (20/hr)</li>
+                  <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (10/hr)</li>
                 </ul>
                 <Btn onClick={login} className="w-full">Go Pro</Btn>
               </div>

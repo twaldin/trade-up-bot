@@ -10,45 +10,36 @@ export function buildPricingEmbed(): EmbedBuilder {
       {
         name: "Free — $0",
         value:
-          "- 10 sample trade-ups per rarity tier\n" +
+          "- Unlimited trade-ups\n" +
+          "- Full filters, search, sorting\n" +
+          "- Direct listing links\n" +
           "- Full outcome details and chart\n" +
           "- 3-hour data delay\n" +
-          "- Collection browser + price analytics\n" +
-          "- No listing links, filters, or claims",
+          "- Collection browser + price analytics",
       },
       {
-        name: "Basic — $5/mo",
+        name: "Pro — $6.99/mo",
         value:
-          "- Unlimited trade-ups\n" +
-          "- 30-min delay on new discoveries\n" +
-          "- Filters, search, pagination\n" +
-          "- Direct listing links\n" +
-          "- Verify availability (10/hr)",
-      },
-      {
-        name: "Pro — $15/mo",
-        value:
-          "- Everything in Basic\n" +
+          "- Everything in Free\n" +
           "- **Real-time data** (no delay)\n" +
           "- **Claim system** (lock listings 30 min)\n" +
           "- Up to 5 active claims\n" +
           "- Verify availability (20/hr)\n" +
-          "- Discord alert channels",
+          "- Claims (10/hr)",
       },
       {
         name: "Feature Comparison",
         value:
           "```\n" +
-          "Feature              Free        Basic       Pro\n" +
-          "─────────────────────────────────────────────────\n" +
-          "Trade-ups            10/tier     Unlimited   Unlimited\n" +
-          "Data freshness       3h delay    30m delay   Real-time\n" +
-          "Filters & search     No          Yes         Yes\n" +
-          "Listing links        No          Yes         Yes\n" +
-          "Verify               No          10/hr       20/hr\n" +
-          "Claims               No          No          10/hr\n" +
-          "Active claims        No          No          Up to 5\n" +
-          "Discord alerts       No          No          Yes\n" +
+          "Feature              Free        Pro\n" +
+          "────────────────────────────────────\n" +
+          "Trade-ups            Unlimited   Unlimited\n" +
+          "Data freshness       3h delay    Real-time\n" +
+          "Filters & search     Yes         Yes\n" +
+          "Listing links        Yes         Yes\n" +
+          "Verify               No          20/hr\n" +
+          "Claims               No          10/hr\n" +
+          "Active claims        No          Up to 5\n" +
           "```",
       },
     )

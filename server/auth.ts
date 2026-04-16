@@ -54,7 +54,7 @@ export interface User {
   steam_id: string;
   display_name: string;
   avatar_url: string;
-  tier: "free" | "basic" | "pro";
+  tier: "free" | "pro";
   is_admin: boolean;
   stripe_customer_id: string | null;
   discord_id: string | null;
@@ -303,8 +303,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       return;
     }
     const { steam_id, tier } = req.body as { steam_id?: string; tier?: string };
-    if (!tier || !["free", "basic", "pro"].includes(tier)) {
-      res.status(400).json({ error: "Invalid tier. Use 'free', 'basic', or 'pro'." });
+    if (!tier || !["free", "pro"].includes(tier)) {
+      res.status(400).json({ error: "Invalid tier. Use 'free' or 'pro'." });
       return;
     }
     const targetId = steam_id || (req.user as User).steam_id;
@@ -340,8 +340,6 @@ export function getTierConfig(req: Request): { delay: number; limit: number; sho
   switch (tier) {
     case "pro":
       return { delay: 0, limit: 0, showListingIds: true };
-    case "basic":
-      return { delay: 30 * 60, limit: 0, showListingIds: true };
     default:
       return { delay: 3 * 60 * 60, limit: 0, showListingIds: true };
   }

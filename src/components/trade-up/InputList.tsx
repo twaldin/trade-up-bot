@@ -275,7 +275,7 @@ export function InputList({ tu, verifyResult, verifying, onVerify, onNavigateSki
           </button>
         )}
         {!tu.is_theoretical && !showVerify && (
-          <span className="ml-2 text-[0.65rem] text-muted-foreground/60 align-middle">Upgrade to Basic to verify listings</span>
+          <span className="ml-2 text-[0.65rem] text-muted-foreground/60 align-middle">Upgrade to Pro to verify listings</span>
         )}
         {verifyResult && (() => {
           const vr = verifyResult;

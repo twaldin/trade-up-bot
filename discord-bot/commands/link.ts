@@ -46,7 +46,7 @@ export async function handleLink(interaction: ChatInputCommandInteraction): Prom
 
     // Remove existing tier roles, add the correct one
     const tierRoleNames = ["Pro", "Basic", "Free"];
-    const targetRoleName = data.tier === "pro" ? "Pro" : data.tier === "basic" ? "Basic" : "Free";
+    const targetRoleName = data.tier === "pro" ? "Pro" : "Free";
 
     for (const roleName of tierRoleNames) {
       const role = guild.roles.cache.find(r => r.name === roleName);
@@ -60,7 +60,6 @@ export async function handleLink(interaction: ChatInputCommandInteraction): Prom
 
     const tierColors: Record<string, number> = {
       pro: EMBED_COLORS.gold,
-      basic: EMBED_COLORS.blue,
       free: EMBED_COLORS.green,
     };
 

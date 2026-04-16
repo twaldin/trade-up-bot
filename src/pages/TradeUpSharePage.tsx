@@ -119,7 +119,7 @@ export function TradeUpSharePage() {
   const typeLabel = TRADE_UP_TYPE_LABELS[tuType] || tuType;
   const typeColor = TYPE_COLORS[tuType] || "text-foreground border-border bg-muted";
   const isAuthenticated = !!user;
-  const isBasicPlus = user?.tier === "basic" || user?.tier === "pro" || user?.tier === "admin";
+  const isBasicPlus = user?.tier === "pro" || user?.tier === "admin";
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">

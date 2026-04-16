@@ -124,10 +124,10 @@ export function FaqPage() {
             },
             {
               "@type": "Question",
-              "name": "What's the difference between Free, Basic, and Pro?",
+              "name": "What's the difference between Free and Pro?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Free — Unlimited trade-ups with full filters, search, sorting, listing links, and outcome details. 3-hour data delay. No verification or claims. Basic ($5/mo) — Everything in Free plus a 30-minute data delay, availability verification (10/hr), and claims (5/day, up to 5 active). Pro ($15/mo) — Everything in Basic plus real-time data (no delay), more verifications (20/hr), and more claims (10/hr)."
+                "text": "Free — Unlimited trade-ups with full filters, search, sorting, listing links, and outcome details. 3-hour data delay. No verification or claims. Pro ($6.99/mo) — Everything in Free plus real-time data (no delay), availability verification (20/hr), and claims (10/hr, up to 5 active)."
               }
             },
             {
@@ -143,7 +143,7 @@ export function FaqPage() {
               "name": "What are the rate limits?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Rate limits vary by tier and action. Verify: Basic 10/hour, Pro 20/hour. Claim: Basic 5/day, Pro 10/hour (up to 5 active claims). These limits exist to ensure fair access and prevent abuse of marketplace APIs."
+                "text": "Rate limits apply to Pro tier actions. Verify: 20/hour. Claim: 10/hour (up to 5 active claims). These limits exist to ensure fair access and prevent abuse of marketplace APIs."
               }
             }
           ]
@@ -277,18 +277,14 @@ export function FaqPage() {
               </p>
             </FaqItem>
 
-            <FaqItem question="What's the difference between Free, Basic, and Pro?">
+            <FaqItem question="What's the difference between Free and Pro?">
               <p>
                 <strong className="text-foreground">Free</strong> — Unlimited trade-ups with full filters, search, sorting, listing
                 links, and outcome details. 3-hour data delay. No verification or claims.
               </p>
               <p>
-                <strong className="text-foreground">Basic ($5/mo)</strong> — Everything in Free plus a 30-minute data delay,
-                availability verification (10/hr), and claims (5/day, up to 5 active).
-              </p>
-              <p>
-                <strong className="text-foreground">Pro ($15/mo)</strong> — Everything in Basic plus real-time data (no delay),
-                more verifications (20/hr), and more claims (10/hr).
+                <strong className="text-foreground">Pro ($6.99/mo)</strong> — Everything in Free plus real-time data (no delay),
+                availability verification (20/hr), and claims (10/hr, up to 5 active).
               </p>
               <BlogLink slug="how-to-use-tradeupbot" title="How to Use TradeUpBot" />
             </FaqItem>
@@ -313,11 +309,11 @@ export function FaqPage() {
 
             <FaqItem question="What are the rate limits?">
               <p>
-                Rate limits vary by tier and action:
+                Rate limits apply to Pro tier actions:
               </p>
               <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong className="text-foreground">Verify</strong> — Basic: 10/hour, Pro: 20/hour</li>
-                <li><strong className="text-foreground">Claim</strong> — Basic: 5/day, Pro: 10/hour (up to 5 active claims)</li>
+                <li><strong className="text-foreground">Verify</strong> — 20/hour</li>
+                <li><strong className="text-foreground">Claim</strong> — 10/hour (up to 5 active claims)</li>
               </ul>
               <p>
                 These limits exist to ensure fair access and prevent abuse of marketplace APIs.

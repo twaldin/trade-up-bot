@@ -23,7 +23,7 @@ interface Props {
   onNavigateCollection: (name: string) => void;
 }
 
-function UpgradeBanner({ message, plan }: { message: string; plan: "basic" | "pro" }) {
+function UpgradeBanner({ message }: { message: string }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 my-2 bg-yellow-950/30 border border-yellow-500/30 rounded-md text-sm text-yellow-200">
       <span>{message}</span>
@@ -81,7 +81,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const isFree = tier === "free";
-  const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
 
   // Sync state to URL search params
@@ -279,7 +278,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onSort={handleSort}
             onNavigateSkin={onNavigateSkin}
             onNavigateCollection={onNavigateCollection}
-            onClaimChange={(isPro || isBasic) ? handleClaimChange : undefined}
+            onClaimChange={isPro ? handleClaimChange : undefined}
             tier={tier}
             claimLimit={claimLimit}
             verifyLimit={verifyLimit}
@@ -289,12 +288,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
           {/* Free tier: upgrade banner */}
           {isFree && !loading && (
-            <UpgradeBanner message="Upgrade to Basic for verification, claims, and 30-minute data delay" plan="basic" />
-          )}
-
-          {/* Basic tier: upgrade banner for real-time + more claims */}
-          {isBasic && !loading && (
-            <UpgradeBanner message="Viewing with 30-minute delay. Upgrade to Pro for real-time data and unlimited claims." plan="pro" />
+            <UpgradeBanner message="Upgrade to Pro for real-time data, verification, and claims" />
           )}
 
           {/* Pagination — all tiers */}
