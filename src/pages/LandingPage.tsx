@@ -52,8 +52,11 @@ interface LandingUser {
   tier: string;
 }
 
+type LandingBillingInterval = "monthly" | "yearly" | "lifetime";
+
 const LandingPage = ({ user }: { user?: LandingUser | null }) => {
   const [stats, setStats] = useState<GlobalStats | null>(null);
+  const [billing, setBilling] = useState<LandingBillingInterval>("monthly");
 
   useEffect(() => {
     fetch("/api/global-stats").then(r => r.json()).then(setStats).catch(() => {});
@@ -264,7 +267,36 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
         <section id="pricing" className="py-20 border-t border-border">
           <div className="mx-auto max-w-4xl px-6">
             <h2 className="text-2xl font-bold mb-2 text-center">Pricing</h2>
-            <p className="text-muted-foreground text-center mb-12">Start free. Upgrade when you're ready.</p>
+            <p className="text-muted-foreground text-center mb-8">Start free. Upgrade when you're ready.</p>
+
+            {/* Billing toggle */}
+            <div className="flex justify-center mb-10">
+              <div className="inline-flex items-center gap-1 bg-muted/50 border border-border rounded-lg p-1 text-sm">
+                {(["monthly", "yearly", "lifetime"] as LandingBillingInterval[]).map((interval) => (
+                  <button
+                    key={interval}
+                    onClick={() => setBilling(interval)}
+                    className={`relative px-4 py-1.5 rounded-md font-medium transition-all cursor-pointer capitalize ${
+                      billing === interval
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {interval === "yearly" && (
+                      <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                        Save 28%
+                      </span>
+                    )}
+                    {interval === "lifetime" && (
+                      <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                        Best value
+                      </span>
+                    )}
+                    {interval.charAt(0).toUpperCase() + interval.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="grid md:grid-cols-2 gap-6">
               {/* Free */}
@@ -289,7 +321,17 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div className="rounded-xl border border-foreground/20 p-6 flex flex-col bg-foreground/[0.03]">
                 <div className="mb-6">
                   <div className="text-sm text-green-500 mb-1">Pro</div>
-                  <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                  {billing === "monthly" && (
+                    <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                  )}
+                  {billing === "yearly" && (
+                    <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span>
+                      <span className="ml-2 text-xs text-green-500 font-normal">billed $60/year</span>
+                    </div>
+                  )}
+                  {billing === "lifetime" && (
+                    <div className="text-3xl font-bold">$50<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
+                  )}
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1 text-sm">
                   <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
