@@ -214,15 +214,31 @@ app.use((req, res, next) => {
           + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
           + `<p><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></p>`;
 
-        const jsonLd: Record<string, unknown>[] = [{
-          "@context": "https://schema.org", "@type": "BreadcrumbList",
-          itemListElement: [
-            { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
-            { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
-            { "@type": "ListItem", position: 3, name: `${displayName} Collection`, item: `https://tradeupbot.app/collections/${req.params.slug}` },
-            { "@type": "ListItem", position: 4, name: "Trade-Ups" },
-          ],
-        }];
+        // Top trade-ups for ItemList JSON-LD (up to 10, by profit)
+        const itemListTus = [...tradeUps].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 10);
+        const jsonLd: Record<string, unknown>[] = [
+          {
+            "@context": "https://schema.org", "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+              { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
+              { "@type": "ListItem", position: 3, name: `${displayName} Collection`, item: `https://tradeupbot.app/collections/${req.params.slug}` },
+              { "@type": "ListItem", position: 4, name: "Trade-Ups" },
+            ],
+          },
+          {
+            "@context": "https://schema.org", "@type": "ItemList",
+            name: `Best ${displayName} CS2 Trade-Up Contracts`,
+            description: `Top profitable trade-up contracts using skins from the ${displayName} collection, ranked by profit.`,
+            numberOfItems: tradeUps.length,
+            itemListElement: itemListTus.map((t, i) => ({
+              "@type": "ListItem",
+              position: i + 1,
+              url: `https://tradeupbot.app/trade-ups/${t.id}`,
+              name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} profit (${t.roi_percentage.toFixed(1)}% ROI)`,
+            })),
+          },
+        ];
 
         res.send(buildSeoHtml({
           title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
