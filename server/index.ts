@@ -856,6 +856,17 @@ app.use((req, res, next) => {
         }));
         return;
       }
+      const cacheKey = "seo_skins_list";
+      try {
+        const { cacheGet, cacheSet } = await import("./redis.js");
+        const cached = await cacheGet<string>(cacheKey);
+        if (cached) {
+          res.setHeader("Content-Type", "text/html");
+          res.setHeader("X-Cache", "HIT");
+          res.send(cached);
+          return;
+        }
+      } catch { }
       try {
         const { rows } = await pool.query(`
           SELECT s.name, COUNT(l.id)::int as listing_count
@@ -868,13 +879,18 @@ app.use((req, res, next) => {
           const slug = toSlug(s.name);
           return `<li><a href="/skins/${slug}">${escapeHtml(s.name)}</a> (${s.listing_count} listings)</li>`;
         }).join("");
-        res.setHeader("Content-Type", "text/html");
-        res.send(buildSeoHtml({
+        const html = buildSeoHtml({
           title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
           description: `Browse ${rows.length}+ CS2 skins with live prices from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/skins",
           bodyText: `Browse CS2 skins with live market prices and float data.`,
-        }).replace("</main>", `<ul>${links}</ul></main>`));
+        }).replace("</main>", `<ul>${links}</ul></main>`);
+        try {
+          const { cacheSet } = await import("./redis.js");
+          await cacheSet(cacheKey, html, 3600).catch(() => {});
+        } catch { }
+        res.setHeader("Content-Type", "text/html");
+        res.send(html);
       } catch { next(); }
     });
 
