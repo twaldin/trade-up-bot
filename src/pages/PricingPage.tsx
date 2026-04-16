@@ -156,11 +156,11 @@ export function PricingPage() {
                 )}
                 {billing === "yearly" && (
                   <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span>
-                    <span className="ml-2 text-xs text-green-500 font-normal">billed $60/year</span>
+                    <span className="ml-2 text-xs text-green-500 font-normal">billed $59.99/year</span>
                   </div>
                 )}
                 {billing === "lifetime" && (
-                  <div className="text-3xl font-bold">$50<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
+                  <div className="text-3xl font-bold">$74.99<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
                 )}
                 <p className="text-xs text-muted-foreground mt-2">Real-time data, claim system, and full analytics. The price of one CS2 case key.</p>
               </div>
