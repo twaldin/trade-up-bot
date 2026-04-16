@@ -98,10 +98,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "data:"],
-      connectSrc: ["'self'", "https://checkout.stripe.com"],
+      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com"],
       frameSrc: ["https://checkout.stripe.com"],
     },
   },
