@@ -133,10 +133,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       where += ` AND t.created_at <= NOW() - INTERVAL '10800 seconds'`;
     }
 
-    // Basic tier: 30-min delay — only show trade-ups created 30+ min ago
-    if (effectiveTier === "basic") {
-      where += ` AND t.created_at <= NOW() - INTERVAL '1800 seconds'`;
-    }
+
 
     // Load active claims from Redis (fast) — includes listing IDs for conflict detection
     const activeClaims = await getActiveClaims(pool);
@@ -457,12 +454,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       tier: effectiveTier,
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
-      claim_limit: effectiveTier === "pro"
-        ? await getRateLimit(userId, "claim", 10)
-        : effectiveTier === "basic"
-          ? await getRateLimit(userId, "claim", 5)
-          : null,
-      verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", effectiveTier === "pro" ? 20 : 10),
+      claim_limit: effectiveTier === "pro" ? await getRateLimit(userId, "claim", 10) : null,
+      verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", 20),
     };
     res.json(result);
   }));
@@ -492,11 +485,11 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   });
 
   router.post("/api/verify-trade-up/:id", async (req, res) => {
-    // Verify requires authentication (basic+ tier)
+    // Verify requires pro tier
     const userId = req.user?.steam_id;
     const userTier = req.user?.tier || "free";
     if (!userId || userTier === "free") {
-      res.status(403).json({ error: "Verify requires Basic or Pro plan" });
+      res.status(403).json({ error: "Verify requires Pro plan" });
       return;
     }
 
@@ -512,8 +505,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       return;
     }
 
-    // Rate limit: basic 10/hr, pro 20/hr
-    const verifyMax = userTier === "pro" ? 20 : 10;
+    const verifyMax = 20;
     const { checkRateLimit: checkRL } = await import("../redis.js");
     const verifyRateLimit = await checkRL(userId, "verify", verifyMax, 3600);
     if (!verifyRateLimit.allowed) {

@@ -156,7 +156,6 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
 
 export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate, renderActions }: Props) {
   const isFree = tier === "free";
-  const isBasic = tier === "basic";
   const isPro = tier === "pro" || tier === "admin";
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
@@ -288,8 +287,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
         <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
           {showUpgradeLocal && (
             <div className="flex items-center justify-between mb-1.5 px-3 py-2 bg-yellow-950/40 border border-yellow-500/30 rounded text-[0.75rem] text-yellow-200">
-              <span>Upgrade to Basic to claim trade-ups and lock listings while you buy</span>
-              <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "basic" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
+              <span>Upgrade to Pro to claim trade-ups and lock listings while you buy</span>
+              <button className="text-yellow-400 hover:text-yellow-300 font-medium cursor-pointer whitespace-nowrap ml-3" onClick={async (e) => { e.stopPropagation(); const r = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan: "pro" }) }); const d = await r.json(); if (d.url) window.location.href = d.url; }}>
                 Upgrade →
               </button>
             </div>
@@ -305,7 +304,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {!myClaimLocal && !otherClaim && (
-                (isPro || isBasic)
+                isPro
                   ? <ClaimButton tuId={tu.id} claimed={claimedIds} setClaimed={setClaimedIds} onClaimChange={onClaimChange} limit={claimLimit} onLimitUpdate={onClaimLimitUpdate} onClaimExpiry={handleClaimExpiry} />
                   : <button
                       className="px-2 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 hover:border-purple-400 cursor-pointer transition-colors"
@@ -405,7 +404,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           onVerify={handleVerify}
           onNavigateSkin={onNavigateSkin}
           showListingLinks={true}
-          showVerify={isPro || isBasic}
+          showVerify={isPro}
           verifyLimit={verifyLimit}
           confirmMode={confirmModeId === tu.id}
           confirmSelected={confirmSelected}

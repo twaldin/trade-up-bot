@@ -198,8 +198,8 @@ export function claimsRouter(pool: pg.Pool): Router {
     return { status, total, active, missing };
   }
 
-  // POST /api/trade-ups/:id/claim - claim a trade-up (Basic + Pro)
-  router.post("/api/trade-ups/:id/claim", requireTier("basic", "pro"), async (req, res) => {
+  // POST /api/trade-ups/:id/claim - claim a trade-up (Pro only)
+  router.post("/api/trade-ups/:id/claim", requireTier("pro"), async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
@@ -207,21 +207,17 @@ export function claimsRouter(pool: pg.Pool): Router {
     }
 
     const userId = (req.user as User)?.steam_id || "anonymous";
-    const userTier = (req.user as User)?.tier as string || "free";
-    const isProLevel = userTier === "pro" || userTier === "admin";
 
     await releaseExpiredClaims();
 
-    // Rate limit: basic 5/24hr, pro 10/hr
-    const claimMax = isProLevel ? 10 : 5;
-    const claimWindow = isProLevel ? 3600 : 86400;
+    // Rate limit: pro 10/hr
+    const claimMax = 10;
+    const claimWindow = 3600;
     const rateLimit = await checkRateLimit(userId, "claim", claimMax, claimWindow);
     if (!rateLimit.allowed) {
-      const resetLabel = isProLevel
-        ? `${Math.ceil(rateLimit.resetIn! / 60)} min`
-        : `${Math.ceil(rateLimit.resetIn! / 3600)} hr`;
+      const resetLabel = `${Math.ceil(rateLimit.resetIn! / 60)} min`;
       res.status(429).json({
-        error: `Claim limit reached (${claimMax}/${isProLevel ? "hour" : "day"}). Resets in ${resetLabel}.`,
+        error: `Claim limit reached (${claimMax}/hour). Resets in ${resetLabel}.`,
         rate_limit: rateLimit,
       });
       return;
@@ -438,7 +434,7 @@ export function claimsRouter(pool: pg.Pool): Router {
   // Body: { listing_ids: string[] } — which listings user actually bought
   // Confirmed listings are deleted (triggers auto-correct cascade on next read)
   // Unchecked listings are released (claimed_by cleared)
-  router.post("/api/trade-ups/:id/confirm", requireTier("basic", "pro"), async (req, res) => {
+  router.post("/api/trade-ups/:id/confirm", requireTier("pro"), async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });

@@ -9,7 +9,6 @@ import { syncDiscordRoles } from "../discord-rest.js";
 
 // Read at request time, not module load (env may not be loaded yet)
 function getPlan(plan: string): { priceId: string; name: string } | null {
-  if (plan === "basic") return { priceId: process.env.STRIPE_BASIC_PRICE_ID || "", name: "Basic" };
   if (plan === "pro") return { priceId: process.env.STRIPE_PRO_PRICE_ID || "", name: "Pro" };
   return null;
 }
@@ -30,7 +29,7 @@ export function stripeRouter(pool: pg.Pool): Router {
     const user = req.user as User;
     const plan = req.body?.plan as string;
     if (!plan || !getPlan(plan)) {
-      res.status(400).json({ error: "Invalid plan. Use 'basic' or 'pro'." });
+      res.status(400).json({ error: "Invalid plan. Use pro." });
       return;
     }
 
@@ -114,11 +113,12 @@ export function stripeRouter(pool: pg.Pool): Router {
         const status = sub.status;
         const priceId = sub.items.data[0]?.price?.id;
 
-        // Map price ID -> tier
+        // Map price ID -> tier (basic price ID grandfathered to pro)
         let tier = "free";
         if (status === "active" || status === "trialing") {
+          const basicPriceId = process.env.STRIPE_BASIC_PRICE_ID;
           if (priceId === getPlan("pro")!.priceId) tier = "pro";
-          else if (priceId === getPlan("basic")!.priceId) tier = "basic";
+          else if (basicPriceId && priceId === basicPriceId) tier = "pro";
         }
 
         await pool.query("UPDATE users SET tier = $1 WHERE stripe_customer_id = $2", [tier, customerId]);

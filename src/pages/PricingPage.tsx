@@ -70,10 +70,10 @@ export function PricingPage() {
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <Helmet>
         <title>Pricing — TradeUpBot CS2 Trade-Up Plans</title>
-        <meta name="description" content="Free, Basic, and Pro plans for TradeUpBot. Start finding profitable CS2 trade-ups for free, upgrade for real-time alerts and full marketplace access." />
+        <meta name="description" content="Free and Pro plans for TradeUpBot. Start finding profitable CS2 trade-ups for free, upgrade for real-time data and full marketplace access." />
         <link rel="canonical" href="https://tradeupbot.app/pricing" />
         <meta property="og:title" content="Pricing — TradeUpBot CS2 Trade-Up Plans" />
-        <meta property="og:description" content="Free, Basic, and Pro plans. Start finding profitable CS2 trade-ups for free." />
+        <meta property="og:description" content="Free and Pro plans. Start finding profitable CS2 trade-ups for free." />
         <meta property="og:url" content="https://tradeupbot.app/pricing" />
         <meta property="og:type" content="website" />
       </Helmet>
@@ -87,7 +87,7 @@ export function PricingPage() {
           </p>
 
           {/* Tier cards */}
-          <div className="grid md:grid-cols-3 gap-6 mb-16">
+          <div className="grid md:grid-cols-2 gap-6 mb-16">
             {/* Free */}
             <div className="rounded-xl border border-border p-6 flex flex-col">
               <div className="mb-6">
@@ -109,35 +109,15 @@ export function PricingPage() {
               <Btn variant="outline" onClick={login} className="w-full">Get started</Btn>
             </div>
 
-            {/* Basic */}
-            <div className="rounded-xl border border-border p-6 flex flex-col">
-              <div className="mb-6">
-                <div className="text-sm mb-1">Basic</div>
-                <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
-                <p className="text-xs text-muted-foreground mt-2">Faster data, verification, and claims. See trade-ups 30 minutes after discovery.</p>
-              </div>
-              <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> 30-min delay on new finds</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Verify availability (10/hr)</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Claims (5/day)</li>
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
-                <li className="flex items-center gap-2 text-muted-foreground/40"><IconX /> No real-time data</li>
-              </ul>
-              <Btn variant="outline" onClick={() => user ? subscribe("basic") : login()} className="w-full">
-                {user?.tier === "basic" ? "Current plan" : "Subscribe"}
-              </Btn>
-            </div>
-
             {/* Pro */}
             <div className="rounded-xl border border-foreground/20 p-6 flex flex-col bg-foreground/[0.03]">
               <div className="mb-6">
                 <div className="text-sm text-green-500 mb-1">Pro</div>
-                <div className="text-3xl font-bold">$15<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
-                <p className="text-xs text-muted-foreground mt-2">Real-time data, claim system, and full analytics. For serious trade-up operators.</p>
+                <div className="text-3xl font-bold">$6.99<span className="text-sm text-muted-foreground font-normal">/mo</span></div>
+                <p className="text-xs text-muted-foreground mt-2">Real-time data, claim system, and full analytics. The price of one CS2 case key.</p>
               </div>
               <ul className="space-y-2.5 mb-6 flex-1 text-sm">
-                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Basic</li>
+                <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Everything in Free</li>
                 <li className="flex items-center gap-2"><IconCheck /> Real-time data (no delay)</li>
                 <li className="flex items-center gap-2"><IconCheck /> Claim system (30 min lock)</li>
                 <li className="flex items-center gap-2 text-muted-foreground"><IconCheck /> Up to 5 active claims</li>
@@ -158,24 +138,23 @@ export function PricingPage() {
                 <tr className="border-b border-border bg-muted/30">
                   <th className="text-left px-4 py-3 font-medium text-muted-foreground">Feature</th>
                   <th className="text-center px-4 py-3 font-medium text-muted-foreground">Free</th>
-                  <th className="text-center px-4 py-3 font-medium">Basic</th>
                   <th className="text-center px-4 py-3 font-medium text-green-500">Pro</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {[
-                  { feature: "Trade-ups visible", free: "Unlimited", basic: "Unlimited", pro: "Unlimited" },
-                  { feature: "Data freshness", free: "3-hour delay", basic: "30-min delay", pro: "Real-time" },
-                  { feature: "Outcome details", free: true, basic: true, pro: true },
-                  { feature: "Sort columns", free: true, basic: true, pro: true },
-                  { feature: "Filters & search", free: true, basic: true, pro: true },
-                  { feature: "Pagination", free: true, basic: true, pro: true },
-                  { feature: "Direct listing links", free: true, basic: true, pro: true },
-                  { feature: "Verify availability", free: false, basic: "10/hr", pro: "20/hr" },
-                  { feature: "Claim system", free: false, basic: "5/day", pro: "10/hr" },
-                  { feature: "Active claims", free: false, basic: "Up to 5", pro: "Up to 5" },
-                  { feature: "Collection browser", free: true, basic: true, pro: true },
-                  { feature: "Price analytics", free: true, basic: true, pro: true },
+                  { feature: "Trade-ups visible", free: "Unlimited", pro: "Unlimited" },
+                  { feature: "Data freshness", free: "3-hour delay", pro: "Real-time" },
+                  { feature: "Outcome details", free: true, pro: true },
+                  { feature: "Sort columns", free: true, pro: true },
+                  { feature: "Filters & search", free: true, pro: true },
+                  { feature: "Pagination", free: true, pro: true },
+                  { feature: "Direct listing links", free: true, pro: true },
+                  { feature: "Verify availability", free: false, pro: "20/hr" },
+                  { feature: "Claim system", free: false, pro: "10/hr" },
+                  { feature: "Active claims", free: false, pro: "Up to 5" },
+                  { feature: "Collection browser", free: true, pro: true },
+                  { feature: "Price analytics", free: true, pro: true },
                 ].map((row, i) => (
                   <tr key={i} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3 text-foreground">{row.feature}</td>
@@ -183,11 +162,6 @@ export function PricingPage() {
                       {row.free === true ? <span className="inline-flex justify-center"><IconCheck /></span> :
                        row.free === false ? <span className="inline-flex justify-center"><IconX /></span> :
                        <span className="text-muted-foreground">{row.free}</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {row.basic === true ? <span className="inline-flex justify-center"><IconCheck /></span> :
-                       row.basic === false ? <span className="inline-flex justify-center"><IconX /></span> :
-                       <span className="text-muted-foreground">{row.basic}</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {row.pro === true ? <span className="inline-flex justify-center"><IconCheck /></span> :
@@ -217,27 +191,18 @@ export function PricingPage() {
               </p>
             </PricingFaqItem>
 
-            <PricingFaqItem question="Can I switch between plans?">
-              <p>
-                Yes. You can upgrade or downgrade at any time. When upgrading, you're charged the
-                prorated difference for the remainder of your billing period. When downgrading, the
-                change takes effect at the start of your next billing period.
-              </p>
-            </PricingFaqItem>
-
-            <PricingFaqItem question="Is there a free trial for paid plans?">
+            <PricingFaqItem question="Is there a free trial for Pro?">
               <p>
                 There's no separate trial — the Free tier itself serves as a permanent trial. You can
                 use the Free tier for as long as you want to explore the platform. When you're ready
-                to act on trade-ups with full data, upgrade to Basic or Pro.
+                to act on trade-ups with real-time data, upgrade to Pro.
               </p>
             </PricingFaqItem>
 
             <PricingFaqItem question="What do the data delays mean?">
               <p>
-                Free users see trade-ups 3 hours after they're discovered. Basic users see them after 30 minutes.
-                Pro users see them immediately. Shorter delays mean you can act on opportunities before other
-                users see them.
+                Free users see trade-ups 3 hours after they're discovered. Pro users see them immediately.
+                Shorter delays mean you can act on opportunities before other users see them.
               </p>
             </PricingFaqItem>
 

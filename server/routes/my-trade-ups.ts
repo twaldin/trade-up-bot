@@ -8,7 +8,7 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
 
   // ── GET /api/my-trade-ups/stats ────────────────────────────────────────
   // Must be registered BEFORE /:id to avoid Express shadowing.
-  router.get("/api/my-trade-ups/stats", requireTier("basic", "pro"), async (req, res) => {
+  router.get("/api/my-trade-ups/stats", requireTier("pro"), async (req, res) => {
     const userId = (req.user as User).steam_id;
 
     const { rows: [sold] } = await pool.query(
@@ -45,7 +45,7 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // ── GET /api/my-trade-ups ──────────────────────────────────────────────
-  router.get("/api/my-trade-ups", requireTier("basic", "pro"), async (req, res) => {
+  router.get("/api/my-trade-ups", requireTier("pro"), async (req, res) => {
     const userId = (req.user as User).steam_id;
     const statusFilter = req.query.status as string | undefined;
 
@@ -66,7 +66,7 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // ── POST /api/my-trade-ups/:id/execute ─────────────────────────────────
-  router.post("/api/my-trade-ups/:id/execute", requireTier("basic", "pro"), async (req, res) => {
+  router.post("/api/my-trade-ups/:id/execute", requireTier("pro"), async (req, res) => {
     const utId = parseInt(String(req.params.id));
     if (isNaN(utId)) {
       res.status(400).json({ error: "Invalid ID" });
@@ -122,7 +122,7 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // ── POST /api/my-trade-ups/:id/sell ────────────────────────────────────
-  router.post("/api/my-trade-ups/:id/sell", requireTier("basic", "pro"), async (req, res) => {
+  router.post("/api/my-trade-ups/:id/sell", requireTier("pro"), async (req, res) => {
     const utId = parseInt(String(req.params.id));
     if (isNaN(utId)) {
       res.status(400).json({ error: "Invalid ID" });
@@ -193,7 +193,7 @@ export default function myTradeUpsRouter(pool: pg.Pool): Router {
   });
 
   // ── DELETE /api/my-trade-ups/:id ───────────────────────────────────────
-  router.delete("/api/my-trade-ups/:id", requireTier("basic", "pro"), async (req, res) => {
+  router.delete("/api/my-trade-ups/:id", requireTier("pro"), async (req, res) => {
     const utId = parseInt(String(req.params.id));
     if (isNaN(utId)) {
       res.status(400).json({ error: "Invalid ID" });

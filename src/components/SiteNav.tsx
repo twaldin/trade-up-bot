@@ -11,7 +11,6 @@ const NAV_LINKS = [
 // Match main app UserMenu colors exactly
 const tierColors: Record<string, string> = {
   pro: "text-yellow-400",
-  basic: "text-blue-400",
   free: "text-muted-foreground",
   admin: "text-red-400",
 };

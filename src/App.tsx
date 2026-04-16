@@ -142,7 +142,6 @@ function UserMenu({ user }: { user: AuthUser }) {
 
   const tierColors: Record<string, string> = {
     pro: "text-yellow-400",
-    basic: "text-blue-400",
     free: "text-muted-foreground",
   };
 
@@ -185,7 +184,7 @@ function UserMenu({ user }: { user: AuthUser }) {
               View Plans
             </a>
           )}
-          {(user.tier === "basic" || user.tier === "pro") && !user.is_admin && (
+          {user.tier === "pro" && !user.is_admin && (
             <button className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer" onClick={async () => {
               const res = await fetch("/api/billing-portal", { method: "POST", credentials: "include" });
               const data = await res.json();
@@ -218,7 +217,7 @@ function UserMenu({ user }: { user: AuthUser }) {
               <div className="px-3 py-1.5 text-[10px] text-muted-foreground uppercase tracking-wider border-t border-border mt-1">
                 Change Plan
               </div>
-              {(["free", "basic", "pro"] as const).map(t => (
+              {(["free", "pro"] as const).map(t => (
                 <button
                   key={t}
                   className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted cursor-pointer ${user.tier === t ? "text-foreground font-medium" : "text-muted-foreground"}`}
@@ -336,7 +335,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
         {[
           { to: "/trade-ups", label: "Trade-Ups", end: true },
-          ...(user && (user.tier === "pro" || user.tier === "basic" || user.is_admin) ? [{ to: "/my-trade-ups", label: "My Trade-Ups" }] : []),
+          ...(user && (user.tier === "pro" || user.is_admin) ? [{ to: "/my-trade-ups", label: "My Trade-Ups" }] : []),
           { to: "/skins", label: "Skins" },
           { to: "/collections", label: "Collections" },
           { to: "/calculator", label: "Calculator" },
