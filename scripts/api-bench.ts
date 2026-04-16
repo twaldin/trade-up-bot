@@ -68,10 +68,11 @@ async function bench(
   url: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string; warmRepeat?: boolean } = {}
 ): Promise<BenchResult> {
+  await new Promise(r => setTimeout(r, 300)); // throttle to avoid CF rate limiting
   const cold = await hit(url, opts);
   let warm: { ms: number; status: number; cached: boolean; size_bytes: number; error?: string } | null = null;
   if (opts.warmRepeat !== false && !cold.error) {
-    await new Promise(r => setTimeout(r, 80)); // brief pause
+    await new Promise(r => setTimeout(r, 200)); // brief pause before warm hit
     warm = await hit(url, opts);
   }
   const flags: string[] = [];
