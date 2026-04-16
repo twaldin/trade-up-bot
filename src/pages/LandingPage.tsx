@@ -326,11 +326,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   )}
                   {billing === "yearly" && (
                     <div className="text-3xl font-bold">$5<span className="text-sm text-muted-foreground font-normal">/mo</span>
-                      <span className="ml-2 text-xs text-green-500 font-normal">billed $60/year</span>
+                      <span className="ml-2 text-xs text-green-500 font-normal">billed $59.99/year</span>
                     </div>
                   )}
                   {billing === "lifetime" && (
-                    <div className="text-3xl font-bold">$50<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
+                    <div className="text-3xl font-bold">$74.99<span className="text-sm text-muted-foreground font-normal"> one-time</span></div>
                   )}
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1 text-sm">
