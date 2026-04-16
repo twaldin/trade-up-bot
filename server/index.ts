@@ -462,6 +462,29 @@ app.use((req, res, next) => {
       `, [skinName]);
       const outputTuCount = outputStats?.count || 0;
 
+      // 30-day price trend: compare first-week median vs last-week median
+      const { rows: [priceTrend] } = await pool.query(`
+        SELECT
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at < NOW() - INTERVAL '23 days') AS old_median,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at > NOW() - INTERVAL '7 days') AS new_median,
+          COUNT(*) as obs_count
+        FROM price_observations
+        WHERE skin_name = $1 AND observed_at > NOW() - INTERVAL '30 days'
+      `, [skinName]);
+      let priceTrendHtml = "";
+      if (priceTrend?.old_median && priceTrend?.new_median && priceTrend.obs_count >= 5) {
+        const oldMedian = parseFloat(priceTrend.old_median);
+        const newMedian = parseFloat(priceTrend.new_median);
+        if (oldMedian > 0) {
+          const pctChange = ((newMedian - oldMedian) / oldMedian) * 100;
+          const direction = pctChange > 0 ? "increased" : "decreased";
+          const absPct = Math.abs(pctChange).toFixed(1);
+          const oldFmt = "$" + (oldMedian / 100).toFixed(2);
+          const newFmt = "$" + (newMedian / 100).toFixed(2);
+          priceTrendHtml = `<p><strong>Price Trend:</strong> ${e(skinName)} prices have ${direction} ${absPct}% over the last 30 days, from ${oldFmt} to ${newFmt}.</p>`;
+        }
+      }
+
       // Other skins in the same collection (for interlinking)
       const primaryCollection = collections.length > 0 ? collections[0].name : null;
       let siblingSkinsHtml = "";
@@ -573,6 +596,7 @@ app.use((req, res, next) => {
         + `<p><strong>Available Conditions:</strong> ${availableConditions.join(", ")}</p>`
         + (collections.length > 0 ? `<p><strong>Collections:</strong> ${collLinks}</p>` : "")
         + tuStatsParagraphs
+        + priceTrendHtml
         + priceTable
         + tuTable
         + siblingSkinsHtml
