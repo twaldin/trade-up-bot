@@ -26,7 +26,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const BATCH_SIZE = 50_000;
+const BATCH_SIZE = 5_000;
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://localhost:5432/tradeupbot",
