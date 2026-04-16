@@ -1023,7 +1023,7 @@ app.use((req, res, next) => {
         }
 
         // Warm skin-data for most common rarity tabs (5s cold query, 1800s TTL)
-        for (const rarity of ["Covert", "Classified", "knife_glove"]) {
+        for (const rarity of ["Covert", "Classified", "knife_glove", "all"]) {
           const key = `skins:${rarity}:::1:0:`;
           if (!(await cacheGet(key))) {
             console.log(`Warming cache: skin-data ${rarity}...`);
