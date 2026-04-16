@@ -52,6 +52,50 @@ describe("buildSeoHtml", () => {
     expect(html).toContain('content="noindex, nofollow"');
   });
 
+  it("includes raw bodyHtml without escaping", () => {
+    const html = buildSeoHtml({
+      title: "Test",
+      description: "Test desc",
+      url: "https://tradeupbot.app/test",
+      bodyHtml: '<h1>Test Skin</h1><table><tr><td><a href="/skins/ak-47">AK-47</a></td></tr></table>',
+    });
+
+    expect(html).toContain('<h1>Test Skin</h1>');
+    expect(html).toContain('<a href="/skins/ak-47">AK-47</a>');
+    expect(html).toContain("<main>");
+  });
+
+  it("prefers bodyHtml over bodyText when both provided", () => {
+    const html = buildSeoHtml({
+      title: "Test",
+      description: "Test desc",
+      url: "https://tradeupbot.app/test",
+      bodyText: "plain text",
+      bodyHtml: "<h1>rich html</h1>",
+    });
+
+    expect(html).toContain("<h1>rich html</h1>");
+    expect(html).not.toContain("plain text");
+  });
+
+  it("handles jsonLd as array", () => {
+    const html = buildSeoHtml({
+      title: "Test",
+      description: "Test desc",
+      url: "https://tradeupbot.app/test",
+      jsonLd: [
+        { "@context": "https://schema.org", "@type": "BreadcrumbList" },
+        { "@context": "https://schema.org", "@type": "Product", name: "AK-47" },
+      ],
+    });
+
+    expect(html).toContain('"@type":"BreadcrumbList"');
+    expect(html).toContain('"@type":"Product"');
+    // Two separate script tags
+    const matches = html.match(/application\/ld\+json/g);
+    expect(matches).toHaveLength(2);
+  });
+
   it("escapes HTML entities in title and description", () => {
     const html = buildSeoHtml({
       title: 'M4A4 "Howl" — $100 <script>alert(1)</script>',
