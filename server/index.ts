@@ -298,6 +298,12 @@ app.use((req, res, next) => {
       if (!collectionName) return next();
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
 
+      // Collection image
+      const { rows: [collRow] } = await pool.query(
+        "SELECT image_url FROM collections WHERE name = $1", [collectionName]
+      );
+      const collectionImageUrl = collRow?.image_url || null;
+
       // All skins in this collection with listing counts
       const { rows: skins } = await pool.query(`
         SELECT s.name, s.weapon, s.rarity, COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price
@@ -312,6 +318,8 @@ app.use((req, res, next) => {
           WHEN 'Mil-Spec' THEN 4 WHEN 'Industrial Grade' THEN 5 WHEN 'Consumer Grade' THEN 6
           ELSE 7 END, s.name
       `, [collectionName]);
+
+      const totalListings = skins.reduce((sum: number, s: { listing_count: number }) => sum + s.listing_count, 0);
 
       // Profitable trade-up count for this collection
       const { rows: [tuStats] } = await pool.query(`
@@ -344,11 +352,19 @@ app.use((req, res, next) => {
         ? `<p><strong>${tuCount} profitable trade-ups</strong> use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">View ${displayName} trade-ups</a></p>`
         : "";
 
+      const collImageHtml = collectionImageUrl
+        ? `<img src="${e(collectionImageUrl)}" alt="${e(displayName)} collection CS2" width="200" height="200" />`
+        : "";
+
       const bodyHtml = `<h1>${e(displayName)} Collection</h1>`
-        + `<p>The ${e(displayName)} collection contains ${skins.length} skins across ${grouped.size} rarity tiers. Browse skins, compare prices, and find trade-up opportunities.</p>`
+        + collImageHtml
+        + `<p>The ${e(displayName)} collection is a CS2 weapon case collection containing ${skins.length} skins across ${grouped.size} rarity tiers. `
+        + `There are currently ${totalListings.toLocaleString()} active listings across CSFloat, DMarket, and Skinport. `
+        + (tuCount > 0 ? `The collection features in ${tuCount} profitable trade-up contracts, ` : "")
+        + `Browse skins, compare prices, and find trade-up opportunities below.</p>`
         + tuLink
         + skinTablesHtml
-        + `<p><a href="/collections/${req.params.slug}">View full ${e(displayName)} collection with live prices and trade-up data</a></p>`;
+        + (tuCount > 0 ? `<p><a href="/trade-ups/collection/${req.params.slug}">View all ${e(displayName)} collection trade-ups with live data</a></p>` : "");
 
       const jsonLd: Record<string, unknown>[] = [
         {
@@ -362,16 +378,18 @@ app.use((req, res, next) => {
         {
           "@context": "https://schema.org", "@type": "CollectionPage",
           name: `${displayName} Collection`,
-          description: `${skins.length} CS2 skins in the ${displayName} collection.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
+          description: `${skins.length} CS2 skins in the ${displayName} collection. ${totalListings.toLocaleString()} active listings.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
           url: `https://tradeupbot.app/collections/${req.params.slug}`,
           numberOfItems: skins.length,
+          ...(collectionImageUrl ? { image: collectionImageUrl } : {}),
         },
       ];
 
       res.send(buildSeoHtml({
         title: `${displayName} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`,
-        description: `Browse ${skins.length} skins in the ${displayName} collection. Prices from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
+        description: `Browse ${skins.length} skins in the ${displayName} collection. ${totalListings.toLocaleString()} listings from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
         url: `https://tradeupbot.app/collections/${req.params.slug}`,
+        ogImage: collectionImageUrl || undefined,
         bodyHtml,
         jsonLd,
       }));
@@ -388,9 +406,9 @@ app.use((req, res, next) => {
       const skinName = slugMap.get(req.params.slug);
       if (!skinName) return next();
 
-      // Skin metadata + listing stats
+      // Skin metadata + listing stats (now includes image_url)
       const { rows: [skinMeta] } = await pool.query(`
-        SELECT s.name, s.weapon, s.rarity, s.min_float, s.max_float,
+        SELECT s.name, s.weapon, s.rarity, s.min_float, s.max_float, s.image_url,
                COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price, MAX(l.price_cents) as max_price
         FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
         WHERE s.name = $1 AND s.stattrak = false
@@ -421,19 +439,85 @@ app.use((req, res, next) => {
           WHEN 'Battle-Scarred' THEN 5 END
       `, [skinName]);
 
-      // Trade-ups using this skin (top 5 by profit)
+      // Trade-ups using this skin as INPUT (top 5 for table + total count)
       const { rows: tradeUps } = await pool.query(`
         SELECT t.id, t.type, t.profit_cents, t.roi_percentage, t.chance_to_profit, t.total_cost_cents
         FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
         WHERE ti.skin_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
         ORDER BY t.profit_cents DESC LIMIT 5
       `, [skinName]);
+      const { rows: [inputStats] } = await pool.query(`
+        SELECT COUNT(DISTINCT ti.trade_up_id)::int as count
+        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE ti.skin_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+      `, [skinName]);
+      const inputTuCount = inputStats?.count || 0;
+
+      // Trade-ups that PRODUCE this skin as OUTPUT
+      const { rows: [outputStats] } = await pool.query(`
+        SELECT COUNT(*)::int as count
+        FROM trade_ups
+        WHERE output_skin_names @> ARRAY[$1]::text[]
+          AND listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
+      `, [skinName]);
+      const outputTuCount = outputStats?.count || 0;
+
+      // Other skins in the same collection (for interlinking)
+      const primaryCollection = collections.length > 0 ? collections[0].name : null;
+      let siblingSkinsHtml = "";
+      if (primaryCollection) {
+        const { rows: siblings } = await pool.query(`
+          SELECT s.name FROM skin_collections sc
+          JOIN collections c ON sc.collection_id = c.id
+          JOIN skins s ON sc.skin_id = s.id
+          WHERE c.name = $1 AND s.stattrak = false AND s.name != $2
+          ORDER BY CASE s.rarity
+            WHEN 'Covert' THEN 1 WHEN 'Classified' THEN 2 WHEN 'Restricted' THEN 3
+            WHEN 'Mil-Spec' THEN 4 WHEN 'Industrial Grade' THEN 5 WHEN 'Consumer Grade' THEN 6
+            ELSE 7 END, s.name
+        `, [primaryCollection, skinName]);
+        if (siblings.length > 0) {
+          const collDisplay = primaryCollection.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
+          const links = siblings.map((s: { name: string }) =>
+            `<li><a href="/skins/${toSlug(s.name)}">${escapeHtml(s.name)}</a></li>`
+          ).join("");
+          siblingSkinsHtml = `<h2>Other Skins in the ${escapeHtml(collDisplay)} Collection</h2><ul>${links}</ul>`;
+        }
+      }
+
+      // Determine available conditions from float range
+      const conditionRanges = [
+        { name: "Factory New", min: 0.00, max: 0.07 },
+        { name: "Minimal Wear", min: 0.07, max: 0.15 },
+        { name: "Field-Tested", min: 0.15, max: 0.38 },
+        { name: "Well-Worn", min: 0.38, max: 0.45 },
+        { name: "Battle-Scarred", min: 0.45, max: 1.00 },
+      ];
+      const availableConditions = conditionRanges
+        .filter(c => skinMeta.min_float < c.max && skinMeta.max_float > c.min)
+        .map(c => c.name);
 
       // Build HTML body
       const e = escapeHtml;
       const collLinks = collections.map((c: { name: string }) =>
         `<a href="/collections/${collectionToSlug(c.name)}">${e(c.name.replace(/^The\s+/i, "").replace(/\s+Collection$/i, ""))}</a>`
       ).join(", ");
+
+      // Skin image
+      const imgHtml = skinMeta.image_url
+        ? `<img src="${e(skinMeta.image_url)}" alt="${e(skinMeta.weapon)} ${e(skinName)} CS2 skin" width="512" height="384" />`
+        : "";
+
+      // Natural paragraph
+      const collDisplay = primaryCollection
+        ? primaryCollection.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")
+        : "";
+      let naturalParagraph = `${e(skinName)} is a ${e(skinMeta.rarity)} quality ${e(skinMeta.weapon)} skin`
+        + (collDisplay ? ` from the ${e(collDisplay)} collection` : "")
+        + `. It has a float range of ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}, meaning it comes in ${availableConditions.join(", ")} condition.`;
+      if (listingCount > 0) {
+        naturalParagraph += ` There are currently ${listingCount.toLocaleString()} active listings across CSFloat, DMarket, and Skinport, with prices ranging from $${minPrice} to $${maxPrice}.`;
+      }
 
       let priceTable = "";
       if (condPrices.length > 0) {
@@ -451,15 +535,51 @@ app.use((req, res, next) => {
         tuTable = `<h2>Trade-Ups Using ${e(skinName)}</h2><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
       }
 
+      // Trade-up stats paragraphs
+      let tuStatsParagraphs = "";
+      if (inputTuCount > 0) {
+        tuStatsParagraphs += `<p>This skin appears in <strong>${inputTuCount} profitable trade-ups</strong> as an input.</p>`;
+      }
+      if (outputTuCount > 0) {
+        tuStatsParagraphs += `<p><strong>${outputTuCount} profitable trade-ups</strong> can produce this skin as an output.</p>`;
+      }
+
+      // FAQ section
+      const faqEntries = [
+        {
+          q: `How much does ${skinName} cost?`,
+          a: listingCount > 0
+            ? `${skinName} prices currently range from $${minPrice} to $${maxPrice} across ${listingCount.toLocaleString()} active listings on CSFloat, DMarket, and Skinport.`
+            : `There are currently no active listings for ${skinName}. Check back later for updated pricing.`,
+        },
+        {
+          q: `What is the float range of ${skinName}?`,
+          a: `${skinName} has a float range of ${skinMeta.min_float.toFixed(2)} to ${skinMeta.max_float.toFixed(2)}, which means it is available in ${availableConditions.join(", ")} condition.`,
+        },
+        {
+          q: `What trade-ups use ${skinName}?`,
+          a: inputTuCount > 0
+            ? `${skinName} appears as an input in ${inputTuCount} profitable trade-up contracts.${outputTuCount > 0 ? ` Additionally, ${outputTuCount} profitable trade-ups can produce this skin as an output.` : ""}`
+            : `There are currently no profitable trade-ups using ${skinName} as an input.${outputTuCount > 0 ? ` However, ${outputTuCount} profitable trade-ups can produce this skin as an output.` : ""}`,
+        },
+      ];
+      const faqHtml = `<h2>Frequently Asked Questions</h2>`
+        + faqEntries.map(f => `<h3>${e(f.q)}</h3><p>${e(f.a)}</p>`).join("");
+
       const bodyHtml = `<h1>${e(skinName)}</h1>`
+        + imgHtml
+        + `<p>${naturalParagraph}</p>`
         + `<p><strong>Weapon:</strong> ${e(skinMeta.weapon)} | <strong>Rarity:</strong> ${e(skinMeta.rarity)} | <strong>Float Range:</strong> ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)} | <strong>Listings:</strong> ${listingCount}</p>`
+        + `<p><strong>Available Conditions:</strong> ${availableConditions.join(", ")}</p>`
         + (collections.length > 0 ? `<p><strong>Collections:</strong> ${collLinks}</p>` : "")
-        + `<p>${e(skinName)} prices range from $${minPrice} to $${maxPrice} across ${listingCount} active marketplace listings on CSFloat, DMarket, and Skinport.</p>`
+        + tuStatsParagraphs
         + priceTable
         + tuTable
-        + `<p><a href="/skins/${req.params.slug}">View live ${e(skinName)} price charts, float scatter plot, and all trade-up opportunities</a></p>`;
+        + siblingSkinsHtml
+        + faqHtml
+        + `<p><a href="/skins/${req.params.slug}">View interactive price charts and live listings</a></p>`;
 
-      // Structured data: Product + BreadcrumbList
+      // Structured data: Product + BreadcrumbList + FAQPage
       const jsonLd: Record<string, unknown>[] = [
         {
           "@context": "https://schema.org", "@type": "BreadcrumbList",
@@ -475,6 +595,7 @@ app.use((req, res, next) => {
           description: `${skinName} CS2 skin \u2014 ${skinMeta.rarity} rarity, float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}. ${listingCount} active listings.`,
           url: `https://tradeupbot.app/skins/${req.params.slug}`,
           category: `CS2 Skins > ${skinMeta.rarity}`,
+          ...(skinMeta.image_url ? { image: skinMeta.image_url } : {}),
           ...(skinMeta.min_price ? {
             offers: {
               "@type": "AggregateOffer", priceCurrency: "USD",
@@ -484,14 +605,23 @@ app.use((req, res, next) => {
             },
           } : {}),
         },
+        {
+          "@context": "https://schema.org", "@type": "FAQPage",
+          mainEntity: faqEntries.map(f => ({
+            "@type": "Question",
+            name: f.q,
+            acceptedAnswer: { "@type": "Answer", text: f.a },
+          })),
+        },
       ];
 
-      const tuSuffix = tradeUps.length > 0 ? ` ${tradeUps.length} profitable trade-ups available.` : "";
+      const tuSuffix = inputTuCount > 0 ? ` ${inputTuCount} profitable trade-ups available.` : "";
       res.send(buildSeoHtml({
         title: `${skinName} — CS2 Price, Float Data & Trade-Ups | TradeUpBot`,
         description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} listings on CSFloat, DMarket, Skinport. Float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}.${tuSuffix}`,
         url: `https://tradeupbot.app/skins/${req.params.slug}`,
         robots,
+        ogImage: skinMeta.image_url || undefined,
         bodyHtml,
         jsonLd,
       }));
