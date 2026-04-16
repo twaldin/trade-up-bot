@@ -162,6 +162,94 @@ app.use((req, res, next) => {
     }
   });
 
+  // SEO: collection trade-up landing pages — /trade-ups/collection/:slug
+  // Shows best trade-ups per collection grouped by rarity tier. Stable URLs, daily-updating content.
+  app.get("/trade-ups/collection/:slug", async (req, res, next) => {
+    const ua = req.headers["user-agent"] || "";
+    try {
+      const { getCollectionSlugMap } = await import("./routes/data.js");
+      const slugMap = await getCollectionSlugMap(pool);
+      const collectionName = slugMap.get(req.params.slug);
+      if (!collectionName) return next();
+      const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
+
+      // Get profitable trade-ups for this collection
+      const { rows: tradeUps } = await pool.query(`
+        SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents,
+               t.roi_percentage, t.chance_to_profit, t.best_case_cents, t.worst_case_cents
+        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        ORDER BY t.id, t.profit_cents DESC
+      `, [collectionName]);
+
+      const pageUrl = `https://tradeupbot.app/trade-ups/collection/${req.params.slug}`;
+
+      if (isCrawler(ua)) {
+        // Group by type for crawler HTML
+        const e = escapeHtml;
+        const byType = new Map<string, typeof tradeUps>();
+        for (const tu of tradeUps) {
+          if (!byType.has(tu.type)) byType.set(tu.type, []);
+          byType.get(tu.type)!.push(tu);
+        }
+
+        let tablesHtml = "";
+        const typeOrder = ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
+        for (const type of typeOrder) {
+          const tus = byType.get(type);
+          if (!tus || tus.length === 0) continue;
+          const sorted = [...tus].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 20);
+          const label = TRADE_UP_TYPE_LABELS[type] || type;
+          const rows = sorted.map((t: { id: number; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
+            `<tr><td><a href="/trade-ups/${t.id}">#${t.id}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+          ).join("");
+          tablesHtml += `<h2>${e(label)} Trade-Ups (${tus.length})</h2><table><thead><tr><th>ID</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+        }
+
+        const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
+        const bodyHtml = `<h1>${e(displayName)} Trade-Ups</h1>`
+          + `<p>${tradeUps.length} profitable trade-up contracts using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
+          + (bestProfit > 0 ? `<p>Best profit: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
+          + tablesHtml
+          + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
+          + `<p><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></p>`;
+
+        const jsonLd: Record<string, unknown>[] = [{
+          "@context": "https://schema.org", "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+            { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
+            { "@type": "ListItem", position: 3, name: `${displayName} Collection`, item: `https://tradeupbot.app/collections/${req.params.slug}` },
+            { "@type": "ListItem", position: 4, name: "Trade-Ups" },
+          ],
+        }];
+
+        res.send(buildSeoHtml({
+          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
+          description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection.${bestProfit > 0 ? ` Best profit: $${(bestProfit / 100).toFixed(2)}.` : ""} Real listings from CSFloat, DMarket, Skinport.`,
+          url: pageUrl,
+          bodyHtml,
+          jsonLd,
+        }));
+      } else {
+        // Non-crawler: serve SPA with injected meta
+        const distPath = path.join(__dirname, "..", "dist");
+        const indexPath = path.join(distPath, "index.html");
+        if (fs.existsSync(indexPath)) {
+          const indexHtml = fs.readFileSync(indexPath, "utf-8");
+          res.setHeader("Content-Type", "text/html");
+          res.send(injectMetaIntoSpa(indexHtml, {
+            title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
+            description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
+            url: pageUrl,
+          }));
+        } else {
+          next();
+        }
+      }
+    } catch { next(); }
+  });
+
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
   app.get("/trade-ups/:id", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
@@ -199,7 +287,7 @@ app.use((req, res, next) => {
     } catch { next(); }
   });
 
-  // SEO: crawler handler for /collections/:slug pages
+  // SEO: crawler handler for /collections/:slug pages — enriched
   app.get("/collections/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     if (!isCrawler(ua)) return next();
@@ -210,16 +298,87 @@ app.use((req, res, next) => {
       if (!collectionName) return next();
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
 
+      // All skins in this collection with listing counts
+      const { rows: skins } = await pool.query(`
+        SELECT s.name, s.weapon, s.rarity, COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price
+        FROM skin_collections sc
+        JOIN collections c ON sc.collection_id = c.id
+        JOIN skins s ON sc.skin_id = s.id
+        LEFT JOIN listings l ON s.id = l.skin_id
+        WHERE c.name = $1 AND s.stattrak = false
+        GROUP BY s.name, s.weapon, s.rarity
+        ORDER BY CASE s.rarity
+          WHEN 'Covert' THEN 1 WHEN 'Classified' THEN 2 WHEN 'Restricted' THEN 3
+          WHEN 'Mil-Spec' THEN 4 WHEN 'Industrial Grade' THEN 5 WHEN 'Consumer Grade' THEN 6
+          ELSE 7 END, s.name
+      `, [collectionName]);
+
+      // Profitable trade-up count for this collection
+      const { rows: [tuStats] } = await pool.query(`
+        SELECT COUNT(DISTINCT ti.trade_up_id)::int as tu_count
+        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+      `, [collectionName]);
+      const tuCount = tuStats?.tu_count || 0;
+
+      // Group skins by rarity
+      const e = escapeHtml;
+      const rarityOrder = ["Covert", "Classified", "Restricted", "Mil-Spec", "Industrial Grade", "Consumer Grade"];
+      const grouped = new Map<string, typeof skins>();
+      for (const s of skins) {
+        if (!grouped.has(s.rarity)) grouped.set(s.rarity, []);
+        grouped.get(s.rarity)!.push(s);
+      }
+
+      let skinTablesHtml = "";
+      for (const rarity of rarityOrder) {
+        const rs = grouped.get(rarity);
+        if (!rs || rs.length === 0) continue;
+        const rows = rs.map((s: { name: string; weapon: string; listing_count: number; min_price: number | null }) =>
+          `<tr><td><a href="/skins/${toSlug(s.name)}">${e(s.name)}</a></td><td>${e(s.weapon)}</td><td>${s.listing_count}</td><td>${s.min_price ? "$" + (s.min_price / 100).toFixed(2) : "N/A"}</td></tr>`
+        ).join("");
+        skinTablesHtml += `<h2>${e(rarity)} (${rs.length})</h2><table><thead><tr><th>Skin</th><th>Weapon</th><th>Listings</th><th>From</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+
+      const tuLink = tuCount > 0
+        ? `<p><strong>${tuCount} profitable trade-ups</strong> use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">View ${displayName} trade-ups</a></p>`
+        : "";
+
+      const bodyHtml = `<h1>${e(displayName)} Collection</h1>`
+        + `<p>The ${e(displayName)} collection contains ${skins.length} skins across ${grouped.size} rarity tiers. Browse skins, compare prices, and find trade-up opportunities.</p>`
+        + tuLink
+        + skinTablesHtml
+        + `<p><a href="/collections/${req.params.slug}">View full ${e(displayName)} collection with live prices and trade-up data</a></p>`;
+
+      const jsonLd: Record<string, unknown>[] = [
+        {
+          "@context": "https://schema.org", "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+            { "@type": "ListItem", position: 2, name: "Collections", item: "https://tradeupbot.app/collections" },
+            { "@type": "ListItem", position: 3, name: `${displayName} Collection` },
+          ],
+        },
+        {
+          "@context": "https://schema.org", "@type": "CollectionPage",
+          name: `${displayName} Collection`,
+          description: `${skins.length} CS2 skins in the ${displayName} collection.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
+          url: `https://tradeupbot.app/collections/${req.params.slug}`,
+          numberOfItems: skins.length,
+        },
+      ];
+
       res.send(buildSeoHtml({
-        title: `${displayName} Collection — CS2 Trade-Ups & Skins | TradeUpBot`,
-        description: `Browse skins and find profitable trade-ups from the ${displayName} collection.`,
+        title: `${displayName} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`,
+        description: `Browse ${skins.length} skins in the ${displayName} collection. Prices from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
         url: `https://tradeupbot.app/collections/${req.params.slug}`,
-        bodyText: `${displayName} collection — browse skins and find profitable trade-ups on TradeUpBot.`,
+        bodyHtml,
+        jsonLd,
       }));
     } catch { next(); }
   });
 
-  // SEO: crawler handler for /skins/:slug pages
+  // SEO: crawler handler for /skins/:slug pages — enriched with structured data
   app.get("/skins/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     if (!isCrawler(ua)) return next();
@@ -229,23 +388,112 @@ app.use((req, res, next) => {
       const skinName = slugMap.get(req.params.slug);
       if (!skinName) return next();
 
-      const { rows: [stats] } = await pool.query(`
-        SELECT COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price, MAX(l.price_cents) as max_price
-        FROM skins s JOIN listings l ON s.id = l.skin_id
+      // Skin metadata + listing stats
+      const { rows: [skinMeta] } = await pool.query(`
+        SELECT s.name, s.weapon, s.rarity, s.min_float, s.max_float,
+               COUNT(l.id)::int as listing_count, MIN(l.price_cents) as min_price, MAX(l.price_cents) as max_price
+        FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
+        WHERE s.name = $1 AND s.stattrak = false
+        GROUP BY s.id
+      `, [skinName]);
+      if (!skinMeta) return next();
+
+      const listingCount = skinMeta.listing_count || 0;
+      const minPrice = skinMeta.min_price ? (skinMeta.min_price / 100).toFixed(2) : "N/A";
+      const maxPrice = skinMeta.max_price ? (skinMeta.max_price / 100).toFixed(2) : "N/A";
+      const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
+
+      // Collections this skin belongs to
+      const { rows: collections } = await pool.query(`
+        SELECT c.name FROM skin_collections sc
+        JOIN collections c ON sc.collection_id = c.id
+        JOIN skins s ON sc.skin_id = s.id
         WHERE s.name = $1 AND s.stattrak = false
       `, [skinName]);
 
-      const listingCount = stats?.listing_count || 0;
-      const minPrice = stats?.min_price ? (stats.min_price / 100).toFixed(2) : "N/A";
-      const maxPrice = stats?.max_price ? (stats.max_price / 100).toFixed(2) : "N/A";
-      const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
+      // Prices by condition
+      const { rows: condPrices } = await pool.query(`
+        SELECT condition, avg_price_cents, median_price_cents, min_price_cents
+        FROM price_data WHERE skin_name = $1 AND source = 'csfloat_ref'
+        ORDER BY CASE condition
+          WHEN 'Factory New' THEN 1 WHEN 'Minimal Wear' THEN 2
+          WHEN 'Field-Tested' THEN 3 WHEN 'Well-Worn' THEN 4
+          WHEN 'Battle-Scarred' THEN 5 END
+      `, [skinName]);
 
+      // Trade-ups using this skin (top 5 by profit)
+      const { rows: tradeUps } = await pool.query(`
+        SELECT t.id, t.type, t.profit_cents, t.roi_percentage, t.chance_to_profit, t.total_cost_cents
+        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE ti.skin_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        ORDER BY t.profit_cents DESC LIMIT 5
+      `, [skinName]);
+
+      // Build HTML body
+      const e = escapeHtml;
+      const collLinks = collections.map((c: { name: string }) =>
+        `<a href="/collections/${collectionToSlug(c.name)}">${e(c.name.replace(/^The\s+/i, "").replace(/\s+Collection$/i, ""))}</a>`
+      ).join(", ");
+
+      let priceTable = "";
+      if (condPrices.length > 0) {
+        const rows = condPrices.map((p: { condition: string; avg_price_cents: number; median_price_cents: number; min_price_cents: number }) =>
+          `<tr><td>${e(p.condition)}</td><td>$${(p.avg_price_cents / 100).toFixed(2)}</td><td>$${(p.median_price_cents / 100).toFixed(2)}</td><td>$${(p.min_price_cents / 100).toFixed(2)}</td></tr>`
+        ).join("");
+        priceTable = `<h2>${e(skinName)} Prices by Condition</h2><table><thead><tr><th>Condition</th><th>Avg</th><th>Median</th><th>Min</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+
+      let tuTable = "";
+      if (tradeUps.length > 0) {
+        const rows = tradeUps.map((t: { id: number; type: string; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
+          `<tr><td><a href="/trade-ups/${t.id}">${e(TRADE_UP_TYPE_LABELS[t.type] || t.type)}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+        ).join("");
+        tuTable = `<h2>Trade-Ups Using ${e(skinName)}</h2><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+
+      const bodyHtml = `<h1>${e(skinName)}</h1>`
+        + `<p><strong>Weapon:</strong> ${e(skinMeta.weapon)} | <strong>Rarity:</strong> ${e(skinMeta.rarity)} | <strong>Float Range:</strong> ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)} | <strong>Listings:</strong> ${listingCount}</p>`
+        + (collections.length > 0 ? `<p><strong>Collections:</strong> ${collLinks}</p>` : "")
+        + `<p>${e(skinName)} prices range from $${minPrice} to $${maxPrice} across ${listingCount} active marketplace listings on CSFloat, DMarket, and Skinport.</p>`
+        + priceTable
+        + tuTable
+        + `<p><a href="/skins/${req.params.slug}">View live ${e(skinName)} price charts, float scatter plot, and all trade-up opportunities</a></p>`;
+
+      // Structured data: Product + BreadcrumbList
+      const jsonLd: Record<string, unknown>[] = [
+        {
+          "@context": "https://schema.org", "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+            { "@type": "ListItem", position: 2, name: "Skins", item: "https://tradeupbot.app/skins" },
+            { "@type": "ListItem", position: 3, name: skinName },
+          ],
+        },
+        {
+          "@context": "https://schema.org", "@type": "Product",
+          name: skinName,
+          description: `${skinName} CS2 skin \u2014 ${skinMeta.rarity} rarity, float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}. ${listingCount} active listings.`,
+          url: `https://tradeupbot.app/skins/${req.params.slug}`,
+          category: `CS2 Skins > ${skinMeta.rarity}`,
+          ...(skinMeta.min_price ? {
+            offers: {
+              "@type": "AggregateOffer", priceCurrency: "USD",
+              lowPrice: (skinMeta.min_price / 100).toFixed(2),
+              highPrice: ((skinMeta.max_price ?? skinMeta.min_price) / 100).toFixed(2),
+              offerCount: listingCount,
+            },
+          } : {}),
+        },
+      ];
+
+      const tuSuffix = tradeUps.length > 0 ? ` ${tradeUps.length} profitable trade-ups available.` : "";
       res.send(buildSeoHtml({
-        title: `${skinName} Price & Float Data — CS2 | TradeUpBot`,
-        description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} active listings across CSFloat, DMarket, and Skinport.`,
+        title: `${skinName} — CS2 Price, Float Data & Trade-Ups | TradeUpBot`,
+        description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} listings on CSFloat, DMarket, Skinport. Float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}.${tuSuffix}`,
         url: `https://tradeupbot.app/skins/${req.params.slug}`,
         robots,
-        bodyText: `${skinName} — ${listingCount} listings, $${minPrice} to $${maxPrice}. View price charts, float data, and trade-up opportunities on TradeUpBot.`,
+        bodyHtml,
+        jsonLd,
       }));
     } catch { next(); }
   });
