@@ -207,12 +207,24 @@ app.use((req, res, next) => {
         }
 
         const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
-        const bodyHtml = `<h1>${e(displayName)} Trade-Ups</h1>`
+        const collTuBreadcrumb = `<nav aria-label="Breadcrumb"><ol>`
+          + `<li><a href="/">Home</a></li>`
+          + `<li><a href="/trade-ups">Trade-Ups</a></li>`
+          + `<li><a href="/collections/${req.params.slug}">${e(displayName)} Collection</a></li>`
+          + `<li>${e(displayName)} Trade-Ups</li>`
+          + `</ol></nav>`;
+        const collTuRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
+          + `<li><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></li>`
+          + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
+          + `<li><a href="/collections">All CS2 collections</a></li>`
+          + `</ul></nav>`;
+        const bodyHtml = collTuBreadcrumb
+          + `<h1>${e(displayName)} Trade-Ups</h1>`
           + `<p>${tradeUps.length} profitable trade-up contracts using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
           + (bestProfit > 0 ? `<p>Best profit: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
           + tablesHtml
           + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
-          + `<p><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></p>`;
+          + collTuRelated;
 
         // Top trade-ups for ItemList JSON-LD (up to 10, by profit)
         const itemListTus = [...tradeUps].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 10);
@@ -372,7 +384,19 @@ app.use((req, res, next) => {
         ? `<img src="${e(collectionImageUrl)}" alt="${e(displayName)} collection CS2" width="200" height="200" />`
         : "";
 
-      const bodyHtml = `<h1>${e(displayName)} Collection</h1>`
+      const collBreadcrumb = `<nav aria-label="Breadcrumb"><ol>`
+        + `<li><a href="/">Home</a></li>`
+        + `<li><a href="/collections">Collections</a></li>`
+        + `<li>${e(displayName)} Collection</li>`
+        + `</ol></nav>`;
+      const collRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
+        + (tuCount > 0 ? `<li><a href="/trade-ups/collection/${req.params.slug}">${e(displayName)} trade-up contracts</a></li>` : "")
+        + `<li><a href="/collections">All CS2 collections</a></li>`
+        + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
+        + `<li><a href="/skins">Browse all CS2 skins</a></li>`
+        + `</ul></nav>`;
+      const bodyHtml = collBreadcrumb
+        + `<h1>${e(displayName)} Collection</h1>`
         + collImageHtml
         + `<p>The ${e(displayName)} collection is a CS2 weapon case collection containing ${skins.length} skins across ${grouped.size} rarity tiers. `
         + `There are currently ${totalListings.toLocaleString()} active listings across CSFloat, DMarket, and Skinport. `
@@ -380,7 +404,7 @@ app.use((req, res, next) => {
         + `Browse skins, compare prices, and find trade-up opportunities below.</p>`
         + tuLink
         + skinTablesHtml
-        + (tuCount > 0 ? `<p><a href="/trade-ups/collection/${req.params.slug}">View all ${e(displayName)} collection trade-ups with live data</a></p>` : "");
+        + collRelated;
 
       const jsonLd: Record<string, unknown>[] = [
         {
@@ -627,7 +651,20 @@ app.use((req, res, next) => {
       const faqHtml = `<h2>Frequently Asked Questions</h2>`
         + faqEntries.map(f => `<h3>${e(f.q)}</h3><p>${e(f.a)}</p>`).join("");
 
-      const bodyHtml = `<h1>${e(skinName)}</h1>`
+      const skinBreadcrumb = `<nav aria-label="Breadcrumb"><ol>`
+        + `<li><a href="/">Home</a></li>`
+        + `<li><a href="/skins">Skins</a></li>`
+        + (primaryCollection ? `<li><a href="/collections/${collectionToSlug(primaryCollection)}">${e(collDisplay)} Collection</a></li>` : "")
+        + `<li>${e(skinName)}</li>`
+        + `</ol></nav>`;
+      const skinRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
+        + (primaryCollection ? `<li><a href="/collections/${collectionToSlug(primaryCollection)}">${e(collDisplay)} Collection — all skins</a></li>` : "")
+        + (primaryCollection ? `<li><a href="/trade-ups/collection/${collectionToSlug(primaryCollection)}">${e(collDisplay)} Collection trade-ups</a></li>` : "")
+        + (inputTuCount > 0 ? `<li><a href="/trade-ups">Find profitable trade-ups using ${e(skinName)}</a></li>` : "")
+        + `<li><a href="/skins">Browse all CS2 skins</a></li>`
+        + `</ul></nav>`;
+      const bodyHtml = skinBreadcrumb
+        + `<h1>${e(skinName)}</h1>`
         + imgHtml
         + `<p>${naturalParagraph}</p>`
         + `<p><strong>Weapon:</strong> ${e(skinMeta.weapon)} | <strong>Rarity:</strong> ${e(skinMeta.rarity)} | <strong>Float Range:</strong> ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)} | <strong>Listings:</strong> ${listingCount}</p>`
@@ -639,7 +676,7 @@ app.use((req, res, next) => {
         + tuTable
         + siblingSkinsHtml
         + faqHtml
-        + `<p><a href="/skins/${req.params.slug}">View interactive price charts and live listings</a></p>`;
+        + skinRelated;
 
       // Structured data: Product + BreadcrumbList + FAQPage
       const jsonLd: Record<string, unknown>[] = [
