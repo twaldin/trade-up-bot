@@ -2,6 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { batchInputValueRatios } from "../engine.js";
 import { floatToCondition } from "../../shared/types.js";
+import { cacheGet, cacheSet } from "../redis.js";
 
 interface SniperListing {
   id: string;
@@ -23,6 +24,12 @@ export function listingSniperRouter(pool: pg.Pool): Router {
   // Filter options for the sniper UI
   router.get("/api/listing-sniper/filter-options", async (_req, res) => {
     try {
+      const cached = await cacheGet<{ skins: string[]; collections: string[] }>("sniper_filter_opts").catch(() => null);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.json(cached);
+        return;
+      }
       const [skinRows, collectionRows] = await Promise.all([
         pool.query<{ name: string }>(
           `SELECT DISTINCT s.name FROM listings l JOIN skins s ON s.id = l.skin_id ORDER BY s.name LIMIT 2000`
@@ -35,10 +42,12 @@ export function listingSniperRouter(pool: pg.Pool): Router {
            ORDER BY c.name LIMIT 500`
         ),
       ]);
-      res.json({
+      const result = {
         skins: skinRows.rows.map(r => r.name),
         collections: collectionRows.rows.map(r => r.name),
-      });
+      };
+      await cacheSet("sniper_filter_opts", result, 3600).catch(() => {});
+      res.json(result);
     } catch (err) {
       console.error("listing-sniper filter-options error:", err instanceof Error ? err.message : err);
       res.json({ skins: [], collections: [] });
