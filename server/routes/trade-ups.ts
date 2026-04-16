@@ -117,6 +117,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
+    let collectionJoin = ""; // JOIN clause for single-collection filter (avoids 30s full-table scan)
     const params: (string | number | string[])[] = [];
     let paramIndex = 1;
     if (includeStale) {
@@ -235,11 +236,20 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     // Collection filter
+    // Single collection: JOIN approach is ~10x faster than IN subquery.
+    // The IN subquery causes PG to scan 419K trade_ups in profit order, checking each against the
+    // collection (30s). JOIN materializes the ~8K collection IDs first, then does PK lookups (3s).
+    // Multi-collection (AND logic across "|"-separated names) falls back to IN subqueries.
     if (collection) {
       const collNames = collection.split("|").map(s => s.trim()).filter(Boolean);
-      for (const collName of collNames) {
-        where += ` AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++})`;
-        params.push(collName);
+      if (collNames.length === 1) {
+        collectionJoin = `JOIN (SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++}) _coll ON _coll.trade_up_id = t.id`;
+        params.push(collNames[0]);
+      } else {
+        for (const collName of collNames) {
+          where += ` AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++})`;
+          params.push(collName);
+        }
       }
     }
 
@@ -290,7 +300,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               0 as outcome_count,
               (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND (l.id IS NULL OR l.claimed_by IS NOT NULL)) as missing_inputs
-       FROM trade_ups t ${where}
+       FROM trade_ups t ${collectionJoin} ${where}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, perPage, offset]
@@ -326,7 +336,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     } else {
       // Capped COUNT: stop scanning after 10,001 rows for filtered queries
       const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${where} LIMIT 10001) sub`,
+        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${collectionJoin} ${where} LIMIT 10001) sub`,
         params
       );
       total = parseInt(countRow?.c) || 0;
