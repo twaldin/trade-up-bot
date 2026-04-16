@@ -24,10 +24,12 @@ const MIN_FLOOR = 0.001;
 
 /**
  * Softmax scaling factor. Yield rates are small (0-0.10), so we scale up
- * to create meaningful differentiation. Scale=50 means:
- *   7.8% yield → logit 3.9 → exp(3.9) ≈ 49x a 0% strategy
+ * aggressively to give near-total budget to the top strategy.
+ * Scale=1000: any strategy with ≥0.4% yield dominates (>70% allocation)
+ * over 0%-yield peers. MIN_FLOOR ensures blind strategies keep a tiny
+ * exploration budget (~0.1% each).
  */
-const SOFTMAX_SCALE = 50;
+const SOFTMAX_SCALE = 1000;
 
 interface StrategyHistory {
   iterations: number; // decayed cumulative
@@ -113,31 +115,24 @@ export function computeAdaptiveWeights(
     return buildStaticWeights(totalStrategies, floatBiasedCases);
   }
 
-  // Check if we have enough data to be meaningful (at least 100 total iterations)
+  // Check if we have enough data to be meaningful
   const totalIters = history.strategies.reduce((s, h) => s + h.iterations, 0);
-  if (totalIters < 100) {
+  if (totalIters < 50) {
     return buildStaticWeights(totalStrategies, floatBiasedCases);
   }
 
-  // Compute yield rates
+  // Compute yield rates — pessimistic prior (0%) for strategies with insufficient data.
+  // This prevents the median-prior trap: as top strategies absorb iterations,
+  // untested strategies would inherit the median (≈ top yield), collapsing weights
+  // back to uniform. Pessimistic prior keeps them at MIN_FLOOR until they earn signal.
   const yieldRates: number[] = [];
   for (let s = 0; s < totalStrategies; s++) {
     const h = history.strategies[s];
-    if (h && h.iterations > 10) {
+    if (h && h.iterations > 5) {
       yieldRates.push(h.profitable / h.iterations);
     } else {
-      // Not enough data for this strategy — give it a prior (median yield rate)
-      yieldRates.push(-1); // sentinel, will be replaced below
+      yieldRates.push(0);
     }
-  }
-
-  // Replace sentinels with median of observed rates (optimistic prior for untried strategies)
-  const observedRates = yieldRates.filter(r => r >= 0);
-  const medianRate = observedRates.length > 0
-    ? observedRates.sort((a, b) => a - b)[Math.floor(observedRates.length / 2)]
-    : 0;
-  for (let s = 0; s < totalStrategies; s++) {
-    if (yieldRates[s] < 0) yieldRates[s] = medianRate;
   }
 
   // Softmax: logit = rate * scale, then softmax
