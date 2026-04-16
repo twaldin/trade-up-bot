@@ -54,14 +54,16 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       const { rows: collections } = await pool.query(
         `SELECT collection_name as name, COUNT(*) as count FROM trade_up_inputs GROUP BY collection_name ORDER BY count DESC`
       );
+      // COUNT(*) not COUNT(DISTINCT trade_up_id) — the latter takes 18s on 11M rows
       const { rows: marketRows } = await pool.query(
-        "SELECT source as name, COUNT(DISTINCT trade_up_id) as count FROM trade_up_inputs GROUP BY source ORDER BY count DESC"
+        "SELECT source as name, COUNT(*) as count FROM trade_up_inputs GROUP BY source ORDER BY count DESC"
       );
 
       const result = { skins: skinMap, collections, markets: marketRows };
 
       const { cacheSet } = await import("../redis.js");
-      await cacheSet("filter_opts", result, 600).catch(() => {});
+      // 3600s TTL: daemon runs every ~30 min, 600s caused expiry between cycles
+      await cacheSet("filter_opts", result, 3600).catch(() => {});
 
       res.setHeader("X-Cache", "MISS");
       res.json(result);

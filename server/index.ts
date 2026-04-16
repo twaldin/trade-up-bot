@@ -441,6 +441,19 @@ app.use((req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     if (!isCrawler(ua)) return next();
     try {
+      // Redis cache: 3600s TTL. Skin data changes infrequently; cache avoids 5s+ cold path per page.
+      const cacheKey = `seo_skin:${req.params.slug}`;
+      try {
+        const { cacheGet } = await import("./redis.js");
+        const cached = await cacheGet<string>(cacheKey);
+        if (cached) {
+          res.setHeader("Content-Type", "text/html");
+          res.setHeader("X-Cache", "HIT");
+          res.send(cached);
+          return;
+        }
+      } catch { /* Redis unavailable */ }
+
       const { getSlugMap } = await import("./routes/data.js");
       const slugMap = await getSlugMap(pool);
       const skinName = slugMap.get(req.params.slug);
@@ -480,16 +493,24 @@ app.use((req, res, next) => {
       `, [skinName]);
 
       // Trade-ups using this skin as INPUT (top 5 for table + total count)
+      // MATERIALIZED CTE forces the planner to start from trade_up_inputs (28 rows for AK Redline)
+      // rather than scanning all 41K profitable trade_ups in a nested loop (was 4.5s → 9ms).
       const { rows: tradeUps } = await pool.query(`
+        WITH skin_tus AS MATERIALIZED (
+          SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
+        )
         SELECT t.id, t.type, t.profit_cents, t.roi_percentage, t.chance_to_profit, t.total_cost_cents
-        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
-        WHERE ti.skin_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
+        WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
         ORDER BY t.profit_cents DESC LIMIT 5
       `, [skinName]);
       const { rows: [inputStats] } = await pool.query(`
-        SELECT COUNT(DISTINCT ti.trade_up_id)::int as count
-        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
-        WHERE ti.skin_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        WITH skin_tus AS MATERIALIZED (
+          SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
+        )
+        SELECT COUNT(*)::int as count
+        FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
+        WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
       `, [skinName]);
       const inputTuCount = inputStats?.count || 0;
 
@@ -715,7 +736,7 @@ app.use((req, res, next) => {
       ];
 
       const tuSuffix = inputTuCount > 0 ? ` ${inputTuCount} profitable trade-ups available.` : "";
-      res.send(buildSeoHtml({
+      const html = buildSeoHtml({
         title: `${skinName} — CS2 Price, Float Data & Trade-Ups | TradeUpBot`,
         description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} listings on CSFloat, DMarket, Skinport. Float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}.${tuSuffix}`,
         url: `https://tradeupbot.app/skins/${req.params.slug}`,
@@ -723,7 +744,14 @@ app.use((req, res, next) => {
         ogImage: skinMeta.image_url || undefined,
         bodyHtml,
         jsonLd,
-      }));
+      });
+      // Cache the rendered HTML for 3600s — skin data changes at daemon cycle frequency (~30 min)
+      try {
+        const { cacheSet } = await import("./redis.js");
+        await cacheSet(cacheKey, html, 3600).catch(() => {});
+      } catch { /* Redis unavailable */ }
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
     } catch { next(); }
   });
 
@@ -992,6 +1020,18 @@ app.use((req, res, next) => {
           }
           await cacheSet("type_counts", counts, 1800);
           console.log(`Cache warmed: type-counts (${((Date.now() - t2) / 1000).toFixed(1)}s)`);
+        }
+
+        // Warm skin-data for most common rarity tabs (5s cold query, 1800s TTL)
+        for (const rarity of ["Covert", "Classified", "knife_glove"]) {
+          const key = `skins:${rarity}:::1:0:`;
+          if (!(await cacheGet(key))) {
+            console.log(`Warming cache: skin-data ${rarity}...`);
+            const t3 = Date.now();
+            // Hit our own API to warm the cache (reuses all data.ts logic including collectionKnifePool)
+            await fetch(`http://localhost:${process.env.PORT || 3001}/api/skin-data?rarity=${encodeURIComponent(rarity)}`).catch(() => {});
+            console.log(`Cache warmed: skin-data ${rarity} (${((Date.now() - t3) / 1000).toFixed(1)}s)`);
+          }
         }
       } catch (e) {
         console.error("Cache warming failed:", (e as Error).message);
