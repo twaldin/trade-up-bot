@@ -521,7 +521,7 @@ app.use((req, res, next) => {
           const absPct = Math.abs(pctChange).toFixed(1);
           const oldFmt = "$" + (oldMedian / 100).toFixed(2);
           const newFmt = "$" + (newMedian / 100).toFixed(2);
-          priceTrendHtml = `<p><strong>Price Trend:</strong> ${e(skinName)} prices have ${direction} ${absPct}% over the last 30 days, from ${oldFmt} to ${newFmt}.</p>`;
+          priceTrendHtml = `<p><strong>Price Trend:</strong> ${escapeHtml(skinName)} prices have ${direction} ${absPct}% over the last 30 days, from ${oldFmt} to ${newFmt}.</p>`;
         }
       }
 
