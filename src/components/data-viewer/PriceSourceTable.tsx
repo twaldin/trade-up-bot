@@ -1,12 +1,13 @@
-import { formatDollars } from "../../utils/format.js";
 import type { PriceSourceRow } from "./types.js";
 import { SOURCE_LABELS, CONDITION_ORDER } from "./types.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 
 interface PriceSourceTableProps {
   priceSources: PriceSourceRow[];
 }
 
 export function PriceSourceTable({ priceSources }: PriceSourceTableProps) {
+  const { formatPrice } = useCurrency();
   const byCondition = new Map<string, Map<string, { price: number; volume: number }>>();
   for (const p of priceSources) {
     if (!byCondition.has(p.condition)) byCondition.set(p.condition, new Map());
@@ -43,7 +44,7 @@ export function PriceSourceTable({ priceSources }: PriceSourceTableProps) {
               }
               return (
                 <td key={src} className="px-2.5 py-1 border-b border-border/70 text-foreground/80">
-                  <span className="text-green-500 font-medium">{formatDollars(data.price)}</span>
+                  <span className="text-green-500 font-medium">{formatPrice(data.price)}</span>
                   <span className="text-muted-foreground text-[0.7rem] ml-1">({data.volume})</span>
                 </td>
               );

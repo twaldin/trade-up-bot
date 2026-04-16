@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import type { TradeUp } from "../../shared/types.js";
-import { formatDollars, condAbbr } from "../utils/format.js";
+import { condAbbr } from "../utils/format.js";
+import { useCurrency } from "../contexts/CurrencyContext.js";
 import { OutcomeChart } from "../components/trade-up/OutcomeChart.js";
 import { OutcomeList } from "../components/trade-up/OutcomeList.js";
 import { Button } from "../../shared/components/ui/button.js";
@@ -58,6 +59,7 @@ function SkinSearchInput({
   onClear: () => void;
   placeholder: string;
 }) {
+  const { formatPrice } = useCurrency();
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +147,7 @@ function SkinSearchInput({
               <span className={`font-medium ${RARITY_COLORS[r.rarity] || "text-foreground"}`}>{r.name}</span>
               <span className="text-[0.7rem] text-muted-foreground">
                 {r.collection_name}
-                {r.floor_price_cents ? ` -- floor ${formatDollars(r.floor_price_cents)}` : ""}
+                {r.floor_price_cents ? ` -- floor ${formatPrice(r.floor_price_cents)}` : ""}
                 <span className="ml-2">float [{r.min_float.toFixed(2)}-{r.max_float.toFixed(2)}]</span>
               </span>
             </button>
@@ -171,6 +173,7 @@ function InputSlotRow({
   onRemove: (index: number) => void;
   canRemove: boolean;
 }) {
+  const { formatPrice } = useCurrency();
   const handleSelect = (result: SearchResult) => {
     const update: Partial<InputSlot> = {
       skinName: result.name,
@@ -254,7 +257,7 @@ function InputSlotRow({
             />
             {slot.priceCents && (
               <span className="text-[0.65rem] text-muted-foreground mt-0.5 block">
-                {formatDollars(parseInt(slot.priceCents) || 0)}
+                {formatPrice(parseInt(slot.priceCents) || 0)}
               </span>
             )}
           </div>
@@ -280,6 +283,7 @@ function floatToConditionLocal(f: number): string {
 }
 
 export function CalculatorPage() {
+  const { formatPrice } = useCurrency();
   const [inputs, setInputs] = useState<InputSlot[]>([{ ...EMPTY_INPUT }]);
   const [result, setResult] = useState<TradeUp | null>(null);
   const [stats, setStats] = useState<CalculatorStats | null>(null);
@@ -470,17 +474,17 @@ export function CalculatorPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             <StatCard
               label="Total Cost"
-              value={formatDollars(result.total_cost_cents)}
+              value={formatPrice(result.total_cost_cents)}
               className="text-foreground"
             />
             <StatCard
               label="Expected Value"
-              value={formatDollars(result.expected_value_cents)}
+              value={formatPrice(result.expected_value_cents)}
               className={result.expected_value_cents >= result.total_cost_cents ? "text-green-400" : "text-red-400"}
             />
             <StatCard
               label="Profit (EV)"
-              value={formatDollars(result.profit_cents)}
+              value={formatPrice(result.profit_cents)}
               className={result.profit_cents >= 0 ? "text-green-400" : "text-red-400"}
             />
             <StatCard
@@ -503,10 +507,10 @@ export function CalculatorPage() {
           {/* Best/Worst case */}
           <div className="flex gap-4 text-sm text-muted-foreground px-1">
             <span>
-              Best case: <strong className="text-green-400">{formatDollars(stats.best_case_cents)}</strong>
+              Best case: <strong className="text-green-400">{formatPrice(stats.best_case_cents)}</strong>
             </span>
             <span>
-              Worst case: <strong className="text-red-400">{formatDollars(stats.worst_case_cents)}</strong>
+              Worst case: <strong className="text-red-400">{formatPrice(stats.worst_case_cents)}</strong>
             </span>
           </div>
 

@@ -1,12 +1,13 @@
 import { useState, memo } from "react";
 import type { TradeUp } from "../../../shared/types.js";
-import { formatDollars } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 
 interface OutcomeChartProps {
   tu: TradeUp;
 }
 
 export const OutcomeChart = memo(function OutcomeChart({ tu }: OutcomeChartProps) {
+  const { formatPrice } = useCurrency();
   const [binSize, setBinSize] = useState(50);
 
   if (tu.outcomes.length === 0) return null;
@@ -121,10 +122,10 @@ export const OutcomeChart = memo(function OutcomeChart({ tu }: OutcomeChartProps
             const isPositive = midProfit >= 0;
             const probPct = (bin.probability * 100);
             const rangeLabel = bin.isEdge === "lo"
-              ? `\u2264 ${formatDollars(bin.hi)}`
+              ? `\u2264 ${formatPrice(bin.hi)}`
               : bin.isEdge === "hi"
-                ? `\u2265 ${formatDollars(bin.lo)}`
-                : `${formatDollars(bin.lo)} to ${formatDollars(bin.hi)}`;
+                ? `\u2265 ${formatPrice(bin.lo)}`
+                : `${formatPrice(bin.lo)} to ${formatPrice(bin.hi)}`;
             const tooltip = `${rangeLabel}\n${probPct.toFixed(1)}% chance\n${bin.skins.join(", ")}`;
 
             return (
@@ -164,10 +165,10 @@ export const OutcomeChart = memo(function OutcomeChart({ tu }: OutcomeChartProps
           {bins.map((bin, i) => {
             const mid = (bin.lo + bin.hi) / 2;
             const label = bin.isEdge === "lo"
-              ? `\u2264${formatDollars(bin.hi)}`
+              ? `\u2264${formatPrice(bin.hi)}`
               : bin.isEdge === "hi"
-                ? `\u2265${formatDollars(bin.lo)}`
-                : formatDollars(bin.lo);
+                ? `\u2265${formatPrice(bin.lo)}`
+                : formatPrice(bin.lo);
             return (
               <div key={i} className="text-[0.62rem] text-center pt-0.5 overflow-hidden text-ellipsis whitespace-nowrap" style={{ width: `${100 / bins.length}%` }}>
                 <span className={mid >= 0 ? "text-green-600/70" : "text-red-600/70"}>
@@ -179,7 +180,7 @@ export const OutcomeChart = memo(function OutcomeChart({ tu }: OutcomeChartProps
         </div>
       </div>
       <div className="flex justify-between text-[0.72rem] text-muted-foreground pt-1">
-        <span>EV: <strong style={{ color: tu.expected_value_cents - cost >= 0 ? "#22c55e" : "#ef4444" }}>{formatDollars(tu.expected_value_cents - cost)}</strong></span>
+        <span>EV: <strong style={{ color: tu.expected_value_cents - cost >= 0 ? "#22c55e" : "#ef4444" }}>{formatPrice(tu.expected_value_cents - cost)}</strong></span>
         <span className="text-muted-foreground/70">&larr; Loss | Profit &rarr;</span>
         <span>{tu.outcomes.length} outcomes in {bins.filter(b => b.probability > 0).length} bins</span>
       </div>

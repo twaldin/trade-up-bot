@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
-import { formatDollars, condAbbr, csfloatSearchUrl } from "../../utils/format.js";
+import { condAbbr, csfloatSearchUrl } from "../../utils/format.js";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import { PriceDetailsPanel } from "./PriceDetailsPanel.js";
 import { toSlug } from "../../../shared/slugs.js";
 
@@ -19,6 +20,7 @@ interface OutcomeStats {
 }
 
 export function OutcomeList({ tu, priceDetailKey, onTogglePriceDetail, onNavigateSkin }: OutcomeListProps) {
+  const { formatPrice } = useCurrency();
   const [stats, setStats] = useState<Map<string, OutcomeStats>>(new Map());
 
   // Fetch outcome skin stats on mount
@@ -88,9 +90,9 @@ export function OutcomeList({ tu, priceDetailKey, onTogglePriceDetail, onNavigat
                       {outcome.sell_marketplace === "dmarket" ? "DM" : "SP"}
                     </span>
                   )}
-                  <span className="text-foreground/80 text-[0.75rem]">{formatDollars(outcome.estimated_price_cents)}</span>
+                  <span className="text-foreground/80 text-[0.75rem]">{formatPrice(outcome.estimated_price_cents)}</span>
                   <span className={`text-[0.7rem] font-semibold ${delta >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {delta >= 0 ? "+" : ""}{formatDollars(delta)}
+                    {delta >= 0 ? "+" : ""}{formatPrice(delta)}
                   </span>
                 </div>
               </div>

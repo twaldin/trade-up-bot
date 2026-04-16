@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import type { TradeUp } from "../../shared/types.js";
 import { TRADE_UP_TYPE_LABELS } from "../../shared/types.js";
-import { formatDollars } from "../utils/format.js";
+import { useCurrency } from "../contexts/CurrencyContext.js";
 import { OutcomeChart } from "../components/trade-up/OutcomeChart.js";
 import { InputList } from "../components/trade-up/InputList.js";
 import { OutcomeList } from "../components/trade-up/OutcomeList.js";
@@ -26,6 +26,7 @@ interface AuthUser {
 }
 
 export function TradeUpSharePage() {
+  const { formatPrice } = useCurrency();
   const { id } = useParams<{ id: string }>();
   const [tu, setTu] = useState<TradeUp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,10 +139,10 @@ export function TradeUpSharePage() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <StatCard label="Cost" value={formatDollars(tu.total_cost_cents)} />
+              <StatCard label="Cost" value={formatPrice(tu.total_cost_cents)} />
               <StatCard
                 label="Profit"
-                value={formatDollars(tu.profit_cents)}
+                value={formatPrice(tu.profit_cents)}
                 className={tu.profit_cents > 0 ? "text-green-500" : "text-red-400"}
               />
               <StatCard
@@ -158,9 +159,9 @@ export function TradeUpSharePage() {
 
             <div className="flex items-center gap-3 mt-3">
               <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>EV: <span className="text-foreground">{formatDollars(tu.expected_value_cents)}</span></span>
-                <span>Best: <span className="text-green-500">{formatDollars(tu.best_case_cents ?? 0)}</span></span>
-                <span>Worst: <span className={(tu.worst_case_cents ?? 0) < 0 ? "text-red-400" : "text-foreground"}>{formatDollars(tu.worst_case_cents ?? 0)}</span></span>
+                <span>EV: <span className="text-foreground">{formatPrice(tu.expected_value_cents)}</span></span>
+                <span>Best: <span className="text-green-500">{formatPrice(tu.best_case_cents ?? 0)}</span></span>
+                <span>Worst: <span className={(tu.worst_case_cents ?? 0) < 0 ? "text-red-400" : "text-foreground"}>{formatPrice(tu.worst_case_cents ?? 0)}</span></span>
               </div>
               <div className="ml-auto">
                 <button

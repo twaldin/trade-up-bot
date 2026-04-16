@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { Badge } from "@shared/components/ui/badge.js";
 import { Button } from "@shared/components/ui/button.js";
 import { Input } from "@shared/components/ui/input.js";
-import { formatDollars, condAbbr, listingUrl, sourceLabel, sourceColor } from "../utils/format.js";
+import { condAbbr, listingUrl, sourceLabel, sourceColor } from "../utils/format.js";
+import { useCurrency } from "../contexts/CurrencyContext.js";
 
 interface SniperListing {
   id: string;
@@ -228,6 +229,7 @@ function SortIndicator({ column, sort, order }: { column: string; sort: string; 
 }
 
 export function ListingSniperPage() {
+  const { formatPrice } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [listings, setListings] = useState<SniperListing[]>([]);
@@ -446,16 +448,16 @@ export function ListingSniperPage() {
                 <div className="flex gap-4 mt-1.5 flex-wrap">
                   <div>
                     <div className="text-muted-foreground/70 mb-0.5">Listed</div>
-                    <div className="font-mono text-foreground">{formatDollars(listing.listed_price_cents)}</div>
+                    <div className="font-mono text-foreground">{formatPrice(listing.listed_price_cents)}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground/70 mb-0.5">Est. Value</div>
-                    <div className="font-mono text-muted-foreground">{formatDollars(listing.estimated_price_cents)}</div>
+                    <div className="font-mono text-muted-foreground">{formatPrice(listing.estimated_price_cents)}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground/70 mb-0.5">Diff</div>
                     <div className="font-mono text-green-400 font-semibold">
-                      +{formatDollars(listing.diff_cents)} (+{listing.diff_pct.toFixed(1)}%)
+                      +{formatPrice(listing.diff_cents)} (+{listing.diff_pct.toFixed(1)}%)
                     </div>
                   </div>
                 </div>
@@ -508,13 +510,13 @@ export function ListingSniperPage() {
                       </div>
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono text-foreground">
-                      {formatDollars(listing.listed_price_cents)}
+                      {formatPrice(listing.listed_price_cents)}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono text-muted-foreground">
-                      {formatDollars(listing.estimated_price_cents)}
+                      {formatPrice(listing.estimated_price_cents)}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono text-green-400">
-                      +{formatDollars(listing.diff_cents)}
+                      +{formatPrice(listing.diff_cents)}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono font-semibold text-green-400">
                       +{listing.diff_pct.toFixed(1)}%

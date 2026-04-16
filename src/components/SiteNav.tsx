@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { CurrencyPicker } from "./CurrencyPicker.js";
 
 const NAV_LINKS = [
   { to: "/features", label: "Features" },
@@ -102,6 +103,7 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
           )}
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-self-end">
+          <CurrencyPicker />
           {user ? (
             <>
               <Link
