@@ -187,12 +187,12 @@ export function formatYieldSummary(
 
 /** Strategy counts per tier type. */
 export const STRATEGY_COUNTS: Record<string, number> = {
-  knife: 13,
-  classified: 16,
-  restricted: 16,
-  milspec: 16,
-  industrial: 16,
-  consumer: 16,
+  knife: 17,
+  classified: 20,
+  restricted: 20,
+  milspec: 20,
+  industrial: 20,
+  consumer: 20,
 };
 
 /** Float-biased strategy indices per tier (used as fallback). */

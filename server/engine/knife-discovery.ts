@@ -724,9 +724,36 @@ export async function exploreKnifeWithBudget(
     }
   }
 
+  // Load profitable knife trade-ups for swap strategies (S13-S16)
+  const swapPool: { id: number; inputs: { listing_id: string; skin_name: string; collection_name: string; price_cents: number }[] }[] = [];
+  try {
+    const { rows: profInputs } = await pool.query(`
+      SELECT tu.id as trade_up_id, tui.listing_id, tui.skin_name,
+        tui.collection_name, tui.price_cents
+      FROM trade_ups tu
+      JOIN trade_up_inputs tui ON tui.trade_up_id = tu.id
+      WHERE tu.type = 'covert_knife' AND tu.profit_cents > 0 AND tu.is_theoretical = false
+      AND (tu.listing_status IS NULL OR tu.listing_status = 'active')
+      ORDER BY tu.profit_cents DESC
+    `);
+    const byTU = new Map<number, { listing_id: string; skin_name: string; collection_name: string; price_cents: number }[]>();
+    for (const row of profInputs) {
+      const list = byTU.get(row.trade_up_id) ?? [];
+      list.push({ listing_id: row.listing_id, skin_name: row.skin_name, collection_name: row.collection_name, price_cents: row.price_cents });
+      byTU.set(row.trade_up_id, list);
+    }
+    let swapCount = 0;
+    for (const [id, inputs] of byTU) {
+      if (swapCount >= 200) break;
+      inputs.sort((a, b) => b.price_cents - a.price_cents); // most expensive first
+      swapPool.push({ id, inputs });
+      swapCount++;
+    }
+  } catch { /* swap pool loading failed, skip swap strategies */ }
+
   // Float-biased strategies: float-targeted (5), ultra-low-float (7), output-aware (8), value-ratio (10, 11) get 2x
   const KNIFE_FLOAT_BIASED = [5, 7, 8, 10, 11];
-  const KNIFE_TOTAL_STRATEGIES = 13;
+  const KNIFE_TOTAL_STRATEGIES = 17;
   const adaptiveWeights = options.strategyWeights?.length === KNIFE_TOTAL_STRATEGIES ? options.strategyWeights : undefined;
 
   const results: TradeUp[] = [];
@@ -948,6 +975,163 @@ export async function exploreKnifeWithBudget(
           });
           if (lowFloat.length < 5) break;
           inputs = lowFloat.slice(0, 5);
+          break;
+        }
+
+        case 13: {
+          // Swap second-most-expensive: like smart swap but targets input #2
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          if (tu.inputs.length < 2) break;
+          const targetInput = tu.inputs[1]; // second most expensive
+
+          const colListings = byCollection.get(targetInput.collection_name);
+          if (!colListings || colListings.length < 2) break;
+
+          const cheaper = colListings.filter(l =>
+            l.price_cents < targetInput.price_cents &&
+            l.id !== targetInput.listing_id &&
+            !tu.inputs.some(inp => inp.listing_id === l.id)
+          );
+          if (cheaper.length === 0) break;
+
+          const replacement = pick(cheaper.slice(0, 20));
+
+          const inputListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            if (inp.listing_id === targetInput.listing_id) {
+              const found = allListings.find(l => l.id === replacement.id);
+              if (found) inputListings.push(found);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 5) {
+            inputs = inputListings;
+          }
+          break;
+        }
+
+        case 14: {
+          // Cross-marketplace swap: find most expensive input cheaper on different source
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          const expensiveInput = tu.inputs[0];
+          if (!expensiveInput) break;
+
+          const currentListing = allListings.find(l => l.id === expensiveInput.listing_id);
+          if (!currentListing) break;
+
+          const crossMarket = allListings.filter(l =>
+            l.skin_name === currentListing.skin_name &&
+            l.source !== currentListing.source &&
+            l.price_cents < currentListing.price_cents &&
+            !tu.inputs.some(inp => inp.listing_id === l.id)
+          );
+          if (crossMarket.length === 0) break;
+
+          crossMarket.sort((a, b) => a.price_cents - b.price_cents);
+          const replacement = crossMarket[0];
+
+          const inputListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            if (inp.listing_id === expensiveInput.listing_id) {
+              inputListings.push(replacement);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 5) {
+            inputs = inputListings;
+          }
+          break;
+        }
+
+        case 15: {
+          // Float-shift: swap highest adjusted-float input for lower-float alternative
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+
+          const tuListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            const found = allListings.find(l => l.id === inp.listing_id);
+            if (found) tuListings.push(found);
+          }
+          if (tuListings.length !== 5) break;
+
+          let worstIdx = 0;
+          let worstAdj = -1;
+          for (let i = 0; i < tuListings.length; i++) {
+            const l = tuListings[i];
+            const range = l.max_float - l.min_float;
+            const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
+            if (adj > worstAdj) { worstAdj = adj; worstIdx = i; }
+          }
+
+          const target = tuListings[worstIdx];
+          const colListings = byCollection.get(target.collection_name);
+          if (!colListings || colListings.length < 2) break;
+
+          const lowerFloat = colListings.filter(l =>
+            l.float_value < target.float_value &&
+            l.id !== target.id &&
+            !tuListings.some(il => il.id === l.id)
+          );
+          if (lowerFloat.length === 0) break;
+
+          lowerFloat.sort((a, b) => a.float_value - b.float_value);
+          const replacement = lowerFloat[Math.floor(Math.random() * Math.min(5, lowerFloat.length))];
+
+          tuListings[worstIdx] = replacement;
+          inputs = tuListings;
+          break;
+        }
+
+        case 16: {
+          // Collection pair swap: replace minority collection with a different one
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+
+          const colGroups = new Map<string, string[]>();
+          for (const inp of tu.inputs) {
+            const list = colGroups.get(inp.collection_name) ?? [];
+            list.push(inp.listing_id);
+            colGroups.set(inp.collection_name, list);
+          }
+          if (colGroups.size < 2) break;
+
+          const sorted = [...colGroups.entries()].sort((a, b) => a[1].length - b[1].length);
+          const [swapColName, swapIds] = sorted[0];
+          const swapCountNeeded = swapIds.length;
+
+          const altCols = knifeCollections.filter(c => c !== swapColName && !colGroups.has(c));
+          if (altCols.length === 0) break;
+
+          const altCol = pick(altCols);
+          const altListingsForCol = byCollection.get(altCol) ?? [];
+          if (altListingsForCol.length < swapCountNeeded) break;
+
+          const replacements = altListingsForCol.slice(0, swapCountNeeded);
+          const swapSet = new Set(swapIds);
+
+          const inputListings: ListingWithCollection[] = [];
+          let ri = 0;
+          for (const inp of tu.inputs) {
+            if (swapSet.has(inp.listing_id)) {
+              inputListings.push(replacements[ri++]);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 5) {
+            inputs = inputListings;
+          }
           break;
         }
       }

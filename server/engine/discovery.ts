@@ -1050,7 +1050,7 @@ export async function exploreWithBudget(
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
   // Strategy 15 (underpriced+filler) gets 3x weight via FLOAT_BIASED_CASES
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13, 15, 15];
-  const TOTAL_STRATEGIES = 16;
+  const TOTAL_STRATEGIES = 20;
   const adaptiveWeights = options.strategyWeights?.length === TOTAL_STRATEGIES ? options.strategyWeights : undefined;
 
   const results: TradeUp[] = [];
@@ -1374,6 +1374,169 @@ export async function exploreWithBudget(
             if (fillerList.length >= 9) {
               inputs = [anchor, ...fillerList.slice(0, 9)];
             }
+          }
+          break;
+        }
+
+        case 16: {
+          // Swap second-most-expensive: like S10 but targets input #2
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          if (tu.inputs.length < 2) break;
+          const targetInput = tu.inputs[1]; // second most expensive (sorted desc)
+
+          const colListings = byCollection.get(targetInput.collection_id);
+          if (!colListings || colListings.length < 2) break;
+
+          const cheaper = colListings.filter(l =>
+            l.price_cents < targetInput.price_cents &&
+            l.id !== targetInput.listing_id &&
+            !tu.inputs.some(inp => inp.listing_id === l.id)
+          );
+          if (cheaper.length === 0) break;
+
+          const replacement = pick(cheaper.slice(0, 20));
+
+          const inputListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            if (inp.listing_id === targetInput.listing_id) {
+              const found = allListings.find(l => l.id === replacement.id);
+              if (found) inputListings.push(found);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 10) {
+            inputs = inputListings;
+          }
+          break;
+        }
+
+        case 17: {
+          // Cross-marketplace swap: find most expensive input cheaper on different source
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          const expensiveInput = tu.inputs[0];
+          if (!expensiveInput) break;
+
+          const currentListing = allListings.find(l => l.id === expensiveInput.listing_id);
+          if (!currentListing) break;
+
+          // Same skin, different marketplace, cheaper price
+          const crossMarket = allListings.filter(l =>
+            l.skin_name === currentListing.skin_name &&
+            l.source !== currentListing.source &&
+            l.price_cents < currentListing.price_cents &&
+            !tu.inputs.some(inp => inp.listing_id === l.id)
+          );
+          if (crossMarket.length === 0) break;
+
+          crossMarket.sort((a, b) => a.price_cents - b.price_cents);
+          const replacement = crossMarket[0];
+
+          const inputListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            if (inp.listing_id === expensiveInput.listing_id) {
+              inputListings.push(replacement);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 10) {
+            inputs = inputListings;
+          }
+          break;
+        }
+
+        case 18: {
+          // Float-shift: swap highest adjusted-float input for lower-float alternative
+          // Pushes output float toward better condition boundary (e.g. MW→FN)
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+
+          // Reconstruct inputs with float data
+          const tuListings: ListingWithCollection[] = [];
+          for (const inp of tu.inputs) {
+            const found = allListings.find(l => l.id === inp.listing_id);
+            if (found) tuListings.push(found);
+          }
+          if (tuListings.length !== 10) break;
+
+          // Find input with highest adjusted float (worst for output condition)
+          let worstIdx = 0;
+          let worstAdj = -1;
+          for (let i = 0; i < tuListings.length; i++) {
+            const l = tuListings[i];
+            const range = l.max_float - l.min_float;
+            const adj = range > 0 ? (l.float_value - l.min_float) / range : 0;
+            if (adj > worstAdj) { worstAdj = adj; worstIdx = i; }
+          }
+
+          const target = tuListings[worstIdx];
+          const colListings = byCollection.get(target.collection_id);
+          if (!colListings || colListings.length < 2) break;
+
+          const lowerFloat = colListings.filter(l =>
+            l.float_value < target.float_value &&
+            l.id !== target.id &&
+            !tuListings.some(il => il.id === l.id)
+          );
+          if (lowerFloat.length === 0) break;
+
+          lowerFloat.sort((a, b) => a.float_value - b.float_value);
+          const replacement = lowerFloat[Math.floor(Math.random() * Math.min(5, lowerFloat.length))];
+
+          tuListings[worstIdx] = replacement;
+          inputs = tuListings;
+          break;
+        }
+
+        case 19: {
+          // Collection pair swap: replace minority collection with a different one
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+
+          // Group inputs by collection
+          const colGroups = new Map<string, string[]>();
+          for (const inp of tu.inputs) {
+            const list = colGroups.get(inp.collection_id) ?? [];
+            list.push(inp.listing_id);
+            colGroups.set(inp.collection_id, list);
+          }
+          if (colGroups.size < 2) break;
+
+          // Swap the smallest group
+          const sorted = [...colGroups.entries()].sort((a, b) => a[1].length - b[1].length);
+          const [swapColId, swapIds] = sorted[0];
+          const swapCount = swapIds.length;
+
+          const altCols = eligibleCollections.filter(c => c !== swapColId && !colGroups.has(c));
+          if (altCols.length === 0) break;
+
+          const altCol = pick(altCols);
+          const altListings = byCollection.get(altCol) ?? [];
+          if (altListings.length < swapCount) break;
+
+          const replacements = altListings.slice(0, swapCount);
+          const swapSet = new Set(swapIds);
+
+          const inputListings: ListingWithCollection[] = [];
+          let ri = 0;
+          for (const inp of tu.inputs) {
+            if (swapSet.has(inp.listing_id)) {
+              inputListings.push(replacements[ri++]);
+            } else {
+              const found = allListings.find(l => l.id === inp.listing_id);
+              if (found) inputListings.push(found);
+            }
+          }
+
+          if (inputListings.length === 10) {
+            inputs = inputListings;
           }
           break;
         }
