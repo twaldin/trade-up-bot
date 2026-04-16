@@ -15,7 +15,7 @@ export function dataRouter(
 
   // Skin browser: list all Covert skins with listing stats and pricing
 
-  router.get("/api/skin-data", cachedRoute((req) => `skins:${req.query.rarity}:${req.query.collection || ""}:${req.query.outputCollection || ""}:${req.query.page || 1}:${req.query.stattrak || 0}:${req.query.search || ""}`, 300, async (req, res) => {
+  router.get("/api/skin-data", cachedRoute((req) => `skins:${req.query.rarity}:${req.query.collection || ""}:${req.query.outputCollection || ""}:${req.query.page || 1}:${req.query.stattrak || 0}:${req.query.search || ""}`, 1800, async (req, res) => {
     const search = (req.query.search as string) || "";
     const rarity = (req.query.rarity as string) || "all";
     const collection = (req.query.collection as string) || "";
