@@ -10,7 +10,7 @@ export function collectionsRouter(
 ): Router {
   const router = Router();
 
-  router.get("/api/collections", cachedRoute("collections", 300, async (_req, res) => {
+  router.get("/api/collections", cachedRoute("collections", 1800, async (_req, res) => {
     try {
       // Run all 3 independent queries in parallel
       const [{ rows: base }, { rows: lcRows }, { rows: psRows }] = await Promise.all([

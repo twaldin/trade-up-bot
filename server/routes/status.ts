@@ -52,9 +52,9 @@ export function statusRouter(pool: pg.Pool): Router {
         total_cycles: parseInt(stats.cycles),
       };
 
-      // Cache in Redis for next request
+      // Cache in Redis for next request — 1800s to survive a full daemon cycle
       const { cacheSet } = await import("../redis.js");
-      await cacheSet("global_stats", data, 60).catch(() => {});
+      await cacheSet("global_stats", data, 1800).catch(() => {});
 
       res.setHeader("X-Cache", "MISS");
       res.json(data);
@@ -63,7 +63,7 @@ export function statusRouter(pool: pg.Pool): Router {
     }
   });
 
-  router.get("/api/daemon-log", cachedRoute("daemon_log", 30, async (_req, res) => {
+  router.get("/api/daemon-log", cachedRoute("daemon_log", 60, async (_req, res) => {
     const logPath = "/tmp/daemon.log";
     const MAX_LINES = 500;
 
