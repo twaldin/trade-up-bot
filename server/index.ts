@@ -568,6 +568,24 @@ app.use((req, res, next) => {
       }
 
       // FAQ section
+      const rarityOutputTier: Record<string, string> = {
+        "Consumer Grade": "Industrial Grade",
+        "Industrial Grade": "Mil-Spec Grade",
+        "Mil-Spec": "Restricted",
+        "Restricted": "Classified",
+        "Classified": "Covert",
+        "Covert": "Knife or Glove",
+      };
+      const outputTier = rarityOutputTier[skinMeta.rarity] || "a higher rarity tier";
+      const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map((t: { profit_cents: number }) => t.profit_cents)) : 0;
+      const goodInputAnswer = (() => {
+        if (inputTuCount === 0) {
+          return `${skinName} is not currently used in any profitable trade-up contracts. It is a ${skinMeta.rarity} skin, which trades up into ${outputTier} outputs, but no profitable contracts are available at current market prices.`;
+        }
+        const bestFmt = "$" + (bestProfit / 100).toFixed(2);
+        return `Yes — ${skinName} appears as an input in ${inputTuCount} profitable trade-up contract${inputTuCount !== 1 ? "s" : ""} at current market prices. As a ${skinMeta.rarity} skin, it trades up into ${outputTier} outputs. The best current contract offers ${bestFmt} profit. Use TradeUpBot's live calculator to find the best entry price.`;
+      })();
+
       const faqEntries = [
         {
           q: `How much does ${skinName} cost?`,
@@ -578,6 +596,10 @@ app.use((req, res, next) => {
         {
           q: `What is the float range of ${skinName}?`,
           a: `${skinName} has a float range of ${skinMeta.min_float.toFixed(2)} to ${skinMeta.max_float.toFixed(2)}, which means it is available in ${availableConditions.join(", ")} condition.`,
+        },
+        {
+          q: `Is ${skinName} a good trade-up input?`,
+          a: goodInputAnswer,
         },
         {
           q: `What trade-ups use ${skinName}?`,
