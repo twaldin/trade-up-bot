@@ -973,7 +973,7 @@ app.use((req, res, next) => {
             ref_prices: parseInt(stats.refs),
             total_cycles: parseInt(stats.cycles),
           };
-          await cacheSet("global_stats", data, 600);
+          await cacheSet("global_stats", data, 1800); // 30-min TTL — survives daemon cycle
           console.log(`Cache warmed: global-stats (${((Date.now() - t) / 1000).toFixed(1)}s)`);
         }
 

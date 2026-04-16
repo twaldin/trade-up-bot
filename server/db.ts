@@ -533,6 +533,34 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     console.log(`  Migration: ${emptyCount} trade-ups need output_skin_names backfill — run scripts/backfill-output-skins.sh separately`);
   }
 
+  // Add collection_names GIN array to trade_ups for fast collection-filter queries.
+  // Old approach: JOIN on 11M-row trade_up_inputs table (15-20s cold).
+  // New approach: GIN bitmap scan on this array (<100ms once populated).
+  await pool.query(`ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS collection_names TEXT[] NOT NULL DEFAULT '{}'`);
+  // Create GIN partial index — fast bitmap scan on active trade-ups by collection
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_tu_active_collection_names ON trade_ups
+    USING GIN(collection_names)
+    WHERE is_theoretical = false AND listing_status = 'active'
+  `);
+  // Backfill: populate collection_names for existing trade-ups that have empty array.
+  // Only runs if there are <=500 empty rows (startup-safe). Full backfill runs via scripts/backfill-collection-names.ts.
+  const { rows: [{ count: emptyCollCount }] } = await pool.query(
+    "SELECT COUNT(*) as count FROM trade_ups WHERE collection_names = '{}' LIMIT 501"
+  );
+  if (parseInt(emptyCollCount) > 0 && parseInt(emptyCollCount) <= 500) {
+    await pool.query(`
+      UPDATE trade_ups SET collection_names = sub.names
+      FROM (
+        SELECT trade_up_id, array_agg(DISTINCT collection_name ORDER BY collection_name) as names
+        FROM trade_up_inputs GROUP BY trade_up_id
+      ) sub
+      WHERE trade_ups.id = sub.trade_up_id AND trade_ups.collection_names = '{}'
+    `);
+  } else if (parseInt(emptyCollCount) > 500) {
+    console.log(`  Migration: ${emptyCollCount} trade-ups need collection_names backfill — run scripts/backfill-collection-names.ts`);
+  }
+
   // Drop unused trade_up_outcomes table (outcomes stored as JSON in trade_ups.outcomes_json)
   await pool.query(`DROP TABLE IF EXISTS trade_up_outcomes;`);
 

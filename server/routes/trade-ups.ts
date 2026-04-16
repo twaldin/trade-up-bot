@@ -117,7 +117,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    let collectionJoin = ""; // JOIN clause for single-collection filter (avoids 30s full-table scan)
+    const collectionJoin = ""; // Unused: collection filter now uses collection_names GIN array
     const params: (string | number | string[])[] = [];
     let paramIndex = 1;
     if (includeStale) {
@@ -215,14 +215,27 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     if (skin) {
       const skinNames = skin.split("||").map(s => s.trim()).filter(Boolean);
       if (skinNames.length === 1 && !skinNames[0].includes("%")) {
-        // Exact skin name match — check inputs table + output_skin_names array (GIN indexed)
-        where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.output_skin_names && $${paramIndex + 1}::text[])`;
+        // Exact skin name match — UNION of input-skin lookup and output GIN array.
+        // The old OR approach forced a full index scan (70s for AK-47 | Redline).
+        // UNION lets PG use idx_trade_up_inputs_skin_tuid + idx_tu_active_output_skins separately,
+        // materializing a small ID set (~30-700 IDs) then joining by PK (~400ms).
+        where += ` AND t.id IN (
+          SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}
+          UNION
+          SELECT id FROM trade_ups WHERE output_skin_names && $${paramIndex + 1}::text[]
+            AND is_theoretical = false AND listing_status = 'active'
+        )`;
         params.push(skinNames[0], [skinNames[0]]);
         paramIndex += 2;
       } else if (skinNames.length > 1) {
-        // Multiple exact skin names (AND) — each skin gets its own clause
+        // Multiple exact skin names (AND) — each skin gets its own UNION clause
         for (const skinName of skinNames) {
-          where += ` AND (t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}) OR t.output_skin_names && $${paramIndex + 1}::text[])`;
+          where += ` AND t.id IN (
+            SELECT trade_up_id FROM trade_up_inputs WHERE skin_name = $${paramIndex}
+            UNION
+            SELECT id FROM trade_ups WHERE output_skin_names && $${paramIndex + 1}::text[]
+              AND is_theoretical = false AND listing_status = 'active'
+          )`;
           params.push(skinName, [skinName]);
           paramIndex += 2;
         }
@@ -236,19 +249,20 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     // Collection filter
-    // Single collection: JOIN approach is ~10x faster than IN subquery.
-    // The IN subquery causes PG to scan 419K trade_ups in profit order, checking each against the
-    // collection (30s). JOIN materializes the ~8K collection IDs first, then does PK lookups (3s).
-    // Multi-collection (AND logic across "|"-separated names) falls back to IN subqueries.
+    // Uses the denormalized collection_names GIN array on trade_ups for single-collection filter.
+    // Old JOIN approach: subquery over 11M-row trade_up_inputs (15-20s cold).
+    // New approach: GIN bitmap scan on trade_ups.collection_names (<100ms once index is built).
+    // Falls back to IN subquery for multi-collection AND logic.
     if (collection) {
       const collNames = collection.split("|").map(s => s.trim()).filter(Boolean);
       if (collNames.length === 1) {
-        collectionJoin = `JOIN (SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++}) _coll ON _coll.trade_up_id = t.id`;
-        params.push(collNames[0]);
+        // GIN index on collection_names — fast bitmap scan, no inputs table scan
+        where += ` AND t.collection_names && $${paramIndex++}::text[]`;
+        params.push([collNames[0]]);
       } else {
         for (const collName of collNames) {
-          where += ` AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE collection_name = $${paramIndex++})`;
-          params.push(collName);
+          where += ` AND t.collection_names && $${paramIndex++}::text[]`;
+          params.push([collName]);
         }
       }
     }
