@@ -434,7 +434,7 @@ export async function main() {
       const weights = computeAdaptiveWeights(history, STRATEGY_COUNTS[tier], FLOAT_BIASED_BY_TIER[tier]);
       tierWeights[tier] = weights;
       if (history && history.strategies.some(s => s.iterations > 0)) {
-        console.log(`  Adaptive weights [${tier}]: ${formatYieldSummary(history, weights, STRATEGY_COUNTS[tier])}`);
+        console.log(`  adaptive weights [${tier}]: ${formatYieldSummary(history, weights, STRATEGY_COUNTS[tier])}`);
       }
     }
 
@@ -681,13 +681,13 @@ export async function main() {
 
     // Completeness audit every 10th cycle
     if (cycleCount % 10 === 0) {
-      console.log(`\n[${timestamp()}] Completeness audit (cycle ${cycleCount})`);
+      console.log(`\n[${timestamp()}] completeness audit: cycle ${cycleCount}`);
       await setDaemonStatus(pool, "calculating", "Completeness audit");
       try {
         const auditResult = await runCompletenessAudit(pool);
         logAuditResult(auditResult);
       } catch (e: unknown) {
-        console.error(`  Completeness audit failed: ${e instanceof Error ? e.message : e}`);
+        console.error(`  completeness audit failed: ${e instanceof Error ? e.message : e}`);
       }
     }
 
