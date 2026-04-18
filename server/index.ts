@@ -115,6 +115,17 @@ app.use((req, res, next) => {
   }
 });
 
+// Default no-cache for HTML/SPA routes so browsers revalidate after deploys and
+// pick up new asset hashes. Content-hashed /assets/* files keep their immutable
+// long cache (set by the express.static setHeaders at the end of the routing).
+// Skipped for /api and /assets so those retain their own cache semantics.
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api") && !req.path.startsWith("/assets")) {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  }
+  next();
+});
+
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
   const pool: pg.Pool = initDb();
