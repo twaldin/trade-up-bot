@@ -987,8 +987,20 @@ app.use((req, res, next) => {
       }
     });
 
-    app.use(express.static(distPath));
+    // Static assets with content-hashed filenames (Vite puts everything in
+    // dist/assets/* with hashes) can be cached aggressively. HTML must always
+    // revalidate so browsers pick up new asset URLs after a deploy.
+    app.use(express.static(distPath, {
+      setHeaders(res, filePath) {
+        if (filePath.includes("/assets/")) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        }
+      },
+    }));
     app.get("*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
