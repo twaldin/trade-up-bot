@@ -43,9 +43,9 @@ jobs:
       - name: Rsync dist to VPS
         run: rsync -avz --delete dist/ root@178.156.239.58:/opt/trade-up-bot/dist/
 
-      - name: Git pull + pm2 restart api
+      - name: Git pull main + tsx-cache clear + pm2 restart api
         run: |
-          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git pull && pm2 restart api"
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && rm -rf /root/.cache/tsx && pm2 restart api"
 
       - name: Smoke check
         run: |
