@@ -1,7 +1,31 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 
-export const SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "BRL", "CNY", "RUB", "TRY", "PLN"] as const;
+export const SUPPORTED_CURRENCIES = [
+  "USD", "EUR", "GBP", "JPY", "BRL", "CNY", "RUB", "TRY", "PLN",
+  "UAH", "KRW", "INR", "CAD", "AUD", "ARS", "MXN", "SEK",
+] as const;
 export type Currency = typeof SUPPORTED_CURRENCIES[number];
+
+interface CurrencyMeta { flag: string; symbol: string; label: string; }
+export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
+  USD: { flag: "🇺🇸", symbol: "$",   label: "US Dollar" },
+  EUR: { flag: "🇪🇺", symbol: "€",   label: "Euro" },
+  GBP: { flag: "🇬🇧", symbol: "£",   label: "British Pound" },
+  JPY: { flag: "🇯🇵", symbol: "¥",   label: "Japanese Yen" },
+  BRL: { flag: "🇧🇷", symbol: "R$",  label: "Brazilian Real" },
+  CNY: { flag: "🇨🇳", symbol: "¥",   label: "Chinese Yuan" },
+  RUB: { flag: "🇷🇺", symbol: "₽",   label: "Russian Ruble" },
+  TRY: { flag: "🇹🇷", symbol: "₺",   label: "Turkish Lira" },
+  PLN: { flag: "🇵🇱", symbol: "zł",  label: "Polish Złoty" },
+  UAH: { flag: "🇺🇦", symbol: "₴",   label: "Ukrainian Hryvnia" },
+  KRW: { flag: "🇰🇷", symbol: "₩",   label: "Korean Won" },
+  INR: { flag: "🇮🇳", symbol: "₹",   label: "Indian Rupee" },
+  CAD: { flag: "🇨🇦", symbol: "CA$", label: "Canadian Dollar" },
+  AUD: { flag: "🇦🇺", symbol: "A$",  label: "Australian Dollar" },
+  ARS: { flag: "🇦🇷", symbol: "AR$", label: "Argentine Peso" },
+  MXN: { flag: "🇲🇽", symbol: "MX$", label: "Mexican Peso" },
+  SEK: { flag: "🇸🇪", symbol: "kr",  label: "Swedish Krona" },
+};
 
 const RATES_CACHE_KEY = "currency_rates_cache";
 const SELECTED_KEY = "selected_currency";
