@@ -56,20 +56,28 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
 
   useEffect(() => {
+    // Validates a cached rates blob: must cover every supported currency (not
+    // just USD) so we never silently serve 1× conversion when the cache is partial.
+    const isValidRates = (r: unknown): r is Record<string, number> =>
+      !!r && typeof r === "object" &&
+      SUPPORTED_CURRENCIES.every(c => typeof (r as Record<string, number>)[c] === "number");
+
     try {
       const raw = localStorage.getItem(RATES_CACHE_KEY);
       if (raw) {
         const { ts, data } = JSON.parse(raw) as { ts: number; data: Record<string, number> };
-        if (Date.now() - ts < CACHE_TTL) {
+        if (Date.now() - ts < CACHE_TTL && isValidRates(data)) {
           setRates(data);
           return;
         }
+        localStorage.removeItem(RATES_CACHE_KEY);
       }
-    } catch {}
+    } catch { try { localStorage.removeItem(RATES_CACHE_KEY); } catch {} }
+
     fetch("https://open.er-api.com/v6/latest/USD")
       .then(r => r.json())
       .then((d: { rates?: Record<string, number> }) => {
-        if (d.rates) {
+        if (d.rates && isValidRates(d.rates)) {
           setRates(d.rates);
           try {
             localStorage.setItem(RATES_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: d.rates }));

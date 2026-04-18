@@ -41,7 +41,7 @@ export function CurrencyPicker() {
         <div
           role="listbox"
           aria-label="Select currency"
-          className="absolute right-0 top-full mt-1.5 w-52 max-h-80 overflow-y-auto rounded-md border border-border bg-background/95 backdrop-blur-md shadow-lg py-1 z-50"
+          className="absolute right-0 top-full mt-1.5 w-32 max-h-80 overflow-y-auto rounded-md border border-border bg-background/95 backdrop-blur-md shadow-lg py-1 z-50"
         >
           {SUPPORTED_CURRENCIES.map(code => {
             const m = CURRENCY_META[code];
@@ -62,8 +62,7 @@ export function CurrencyPicker() {
               >
                 <span className="text-base leading-none w-5 shrink-0">{m.flag}</span>
                 <span className="font-medium w-9 tabular-nums shrink-0">{code}</span>
-                <span className="text-muted-foreground/80 w-8 tabular-nums shrink-0">{m.symbol}</span>
-                <span className="flex-1 truncate text-muted-foreground/60">{m.label}</span>
+                <span className="text-muted-foreground/80 tabular-nums shrink-0">{m.symbol}</span>
               </button>
             );
           })}

@@ -1,0 +1,57 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+        if: hashFiles('frontend/package-lock.json') != ''
+
+      - name: Build (Vite + prerender)
+        run: npm run build
+
+      - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 178.156.239.58 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync dist to VPS
+        run: rsync -avz --delete dist/ root@178.156.239.58:/opt/trade-up-bot/dist/
+
+      - name: Git pull + pm2 restart api
+        run: |
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git pull && pm2 restart api"
+
+      - name: Smoke check
+        run: |
+          sleep 8
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" https://tradeupbot.app/)
+          echo "home: $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "::warning::Homepage returned $HTTP — may be transient pm2 restart window; check manually"
+          fi
