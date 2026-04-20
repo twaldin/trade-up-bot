@@ -71,6 +71,7 @@ export function TradeUpSharePage() {
           outcome_count: outcomes.length,
           listing_status: data.listing_status ?? "active",
           missing_inputs: data.missing_inputs ?? 0,
+          missing_count: data.missing_count ?? data.missing_inputs ?? 0,
           profit_streak: data.profit_streak ?? 0,
           peak_profit_cents: data.peak_profit_cents ?? 0,
           preserved_at: data.preserved_at ?? null,
@@ -121,6 +122,21 @@ export function TradeUpSharePage() {
   const typeColor = TYPE_COLORS[tuType] || "text-foreground border-border bg-muted";
   const isAuthenticated = !!user;
   const isBasicPlus = user?.tier === "pro" || user?.tier === "admin";
+  const missingCount = Math.max(0, Number(tu.missing_count ?? tu.missing_inputs ?? 0));
+  const realInputCount = tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length || tu.inputs.length;
+  const displayStatus = (() => {
+    const status = tu.listing_status ?? "active";
+    if (status !== "active") return status;
+    if (missingCount <= 0) return "active";
+    if (realInputCount > 0 && missingCount >= realInputCount) return "stale";
+    return "partial";
+  })();
+  const displayTu: TradeUp = {
+    ...tu,
+    listing_status: displayStatus,
+    missing_inputs: missingCount,
+    missing_count: missingCount,
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
@@ -198,13 +214,13 @@ export function TradeUpSharePage() {
 
           {/* Trade-up content — same as expanded row in TradeUpTable */}
           <div className="border border-border rounded-lg overflow-hidden bg-card">
-            <OutcomeChart tu={tu} />
-            {((tu.peak_profit_cents ?? 0) > 0 || tu.listing_status !== 'active') && (
-              <VerifyResults tu={tu} />
+            <OutcomeChart tu={displayTu} />
+            {((displayTu.peak_profit_cents ?? 0) > 0 || displayTu.listing_status !== "active") && (
+              <VerifyResults tu={displayTu} />
             )}
             <div className="px-4 sm:px-5 py-4 flex flex-col gap-4">
               <InputList
-                tu={tu}
+                tu={displayTu}
                 verifying={false}
                 onVerify={() => {}}
                 showListingLinks={isAuthenticated}
@@ -212,7 +228,7 @@ export function TradeUpSharePage() {
                 onUnauthLinkClick={!isAuthenticated ? handleUnauthLinkClick : undefined}
               />
               <OutcomeList
-                tu={tu}
+                tu={displayTu}
                 priceDetailKey={priceDetailKey}
                 onTogglePriceDetail={setPriceDetailKey}
               />

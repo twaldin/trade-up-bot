@@ -7,6 +7,18 @@ import { cachedRoute, getRateLimit } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
+function canonicalListingStatus(
+  rawStatus: TradeUp["listing_status"] | null | undefined,
+  missingCount: number,
+  realInputCount: number
+): TradeUp["listing_status"] {
+  const status = rawStatus ?? "active";
+  if (status !== "active") return status;
+  if (missingCount <= 0) return "active";
+  if (realInputCount > 0 && missingCount >= realInputCount) return "stale";
+  return "partial";
+}
+
 export function tradeUpsRouter(pool: pg.Pool): Router {
   const router = Router();
 
@@ -319,7 +331,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               0 as outcome_count,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND (l.id IS NULL OR l.claimed_by IS NOT NULL)) as missing_inputs
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%') as real_input_count,
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count
        FROM trade_ups t ${collectionJoin} ${where}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
@@ -408,6 +421,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
+      const missingCount = Math.max(0, Number(row.missing_count ?? row.missing_inputs ?? 0));
+      const realInputCount = Math.max(0, Number(row.real_input_count ?? summary.input_count ?? 0));
+      const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
 
       const tu: TradeUp = {
         id: row.id,
@@ -425,8 +441,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         best_case_cents: row.best_case_cents ?? 0,
         worst_case_cents: row.worst_case_cents ?? 0,
         outcome_count: row.outcome_count ?? 0,
-        listing_status: (row.listing_status ?? 'active') as TradeUp['listing_status'],
-        missing_inputs: row.missing_inputs ?? 0,
+        listing_status: listingStatus,
+        missing_inputs: missingCount,
+        missing_count: missingCount,
         profit_streak: row.profit_streak ?? 0,
         peak_profit_cents: row.peak_profit_cents ?? 0,
         preserved_at: row.preserved_at ?? null,
@@ -463,7 +480,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   router.get("/api/trade-ups/:id", async (req, res) => {
     const { rows: [row] } = await pool.query(
       `SELECT t.*,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND (l.id IS NULL OR l.claimed_by IS NOT NULL)) as missing_inputs
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%') as real_input_count,
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count
        FROM trade_ups t WHERE t.id = $1`,
       [req.params.id]
     );
@@ -480,8 +498,18 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       [row.id]
     );
     const outcomes = JSON.parse(row.outcomes_json || '[]') as TradeUpOutcome[];
+    const missingCount = Math.max(0, Number(row.missing_count ?? row.missing_inputs ?? 0));
+    const realInputCount = Math.max(0, Number(row.real_input_count ?? 0));
+    const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
 
-    res.json({ ...row, inputs, outcomes });
+    res.json({
+      ...row,
+      listing_status: listingStatus,
+      missing_inputs: missingCount,
+      missing_count: missingCount,
+      inputs,
+      outcomes,
+    });
   });
 
   router.post("/api/verify-trade-up/:id", async (req, res) => {

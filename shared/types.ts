@@ -148,6 +148,7 @@ export interface TradeUp {
   is_theoretical?: boolean; // true = computed from ref prices only, no real listings
   listing_status?: 'active' | 'partial' | 'stale'; // input listing availability
   missing_inputs?: number; // count of inputs whose listings are gone
+  missing_count?: number; // canonical count of deleted/missing listings (excludes claimed-only locks)
   chance_to_profit?: number; // probability of profit (pre-computed)
   best_case_cents?: number; // best outcome minus cost (pre-computed)
   worst_case_cents?: number; // worst outcome minus cost (pre-computed)

@@ -67,6 +67,43 @@ describe("Trade-Ups List API", () => {
     expect(staleOnes.length).toBeGreaterThan(0);
   });
 
+  it("derives partial status + missing_count when DB status is stale/active drifted", async () => {
+    const { rows: [target] } = await ctx.pool.query(`
+      SELECT t.id, tui.listing_id
+      FROM trade_ups t
+      JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+      JOIN listings l ON l.id = tui.listing_id
+      WHERE t.type = 'covert_knife'
+        AND t.listing_status = 'active'
+        AND tui.listing_id NOT LIKE 'theor%'
+      LIMIT 1
+    `);
+
+    expect(target).toBeDefined();
+    await ctx.pool.query("DELETE FROM listings WHERE id = $1", [target.listing_id]);
+
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?type=covert_knife&include_stale=true")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+
+    expect(res.status).toBe(200);
+    const drifted = res.body.trade_ups.find((tu: any) => tu.id === target.id);
+    expect(drifted).toBeDefined();
+    expect(drifted.listing_status).toBe("partial");
+    expect(drifted.missing_count).toBeGreaterThan(0);
+    expect(drifted.missing_inputs).toBe(drifted.missing_count);
+
+    const detail = await request(ctx.app)
+      .get(`/api/trade-ups/${target.id}`)
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.listing_status).toBe("partial");
+    expect(detail.body.missing_count).toBeGreaterThan(0);
+  });
+
   // ─── 4. Pagination returns correct page with per_page limit ───────────
 
   it("pagination returns correct page with per_page limit", async () => {

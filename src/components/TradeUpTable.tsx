@@ -87,6 +87,22 @@ function worstCase(tu: TradeUp): number {
   return Math.min(...tu.outcomes.map(o => o.estimated_price_cents)) - tu.total_cost_cents;
 }
 
+function countRealInputs(inputs: TradeUpInput[]): number {
+  return inputs.filter(i => !i.listing_id.startsWith("theor")).length;
+}
+
+function getMissingCount(tu: TradeUp): number {
+  return Math.max(0, Number(tu.missing_count ?? tu.missing_inputs ?? 0));
+}
+
+function getDisplayListingStatus(tu: TradeUp, missingCount: number, realInputCount: number): TradeUp["listing_status"] {
+  const status = tu.listing_status ?? "active";
+  if (status !== "active") return status;
+  if (missingCount <= 0) return "active";
+  if (realInputCount > 0 && missingCount >= realInputCount) return "stale";
+  return "partial";
+}
+
 function ClaimButton({ tuId, claimed, setClaimed, onClaimChange, limit, onLimitUpdate, onClaimExpiry }: {
   tuId: number;
   claimed: Set<number>;
@@ -275,7 +291,18 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   ];
 
   // Shared expanded content renderer
-  const renderExpanded = (tu: TradeUp) => (
+  const renderExpanded = (tu: TradeUp) => {
+    const missingCount = getMissingCount(tu);
+    const realInputCount = countRealInputs(tu.inputs) || tu.input_summary?.input_count || tu.inputs.length;
+    const displayStatus = getDisplayListingStatus(tu, missingCount, realInputCount);
+    const displayTu = {
+      ...tu,
+      listing_status: displayStatus,
+      missing_inputs: missingCount,
+      missing_count: missingCount,
+    };
+
+    return (
     <div className="bg-card">
       {renderActions ? (
         <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
@@ -393,14 +420,14 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           </div>
         </div>);
       })()}
-      <OutcomeChart tu={tu} />
+      <OutcomeChart tu={displayTu} />
 
-      {((tu.peak_profit_cents ?? 0) > 0 || tu.listing_status !== 'active') && (
-        <VerifyResults tu={tu} />
+      {((displayTu.peak_profit_cents ?? 0) > 0 || displayTu.listing_status !== 'active') && (
+        <VerifyResults tu={displayTu} />
       )}
       <div className="px-4 sm:px-5 py-4 flex flex-col gap-4">
         <InputList
-          tu={tu}
+          tu={displayTu}
           verifyResult={verifyResults.get(tu.id)}
           verifying={verifying === tu.id}
           onVerify={handleVerify}
@@ -420,7 +447,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           }}
         />
         <OutcomeList
-          tu={tu}
+          tu={displayTu}
           priceDetailKey={priceDetailKey}
           onTogglePriceDetail={setPriceDetailKey}
           onNavigateSkin={onNavigateSkin}
@@ -428,6 +455,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
       </div>
     </div>
   );
+  };
 
   // Prepare trade-up data (shared between desktop and mobile)
   const preparedTradeUps = tradeUps.map((rawTu) => {
@@ -440,13 +468,20 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     };
     // Use server-computed input_summary for collapsed view (avoids sending full inputs in list)
     const summary = tu.input_summary;
+    const inputCount = summary?.input_count ?? tu.inputs.length;
+    const realInputCount = countRealInputs(tu.inputs) || inputCount;
+    const missingCount = getMissingCount(tu);
+    const displayStatus = getDisplayListingStatus(tu, missingCount, realInputCount);
     return {
       tu,
       chance: chanceToProfit(tu),
       best: bestCase(tu),
       worst: worstCase(tu),
       inputSummary: summary?.skins ?? summarizeInputs(tu.inputs),
-      inputCount: summary?.input_count ?? tu.inputs.length,
+      inputCount,
+      realInputCount,
+      missingCount,
+      displayStatus,
       collections: summary?.collections ?? [...new Set(tu.inputs.map(i => i.collection_name))],
       age: tu.created_at ? (() => {
         const ts = tu.created_at.endsWith("Z") || tu.created_at.includes("+") ? tu.created_at : tu.created_at + "Z";
@@ -483,12 +518,12 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
     {/* Mobile card layout */}
     <div className="md:hidden flex flex-col gap-2">
-      {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, collections, age }) => (
+      {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, collections, age, displayStatus }) => (
         <div key={tu.id}>
           <div
             className={`rounded-lg border border-border bg-card cursor-pointer active:bg-muted transition-colors ${
-              tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' :
-              tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''
+              displayStatus === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' :
+              displayStatus === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''
             }`}
             onClick={() => handleExpand(tu.id)}
           >
@@ -566,11 +601,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           </tr>
         </thead>
         <tbody>
-          {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, collections, age }) => (
+          {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, realInputCount, missingCount, displayStatus, collections, age }) => (
             <>
               <tr
                 key={tu.id}
-                className={`cursor-pointer hover:bg-muted group/row ${tu.listing_status === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : tu.listing_status === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
+                className={`cursor-pointer hover:bg-muted group/row ${displayStatus === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : displayStatus === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
                 onClick={() => handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">
@@ -614,14 +649,14 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                         </span>
                       );
                     })()}
-                    {tu.listing_status === 'stale' && (
+                    {displayStatus === 'stale' && (
                       <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-red-950 text-red-300 border-red-900" title="All input listings gone">
-                        {tu.missing_inputs}/{inputCount} missing
+                        {missingCount}/{realInputCount || inputCount} missing
                       </Badge>
                     )}
-                    {tu.listing_status === 'partial' && (
+                    {displayStatus === 'partial' && (
                       <Badge variant="outline" className="ml-1.5 text-[0.65rem] bg-yellow-950 text-yellow-200 border-yellow-900" title="Some input listings gone">
-                        {tu.missing_inputs}/{inputCount} missing
+                        {missingCount}/{realInputCount || inputCount} missing
                       </Badge>
                     )}
                     {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && (

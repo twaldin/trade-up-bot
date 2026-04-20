@@ -8,25 +8,35 @@ interface VerifyResultsProps {
 
 export function VerifyResults({ tu }: VerifyResultsProps) {
   const { formatPrice } = useCurrency();
+  const missingCount = Math.max(0, Number(tu.missing_count ?? tu.missing_inputs ?? 0));
+  const realInputCount = tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length || tu.inputs.length;
+  const displayStatus = (() => {
+    const status = tu.listing_status ?? "active";
+    if (status !== "active") return status;
+    if (missingCount <= 0) return "active";
+    if (realInputCount > 0 && missingCount >= realInputCount) return "stale";
+    return "partial";
+  })();
+
   // Status info bar for stale/partial/revived trade-ups
-  if ((tu.peak_profit_cents ?? 0) <= 0 && tu.listing_status === 'active') return null;
+  if ((tu.peak_profit_cents ?? 0) <= 0 && displayStatus === "active") return null;
 
   return (
     <div className="my-2 px-1">
-      {tu.listing_status === 'stale' && (
+      {displayStatus === "stale" && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-red-950/50 border-l-[3px] border-l-red-500 text-red-300">
-          <strong className="mr-1">Stale</strong> &mdash; {tu.missing_inputs || tu.inputs.length}/{tu.inputs.length} input listings gone
+          <strong className="mr-1">Stale</strong> &mdash; {missingCount}/{realInputCount} input listings gone
           {tu.preserved_at && <span className="text-muted-foreground"> (since {timeAgo(tu.preserved_at)})</span>}
           . Waiting for replacement listings. Auto-purges after 2 days.
         </div>
       )}
-      {tu.listing_status === 'partial' && (
+      {displayStatus === "partial" && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-yellow-950/50 border-l-[3px] border-l-yellow-500 text-yellow-200">
-          <strong className="mr-1">Partial</strong> &mdash; {tu.missing_inputs}/{tu.inputs.length} input listings missing
+          <strong className="mr-1">Partial</strong> &mdash; {missingCount}/{realInputCount} input listings missing
           {tu.preserved_at && <span className="text-muted-foreground"> (since {timeAgo(tu.preserved_at)})</span>}
         </div>
       )}
-      {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && tu.listing_status === 'active' && (
+      {(tu.peak_profit_cents ?? 0) > 0 && tu.profit_cents <= 0 && displayStatus === "active" && (
         <div className="text-[0.78rem] px-2.5 py-1.5 rounded mb-1 leading-relaxed bg-blue-950/50 border-l-[3px] border-l-blue-500 text-blue-300">
           <strong className="mr-1">Revived</strong> &mdash; Was {formatPrice(tu.peak_profit_cents!)} profit, now {formatPrice(tu.profit_cents)}. Replacement listings cost {formatPrice(Math.abs(tu.profit_cents))} more than needed to break even.
         </div>
