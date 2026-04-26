@@ -263,18 +263,18 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Uses the denormalized collection_names GIN array on trade_ups for single-collection filter.
     // Old JOIN approach: subquery over 11M-row trade_up_inputs (15-20s cold).
     // New GIN approach: BitmapAnd of idx_tu_active_collection_names + idx_tu_active_profit = 95ms.
-    // IMPORTANT: profit_cents > 0 is required. Without it, PG scans all 44K matching rows (heap
-    // bloat: 35K+ pages scattered) even when they're all unprofitable → 9-30s. With profit>0,
-    // BitmapAnd intersects two bitmaps (44K GIN + 50K profit) to get near-0 rows instantly.
+    //
+    // Previously forced AND profit_cents > 0 silently when min/max_profit weren't set, to keep
+    // queries fast. That made "Profit any" lie: a collection with 23K total but 0 profitable
+    // rows showed an empty table while the dropdown counter reported 23K. Removed for UX truth.
+    // Slow-path note: collections with 50K+ unprofitable rows can take 9-30s on cold cache.
+    // Mitigation if needed later: keep the BitmapAnd hint via an index on (collection_names,
+    // profit_cents) DESC, or default the UI sort to profit DESC + LIMIT to give the planner a
+    // top-K shape.
     if (collection) {
       const collNames = collection.split("|").map(s => s.trim()).filter(Boolean);
-      // Force profitable-only for collection filter: prevents 30s heap scan on collections
-      // with 0 profitable rows (e.g., Dust Collection: 44K rows, all unprofitable = 30s scan).
-      if (!min_profit && !max_profit) {
-        where += ` AND t.profit_cents > 0`;
-      }
       if (collNames.length === 1) {
-        // GIN index on collection_names — fast BitmapAnd with profit index
+        // GIN index on collection_names
         where += ` AND t.collection_names && $${paramIndex++}::text[]`;
         params.push([collNames[0]]);
       } else {
