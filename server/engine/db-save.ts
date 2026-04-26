@@ -184,12 +184,13 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
           // listings, so if a listing is claimed this signature won't be re-discovered. If a race
           // condition causes a claimed listing to sneak in, API auto-correct fixes it on next read.
           const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+          const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
           await client.query(`
             UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3, roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
               peak_profit_cents = GREATEST(peak_profit_cents, $8), listing_status = 'active', preserved_at = NULL, outcomes_json = $9,
-              profit_streak = $10, previous_inputs = NULL, output_skin_names = $12
+              profit_streak = $10, previous_inputs = NULL, output_skin_names = $12, collection_names = $13
             WHERE id=$11
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId, outputSkinNames]);
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId, outputSkinNames, collectionNames]);
           if (tu.profit_cents > 0) {
             const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
             await recordProfitableCombo(client, tu, comboKey);
@@ -223,11 +224,12 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
           const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
           const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
           const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+          const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
           const { rows } = await client.query(`
-            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11)
+            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12)
             RETURNING id
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames]);
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames]);
           const tradeUpId = rows[0].id;
           if (tu.profit_cents > 0) {
             await client.query("UPDATE trade_ups SET peak_profit_cents = $1 WHERE id = $2", [tu.profit_cents, tradeUpId]);
