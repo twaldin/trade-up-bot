@@ -46,3 +46,7 @@ content/edited/
 content/thumbnails/
 content/screenshots/
 docs/superpowers/
+
+# flt agent fleet artifacts (per-spawn .flt/ scratch + agent handoff docs)
+.flt/
+handoffs/
