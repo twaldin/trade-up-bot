@@ -974,7 +974,10 @@ app.use((req, res, next) => {
       if (!post) return next();
       const ua = req.headers["user-agent"] || "";
       const title = `${post.title} | TradeUpBot Blog`;
-      const url = `https://tradeupbot.app/blog/${req.params.slug}`;
+      // Trailing slash matches the URL the server actually serves content
+      // at; without it the canonical points at the redirected (non-trailing)
+      // form and Google sees a redirect loop on the canonical chain (#95).
+      const url = `https://tradeupbot.app/blog/${req.params.slug}/`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
