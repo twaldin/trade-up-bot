@@ -279,7 +279,7 @@ export function PricingPage() {
             </p>
             <div className="space-y-8">
               <div>
-                <img src="/tradeuptable.png" alt="Trade-up table" className="rounded-lg border border-border shadow-lg w-full" />
+                <img src="/tradeuptable.jpg" alt="Trade-up table" className="rounded-lg border border-border shadow-lg w-full" />
                 <p className="text-xs text-muted-foreground text-center mt-3">Trade-up table with profit, EV, chance to profit, and direct listing links</p>
               </div>
               <div>
@@ -291,7 +291,7 @@ export function PricingPage() {
                 <p className="text-xs text-muted-foreground text-center mt-3">Price data viewer with float vs price scatter chart across all marketplaces</p>
               </div>
               <div>
-                <img src="/collections.png" alt="Collection browser" className="rounded-lg border border-border shadow-lg w-full" />
+                <img src="/collections.jpg" alt="Collection browser" className="rounded-lg border border-border shadow-lg w-full" />
                 <p className="text-xs text-muted-foreground text-center mt-3">Collection browser with knife/glove pool info, listing counts, and profitability filters</p>
               </div>
             </div>

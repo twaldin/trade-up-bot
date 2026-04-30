@@ -76,11 +76,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
         <meta property="og:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
         <meta property="og:url" content="https://tradeupbot.app/" />
         <meta property="og:type" content="website" />
-        <meta property="og:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <meta property="og:image" content="https://tradeupbot.app/tradeuptable.jpg" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
         <meta name="twitter:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
-        <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.jpg" />
         <script type="application/ld+json">{JSON.stringify({
           "@context": "https://schema.org",
           "@graph": [
@@ -204,7 +204,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Price intelligence</h2>
                 <p className="text-muted-foreground mb-6">Float vs price scatter charts with data from CSFloat, DMarket, Skinport, and sale history across every condition.</p>
-                <img src="/dataviewer.png" alt="Price data" className="rounded-lg border border-border w-full" />
+                <img src="/dataviewer.jpg" alt="Price data" className="rounded-lg border border-border w-full" />
               </div>
             </div>
             <div>
