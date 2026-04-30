@@ -27,9 +27,9 @@ describe("landing page link targets", () => {
   });
 
   it("adds lazy loading and explicit dimensions to marketing screenshots", () => {
-    expect(landingPageSource).toContain('src="/expanded.png" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822"');
-    expect(landingPageSource).toContain('src="/dataviewer.png" alt="Price data" loading="lazy" width="2434" height="1498"');
-    expect(landingPageSource).toContain('src="/collections.png" alt="Collections" loading="lazy" width="2624" height="1608"');
+    expect(landingPageSource).toContain('src="/expanded.jpg" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822"');
+    expect(landingPageSource).toContain('src="/dataviewer.jpg" alt="Price data" loading="lazy" width="2434" height="1498"');
+    expect(landingPageSource).toContain('src="/collections.jpg" alt="Collections" loading="lazy" width="2624" height="1608"');
   });
 });
 
