@@ -40,7 +40,7 @@ interface InputListProps {
 
 function handleBuffLink(e: React.MouseEvent, input: TradeUpInput, formatFn: (cents: number) => string) {
   e.preventDefault();
-  const url = listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id);
+  const url = listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak);
   const msg = `Look for float ${input.float_value.toFixed(6)} at ${formatFn(input.price_cents)}\n\nBuff cannot link to a specific listing. You will be taken to the item page.`;
   if (window.confirm(msg)) {
     window.open(url, "_blank", "noopener,noreferrer");
@@ -49,7 +49,7 @@ function handleBuffLink(e: React.MouseEvent, input: TradeUpInput, formatFn: (cen
 
 function inputHref(input: TradeUpInput, isTheory: boolean): string {
   if (isTheory) return csfloatSearchUrl(input.skin_name, input.condition);
-  return listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id);
+  return listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak);
 }
 
 function InputCard({ input, onNavigateSkin }: { input: TradeUpInput; onNavigateSkin?: (skinName: string) => void }) {
