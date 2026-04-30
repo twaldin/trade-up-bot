@@ -5,17 +5,17 @@ import type { SyncStatus } from "../shared/types.js";
 import { collectionToSlug } from "../shared/slugs.js";
 import { useStatus } from "./hooks/useStatus.js";
 import { DaemonModal } from "./components/DaemonModal.js";
-import { TradeUpsPage } from "./pages/TradeUpsPage.js";
-import { LandingPage } from "./pages/LandingPage.js";
-import { FaqPage } from "./pages/FaqPage.js";
-import { TermsPage } from "./pages/TermsPage.js";
-import { PrivacyPage } from "./pages/PrivacyPage.js";
-import { FeaturesPage } from "./pages/FeaturesPage.js";
-import { PricingPage } from "./pages/PricingPage.js";
-import MyTradeUpsPage from "./pages/MyTradeUpsPage.js";
-import { ListingSniperPage } from "./pages/ListingSniperPage.js";
-import { BlogPage } from "./pages/BlogPage.js";
-import { BlogPostPage } from "./pages/BlogPostPage.js";
+const TradeUpsPage = lazy(() => import("./pages/TradeUpsPage.js").then(m => ({ default: m.TradeUpsPage })));
+const LandingPage = lazy(() => import("./pages/LandingPage.js").then(m => ({ default: m.LandingPage })));
+const FaqPage = lazy(() => import("./pages/FaqPage.js").then(m => ({ default: m.FaqPage })));
+const TermsPage = lazy(() => import("./pages/TermsPage.js").then(m => ({ default: m.TermsPage })));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage.js").then(m => ({ default: m.PrivacyPage })));
+const FeaturesPage = lazy(() => import("./pages/FeaturesPage.js").then(m => ({ default: m.FeaturesPage })));
+const PricingPage = lazy(() => import("./pages/PricingPage.js").then(m => ({ default: m.PricingPage })));
+const MyTradeUpsPage = lazy(() => import("./pages/MyTradeUpsPage.js"));
+const ListingSniperPage = lazy(() => import("./pages/ListingSniperPage.js").then(m => ({ default: m.ListingSniperPage })));
+const BlogPage = lazy(() => import("./pages/BlogPage.js").then(m => ({ default: m.BlogPage })));
+const BlogPostPage = lazy(() => import("./pages/BlogPostPage.js").then(m => ({ default: m.BlogPostPage })));
 import { SiteFooter } from "./components/SiteFooter.js";
 import { Button } from "../shared/components/ui/button.js";
 import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
@@ -441,20 +441,22 @@ function AuthGatedApp() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/faq" element={<FaqPage />} />
-      <Route path="/features" element={<FeaturesPage />} />
-      <Route path="/pricing" element={<PricingPage />} />
-      <Route path="/terms" element={<TermsPage />} />
-      <Route path="/privacy" element={<PrivacyPage />} />
-      <Route path="/blog" element={<BlogPage />} />
-      <Route path="/blog/:slug" element={<BlogPostPage />} />
-      <Route path="/trade-ups/:id" element={
-        <Suspense fallback={<div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading</div>}>
-          <TradeUpSharePage />
-        </Suspense>
-      } />
-      <Route path="*" element={<AuthGatedApp />} />
-    </Routes>
+    <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+      <Routes>
+        <Route path="/faq" element={<FaqPage />} />
+        <Route path="/features" element={<FeaturesPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/blog" element={<BlogPage />} />
+        <Route path="/blog/:slug" element={<BlogPostPage />} />
+        <Route path="/trade-ups/:id" element={
+          <Suspense fallback={<div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading</div>}>
+            <TradeUpSharePage />
+          </Suspense>
+        } />
+        <Route path="*" element={<AuthGatedApp />} />
+      </Routes>
+    </Suspense>
   );
 }
