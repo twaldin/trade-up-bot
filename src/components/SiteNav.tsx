@@ -50,8 +50,10 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
   const location = useLocation();
   // Initialize from localStorage to prevent flicker on navigation
   const [user, setUser] = useState<NavUser | null>(loadCachedUser);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -68,15 +70,20 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
       .catch(() => {});
   }, []);
 
-  // Close menu on outside click
+  const navLinks = centerLinks
+    ? centerLinks.map(({ href, label }) => ({ href, label }))
+    : NAV_LINKS.map(({ to, label }) => ({ href: to, label }));
+
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!userMenuOpen && !mobileMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const target = e.target as Node;
+      if (userMenuRef.current && !userMenuRef.current.contains(target)) setUserMenuOpen(false);
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) setMobileMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
+  }, [userMenuOpen, mobileMenuOpen]);
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
@@ -86,23 +93,44 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
           <span className="hidden sm:inline">TradeUpBot</span>
         </Link>
         <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
-          {centerLinks ? (
-            centerLinks.map(({ href, label }) => (
-              <a key={href} href={href} className="hover:text-foreground transition-colors">{label}</a>
-            ))
-          ) : (
-            NAV_LINKS.map(({ to, label }) => (
-              <Link
-                key={to}
-                to={to}
-                className={location.pathname.startsWith(to) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
-              >
-                {label}
-              </Link>
-            ))
-          )}
+          {navLinks.map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              className={location.pathname.startsWith(href) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
+            >
+              {label}
+            </a>
+          ))}
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-self-end">
+          <div className="relative sm:hidden" ref={mobileMenuRef}>
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Open navigation menu"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+            {mobileMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-border bg-card shadow-xl z-50 py-1">
+                {navLinks.map(({ href, label }) => (
+                  <a
+                    key={href}
+                    href={href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    {label}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
           <CurrencyPicker />
           {user ? (
             <>
@@ -112,9 +140,9 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
               >
                 Dashboard
               </Link>
-              <div className="relative" ref={menuRef}>
+              <div className="relative" ref={userMenuRef}>
                 <button
-                  onClick={() => setMenuOpen(!menuOpen)}
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer rounded-md px-2 py-1.5 hover:bg-muted"
                 >
                   {user.avatar_url && <img src={user.avatar_url} className="w-5 h-5 rounded-full" alt="" />}
@@ -124,7 +152,7 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
                   </span>
                   <span className="text-muted-foreground/50 text-[10px]">&#9662;</span>
                 </button>
-                {menuOpen && (
+                {userMenuOpen && (
                   <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-xl z-50 py-1">
                     <div className="px-3 py-2 border-b border-border">
                       <div className="text-sm font-medium">{user.display_name}</div>
