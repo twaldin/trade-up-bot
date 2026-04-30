@@ -32,7 +32,7 @@ The bot automates this: it fetches real market listings, tests input combination
 
 **Collection Browser** — All 89 collections with knife/glove pool info, listing counts, and profitable trade-up counts.
 
-![Collections](public/collections.png)
+![Collections](public/collections.jpg)
 
 **Claim & Verify System** — Pro users can claim trade-ups (locks the underlying listings for 30 minutes) and verify that input listings are still available on-market before purchasing. Verification propagates status changes across all trade-ups sharing those listings.
 

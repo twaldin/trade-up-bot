@@ -1,29 +1,35 @@
-
 import { describe, it, expect } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { statSync, existsSync } from 'fs';
+import { resolve } from 'path';
 
-const publicDir = path.resolve(process.cwd(), 'public');
-const imageAssets = [
-  'collections',
-  'expanded',
-  'dataviewer',
-  'tradeuptable',
-];
+describe('Marketing assets', () => {
+  const publicDir = resolve(__dirname, '..', '..', 'public');
+  const assets = [
+    'collections.jpg',
+    'expanded.jpg',
+    'dataviewer.jpg',
+    'tradeuptable.jpg',
+  ];
+  const deletedAssets = [
+    'collections.png',
+    'expanded.png',
+    'dataviewer.png',
+    'tradeuptable.png',
+  ];
+  const maxSize = 500_000;
 
-describe('Marketing Assets', () => {
-  imageAssets.forEach((asset) => {
-    const jpgPath = path.join(publicDir, `${asset}.jpg`);
-    const pngPath = path.join(publicDir, `${asset}.png`);
-
-    it(`${asset}.jpg should exist and be less than 500KB`, () => {
-      expect(fs.existsSync(jpgPath)).toBe(true);
-      const stats = fs.statSync(jpgPath);
-      expect(stats.size).toBeLessThan(500_000);
+  for (const asset of assets) {
+    it(`${asset} should exist and be less than ${maxSize} bytes`, () => {
+      const assetPath = resolve(publicDir, asset);
+      const stats = statSync(assetPath);
+      expect(stats.size).toBeLessThan(maxSize);
     });
+  }
 
-    it(`${asset}.png should not exist`, () => {
-      expect(fs.existsSync(pngPath)).toBe(false);
+  for (const asset of deletedAssets) {
+    it(`${asset} should not exist`, () => {
+      const assetPath = resolve(publicDir, asset);
+      expect(existsSync(assetPath)).toBe(false);
     });
-  });
+  }
 });

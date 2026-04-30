@@ -283,7 +283,7 @@ export function PricingPage() {
                 <p className="text-xs text-muted-foreground text-center mt-3">Trade-up table with profit, EV, chance to profit, and direct listing links</p>
               </div>
               <div>
-                <img src="/expanded.png" alt="Expanded trade-up with outcomes" className="rounded-lg border border-border shadow-lg w-full" />
+                <img src="/expanded.jpg" alt="Expanded trade-up with outcomes" className="rounded-lg border border-border shadow-lg w-full" />
                 <p className="text-xs text-muted-foreground text-center mt-3">Expanded trade-up showing every possible outcome with probabilities and values</p>
               </div>
               <div>

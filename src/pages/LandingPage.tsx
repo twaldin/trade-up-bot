@@ -210,7 +210,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <div>
               <h2 className="text-2xl font-bold mb-3">89 collections covered</h2>
               <p className="text-muted-foreground mb-6">Browse every collection with knife/glove pool info, listing counts, and profitable trade-ups. Filter by knives, gloves, or profitability.</p>
-              <img src="/collections.png" alt="Collections" className="rounded-lg border border-border w-full" />
+              <img src="/collections.jpg" alt="Collections" className="rounded-lg border border-border w-full" />
             </div>
             <div className="text-center mt-10">
               <a href="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
