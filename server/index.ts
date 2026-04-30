@@ -8,7 +8,7 @@ import { initDb, createTables } from "./db.js";
 import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
-import { statusRouter } from "./routes/status.js";
+import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
@@ -76,10 +76,12 @@ import compression from "compression";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import type { NextFunction } from "express";
+import { redirectWwwHost } from "./redirect-www.js";
 
 const app = express();
 const PORT = 3001;
 
+app.use(redirectWwwHost);
 app.use(compression());
 app.use(cors({
   origin: [
@@ -1004,6 +1006,39 @@ app.use((req, res, next) => {
       } else {
         res.send(injectMetaIntoSpa(indexHtml, { title, description: post.excerpt, url }));
       }
+    });
+
+    app.get("/", async (_req, res, next) => {
+      const indexPath = path.join(__dirname, "..", "dist", "index.html");
+      if (!fs.existsSync(indexPath)) return next();
+
+      let html = dedupeHead(fs.readFileSync(indexPath, "utf-8"));
+
+      try {
+        const stats = await Promise.race([
+          getGlobalStats(pool),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 350)),
+        ]);
+
+        if (stats) {
+          const replaceCounter = (source: string, label: string, value: number): string => {
+            const pattern = new RegExp(`>0<\\/span>\\s*<span class="text-muted-foreground">${label}`, "i");
+            return source.replace(pattern, `>${value.toLocaleString("en-US")}</span> <span class="text-muted-foreground">${label}`);
+          };
+
+          html = replaceCounter(html, "trade-ups", stats.total_trade_ups);
+          html = replaceCounter(html, "profitable", stats.profitable_trade_ups);
+          html = replaceCounter(html, "data points", stats.total_data_points);
+        } else {
+          console.warn("Homepage stats injection skipped: timed out waiting for global stats");
+        }
+      } catch (err) {
+        console.error("Homepage stats injection failed:", err);
+      }
+
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      res.send(html);
     });
 
     // Static assets with content-hashed filenames (Vite puts everything in
