@@ -463,7 +463,7 @@ export function ListingSniperPage() {
                 </div>
                 <div className="mt-2">
                   <a
-                    href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined)}
+                    href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined, listing.stattrak)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:text-blue-300 text-[0.7rem]"
@@ -531,7 +531,7 @@ export function ListingSniperPage() {
                     </td>
                     <td className="py-2.5 text-right">
                       <a
-                        href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined)}
+                        href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined, listing.stattrak)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300 text-[0.7rem] whitespace-nowrap"
