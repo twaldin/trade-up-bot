@@ -43,7 +43,9 @@ export function buildStaticSitemap(base: string, lastmod: string): string {
   ];
 
   for (const slug of BLOG_SLUGS) {
-    staticPages.push({ path: `/blog/${slug}`, priority: "0.7", freq: "monthly" });
+    // Match the trailing-slash form the server actually serves so the
+    // sitemap, canonical, and 301-target URL all agree (#95).
+    staticPages.push({ path: `/blog/${slug}/`, priority: "0.7", freq: "monthly" });
   }
 
   const urls = staticPages.map(p =>
