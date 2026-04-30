@@ -76,10 +76,12 @@ import compression from "compression";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import type { NextFunction } from "express";
+import { redirectWwwHost } from "./redirect-www.js";
 
 const app = express();
 const PORT = 3001;
 
+app.use(redirectWwwHost);
 app.use(compression());
 app.use(cors({
   origin: [
