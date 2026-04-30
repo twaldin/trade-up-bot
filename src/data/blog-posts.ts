@@ -159,8 +159,8 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "cs2-trade-up-float-values-guide",
-    title: "CS2 Trade-Up Float Formula Explained — How Adjusted Floats Actually Work",
-    excerpt: "Learn exactly how the adjusted float formula determines your output float — and why two Factory New inputs at the same price can produce wildly different results. Includes float targeting strategies you can apply immediately.",
+    title: "CS2 Float Ranges Explained: How Adjusted Float Actually Works in CS2",
+    excerpt: "CS2 float values range 0–1 and set permanent skin wear. In trade-up contracts, adjusted float — not raw float — determines your output condition. Learn the exact formula, the five condition boundaries, and float targeting strategies.",
     publishedAt: "2026-03-17",
     readTime: "7 min read",
     author: "TradeUpBot Team",
@@ -328,8 +328,8 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   },
   {
     slug: "cs2-trade-up-marketplace-fees",
-    title: "CS2 Trade-Up Fees: How Marketplace Costs Eat Your Profits",
-    excerpt: "A breakdown of CSFloat, DMarket, and Skinport fee structures — and why ignoring them turns profitable trade-ups into losses.",
+    title: "CSFloat Seller Fee (2%), DMarket & Skinport: CS2 Trade-Up Marketplace Costs",
+    excerpt: "CSFloat charges a 2% seller fee + buyer fee. DMarket: 2% seller + 2.5% buyer. Skinport: 12% seller. See how these fees affect your CS2 trade-up profitability.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
     author: "TradeUpBot Team",
