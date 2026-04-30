@@ -9,7 +9,7 @@ describe("buildSitemapIndex", () => {
     expect(xml).toContain("/sitemap-static.xml");
     expect(xml).toContain("/sitemap-collections.xml");
     expect(xml).toContain("/sitemap-skins.xml");
-    expect(xml).toContain("/sitemap-tradeups.xml");
+    expect(xml).not.toContain("/sitemap-tradeups.xml");
   });
 });
 
@@ -32,8 +32,15 @@ describe("buildCollectionSitemap", () => {
       { name: "The Fracture Collection" },
     ];
     const xml = buildCollectionSitemap("https://tradeupbot.app", collections, "2026-03-24");
+    expect((xml.match(/<url>/g) ?? []).length).toBe(2);
     expect(xml).toContain("tradeupbot.app/collections/dreams-nightmares");
     expect(xml).toContain("tradeupbot.app/collections/fracture");
+  });
+
+  it("returns an empty urlset for an empty collection list", () => {
+    const xml = buildCollectionSitemap("https://tradeupbot.app", [], "2026-03-24");
+    expect(xml).toContain("<urlset");
+    expect(xml).not.toContain("<url>");
   });
 });
 
