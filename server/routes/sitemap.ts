@@ -23,7 +23,6 @@ export function buildSitemapIndex(base: string, lastmod: string): string {
   <sitemap><loc>${base}/sitemap-collections.xml</loc><lastmod>${lastmod}</lastmod></sitemap>
   <sitemap><loc>${base}/sitemap-collection-tradeups.xml</loc><lastmod>${lastmod}</lastmod></sitemap>
   <sitemap><loc>${base}/sitemap-skins.xml</loc><lastmod>${lastmod}</lastmod></sitemap>
-  <sitemap><loc>${base}/sitemap-tradeups.xml</loc><lastmod>${lastmod}</lastmod></sitemap>
 </sitemapindex>`;
 }
 
@@ -100,7 +99,17 @@ export function sitemapRouter(pool: pg.Pool): Router {
     const lastmod = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/xml");
     try {
-      const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
+      const { rows } = await pool.query(`
+        SELECT c.name
+        FROM collections c
+        WHERE EXISTS (
+          SELECT 1
+          FROM skin_collections sc
+          JOIN listings l ON l.skin_id = sc.skin_id
+          WHERE sc.collection_id = c.id
+        )
+        ORDER BY c.name
+      `);
       res.send(buildCollectionSitemap(BASE, rows, lastmod));
     } catch (e) {
       console.error("Sitemap collections error:", e instanceof Error ? e.message : e);
@@ -134,34 +143,20 @@ export function sitemapRouter(pool: pg.Pool): Router {
     }
   });
 
-  // Cap trade-up sitemap to top 200 profitable active trade-ups.
-  // The old approach included 34K+ ephemeral URLs that wasted crawl budget.
-  router.get("/sitemap-tradeups.xml", async (_req, res) => {
-    const lastmod = new Date().toISOString().split("T")[0];
-    res.setHeader("Content-Type", "application/xml");
-    try {
-      const { rows } = await pool.query(`
-        SELECT id FROM trade_ups
-        WHERE listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
-        ORDER BY profit_cents DESC
-        LIMIT 200
-      `);
-      const urls = rows.map((r: { id: number }) =>
-        `  <url><loc>${BASE}/trade-ups/${r.id}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.5</priority></url>`
-      ).join("\n");
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
-    } catch (e) {
-      console.error("Sitemap trade-ups error:", e instanceof Error ? e.message : e);
-      res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
-    }
-  });
-
   // Collection trade-up landing pages: /trade-ups/collection/{slug}
   router.get("/sitemap-collection-tradeups.xml", async (_req, res) => {
     const lastmod = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/xml");
     try {
-      const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
+      const { rows } = await pool.query(`
+        SELECT DISTINCT ti.collection_name AS name
+        FROM trade_up_inputs ti
+        JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE t.listing_status = 'active'
+          AND t.is_theoretical = false
+          AND t.profit_cents > 0
+        ORDER BY name
+      `);
       const urls = rows.map((c: { name: string }) =>
         `  <url><loc>${BASE}/trade-ups/collection/${collectionToSlug(c.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`
       ).join("\n");
