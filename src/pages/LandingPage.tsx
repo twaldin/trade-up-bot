@@ -76,11 +76,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
         <meta property="og:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
         <meta property="og:url" content="https://tradeupbot.app/" />
         <meta property="og:type" content="website" />
-        <meta property="og:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <meta property="og:image" content="https://tradeupbot.app/tradeuptable.jpg" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
         <meta name="twitter:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
-        <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.png" />
+        <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.jpg" />
         <script type="application/ld+json">{JSON.stringify({
           "@context": "https://schema.org",
           "@graph": [
@@ -199,18 +199,18 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Outcome analysis</h2>
                 <p className="text-muted-foreground mb-6">Every possible outcome with probabilities, expected value, and the exact inputs needed. Claim to lock listings for 30 minutes while you buy.</p>
-                <img src="/expanded.png" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822" className="rounded-lg border border-border w-full" />
+                <img src="/expanded.jpg" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822" className="rounded-lg border border-border w-full" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold mb-3">Price intelligence</h2>
                 <p className="text-muted-foreground mb-6">Float vs price scatter charts with data from CSFloat, DMarket, Skinport, and sale history across every condition.</p>
-                <img src="/dataviewer.png" alt="Price data" loading="lazy" width="2434" height="1498" className="rounded-lg border border-border w-full" />
+                <img src="/dataviewer.jpg" alt="Price data" loading="lazy" width="2434" height="1498" className="rounded-lg border border-border w-full" />
               </div>
             </div>
             <div>
               <h2 className="text-2xl font-bold mb-3">89 collections covered</h2>
               <p className="text-muted-foreground mb-6">Browse every collection with knife/glove pool info, listing counts, and profitable trade-ups. Filter by knives, gloves, or profitability.</p>
-              <img src="/collections.png" alt="Collections" loading="lazy" width="2624" height="1608" className="rounded-lg border border-border w-full" />
+              <img src="/collections.jpg" alt="Collections" loading="lazy" width="2624" height="1608" className="rounded-lg border border-border w-full" />
             </div>
             <div className="text-center mt-10">
               <a href="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">

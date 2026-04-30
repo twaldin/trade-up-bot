@@ -18,11 +18,109 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export function dedupeHead(html: string): string {
+  const headMatch = html.match(/<head[^>]*>[\s\S]*?<\/head>/i);
+  if (!headMatch || headMatch.index === undefined) return html;
+
+  const fullHead = headMatch[0];
+  const openTagMatch = fullHead.match(/^<head[^>]*>/i);
+  if (!openTagMatch) return html;
+
+  const openTag = openTagMatch[0];
+  const closeTag = "</head>";
+  const innerHead = fullHead.slice(openTag.length, fullHead.length - closeTag.length);
+
+  type Match = { start: number; end: number; tag: string; key?: string };
+  const remove = new Set<number>();
+
+  const collect = (pattern: RegExp, keyIndex?: number): Match[] => {
+    const result: Match[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = pattern.exec(innerHead)) !== null) {
+      result.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        tag: m[0],
+        key: keyIndex === undefined ? undefined : (m[keyIndex] || "").toLowerCase(),
+      });
+    }
+    return result;
+  };
+
+  const markDuplicates = (matches: Match[], opts?: { byKey?: boolean; dropEmptyTitle?: boolean }) => {
+    const grouped = new Map<string, Match[]>();
+    if (opts?.byKey) {
+      for (const match of matches) {
+        const groupKey = match.key || "";
+        if (!grouped.has(groupKey)) grouped.set(groupKey, []);
+        grouped.get(groupKey)!.push(match);
+      }
+    } else {
+      grouped.set("all", matches);
+    }
+
+    for (const group of grouped.values()) {
+      const candidates = opts?.dropEmptyTitle
+        ? group.filter((entry) => entry.tag.replace(/<\/?title[^>]*>/gi, "").trim().length > 0)
+        : group;
+
+      if (opts?.dropEmptyTitle) {
+        for (const entry of group) {
+          if (entry.tag.replace(/<\/?title[^>]*>/gi, "").trim().length === 0) {
+            remove.add(entry.start);
+          }
+        }
+      }
+
+      if (candidates.length <= 1) continue;
+
+      const helmetCandidate = candidates.find((entry) => /\sdata-rh=(['"])true\1/i.test(entry.tag));
+      const keep = helmetCandidate || candidates[0];
+
+      for (const entry of candidates) {
+        if (entry.start !== keep.start) remove.add(entry.start);
+      }
+    }
+  };
+
+  const titleMatches = collect(/<title[^>]*>[\s\S]*?<\/title>/gi);
+  const descriptionMatches = collect(/<meta\b[^>]*\bname=["']description["'][^>]*\/?\s*>/gi);
+  const canonicalMatches = collect(/<link\b[^>]*\brel=["']canonical["'][^>]*\/?\s*>/gi);
+  const ogMatches = collect(/<meta\b[^>]*\bproperty=["']og:([^"']+)["'][^>]*\/?\s*>/gi, 1);
+  const twitterMatches = collect(/<meta\b[^>]*\bname=["']twitter:([^"']+)["'][^>]*\/?\s*>/gi, 1);
+
+  markDuplicates(titleMatches, { dropEmptyTitle: true });
+  markDuplicates(descriptionMatches);
+  markDuplicates(canonicalMatches);
+  markDuplicates(ogMatches, { byKey: true });
+  markDuplicates(twitterMatches, { byKey: true });
+
+  const allMatches = titleMatches.concat(descriptionMatches, canonicalMatches, ogMatches, twitterMatches);
+  const ranges = Array.from(remove)
+    .map((start) => {
+      const tag = allMatches.find((entry) => entry.start === start);
+      return tag ? { start: tag.start, end: tag.end } : null;
+    })
+    .filter((range): range is { start: number; end: number } => !!range)
+    .sort((a, b) => a.start - b.start);
+
+  let rebuilt = "";
+  let cursor = 0;
+  for (const range of ranges) {
+    rebuilt += innerHead.slice(cursor, range.start);
+    cursor = range.end;
+  }
+  rebuilt += innerHead.slice(cursor);
+
+  const rebuiltHead = `${openTag}${rebuilt}${closeTag}`;
+  return `${html.slice(0, headMatch.index)}${rebuiltHead}${html.slice(headMatch.index + fullHead.length)}`;
+}
+
 export function buildSeoHtml(meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.png";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
 
   let jsonLdTag = "";
   if (meta.jsonLd) {
@@ -79,7 +177,7 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.png";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
 
   // Strip existing SEO tags (they come from the pre-rendered homepage)
   let result = html

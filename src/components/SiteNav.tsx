@@ -94,13 +94,23 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
         </Link>
         <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground">
           {navLinks.map(({ href, label }) => (
-            <a
-              key={href}
-              href={href}
-              className={location.pathname.startsWith(href) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
-            >
-              {label}
-            </a>
+            centerLinks ? (
+              <a
+                key={href}
+                href={href}
+                className={location.pathname.startsWith(href) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
+              >
+                {label}
+              </a>
+            ) : (
+              <Link
+                key={href}
+                to={href}
+                className={location.pathname.startsWith(href) ? "text-foreground transition-colors" : "hover:text-foreground transition-colors"}
+              >
+                {label}
+              </Link>
+            )
           ))}
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0 justify-self-end">
@@ -119,14 +129,25 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
             {mobileMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-border bg-card shadow-xl z-50 py-1">
                 {navLinks.map(({ href, label }) => (
-                  <a
-                    key={href}
-                    href={href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                  >
-                    {label}
-                  </a>
+                  centerLinks ? (
+                    <a
+                      key={href}
+                      href={href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      {label}
+                    </a>
+                  ) : (
+                    <Link
+                      key={href}
+                      to={href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      {label}
+                    </Link>
+                  )
                 ))}
               </div>
             )}
