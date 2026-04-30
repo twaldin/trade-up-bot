@@ -5,6 +5,43 @@ import { getSyncMeta } from "../db.js";
 import { cachedRoute } from "../redis.js";
 import { buildStatusData } from "./status-helpers.js";
 
+export async function getGlobalStats(pool: pg.Pool): Promise<Record<string, number>> {
+  try {
+    const { cacheGet } = await import("../redis.js");
+    const cached = await cacheGet<Record<string, number>>("global_stats");
+    if (cached) return cached;
+  } catch { }
+
+  const { rows: [stats] } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
+      (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
+      (SELECT COUNT(*) FROM listings) as listings,
+      (SELECT COUNT(*) FROM price_observations) as sale_obs,
+      (SELECT COUNT(*) FROM sale_history) as sale_hist,
+      (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
+      (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
+  `);
+
+  const data = {
+    total_trade_ups: parseInt(stats.total_tu, 10),
+    profitable_trade_ups: parseInt(stats.profitable_tu, 10) || 0,
+    total_data_points: parseInt(stats.listings, 10) + parseInt(stats.sale_obs, 10) + parseInt(stats.sale_hist, 10) + parseInt(stats.refs, 10),
+    listings: parseInt(stats.listings, 10),
+    sale_observations: parseInt(stats.sale_obs, 10),
+    sale_history: parseInt(stats.sale_hist, 10),
+    ref_prices: parseInt(stats.refs, 10),
+    total_cycles: parseInt(stats.cycles, 10),
+  };
+
+  try {
+    const { cacheSet } = await import("../redis.js");
+    await cacheSet("global_stats", data, 1800).catch(() => {});
+  } catch { }
+
+  return data;
+}
+
 export function statusRouter(pool: pg.Pool): Router {
   const router = Router();
 
@@ -13,50 +50,9 @@ export function statusRouter(pool: pg.Pool): Router {
     res.json(result);
   }));
 
-  // Global stats: Redis-first, DB fallback with 3s timeout.
-  // The COUNT(*) on 1M+ row trade_ups table takes 50s+ during WAL contention.
-  // Daemon pre-populates Redis every cycle. API should almost never hit DB.
   router.get("/api/global-stats", async (_req, res) => {
     try {
-      // Try Redis first (populated by daemon every cycle)
-      const { cacheGet } = await import("../redis.js");
-      const cached = await cacheGet<Record<string, unknown>>("global_stats");
-      if (cached) {
-        res.setHeader("X-Cache", "HIT");
-        res.json(cached);
-        return;
-      }
-    } catch { /* Redis unavailable */ }
-
-    // Redis miss: fall back to DB
-    try {
-      const { rows: [stats] } = await pool.query(`
-        SELECT
-          (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
-          (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
-          (SELECT COUNT(*) FROM listings) as listings,
-          (SELECT COUNT(*) FROM price_observations) as sale_obs,
-          (SELECT COUNT(*) FROM sale_history) as sale_hist,
-          (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
-          (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
-      `);
-
-      const data = {
-        total_trade_ups: parseInt(stats.total_tu),
-        profitable_trade_ups: parseInt(stats.profitable_tu) ?? 0,
-        total_data_points: parseInt(stats.listings) + parseInt(stats.sale_obs) + parseInt(stats.sale_hist) + parseInt(stats.refs),
-        listings: parseInt(stats.listings),
-        sale_observations: parseInt(stats.sale_obs),
-        sale_history: parseInt(stats.sale_hist),
-        ref_prices: parseInt(stats.refs),
-        total_cycles: parseInt(stats.cycles),
-      };
-
-      // Cache in Redis for next request — 1800s to survive a full daemon cycle
-      const { cacheSet } = await import("../redis.js");
-      await cacheSet("global_stats", data, 1800).catch(() => {});
-
-      res.setHeader("X-Cache", "MISS");
+      const data = await getGlobalStats(pool);
       res.json(data);
     } catch {
       res.json({ total_trade_ups: 0, profitable_trade_ups: 0, total_data_points: 0, total_cycles: 0 });

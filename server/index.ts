@@ -8,7 +8,7 @@ import { initDb, createTables } from "./db.js";
 import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
-import { statusRouter } from "./routes/status.js";
+import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
@@ -813,13 +813,21 @@ app.use((req, res, next) => {
         const rows = topTradeUps.map((t: { id: number; type: string; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
           `<tr><td><a href="/trade-ups/${t.id}">${TRADE_UP_TYPE_LABELS[t.type] || t.type}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
         ).join("");
+        const faqSchema = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: [
+          { "@type": "Question", name: "What is a CS2 trade-up contract?", acceptedAnswer: { "@type": "Answer", text: "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted proportionally by input count per collection." } },
+          { "@type": "Question", name: "How does TradeUpBot find profitable trade-ups?", acceptedAnswer: { "@type": "Answer", text: "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both buy and sell sides." } },
+          { "@type": "Question", name: "Are these listings live?", acceptedAnswer: { "@type": "Answer", text: "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." } },
+        ] };
         const html = buildSeoHtml({
           title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
           description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/trade-ups",
-          bodyText: `Browse ${total.toLocaleString()} active CS2 trade-up contracts. ${profitable.toLocaleString()} are currently profitable. Filter by rarity tier, ROI, profit, cost, and more.`,
-          jsonLd: { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
-        }).replace("</main>", `<table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table></main>`);
+          bodyHtml: `<h2>Find Profitable CS2 Trade-Up Contracts</h2><p>Browse ${total.toLocaleString()} active CS2 trade-up contracts built from real, buyable listings across all rarity tiers — Knife, Glove, Covert, Classified, Restricted, Mil-Spec. ${profitable.toLocaleString()} are currently profitable. Data sourced from CSFloat, DMarket, and Skinport with marketplace fees included.</p><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table><section><h2>Common Questions</h2><h3>What is a CS2 trade-up contract?</h3><p>A trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection.</p><h3>How does TradeUpBot find profitable trade-ups?</h3><p>TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides.</p><h3>Are these listings live?</h3><p>Every trade-up is built from listings that existed on the marketplace at discovery time. Use the Verify button to confirm availability before purchasing inputs.</p></section>`,
+          jsonLd: [
+            { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
+            faqSchema,
+          ],
+        });
         try {
           const { cacheSet } = await import("./redis.js");
           await cacheSet(cacheKey, html, 3600).catch(() => {});
@@ -937,8 +945,8 @@ app.use((req, res, next) => {
         author: "TradeUpBot Team",
       },
       "cs2-trade-up-float-values-guide": {
-        title: "CS2 Trade-Up Float Formula Explained — How Adjusted Floats Actually Work",
-        excerpt: "Learn exactly how the adjusted float formula determines your output float — and why two Factory New inputs at the same price can produce wildly different results. Includes float targeting strategies you can apply immediately.",
+        title: "CS2 Float Ranges Explained: How Adjusted Float Actually Works in CS2",
+        excerpt: "CS2 float values range 0–1 and set permanent skin wear. In trade-up contracts, adjusted float — not raw float — determines your output condition. Learn the exact formula, the five condition boundaries, and float targeting strategies.",
         publishedAt: "2026-03-17",
         author: "TradeUpBot Team",
       },
@@ -949,8 +957,8 @@ app.use((req, res, next) => {
         author: "TradeUpBot Team",
       },
       "cs2-trade-up-marketplace-fees": {
-        title: "CS2 Trade-Up Fees: How Marketplace Costs Eat Your Profits",
-        excerpt: "A breakdown of CSFloat, DMarket, and Skinport fee structures — and why ignoring them turns profitable trade-ups into losses.",
+        title: "CSFloat Seller Fee (2%), DMarket & Skinport: CS2 Trade-Up Marketplace Costs",
+        excerpt: "CSFloat charges a 2% seller fee + buyer fee. DMarket: 2% seller + 2.5% buyer. Skinport: 12% seller. See how these fees affect your CS2 trade-up profitability.",
         publishedAt: "2026-03-19",
         author: "TradeUpBot Team",
       },
@@ -996,6 +1004,39 @@ app.use((req, res, next) => {
       } else {
         res.send(injectMetaIntoSpa(indexHtml, { title, description: post.excerpt, url }));
       }
+    });
+
+    app.get("/", async (_req, res, next) => {
+      const indexPath = path.join(__dirname, "..", "dist", "index.html");
+      if (!fs.existsSync(indexPath)) return next();
+
+      let html = dedupeHead(fs.readFileSync(indexPath, "utf-8"));
+
+      try {
+        const stats = await Promise.race([
+          getGlobalStats(pool),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 350)),
+        ]);
+
+        if (stats) {
+          const replaceCounter = (source: string, label: string, value: number): string => {
+            const pattern = new RegExp(`>0<\\/span>\\s*<span class="text-muted-foreground">${label}`, "i");
+            return source.replace(pattern, `>${value.toLocaleString("en-US")}</span> <span class="text-muted-foreground">${label}`);
+          };
+
+          html = replaceCounter(html, "trade-ups", stats.total_trade_ups);
+          html = replaceCounter(html, "profitable", stats.profitable_trade_ups);
+          html = replaceCounter(html, "data points", stats.total_data_points);
+        } else {
+          console.warn("Homepage stats injection skipped: timed out waiting for global stats");
+        }
+      } catch (err) {
+        console.error("Homepage stats injection failed:", err);
+      }
+
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      res.send(html);
     });
 
     // Static assets with content-hashed filenames (Vite puts everything in
