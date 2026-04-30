@@ -194,7 +194,36 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           "operatingSystem": "Web",
           "description": "Find profitable CS2 trade-up contracts using real marketplace listings."
         })}</script>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is a CS2 trade-up contract?",
+              "acceptedAnswer": { "@type": "Answer", "text": "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection." }
+            },
+            {
+              "@type": "Question",
+              "name": "How does TradeUpBot find profitable trade-ups?",
+              "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
+            },
+            {
+              "@type": "Question",
+              "name": "Are these listings live?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." }
+            }
+          ]
+        })}</script>
       </Helmet>
+
+      <section className="mb-5">
+        <h2 className="text-base font-semibold mb-1.5">Find Profitable CS2 Trade-Up Contracts</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Browse profitable CS2 trade-up contracts built from real, buyable listings across all rarity tiers — Knife, Glove, Covert, Classified, Restricted, Mil-Spec. Every entry uses live pricing from CSFloat, DMarket, and Skinport with marketplace fees already factored in.
+        </p>
+      </section>
+
       {/* Type selector + Your Claims button */}
       {types.length > 1 && (
         <div className="flex items-center gap-1.5 md:gap-2 mb-3 flex-wrap">
@@ -307,6 +336,24 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           )}
         </div>
       )}
+
+      <section className="mt-10 pt-8 border-t border-border/40">
+        <h2 className="text-sm font-semibold mb-4 text-muted-foreground uppercase tracking-wide">Common Questions</h2>
+        <div className="space-y-5">
+          <div>
+            <h3 className="text-sm font-medium mb-1">What is a CS2 trade-up contract?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">A trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted proportionally by how many inputs came from each collection.</p>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium mb-1">How does TradeUpBot find profitable trade-ups?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates the expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides — only surfaces contracts where the numbers work.</p>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium mb-1">Are these listings live?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability and current prices before purchasing inputs.</p>
+          </div>
+        </div>
+      </section>
     </>
   );
 }

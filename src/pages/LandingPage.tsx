@@ -107,10 +107,10 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
       </Helmet>
 
       <SiteNav centerLinks={[
-        { href: "#features", label: "Features" },
-        { href: "#pricing", label: "Pricing" },
-        { href: "#faq", label: "FAQ" },
-        { href: "#blog", label: "Blog" },
+        { href: "/features", label: "Features" },
+        { href: "/pricing", label: "Pricing" },
+        { href: "/faq", label: "FAQ" },
+        { href: "/blog", label: "Blog" },
       ]} />
 
       <main>
@@ -134,9 +134,9 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                   </Btn>
                 ) : (
                   <>
-                    <Btn onClick={() => { window.location.href = '/trade-ups'; }} className="px-6 py-3">
+                    <a href="/trade-ups" className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium rounded-lg transition-all cursor-pointer bg-foreground text-background hover:bg-foreground/90">
                       View Trade-Ups
-                    </Btn>
+                    </a>
                     <span className="text-xs text-muted-foreground">Free — no account needed</span>
                   </>
                 )}
@@ -199,18 +199,18 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Outcome analysis</h2>
                 <p className="text-muted-foreground mb-6">Every possible outcome with probabilities, expected value, and the exact inputs needed. Claim to lock listings for 30 minutes while you buy.</p>
-                <img src="/expanded.png" alt="Trade-up outcomes" className="rounded-lg border border-border w-full" />
+                <img src="/expanded.png" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822" className="rounded-lg border border-border w-full" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold mb-3">Price intelligence</h2>
                 <p className="text-muted-foreground mb-6">Float vs price scatter charts with data from CSFloat, DMarket, Skinport, and sale history across every condition.</p>
-                <img src="/dataviewer.png" alt="Price data" className="rounded-lg border border-border w-full" />
+                <img src="/dataviewer.png" alt="Price data" loading="lazy" width="2434" height="1498" className="rounded-lg border border-border w-full" />
               </div>
             </div>
             <div>
               <h2 className="text-2xl font-bold mb-3">89 collections covered</h2>
               <p className="text-muted-foreground mb-6">Browse every collection with knife/glove pool info, listing counts, and profitable trade-ups. Filter by knives, gloves, or profitability.</p>
-              <img src="/collections.png" alt="Collections" className="rounded-lg border border-border w-full" />
+              <img src="/collections.png" alt="Collections" loading="lazy" width="2624" height="1608" className="rounded-lg border border-border w-full" />
             </div>
             <div className="text-center mt-10">
               <a href="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -414,9 +414,9 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Product</div>
               <div className="space-y-2 text-sm">
-                <a href="#features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</a>
-                <a href="#pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
-                <a href="#faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
+                <a href="/features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</a>
+                <a href="/pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+                <a href="/faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
                 <a href="/blog" className="block text-muted-foreground hover:text-foreground transition-colors">Blog</a>
               </div>
             </div>
@@ -430,7 +430,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Contact</div>
               <div className="space-y-2 text-sm">
-                <a href="https://discord.gg/tradeupbot" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+                <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
               </div>
             </div>
           </div>

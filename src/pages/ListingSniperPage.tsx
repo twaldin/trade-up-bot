@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { Badge } from "@shared/components/ui/badge.js";
 import { Button } from "@shared/components/ui/button.js";
 import { Input } from "@shared/components/ui/input.js";
@@ -346,6 +347,15 @@ export function ListingSniperPage() {
 
   return (
     <>
+      <Helmet>
+        <title>Listing Sniper | TradeUpBot</title>
+      </Helmet>
+
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-foreground">Listing Sniper</h1>
+        <p className="text-sm text-muted-foreground mt-1">Listings priced below estimated market value, sorted by discount percentage.</p>
+      </div>
+
       <div className="flex items-center gap-3 mb-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="flex gap-2.5 items-center flex-wrap">
@@ -463,7 +473,7 @@ export function ListingSniperPage() {
                 </div>
                 <div className="mt-2">
                   <a
-                    href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined)}
+                    href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined, listing.stattrak)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:text-blue-300 text-[0.7rem]"
@@ -531,7 +541,7 @@ export function ListingSniperPage() {
                     </td>
                     <td className="py-2.5 text-right">
                       <a
-                        href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined)}
+                        href={listingUrl(listing.id, listing.skin_name, listing.condition, listing.float_value, listing.listed_price_cents, listing.source, listing.marketplace_id ?? undefined, listing.stattrak)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300 text-[0.7rem] whitespace-nowrap"
