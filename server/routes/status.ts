@@ -51,8 +51,16 @@ export function statusRouter(pool: pg.Pool): Router {
   }));
 
   router.get("/api/global-stats", async (_req, res) => {
+    let cacheHit = false;
+    try {
+      const { cacheGet } = await import("../redis.js");
+      const cached = await cacheGet<Record<string, number>>("global_stats");
+      if (cached) cacheHit = true;
+    } catch { /* Redis unavailable */ }
+
     try {
       const data = await getGlobalStats(pool);
+      res.setHeader("X-Cache", cacheHit ? "HIT" : "MISS");
       res.json(data);
     } catch {
       res.json({ total_trade_ups: 0, profitable_trade_ups: 0, total_data_points: 0, total_cycles: 0 });
