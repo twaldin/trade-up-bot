@@ -63,7 +63,7 @@ export function listingSource(listingId: string, source?: string): "csfloat" | "
 /** Source-aware listing URL — routes to the correct marketplace with float/price filters.
  *  priceCents is the EFFECTIVE cost (with buyer fees). The URL uses the ORIGINAL listing
  *  price (without fees) so price filters target the exact listing on the marketplace. */
-export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number, sourceHint?: string, marketplaceId?: string): string {
+export function listingUrl(listingId: string, skinName?: string, condition?: string, floatValue?: number, priceCents?: number, sourceHint?: string, marketplaceId?: string, stattrak?: boolean): string {
   const source = listingSource(listingId, sourceHint);
   if (source === "buff") {
     // Buff can't deep-link to a specific listing — link to the goods page
@@ -75,7 +75,7 @@ export function listingUrl(listingId: string, skinName?: string, condition?: str
     // Float has 3-digit precision — floor/ceil at 3rd decimal to bracket the exact listing.
     // e.g. float 0.2819 → floatValueFrom=0.281, floatValueTo=0.282
     const params = new URLSearchParams({ title: skinName ?? "" });
-    params.set("category_0", "not_stattrak_tm");
+    params.set("category_0", stattrak ? "stattrak_tm" : "not_stattrak_tm");
     if (floatValue !== undefined && floatValue > 0) {
       const lower = Math.floor(floatValue * 1000) / 1000;
       const upper = lower + 0.001;

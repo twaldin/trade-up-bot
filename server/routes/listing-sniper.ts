@@ -148,8 +148,9 @@ export function listingSniperRouter(pool: pg.Pool): Router {
         if (ratio >= 1.0) continue; // Not underpriced or no KNN data
 
         const estimatedCents = Math.round(row.price_cents / ratio);
-        const diffCents = estimatedCents - row.price_cents;
+        if (estimatedCents > row.price_cents * 10) continue;
 
+        const diffCents = estimatedCents - row.price_cents;
         if (diffCents < minDiffCents) continue;
 
         results.push({
