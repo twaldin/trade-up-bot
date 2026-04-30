@@ -199,7 +199,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Outcome analysis</h2>
                 <p className="text-muted-foreground mb-6">Every possible outcome with probabilities, expected value, and the exact inputs needed. Claim to lock listings for 30 minutes while you buy.</p>
-                <img src="/expanded.png" alt="Trade-up outcomes" className="rounded-lg border border-border w-full" />
+                <img src="/expanded.jpg" alt="Trade-up outcomes" className="rounded-lg border border-border w-full" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold mb-3">Price intelligence</h2>

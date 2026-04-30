@@ -287,7 +287,7 @@ export function PricingPage() {
                 <p className="text-xs text-muted-foreground text-center mt-3">Expanded trade-up showing every possible outcome with probabilities and values</p>
               </div>
               <div>
-                <img src="/dataviewer.png" alt="Price data viewer" className="rounded-lg border border-border shadow-lg w-full" />
+                <img src="/dataviewer.jpg" alt="Price data viewer" className="rounded-lg border border-border shadow-lg w-full" />
                 <p className="text-xs text-muted-foreground text-center mt-3">Price data viewer with float vs price scatter chart across all marketplaces</p>
               </div>
               <div>

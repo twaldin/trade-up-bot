@@ -120,7 +120,7 @@ export function buildSeoHtml(meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.png";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
 
   let jsonLdTag = "";
   if (meta.jsonLd) {
@@ -177,7 +177,7 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.png";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
 
   // Strip existing SEO tags (they come from the pre-rendered homepage)
   let result = html
