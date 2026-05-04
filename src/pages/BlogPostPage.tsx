@@ -28,10 +28,10 @@ export function BlogPostPage() {
       <Helmet>
         <title>{post.title} | TradeUpBot Blog</title>
         <meta name="description" content={post.excerpt} />
-        <link rel="canonical" href={`https://tradeupbot.app/blog/${post.slug}`} />
+        <link rel="canonical" href={`https://tradeupbot.app/blog/${post.slug}/`} />
         <meta property="og:title" content={`${post.title} | TradeUpBot Blog`} />
         <meta property="og:description" content={post.excerpt} />
-        <meta property="og:url" content={`https://tradeupbot.app/blog/${post.slug}`} />
+        <meta property="og:url" content={`https://tradeupbot.app/blog/${post.slug}/`} />
         <meta property="og:type" content="article" />
         <meta property="article:published_time" content={post.publishedAt} />
         <meta property="article:author" content={post.author} />
@@ -43,7 +43,7 @@ export function BlogPostPage() {
           "datePublished": post.publishedAt,
           "author": { "@type": "Organization", "name": post.author },
           "publisher": { "@type": "Organization", "name": "TradeUpBot", "url": "https://tradeupbot.app" },
-          "mainEntityOfPage": `https://tradeupbot.app/blog/${post.slug}`
+          "mainEntityOfPage": `https://tradeupbot.app/blog/${post.slug}/`
         })}</script>
       </Helmet>
       <SiteNav />
