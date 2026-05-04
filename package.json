@@ -8,7 +8,7 @@
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build": "tsc && vite build",
-    "postbuild": "node scripts/prerender.js",
+    "postbuild": "npx tsx scripts/prerender.ts",
     "sync": "tsx server/sync.ts",
     "fetch-listings": "tsx server/fetch-listings.ts",
     "calculate": "tsx server/calculate.ts",

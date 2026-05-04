@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
@@ -297,7 +297,7 @@ app.use((req, res, next) => {
     if (!isCrawler(ua)) return next();
     try {
       const { rows: [row] } = await pool.query(
-        "SELECT type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at FROM trade_ups WHERE id = $1",
+        "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json FROM trade_ups WHERE id = $1",
         [req.params.id]
       );
       if (!row) return next();
@@ -307,15 +307,29 @@ app.use((req, res, next) => {
       const chance = Math.round((row.chance_to_profit ?? 0) * 100);
       const roi = row.roi_percentage?.toFixed(1) ?? "0";
 
-      // Noindex stale or old preserved trade-ups
       const isStale = row.listing_status === "stale"
         || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
 
       const { rows: inputs } = await pool.query(
-        "SELECT skin_name, condition FROM trade_up_inputs WHERE trade_up_id = $1 LIMIT 3",
-        [row.id ?? req.params.id]
+        "SELECT skin_name, condition, collection_name, price_cents FROM trade_up_inputs WHERE trade_up_id = $1",
+        [row.id]
       );
-      const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name).join(", ");
+
+      const outcomes = JSON.parse(row.outcomes_json || "[]") as Array<{
+        skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
+      }>;
+
+      const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
+      const related = [
+        ...collections.map((c: string) => ({
+          label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
+          url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
+        })).slice(0, 2),
+        { label: "All Profitable CS2 Trade-Ups", url: "/trade-ups" },
+        { label: "Browse CS2 Collections", url: "/collections" },
+      ];
+
+      const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
 
       res.send(buildSeoHtml({
         title: `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`,
@@ -323,7 +337,12 @@ app.use((req, res, next) => {
         url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
         ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
         robots: isStale ? "noindex, follow" : "index, follow",
-        bodyText: `${typeLabel} Trade-Up: $${profit} profit, ${roi}% ROI, ${chance}% chance to profit. Cost: $${cost}. Inputs: ${inputNames}.`,
+        bodyHtml: renderTradeUpDetail(
+          { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
+          inputs,
+          outcomes,
+          related,
+        ),
       }));
     } catch { next(); }
   });
@@ -824,7 +843,7 @@ app.use((req, res, next) => {
           title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
           description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/trade-ups",
-          bodyHtml: `<h2>Find Profitable CS2 Trade-Up Contracts</h2><p>Browse ${total.toLocaleString()} active CS2 trade-up contracts built from real, buyable listings across all rarity tiers — Knife, Glove, Covert, Classified, Restricted, Mil-Spec. ${profitable.toLocaleString()} are currently profitable. Data sourced from CSFloat, DMarket, and Skinport with marketplace fees included.</p><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table><section><h2>Common Questions</h2><h3>What is a CS2 trade-up contract?</h3><p>A trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection.</p><h3>How does TradeUpBot find profitable trade-ups?</h3><p>TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides.</p><h3>Are these listings live?</h3><p>Every trade-up is built from listings that existed on the marketplace at discovery time. Use the Verify button to confirm availability before purchasing inputs.</p></section>`,
+          bodyHtml: `<h1>Find Profitable CS2 Trade-Up Contracts</h1><p>Browse ${total.toLocaleString()} active CS2 trade-up contracts built from real, buyable listings across all rarity tiers — Knife, Glove, Covert, Classified, Restricted, Mil-Spec. ${profitable.toLocaleString()} are currently profitable. Data sourced from CSFloat, DMarket, and Skinport with marketplace fees included.</p><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table><section><h2>Common Questions</h2><h3>What is a CS2 trade-up contract?</h3><p>A trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection.</p><h3>How does TradeUpBot find profitable trade-ups?</h3><p>TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides.</p><h3>Are these listings live?</h3><p>Every trade-up is built from listings that existed on the marketplace at discovery time. Use the Verify button to confirm availability before purchasing inputs.</p></section>`,
           jsonLd: [
             { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
             faqSchema,
@@ -904,8 +923,8 @@ app.use((req, res, next) => {
           title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
           description: `Browse ${rows.length}+ CS2 skins with live prices from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/skins",
-          bodyText: `Browse CS2 skins with live market prices and float data.`,
-        }).replace("</main>", `<ul>${links}</ul></main>`);
+          bodyHtml: `<h1>CS2 Skin Database — Prices, Floats, Trade-Ups</h1><p>Browse ${rows.length}+ CS2 weapon skins with live market prices and float data from CSFloat, DMarket, and Skinport.</p><ul>${links}</ul>`,
+        });
         try {
           const { cacheSet } = await import("./redis.js");
           await cacheSet(cacheKey, html, 3600).catch(() => {});

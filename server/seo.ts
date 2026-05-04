@@ -156,6 +156,95 @@ ${jsonLdTag}
 </head><body>${bodyContent}</body></html>`;
 }
 
+export interface TradeUpDetailRow {
+  id: number;
+  type: string;
+  total_cost_cents: number;
+  profit_cents: number;
+  roi_percentage: number;
+  chance_to_profit: number;
+}
+
+export interface TradeUpInputRow {
+  skin_name: string;
+  condition: string;
+  collection_name: string;
+  price_cents?: number;
+}
+
+export interface TradeUpOutcomeRow {
+  skin_name: string;
+  probability: number;
+  predicted_condition: string;
+  estimated_price_cents: number;
+}
+
+export interface TradeUpRelatedLink {
+  label: string;
+  url: string;
+}
+
+const TRADE_UP_TYPE_DISPLAY: Record<string, string> = {
+  covert_knife: "Knife/Glove",
+  classified_covert: "Classified",
+  restricted_classified: "Restricted",
+  milspec_restricted: "Mil-Spec",
+  industrial_milspec: "Industrial Grade",
+  consumer_industrial: "Consumer Grade",
+};
+
+export function renderTradeUpDetail(
+  tradeUp: TradeUpDetailRow,
+  inputs: TradeUpInputRow[],
+  outcomes: TradeUpOutcomeRow[],
+  related: TradeUpRelatedLink[]
+): string {
+  const e = escapeHtml;
+  const profit = (tradeUp.profit_cents / 100).toFixed(2);
+  const cost = (tradeUp.total_cost_cents / 100).toFixed(2);
+  const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
+  const chance = Math.round((tradeUp.chance_to_profit ?? 0) * 100);
+  const typeLabel = TRADE_UP_TYPE_DISPLAY[tradeUp.type] || tradeUp.type;
+
+  const inputRows = inputs.map(inp =>
+    `<li>${e(inp.skin_name)} (${e(inp.condition)}) — ${e(inp.collection_name)}${inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : ""}</li>`
+  ).join("");
+
+  const outcomeRows = outcomes.map(out => {
+    const pct = Math.round(out.probability * 100);
+    const price = (out.estimated_price_cents / 100).toFixed(2);
+    return `<li>${e(out.skin_name)} (${e(out.predicted_condition)}) — ${pct}% chance — est. $${price}</li>`;
+  }).join("");
+
+  const relatedLinks = related.map(r =>
+    `<li><a href="${e(r.url)}">${e(r.label)}</a></li>`
+  ).join("");
+
+  const collections = [...new Set(inputs.map(i => i.collection_name))];
+  const collectionText = collections.length === 1
+    ? `all 10 inputs from the ${e(collections[0])} collection`
+    : `inputs from ${e(collections.join(", "))}`;
+
+  return `<h1>${e(typeLabel)} Trade-Up — $${profit} Profit (${roi}% ROI)</h1>
+<p>Cost $${cost} · ${chance}% chance to profit · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
+
+<h2>Inputs</h2>
+<p>This trade-up contract uses 10 input skins of the same rarity. The 10 inputs are:</p>
+<ul>${inputRows}</ul>
+
+<h2>Outputs</h2>
+<p>The output skin is randomly selected from the next rarity tier in the matching collections, weighted proportionally by input count per collection. Possible outputs:</p>
+<ul>${outcomeRows || "<li>Output details not available.</li>"}</ul>
+
+<h2>Mechanics</h2>
+<p>In CS2, a trade-up contract accepts exactly 10 weapon skins of the same rarity and produces 1 skin of the next higher rarity. The output skin's float value is determined by the <em>adjusted float formula</em>: the average float of all 10 inputs is mapped into the output skin's condition range, producing a predictable wear result.</p>
+<p>The output condition depends on where the average input float falls relative to the output skin's min and max float values. Lower-float inputs (closer to 0) tend to produce Factory New or Minimal Wear outputs; higher-float inputs (above 0.45) push toward Field-Tested, Well-Worn, or Battle-Scarred.</p>
+<p>Profitability depends on three factors: (1) the cost of 10 inputs at current marketplace prices, (2) the expected value of the output distribution weighted by each skin's market price, and (3) the marketplace fees applied on both the buy and sell sides. This trade-up was calculated using live listing prices with all fees included.</p>
+
+<h2>Related</h2>
+<ul>${relatedLinks}</ul>`;
+}
+
 const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot|bingbot|Baiduspider|YandexBot/i;
 
 export function isCrawler(userAgent: string): boolean {
