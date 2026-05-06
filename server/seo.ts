@@ -75,7 +75,7 @@ export function dedupeHead(html: string): string {
       if (candidates.length <= 1) continue;
 
       const helmetCandidate = candidates.find((entry) => /\sdata-rh=(['"])true\1/i.test(entry.tag));
-      const keep = helmetCandidate || candidates[0];
+      const keep = helmetCandidate || candidates[candidates.length - 1];
 
       for (const entry of candidates) {
         if (entry.start !== keep.start) remove.add(entry.start);
