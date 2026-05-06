@@ -416,6 +416,26 @@ interface AuthUser {
   discord_tag?: string | null;
 }
 
+function SignInRequired({ returnTo, message }: { returnTo: string; message: string }) {
+  const href = `/auth/steam?return=${encodeURIComponent(returnTo)}`;
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center px-6 text-center gap-5">
+      <h1 className="text-2xl font-semibold">Sign in required</h1>
+      <p className="text-sm text-muted-foreground max-w-md">{message}</p>
+      <a
+        href={href}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
+        Sign in with Steam
+      </a>
+      <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+        Back to home
+      </a>
+    </div>
+  );
+}
+
 function AuthGatedApp() {
   const [user, setUser] = useState<AuthUser | null | undefined>(() => {
     try {
@@ -446,12 +466,12 @@ function AuthGatedApp() {
     return <LandingPage user={user ?? undefined} />;
   }
 
-  // Auth-required routes: redirect to landing if not logged in
+  // Auth-required routes: show a sign-in prompt if not logged in
   if (location.pathname === "/my-trade-ups") {
     if (user === undefined) {
       return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading...</div>;
     }
-    if (!user) return <LandingPage />;
+    if (!user) return <SignInRequired returnTo="/my-trade-ups" message="Sign in with Steam to see your trade-ups." />;
   }
 
   // All other app routes: render publicly. Pass user (may be null/undefined).
