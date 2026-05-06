@@ -242,6 +242,24 @@ function UserMenu({ user }: { user: AuthUser }) {
   );
 }
 
+function NotFoundPage() {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-24 gap-4">
+      <div className="text-5xl font-bold text-muted-foreground/40 tabular-nums">404</div>
+      <h1 className="text-xl font-semibold text-foreground">Page not found</h1>
+      <p className="text-sm text-muted-foreground max-w-md">
+        The page you're looking for doesn't exist or has moved.
+      </p>
+      <a
+        href="/trade-ups"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors"
+      >
+        Go to Trade-Ups
+      </a>
+    </div>
+  );
+}
+
 function AppShell({ user }: { user?: AuthUser | null }) {
   const userIsAdmin = user?.is_admin === true;
   const { status, newDataHint: statusHint, refresh } = useStatus(userIsAdmin);
@@ -380,6 +398,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
         {/* Legacy redirects */}
         <Route path="/dashboard" element={<Navigate to="/trade-ups" replace />} />
         <Route path="/data" element={<Navigate to="/skins" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       </div>
       <SiteFooter />
