@@ -152,7 +152,7 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
                       variant="outline"
                       className="text-[0.65rem] bg-blue-400/10 text-blue-400 border-blue-400/25"
                     >
-                      {c.knife_type_count} knife{c.knife_type_count !== 1 ? "s" : ""}
+                      {c.knife_type_count} {c.knife_type_count === 1 ? "knife" : "knives"}
                     </Badge>
                   )}
                   {c.has_gloves && (
