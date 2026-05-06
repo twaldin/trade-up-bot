@@ -279,19 +279,28 @@ export function PricingPage() {
             </p>
             <div className="space-y-8">
               <div>
-                <img src="/tradeuptable.jpg" alt="Trade-up table" className="rounded-lg border border-border shadow-lg w-full" />
+                <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
                 <p className="text-xs text-muted-foreground text-center mt-3">Trade-up table with profit, EV, chance to profit, and direct listing links</p>
               </div>
               <div>
-                <img src="/expanded.jpg" alt="Expanded trade-up with outcomes" className="rounded-lg border border-border shadow-lg w-full" />
+                <picture>
+                  <source type="image/webp" srcSet="/expanded-375w.webp 375w, /expanded-768w.webp 768w, /expanded-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
+                  <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Expanded trade-up with outcomes" width="2596" height="1822" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
+                </picture>
                 <p className="text-xs text-muted-foreground text-center mt-3">Expanded trade-up showing every possible outcome with probabilities and values</p>
               </div>
               <div>
-                <img src="/dataviewer.jpg" alt="Price data viewer" className="rounded-lg border border-border shadow-lg w-full" />
+                <picture>
+                  <source type="image/webp" srcSet="/dataviewer-375w.webp 375w, /dataviewer-768w.webp 768w, /dataviewer-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
+                  <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Price data viewer" width="2434" height="1498" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
+                </picture>
                 <p className="text-xs text-muted-foreground text-center mt-3">Price data viewer with float vs price scatter chart across all marketplaces</p>
               </div>
               <div>
-                <img src="/collections.jpg" alt="Collection browser" className="rounded-lg border border-border shadow-lg w-full" />
+                <picture>
+                  <source type="image/webp" srcSet="/collections-375w.webp 375w, /collections-768w.webp 768w, /collections-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
+                  <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
+                </picture>
                 <p className="text-xs text-muted-foreground text-center mt-3">Collection browser with knife/glove pool info, listing counts, and profitability filters</p>
               </div>
             </div>
