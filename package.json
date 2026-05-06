@@ -19,7 +19,8 @@
     "test:stress": "vitest run tests/stress/",
     "test:all": "vitest run tests/unit/ tests/integration/ tests/stress/",
     "test:watch": "vitest tests/unit/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "optimize-images": "node scripts/optimize-images.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -80,6 +81,7 @@
     "puppeteer": "^24.40.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sharp": "^0.34.5",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.19.0",

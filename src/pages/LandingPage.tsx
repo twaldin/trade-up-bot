@@ -199,18 +199,27 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Outcome analysis</h2>
                 <p className="text-muted-foreground mb-6">Every possible outcome with probabilities, expected value, and the exact inputs needed. Claim to lock listings for 30 minutes while you buy.</p>
-                <img src="/expanded.jpg" alt="Trade-up outcomes" loading="lazy" width="2596" height="1822" className="rounded-lg border border-border w-full" />
+                <picture>
+                  <source type="image/webp" srcSet="/expanded-375w.webp 375w, /expanded-768w.webp 768w, /expanded-1280w.webp 1280w" sizes="(max-width: 768px) 100vw, 50vw" />
+                  <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 768px) 100vw, 50vw" alt="Trade-up outcomes" width="2596" height="1822" loading="lazy" className="rounded-lg border border-border w-full" />
+                </picture>
               </div>
               <div>
                 <h2 className="text-2xl font-bold mb-3">Price intelligence</h2>
                 <p className="text-muted-foreground mb-6">Float vs price scatter charts with data from CSFloat, DMarket, Skinport, and sale history across every condition.</p>
-                <img src="/dataviewer.jpg" alt="Price data" loading="lazy" width="2434" height="1498" className="rounded-lg border border-border w-full" />
+                <picture>
+                  <source type="image/webp" srcSet="/dataviewer-375w.webp 375w, /dataviewer-768w.webp 768w, /dataviewer-1280w.webp 1280w" sizes="(max-width: 768px) 100vw, 50vw" />
+                  <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 768px) 100vw, 50vw" alt="Price data" width="2434" height="1498" loading="lazy" className="rounded-lg border border-border w-full" />
+                </picture>
               </div>
             </div>
             <div>
               <h2 className="text-2xl font-bold mb-3">89 collections covered</h2>
               <p className="text-muted-foreground mb-6">Browse every collection with knife/glove pool info, listing counts, and profitable trade-ups. Filter by knives, gloves, or profitability.</p>
-              <img src="/collections.jpg" alt="Collections" loading="lazy" width="2624" height="1608" className="rounded-lg border border-border w-full" />
+              <picture>
+                <source type="image/webp" srcSet="/collections-375w.webp 375w, /collections-768w.webp 768w, /collections-1280w.webp 1280w" sizes="100vw" />
+                <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="100vw" alt="Collections" width="2624" height="1608" loading="lazy" className="rounded-lg border border-border w-full" />
+              </picture>
             </div>
             <div className="text-center mt-10">
               <a href="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
