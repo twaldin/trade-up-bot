@@ -20,7 +20,6 @@ improvements.md
 overnight_tracking.md
 notes.md
 RESEARCH.md
-CLAUDE.md
 deployment.md
 optimizations.md
 overnight-notes.md
@@ -36,8 +35,7 @@ scaling.md
 .DS_Store
 Thumbs.db
 
-# CLAUDE.md and docs
-server/**/CLAUDE.md
+# Docs
 docs/
 
 # Content production (raw footage, edited video, screenshots)
