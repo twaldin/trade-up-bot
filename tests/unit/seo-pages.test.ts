@@ -30,4 +30,18 @@ describe("SEO crawler page robustness", () => {
     expect(serverSource).toContain('res.status(404).send("Blog post not found")');
     expect(serverSource).toContain('res.redirect(301, `/blog/${slug}/`)');
   });
+
+  it("static sitemap pages have crawler-specific meaningful fallback content", () => {
+    expect(serverSource).toContain("STATIC_SEO_PAGES");
+    expect(serverSource).toContain("for (const staticPage of STATIC_SEO_PAGES)");
+    expect(serverSource).toContain("bodyHtml: staticPage.bodyHtml");
+    expect(serverSource).toContain("CS2 Trade-Up Calculator");
+    expect(serverSource).toContain("TradeUpBot Features");
+  });
+
+  it("blog sitemap pages render more than excerpt-only body content for crawlers", () => {
+    expect(serverSource).toContain("const blogBodyHtml");
+    expect(serverSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
+    expect(serverSource).toContain("Read related CS2 trade-up guides");
+  });
 });

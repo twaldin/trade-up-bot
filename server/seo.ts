@@ -301,7 +301,12 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   // Replace pre-rendered body inside #root with server-rendered content.
   // React's createRoot().render() replaces #root children on mount, so
   // this content is only visible until JS loads (acts as SSR fallback).
-  if (meta.bodyText) {
+  if (meta.bodyHtml) {
+    result = result.replace(
+      /<div id="root"[^>]*>[\s\S]*?<\/div>\s*(?=<\/body>)/,
+      `<div id="root"><main>${meta.bodyHtml}</main></div>`
+    );
+  } else if (meta.bodyText) {
     result = result.replace(
       /<div id="root"[^>]*>[\s\S]*?<\/div>\s*(?=<\/body>)/,
       `<div id="root"><main><h1>${title}</h1><p>${escapeHtml(meta.bodyText)}</p></main></div>`
