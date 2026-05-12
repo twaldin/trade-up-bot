@@ -81,6 +81,17 @@ ${urls}
 </urlset>`;
 }
 
+export function buildCollectionTradeUpSitemap(base: string, collections: { name: string }[], lastmod: string): string {
+  const urls = collections.map(c =>
+    `  <url><loc>${base}/trade-ups/collection/${collectionToSlug(c.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`
+  ).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>`;
+}
+
 export function sitemapRouter(pool: pg.Pool): Router {
   const router = Router();
   const BASE = "https://tradeupbot.app";
@@ -159,10 +170,7 @@ export function sitemapRouter(pool: pg.Pool): Router {
           AND t.profit_cents > 0
         ORDER BY name
       `);
-      const urls = rows.map((c: { name: string }) =>
-        `  <url><loc>${BASE}/trade-ups/collection/${collectionToSlug(c.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`
-      ).join("\n");
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+      res.send(buildCollectionTradeUpSitemap(BASE, rows, lastmod));
     } catch (e) {
       console.error("Sitemap collection trade-ups error:", e instanceof Error ? e.message : e);
       res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
