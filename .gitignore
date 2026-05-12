@@ -48,3 +48,11 @@ docs/superpowers/
 # flt agent fleet artifacts (per-spawn .flt/ scratch + agent handoff docs)
 .flt/
 handoffs/
+
+# Agent tooling artifacts
+.agents/
+.planning/
+.superpowers/
+AGENTS.md
+server/**/AGENTS.md
+scripts/generate-daily-content.sh
