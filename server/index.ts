@@ -998,15 +998,31 @@ app.use((req, res, next) => {
     };
 
     // SEO: individual blog post pages
-    app.get("/blog/:slug", (req, res, next) => {
-      const post = BLOG_POST_META[req.params.slug];
-      if (!post) return next();
+    // Canonical blog post URLs always include a trailing slash. Use regex
+    // routes so Express' default non-strict routing cannot serve both forms.
+    app.get(/^\/blog\/([^/]+)$/, (req, res, next) => {
+      const slug = req.params[0];
+      const post = BLOG_POST_META[slug];
+      if (!post) {
+        res.status(404).send("Blog post not found");
+        return;
+      }
+      res.redirect(301, `/blog/${slug}/`);
+    });
+
+    app.get(/^\/blog\/([^/]+)\/$/, (req, res, next) => {
+      const slug = req.params[0];
+      const post = BLOG_POST_META[slug];
+      if (!post) {
+        res.status(404).send("Blog post not found");
+        return;
+      }
       const ua = req.headers["user-agent"] || "";
       const title = `${post.title} | TradeUpBot Blog`;
       // Trailing slash matches the URL the server actually serves content
       // at; without it the canonical points at the redirected (non-trailing)
       // form and Google sees a redirect loop on the canonical chain (#95).
-      const url = `https://tradeupbot.app/blog/${req.params.slug}/`;
+      const url = `https://tradeupbot.app/blog/${slug}/`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
