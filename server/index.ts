@@ -183,7 +183,10 @@ app.use((req, res, next) => {
       const { getCollectionSlugMap } = await import("./routes/data.js");
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
-      if (!collectionName) return next();
+      if (!collectionName) {
+        res.status(404).send("Collection trade-up page not found");
+        return;
+      }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
 
       // Get profitable trade-ups for this collection
@@ -294,13 +297,15 @@ app.use((req, res, next) => {
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
   app.get("/trade-ups/:id", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
     try {
       const { rows: [row] } = await pool.query(
         "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json FROM trade_ups WHERE id = $1",
         [req.params.id]
       );
-      if (!row) return next();
+      if (!row) {
+        res.status(404).send("Trade-up not found");
+        return;
+      }
       const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;
       const profit = (row.profit_cents / 100).toFixed(2);
       const cost = (row.total_cost_cents / 100).toFixed(2);
@@ -331,7 +336,7 @@ app.use((req, res, next) => {
 
       const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
 
-      res.send(buildSeoHtml({
+      const meta = {
         title: `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`,
         description: `$${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
         url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
@@ -343,19 +348,30 @@ app.use((req, res, next) => {
           outcomes,
           related,
         ),
-      }));
+      };
+
+      if (isCrawler(ua)) {
+        res.send(buildSeoHtml(meta));
+      } else {
+        const indexPath = path.join(__dirname, "..", "dist", "index.html");
+        if (!fs.existsSync(indexPath)) return next();
+        res.setHeader("Content-Type", "text/html");
+        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+      }
     } catch { next(); }
   });
 
   // SEO: crawler handler for /collections/:slug pages — enriched
   app.get("/collections/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
     try {
       const { getCollectionSlugMap } = await import("./routes/data.js");
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
-      if (!collectionName) return next();
+      if (!collectionName) {
+        res.status(404).send("Collection not found");
+        return;
+      }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
 
       // Collection image
@@ -457,25 +473,33 @@ app.use((req, res, next) => {
         },
       ];
 
-      res.send(buildSeoHtml({
+      const meta = {
         title: `${displayName} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`,
         description: `Browse ${skins.length} skins in the ${displayName} collection. ${totalListings.toLocaleString()} listings from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tuCount} profitable trade-ups.` : ""}`,
         url: `https://tradeupbot.app/collections/${req.params.slug}`,
         ogImage: collectionImageUrl || undefined,
         bodyHtml,
         jsonLd,
-      }));
+      };
+
+      res.setHeader("Content-Type", "text/html");
+      if (isCrawler(ua)) {
+        res.send(buildSeoHtml(meta));
+      } else {
+        const indexPath = path.join(__dirname, "..", "dist", "index.html");
+        if (!fs.existsSync(indexPath)) return next();
+        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+      }
     } catch { next(); }
   });
 
   // SEO: crawler handler for /skins/:slug pages — enriched with structured data
   app.get("/skins/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
-    if (!isCrawler(ua)) return next();
     try {
       // Redis cache: 3600s TTL. Skin data changes infrequently; cache avoids 5s+ cold path per page.
       const cacheKey = `seo_skin:${req.params.slug}`;
-      try {
+      if (isCrawler(ua)) try {
         const { cacheGet } = await import("./redis.js");
         const cached = await cacheGet<string>(cacheKey);
         if (cached) {
@@ -489,7 +513,10 @@ app.use((req, res, next) => {
       const { getSlugMap } = await import("./routes/data.js");
       const slugMap = await getSlugMap(pool);
       const skinName = slugMap.get(req.params.slug);
-      if (!skinName) return next();
+      if (!skinName) {
+        res.status(404).send("Skin not found");
+        return;
+      }
 
       // Skin metadata + listing stats (now includes image_url)
       const { rows: [skinMeta] } = await pool.query(`
@@ -499,7 +526,10 @@ app.use((req, res, next) => {
         WHERE s.name = $1 AND s.stattrak = false
         GROUP BY s.id
       `, [skinName]);
-      if (!skinMeta) return next();
+      if (!skinMeta) {
+        res.status(404).send("Skin not found");
+        return;
+      }
 
       const listingCount = skinMeta.listing_count || 0;
       const minPrice = skinMeta.min_price ? (skinMeta.min_price / 100).toFixed(2) : "N/A";
@@ -768,7 +798,7 @@ app.use((req, res, next) => {
       ];
 
       const tuSuffix = inputTuCount > 0 ? ` ${inputTuCount} profitable trade-ups available.` : "";
-      const html = buildSeoHtml({
+      const meta = {
         title: `${skinName} — CS2 Price, Float Data & Trade-Ups | TradeUpBot`,
         description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} listings on CSFloat, DMarket, Skinport. Float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}.${tuSuffix}`,
         url: `https://tradeupbot.app/skins/${req.params.slug}`,
@@ -776,14 +806,21 @@ app.use((req, res, next) => {
         ogImage: skinMeta.image_url || undefined,
         bodyHtml,
         jsonLd,
-      });
+      };
+      const html = buildSeoHtml(meta);
       // Cache the rendered HTML for 3600s — skin data changes at daemon cycle frequency (~30 min)
-      try {
+      if (isCrawler(ua)) try {
         const { cacheSet } = await import("./redis.js");
         await cacheSet(cacheKey, html, 3600).catch(() => {});
       } catch { /* Redis unavailable */ }
       res.setHeader("Content-Type", "text/html");
-      res.send(html);
+      if (isCrawler(ua)) {
+        res.send(html);
+      } else {
+        const indexPath = path.join(__dirname, "..", "dist", "index.html");
+        if (!fs.existsSync(indexPath)) return next();
+        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+      }
     } catch { next(); }
   });
 
