@@ -576,14 +576,21 @@ app.use((req, res, next) => {
       `, [skinName]);
       const inputTuCount = inputStats?.count || 0;
 
-      // Trade-ups that PRODUCE this skin as OUTPUT
-      const { rows: [outputStats] } = await pool.query(`
-        SELECT COUNT(*)::int as count
-        FROM trade_ups
-        WHERE output_skin_names @> ARRAY[$1]::text[]
-          AND listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
-      `, [skinName]);
-      const outputTuCount = outputStats?.count || 0;
+      // Trade-ups that PRODUCE this skin as OUTPUT.
+      // Some restored/local databases predate the output_skin_names helper column.
+      // Treat that optional count as 0 instead of failing the whole crawler page.
+      let outputTuCount = 0;
+      try {
+        const { rows: [outputStats] } = await pool.query(`
+          SELECT COUNT(*)::int as count
+          FROM trade_ups
+          WHERE output_skin_names @> ARRAY[$1]::text[]
+            AND listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
+        `, [skinName]);
+        outputTuCount = outputStats?.count || 0;
+      } catch (err) {
+        console.warn("Skin SEO output count unavailable:", err instanceof Error ? err.message : err);
+      }
 
       // 30-day price trend: compare first-week median vs last-week median
       const { rows: [priceTrend] } = await pool.query(`
