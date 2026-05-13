@@ -578,6 +578,7 @@ registerRobotsTxtRoute(app);
       const listingCount = skinMeta.listing_count || 0;
       const minPrice = skinMeta.min_price ? (skinMeta.min_price / 100).toFixed(2) : "N/A";
       const maxPrice = skinMeta.max_price ? (skinMeta.max_price / 100).toFixed(2) : "N/A";
+      const floatRangeText = `${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}`;
       const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
 
       // Collections this skin belongs to
@@ -709,12 +710,16 @@ registerRobotsTxtRoute(app);
       const collDisplay = primaryCollection
         ? primaryCollection.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")
         : "";
+      const collectionSummaryForDescription = collDisplay ? ` from the ${collDisplay} collection` : "";
+      const listingSummaryForDescription = listingCount === 1 ? "1 active listing" : `${listingCount.toLocaleString()} active listings`;
       let naturalParagraph = `${e(skinName)} is a ${e(skinMeta.rarity)} quality ${e(skinMeta.weapon)} skin`
         + (collDisplay ? ` from the ${e(collDisplay)} collection` : "")
-        + `. It has a float range of ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}, meaning it comes in ${availableConditions.join(", ")} condition.`;
+        + `. It has a float range of ${floatRangeText}, meaning it comes in ${availableConditions.join(", ")} condition.`;
       if (listingCount > 0) {
         naturalParagraph += ` There are currently ${listingCount.toLocaleString()} active listings across CSFloat, DMarket, and Skinport, with prices ranging from $${minPrice} to $${maxPrice}.`;
       }
+      const researchParagraph = `<p>Use this ${e(skinName)} page as a crawler-readable reference for price research, float planning, and collection context before building a trade-up contract. The listing range shows the current low and high market prices available to TradeUpBot, while the float range shows which wear conditions this skin can naturally support. For trade-up inputs, that float range matters because ten input floats are normalized and averaged to determine the output condition. A cheaper listing is not always the best input if its float pushes the contract away from a valuable boundary, so compare price, condition, collection, rarity, and active supply together.</p>`
+        + `<p>${e(skinName)} also connects into the broader CS2 collection graph. Collection links help you inspect sibling skins, identify compatible rarity tiers, and move from a single skin page into collection-level trade-up opportunities. When profitable contracts exist, the trade-up table below summarizes the best examples using this skin as an input, including cost, expected profit, ROI, and chance to profit. These figures are market-sensitive and should be checked against live listings before purchase.</p>`;
 
       let priceTable = "";
       if (condPrices.length > 0) {
@@ -801,9 +806,10 @@ registerRobotsTxtRoute(app);
         + `<h1>${e(skinName)}</h1>`
         + imgHtml
         + `<p>${naturalParagraph}</p>`
-        + `<p><strong>Weapon:</strong> ${e(skinMeta.weapon)} | <strong>Rarity:</strong> ${e(skinMeta.rarity)} | <strong>Float Range:</strong> ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)} | <strong>Listings:</strong> ${listingCount}</p>`
+        + `<p><strong>Weapon:</strong> ${e(skinMeta.weapon)} | <strong>Rarity:</strong> ${e(skinMeta.rarity)} | <strong>Float Range:</strong> ${floatRangeText} | <strong>Listings:</strong> ${listingCount}</p>`
         + `<p><strong>Available Conditions:</strong> ${availableConditions.join(", ")}</p>`
         + (collections.length > 0 ? `<p><strong>Collections:</strong> ${collLinks}</p>` : "")
+        + researchParagraph
         + tuStatsParagraphs
         + priceTrendHtml
         + priceTable
@@ -850,8 +856,8 @@ registerRobotsTxtRoute(app);
 
       const tuSuffix = inputTuCount > 0 ? ` ${inputTuCount} profitable trade-ups available.` : "";
       const meta = {
-        title: `${skinName} — CS2 Price, Float Data & Trade-Ups | TradeUpBot`,
-        description: `${skinName} prices from $${minPrice} to $${maxPrice}. ${listingCount} listings on CSFloat, DMarket, Skinport. Float range ${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}.${tuSuffix}`,
+        title: `${skinName} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`,
+        description: `${skinName}${collectionSummaryForDescription} prices from $${minPrice} to $${maxPrice}. ${listingSummaryForDescription} on CSFloat, DMarket, Skinport. Float range ${floatRangeText}.${tuSuffix}`,
         url: `https://tradeupbot.app/skins/${req.params.slug}`,
         robots,
         ogImage: skinMeta.image_url || undefined,
