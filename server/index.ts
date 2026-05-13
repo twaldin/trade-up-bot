@@ -1058,51 +1058,70 @@ app.use((req, res, next) => {
     });
 
     // Blog post metadata inlined to avoid importing from src/ (frontend module boundary)
-    const BLOG_POST_META: Record<string, { title: string; excerpt: string; publishedAt: string; author: string }> = {
+    const BLOG_POST_META: Record<string, { title: string; excerpt: string; publishedAt: string; author: string; faq?: { question: string; answer: string }[] }> = {
       "how-cs2-trade-ups-work": {
-        title: "How CS2 Trade-Up Contracts Actually Work",
-        excerpt: "The real mechanics behind trade-up contracts: input rules, float calculation formula, condition boundaries, and the mistakes that cost people money.",
+        title: "How CS2 Trade-Ups Work: 10 Skins, Float & Profit",
+        excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, odds, and fees. Use this guide to calculate smarter contracts before buying.",
         publishedAt: "2026-03-15",
         author: "TradeUpBot Team",
       },
       "profitable-trade-ups-theory-vs-reality": {
-        title: "Why Most CS2 Trade-Up Calculators Are Wrong — Theory vs. Real Listings",
-        excerpt: "Theoretical calculators promise big profits — then reality hits. Here's the exact reason theory-only tools consistently overstate returns, and why checking real marketplace listings before you commit changes everything.",
+        title: "CS2 Trade-Up Calculators Are Wrong: $2,778 Data Test",
+        excerpt: "See the $2,778 theory-vs-reality gap in CS2 trade-up calculators. Compare real listings, fees, and floats before you trust profit claims.",
         publishedAt: "2026-03-16",
         author: "TradeUpBot Team",
       },
       "cs2-trade-up-float-values-guide": {
-        title: "CS2 Float Ranges Explained: How Adjusted Float Actually Works in CS2",
-        excerpt: "CS2 float values range 0–1 and set permanent skin wear. In trade-up contracts, adjusted float — not raw float — determines your output condition. Learn the exact formula, the five condition boundaries, and float targeting strategies.",
+        title: "CS2 Float Values Guide: Ranges, Conditions & Trade-Ups",
+        excerpt: "Master CS2 float values, condition ranges, and adjusted-float trade-up math. Use the table and FAQ to target better outputs today.",
         publishedAt: "2026-03-17",
         author: "TradeUpBot Team",
+        faq: [
+          { question: "What are CS2 float values?", answer: "CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred." },
+          { question: "What float is Factory New in CS2?", answer: "Factory New covers floats from 0.00 up to 0.07. Minimal Wear starts at 0.07, so tiny float differences near that boundary can create large price changes." },
+          { question: "How does adjusted float affect trade-ups?", answer: "Adjusted float normalizes each input within its own min and max range, averages those values, and maps the average onto the output skin range." },
+        ],
       },
       "how-to-use-tradeupbot": {
-        title: "How to Find Profitable CS2 Trade-Ups with TradeUpBot",
-        excerpt: "A practical walkthrough of TradeUpBot: browsing trade-ups, reading the table, using Verify and Claim, and getting the most out of each subscription tier.",
+        title: "How to Use TradeUpBot to Find Profitable Trade-Ups",
+        excerpt: "Learn how to use TradeUpBot to find profitable CS2 trade-ups, verify live listings, claim inputs, and compare risk before you buy.",
         publishedAt: "2026-03-18",
         author: "TradeUpBot Team",
+        faq: [
+          { question: "What does TradeUpBot do?", answer: "TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by net profit, ROI, chance-to-profit, input cost, and output distribution." },
+          { question: "Should I verify a trade-up before buying inputs?", answer: "Yes. Verification checks whether each marketplace listing still exists and updates prices before you commit money to the contract." },
+          { question: "What does claiming a trade-up do?", answer: "Claiming hides the trade-up inputs from other TradeUpBot users for 30 minutes, giving Pro users time to purchase the linked listings." },
+        ],
       },
       "cs2-trade-up-marketplace-fees": {
-        title: "CSFloat Seller Fee (2%), DMarket & Skinport: CS2 Trade-Up Marketplace Costs",
-        excerpt: "CSFloat charges a 2% seller fee + buyer fee. DMarket: 2% seller + 2.5% buyer. Skinport: 12% seller. See how these fees affect your CS2 trade-up profitability.",
+        title: "3 CS2 Marketplace Fees That Can Kill Trade-Up Profit",
+        excerpt: "Compare CSFloat, DMarket, and Skinport fees with real trade-up math. Check the fee traps before your next contract loses profit.",
         publishedAt: "2026-03-19",
         author: "TradeUpBot Team",
+        faq: [
+          { question: "Which CS2 marketplace has the lowest buyer fee?", answer: "Skinport has no buyer fee, DMarket charges a 2.5% buyer fee, and CSFloat adds a 2.8% deposit fee plus a flat $0.30 cost." },
+          { question: "Which marketplace is best for selling CS2 trade-up outputs?", answer: "CSFloat and DMarket usually net more for outputs because both charge 2% seller fees, while Skinport takes 12% from sellers." },
+          { question: "Do marketplace fees change trade-up EV?", answer: "Yes. Buyer fees raise input cost and seller fees reduce output value, so thin-margin trade-ups can turn negative after fees." },
+        ],
       },
       "best-cs2-collections-knife-trade-ups-2026": {
-        title: "7 Best CS2 Collections for Knife Trade-Ups in 2026 (With Real Profit Data)",
-        excerpt: "Not all knife trade-up collections are equal. We ranked the top 7 using real listing data — profit margins, knife pool size, and input availability — so you know which cases are actually worth building around right now.",
+        title: "7 Best CS2 Knife Trade-Up Collections by 2026 Data",
+        excerpt: "Discover the 7 best CS2 knife trade-up collections using real 2026 data on input prices, knife pools, and downside risk before buying.",
         publishedAt: "2026-03-20",
         author: "TradeUpBot Team",
+        faq: [
+          { question: "How many skins do knife trade-ups need?", answer: "Knife and glove trade-ups use 5 Covert inputs rather than the 10 inputs used by normal gun-skin trade-up contracts." },
+          { question: "What makes a CS2 collection good for knife trade-ups?", answer: "Strong collections have affordable Covert inputs, valuable knife or glove pools, enough listing availability, and output float ranges that make premium conditions reachable." },
+          { question: "Can you mix collections in knife trade-ups?", answer: "You can only mix collections when their cases share compatible knife or glove pools; otherwise the output pool and contract rules will not line up." },
+        ],
       },
       "cs2-trade-up-probability-expected-value": {
-        title: "Understanding CS2 Trade-Up Probability and Expected Value",
-        excerpt: "How outcome probabilities are calculated, what expected value actually tells you, and why chance-to-profit matters more than EV for most traders.",
+        title: "How to Use CS2 Trade-Up Probability and EV Wisely",
+        excerpt: "Learn how to use CS2 trade-up probability, expected value, and chance-to-profit with a $80 example before choosing risky contracts.",
         publishedAt: "2026-03-21",
         author: "TradeUpBot Team",
       },
     };
-
     // SEO: individual blog post pages
     // Canonical blog post URLs always include a trailing slash. Use regex
     // routes so Express' default non-strict routing cannot serve both forms.
@@ -1129,7 +1148,10 @@ app.use((req, res, next) => {
       // at; without it the canonical points at the redirected (non-trailing)
       // form and Google sees a redirect loop on the canonical chain (#95).
       const url = `https://tradeupbot.app/blog/${slug}/`;
-      const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1><p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p><p>${escapeHtml(post.excerpt)}</p><p>This TradeUpBot guide is part of our CS2 trade-up library for players who want practical, marketplace-aware contract analysis. Use it to understand how input prices, output probabilities, float values, condition boundaries, and platform fees affect expected value before you buy skins.</p><p>Trade-up contracts are most useful when theory is connected to real listings. After reading, compare the lesson against current opportunities in the live trade-up table, inspect relevant skin prices, and review collection-level trade-up pages to see how the same mechanics behave with current CSFloat, DMarket, and Skinport data.</p><p><a href="/trade-ups">Browse live profitable CS2 trade-ups</a>, <a href="/calculator">estimate a contract with the calculator</a>, and <a href="/blog">Read related CS2 trade-up guides</a>.</p></article>`;
+      const faqBodyHtml = post.faq
+        ? `<h2>FAQ</h2>${post.faq.map((item) => `<h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p>`).join("")}`
+        : "";
+      const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1><p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p><p>${escapeHtml(post.excerpt)}</p><p>This TradeUpBot guide is part of our CS2 trade-up library for players who want practical, marketplace-aware contract analysis. Use it to understand how input prices, output probabilities, float values, condition boundaries, and platform fees affect expected value before you buy skins.</p><p>Trade-up contracts are most useful when theory is connected to real listings. After reading, compare the lesson against current opportunities in the live trade-up table, inspect relevant skin prices, and review collection-level trade-up pages to see how the same mechanics behave with current CSFloat, DMarket, and Skinport data.</p><p><a href="/trade-ups">Browse live profitable CS2 trade-ups</a>, <a href="/calculator">estimate a contract with the calculator</a>, and <a href="/blog">Read related CS2 trade-up guides</a>.</p>${faqBodyHtml}</article>`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
@@ -1137,16 +1159,27 @@ app.use((req, res, next) => {
           description: post.excerpt,
           url,
           bodyHtml: blogBodyHtml,
-          jsonLd: {
-            "@context": "https://schema.org",
-            "@type": "BlogPosting",
-            headline: post.title,
-            description: post.excerpt,
-            datePublished: post.publishedAt,
-            author: { "@type": "Organization", name: post.author },
-            publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
-            mainEntityOfPage: url,
-          },
+          jsonLd: [
+            {
+              "@context": "https://schema.org",
+              "@type": "BlogPosting",
+              headline: post.title,
+              description: post.excerpt,
+              datePublished: post.publishedAt,
+              author: { "@type": "Organization", name: post.author },
+              publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
+              mainEntityOfPage: url,
+            },
+            ...(post.faq ? [{
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: post.faq.map((item) => ({
+                "@type": "Question",
+                name: item.question,
+                acceptedAnswer: { "@type": "Answer", text: item.answer },
+              })),
+            }] : []),
+          ],
         }));
       } else {
         res.send(injectMetaIntoSpa(indexHtml, { title, description: post.excerpt, url, bodyHtml: blogBodyHtml }));

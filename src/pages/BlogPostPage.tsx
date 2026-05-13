@@ -22,6 +22,28 @@ export function BlogPostPage() {
   }
 
   const relatedPosts = blogPosts.filter((p) => p.slug !== post.slug).slice(0, 2);
+  const blogPostingJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt,
+    datePublished: post.publishedAt,
+    author: { "@type": "Organization", name: post.author },
+    publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
+    mainEntityOfPage: `https://tradeupbot.app/blog/${post.slug}/`,
+  };
+  const faqJsonLd = post.faq
+    ? {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: post.faq.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: { "@type": "Answer", text: item.answer },
+        })),
+      }
+    : undefined;
+  const jsonLd = faqJsonLd ? [blogPostingJsonLd, faqJsonLd] : blogPostingJsonLd;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
@@ -35,16 +57,7 @@ export function BlogPostPage() {
         <meta property="og:type" content="article" />
         <meta property="article:published_time" content={post.publishedAt} />
         <meta property="article:author" content={post.author} />
-        <script type="application/ld+json">{JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "BlogPosting",
-          "headline": post.title,
-          "description": post.excerpt,
-          "datePublished": post.publishedAt,
-          "author": { "@type": "Organization", "name": post.author },
-          "publisher": { "@type": "Organization", "name": "TradeUpBot", "url": "https://tradeupbot.app" },
-          "mainEntityOfPage": `https://tradeupbot.app/blog/${post.slug}/`
-        })}</script>
+        <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>
       </Helmet>
       <SiteNav />
 

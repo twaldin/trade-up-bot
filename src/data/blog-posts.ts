@@ -6,18 +6,21 @@ export interface BlogPost {
   publishedAt: string;
   readTime: string;
   author: string;
+  faq?: { question: string; answer: string }[];
 }
 
 export const blogPosts: BlogPost[] = [
   {
     slug: "how-cs2-trade-ups-work",
-    title: "How CS2 Trade-Up Contracts Actually Work",
-    excerpt: "The real mechanics behind trade-up contracts: input rules, float calculation formula, condition boundaries, and the mistakes that cost people money.",
+    title: "How CS2 Trade-Ups Work: 10 Skins, Float & Profit",
+    excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, odds, and fees. Use this guide to calculate smarter contracts before buying.",
     publishedAt: "2026-03-15",
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Trade-up contracts are one of the few ways to consistently extract value from the CS2 skin market without relying on case opening luck. But most people get the mechanics wrong, and that costs them money.</p>
+<p>CS2 trade-ups are contracts where 10 same-rarity skins become one higher-rarity output, with the result weighted by collection and priced by exact float. To profit, you must calculate input cost, adjusted float, output odds, and marketplace fees before buying anything.</p>
+
+<p>For live examples, <a href="/trade-ups">browse current CS2 trade-up contracts</a> or use the <a href="/calculator">CS2 trade-up calculator</a> to test your own 10-skin setup.</p>
 
 <h2>The Basic Mechanic</h2>
 
@@ -82,13 +85,15 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "profitable-trade-ups-theory-vs-reality",
-    title: "Why Most CS2 Trade-Up Calculators Are Wrong — Theory vs. Real Listings",
-    excerpt: "Theoretical calculators promise big profits — then reality hits. Here's the exact reason theory-only tools consistently overstate returns, and why checking real marketplace listings before you commit changes everything.",
+    title: "CS2 Trade-Up Calculators Are Wrong: $2,778 Data Test",
+    excerpt: "See the $2,778 theory-vs-reality gap in CS2 trade-up calculators. Compare real listings, fees, and floats before you trust profit claims.",
     publishedAt: "2026-03-16",
     readTime: "7 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Most trade-up calculators on the internet work the same way: you pick a target output, the tool suggests which input skins to use, and it tells you the expected profit. The number looks great. Then you try to actually do the trade-up and the profit evaporates.</p>
+<p>CS2 trade-up calculator profits often fail when theory meets real listings: ideal floats are missing, cheap inputs sell out, and fees erase margins. Our $2,778 data test showed why marketplace-backed calculations beat theoretical recipes for anyone trying to execute profitable contracts.</p>
+
+<p>Compare theory against reality by checking <a href="/trade-ups">live marketplace-backed trade-ups</a> and reviewing <a href="/blog/cs2-trade-up-float-values-guide/">CS2 float value math</a> before trusting any profit estimate.</p>
 
 <p>We built TradeUpBot specifically because we kept running into this problem. Here's what goes wrong and why real-listing-based discovery is the only approach that works.</p>
 
@@ -159,13 +164,15 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "cs2-trade-up-float-values-guide",
-    title: "CS2 Float Ranges Explained: How Adjusted Float Actually Works in CS2",
-    excerpt: "CS2 float values range 0–1 and set permanent skin wear. In trade-up contracts, adjusted float — not raw float — determines your output condition. Learn the exact formula, the five condition boundaries, and float targeting strategies.",
+    title: "CS2 Float Values Guide: Ranges, Conditions & Trade-Ups",
+    excerpt: "Master CS2 float values, condition ranges, and adjusted-float trade-up math. Use the table and FAQ to target better outputs today.",
     publishedAt: "2026-03-17",
     readTime: "7 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Float values are the entire game in trade-up contracts. Two Factory New skins at $10 each can have completely different trade-up value depending on their exact float. Understanding this is the difference between consistent profits and random losses.</p>
+<p>CS2 float values are permanent wear numbers from 0 to 1 that determine skin condition and trade-up output quality. In trade-up contracts, adjusted float maps each input to its own float range, then projects the average onto the output skin.</p>
+
+<p>After learning the ranges, test exact inputs in the <a href="/calculator">CS2 trade-up calculator</a> or compare active opportunities on the <a href="/trade-ups">live trade-up table</a>.</p>
 
 <h2>Float Values Explained</h2>
 
@@ -246,17 +253,36 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p><strong>Small float differences in inputs compound.</strong> Replacing one input skin with a float 0.02 lower reduces the average adjusted float by 0.002 (in a 10-input trade-up). That might not sound like much, but when you're right at the 0.07 boundary, 0.002 is the difference between FN and MW — and potentially hundreds of dollars in output value.</p>
 
 <p><strong>Check input float ranges before buying.</strong> A "cheap" input that looks like a great deal might have a narrow float range that gives it a high adjusted float, dragging your output toward a worse condition. Always calculate the adjusted float, not just the raw float.</p>
+
+<h2>FAQ</h2>
+
+<h3>What are CS2 float values?</h3>
+<p>CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred.</p>
+
+<h3>What float is Factory New in CS2?</h3>
+<p>Factory New covers floats from 0.00 up to 0.07. Minimal Wear starts at 0.07, so tiny float differences near that boundary can create large price changes.</p>
+
+<h3>How does adjusted float affect trade-ups?</h3>
+<p>Adjusted float normalizes each input within its own min and max range, averages those values, and maps the average onto the output skin range.</p>
+
 `,
+    faq: [
+      { question: "What are CS2 float values?", answer: "CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred." },
+      { question: "What float is Factory New in CS2?", answer: "Factory New covers floats from 0.00 up to 0.07. Minimal Wear starts at 0.07, so tiny float differences near that boundary can create large price changes." },
+      { question: "How does adjusted float affect trade-ups?", answer: "Adjusted float normalizes each input within its own min and max range, averages those values, and maps the average onto the output skin range." },
+    ],
   },
   {
     slug: "how-to-use-tradeupbot",
-    title: "How to Find Profitable CS2 Trade-Ups with TradeUpBot",
-    excerpt: "A practical walkthrough of TradeUpBot: browsing trade-ups, reading the table, using Verify and Claim, and getting the most out of each subscription tier.",
+    title: "How to Use TradeUpBot to Find Profitable Trade-Ups",
+    excerpt: "Learn how to use TradeUpBot to find profitable CS2 trade-ups, verify live listings, claim inputs, and compare risk before you buy.",
     publishedAt: "2026-03-18",
     readTime: "5 min read",
     author: "TradeUpBot Team",
     content: `
-<p>TradeUpBot finds profitable CS2 trade-up contracts by scanning real marketplace listings across CSFloat, DMarket, and Skinport. This guide walks through the platform from sign-up to executing your first trade-up.</p>
+<p>TradeUpBot is a CS2 trade-up scanner that finds profitable contracts from real CSFloat, DMarket, and Skinport listings, then ranks them by profit, ROI, risk, and chance-to-profit. Use it to verify listings, claim opportunities, and compare outcomes before buying inputs safely.</p>
+
+<p>Start with the <a href="/trade-ups">live trade-up table</a>, then check account limits on <a href="/pricing">TradeUpBot pricing</a> before using Verify or Claim on real listings.</p>
 
 <h2>Getting Started</h2>
 
@@ -324,17 +350,36 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p><strong>Use filters to focus.</strong> If you have a budget of $50, filter by cost range. If you only want knife trade-ups, use the tier tab. If you're interested in a specific collection, search for it. The less noise in your view, the faster you find actionable opportunities.</p>
 
 <p>For more detailed answers to common questions, check the <a href="/faq">FAQ page</a>.</p>
+
+<h2>FAQ</h2>
+
+<h3>What does TradeUpBot do?</h3>
+<p>TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by net profit, ROI, chance-to-profit, input cost, and output distribution.</p>
+
+<h3>Should I verify a trade-up before buying inputs?</h3>
+<p>Yes. Verification checks whether each marketplace listing still exists and updates prices before you commit money to the contract.</p>
+
+<h3>What does claiming a trade-up do?</h3>
+<p>Claiming hides the trade-up inputs from other TradeUpBot users for 30 minutes, giving Pro users time to purchase the linked listings.</p>
+
 `,
+    faq: [
+      { question: "What does TradeUpBot do?", answer: "TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by net profit, ROI, chance-to-profit, input cost, and output distribution." },
+      { question: "Should I verify a trade-up before buying inputs?", answer: "Yes. Verification checks whether each marketplace listing still exists and updates prices before you commit money to the contract." },
+      { question: "What does claiming a trade-up do?", answer: "Claiming hides the trade-up inputs from other TradeUpBot users for 30 minutes, giving Pro users time to purchase the linked listings." },
+    ],
   },
   {
     slug: "cs2-trade-up-marketplace-fees",
-    title: "CSFloat Seller Fee (2%), DMarket & Skinport: CS2 Trade-Up Marketplace Costs",
-    excerpt: "CSFloat charges a 2% seller fee + buyer fee. DMarket: 2% seller + 2.5% buyer. Skinport: 12% seller. See how these fees affect your CS2 trade-up profitability.",
+    title: "3 CS2 Marketplace Fees That Can Kill Trade-Up Profit",
+    excerpt: "Compare CSFloat, DMarket, and Skinport fees with real trade-up math. Check the fee traps before your next contract loses profit.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Marketplace fees are the single most overlooked factor in trade-up profitability. A trade-up that looks like $10 profit on paper can become $3 after fees — or go negative entirely. Every marketplace charges differently, on different sides of the transaction, and the math changes depending on whether you're buying inputs or selling outputs.</p>
+<p>CS2 marketplace fees are buyer and seller charges from CSFloat, DMarket, and Skinport that change whether a trade-up is actually profitable. A contract that shows $15 raw profit can fall near breakeven once deposit fees, buyer fees, and seller commissions are included.</p>
+
+<p>Use the <a href="/calculator">trade-up calculator</a> to model fees before buying, then compare results against <a href="/trade-ups">live profitable CS2 trade-ups</a> that already include fee math.</p>
 
 <h2>The Three Fee Structures</h2>
 
@@ -393,17 +438,36 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>For trade-up inputs, this means the "cheapest" listing isn't always on the marketplace with the lowest sticker price. A skin listed at $9.50 on Skinport (total cost: $9.50) is cheaper than the same skin at $9.00 on CSFloat (total cost: $9.00 * 1.028 + $0.30 = $9.55). Always compare total cost after fees, not listing price.</p>
 
 <p>TradeUpBot handles this automatically. When it selects inputs for a trade-up, it's comparing total acquisition cost across all three marketplaces, not raw listing prices. The cheapest listing price is not always the cheapest input.</p>
+
+<h2>FAQ</h2>
+
+<h3>Which CS2 marketplace has the lowest buyer fee?</h3>
+<p>Skinport has no buyer fee, DMarket charges a 2.5% buyer fee, and CSFloat adds a 2.8% deposit fee plus a flat $0.30 cost.</p>
+
+<h3>Which marketplace is best for selling CS2 trade-up outputs?</h3>
+<p>CSFloat and DMarket usually net more for outputs because both charge 2% seller fees, while Skinport takes 12% from sellers.</p>
+
+<h3>Do marketplace fees change trade-up EV?</h3>
+<p>Yes. Buyer fees raise input cost and seller fees reduce output value, so thin-margin trade-ups can turn negative after fees.</p>
+
 `,
+    faq: [
+      { question: "Which CS2 marketplace has the lowest buyer fee?", answer: "Skinport has no buyer fee, DMarket charges a 2.5% buyer fee, and CSFloat adds a 2.8% deposit fee plus a flat $0.30 cost." },
+      { question: "Which marketplace is best for selling CS2 trade-up outputs?", answer: "CSFloat and DMarket usually net more for outputs because both charge 2% seller fees, while Skinport takes 12% from sellers." },
+      { question: "Do marketplace fees change trade-up EV?", answer: "Yes. Buyer fees raise input cost and seller fees reduce output value, so thin-margin trade-ups can turn negative after fees." },
+    ],
   },
   {
     slug: "best-cs2-collections-knife-trade-ups-2026",
-    title: "7 Best CS2 Collections for Knife Trade-Ups in 2026 (With Real Profit Data)",
-    excerpt: "Not all knife trade-up collections are equal. We ranked the top 7 using real listing data — profit margins, knife pool size, and input availability — so you know which cases are actually worth building around right now.",
+    title: "7 Best CS2 Knife Trade-Up Collections by 2026 Data",
+    excerpt: "Discover the 7 best CS2 knife trade-up collections using real 2026 data on input prices, knife pools, and downside risk before buying.",
     publishedAt: "2026-03-20",
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Knife trade-ups are the highest-stakes contracts in CS2: 5 Covert inputs, typically $30-150 each, for a shot at a knife or glove that could be worth $200 to $10,000+. The collection you build your trade-up around determines everything — which knives are possible, how many outcomes dilute your odds, and what the floor looks like when you miss.</p>
+<p>CS2 knife trade-up collections determine which knife or glove pool your 5 Covert inputs can hit, how diluted your odds are, and how painful the worst outcome becomes. The best collections combine affordable inputs, premium knife pools, and manageable float requirements.</p>
+
+<p>Research candidate pools in the <a href="/collections">CS2 collections browser</a> and compare knife opportunities on the <a href="/trade-ups">live trade-up table</a> before funding a high-stakes contract.</p>
 
 <h2>How Knife Outputs Work</h2>
 
@@ -452,17 +516,36 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>In practice, the best knife trade-ups tend to use collections where the Covert skins are cheap relative to the knife pool's expected value. If a collection's Covert skin trades at $35 and the average knife output is worth $250, the math works. If the Covert input costs $120, you need the average knife output to justify $600+ in total inputs — which limits you to pools with mostly high-value knife types.</p>
 
 <p>TradeUpBot's discovery engine evaluates all of this automatically. It scans every available Covert listing, tests each valid 5-input combination against the full knife output pool (including per-phase Doppler pricing), and only surfaces trade-ups where the expected value exceeds total input cost after fees.</p>
+
+<h2>FAQ</h2>
+
+<h3>How many skins do knife trade-ups need?</h3>
+<p>Knife and glove trade-ups use 5 Covert inputs rather than the 10 inputs used by normal gun-skin trade-up contracts.</p>
+
+<h3>What makes a CS2 collection good for knife trade-ups?</h3>
+<p>Strong collections have affordable Covert inputs, valuable knife or glove pools, enough listing availability, and output float ranges that make premium conditions reachable.</p>
+
+<h3>Can you mix collections in knife trade-ups?</h3>
+<p>You can only mix collections when their cases share compatible knife or glove pools; otherwise the output pool and contract rules will not line up.</p>
+
 `,
+    faq: [
+      { question: "How many skins do knife trade-ups need?", answer: "Knife and glove trade-ups use 5 Covert inputs rather than the 10 inputs used by normal gun-skin trade-up contracts." },
+      { question: "What makes a CS2 collection good for knife trade-ups?", answer: "Strong collections have affordable Covert inputs, valuable knife or glove pools, enough listing availability, and output float ranges that make premium conditions reachable." },
+      { question: "Can you mix collections in knife trade-ups?", answer: "You can only mix collections when their cases share compatible knife or glove pools; otherwise the output pool and contract rules will not line up." },
+    ],
   },
   {
     slug: "cs2-trade-up-probability-expected-value",
-    title: "Understanding CS2 Trade-Up Probability and Expected Value",
-    excerpt: "How outcome probabilities are calculated, what expected value actually tells you, and why chance-to-profit matters more than EV for most traders.",
+    title: "How to Use CS2 Trade-Up Probability and EV Wisely",
+    excerpt: "Learn how to use CS2 trade-up probability, expected value, and chance-to-profit with a $80 example before choosing risky contracts.",
     publishedAt: "2026-03-21",
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Every trade-up contract is a bet. You know the possible outcomes, you know the probabilities, and you can calculate the expected value before you commit. But most traders fixate on EV and ignore the metric that actually determines whether they make money: chance-to-profit.</p>
+<p>CS2 trade-up probability measures which output you can hit, while expected value estimates average profit after input cost. Use both with chance-to-profit: a +$36 EV contract can still lose money 35% of the time if the output distribution is volatile.</p>
+
+<p>Sort <a href="/trade-ups">live trade-ups by chance-to-profit</a> to see probability in practice, or run scenarios in the <a href="/calculator">CS2 trade-up calculator</a> before risking inputs.</p>
 
 <h2>How Trade-Up Probabilities Work</h2>
 
