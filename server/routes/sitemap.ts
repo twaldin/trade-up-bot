@@ -16,6 +16,7 @@ const BLOG_SLUGS = [
   "cs2-trade-up-probability-expected-value",
   "cs2-trade-up-calculator-guide",
   "how-do-cs2-trade-ups-work",
+  "best-cs2-trade-up-simulator",
 ];
 
 export const ROBOTS_TXT = [
