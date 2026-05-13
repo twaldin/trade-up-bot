@@ -726,7 +726,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "8 min read",
     author: "TradeUpBot Team",
     content: `
-<p>How do CS2 trade ups work? For players asking how do CSGO trade ups work after the move to CS2, a trade up contract exchanges 10 same-rarity weapon skins for one random higher-rarity skin, with odds based on input collections and condition based on adjusted float math.</p>
+<p>CS2 trade ups are Counter-Strike contracts that let players exchange 10 same-rarity weapon skins for one random higher-rarity skin. For anyone asking how do CSGO trade ups work in CS2, the answer is collection-weighted odds plus deterministic output float math from the inputs.</p>
 
 <p>If you want to test a real contract while reading, open the <a href="/calculator">CS2 trade up calculator</a>, compare examples on the <a href="/trade-ups">live CS2 trade-ups page</a>, and research current prices in the <a href="/skins">CS2 skin database</a>.</p>
 
