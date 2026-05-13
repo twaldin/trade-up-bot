@@ -39,9 +39,11 @@ describe("SEO crawler page robustness", () => {
     expect(serverSource).toContain("TradeUpBot Features");
   });
 
-  it("blog sitemap pages render more than excerpt-only body content for crawlers", () => {
+  it("blog sitemap pages render actual blog post content for crawlers", () => {
+    expect(serverSource).toContain('import { blogPosts, type BlogPost } from "../src/data/blog-posts.js";');
+    expect(serverSource).toContain("const BLOG_POST_META: Record<string, BlogPost>");
     expect(serverSource).toContain("const blogBodyHtml");
     expect(serverSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
-    expect(serverSource).toContain("Read related CS2 trade-up guides");
+    expect(serverSource).toContain("${post.content}</article>");
   });
 });

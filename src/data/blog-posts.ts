@@ -372,14 +372,15 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   {
     slug: "cs2-trade-up-marketplace-fees",
     title: "3 CS2 Marketplace Fees That Can Kill Trade-Up Profit",
-    excerpt: "Compare CSFloat, DMarket, and Skinport fees with real trade-up math. Check the fee traps before your next contract loses profit.",
+    excerpt: "Compare CSFloat, DMarket, and Skinport fees from 0% buyer fees to 12% seller cuts. Check fee traps before your next contract.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
     author: "TradeUpBot Team",
     content: `
 <p>CS2 marketplace fees are buyer and seller charges from CSFloat, DMarket, and Skinport that change whether a trade-up is actually profitable. A contract that shows $15 raw profit can fall near breakeven once deposit fees, buyer fees, and seller commissions are included.</p>
 
-<p>Use the <a href="/calculator">trade-up calculator</a> to model fees before buying, then compare results against <a href="/trade-ups">live profitable CS2 trade-ups</a> that already include fee math.</p>
+<p>Use the <a href="/calculator">trade-up calculator</a> to model fees before buying.</p>
+<p>Then compare results against <a href="/trade-ups">live profitable CS2 trade-ups</a> that already include fee math, or research input prices in the <a href="/skins">CS2 skin price database</a>.</p>
 
 <h2>The Three Fee Structures</h2>
 
