@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Express } from "express";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
@@ -15,6 +15,21 @@ const BLOG_SLUGS = [
   "best-cs2-collections-knife-trade-ups-2026",
   "cs2-trade-up-probability-expected-value",
 ];
+
+export const ROBOTS_TXT = [
+  "User-agent: *",
+  "Allow: /",
+  "Disallow: /auth/",
+  "Disallow: /api/",
+  "Sitemap: https://tradeupbot.app/sitemap.xml",
+].join("\n");
+
+export function registerRobotsTxtRoute(app: Express): void {
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain");
+    res.send(ROBOTS_TXT);
+  });
+}
 
 export function buildSitemapIndex(base: string, lastmod: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>

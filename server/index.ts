@@ -18,7 +18,7 @@ import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
-import { sitemapRouter } from "./routes/sitemap.js";
+import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
@@ -166,6 +166,10 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Serve robots.txt dynamically before the dist/ static middleware so stale
+// build artifacts cannot override the canonical crawler directives.
+registerRobotsTxtRoute(app);
 
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
