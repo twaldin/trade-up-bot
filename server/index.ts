@@ -468,9 +468,7 @@ registerRobotsTxtRoute(app);
         skinTablesHtml += `<h2>${e(rarity)} (${rs.length})</h2><table><thead><tr><th>Skin</th><th>Weapon</th><th>Listings</th><th>From</th></tr></thead><tbody>${rows}</tbody></table>`;
       }
 
-      const tuLink = tuCount > 0
-        ? `<p><strong>${tuCount} profitable trade-ups</strong> use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">View ${displayName} trade-ups</a></p>`
-        : "";
+      const tuLink = `<p><strong>${tuCount} profitable trade-ups</strong> currently use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">Explore ${displayName} trade-up contracts</a></p>`;
 
       const collImageHtml = collectionImageUrl
         ? `<img src="${e(collectionImageUrl)}" alt="${e(displayName)} collection CS2" width="200" height="200" />`
@@ -482,11 +480,16 @@ registerRobotsTxtRoute(app);
         + `<li>${e(displayName)} Collection</li>`
         + `</ol></nav>`;
       const collRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
-        + (tuCount > 0 ? `<li><a href="/trade-ups/collection/${req.params.slug}">${e(displayName)} trade-up contracts</a></li>` : "")
+        + `<li><a href="/trade-ups/collection/${req.params.slug}">${e(displayName)} trade-up contracts</a></li>`
         + `<li><a href="/collections">All CS2 collections</a></li>`
         + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
         + `<li><a href="/skins">Browse all CS2 skins</a></li>`
         + `</ul></nav>`;
+      const collectionOverviewHtml = `<h2>Collection trade-up research</h2>`
+        + `<p>The ${e(displayName)} Collection matters for trade-up planning because collection membership changes the output pool, not just the cosmetic theme. `
+        + `A contract using ${e(displayName)} inputs can roll next-rarity skins from this collection according to the collection weights represented by the 10 input skins. `
+        + `That makes rarity depth, listing supply, float ranges, and floor prices important signals when comparing contracts. Use the rarity sections below to see how many skins are available at each tier, which weapons appear in the collection, and where the cheapest active listings start. `
+        + `For profitable trade-ups, TradeUpBot combines these collection details with real marketplace prices, deterministic output-float math, CSFloat, DMarket, and Skinport data, then links the live opportunities on the dedicated collection trade-up page.</p>`;
       const bodyHtml = collBreadcrumb
         + `<h1>${e(displayName)} Collection</h1>`
         + collImageHtml
@@ -494,6 +497,7 @@ registerRobotsTxtRoute(app);
         + `There are currently ${totalListings.toLocaleString()} active listings across CSFloat, DMarket, and Skinport. `
         + (tuCount > 0 ? `The collection features in ${tuCount} profitable trade-up contracts, ` : "")
         + `Browse skins, compare prices, and find trade-up opportunities below.</p>`
+        + collectionOverviewHtml
         + tuLink
         + skinTablesHtml
         + collRelated;
