@@ -194,3 +194,22 @@ npm run dev
 ```
 
 Requires `.env` with `CSFLOAT_API_KEY`, `DMARKET_PUBLIC_KEY`, `DMARKET_SECRET_KEY`, `STRIPE_SECRET_KEY`, and related Stripe config.
+
+## SEO Infrastructure
+
+Server-rendered HTML for search engine crawlers alongside the React SPA. Two rendering paths in `server/seo.ts`:
+
+- **Crawlers** (Googlebot, social bots) → `buildSeoHtml()` returns full HTML with meta tags, structured data, and body content
+- **Browsers** → `injectMetaIntoSpa()` injects route-specific meta + server-rendered body into the SPA `index.html` so React hydrates over meaningful content (prevents Google soft-404 on empty SPA states)
+
+Key pages:
+
+- **`/trade-ups` hub** — enriched crawler HTML with live trade-up table, collection links, and FAQ section (`renderTradeUpsHub()`)
+- **Collection + skin pages** — server-rendered body content via `renderCollectionHub()` and `renderTradeUpDetail()` with cross-links
+- **Blog** (`server/blog-routes.ts`) — `BlogPosting` + `FAQPage` structured data; canonical trailing-slash form (`/blog/slug/`) with 301 redirect from non-trailing
+
+Blog posts: `cs2-trade-up-calculator-guide`, `how-do-cs2-trade-ups-work`, `best-cs2-trade-up-simulator`, plus 7 other guides.
+
+Sitemap (`server/routes/sitemap.ts`) — 4 sub-sitemaps: `static`, `collections`, `collection-tradeups`, `skins`. Skin sitemap filters to skins with ≥5 listings and is Redis-cached (1hr).
+
+Other: `www` → non-www 301 redirect (`server/redirect-www.ts`), internal cross-linking (skin → collection → trade-ups), and `robots.txt` allowing all crawlers.
