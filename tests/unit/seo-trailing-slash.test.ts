@@ -1,42 +1,58 @@
+import express from "express";
+import request from "supertest";
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dir = dirname(fileURLToPath(import.meta.url));
+import { registerBlogRoutes } from "../../server/blog-routes.js";
+import { buildStaticSitemap } from "../../server/routes/sitemap.js";
 
 describe("blog post canonical uses trailing slash (#2)", () => {
-  it("BlogPostPage.tsx canonical href template ends with trailing slash", () => {
-    const source = readFileSync(join(__dir, "../../src/pages/BlogPostPage.tsx"), "utf-8");
-    // The canonical href should be /blog/${something}/ (trailing slash)
-    // Not /blog/${something} (no trailing slash)
-    // Matches template literal: /blog/${post.slug}/ followed by backtick
-    expect(source).toMatch(/\/blog\/\$\{[^}]+\}\/`/);
+  const knownSlug = "how-cs2-trade-ups-work";
+
+  function createApp() {
+    const app = express();
+    registerBlogRoutes(app, "<!doctype html><html><head><title></title></head><body><div id=\"root\"></div></body></html>");
+    return app;
+  }
+
+  it("redirects known blog post URLs without a trailing slash to the canonical trailing-slash route", async () => {
+    const response = await request(createApp())
+      .get(`/blog/${knownSlug}`)
+      .expect(301);
+
+    expect(response.headers.location).toBe(`/blog/${knownSlug}/`);
   });
 
-  it("server redirects non-trailing-slash blog post URLs before serving blog HTML", () => {
-    const source = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
-    const redirectRoute = source.indexOf("app.get(/^\\/blog\\/([^/]+)$/");
-    const contentRoute = source.indexOf("app.get(/^\\/blog\\/([^/]+)\\/$/");
+  it("serves known trailing-slash blog post URLs with crawler HTML and a self-referencing canonical", async () => {
+    const response = await request(createApp())
+      .get(`/blog/${knownSlug}/`)
+      .set("User-Agent", "Googlebot")
+      .expect(200)
+      .expect("Content-Type", /html/);
 
-    expect(redirectRoute).toBeGreaterThan(-1);
-    expect(contentRoute).toBeGreaterThan(-1);
-    expect(redirectRoute).toBeLessThan(contentRoute);
-    expect(source).toContain("res.redirect(301, `/blog/${slug}/`)");
+    expect(response.text).toContain(`<link rel="canonical" href="https://tradeupbot.app/blog/${knownSlug}/" />`);
+    expect(response.text).toContain("<article>");
   });
 
-  it("server blog routes return 404 for unknown slugs instead of falling through to SPA", () => {
-    const source = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
-    const notFoundResponses = source.match(/res\.status\(404\)\.send\("Blog post not found"\)/g) || [];
+  it("keeps blog crawler canonical URLs identical to sitemap URLs", async () => {
+    const response = await request(createApp())
+      .get(`/blog/${knownSlug}/`)
+      .set("User-Agent", "Googlebot")
+      .expect(200);
 
-    expect(notFoundResponses).toHaveLength(2);
+    const canonical = response.text.match(/<link rel="canonical" href="([^"]+)" \/>/)?.[1];
+    const sitemap = buildStaticSitemap("https://tradeupbot.app", "2026-05-13");
+
+    expect(canonical).toBe(`https://tradeupbot.app/blog/${knownSlug}/`);
+    expect(sitemap).toContain(`<loc>${canonical}</loc>`);
   });
 
-  it("server blog canonical and sitemap URL templates match exactly", () => {
-    const indexSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
-    const sitemapSource = readFileSync(join(__dir, "../../server/routes/sitemap.ts"), "utf-8");
+  it("returns 404 for unknown blog slugs with or without trailing slash", async () => {
+    const app = createApp();
 
-    expect(indexSource).toContain("https://tradeupbot.app/blog/${slug}/");
-    expect(sitemapSource).toContain("`/blog/${slug}/`");
+    await request(app)
+      .get("/blog/this-post-does-not-exist")
+      .expect(404, "Blog post not found");
+    await request(app)
+      .get("/blog/this-post-does-not-exist/")
+      .expect(404, "Blog post not found");
   });
 });
