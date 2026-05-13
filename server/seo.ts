@@ -156,6 +156,48 @@ ${jsonLdTag}
 </head><body>${bodyContent}</body></html>`;
 }
 
+export interface CollectionHubLink {
+  name: string;
+  slug: string;
+}
+
+const FALLBACK_COLLECTION_HUB_LINKS: CollectionHubLink[] = [
+  { name: "Dreams & Nightmares", slug: "dreams-nightmares" },
+  { name: "Norse", slug: "norse" },
+  { name: "Gallery", slug: "gallery" },
+  { name: "Spectrum", slug: "spectrum" },
+  { name: "Chroma", slug: "chroma" },
+  { name: "Prisma", slug: "prisma" },
+  { name: "Clutch", slug: "clutch" },
+  { name: "Recoil", slug: "recoil" },
+  { name: "Fracture", slug: "fracture" },
+  { name: "Gamma", slug: "gamma" },
+  { name: "Operation Broken Fang", slug: "operation-broken-fang" },
+  { name: "Operation Riptide", slug: "operation-riptide" },
+];
+
+export function renderCollectionsHub(collections: CollectionHubLink[]): string {
+  const e = escapeHtml;
+  const seen = new Set<string>();
+  const popularCollections = [...collections, ...FALLBACK_COLLECTION_HUB_LINKS]
+    .filter((collection) => {
+      if (seen.has(collection.slug)) return false;
+      seen.add(collection.slug);
+      return true;
+    })
+    .slice(0, 12);
+  const collectionLinks = popularCollections.map((collection) =>
+    `<li><a href="/collections/${e(collection.slug)}">${e(collection.name)}</a></li>`
+  ).join("");
+
+  return `<h1>CS2 Skin Collections</h1>
+<p>CS2 collections group weapon skins by the case, operation, map, or themed release where those skins entered the game. Each collection contains skins across rarity tiers, and those rarity tiers determine which inputs and outputs can appear in trade-up contracts. When you build a CS2 trade-up, the contract consumes 10 skins of the same rarity tier, then rolls one output from the next rarity using the collections represented by your inputs. Browsing collections helps traders compare float ranges, supply, prices, and which cases currently support profitable trade-up opportunities.</p>
+<p>Use this index to research popular CS2 skin collections, inspect their individual skin pages, and move from collection research into the live <a href="/trade-ups">CS2 trade-ups hub</a>.</p>
+<h2>Popular CS2 Collections</h2>
+<ul>${collectionLinks}</ul>
+<p>Trade-ups consume 10 skins from the same collection rarity tier or from a weighted mix of compatible collections, so collection choice directly affects the output pool, expected value, and chance to profit.</p>`;
+}
+
 export interface TradeUpDetailRow {
   id: number;
   type: string;

@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
@@ -958,17 +958,17 @@ registerRobotsTxtRoute(app);
       }
       try {
         const { rows } = await pool.query("SELECT name FROM collections ORDER BY name");
-        const links = rows.map((c: { name: string }) => {
-          const slug = collectionToSlug(c.name);
-          return `<li><a href="/collections/${slug}">${escapeHtml(c.name)}</a></li>`;
-        }).join("");
+        const collectionLinks = rows.map((c: { name: string }) => ({
+          name: c.name,
+          slug: collectionToSlug(c.name),
+        }));
         res.setHeader("Content-Type", "text/html");
         res.send(buildSeoHtml({
           title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
           description: `Browse ${rows.length} CS2 collections with skins, float ranges, and trade-up opportunities.`,
           url: "https://tradeupbot.app/collections",
-          bodyText: `Browse all ${rows.length} CS2 collections on TradeUpBot.`,
-        }).replace("</main>", `<ul>${links}</ul></main>`));
+          bodyHtml: renderCollectionsHub(collectionLinks),
+        }));
       } catch { next(); }
     });
 
