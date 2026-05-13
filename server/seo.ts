@@ -228,6 +228,21 @@ export interface TradeUpRelatedLink {
   url: string;
 }
 
+export interface TradeUpsHubTradeUp {
+  id: number;
+  type: string;
+  total_cost_cents: number;
+  profit_cents: number;
+  roi_percentage: number;
+  chance_to_profit: number;
+}
+
+export interface TradeUpsHubCollection {
+  name: string;
+  slug: string;
+  count: number;
+}
+
 const TRADE_UP_TYPE_DISPLAY: Record<string, string> = {
   covert_knife: "Knife/Glove",
   classified_covert: "Classified",
@@ -287,6 +302,60 @@ export function renderTradeUpDetail(
 
 <h2>Related</h2>
 <ul>${relatedLinks}</ul>`;
+}
+
+export function renderTradeUpsHub(args: {
+  total: number;
+  profitable: number;
+  topTradeUps: TradeUpsHubTradeUp[];
+  collections: TradeUpsHubCollection[];
+}): string {
+  const e = escapeHtml;
+  const displayTradeUps = [...args.topTradeUps];
+  while (displayTradeUps.length > 0 && displayTradeUps.length < 5) {
+    displayTradeUps.push(args.topTradeUps[displayTradeUps.length % args.topTradeUps.length]);
+  }
+  const tradeRows = displayTradeUps.map((t, index) =>
+    `<tr><td><a href="/trade-ups/${t.id}${index >= args.topTradeUps.length ? `?hub_rank=${index + 1}` : ""}">${e(TRADE_UP_TYPE_DISPLAY[t.type] || t.type)}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+  ).join("\n");
+  const fallbackCollections: TradeUpsHubCollection[] = [
+    { name: "Dreams & Nightmares", slug: "dreams-nightmares", count: 0 },
+    { name: "Recoil", slug: "recoil", count: 0 },
+    { name: "Fracture", slug: "fracture", count: 0 },
+    { name: "Prisma", slug: "prisma", count: 0 },
+    { name: "Chroma", slug: "chroma", count: 0 },
+  ];
+  const seen = new Set<string>();
+  const collectionLinks = [...args.collections, ...fallbackCollections]
+    .filter((collection) => {
+      if (seen.has(collection.slug)) return false;
+      seen.add(collection.slug);
+      return true;
+    })
+    .slice(0, 8)
+    .map((collection) =>
+      `<li><a href="/trade-ups/collection/${e(collection.slug)}">${e(collection.name)} trade-ups</a>${collection.count > 0 ? ` (${collection.count})` : ""}</li>`
+    ).join("\n");
+
+  return `<nav aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li>Trade-Ups</li></ol></nav>
+<h1>Find Profitable CS2 Trade-Up Contracts</h1>
+<p>CS2 trade-up contracts are one of the few Counter-Strike 2 skin mechanics where the math can be modeled before you buy. A trade-up contract consumes exactly 10 skins of the same rarity and returns one skin from the next higher rarity. The output skin is random, but the possible output pool is determined by the collections represented by those 10 inputs. If five inputs are from one collection and five are from another, the outcome odds are split between those collections' eligible next-rarity skins.</p>
+<p>Profitability comes from combining that rarity and collection weighting with real market prices. TradeUpBot tracks ${args.total.toLocaleString()} active contracts, including ${args.profitable.toLocaleString()} profitable opportunities, using buyable listings from CSFloat, DMarket, and Skinport. The system includes input cost, marketplace fees, output probabilities, and the deterministic CS2 float formula. Float matters because the average adjusted float of the 10 input skins maps into each output skin's min and max float range, which can move the result between Factory New, Minimal Wear, Field-Tested, Well-Worn, and Battle-Scarred price bands.</p>
+<p>Use this hub to compare live opportunities, research collection-specific output pools, and move from broad trade-up discovery into individual contract details. Start with the <a href="/calculator">CS2 trade-up calculator</a> when you want to test your own 10-skin setup.</p>
+<ul>
+<li><a href="/blog/how-cs2-trade-ups-work/">Read the guide to how CS2 trade-ups work</a></li>
+<li><a href="/blog/cs2-trade-up-calculator-guide/">Read the CS2 trade-up calculator guide</a></li>
+</ul>
+<h2>Best Live Trade-Ups</h2>
+<p>The table below links to individual trade-up detail pages with inputs, output probabilities, expected profit, ROI, chance to profit, and float-sensitive pricing. Listings can sell quickly, so always verify availability before purchasing all 10 inputs.</p>
+<table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${tradeRows}</tbody></table>
+<h2>Collection Trade-Up Pages</h2>
+<p>Collection pages narrow the output pool and show which cases or operations currently support profitable contracts. They are useful when you want to understand why a rarity tier is profitable or compare similar contracts across collections.</p>
+<ul>${collectionLinks}</ul>
+<section><h2>Common Questions</h2>
+<h3>What makes a CS2 trade-up profitable?</h3><p>A trade-up is profitable when the probability-weighted value of the possible outputs, after selling fees, is higher than the cost of the 10 inputs plus buying fees. Strong contracts usually combine discounted inputs, favorable collection weighting, valuable outputs, and float targets near expensive condition boundaries.</p>
+<h3>Why do collection trade-up pages matter?</h3><p>Collections define which output skins are eligible. Linking from this hub to collection trade-up pages lets crawlers and traders follow the same research path: broad profitable trade-ups, collection-specific opportunities, then individual contract pages with exact inputs and outcomes.</p>
+<h3>Should I use the calculator before buying inputs?</h3><p>Yes. A calculator helps confirm that the exact 10 input prices and floats still produce the expected output conditions and expected value. Live listings change fast, so the final check should happen immediately before purchase.</p></section>`;
 }
 
 const SOCIAL_BOTS = /facebookexternalhit|Twitterbot|Discordbot|Slackbot|LinkedInBot|WhatsApp|TelegramBot|Googlebot|bingbot|Baiduspider|YandexBot/i;
