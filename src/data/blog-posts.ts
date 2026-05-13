@@ -718,6 +718,102 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
       { question: "Why does exact float matter in trade-up contracts?", answer: "Exact float determines the output condition. Small differences near 0.07, 0.15, 0.38, or 0.45 can move an output across a condition boundary and change its value." },
     ],
   },
+  {
+    slug: "how-do-cs2-trade-ups-work",
+    title: "How Do CS2 Trade Ups Work? Floats, Odds & Profit",
+    excerpt: "Learn how CS2 trade ups work from inputs to float math and odds. Use this beginner guide to check contracts before buying.",
+    publishedAt: "2026-05-12",
+    readTime: "8 min read",
+    author: "TradeUpBot Team",
+    content: `
+<p>How do CS2 trade ups work? For players asking how do CSGO trade ups work after the move to CS2, a trade up contract exchanges 10 same-rarity weapon skins for one random higher-rarity skin, with odds based on input collections and condition based on adjusted float math.</p>
+
+<p>If you want to test a real contract while reading, open the <a href="/calculator">CS2 trade up calculator</a>, compare examples on the <a href="/trade-ups">live CS2 trade-ups page</a>, and research current prices in the <a href="/skins">CS2 skin database</a>.</p>
+
+<h2>The Short Answer</h2>
+
+<p>A trade up is Counter-Strike's built-in upgrade mechanic. You select 10 eligible skins from the same rarity tier, sign the contract, and receive one skin from the next rarity tier. Ten Mil-Spec skins can become one Restricted skin. Ten Restricted skins can become one Classified skin. Ten Classified skins can become one Covert skin.</p>
+
+<p>The game does not simply choose any skin in CS2. It looks at the collections represented by your 10 inputs, finds eligible next-rarity outputs in those collections, then rolls between those outputs according to collection weight. The condition of the output is not random in the same way. It is calculated from the exact float values of your inputs and the float range of the output skin.</p>
+
+<p>That combination is why trade ups are attractive. Part of the result is probability, but much of the contract can be calculated before you spend money. If you know the input skins, collections, floats, prices, fees, and output price ranges, you can estimate expected value and downside risk before clicking submit.</p>
+
+<h2>Step 1: Choose 10 Inputs of the Same Rarity</h2>
+
+<p>Normal weapon trade ups require exactly 10 input skins. They must share the same rarity, but they do not have to share the same collection. You cannot mix Mil-Spec and Restricted inputs in one standard weapon contract. You also cannot use skins from collections that do not have a valid next-rarity output.</p>
+
+<p>For example, if you use 10 Restricted inputs, the output will be Classified. If all 10 inputs come from the same collection, every possible output comes from that collection's Classified skins. If you split the inputs across multiple collections, each collection contributes to the roll based on how many of your inputs came from it.</p>
+
+<p>Knife and glove contracts are a special advanced case with 5 Covert inputs, but beginners should learn the normal 10-skin weapon structure first. The same ideas of collection weighting, float targeting, and price comparison still matter, only the output pools and bankroll risk become larger.</p>
+
+<h2>Step 2: Understand Collection Weighting</h2>
+
+<p>Collection weighting is the answer to most questions about trade-up odds. Suppose you use seven inputs from Collection A and three inputs from Collection B. Collection A receives 70% of the output weight, and Collection B receives 30%.</p>
+
+<p>If Collection A has two eligible next-rarity skins, each of those two skins receives half of Collection A's 70% share, or 35% each. If Collection B has one eligible output, that one skin receives the full 30% share. Your final odds would be 35%, 35%, and 30% across the three possible outputs.</p>
+
+<p>This is why mixing collections can be powerful. You might use cheaper inputs from one collection to lower cost while keeping enough weight on another collection that contains the valuable output you want. It can also backfire if the cheap collection adds low-value outputs that drag down expected value.</p>
+
+<h2>Step 3: Calculate the Output Float</h2>
+
+<p>Float determines whether the output is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred. The important detail is that CS2 does not average raw input floats directly. It averages adjusted floats.</p>
+
+<p><code>adjusted_float = (input_float - input_min) / (input_max - input_min)</code></p>
+
+<p><code>output_float = output_min + average_adjusted_float * (output_max - output_min)</code></p>
+
+<p>This means a 0.03 Factory New input can be excellent or mediocre depending on that skin's own float range. If the skin ranges from 0.00 to 1.00, 0.03 is a very low adjusted float. If the skin ranges from 0.00 to 0.08, 0.03 is much higher relative to its allowed range.</p>
+
+<p>Condition boundaries create the biggest profit swings. Factory New ends at 0.07, Minimal Wear ends at 0.15, Field-Tested ends at 0.38, and Well-Worn ends at 0.45. Landing just below a boundary can be worth much more than landing just above it, even when the visual difference is tiny.</p>
+
+<h2>Step 4: Compare Cost, Output Value, and Fees</h2>
+
+<p>A trade up only makes financial sense if the probability-weighted output value beats your total input cost after fees. Input cost should use real buy prices, not old averages. Output value should reflect the predicted float and realistic sale price, not the best sale ever recorded.</p>
+
+<p>Marketplace fees matter because many trade ups operate on thin margins. Buyer fees raise the cost of inputs, and seller fees reduce what you keep from the output. A contract that looks profitable before fees can turn negative once CSFloat, DMarket, Skinport, or Steam costs are included.</p>
+
+<p>This is also why availability matters. A recipe is useless if the exact low-float inputs are not available at the assumed price. Before buying, verify that each listing still exists and that substitutions do not push the average adjusted float over an important boundary.</p>
+
+<h2>What Makes a Good Beginner Trade Up?</h2>
+
+<p>For a first contract, look for simplicity. A single-collection trade up is easier to understand because the output pool is smaller and the odds are easier to audit. A contract with several profitable outcomes is usually safer than a jackpot-style contract with one huge win and many bad misses.</p>
+
+<p>Positive expected value is useful, but chance-to-profit is more practical when you are only running one or two contracts. A +$20 expected value contract can still lose money most of the time if the profitable output is rare. A lower-profit contract with 80% chance to profit may fit a small bankroll better.</p>
+
+<p>Use TradeUpBot to compare both views. The calculator is best when you already have inputs in mind. The live trade-ups page is best when you want examples assembled from current marketplace listings. Skin pages help you check float ranges, current prices, and whether a replacement input belongs to the right collection.</p>
+
+<h2>Common Mistakes</h2>
+
+<p><strong>Using condition instead of exact float.</strong> Factory New spans a range. A 0.006 input and a 0.069 input can produce very different output conditions.</p>
+
+<p><strong>Ignoring collection dilution.</strong> Cheap inputs are not automatically good if they introduce low-value outputs or reduce the probability of the skin you actually want.</p>
+
+<p><strong>Forgetting fees.</strong> Always include input buyer fees and output seller fees. Thin edges disappear quickly.</p>
+
+<p><strong>Trusting stale recipes.</strong> Trade-up prices change as listings sell and markets move. Recalculate with live data before buying.</p>
+
+<h2>FAQ</h2>
+
+<h3>How do CS2 trade ups work?</h3>
+<p>CS2 trade ups exchange 10 same-rarity weapon skins for one higher-rarity skin. Output odds come from the input collections, while output condition comes from adjusted float calculations.</p>
+
+<h3>Do CS2 trade ups use random floats?</h3>
+<p>No. The output skin is random within the eligible pool, but the output float is calculated from the exact input floats and the selected output skin's float range.</p>
+
+<h3>Can CS2 trade ups be profitable?</h3>
+<p>Yes, but only when real input prices, output values, odds, floats, and marketplace fees produce positive expected value or a risk profile you are willing to accept.</p>
+
+<h3>What should I check before doing a trade up?</h3>
+<p>Check input rarity, collection weighting, exact floats, output pool, total cost after fees, chance-to-profit, worst case, and whether every listing is still available.</p>
+`,
+    faq: [
+      { question: "How do CS2 trade ups work?", answer: "CS2 trade ups exchange 10 same-rarity weapon skins for one higher-rarity skin. Output odds come from the input collections, while output condition comes from adjusted float calculations." },
+      { question: "Do CS2 trade ups use random floats?", answer: "No. The output skin is random within the eligible pool, but the output float is calculated from the exact input floats and the selected output skin's float range." },
+      { question: "Can CS2 trade ups be profitable?", answer: "Yes, but only when real input prices, output values, odds, floats, and marketplace fees produce positive expected value or a risk profile you are willing to accept." },
+      { question: "What should I check before doing a trade up?", answer: "Check input rarity, collection weighting, exact floats, output pool, total cost after fees, chance-to-profit, worst case, and whether every listing is still available." },
+    ],
+  },
+
 ];
 
 export function getPostBySlug(slug: string): BlogPost | undefined {

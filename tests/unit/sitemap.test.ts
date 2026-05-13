@@ -23,6 +23,11 @@ describe("buildStaticSitemap", () => {
     expect(xml).toContain("tradeupbot.app/faq");
     expect(xml).toContain("tradeupbot.app/blog");
   });
+
+  it("includes the how do CS2 trade ups work blog post with trailing slash", () => {
+    const xml = buildStaticSitemap("https://tradeupbot.app", "2026-03-24");
+    expect(xml).toContain("https://tradeupbot.app/blog/how-do-cs2-trade-ups-work/");
+  });
 });
 
 describe("buildCollectionSitemap", () => {

@@ -44,6 +44,6 @@ describe("SEO crawler page robustness", () => {
     expect(serverSource).toContain("const BLOG_POST_META: Record<string, BlogPost>");
     expect(serverSource).toContain("const blogBodyHtml");
     expect(serverSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
-    expect(serverSource).toContain("${post.content}</article>");
+    expect(serverSource).toContain("${post.content}<p><em>Published");
   });
 });

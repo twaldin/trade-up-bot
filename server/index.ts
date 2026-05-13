@@ -1096,7 +1096,7 @@ registerRobotsTxtRoute(app);
       // at; without it the canonical points at the redirected (non-trailing)
       // form and Google sees a redirect loop on the canonical chain (#95).
       const url = `https://tradeupbot.app/blog/${slug}/`;
-      const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1><p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p>${post.content}</article>`;
+      const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1>${post.content}<p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p></article>`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
