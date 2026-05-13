@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
+const blogRoutesSource = readFileSync(join(__dir, "../../server/blog-routes.ts"), "utf-8");
 
 describe("SEO crawler page robustness", () => {
   it("skin crawler pages do not fail when optional output_skin_names stats are unavailable", () => {
@@ -27,8 +28,8 @@ describe("SEO crawler page robustness", () => {
   });
 
   it("non-existent blog slugs still return 404 for trailing-slash canonical routes", () => {
-    expect(serverSource).toContain('res.status(404).send("Blog post not found")');
-    expect(serverSource).toContain('res.redirect(301, `/blog/${slug}/`)');
+    expect(blogRoutesSource).toContain('res.status(404).send("Blog post not found")');
+    expect(blogRoutesSource).toContain('res.redirect(301, `/blog/${slug}/`)');
   });
 
   it("static sitemap pages have crawler-specific meaningful fallback content", () => {
@@ -40,10 +41,10 @@ describe("SEO crawler page robustness", () => {
   });
 
   it("blog sitemap pages render actual blog post content for crawlers", () => {
-    expect(serverSource).toContain('import { blogPosts, type BlogPost } from "../src/data/blog-posts.js";');
-    expect(serverSource).toContain("const BLOG_POST_META: Record<string, BlogPost>");
-    expect(serverSource).toContain("const blogBodyHtml");
-    expect(serverSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
-    expect(serverSource).toContain("${post.content}<p><em>Published");
+    expect(blogRoutesSource).toContain('import { blogPosts, type BlogPost } from "../src/data/blog-posts.js";');
+    expect(blogRoutesSource).toContain("const BLOG_POST_META: Record<string, BlogPost>");
+    expect(blogRoutesSource).toContain("const blogBodyHtml");
+    expect(blogRoutesSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
+    expect(blogRoutesSource).toContain("${post.content}<p><em>Published");
   });
 });
