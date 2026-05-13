@@ -4,6 +4,7 @@ interface SeoMeta {
   url: string;
   robots?: string;
   ogImage?: string;
+  ogType?: string;
   bodyText?: string;
   /** Raw HTML body content (trusted, server-generated). Takes precedence over bodyText. */
   bodyHtml?: string;
@@ -121,6 +122,7 @@ export function buildSeoHtml(meta: SeoMeta): string {
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
   const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
+  const ogType = meta.ogType || "website";
 
   let jsonLdTag = "";
   if (meta.jsonLd) {
@@ -145,7 +147,7 @@ export function buildSeoHtml(meta: SeoMeta): string {
 <meta property="og:title" content="${title}" />
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${escapeHtml(meta.url)}" />
-<meta property="og:type" content="website" />
+<meta property="og:type" content="${escapeHtml(ogType)}" />
 <meta property="og:site_name" content="TradeUpBot" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />

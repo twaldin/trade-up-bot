@@ -1050,7 +1050,10 @@ registerRobotsTxtRoute(app);
       const title = "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot";
       const description = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.";
       const url = "https://tradeupbot.app/blog";
-      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, collection strategy, and profitable contract discovery. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p>`;
+      const postLinks = blogPosts.map((post) =>
+        `<li><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a><p>${escapeHtml(post.excerpt)}</p></li>`
+      ).join("");
+      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, collection strategy, and profitable contract discovery. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p><h2>Latest CS2 Trade-Up Articles</h2><ul>${postLinks}</ul>`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
@@ -1101,6 +1104,7 @@ registerRobotsTxtRoute(app);
           description: post.excerpt,
           url,
           bodyHtml: blogBodyHtml,
+          ogType: "article",
           jsonLd: [
             {
               "@context": "https://schema.org",

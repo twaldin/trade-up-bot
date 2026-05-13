@@ -631,6 +631,93 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>TradeUpBot lets you sort by either metric. Sort by profit (EV) to find the highest-upside plays. Sort by chance to find the most consistent ones. Expand any trade-up to see the full outcome distribution — every possible output, its probability, and whether it's above or below breakeven. That distribution is the trade-up. Everything else is just a summary of it.</p>
 `,
   },
+  {
+    slug: "cs2-trade-up-calculator-guide",
+    title: "CS2 Trade Up Calculator Guide: Profits, Floats & Fees",
+    excerpt: "Use this CS2 trade up calculator guide to test floats, odds, and fees before buying inputs. Start calculating smarter contracts today.",
+    publishedAt: "2026-05-12",
+    readTime: "8 min read",
+    author: "TradeUpBot Team",
+    content: `
+<p>A CS2 trade up calculator is a tool that estimates a contract's output odds, output float, total input cost, marketplace fees, and expected profit before you buy skins. The best calculators use exact float values and live prices instead of averages.</p>
+
+<p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and enter the exact skin, float, and price for each slot. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
+
+<h2>What a Trade Up Calculator Actually Calculates</h2>
+
+<p>A CS2 trade-up contract turns 10 skins of one rarity into one skin of the next rarity. The calculator has two jobs: predict which outputs are possible and estimate whether the probability-weighted output value beats the cost of the inputs. That sounds simple, but every profitable contract depends on details that casual calculators often hide.</p>
+
+<p>First, the calculator must know the collection represented by each input. If all 10 inputs come from one collection, every possible output comes from that collection's next rarity tier. If seven inputs come from one collection and three come from another, the output pool is weighted 70% toward the first collection and 30% toward the second. Within each collection, each eligible next-rarity skin receives an equal share of that collection's probability.</p>
+
+<p>Second, the calculator must predict the output float. The output float decides whether the result is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred. Since condition boundaries often create the biggest price jumps, a contract that lands at 0.0699 can be profitable while the same contract at 0.0701 loses money.</p>
+
+<p>Third, the calculator must price every output at the predicted float and subtract realistic marketplace fees. A raw $12 profit can disappear once buyer fees on inputs and seller fees on the output are included. This is why calculators built on real CSFloat, DMarket, and Skinport listings are more useful than calculators using generic Steam averages.</p>
+
+<h2>The Float Formula You Need to Understand</h2>
+
+<p>The CS2 trade-up float formula is deterministic. The game normalizes each input within that skin's own float range, averages those adjusted floats, then maps the average onto each possible output skin's float range.</p>
+
+<p><code>adjusted_float = (input_float - input_min) / (input_max - input_min)</code></p>
+
+<p><code>output_float = output_min + average_adjusted_float * (output_max - output_min)</code></p>
+
+<p>This means two Factory New inputs can have very different trade-up value. A 0.03 float skin with a 0.00-1.00 range contributes an adjusted float of 0.03. A 0.03 float skin with a 0.00-0.08 range contributes 0.375. Both look clean in inventory, but the second input pulls your output much closer to a worse condition.</p>
+
+<p>A strong calculator should therefore ask for exact float values, not just conditions. "Factory New" is not enough information. The difference between a 0.006 input and a 0.065 input can decide whether a Covert output stays Factory New or drops into Minimal Wear.</p>
+
+<h2>How to Use a CS2 Trade Up Calculator Step by Step</h2>
+
+<p><strong>1. Choose a rarity tier.</strong> Normal weapon trade-ups use 10 same-rarity inputs and produce one higher-rarity output. Mil-Spec trades into Restricted, Restricted trades into Classified, and Classified trades into Covert. Knife and glove trade-ups use a different 5-Covert-input structure, so do not mix those rules with standard weapon contracts.</p>
+
+<p><strong>2. Enter exact inputs.</strong> Add each input skin with its collection, rarity, float, and real buy price. If you are using marketplace listings, include the exact listing price rather than an average price. Average prices do not tell you what a specific low-float listing costs.</p>
+
+<p><strong>3. Check the output pool.</strong> Review every possible output skin and its probability. A contract with one jackpot and nine bad outcomes may show positive expected value while still losing money most of the time. Probability matters as much as headline profit.</p>
+
+<p><strong>4. Inspect output conditions.</strong> Confirm where each possible output lands after the float formula. If the profitable outputs need Factory New, make sure the predicted float is safely below 0.07. A tiny buffer is risky because replacement inputs may not have identical floats.</p>
+
+<p><strong>5. Add marketplace fees.</strong> CSFloat, DMarket, Skinport, and other marketplaces use different buyer and seller fee structures. Your calculator should add buyer fees to input cost and subtract seller fees from output value. Without fees, thin-margin trade-ups look better than they really are.</p>
+
+<p><strong>6. Compare EV and chance-to-profit.</strong> Expected value tells you the average result over many attempts. Chance-to-profit tells you how often one attempt finishes green. Small bankrolls usually benefit from higher chance-to-profit, while larger bankrolls can tolerate lower-probability positive-EV contracts.</p>
+
+<h2>Common Calculator Mistakes</h2>
+
+<p>The most common mistake is using theoretical inputs that cannot be bought. A recipe may require 10 skins at 0.005 float for $3 each, but the market might only have those floats listed at $12. If the calculator is not connected to real listings, it can describe a profitable contract that does not exist.</p>
+
+<p>The second mistake is ignoring non-standard float ranges. Some skins cannot exist in every condition. Others have very narrow ranges that make their adjusted floats surprisingly high. A calculator that assumes every skin ranges from 0.00 to 1.00 will produce wrong output floats for many contracts.</p>
+
+<p>The third mistake is trusting expected value alone. A +$25 EV trade-up with a 20% chance to profit can be mathematically attractive but emotionally and financially brutal if you only run it once. Always look at the worst outcome, best outcome, and probability distribution.</p>
+
+<p>The fourth mistake is forgetting availability. Marketplace listings sell. If one required input disappears, the contract may no longer hit the same float target or output distribution. Before buying, verify that every listing is still live and that prices have not changed.</p>
+
+<h2>What Makes TradeUpBot's Calculator Different</h2>
+
+<p>TradeUpBot is designed around executable trade-ups, not just theoretical recipes. The calculator helps you test your own inputs, while the discovery engine scans real market listings and surfaces contracts that can actually be assembled from current inventory. That connection between calculation and availability is the difference between planning and execution.</p>
+
+<p>The platform also shows downside risk. Instead of giving one profit number, it breaks out output probabilities, estimated values, expected value, ROI, best case, worst case, and chance-to-profit. That helps you decide whether a contract fits your bankroll and risk tolerance.</p>
+
+<p>Use the calculator when you are experimenting with a custom idea. Use the live trade-up table when you want marketplace-backed examples that already include real input prices and fees. Use skin pages when you need to understand float ranges, active listings, and collection relationships before substituting inputs.</p>
+
+<h2>FAQ</h2>
+
+<h3>What is a CS2 trade up calculator?</h3>
+<p>A CS2 trade up calculator estimates output odds, output float, input cost, expected value, and profit for a trade-up contract before you buy the required skins.</p>
+
+<h3>Can a trade up calculator guarantee profit?</h3>
+<p>No. A calculator can estimate expected value from known inputs, floats, prices, and fees, but the output skin is still random and marketplace prices can change before you sell.</p>
+
+<h3>What information do I need for accurate calculations?</h3>
+<p>You need each input skin's collection, rarity, exact float, float range, and current buy price, plus realistic output prices and marketplace buyer and seller fees.</p>
+
+<h3>Why does exact float matter in trade-up contracts?</h3>
+<p>Exact float determines the output condition. Small differences near 0.07, 0.15, 0.38, or 0.45 can move an output across a condition boundary and change its value.</p>
+`,
+    faq: [
+      { question: "What is a CS2 trade up calculator?", answer: "A CS2 trade up calculator estimates output odds, output float, input cost, expected value, and profit for a trade-up contract before you buy the required skins." },
+      { question: "Can a trade up calculator guarantee profit?", answer: "No. A calculator can estimate expected value from known inputs, floats, prices, and fees, but the output skin is still random and marketplace prices can change before you sell." },
+      { question: "What information do I need for accurate calculations?", answer: "You need each input skin's collection, rarity, exact float, float range, and current buy price, plus realistic output prices and marketplace buyer and seller fees." },
+      { question: "Why does exact float matter in trade-up contracts?", answer: "Exact float determines the output condition. Small differences near 0.07, 0.15, 0.38, or 0.45 can move an output across a condition boundary and change its value." },
+    ],
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | undefined {
