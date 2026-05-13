@@ -164,7 +164,7 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "cs2-trade-up-float-values-guide",
-    title: "CS2 Float Values Guide: Ranges, Conditions & Trade-Ups",
+    title: "CS2 Float Values: Ranges, Conditions & Trade-Ups",
     excerpt: "Master CS2 float values, condition ranges, and adjusted-float trade-up math. Use the table and FAQ to target better outputs today.",
     publishedAt: "2026-03-17",
     readTime: "7 min read",
@@ -286,7 +286,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Getting Started</h2>
 
-<p>Head to <a href="https://tradeupbot.app">tradeupbot.app</a> and sign in with your Steam account. There's no registration form — Steam authentication is the only login method. Once signed in, you're on the Free tier with access to 10 sample trade-ups per rarity tier. No credit card required.</p>
+<p>Head to <a href="https://tradeupbot.app">the TradeUpBot CS2 trade-up scanner</a> and sign in with your Steam account. There's no registration form — Steam authentication is the only login method. Once signed in, you're on the Free tier with access to 10 sample trade-ups per rarity tier. No credit card required.</p>
 
 <p>The main interface is the trade-up table. Across the top, you'll see tier tabs: All, Knife/Gloves, Covert, Classified, Restricted, and Mil-Spec. Each tab shows trade-ups for that rarity tier. Click a tab to filter.</p>
 
