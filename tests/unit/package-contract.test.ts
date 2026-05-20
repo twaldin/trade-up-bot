@@ -13,12 +13,13 @@ describe("package deployment contract", () => {
   it("does not expose package scripts whose tsx entrypoints are missing", () => {
     const tsxScriptEntries = Object.entries(pkg.scripts)
       .map(([name, command]) => {
-        const match = command.match(/^tsx (?:watch )?([^ ]+\.ts)$/);
+        const match = command.match(/^(?:npx )?tsx (?:watch )?([^ ]+\.ts)$/);
         return match ? { name, entrypoint: match[1] } : null;
       })
       .filter((entry): entry is { name: string; entrypoint: string } => entry !== null);
 
     expect(tsxScriptEntries.length).toBeGreaterThan(0);
+    expect(tsxScriptEntries.map((entry) => entry.name)).toContain("postbuild");
     for (const { name, entrypoint } of tsxScriptEntries) {
       expect(existsSync(resolve(repoRoot, entrypoint)), `${name} -> ${entrypoint}`).toBe(true);
     }
