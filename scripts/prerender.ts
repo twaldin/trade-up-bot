@@ -4,7 +4,9 @@ import { createServer } from "http";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
+import { blogPosts } from "../src/data/blog-posts.js";
 import { dedupeHead } from "../server/seo.js";
+import { normalizePrerenderedHead } from "./seo-html.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = join(__dirname, "..", "dist");
@@ -15,13 +17,7 @@ const ROUTES = [
   "/faq",
   "/calculator",
   "/blog",
-  "/blog/how-cs2-trade-ups-work",
-  "/blog/profitable-trade-ups-theory-vs-reality",
-  "/blog/cs2-trade-up-float-values-guide",
-  "/blog/how-to-use-tradeupbot",
-  "/blog/cs2-trade-up-marketplace-fees",
-  "/blog/best-cs2-collections-knife-trade-ups-2026",
-  "/blog/cs2-trade-up-probability-expected-value",
+  ...blogPosts.map((post) => `/blog/${post.slug}`),
   "/features",
   "/pricing",
   "/terms",
@@ -113,7 +109,7 @@ async function prerenderRoute(browser: import("puppeteer").Browser, route: strin
     await page.waitForSelector("main, h1, [data-prerender]", { timeout: 5000 }).catch(() => {});
 
     const rawHtml = await page.content();
-    const html = dedupeHead(rawHtml);
+    const html = normalizePrerenderedHead(dedupeHead(rawHtml), route);
 
     let outputPath: string;
     if (route === "/") {

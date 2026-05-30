@@ -29,7 +29,7 @@ export function BlogPage() {
             {blogPosts.map((post) => (
               <Link
                 key={post.slug}
-                to={`/blog/${post.slug}`}
+                to={`/blog/${post.slug}/`}
                 className="group border border-border rounded-lg p-5 hover:border-foreground/20 transition-colors"
               >
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">

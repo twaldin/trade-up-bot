@@ -6,7 +6,7 @@ import { SiteFooter } from "../components/SiteFooter.js";
 
 function BlogLink({ slug, title }: { slug: string; title: string }) {
   return (
-    <Link to={`/blog/${slug}`} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors mt-2">
+    <Link to={`/blog/${slug}/`} className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors mt-2">
       Read more: {title} &rarr;
     </Link>
   );

@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
+const staticSeoPagesSource = readFileSync(join(__dir, "../../server/static-seo-pages.ts"), "utf-8");
 const blogRoutesSource = readFileSync(join(__dir, "../../server/blog-routes.ts"), "utf-8");
 
 describe("SEO crawler page robustness", () => {
@@ -36,8 +37,8 @@ describe("SEO crawler page robustness", () => {
     expect(serverSource).toContain("STATIC_SEO_PAGES");
     expect(serverSource).toContain("for (const staticPage of STATIC_SEO_PAGES)");
     expect(serverSource).toContain("bodyHtml: staticPage.bodyHtml");
-    expect(serverSource).toContain("CS2 Trade-Up Calculator");
-    expect(serverSource).toContain("TradeUpBot Features");
+    expect(staticSeoPagesSource).toContain("CS2 Trade-Up Calculator");
+    expect(staticSeoPagesSource).toContain("TradeUpBot Features");
   });
 
   it("blog sitemap pages render actual blog post content for crawlers", () => {

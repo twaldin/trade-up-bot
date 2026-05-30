@@ -114,7 +114,7 @@ export function BlogPostPage() {
                 {relatedPosts.map((related) => (
                   <Link
                     key={related.slug}
-                    to={`/blog/${related.slug}`}
+                    to={`/blog/${related.slug}/`}
                     className="group border border-border rounded-lg p-4 hover:border-foreground/20 transition-colors"
                   >
                     <div className="text-xs text-muted-foreground mb-2">
