@@ -138,7 +138,11 @@ registerRobotsTxtRoute(app);
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
   const pool: pg.Pool = initDb();
-  await createTables(pool);
+  if (process.env.SKIP_STARTUP_MIGRATIONS === "1") {
+    console.log("Skipping startup migrations");
+  } else {
+    await createTables(pool);
+  }
   initRedis();
 
   // Auth (Steam OpenID + sessions)
