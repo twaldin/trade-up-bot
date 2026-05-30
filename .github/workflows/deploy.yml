@@ -55,3 +55,6 @@ jobs:
           if [ "$HTTP" != "200" ]; then
             echo "::warning::Homepage returned $HTTP — may be transient pm2 restart window; check manually"
           fi
+
+      - name: Googlebot SEO smoke check
+        run: npm run verify:seo:public -- --routes=/calculator,/faq,/features,/blog/how-cs2-trade-ups-work/

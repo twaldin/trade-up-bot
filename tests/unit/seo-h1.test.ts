@@ -7,9 +7,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 
 describe("H1 on listing pages (#9)", () => {
   it("/trade-ups crawler bodyHtml uses <h1> not <h2> as first heading", () => {
-    const source = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
-    // The /trade-ups handler bodyHtml must start with <h1>, not <h2>
-    // Check the specific string used in the trade-ups handler
+    const source = readFileSync(join(__dir, "../../server/seo.ts"), "utf-8");
     expect(source).toContain("<h1>Find Profitable CS2 Trade-Up Contracts</h1>");
     expect(source).not.toContain("<h2>Find Profitable CS2 Trade-Up Contracts</h2>");
   });

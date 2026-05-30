@@ -367,7 +367,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <p className="text-muted-foreground text-center mb-10">Guides, strategies, and updates from the TradeUpBot team.</p>
             <div className="grid sm:grid-cols-3 gap-6">
               {blogPosts.slice(0, 3).map((post) => (
-                <a key={post.slug} href={`/blog/${post.slug}`} className="border border-border rounded-lg p-5 hover:border-foreground/20 transition-colors block">
+                <a key={post.slug} href={`/blog/${post.slug}/`} className="border border-border rounded-lg p-5 hover:border-foreground/20 transition-colors block">
                   <div className="text-xs text-muted-foreground/50 mb-2">{new Date(post.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
                   <h3 className="font-semibold text-sm mb-2">{post.title}</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">{post.excerpt}</p>
