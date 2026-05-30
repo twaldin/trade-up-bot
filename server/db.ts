@@ -605,28 +605,34 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
   // Purge trade-ups with sticker-premium input listings that pre-dated the outlier filter.
-  // Threshold matches the active discovery filter (PR #35). Skips if it can't acquire lock quickly.
-  try {
-    await pool.query("SET lock_timeout = '5s'");
-    const { rowCount: purgedCount } = await pool.query(`
-      DELETE FROM trade_ups tu
-      WHERE EXISTS (
-        SELECT 1 FROM trade_up_inputs ti
-        JOIN price_data pd ON pd.skin_name = ti.skin_name
-          AND pd.condition = ti.condition
-          AND pd.source = 'skinport'
-        WHERE ti.trade_up_id = tu.id
-          AND pd.median_price_cents > 0
-          AND ti.price_cents > pd.median_price_cents * 5
-      )
-    `);
-    if ((purgedCount ?? 0) > 0) {
-      console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >5x Skinport median)`);
+  // This used to run inline at every API startup and could hold row locks for minutes on
+  // production-sized tables, preventing the web process from binding PORT and causing 502s.
+  // Leave this as an explicit maintenance migration instead of a request-path startup gate.
+  if (process.env.RUN_STARTUP_STICKER_PREMIUM_PURGE === "1") {
+    try {
+      await pool.query("SET lock_timeout = '5s'");
+      await pool.query("SET statement_timeout = '30s'");
+      const { rowCount: purgedCount } = await pool.query(`
+        DELETE FROM trade_ups tu
+        WHERE EXISTS (
+          SELECT 1 FROM trade_up_inputs ti
+          JOIN price_data pd ON pd.skin_name = ti.skin_name
+            AND pd.condition = ti.condition
+            AND pd.source = 'skinport'
+          WHERE ti.trade_up_id = tu.id
+            AND pd.median_price_cents > 0
+            AND ti.price_cents > pd.median_price_cents * 5
+        )
+      `);
+      if ((purgedCount ?? 0) > 0) {
+        console.log(`  Migration: purged ${purgedCount} sticker-premium trade-ups (input >5x Skinport median)`);
+      }
+    } catch {
+      // Lock/statement timeout or deadlock — skip; run explicitly during maintenance.
+    } finally {
+      await pool.query("SET lock_timeout = '0'").catch(() => {});
+      await pool.query("SET statement_timeout = '0'").catch(() => {});
     }
-  } catch {
-    // Lock timeout or deadlock — skip this cycle, will retry next restart
-  } finally {
-    await pool.query("SET lock_timeout = '0'").catch(() => {});
   }
 
   } finally {
