@@ -79,6 +79,7 @@ import rateLimit from "express-rate-limit";
 import type { NextFunction } from "express";
 import { redirectWwwHost } from "./redirect-www.js";
 import { registerBlogRoutes } from "./blog-routes.js";
+import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
 import { STATIC_SEO_PAGES } from "./static-seo-pages.js";
 
 const app = express();
@@ -134,6 +135,7 @@ app.use((req, res, next) => {
 // Serve robots.txt dynamically before the dist/ static middleware so stale
 // build artifacts cannot override the canonical crawler directives.
 registerRobotsTxtRoute(app);
+registerCanonicalRedirectRoutes(app);
 
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
