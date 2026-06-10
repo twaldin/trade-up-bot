@@ -10,9 +10,10 @@ const blogRoutesSource = readFileSync(join(__dir, "../../server/blog-routes.ts")
 
 describe("SEO crawler page robustness", () => {
   it("skin crawler pages do not fail when optional output_skin_names stats are unavailable", () => {
-    expect(serverSource).toContain("let outputTuCount = 0;");
+    // outputStats query is wrapped with .catch() in Promise.all to preserve resilience
     expect(serverSource).toContain("Skin SEO output count unavailable:");
     expect(serverSource).toContain("output_skin_names @> ARRAY[$1]::text[]");
+    expect(serverSource).toContain("outputStatsResult.rows[0]?.count || 0");
   });
 
   it("collection trade-up crawler pages include H1 and trade-up data table markup", () => {

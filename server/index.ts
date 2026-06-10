@@ -510,18 +510,34 @@ registerCanonicalRedirectRoutes(app);
   app.get("/skins/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     try {
-      // Redis cache: 3600s TTL. Skin data changes infrequently; cache avoids 5s+ cold path per page.
+      // Redis cache: 3600s TTL. seo_skin: stores full crawler HTML; seo_skin_meta: stores the small
+      // meta object for non-crawlers. Both are checked before any DB work.
       const cacheKey = `seo_skin:${req.params.slug}`;
-      if (isCrawler(ua)) try {
-        const { cacheGet } = await import("./redis.js");
-        const cached = await cacheGet<string>(cacheKey);
-        if (cached) {
-          res.setHeader("Content-Type", "text/html");
-          res.setHeader("X-Cache", "HIT");
-          res.send(cached);
-          return;
-        }
-      } catch { /* Redis unavailable */ }
+      const metaCacheKey = `seo_skin_meta:${req.params.slug}`;
+      const { cacheGet, cacheSet } = await import("./redis.js");
+      if (isCrawler(ua)) {
+        try {
+          const cached = await cacheGet<string>(cacheKey);
+          if (cached) {
+            res.setHeader("Content-Type", "text/html");
+            res.setHeader("X-Cache", "HIT");
+            res.send(cached);
+            return;
+          }
+        } catch { /* Redis unavailable */ }
+      } else {
+        try {
+          const cachedMeta = await cacheGet<{ title: string; description: string; url: string; robots: string; ogImage?: string }>(metaCacheKey);
+          if (cachedMeta) {
+            const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+            if (!shellHtmlLocal) return next();
+            res.setHeader("Content-Type", "text/html");
+            res.setHeader("X-Cache", "HIT");
+            res.send(injectMetaIntoSpa(shellHtmlLocal, cachedMeta));
+            return;
+          }
+        } catch { /* Redis unavailable */ }
+      }
 
       const { getSlugMap } = await import("./routes/data.js");
       const slugMap = await getSlugMap(pool);
@@ -550,71 +566,78 @@ registerCanonicalRedirectRoutes(app);
       const floatRangeText = `${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}`;
       const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
 
-      // Collections this skin belongs to
-      const { rows: collections } = await pool.query(`
-        SELECT c.name FROM skin_collections sc
-        JOIN collections c ON sc.collection_id = c.id
-        JOIN skins s ON sc.skin_id = s.id
-        WHERE s.name = $1 AND s.stattrak = false
-      `, [skinName]);
-
-      // Prices by condition
-      const { rows: condPrices } = await pool.query(`
-        SELECT condition, avg_price_cents, median_price_cents, min_price_cents
-        FROM price_data WHERE skin_name = $1 AND source = 'csfloat_ref'
-        ORDER BY CASE condition
-          WHEN 'Factory New' THEN 1 WHEN 'Minimal Wear' THEN 2
-          WHEN 'Field-Tested' THEN 3 WHEN 'Well-Worn' THEN 4
-          WHEN 'Battle-Scarred' THEN 5 END
-      `, [skinName]);
-
-      // Trade-ups using this skin as INPUT (top 5 for table + total count)
-      // MATERIALIZED CTE forces the planner to start from trade_up_inputs (28 rows for AK Redline)
-      // rather than scanning all 41K profitable trade_ups in a nested loop (was 4.5s → 9ms).
-      const { rows: tradeUps } = await pool.query(`
-        WITH skin_tus AS MATERIALIZED (
-          SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
-        )
-        SELECT t.id, t.type, t.profit_cents, t.roi_percentage, t.chance_to_profit, t.total_cost_cents
-        FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
-        WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
-        ORDER BY t.profit_cents DESC LIMIT 5
-      `, [skinName]);
-      const { rows: [inputStats] } = await pool.query(`
-        WITH skin_tus AS MATERIALIZED (
-          SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
-        )
-        SELECT COUNT(*)::int as count
-        FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
-        WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
-      `, [skinName]);
-      const inputTuCount = inputStats?.count || 0;
-
-      // Trade-ups that PRODUCE this skin as OUTPUT.
-      // Some restored/local databases predate the output_skin_names helper column.
-      // Treat that optional count as 0 instead of failing the whole crawler page.
-      let outputTuCount = 0;
-      try {
-        const { rows: [outputStats] } = await pool.query(`
+      // Run all independent queries in parallel. outputStats wrapped to avoid rejecting on
+      // databases that predate the output_skin_names column (preserve existing resilience).
+      const outputStatsWrapped = pool.query(`
           SELECT COUNT(*)::int as count
           FROM trade_ups
           WHERE output_skin_names @> ARRAY[$1]::text[]
             AND listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
-        `, [skinName]);
-        outputTuCount = outputStats?.count || 0;
-      } catch (err) {
+        `, [skinName]).catch((err: unknown) => {
         console.warn("Skin SEO output count unavailable:", err instanceof Error ? err.message : err);
-      }
+        return { rows: [{ count: 0 }] };
+      });
 
-      // 30-day price trend: compare first-week median vs last-week median
-      const { rows: [priceTrend] } = await pool.query(`
-        SELECT
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at < NOW() - INTERVAL '23 days') AS old_median,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at > NOW() - INTERVAL '7 days') AS new_median,
-          COUNT(*) as obs_count
-        FROM price_observations
-        WHERE skin_name = $1 AND observed_at > NOW() - INTERVAL '30 days'
-      `, [skinName]);
+      const [
+        { rows: collections },
+        { rows: condPrices },
+        { rows: tradeUps },
+        { rows: [inputStats] },
+        outputStatsResult,
+        { rows: [priceTrend] },
+      ] = await Promise.all([
+        // Collections this skin belongs to
+        pool.query(`
+          SELECT c.name FROM skin_collections sc
+          JOIN collections c ON sc.collection_id = c.id
+          JOIN skins s ON sc.skin_id = s.id
+          WHERE s.name = $1 AND s.stattrak = false
+        `, [skinName]),
+        // Prices by condition
+        pool.query(`
+          SELECT condition, avg_price_cents, median_price_cents, min_price_cents
+          FROM price_data WHERE skin_name = $1 AND source = 'csfloat_ref'
+          ORDER BY CASE condition
+            WHEN 'Factory New' THEN 1 WHEN 'Minimal Wear' THEN 2
+            WHEN 'Field-Tested' THEN 3 WHEN 'Well-Worn' THEN 4
+            WHEN 'Battle-Scarred' THEN 5 END
+        `, [skinName]),
+        // Trade-ups using this skin as INPUT (top 5 for table)
+        // MATERIALIZED CTE forces the planner to start from trade_up_inputs (28 rows for AK Redline)
+        // rather than scanning all 41K profitable trade_ups in a nested loop (was 4.5s → 9ms).
+        pool.query(`
+          WITH skin_tus AS MATERIALIZED (
+            SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
+          )
+          SELECT t.id, t.type, t.profit_cents, t.roi_percentage, t.chance_to_profit, t.total_cost_cents
+          FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
+          WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+          ORDER BY t.profit_cents DESC LIMIT 5
+        `, [skinName]),
+        // Total profitable input count
+        pool.query(`
+          WITH skin_tus AS MATERIALIZED (
+            SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE skin_name = $1
+          )
+          SELECT COUNT(*)::int as count
+          FROM trade_ups t JOIN skin_tus ON t.id = skin_tus.trade_up_id
+          WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        `, [skinName]),
+        // Trade-ups that PRODUCE this skin as OUTPUT (optional — fallback on DB column absence)
+        outputStatsWrapped,
+        // 30-day price trend: compare first-week median vs last-week median
+        pool.query(`
+          SELECT
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at < NOW() - INTERVAL '23 days') AS old_median,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_cents) FILTER (WHERE observed_at > NOW() - INTERVAL '7 days') AS new_median,
+            COUNT(*) as obs_count
+          FROM price_observations
+          WHERE skin_name = $1 AND observed_at > NOW() - INTERVAL '30 days'
+        `, [skinName]),
+      ]);
+
+      const inputTuCount = inputStats?.count || 0;
+      const outputTuCount = outputStatsResult.rows[0]?.count || 0;
       let priceTrendHtml = "";
       if (priceTrend?.old_median && priceTrend?.new_median && priceTrend.obs_count >= 5) {
         const oldMedian = parseFloat(priceTrend.old_median);
@@ -834,11 +857,11 @@ registerCanonicalRedirectRoutes(app);
         jsonLd,
       };
       const html = buildSeoHtml(meta);
-      // Cache the rendered HTML for 3600s — skin data changes at daemon cycle frequency (~30 min)
-      if (isCrawler(ua)) try {
-        const { cacheSet } = await import("./redis.js");
-        await cacheSet(cacheKey, html, 3600).catch(() => {});
-      } catch { /* Redis unavailable */ }
+      // Cache both the full crawler HTML and the small meta object — 3600s TTL.
+      // Writing unconditionally so human visitors also warm the cache.
+      const metaToCache = { title: meta.title, description: meta.description, url: meta.url, robots: meta.robots, ogImage: meta.ogImage };
+      cacheSet(cacheKey, html, 3600).catch(() => {});
+      cacheSet(metaCacheKey, metaToCache, 3600).catch(() => {});
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(html);
