@@ -4,7 +4,7 @@ import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLoc
 import type { SyncStatus } from "../shared/types.js";
 import { collectionToSlug } from "../shared/slugs.js";
 import { useStatus } from "./hooks/useStatus.js";
-import { DaemonModal } from "./components/DaemonModal.js";
+const DaemonModal = lazy(() => import("./components/DaemonModal.js").then(m => ({ default: m.DaemonModal })));
 const TradeUpsPage = lazy(() => import("./pages/TradeUpsPage.js").then(m => ({ default: m.TradeUpsPage })));
 const LandingPage = lazy(() => import("./pages/LandingPage.js").then(m => ({ default: m.LandingPage })));
 const FaqPage = lazy(() => import("./pages/FaqPage.js").then(m => ({ default: m.FaqPage })));
@@ -350,7 +350,11 @@ function AppShell({ user }: { user?: AuthUser | null }) {
         </div>
       </div>
 
-      {userIsAdmin && showDaemonModal && <DaemonModal onClose={() => setShowDaemonModal(false)} />}
+      {userIsAdmin && showDaemonModal && (
+        <Suspense fallback={null}>
+          <DaemonModal onClose={() => setShowDaemonModal(false)} />
+        </Suspense>
+      )}
 
       {/* Navigation */}
       <nav className="flex gap-4 md:gap-6 mb-4 border-b border-border overflow-x-auto">
