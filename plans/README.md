@@ -9,7 +9,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001  | Gate deploys and pushes on the test suite | P1 | S | — | DONE (a012426; CI test job also runs `npm run build` — internal-cross-linking.test.ts reads dist/index.html at module load) |
-| 002  | Patch vulnerable deps, prune dead ones | P1 | S | 001* | TODO |
+| 002  | Patch vulnerable deps, prune dead ones | P1 | S | 001* | DONE (0f2f2c3, dd85204 — react-router 7.17.0, ws 8.21.0, audit clean) |
 | 003  | Slim entry chunk (DaemonModal, blog split, calendar) | P1 | M | 001 | TODO |
 | 004  | SPA shell / vendor chunk / font preload / precompression | P1 | M–L | 003 | TODO |
 | 005  | Cache + parallelize SEO route request path | P1 | M | 004** | TODO |
