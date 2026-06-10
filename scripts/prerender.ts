@@ -17,7 +17,7 @@ const ROUTES = [
   "/faq",
   "/calculator",
   "/blog",
-  ...blogPosts.map((post) => `/blog/${post.slug}`),
+  ...blogPosts.map((post) => `/blog/${post.slug}/`),
   "/features",
   "/pricing",
   "/terms",
