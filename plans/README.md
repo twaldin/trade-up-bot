@@ -11,7 +11,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | 001  | Gate deploys and pushes on the test suite | P1 | S | — | DONE (a012426; CI test job also runs `npm run build` — internal-cross-linking.test.ts reads dist/index.html at module load) |
 | 002  | Patch vulnerable deps, prune dead ones | P1 | S | 001* | DONE (0f2f2c3, dd85204 — react-router 7.17.0, ws 8.21.0, audit clean) |
 | 003  | Slim entry chunk (DaemonModal, blog split, calendar) | P1 | M | 001 | DONE (2f31aa5..45cc5f3 — entry 425→317KB, DataViewer 168→92KB; Step 4 helmet removal skipped via STOP gate: 16 files, see Investigate list) |
-| 004  | SPA shell / vendor chunk / font preload / precompression | P1 | M–L | 003 | TODO |
+| 004  | SPA shell / vendor chunk / font preload / precompression | P1 | M–L | 003 | DONE (0197f1b..9ba46d0 — _shell.html for SPA routes, vendor chunk hash-stable, font preload, 34 br/gz assets, −1.7MB dead images; one REVISE round: HTML excluded from precompression after reviewer caught stale index.html sidecars) |
 | 005  | Cache + parallelize SEO route request path | P1 | M | 004** | TODO |
 | 006  | cachedRoute single-flight coalescing | P2 | M | 001 | TODO |
 | 007  | Remove correlated subqueries + claims N+1; obs index | P2 | M | 001 | TODO |
