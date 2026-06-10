@@ -1245,7 +1245,8 @@ registerCanonicalRedirectRoutes(app);
   });
 
   // Start listening
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
+    process.send?.("ready"); // signal PM2 wait_ready when configured
     console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
 
     // Background cache warming: pre-populate Redis with heavy COUNT queries
@@ -1314,6 +1315,12 @@ registerCanonicalRedirectRoutes(app);
         console.error("Cache warming failed:", (e as Error).message);
       }
     }, 500);
+  });
+
+  process.on("SIGTERM", () => {
+    console.log("SIGTERM received — draining");
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 8000).unref(); // hard deadline
   });
 })();
 
