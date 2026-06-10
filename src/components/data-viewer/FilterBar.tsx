@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Button } from "@shared/components/ui/button.js";
 import { Input } from "@shared/components/ui/input.js";
 import {
@@ -6,7 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@shared/components/ui/popover.js";
-import { Calendar } from "@shared/components/ui/calendar.js";
+const Calendar = lazy(() => import("@shared/components/ui/calendar.js").then(m => ({ default: m.Calendar })));
 import { getAvailableConditions } from "./filter-utils.js";
 
 interface FilterBarProps {
@@ -188,11 +188,13 @@ export function FilterBar({
             {timeRange.from ? formatDate(timeRange.from) : "From"}
           </PopoverTrigger>
           <PopoverContent align="start" className="w-auto p-0">
-            <Calendar
-              mode="single"
-              selected={timeRange.from ?? undefined}
-              onSelect={(day: Date | undefined) => onTimeRangeChange({ from: day ?? null, to: timeRange.to })}
-            />
+            <Suspense fallback={<div className="p-4 text-xs text-muted-foreground">Loading…</div>}>
+              <Calendar
+                mode="single"
+                selected={timeRange.from ?? undefined}
+                onSelect={(day: Date | undefined) => onTimeRangeChange({ from: day ?? null, to: timeRange.to })}
+              />
+            </Suspense>
           </PopoverContent>
         </Popover>
         <span className="text-muted-foreground">&ndash;</span>
@@ -203,11 +205,13 @@ export function FilterBar({
             {timeRange.to ? formatDate(timeRange.to) : "Now"}
           </PopoverTrigger>
           <PopoverContent align="start" className="w-auto p-0">
-            <Calendar
-              mode="single"
-              selected={timeRange.to ?? undefined}
-              onSelect={(day: Date | undefined) => onTimeRangeChange({ from: timeRange.from, to: day ?? null })}
-            />
+            <Suspense fallback={<div className="p-4 text-xs text-muted-foreground">Loading…</div>}>
+              <Calendar
+                mode="single"
+                selected={timeRange.to ?? undefined}
+                onSelect={(day: Date | undefined) => onTimeRangeChange({ from: timeRange.from, to: day ?? null })}
+              />
+            </Suspense>
           </PopoverContent>
         </Popover>
         {hasTimeFilter && (
