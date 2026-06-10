@@ -222,6 +222,21 @@ export async function findProfitableKnifeTradeUps(
       const listingsA = byCollection.get(colA)!;
       const listingsB = byCollection.get(colB)!;
 
+      // Hoist condition pools out of the countA loop: listingsA/listingsB are
+      // loop-invariant w.r.t. countA, so build per-condition buckets once per pair.
+      const condPoolsA = new Map<string, ListingWithCollection[]>();
+      const condPoolsB = new Map<string, ListingWithCollection[]>();
+      for (const c of CONDITION_BOUNDS) { condPoolsA.set(c.name, []); condPoolsB.set(c.name, []); }
+      for (const l of listingsA) { const b = condPoolsA.get(floatToCondition(l.float_value)); if (b) b.push(l); }
+      for (const l of listingsB) { const b = condPoolsB.get(floatToCondition(l.float_value)); if (b) b.push(l); }
+
+      // Pre-compute cross-condition pair pools (loop-invariant w.r.t. countA)
+      const knifeCondPairsStatic: [string, string][] = [
+        ["Factory New", "Field-Tested"],
+        ["Factory New", "Minimal Wear"],
+        ["Minimal Wear", "Field-Tested"],
+      ];
+
       // All splits: 1/4, 2/3, 3/2, 4/1
       for (const countA of [1, 2, 3, 4]) {
         const countB = 5 - countA;
@@ -266,10 +281,10 @@ export async function findProfitableKnifeTradeUps(
         const lowestFloat = selectLowestKnifeFloat(quotas);
         if (lowestFloat) await tryEvalKnife(lowestFloat);
 
-        // Condition-targeted pairs: cheapest N at each condition
+        // Condition-targeted pairs: use hoisted pools instead of re-filtering
         for (const cond of CONDITION_BOUNDS.map(c => c.name)) {
-          const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
-          const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
+          const condA = condPoolsA.get(cond) ?? [];
+          const condB = condPoolsB.get(cond) ?? [];
           if (condA.length >= countA && condB.length >= countB) {
             await tryEvalKnife([
               ...condA.slice(0, countA),
@@ -279,19 +294,15 @@ export async function findProfitableKnifeTradeUps(
         }
 
         // Cross-condition mixing: FN from A + FT from B, etc.
-        const condPairs: [string, string][] = [
-          ["Factory New", "Field-Tested"],
-          ["Factory New", "Minimal Wear"],
-          ["Minimal Wear", "Field-Tested"],
-        ];
-        for (const [c1, c2] of condPairs) {
-          const poolA = listingsA.filter(l => floatToCondition(l.float_value) === c1);
-          const poolB = listingsB.filter(l => floatToCondition(l.float_value) === c2);
+        // Uses hoisted pools instead of re-filtering per iteration.
+        for (const [c1, c2] of knifeCondPairsStatic) {
+          const poolA = condPoolsA.get(c1) ?? [];
+          const poolB = condPoolsB.get(c2) ?? [];
           if (poolA.length >= countA && poolB.length >= countB) {
             await tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)]);
           }
-          const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === c2);
-          const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === c1);
+          const poolAr = condPoolsA.get(c2) ?? [];
+          const poolBr = condPoolsB.get(c1) ?? [];
           if (poolAr.length >= countA && poolBr.length >= countB) {
             await tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)]);
           }

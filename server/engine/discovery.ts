@@ -321,6 +321,14 @@ export async function findProfitableTradeUps(
         const listingsA = byCollection.get(colA) ?? [];
         const listingsB = byCollection.get(colB) ?? [];
 
+        // Hoist condition pools out of the countA loop: listingsA/listingsB are
+        // loop-invariant w.r.t. countA, so build per-condition buckets once per pair.
+        const condPoolsA = new Map<string, ListingWithCollection[]>();
+        const condPoolsB = new Map<string, ListingWithCollection[]>();
+        for (const c of CONDITION_BOUNDS) { condPoolsA.set(c.name, []); condPoolsB.set(c.name, []); }
+        for (const l of listingsA) { const b = condPoolsA.get(floatToCondition(l.float_value)); if (b) b.push(l); }
+        for (const l of listingsB) { const b = condPoolsB.get(floatToCondition(l.float_value)); if (b) b.push(l); }
+
         // Pre-compute outcomes and transitions ONCE per pair (reused across all 9 splits)
         const outcomes = outcomesForCols(colA, colB);
         if (outcomes.length === 0) continue;
@@ -330,6 +338,14 @@ export async function findProfitableTradeUps(
             transitions.push(t);
           }
         }
+
+        // Pre-compute cross-condition pair pools (loop-invariant w.r.t. countA)
+        const condPairsStatic: [string, string][] = [
+          ["Factory New", "Field-Tested"],
+          ["Factory New", "Minimal Wear"],
+          ["Minimal Wear", "Field-Tested"],
+          ["Field-Tested", "Well-Worn"],
+        ];
 
         for (let countA = 1; countA <= 9; countA++) {
           const countB = 10 - countA;
@@ -384,10 +400,10 @@ export async function findProfitableTradeUps(
             await tryEval(lowestFloat, outcomes);
           }
 
-          // Condition-targeted pairs: cheapest N at each condition
+          // Condition-targeted pairs: use hoisted pools instead of re-filtering
           for (const cond of CONDITION_BOUNDS.map(c => c.name)) {
-            const condA = listingsA.filter(l => floatToCondition(l.float_value) === cond);
-            const condB = listingsB.filter(l => floatToCondition(l.float_value) === cond);
+            const condA = condPoolsA.get(cond) ?? [];
+            const condB = condPoolsB.get(cond) ?? [];
             if (condA.length >= countA && condB.length >= countB) {
               await tryEval([
                 ...condA.slice(0, countA),
@@ -399,21 +415,16 @@ export async function findProfitableTradeUps(
           // Cross-condition mixing: FN from A + FT from B, MW from A + WW from B, etc.
           // Different condition combos produce different output floats — finds sweet spots
           // that pure-condition pairs miss. Only try adjacent pairs to limit combo explosion.
-          const condPairs: [string, string][] = [
-            ["Factory New", "Field-Tested"],
-            ["Factory New", "Minimal Wear"],
-            ["Minimal Wear", "Field-Tested"],
-            ["Field-Tested", "Well-Worn"],
-          ];
-          for (const [condA, condB] of condPairs) {
-            const poolA = listingsA.filter(l => floatToCondition(l.float_value) === condA);
-            const poolB = listingsB.filter(l => floatToCondition(l.float_value) === condB);
+          // Uses hoisted pools instead of re-filtering per iteration.
+          for (const [c1, c2] of condPairsStatic) {
+            const poolA = condPoolsA.get(c1) ?? [];
+            const poolB = condPoolsB.get(c2) ?? [];
             if (poolA.length >= countA && poolB.length >= countB) {
               await tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes);
             }
             // Also try reversed (B cond from A, A cond from B)
-            const poolAr = listingsA.filter(l => floatToCondition(l.float_value) === condB);
-            const poolBr = listingsB.filter(l => floatToCondition(l.float_value) === condA);
+            const poolAr = condPoolsA.get(c2) ?? [];
+            const poolBr = condPoolsB.get(c1) ?? [];
             if (poolAr.length >= countA && poolBr.length >= countB) {
               await tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes);
             }
