@@ -170,6 +170,20 @@ registerCanonicalRedirectRoutes(app);
 
   app.get("/og/trade-ups/:id.png", async (req, res) => {
     try {
+      // Redis PNG cache — use raw getBuffer/set on the ioredis client to avoid JSON corruption
+      const { getRedis } = await import("./redis.js");
+      const redis = getRedis();
+      const ogKey = `og:tradeup:${req.params.id}`;
+      if (redis) {
+        const cached = await redis.getBuffer(ogKey).catch(() => null);
+        if (cached) {
+          res.setHeader("Content-Type", "image/png");
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          res.send(cached);
+          return;
+        }
+      }
+
       const { rows: [row] } = await pool.query(
         "SELECT id, type, total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, best_case_cents, worst_case_cents FROM trade_ups WHERE id = $1",
         [req.params.id]
@@ -180,6 +194,8 @@ registerCanonicalRedirectRoutes(app);
         [row.id]
       );
       const png = await generateOgImage({ ...row, inputs });
+      // Cache the PNG buffer in Redis — must use raw set (not cacheSet) to avoid JSON serialization
+      if (redis) redis.set(ogKey, png, "EX", 3600).catch(() => {});
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=3600");
       res.send(png);

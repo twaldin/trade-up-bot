@@ -1,14 +1,34 @@
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import type { ReactNode } from "react";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Vendored TTF files (OFL-licensed, https://fonts.google.com/specimen/Inter)
+// Checked in to server/fonts/ to avoid Google Fonts network dependency at startup.
+const FONTS_DIR = path.join(__dirname, "fonts");
 
 // Fetch fonts once at startup (satori needs ttf/otf, not woff/woff2)
 let fontsLoaded: { regular: ArrayBuffer; bold: ArrayBuffer } | null = null;
 
 async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }> {
   if (fontsLoaded) return fontsLoaded;
-  // Google Fonts API returns TTF when requested with a non-woff2-capable user-agent
+
+  // Prefer vendored TTFs in server/fonts/ — eliminates Google Fonts network dependency
+  const regularPath = path.join(FONTS_DIR, "Inter-Regular.ttf");
+  const boldPath = path.join(FONTS_DIR, "Inter-Bold.ttf");
+  if (fs.existsSync(regularPath) && fs.existsSync(boldPath)) {
+    fontsLoaded = {
+      regular: fs.readFileSync(regularPath).buffer as ArrayBuffer,
+      bold: fs.readFileSync(boldPath).buffer as ArrayBuffer,
+    };
+    return fontsLoaded;
+  }
+
+  // Fallback: fetch from Google Fonts (network required, non-woff2 UA returns TTF)
   const css = await fetch("https://fonts.googleapis.com/css2?family=Inter:wght@400;700", {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)" },
   }).then(r => r.text());
