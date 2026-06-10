@@ -4,17 +4,6 @@ import { CSFLOAT_BASE, CONDITION_FROM_FLOAT } from "./types.js";
 import type { CSFloatSaleEntry } from "./types.js";
 import { getSyncMeta, setSyncMeta } from "../db.js";
 
-/**
- * Store a sale as a price observation for KNN float-precise pricing.
- * Called from all sale history sync functions. Dedup handled by unique index.
- */
-async function recordSaleObservation(pool: pg.Pool, skinName: string, floatValue: number, priceCents: number, soldAt: string) {
-  await pool.query(
-    "INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at) VALUES ($1, $2, $3, 'sale', $4) ON CONFLICT DO NOTHING",
-    [skinName, floatValue, priceCents, soldAt]
-  );
-}
-
 type SaleHistoryRow = {
   id: string;
   skinName: string;
@@ -38,7 +27,7 @@ const SALE_BATCH_SIZE = 200;
  * Uses ON CONFLICT DO NOTHING for dedup (matches per-row behaviour).
  * Must be called on a transactional client.
  */
-async function batchInsertSaleHistory(
+export async function batchInsertSaleHistory(
   client: pg.PoolClient,
   rows: SaleHistoryRow[]
 ): Promise<number> {
@@ -65,7 +54,7 @@ async function batchInsertSaleHistory(
  * Uses ON CONFLICT DO NOTHING for dedup (idx_price_obs_dedup unique index).
  * Must be called on a transactional client to keep observations in sync with sale_history.
  */
-async function batchInsertObservations(
+export async function batchInsertObservations(
   client: pg.PoolClient,
   rows: ObservationRow[]
 ): Promise<void> {
@@ -224,7 +213,7 @@ export async function syncSaleHistory(
           if (err.status === 429 && retries < 1) {
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
@@ -457,7 +446,7 @@ export async function syncStatTrakSaleHistory(
           if (err.status === 429 && retries < 1) {
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise(r => setTimeout(r, delay));
             retries++;
@@ -676,7 +665,7 @@ export async function syncSaleHistoryForRarity(
           if (err.status === 429 && retries < 1) {
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
@@ -895,7 +884,7 @@ export async function syncKnifeGloveSaleHistory(
           if (err.status === 429 && retries < 1) {
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 30000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;

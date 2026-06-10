@@ -6,12 +6,14 @@
  * specifically:
  *   - Duplicate rows (same id / same unique observation tuple) are ignored
  *   - Unique rows land correctly
+ *   - Chunking loop fires correctly for >SALE_BATCH_SIZE (200) rows
  *
  * Uses an isolated schema on tradeupbot_test — no side-effects.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import pg from "pg";
+import { batchInsertSaleHistory, batchInsertObservations } from "../../server/sync/sales.js";
 
 const { Pool } = pg;
 
@@ -47,42 +49,11 @@ async function createIsolatedSchema(pool: pg.Pool): Promise<string> {
   return schema;
 }
 
-/** Minimal batch helpers mirroring what sales.ts now uses, operating on a schema-qualified pool. */
-async function batchInsertSaleHistoryDirect(
-  pool: pg.Pool,
-  schema: string,
-  rows: Array<{ id: string; skinName: string; condition: string; price: number; floatValue: number; createdAt: string }>
-): Promise<number> {
-  if (rows.length === 0) return 0;
-  const values: unknown[] = [];
-  const placeholders = rows.map((row, i) => {
-    const b = i * 6;
-    values.push(row.id, row.skinName, row.condition, row.price, row.floatValue, row.createdAt);
-    return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},'csfloat')`;
-  }).join(",");
-  const result = await pool.query(
-    `INSERT INTO "${schema}".sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
-    values
-  );
-  return result.rowCount ?? 0;
-}
-
-async function batchInsertObservationsDirect(
-  pool: pg.Pool,
-  schema: string,
-  rows: Array<{ skinName: string; floatValue: number; price: number; soldAt: string }>
-): Promise<void> {
-  if (rows.length === 0) return;
-  const values: unknown[] = [];
-  const placeholders = rows.map((row, i) => {
-    const b = i * 4;
-    values.push(row.skinName, row.floatValue, row.price, row.soldAt);
-    return `($${b+1},$${b+2},$${b+3},'sale',$${b+4})`;
-  }).join(",");
-  await pool.query(
-    `INSERT INTO "${schema}".price_observations (skin_name, float_value, price_cents, source, observed_at) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
-    values
-  );
+/** Check out a client from the pool and set search_path to the isolated schema. */
+async function clientFor(pool: pg.Pool, schema: string): Promise<pg.PoolClient> {
+  const client = await pool.connect();
+  await client.query(`SET search_path TO "${schema}"`);
+  return client;
 }
 
 describe("sync batch ingest equivalence", () => {
@@ -111,7 +82,13 @@ describe("sync batch ingest equivalence", () => {
       { id: "sale-2", skinName: "AK-47 | Fire Serpent", condition: "Field-Tested", price: 5100, floatValue: 0.18, createdAt: soldAt },
     ];
 
-    const inserted = await batchInsertSaleHistoryDirect(pool, schema, sales);
+    const client = await clientFor(pool, schema);
+    let inserted: number;
+    try {
+      inserted = await batchInsertSaleHistory(client, sales);
+    } finally {
+      client.release();
+    }
 
     // Sale_history: 3 unique rows (sale-1, sale-2, sale-3); 2 duplicates ignored
     expect(inserted).toBe(3);
@@ -132,7 +109,12 @@ describe("sync batch ingest equivalence", () => {
       { skinName: "AK-47 | Fire Serpent", floatValue: 0.18, price: 5100, soldAt },
     ];
 
-    await batchInsertObservationsDirect(pool, schema, obs);
+    const client = await clientFor(pool, schema);
+    try {
+      await batchInsertObservations(client, obs);
+    } finally {
+      client.release();
+    }
 
     const { rows } = await pool.query(
       `SELECT skin_name, float_value, price_cents FROM "${schema}".price_observations ORDER BY price_cents`
@@ -156,8 +138,13 @@ describe("sync batch ingest equivalence", () => {
     ];
     const obsRows = sales.map((s) => ({ skinName: s.skinName, floatValue: s.floatValue, price: s.price, soldAt }));
 
-    await batchInsertSaleHistoryDirect(pool, schema, sales);
-    await batchInsertObservationsDirect(pool, schema, obsRows);
+    const client = await clientFor(pool, schema);
+    try {
+      await batchInsertSaleHistory(client, sales);
+      await batchInsertObservations(client, obsRows);
+    } finally {
+      client.release();
+    }
 
     const { rows: shRows } = await pool.query(
       `SELECT id, skin_name, condition FROM "${schema}".sale_history ORDER BY id`
@@ -175,5 +162,49 @@ describe("sync batch ingest equivalence", () => {
       `SELECT DISTINCT source FROM "${schema}".price_observations`
     );
     expect(sourceRows.map((r) => r.source)).toEqual(["sale"]);
+  });
+
+  it("correctly inserts 250 sales spanning multiple SALE_BATCH_SIZE=200 chunks", async () => {
+    const soldAt = new Date().toISOString();
+    const COUNT = 250;
+
+    // 250 unique sale rows — triggers 2 batches (chunk 0: rows 0-199, chunk 1: rows 200-249)
+    const sales = Array.from({ length: COUNT }, (_, i) => ({
+      id: `bulk-sale-${i}`,
+      skinName: "AK-47 | Redline",
+      condition: "Field-Tested",
+      price: 1000 + i,
+      floatValue: 0.15 + (i % 10) * 0.001,
+      createdAt: soldAt,
+    }));
+    const obsRows = sales.map((s) => ({
+      skinName: s.skinName,
+      floatValue: s.floatValue,
+      price: s.price,
+      soldAt,
+    }));
+
+    const client = await clientFor(pool, schema);
+    let inserted: number;
+    try {
+      inserted = await batchInsertSaleHistory(client, sales);
+      await batchInsertObservations(client, obsRows);
+    } finally {
+      client.release();
+    }
+
+    expect(inserted).toBe(COUNT);
+
+    const { rows: shRows } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM "${schema}".sale_history`
+    );
+    expect(Number(shRows[0].cnt)).toBe(COUNT);
+
+    // Observations: floatValue cycles over 10 distinct values, so 10 unique (float,price) combos per
+    // cycle. With 250 rows and price=1000+i, all 250 are distinct (price is unique per row).
+    const { rows: obsResult } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM "${schema}".price_observations`
+    );
+    expect(Number(obsResult[0].cnt)).toBe(COUNT);
   });
 });

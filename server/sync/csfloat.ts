@@ -114,7 +114,7 @@ export async function syncListingsForRarity(
             // Single retry — bail fast when rate limited; jitter avoids thundering herd
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`  Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
@@ -251,7 +251,7 @@ export async function syncListingsForSkin(
             // Single retry — bail fast if rate limited; jitter avoids thundering herd
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
@@ -411,7 +411,7 @@ export async function syncLowFloatClassifiedListings(
             // Jitter avoids thundering herd when multiple fetch paths share the same bucket
             const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
             const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
-            const delay = base + Math.floor(Math.random() * 5000);
+            const delay = Math.min(base + Math.floor(Math.random() * 5000), 120_000);
             console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
