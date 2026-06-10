@@ -17,7 +17,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
 <p>Whether you call it a CS2 trade-up calculator, trade-up simulator, or trade-up generator, the tool does the same job: model a contract before you spend money. TradeUpBot uses all three terms because players search for each one — the underlying math (collection weighting, adjusted float formula, fee-adjusted profit) is identical regardless of the label.</p>
 <h2>How to use it</h2>
 <ol>
-<li><strong>Choose a rarity tier.</strong> Select the input rarity (Mil-Spec, Restricted, Classified, or Covert for knife/glove). All 10 inputs must share the same rarity.</li>
+<li><strong>Choose a rarity tier.</strong> Inputs can be any rarity from Consumer Grade to Covert. The calculator detects the rarity from your first resolved input. Standard contracts take 10 same-rarity inputs; Covert inputs feed knife/glove contracts which take 5 inputs instead.</li>
 <li><strong>Add each input skin.</strong> Enter the skin name, collection, exact float value, and the listing price from CSFloat, DMarket, or Skinport. Use real listing prices — not averages — because exact float determines output condition.</li>
 <li><strong>Review the output pool and float.</strong> The calculator shows every possible output skin with its probability and estimated value at the predicted float. Check that profitable outputs land safely inside the condition boundary you need (e.g., under 0.07 for Factory New).</li>
 <li><strong>Compare EV and chance-to-profit.</strong> Positive EV means the contract earns on average. High chance-to-profit means most individual attempts finish green. Small bankrolls usually benefit more from high chance-to-profit; larger bankrolls can tolerate lower-probability positive-EV plays.</li>

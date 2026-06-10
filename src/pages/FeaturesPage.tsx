@@ -157,7 +157,7 @@ export function FeaturesPage() {
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Input pricing uses actual listing prices with marketplace-specific buyer fees applied:
                 CSFloat (2.8% + $0.30), DMarket (2.5%), Skinport (0%). Seller fees are deducted from
-                output estimates: CSFloat (2%), DMarket (2%), Skinport (12%). All values in the table
+                output estimates: CSFloat (2%), DMarket (2%), Skinport (8%). All values in the table
                 reflect these real-world costs.
               </p>
             </section>

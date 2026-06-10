@@ -257,10 +257,13 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <h2>FAQ</h2>
 
 <h3>What are CS2 float values?</h3>
-<p>CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred.</p>
+<p>CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New (0.00–0.07), Minimal Wear (0.07–0.15), Field-Tested (0.15–0.38), Well-Worn (0.38–0.45), or Battle-Scarred (0.45–1.00).</p>
 
 <h3>What float is Factory New in CS2?</h3>
 <p>Factory New covers floats from 0.00 up to 0.07. Minimal Wear starts at 0.07, so tiny float differences near that boundary can create large price changes.</p>
+
+<h3>What is adjusted float in CS2 trade-ups?</h3>
+<p>Adjusted float normalizes each input skin's float within its own min–max range: adjusted = (float − min) / (max − min). The 10 adjusted floats are averaged, then mapped onto the output skin's range to produce the output float.</p>
 
 <h3>How does adjusted float affect trade-ups?</h3>
 <p>Adjusted float normalizes each input within its own min and max range, averages those values, and maps the average onto the output skin range.</p>
@@ -417,7 +420,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>Actual profit: $93.10 - $83.31 = $9.79. That $15 "profit" is now under $10. And this assumes you get the expected output — if you hit a lower-value outcome, fees push you further into the red.</p>
 
-<p>If you had to sell on Skinport instead (maybe CSFloat doesn't have enough buyer demand for your output skin), the 8% seller fee cuts the result significantly: $95 * 0.92 = $87.40. Profit: $87.40 - $83.31 = $4.09. That is more than half of the $9.79 you would keep on CSFloat — the 8% seller fee changes the contract from a solid return to a thin one.</p>
+<p>If you had to sell on Skinport instead (maybe CSFloat doesn't have enough buyer demand for your output skin), the 8% seller fee cuts the result significantly: $95 * 0.92 = $87.40. Profit: $87.40 - $83.31 = $4.09 — the 8% seller fee cuts your profit by more than half compared with the $9.79 you would keep selling on CSFloat (the cut is $9.79 − $4.09 = $5.70, more than half). The 8% seller fee changes the contract from a solid return to a thin one.</p>
 
 <h2>The Flat Fee Problem on Cheap Inputs</h2>
 

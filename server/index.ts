@@ -1033,7 +1033,7 @@ registerCanonicalRedirectRoutes(app);
         ] };
         const html = buildSeoHtml({
           title: "CS2 Trade-Ups — Live Profitable Contracts, Updated Daily | TradeUpBot",
-          description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
+          description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport — or model your own contract with the calculator.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({
             total,
