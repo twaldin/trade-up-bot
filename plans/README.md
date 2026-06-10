@@ -14,7 +14,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | 004  | SPA shell / vendor chunk / font preload / precompression | P1 | M–L | 003 | DONE (0197f1b..9ba46d0 — _shell.html for SPA routes, vendor chunk hash-stable, font preload, 34 br/gz assets, −1.7MB dead images; one REVISE round: HTML excluded from precompression after reviewer caught stale index.html sidecars) |
 | 005  | Cache + parallelize SEO route request path | P1 | M | 004** | DONE (3a6f1b3..afa0eaa — human-path Redis caching un-gated, /skins queries parallelized, OG PNG cached, sitemaps cached, SEO errors logged; crawler HTML proven byte-identical vs main; bonus: repo's corrupted server/fonts replaced with real Inter binaries) |
 | 006  | cachedRoute single-flight coalescing | P2 | M | 001 | DONE (695f438 — N concurrent misses now cost 1 handler execution, works with Redis up or down; serve-stale step skipped, no local Redis to test against) |
-| 007  | Remove correlated subqueries + claims N+1; obs index | P2 | M | 001 | TODO |
+| 007  | Remove correlated subqueries + claims N+1; obs index | P2 | M | 001 | DONE (b4c155a..0f2d944 — batched counts proven equivalent via characterization tests run against both code versions; claims N+1 batched; idx_price_obs_skin_observed created on prod via script) |
 | 008  | Cold start: schema-version gate, tsx cache, graceful reload | P2 | M | 001 | TODO |
 | 009  | Server-side cache warming; visibility-gated polling | P2 | S–M | — | TODO |
 | 010  | Engine: hoist condition pools, batch merge/insert writes | P2 | M | 001 | TODO |
