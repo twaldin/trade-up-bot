@@ -196,6 +196,7 @@ export function TradeUpSharePage() {
               <span className="text-sm text-muted-foreground">Sign in to verify, claim, and purchase listings</span>
               <a
                 href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`}
+                rel="nofollow"
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
               >
                 Sign in with Steam
@@ -206,7 +207,7 @@ export function TradeUpSharePage() {
           {/* Toast for unauthenticated listing link clicks */}
           {linkToast && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium shadow-lg animate-in fade-in slide-in-from-bottom-4">
-              <a href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`} className="hover:underline">
+              <a href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`} rel="nofollow" className="hover:underline">
                 Sign in with Steam to view listing links
               </a>
             </div>
@@ -241,6 +242,7 @@ export function TradeUpSharePage() {
               <p className="text-sm text-muted-foreground mb-3">Find more profitable trade-ups on TradeUpBot</p>
               <a
                 href={`/auth/steam?return=/dashboard`}
+                rel="nofollow"
                 className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
               >
                 Sign in with Steam

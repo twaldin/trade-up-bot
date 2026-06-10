@@ -192,6 +192,7 @@ export function FeaturesPage() {
             <p className="text-sm text-muted-foreground mb-6">Sign in with Steam to get started. Free tier available.</p>
             <a
               href="/auth/steam"
+              rel="nofollow"
               className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
             >
               Sign in with Steam

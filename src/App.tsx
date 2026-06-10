@@ -197,7 +197,7 @@ function UserMenu({ user }: { user: AuthUser }) {
 
           {/* Discord linking */}
           {!user.discord_id ? (
-            <a href="/api/auth/discord" className="block w-full text-left px-3 py-2 text-xs text-indigo-400 hover:bg-muted cursor-pointer">
+            <a href="/api/auth/discord" rel="nofollow" className="block w-full text-left px-3 py-2 text-xs text-indigo-400 hover:bg-muted cursor-pointer">
               Link Discord
             </a>
           ) : (
@@ -232,7 +232,7 @@ function UserMenu({ user }: { user: AuthUser }) {
           )}
 
           <div className="border-t border-border mt-1">
-            <a href="/auth/logout" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
+            <a href="/auth/logout" rel="nofollow" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
               Sign Out
             </a>
           </div>
