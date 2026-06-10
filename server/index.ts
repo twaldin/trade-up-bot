@@ -1109,11 +1109,13 @@ registerCanonicalRedirectRoutes(app);
       orderPreference: ["br", "gz"],
       serveStatic: {
         setHeaders(res, filePath) {
-          if (filePath.includes("/assets/")) {
+          // Strip .br/.gz suffix that express-static-gzip appends when rewriting req.url
+          const normalizedPath = filePath.replace(/\.(br|gz)$/, "");
+          if (normalizedPath.includes("/assets/")) {
             res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-          } else if (filePath.endsWith(".html")) {
+          } else if (normalizedPath.endsWith(".html")) {
             res.setHeader("Cache-Control", "no-cache, must-revalidate");
-          } else if (/\.(png|jpe?g|webp|svg)$/i.test(filePath) && !filePath.includes("/assets/")) {
+          } else if (/\.(png|jpe?g|webp|svg)$/i.test(normalizedPath) && !normalizedPath.includes("/assets/")) {
             // Public images (not content-hashed): 1-day cache
             res.setHeader("Cache-Control", "public, max-age=86400");
           }

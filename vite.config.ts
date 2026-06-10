@@ -28,8 +28,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     preloadGeist(),
-    compression({ algorithm: "brotliCompress", threshold: 1024 }),
-    compression({ algorithm: "gzip", threshold: 1024 }),
+    compression({ algorithm: "brotliCompress", threshold: 1024, exclude: /\.html$/ }),
+    compression({ algorithm: "gzip", threshold: 1024, exclude: /\.html$/ }),
   ],
   build: {
     rollupOptions: {
