@@ -1,5 +1,15 @@
 import type { Express, RequestHandler } from "express";
 
+// Canonicalization convention:
+//   Site-wide canonical form is NO trailing slash (e.g. /features, /pricing).
+//   EXCEPTION: blog posts use a trailing slash (/blog/:slug/) — slash-canonical,
+//   enforced by server/blog-routes.ts (301 redirect no-slash → slash) and
+//   prerendered as directories in scripts/prerender.ts.
+//
+//   New routes must pick one form and register the matching redirect here
+//   (no-slash paths → NO_TRAILING_SLASH_PATHS / NO_TRAILING_SLASH_PATTERNS)
+//   or in blog-routes.ts (slash paths).
+
 const NO_TRAILING_SLASH_PATHS = new Set([
   "/blog",
   "/calculator",
