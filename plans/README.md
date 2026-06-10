@@ -13,7 +13,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | 003  | Slim entry chunk (DaemonModal, blog split, calendar) | P1 | M | 001 | DONE (2f31aa5..45cc5f3 — entry 425→317KB, DataViewer 168→92KB; Step 4 helmet removal skipped via STOP gate: 16 files, see Investigate list) |
 | 004  | SPA shell / vendor chunk / font preload / precompression | P1 | M–L | 003 | DONE (0197f1b..9ba46d0 — _shell.html for SPA routes, vendor chunk hash-stable, font preload, 34 br/gz assets, −1.7MB dead images; one REVISE round: HTML excluded from precompression after reviewer caught stale index.html sidecars) |
 | 005  | Cache + parallelize SEO route request path | P1 | M | 004** | DONE (3a6f1b3..afa0eaa — human-path Redis caching un-gated, /skins queries parallelized, OG PNG cached, sitemaps cached, SEO errors logged; crawler HTML proven byte-identical vs main; bonus: repo's corrupted server/fonts replaced with real Inter binaries) |
-| 006  | cachedRoute single-flight coalescing | P2 | M | 001 | TODO |
+| 006  | cachedRoute single-flight coalescing | P2 | M | 001 | DONE (695f438 — N concurrent misses now cost 1 handler execution, works with Redis up or down; serve-stale step skipped, no local Redis to test against) |
 | 007  | Remove correlated subqueries + claims N+1; obs index | P2 | M | 001 | TODO |
 | 008  | Cold start: schema-version gate, tsx cache, graceful reload | P2 | M | 001 | TODO |
 | 009  | Server-side cache warming; visibility-gated polling | P2 | S–M | — | TODO |
@@ -55,6 +55,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **Client-side per-tab fetch cache / react-query** — over-engineering for this codebase; server-side single-flight (006) addresses the cost.
 
 ## Investigate later (real signals, not yet plan-worthy)
+
+- cachedRoute HIT/COALESCED paths replay cached bodies with status 200 even when the original handler responded non-2xx (pre-existing for HIT, newly reachable with Redis down for COALESCED) — consider skipping cache/coalesce capture for non-2xx responses (plan 006 reviewer finding, 2026-06-10).
+- react-helmet-async removal (plan 003 Step 4) skipped via STOP gate: 16 files use `<Helmet>` — needs its own small plan if wanted (~6KB gz entry savings on React 19).
 
 - Worker signature-load timeout → duplicate-discovery feedback loop (`server/daemon/calc-worker.ts:113-130`); root fix is main-process sig precomputation (builds on plan 010).
 - Discovery memory: 6 rarity datasets × duplicated index arrays drive the 8GB heap (`engine/data-load.ts:75`, `daemon/index.ts:370`); streaming/partitioning is an L-effort redesign.
