@@ -18,7 +18,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | 008  | Cold start: schema-version gate, tsx cache, graceful reload | P2 | M | 001 | DONE (f4e868b..54fc3be — createTables gated on sync_meta schema_version (bump contract in db.ts comment), tsx cache retained across deploys, pm2 reload + SIGTERM drain + ready signal, prod https assert; NODE_ENV=production set on VPS at rollout) |
 | 009  | Server-side cache warming; visibility-gated polling | P2 | S–M | — | DONE (8c98e7f..654a337 — client warm-up fetches removed, daemon warms type_counts/collections/skin-data at cycle end, hidden tabs stop polling, preparedTradeUps memoized) |
 | 010  | Engine: hoist condition pools, batch merge/insert writes | P2 | M | 001 | DONE (a6422fa..0f2d9fa — pools built once per pair (~117 redundant filter passes eliminated per pair), merge SELECT batched via ANY(array), inputs in one multi-row INSERT, peak fold; pre/post discovery output proven byte-identical) |
-| 011  | Sync ingest batching + retry jitter | P3 | M | 001 | TODO |
+| 011  | Sync ingest batching + retry jitter | P3 | M | 001 | DONE (302db56..63a19da — 6 sale-ingest loops batched (≤2 multi-row INSERTs/page), Skinport WS micro-batched via ObservationBuffer (50 rows/500ms), retry sleeps jittered + capped at 120s; one REVISE round: integration test now exercises the exported production helpers incl. 250-row chunking) |
 
 \* 002 can run before 001 if needed. \*\* 005 works without 004 (falls back to reading index.html once at boot) but lands cleaner after it.
 
@@ -31,6 +31,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 004 creates `dist/_shell.html` + `app.locals`/module shell constant that 005 reuses.
 - 006 (fewer duplicate misses) and 007 (cheaper misses) compose; either order.
 - Daemon-side plans (009 step 2, 010, 011) require a **hard** `pm2 restart daemon` on the VPS after deploy (running process holds old code).
+
+## Execution record (2026-06-10)
+
+All 11 plans executed, merged to main, and deployed the same day via the executor-worktree + adversarial-verification loop. Production extras applied during rollout: nginx `gzip_static on;` for `/assets/` (nginx owns that location — express-static-gzip never sees those requests); backup files moved out of `sites-enabled/`; VPS `node_modules` synced (deploys don't npm-install); `NODE_ENV=production` set in the VPS `.env`; `SKIP_STARTUP_MIGRATIONS` removed from `.env` and the PM2 `api` process args so the schema-version gate governs migrations (gated restart-to-serving measured at 2.9s); `idx_price_obs_skin_observed` built CONCURRENTLY on prod (planner verified using it). An uncommitted VPS-local change set (5 files, incl. an alternate collection-filter approach in trade-ups.ts that conflicted with plan 007) was rescued to branch `vps-local-changes-2026-06-10` — needs review/reconcile before any of it is re-applied.
 
 ## Operator follow-ups (manual, on the VPS)
 
