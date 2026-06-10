@@ -252,15 +252,21 @@ export function cachedRoute(
     // Intercept res.json to capture the response and resolve the deferred
     const originalJson = res.json.bind(res);
     res.json = function (data: unknown) {
+      const statusCode = res.statusCode;
       res.setHeader("X-Cache", "MISS");
-      const raw = JSON.stringify(data);
-      // Store in Redis (fire-and-forget, don't block response)
-      if (_available && _redis) {
-        _redis.set(key, raw, "EX", ttlSeconds).catch(() => {});
+      if (statusCode < 300) {
+        // 2xx: store in Redis and resolve waiters with the raw JSON string
+        const raw = JSON.stringify(data);
+        if (_available && _redis) {
+          _redis.set(key, raw, "EX", ttlSeconds).catch(() => {});
+        }
+        resolved = true;
+        resolve(raw);
+      } else {
+        // Non-2xx: skip Redis and resolve with null so followers run independently
+        resolved = true;
+        resolve(null);
       }
-      // Resolve waiters with the raw JSON string
-      resolved = true;
-      resolve(raw);
       return originalJson(data);
     } as typeof res.json;
 

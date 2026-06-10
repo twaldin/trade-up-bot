@@ -117,3 +117,38 @@ describe("cachedRoute single-flight coalescing", () => {
     });
   });
 });
+
+describe("cachedRoute non-2xx response handling", () => {
+  describe("404 responses are not cached or coalesced", () => {
+    it("returns 404 to all concurrent requests and re-runs handler on subsequent request", async () => {
+      let callCount = 0;
+
+      const handler = async (_req: express.Request, res: express.Response) => {
+        callCount++;
+        // Simulate slow handler so followers are in-flight
+        await new Promise<void>((resolve) => setTimeout(resolve, 80));
+        res.status(404).json({ error: "not found" });
+      };
+
+      const app = makeApp("test_404_key", handler);
+
+      // Fire 3 concurrent requests — all should get 404, not 200
+      const results = await Promise.all([
+        request(app).get("/test"),
+        request(app).get("/test"),
+        request(app).get("/test"),
+      ]);
+
+      for (const r of results) {
+        expect(r.status).toBe(404);
+        expect(r.body).toEqual({ error: "not found" });
+      }
+
+      // Subsequent sequential request must run the handler again (nothing was cached/coalesced)
+      const before = callCount;
+      const r4 = await request(app).get("/test");
+      expect(r4.status).toBe(404);
+      expect(callCount).toBeGreaterThan(before);
+    });
+  });
+});
