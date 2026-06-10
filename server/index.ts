@@ -210,9 +210,8 @@ registerCanonicalRedirectRoutes(app);
   app.get("/trade-ups/collection/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     try {
-      // Redis cache: 1800s TTL. seo_coll_tu: full crawler HTML; coll_tu_count: non-crawler count.
+      // Redis cache: 1800s TTL. seo_coll_tu:<slug> full crawler HTML; coll_tu_count:<collectionName> non-crawler count.
       const collTuCacheKey = `seo_coll_tu:${req.params.slug}`;
-      const collTuCountKey = `coll_tu_count:${req.params.slug}`;
       const { cacheGet: ctCacheGet, cacheSet: ctCacheSet } = await import("./redis.js");
 
       // Check crawler cache first
@@ -354,7 +353,6 @@ registerCanonicalRedirectRoutes(app);
       ctCacheSet(collTuCacheKey, collTuHtml, 1800).catch(() => {});
       // Also update the count cache so next non-crawler sees the fresh value
       ctCacheSet(`coll_tu_count:${collectionName}`, tradeUps.length, 1800).catch(() => {});
-      void collTuCountKey; // referenced above for non-crawler; suppress unused warning
       res.send(collTuHtml);
     } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });

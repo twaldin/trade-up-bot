@@ -7,7 +7,9 @@ import { fileURLToPath } from "url";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Vendored TTF files (OFL-licensed, https://fonts.google.com/specimen/Inter)
+// Vendored Inter font binaries (OFL-licensed, https://fonts.google.com/specimen/Inter).
+// NOTE: the files are WOFF-format binaries kept under .ttf names for the loader paths
+// below — satori accepts WOFF ArrayBuffers.
 // Checked in to server/fonts/ to avoid Google Fonts network dependency at startup.
 const FONTS_DIR = path.join(__dirname, "fonts");
 

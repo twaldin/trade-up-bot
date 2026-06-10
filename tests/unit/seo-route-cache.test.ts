@@ -24,6 +24,7 @@ describe("SEO route caching (Plan 005)", () => {
       const metaCacheIdx = serverSource.indexOf("seo_skin_meta:");
       const crawlerBranchIdx = serverSource.indexOf("if (isCrawler(ua)) {", metaCacheIdx);
       expect(metaCacheIdx).toBeGreaterThan(0);
+      expect(crawlerBranchIdx).toBeGreaterThan(metaCacheIdx);
       // meta key is introduced in the initial cache block, before the isCrawler check for DB queries
       expect(serverSource).toContain("const metaCacheKey = `seo_skin_meta:");
     });
