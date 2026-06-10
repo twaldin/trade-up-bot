@@ -1,0 +1,5 @@
+#!/bin/sh
+# Pre-push gate promised by CLAUDE.md: typecheck + unit tests.
+set -e
+npm run typecheck
+npm run test:unit

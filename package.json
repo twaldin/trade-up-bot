@@ -19,7 +19,8 @@
     "test:watch": "vitest tests/unit/",
     "typecheck": "tsc --noEmit",
     "verify:seo:public": "tsx scripts/verify-public-seo.ts",
-    "optimize-images": "node scripts/optimize-images.mjs"
+    "optimize-images": "node scripts/optimize-images.mjs",
+    "prepare": "git config core.hooksPath scripts/git-hooks"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

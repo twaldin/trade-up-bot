@@ -10,7 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build (required for unit tests that read dist/)
+        run: npm run build
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Stress / perf budgets
+        run: npm run test:stress
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
