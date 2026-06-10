@@ -1,6 +1,6 @@
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
-import { blogPosts } from "../data/blog-posts.js";
+import { blogMeta } from "../data/blog-meta.js";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
@@ -26,7 +26,7 @@ export function BlogPage() {
           </p>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {blogPosts.map((post) => (
+            {blogMeta.map((post) => (
               <Link
                 key={post.slug}
                 to={`/blog/${post.slug}/`}

@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { DemoAnimation } from '../components/DemoAnimation.js';
 import { DemoAnimationMobile } from '../components/DemoAnimationMobile.js';
 import { SiteNav } from '../components/SiteNav.js';
-import { blogPosts } from '../data/blog-posts.js';
+import { blogMeta } from '../data/blog-meta.js';
 
 const IconSteam = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -366,7 +366,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <h2 className="text-2xl font-bold mb-3 text-center">Blog</h2>
             <p className="text-muted-foreground text-center mb-10">Guides, strategies, and updates from the TradeUpBot team.</p>
             <div className="grid sm:grid-cols-3 gap-6">
-              {blogPosts.slice(0, 3).map((post) => (
+              {blogMeta.slice(0, 3).map((post) => (
                 <a key={post.slug} href={`/blog/${post.slug}/`} className="border border-border rounded-lg p-5 hover:border-foreground/20 transition-colors block">
                   <div className="text-xs text-muted-foreground/50 mb-2">{new Date(post.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
                   <h3 className="font-semibold text-sm mb-2">{post.title}</h3>
