@@ -33,14 +33,26 @@ export async function getActiveClaims(pool: pg.Pool): Promise<ActiveClaim[]> {
       "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
     );
 
-    const result: ActiveClaim[] = [];
-    for (const c of claims) {
-      const { rows: inputs } = await pool.query(
-        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
-        [c.trade_up_id]
+    // Batch-load all listing IDs in a single query instead of one per claim
+    const claimTradeUpIds = claims.map((c: { trade_up_id: number }) => c.trade_up_id);
+    const listingIdsByTradeUp = new Map<number, string[]>();
+    if (claimTradeUpIds.length > 0) {
+      const { rows: inputRows } = await pool.query<{ trade_up_id: number; listing_ids: string[] }>(
+        `SELECT trade_up_id, array_agg(listing_id) AS listing_ids
+         FROM trade_up_inputs
+         WHERE trade_up_id = ANY($1::int[])
+         GROUP BY trade_up_id`,
+        [claimTradeUpIds]
       );
-      result.push({ ...c, listing_ids: inputs.map((i: any) => i.listing_id) });
+      for (const r of inputRows) {
+        listingIdsByTradeUp.set(Number(r.trade_up_id), r.listing_ids ?? []);
+      }
     }
+
+    const result: ActiveClaim[] = claims.map((c: { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }) => ({
+      ...c,
+      listing_ids: listingIdsByTradeUp.get(c.trade_up_id) ?? [],
+    }));
 
     await cacheSet("active_claims", result, 300); // 5-min TTL, refreshed on claim/release
     return result;
@@ -56,14 +68,26 @@ async function refreshClaimsCache(pool: pg.Pool): Promise<void> {
       "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
     );
 
-    const result: ActiveClaim[] = [];
-    for (const c of claims) {
-      const { rows: inputs } = await pool.query(
-        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
-        [c.trade_up_id]
+    // Batch-load all listing IDs in a single query instead of one per claim
+    const claimTradeUpIds = claims.map((c: { trade_up_id: number }) => c.trade_up_id);
+    const listingIdsByTradeUp = new Map<number, string[]>();
+    if (claimTradeUpIds.length > 0) {
+      const { rows: inputRows } = await pool.query<{ trade_up_id: number; listing_ids: string[] }>(
+        `SELECT trade_up_id, array_agg(listing_id) AS listing_ids
+         FROM trade_up_inputs
+         WHERE trade_up_id = ANY($1::int[])
+         GROUP BY trade_up_id`,
+        [claimTradeUpIds]
       );
-      result.push({ ...c, listing_ids: inputs.map((i: any) => i.listing_id) });
+      for (const r of inputRows) {
+        listingIdsByTradeUp.set(Number(r.trade_up_id), r.listing_ids ?? []);
+      }
     }
+
+    const result: ActiveClaim[] = claims.map((c: { trade_up_id: number; user_id: string; claimed_at: string; expires_at: string }) => ({
+      ...c,
+      listing_ids: listingIdsByTradeUp.get(c.trade_up_id) ?? [],
+    }));
 
     await cacheSet("active_claims", result, 300); // 5-min TTL
     console.log(`Claims cache refreshed: ${result.length} active claims`);
