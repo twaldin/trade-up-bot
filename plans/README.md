@@ -15,7 +15,7 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 | 005  | Cache + parallelize SEO route request path | P1 | M | 004** | DONE (3a6f1b3..afa0eaa — human-path Redis caching un-gated, /skins queries parallelized, OG PNG cached, sitemaps cached, SEO errors logged; crawler HTML proven byte-identical vs main; bonus: repo's corrupted server/fonts replaced with real Inter binaries) |
 | 006  | cachedRoute single-flight coalescing | P2 | M | 001 | DONE (695f438 — N concurrent misses now cost 1 handler execution, works with Redis up or down; serve-stale step skipped, no local Redis to test against) |
 | 007  | Remove correlated subqueries + claims N+1; obs index | P2 | M | 001 | DONE (b4c155a..0f2d944 — batched counts proven equivalent via characterization tests run against both code versions; claims N+1 batched; idx_price_obs_skin_observed created on prod via script) |
-| 008  | Cold start: schema-version gate, tsx cache, graceful reload | P2 | M | 001 | TODO |
+| 008  | Cold start: schema-version gate, tsx cache, graceful reload | P2 | M | 001 | DONE (f4e868b..54fc3be — createTables gated on sync_meta schema_version (bump contract in db.ts comment), tsx cache retained across deploys, pm2 reload + SIGTERM drain + ready signal, prod https assert; NODE_ENV=production set on VPS at rollout) |
 | 009  | Server-side cache warming; visibility-gated polling | P2 | S–M | — | TODO |
 | 010  | Engine: hoist condition pools, batch merge/insert writes | P2 | M | 001 | TODO |
 | 011  | Sync ingest batching + retry jitter | P3 | M | 001 | TODO |
