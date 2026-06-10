@@ -140,6 +140,10 @@ registerCanonicalRedirectRoutes(app);
 
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
+  if (process.env.NODE_ENV === "production" && !(process.env.BASE_URL || "").startsWith("https")) {
+    throw new Error("BASE_URL must be set to an https URL in production");
+  }
+
   const pool: pg.Pool = initDb();
   if (process.env.SKIP_STARTUP_MIGRATIONS === "1") {
     console.log("Skipping startup migrations");
