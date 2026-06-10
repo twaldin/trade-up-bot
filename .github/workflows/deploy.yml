@@ -13,6 +13,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Stress (concurrency) and integration tests build on tests/integration/setup.ts,
+    # which requires the tradeupbot_test PostgreSQL database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tradeupbot
+          POSTGRES_PASSWORD: tradeupbot_pg_2026
+          POSTGRES_DB: tradeupbot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +45,8 @@ jobs:
         run: npm run build
       - name: Unit tests
         run: npm run test:unit
+      - name: Integration tests
+        run: npm run test:integration
       - name: Stress / perf budgets
         run: npm run test:stress
 
