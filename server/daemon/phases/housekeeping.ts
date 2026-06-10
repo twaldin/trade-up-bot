@@ -84,13 +84,18 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   // deletion/staleness check. Full-scan refreshListingStatuses removed — caused
   // deadlocks with concurrent DMarket fetcher on 2.8M trade-ups.
 
-  // Purge orphaned trade-ups (inputs deleted but trade-up row remains)
-  const { rowCount: orphanedCount } = await pool.query(`
-    DELETE FROM trade_ups
-    WHERE id NOT IN (SELECT DISTINCT trade_up_id FROM trade_up_inputs)
-  `);
-  if ((orphanedCount ?? 0) > 0) {
-    console.log(`  Purged ${orphanedCount} orphaned trade-ups (no inputs)`);
+  // Purge orphaned trade-ups (inputs deleted but trade-up row remains).
+  // This is a full-table anti-join over trade_ups/trade_up_inputs, so do not
+  // pay it every cycle. Orphans are rare and not user-visible once inputs are
+  // missing; periodic cleanup keeps storage bounded without stalling Phase 1.
+  if (cycleCount % 10 === 0) {
+    const { rowCount: orphanedCount } = await pool.query(`
+      DELETE FROM trade_ups
+      WHERE id NOT IN (SELECT DISTINCT trade_up_id FROM trade_up_inputs)
+    `);
+    if ((orphanedCount ?? 0) > 0) {
+      console.log(`  Purged ${orphanedCount} orphaned trade-ups (no inputs)`);
+    }
   }
 
   // Purge trade-ups preserved >24 hours (partial/stale listings aren't coming back)

@@ -131,9 +131,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const includeStale = req.query.include_stale === "true";
     let where: string;
-    const collectionJoin = ""; // Unused: collection filter now uses collection_names GIN array
     const params: (string | number | string[])[] = [];
     let paramIndex = 1;
+    let collectionIndexParam: number | null = null;
     if (includeStale) {
       where = `WHERE t.is_theoretical = false AND (t.listing_status = 'active' OR t.preserved_at IS NOT NULL)`;
     } else {
@@ -259,28 +259,21 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Collection filter
-    // Uses the denormalized collection_names GIN array on trade_ups for single-collection filter.
-    // Old JOIN approach: subquery over 11M-row trade_up_inputs (15-20s cold).
-    // New GIN approach: BitmapAnd of idx_tu_active_collection_names + idx_tu_active_profit = 95ms.
-    //
-    // Previously forced AND profit_cents > 0 silently when min/max_profit weren't set, to keep
-    // queries fast. That made "Profit any" lie: a collection with 23K total but 0 profitable
-    // rows showed an empty table while the dropdown counter reported 23K. Removed for UX truth.
-    // Slow-path note: collections with 50K+ unprofitable rows can take 9-30s on cold cache.
-    // Mitigation if needed later: keep the BitmapAnd hint via an index on (collection_names,
-    // profit_cents) DESC, or default the UI sort to profit DESC + LIMIT to give the planner a
-    // top-K shape.
+    // Collection filter: single-collection requests use trade_up_collection_index
+    // below so cold broad collections can scan an ordered btree index. Multi-
+    // collection AND filters keep the array predicate path because they are rare.
     if (collection) {
       const collNames = collection.split("|").map(s => s.trim()).filter(Boolean);
       if (collNames.length === 1) {
-        // GIN index on collection_names
-        where += ` AND t.collection_names && $${paramIndex++}::text[]`;
-        params.push([collNames[0]]);
+        collectionIndexParam = paramIndex++;
+        params.push(collNames[0]);
       } else {
         for (const collName of collNames) {
-          where += ` AND t.collection_names && $${paramIndex++}::text[]`;
-          params.push([collName]);
+          where += ` AND EXISTS (
+            SELECT 1 FROM trade_up_inputs ti_coll
+            WHERE ti_coll.trade_up_id = t.id AND ti_coll.collection_name = $${paramIndex++}
+          )`;
+          params.push(collName);
         }
       }
     }
@@ -315,6 +308,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     };
     const sortCol = sortMap[sort] ?? "t.profit_cents";
     const sortOrder = order === "asc" ? "ASC" : "DESC";
+    const sortField = sortCol.replace(/^t\./, "");
 
     // Fast path: for default queries (type filter only, no extra filters), use Redis-cached
     // counts per type. The daemon pre-populates these every cycle. Avoids COUNT on 300K-664K rows.
@@ -324,20 +318,33 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const limitParam = paramIndex++;
     const offsetParam = paramIndex++;
 
-    // Data query always runs (fast: index scan + LIMIT)
-    const dataPromise = pool.query(
-      `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+    const selectTradeUpColumns = `t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
-              t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+              t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents`;
+
+    const selectListRows = `${selectTradeUpColumns},
               0 as outcome_count,
               (SELECT COUNT(*)::int FROM trade_up_inputs tui WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%') as real_input_count,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count
-       FROM trade_ups t ${collectionJoin} ${where}
-       ORDER BY ${sortCol} ${sortOrder}
-       LIMIT $${limitParam} OFFSET $${offsetParam}`,
-      [...params, perPage, offset]
-    );
+              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count`;
+
+    const dataSql = collectionIndexParam !== null
+      ? `SELECT ${selectListRows}
+         FROM trade_up_collection_index ci
+         JOIN trade_ups t ON t.id = ci.trade_up_id
+         ${where} AND ci.collection_name = $${collectionIndexParam}
+           AND ci.is_theoretical = false
+           AND ${includeStale ? "(ci.listing_status = 'active' OR ci.preserved_at IS NOT NULL)" : "ci.listing_status = 'active'"}
+         ORDER BY ci.${sortField} ${sortOrder}
+         LIMIT $${limitParam} OFFSET $${offsetParam}`
+      : `SELECT ${selectListRows}
+         FROM trade_ups t ${where}
+         ORDER BY ${sortCol} ${sortOrder}
+         LIMIT $${limitParam} OFFSET $${offsetParam}`;
+
+    // Data query always runs. Single-collection filters use the denormalized
+    // collection index to avoid broad GIN bitmap heap scans on cold requests.
+    const dataPromise = pool.query(dataSql, [...params, perPage, offset]);
 
     let total: number;
     let totalProfitable: number;
@@ -368,10 +375,18 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     } else {
       // Capped COUNT: stop scanning after 10,001 rows for filtered queries
-      const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${collectionJoin} ${where} LIMIT 10001) sub`,
-        params
-      );
+      const countSql = collectionIndexParam !== null
+        ? `SELECT COUNT(*) as c FROM (
+             SELECT 1
+             FROM trade_up_collection_index ci
+             JOIN trade_ups t ON t.id = ci.trade_up_id
+             ${where} AND ci.collection_name = $${collectionIndexParam}
+               AND ci.is_theoretical = false
+               AND ${includeStale ? "(ci.listing_status = 'active' OR ci.preserved_at IS NOT NULL)" : "ci.listing_status = 'active'"}
+             LIMIT 10001
+           ) sub`
+        : `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${where} LIMIT 10001) sub`;
+      const { rows: [countRow] } = await pool.query(countSql, params);
       total = parseInt(countRow?.c) || 0;
       totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
     }
