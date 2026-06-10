@@ -13,6 +13,11 @@
 import pg from "pg";
 import { io, Socket } from "socket.io-client";
 import { dopplerPhaseFromPaintIndex } from "./doppler-phases.js";
+import { ObservationBuffer } from "./observation-buffer.js";
+
+// Re-export so callers that need these types don't reach into observation-buffer directly
+export type { ObsRow } from "./observation-buffer.js";
+export { ObservationBuffer, WS_BUFFER_MAX_ROWS, WS_BUFFER_MAX_MS } from "./observation-buffer.js";
 
 // socket.io-msgpack-parser is a CJS module, use dynamic import
 let msgpackParser: any = null;
@@ -83,6 +88,21 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
     }
   }
 
+  // Create the observation buffer with a pool-backed flush function
+  const buffer = new ObservationBuffer(async (rows) => {
+    const values: unknown[] = [];
+    const placeholders = rows.map((row, i) => {
+      const b = i * 3;
+      values.push(row.skinName, row.floatValue, row.priceCents);
+      return `($${b+1},$${b+2},$${b+3},'skinport_sale',NOW())`;
+    }).join(",");
+    await pool.query(
+      `INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+      values
+    );
+    stats.totalSaleObservations += rows.length;
+  });
+
   const socket: Socket = io("wss://skinport.com", {
     transports: ["websocket"],
     parser: msgpackParser,
@@ -100,7 +120,7 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
     stats.connected = false;
   });
 
-  socket.on("saleFeed", async (data: SkinportFeedData) => {
+  socket.on("saleFeed", (data: SkinportFeedData) => {
     if (!data?.sales) return;
 
     // Detect unsupported event types — docs list "price_changed" and "canceled" as unsupported.
@@ -134,25 +154,18 @@ export async function startSkinportListener(pool: pg.Pool): Promise<() => void> 
         }
       }
 
-      try {
-        await pool.query(`
-          INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
-          VALUES ($1, $2, $3, 'skinport_sale', NOW())
-          ON CONFLICT DO NOTHING
-        `, [finalSkinName, item.wear, item.salePrice]);
-        stats.totalSaleObservations++;
-      } catch {
-        // DB errors in WS handler are non-critical
-      }
+      buffer.push({ skinName: finalSkinName, floatValue: item.wear, priceCents: item.salePrice });
     }
   });
 
-  socket.on("connect_error", (err: Error) => {
+  socket.on("connect_error", (_err: Error) => {
     // Silent — auto-reconnect handles this
   });
 
   return () => {
     socket.disconnect();
     stats.connected = false;
+    // Drain any buffered rows synchronously-ish on shutdown
+    buffer.drain().catch(() => {});
   };
 }
