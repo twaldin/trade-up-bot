@@ -4,8 +4,44 @@
 
 import pg from "pg";
 import { setSyncMeta } from "../db.js";
-import { type TradeUp } from "../../shared/types.js";
+import { type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import { withRetry, computeChanceToProfit, computeBestWorstCase, listingSig, parseSig } from "./utils.js";
+
+/**
+ * Insert all inputs for one trade-up in a single multi-row INSERT statement.
+ * Replaces the per-input INSERT loop to reduce round-trips per trade-up.
+ * Inputs are chunked at 100 rows (900 params) to stay well under the driver limit.
+ */
+async function insertInputsBatch(
+  client: pg.PoolClient,
+  tradeUpId: number,
+  inputs: TradeUpInput[]
+): Promise<void> {
+  const CHUNK_SIZE = 100; // 900 params per chunk, well under driver limits
+  for (let start = 0; start < inputs.length; start += CHUNK_SIZE) {
+    const chunk = inputs.slice(start, start + CHUNK_SIZE);
+    const values: unknown[] = [];
+    const placeholders = chunk.map((inp, i) => {
+      const b = i * 9;
+      values.push(
+        tradeUpId,
+        inp.listing_id,
+        inp.skin_id,
+        inp.skin_name,
+        inp.collection_name,
+        inp.price_cents,
+        inp.float_value,
+        inp.condition,
+        inp.source ?? "csfloat"
+      );
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9})`;
+    }).join(",");
+    await client.query(
+      `INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source) VALUES ${placeholders}`,
+      values
+    );
+  }
+}
 
 /**
  * Record a combo as profitable in the history table. Called whenever discovery finds profit.
@@ -92,22 +128,7 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
         ]);
         const tradeUpId = rows[0].id;
 
-        for (const input of tu.inputs) {
-          await client.query(`
-            INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          `, [
-            tradeUpId,
-            input.listing_id,
-            input.skin_id,
-            input.skin_name,
-            input.collection_name,
-            input.price_cents,
-            input.float_value,
-            input.condition,
-            input.source ?? "csfloat"
-          ]);
-        }
+        await insertInputsBatch(client, tradeUpId, tu.inputs);
       }
 
       await client.query('COMMIT');
@@ -237,23 +258,20 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
           const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
           const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
           const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
+          // Fold peak_profit_cents into the INSERT (replaces the post-insert UPDATE).
+          // Semantics: only set when profitable (matches former: UPDATE only ran when profit > 0).
+          const peakProfit = Math.max(tu.profit_cents, 0);
           const { rows } = await client.query(`
-            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12)
+            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, peak_profit_cents)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12, $13)
             RETURNING id
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames]);
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames, peakProfit]);
           const tradeUpId = rows[0].id;
           if (tu.profit_cents > 0) {
-            await client.query("UPDATE trade_ups SET peak_profit_cents = $1 WHERE id = $2", [tu.profit_cents, tradeUpId]);
             const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
             await recordProfitableCombo(client, tu, comboKey);
           }
-          for (const inp of tu.inputs) {
-            await client.query(`
-              INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            `, [tradeUpId, inp.listing_id, inp.skin_id, inp.skin_name, inp.collection_name, inp.price_cents, inp.float_value, inp.condition, inp.source ?? "csfloat"]);
-          }
+          await insertInputsBatch(client, tradeUpId, tu.inputs);
         }
         await client.query('COMMIT');
       } catch (err) {
