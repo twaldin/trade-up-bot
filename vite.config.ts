@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { compression } from "vite-plugin-compression2";
 
 function preloadGeist(): Plugin {
   return {
@@ -23,7 +24,13 @@ function preloadGeist(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), preloadGeist()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    preloadGeist(),
+    compression({ algorithm: "brotliCompress", threshold: 1024 }),
+    compression({ algorithm: "gzip", threshold: 1024 }),
+  ],
   build: {
     rollupOptions: {
       output: {

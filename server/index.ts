@@ -74,6 +74,7 @@ if (fs.existsSync(envPath)) {
 }
 
 import compression from "compression";
+import expressStaticGzip from "express-static-gzip";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import type { NextFunction } from "express";
@@ -1102,13 +1103,18 @@ registerCanonicalRedirectRoutes(app);
     // Static assets with content-hashed filenames (Vite puts everything in
     // dist/assets/* with hashes) can be cached aggressively. HTML must always
     // revalidate so browsers pick up new asset URLs after a deploy.
-    app.use(express.static(distPath, {
-      setHeaders(res, filePath) {
-        if (filePath.includes("/assets/")) {
-          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-        } else if (filePath.endsWith(".html")) {
-          res.setHeader("Cache-Control", "no-cache, must-revalidate");
-        }
+    // expressStaticGzip serves pre-compressed .br/.gz artifacts when the client supports them.
+    app.use(expressStaticGzip(distPath, {
+      enableBrotli: true,
+      orderPreference: ["br", "gz"],
+      serveStatic: {
+        setHeaders(res, filePath) {
+          if (filePath.includes("/assets/")) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else if (filePath.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache, must-revalidate");
+          }
+        },
       },
     }));
     app.get("*", (_req, res) => {
