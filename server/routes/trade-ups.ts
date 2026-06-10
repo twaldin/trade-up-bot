@@ -19,6 +19,42 @@ function canonicalListingStatus(
   return "partial";
 }
 
+/** Batch-load real_input_count and missing_count for a set of trade-up IDs.
+ *
+ * Replaces per-row correlated subqueries with a single LEFT JOIN aggregation.
+ * Returns a Map keyed by trade_up_id; IDs absent from the result had no inputs.
+ */
+async function batchLoadInputCounts(
+  pool: pg.Pool,
+  tradeUpIds: number[]
+): Promise<Map<number, { real_input_count: number; missing_count: number }>> {
+  const result = new Map<number, { real_input_count: number; missing_count: number }>();
+  if (tradeUpIds.length === 0) return result;
+
+  const { rows } = await pool.query<{
+    trade_up_id: number;
+    real_input_count: number;
+    missing_count: number;
+  }>(
+    `SELECT tui.trade_up_id,
+            COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%')::int AS real_input_count,
+            COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL)::int AS missing_count
+     FROM trade_up_inputs tui
+     LEFT JOIN listings l ON tui.listing_id = l.id
+     WHERE tui.trade_up_id = ANY($1::int[])
+     GROUP BY tui.trade_up_id`,
+    [tradeUpIds]
+  );
+
+  for (const row of rows) {
+    result.set(Number(row.trade_up_id), {
+      real_input_count: Number(row.real_input_count),
+      missing_count: Number(row.missing_count),
+    });
+  }
+  return result;
+}
+
 export function tradeUpsRouter(pool: pg.Pool): Router {
   const router = Router();
 
@@ -324,15 +360,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const limitParam = paramIndex++;
     const offsetParam = paramIndex++;
 
-    // Data query always runs (fast: index scan + LIMIT)
+    // Data query always runs (fast: index scan + LIMIT).
+    // Correlated subqueries for real_input_count / missing_count have been moved to a
+    // single batched query after the page rows resolve (see batchLoadInputCounts).
     const dataPromise = pool.query(
       `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
-              0 as outcome_count,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%') as real_input_count,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count
+              0 as outcome_count
        FROM trade_ups t ${collectionJoin} ${where}
        ORDER BY ${sortCol} ${sortOrder}
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
@@ -378,9 +414,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const rows = (await dataPromise).rows;
 
+    // Batch-load real_input_count and missing_count for all page rows in one query.
+    // This replaces the two correlated subqueries that were inlined in the SELECT above.
+    const tuIds = rows.map((r: { id: number }) => r.id);
+    const inputCountsById = await batchLoadInputCounts(pool, tuIds);
+
     // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
     // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
-    const tuIds = rows.map((r: { id: number }) => r.id);
     const summaryByTuId = new Map<number, InputSummary>();
     if (tuIds.length > 0) {
       const placeholders = tuIds.map((_: number, i: number) => `$${i + 1}`).join(",");
@@ -421,8 +461,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
-      const missingCount = Math.max(0, Number(row.missing_count ?? row.missing_inputs ?? 0));
-      const realInputCount = Math.max(0, Number(row.real_input_count ?? summary.input_count ?? 0));
+      const counts = inputCountsById.get(row.id) ?? { real_input_count: 0, missing_count: 0 };
+      const missingCount = Math.max(0, counts.missing_count);
+      const realInputCount = Math.max(0, counts.real_input_count);
       const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
 
       const tu: TradeUp = {
@@ -479,10 +520,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
   router.get("/api/trade-ups/:id", async (req, res) => {
     const { rows: [row] } = await pool.query(
-      `SELECT t.*,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%') as real_input_count,
-              (SELECT COUNT(*)::int FROM trade_up_inputs tui LEFT JOIN listings l ON tui.listing_id = l.id WHERE tui.trade_up_id = t.id AND tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL) as missing_count
-       FROM trade_ups t WHERE t.id = $1`,
+      `SELECT t.* FROM trade_ups t WHERE t.id = $1`,
       [req.params.id]
     );
 
@@ -491,6 +529,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       return;
     }
 
+    // Use the same batch helper with a single-element array (reuses the batched path)
+    const countsMap = await batchLoadInputCounts(pool, [row.id]);
+    const counts = countsMap.get(row.id) ?? { real_input_count: 0, missing_count: 0 };
+
     const { rows: inputs } = await pool.query(
       `SELECT tui.*, l.marketplace_id FROM trade_up_inputs tui
        LEFT JOIN listings l ON tui.listing_id = l.id
@@ -498,12 +540,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       [row.id]
     );
     const outcomes = JSON.parse(row.outcomes_json || '[]') as TradeUpOutcome[];
-    const missingCount = Math.max(0, Number(row.missing_count ?? row.missing_inputs ?? 0));
-    const realInputCount = Math.max(0, Number(row.real_input_count ?? 0));
+    const missingCount = Math.max(0, counts.missing_count);
+    const realInputCount = Math.max(0, counts.real_input_count);
     const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
 
     res.json({
       ...row,
+      real_input_count: realInputCount,
       listing_status: listingStatus,
       missing_inputs: missingCount,
       missing_count: missingCount,
