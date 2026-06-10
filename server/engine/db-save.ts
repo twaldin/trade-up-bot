@@ -165,6 +165,19 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
     // refreshListingStatuses() in housekeeping handles actual staleness.
   }
 
+  // Batch-read all streak data upfront: one ANY(array) query replaces per-row SELECTs
+  const oldById = new Map<number, { profit_cents: number; profit_streak: number }>();
+  if (toUpdate.length > 0) {
+    const ids = toUpdate.map(u => u.existId);
+    const { rows: oldStats } = await pool.query(
+      `SELECT id, profit_cents, profit_streak FROM trade_ups WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+    for (const r of oldStats) {
+      oldById.set(r.id as number, { profit_cents: r.profit_cents as number, profit_streak: r.profit_streak as number });
+    }
+  }
+
   for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
     const batch = toUpdate.slice(i, i + BATCH_SIZE);
     await withRetry(async () => {
@@ -174,8 +187,7 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
         for (const { existId, tu } of batch) {
           const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
           const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
-          const { rows: oldRows } = await client.query(`SELECT profit_cents, profit_streak FROM trade_ups WHERE id = $1`, [existId]);
-          const old = oldRows[0] as { profit_cents: number; profit_streak: number } | undefined;
+          const old = oldById.get(existId);
           let streak = 0;
           if (tu.profit_cents > 0) {
             streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
