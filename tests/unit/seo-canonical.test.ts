@@ -61,7 +61,9 @@ describe("server route canonical/noindex/404 behavior", () => {
     expect(source).toContain("https://tradeupbot.app/collections/${req.params.slug}");
     expect(source).toContain("https://tradeupbot.app/skins/${req.params.slug}");
     expect(source).toContain("https://tradeupbot.app/trade-ups/${req.params.id}");
-    expect(countMatches(source, /injectMetaIntoSpa\(fs\.readFileSync\(indexPath, "utf-8"\), meta\)/g)).toBeGreaterThanOrEqual(3);
+    // Non-crawler handlers now use the startup-time shell (req.app.locals.shellHtml) instead of
+    // per-request fs.readFileSync — verify the new pattern appears in at least 3 handlers.
+    expect(countMatches(source, /injectMetaIntoSpa\(shellHtmlLocal, meta\)/g)).toBeGreaterThanOrEqual(3);
   });
 
   it("noindex remains limited to low-listing skins and stale trade-up details", () => {

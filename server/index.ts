@@ -291,19 +291,14 @@ registerCanonicalRedirectRoutes(app);
         }));
       } else {
         // Non-crawler: serve SPA with injected meta
-        const distPath = path.join(__dirname, "..", "dist");
-        const indexPath = path.join(distPath, "index.html");
-        if (fs.existsSync(indexPath)) {
-          const indexHtml = fs.readFileSync(indexPath, "utf-8");
-          res.setHeader("Content-Type", "text/html");
-          res.send(injectMetaIntoSpa(indexHtml, {
-            title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
-            description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
-            url: pageUrl,
-          }));
-        } else {
-          next();
-        }
+        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+        if (!shellHtmlLocal) return next();
+        res.setHeader("Content-Type", "text/html");
+        res.send(injectMetaIntoSpa(shellHtmlLocal, {
+          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
+          description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
+          url: pageUrl,
+        }));
       }
     } catch { next(); }
   });
@@ -367,10 +362,10 @@ registerCanonicalRedirectRoutes(app);
       if (isCrawler(ua)) {
         res.send(buildSeoHtml(meta));
       } else {
-        const indexPath = path.join(__dirname, "..", "dist", "index.html");
-        if (!fs.existsSync(indexPath)) return next();
+        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+        if (!shellHtmlLocal) return next();
         res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+        res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
     } catch { next(); }
   });
@@ -504,9 +499,9 @@ registerCanonicalRedirectRoutes(app);
       if (isCrawler(ua)) {
         res.send(buildSeoHtml(meta));
       } else {
-        const indexPath = path.join(__dirname, "..", "dist", "index.html");
-        if (!fs.existsSync(indexPath)) return next();
-        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+        if (!shellHtmlLocal) return next();
+        res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
     } catch { next(); }
   });
@@ -848,9 +843,9 @@ registerCanonicalRedirectRoutes(app);
       if (isCrawler(ua)) {
         res.send(html);
       } else {
-        const indexPath = path.join(__dirname, "..", "dist", "index.html");
-        if (!fs.existsSync(indexPath)) return next();
-        res.send(injectMetaIntoSpa(fs.readFileSync(indexPath, "utf-8"), meta));
+        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+        if (!shellHtmlLocal) return next();
+        res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
     } catch { next(); }
   });
