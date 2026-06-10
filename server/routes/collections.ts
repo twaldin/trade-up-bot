@@ -24,11 +24,15 @@ export function collectionsRouter(
           GROUP BY c.id, c.name
         `),
         pool.query(`
-          SELECT sc.collection_id, COUNT(DISTINCT l.id) as cnt
-          FROM listings l
-          JOIN skins s ON l.skin_id = s.id
-          JOIN skin_collections sc ON s.id = sc.skin_id
-          WHERE l.stattrak = false
+          WITH listing_counts_by_skin AS (
+            SELECT skin_id, COUNT(*) AS cnt
+            FROM listings
+            WHERE stattrak = false
+            GROUP BY skin_id
+          )
+          SELECT sc.collection_id, SUM(lc.cnt) as cnt
+          FROM listing_counts_by_skin lc
+          JOIN skin_collections sc ON lc.skin_id = sc.skin_id
           GROUP BY sc.collection_id
         `),
         pool.query(`
