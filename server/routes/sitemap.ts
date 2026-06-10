@@ -199,7 +199,7 @@ export function sitemapRouter(pool: pg.Pool): Router {
         JOIN trade_ups t ON ti.trade_up_id = t.id
         WHERE t.listing_status = 'active'
           AND t.is_theoretical = false
-          AND t.profit_cents > 0
+          AND t.profit_cents > 100
         ORDER BY name
       `);
       const xml = buildCollectionTradeUpSitemap(BASE, rows, lastmod);

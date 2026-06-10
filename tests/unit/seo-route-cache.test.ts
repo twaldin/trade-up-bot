@@ -82,6 +82,48 @@ describe("SEO route caching (Plan 005)", () => {
     it("caches crawler HTML after rendering", () => {
       expect(serverSource).toContain("ctCacheSet(collTuCacheKey, collTuHtml, 1800)");
     });
+
+    it("crawler query uses profit_cents > 100 to exclude penny-profit noise", () => {
+      // The DISTINCT ON crawler query must filter > $1 profit, not just > 0
+      const crawlerQueryIdx = serverSource.indexOf("SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents");
+      expect(crawlerQueryIdx).toBeGreaterThan(0);
+      const crawlerQueryEnd = serverSource.indexOf("LIMIT 120", crawlerQueryIdx);
+      expect(crawlerQueryEnd).toBeGreaterThan(crawlerQueryIdx);
+      const crawlerQueryBlock = serverSource.slice(crawlerQueryIdx, crawlerQueryEnd + 10);
+      expect(crawlerQueryBlock).toContain("profit_cents > 100");
+    });
+
+    it("crawler query is bounded with LIMIT 120 (6 types × 20 shown)", () => {
+      expect(serverSource).toContain("LIMIT 120");
+    });
+
+    it("non-crawler COUNT query uses the same profit_cents > 100 threshold", () => {
+      // COUNT(DISTINCT) for non-crawler meta path must match the crawler threshold
+      const countQueryIdx = serverSource.indexOf("COUNT(DISTINCT ti.trade_up_id)::int AS count");
+      expect(countQueryIdx).toBeGreaterThan(0);
+      const countQueryBlock = serverSource.slice(countQueryIdx, countQueryIdx + 300);
+      expect(countQueryBlock).toContain("profit_cents > 100");
+    });
+
+    it("crawler query excludes preserved-stale trade-ups (7-day window matches detail handler)", () => {
+      // The preserved_at filter must appear in the same DISTINCT ON crawler query block
+      const crawlerQueryIdx = serverSource.indexOf("SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents");
+      expect(crawlerQueryIdx).toBeGreaterThan(0);
+      const limitIdx = serverSource.indexOf("LIMIT 120", crawlerQueryIdx);
+      expect(limitIdx).toBeGreaterThan(crawlerQueryIdx);
+      const crawlerBlock = serverSource.slice(crawlerQueryIdx, limitIdx + 10);
+      expect(crawlerBlock).toContain("preserved_at IS NULL");
+      expect(crawlerBlock).toContain("7 days");
+    });
+  });
+
+  describe("sitemap-collection-tradeups.xml profit threshold", () => {
+    it("sitemap collection trade-up query uses profit_cents > 100 to match page threshold", () => {
+      const sitemapQueryIdx = sitemapSource.indexOf("SELECT DISTINCT ti.collection_name AS name");
+      expect(sitemapQueryIdx).toBeGreaterThan(0);
+      const sitemapQueryBlock = sitemapSource.slice(sitemapQueryIdx, sitemapQueryIdx + 300);
+      expect(sitemapQueryBlock).toContain("profit_cents > 100");
+    });
   });
 
   describe("OG image handler", () => {

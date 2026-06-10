@@ -254,7 +254,7 @@ registerCanonicalRedirectRoutes(app);
             const { rows: [countRow] } = await pool.query(`
               SELECT COUNT(DISTINCT ti.trade_up_id)::int AS count
               FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
-              WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+              WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 100
             `, [collectionName]);
             tuCount = countRow?.count || 0;
             ctCacheSet(nonCrawlerCountKey, tuCount, 1800).catch(() => {});
@@ -272,12 +272,16 @@ registerCanonicalRedirectRoutes(app);
       }
 
       // Crawler path: full query, build HTML, cache result.
+      // LIMIT 120 = 6 types × 20 shown; profit_cents > 100 removes penny-profit noise.
+      // preserved_at filter excludes stale trade-ups (mirrors detail handler staleness check).
       const { rows: tradeUps } = await pool.query(`
         SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents,
                t.roi_percentage, t.chance_to_profit, t.best_case_cents, t.worst_case_cents
         FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
-        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 100
+          AND (t.preserved_at IS NULL OR t.preserved_at > NOW() - INTERVAL '7 days')
         ORDER BY t.id, t.profit_cents DESC
+        LIMIT 120
       `, [collectionName]);
 
       // Group by type for crawler HTML
