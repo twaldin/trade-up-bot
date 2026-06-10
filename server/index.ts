@@ -1109,7 +1109,7 @@ registerCanonicalRedirectRoutes(app);
           SELECT s.name, COUNT(l.id)::int as listing_count
           FROM skins s JOIN listings l ON s.id = l.skin_id
           WHERE s.stattrak = false
-          GROUP BY s.name HAVING COUNT(l.id) >= 5
+          GROUP BY s.name HAVING COUNT(l.id) >= 10
           ORDER BY s.name LIMIT 200
         `);
         const links = rows.map((s: { name: string; listing_count: number }) => {

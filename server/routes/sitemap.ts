@@ -86,7 +86,7 @@ ${urls}
 </urlset>`;
 }
 
-export function buildSkinSitemap(base: string, skins: { name: string; listing_count: number }[], lastmod: string, minListings: number = 5): string {
+export function buildSkinSitemap(base: string, skins: { name: string; listing_count: number }[], lastmod: string, minListings: number = 10): string {
   const urls = skins
     .filter(s => s.listing_count >= minListings)
     .map(s =>
