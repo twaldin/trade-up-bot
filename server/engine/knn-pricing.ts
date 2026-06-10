@@ -155,7 +155,17 @@ const KNN_SOURCE_WEIGHTS: Record<string, number> = {
   skinport_sale: 0.5,     // Skinport confirmed transactions — downweighted due to platform premium bias
 };
 
-const _knnCache = new Map<string, { float: number; price: number; weight: number; condition: string }[]>();
+type KnnCacheMap = Map<string, KnnObservation[]>;
+
+interface KnnObservationRow {
+  skin_name: string;
+  float_value: number;
+  price_cents: number;
+  source: string;
+  age_days: number | string | null;
+}
+
+const _knnCache: KnnCacheMap = new Map();
 const _knnFreshnessCache = new Map<string, number>(); // skin_name → count of observations < 14 days old
 const _knnHasCsfloatSales = new Set<string>(); // skins with at least 1 CSFloat sale (source='sale')
 const _knnHasBuffSales = new Set<string>(); // skins with at least 1 Buff sale (source='buff_sale')
@@ -176,6 +186,78 @@ export function knnTimeDecay(ageDays: number): number {
   return Math.pow(2, -ageDays / 30);
 }
 
+async function loadKnnObservationRows(
+  pool: pg.Pool,
+  skinNames?: string[],
+): Promise<KnnObservationRow[]> {
+  const params: unknown[] = [KNN_MAX_OBS_AGE_DAYS];
+  const skinFilter = skinNames && skinNames.length > 0
+    ? `AND skin_name = ANY($2::text[])`
+    : "";
+  if (skinNames && skinNames.length > 0) params.push(skinNames);
+
+  const { rows } = await pool.query<KnnObservationRow>(`
+    SELECT skin_name, float_value, price_cents, source,
+      EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
+    FROM price_observations
+    WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 day')
+      AND source IN ('sale', 'skinport_sale', 'buff_sale')
+      ${skinFilter}
+    ORDER BY skin_name, float_value
+  `, params);
+
+  return rows;
+}
+
+function buildKnnCache(rows: KnnObservationRow[]): {
+  cache: KnnCacheMap;
+  freshness: Map<string, number>;
+  csfloatSales: Set<string>;
+  buffSales: Set<string>;
+} {
+  // Group raw observations by skin
+  const rawBySkin = new Map<string, KnnObservationRow[]>();
+  for (const row of rows) {
+    let arr = rawBySkin.get(row.skin_name);
+    if (!arr) { arr = []; rawBySkin.set(row.skin_name, arr); }
+    arr.push(row);
+  }
+
+  const cache: KnnCacheMap = new Map();
+  const freshness = new Map<string, number>();
+  const csfloatSales = new Set<string>();
+  const buffSales = new Set<string>();
+
+  // Build cache with exponential time-decay + track freshness + CSFloat sale presence
+  for (const [skinName, skinRows] of rawBySkin) {
+    const arr: KnnObservation[] = [];
+    let recentCount = 0;
+    let hasCsfloat = false;
+    let hasBuff = false;
+    for (const row of skinRows) {
+      const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
+      const ageDays = Number(row.age_days) || 0;
+      const ageDecay = knnTimeDecay(ageDays);
+      arr.push({
+        float: row.float_value,
+        price: row.price_cents,
+        weight: baseWeight * ageDecay,
+        condition: floatToCondition(row.float_value),
+      });
+      if (ageDays < 14) recentCount++;
+      if (row.source === "sale") hasCsfloat = true;
+      if (row.source === "buff_sale") hasBuff = true;
+    }
+    arr.sort((a, b) => a.float - b.float);
+    cache.set(skinName, arr);
+    freshness.set(skinName, recentCount);
+    if (hasCsfloat) csfloatSales.add(skinName);
+    if (hasBuff) buffSales.add(skinName);
+  }
+
+  return { cache, freshness, csfloatSales, buffSales };
+}
+
 async function ensureKnnCache(pool: pg.Pool) {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
   const t0 = Date.now();
@@ -186,48 +268,13 @@ async function ensureKnnCache(pool: pg.Pool) {
 
   // Sales-only for output pricing: listings are ask prices (not transaction prices)
   // and inflate estimates for expensive skins where sellers list at collector premiums.
-  const { rows } = await pool.query(`
-    SELECT skin_name, float_value, price_cents, source,
-      EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
-    FROM price_observations
-    WHERE EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 <= $1
-      AND source IN ('sale', 'skinport_sale', 'buff_sale')
-    ORDER BY skin_name, float_value
-  `, [KNN_MAX_OBS_AGE_DAYS]);
+  const rows = await loadKnnObservationRows(pool);
   const tQuery = Date.now();
-
-  // Group raw observations by skin
-  const rawBySkin = new Map<string, typeof rows>();
-  for (const row of rows) {
-    let arr = rawBySkin.get(row.skin_name);
-    if (!arr) { arr = []; rawBySkin.set(row.skin_name, arr); }
-    arr.push(row);
-  }
-
-  // Build cache with exponential time-decay + track freshness + CSFloat sale presence
-  for (const [skinName, skinRows] of rawBySkin) {
-    const arr: { float: number; price: number; weight: number; condition: string }[] = [];
-    let recentCount = 0;
-    let hasCsfloat = false;
-    let hasBuff = false;
-    for (const row of skinRows) {
-      const baseWeight = KNN_SOURCE_WEIGHTS[row.source] ?? 1.0;
-      const ageDecay = knnTimeDecay(row.age_days || 0);
-      arr.push({
-        float: row.float_value,
-        price: row.price_cents,
-        weight: baseWeight * ageDecay,
-        condition: floatToCondition(row.float_value),
-      });
-      if ((row.age_days || 0) < 14) recentCount++;
-      if (row.source === "sale") hasCsfloat = true;
-      if (row.source === "buff_sale") hasBuff = true;
-    }
-    _knnCache.set(skinName, arr);
-    _knnFreshnessCache.set(skinName, recentCount);
-    if (hasCsfloat) _knnHasCsfloatSales.add(skinName);
-    if (hasBuff) _knnHasBuffSales.add(skinName);
-  }
+  const built = buildKnnCache(rows);
+  for (const [skinName, obs] of built.cache) _knnCache.set(skinName, obs);
+  for (const [skinName, recentCount] of built.freshness) _knnFreshnessCache.set(skinName, recentCount);
+  for (const skinName of built.csfloatSales) _knnHasCsfloatSales.add(skinName);
+  for (const skinName of built.buffSales) _knnHasBuffSales.add(skinName);
   _knnCacheLoadedAt = Date.now();
   console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
 }
