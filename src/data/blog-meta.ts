@@ -42,8 +42,8 @@ export const blogMeta: BlogMeta[] = [
   },
   {
     slug: "cs2-trade-up-marketplace-fees",
-    title: "3 CS2 Marketplace Fees That Can Kill Trade-Up Profit",
-    excerpt: "Compare CSFloat, DMarket, and Skinport fees from 0% buyer fees to 12% seller cuts. Check fee traps before your next contract.",
+    title: "CSFloat, DMarket & Skinport Fees (2026) — Exact Buyer & Seller Percentages",
+    excerpt: "CSFloat charges 2% seller fee (2.8% + $0.30 buyer). DMarket: 2% seller, 2.5% buyer. Skinport: 8% seller, 0% buyer. Full CS2 marketplace fee breakdown for trade-ups.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
     author: "TradeUpBot Team",

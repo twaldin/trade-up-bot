@@ -72,7 +72,7 @@ export const blogPosts: BlogPost[] = [
 
 <p><strong>Using average market prices instead of actual listing prices.</strong> Steam Community Market averages include outliers and don't reflect what you'll actually pay. A skin listed at $8.50 average might have the specific float you need listed at $12.</p>
 
-<p><strong>Ignoring marketplace fees.</strong> CSFloat charges a 2% seller fee, DMarket has a 2% seller fee plus 2.5% buyer fee, and Skinport takes 12% from sellers. If your trade-up has a 5% expected profit margin, fees can flip it to a loss.</p>
+<p><strong>Ignoring marketplace fees.</strong> CSFloat charges a 2% seller fee, DMarket has a 2% seller fee plus 2.5% buyer fee, and Skinport takes 8% from sellers. If your trade-up has a 5% expected profit margin, fees can flip it to a loss.</p>
 
 <p><strong>Not accounting for float ranges of the output skin.</strong> Running a trade-up calculator with generic float values and assuming the output will be Factory New, then getting Minimal Wear because the output skin has a non-standard float range.</p>
 
@@ -130,7 +130,7 @@ export const blogPosts: BlogPost[] = [
 <ul>
 <li>CSFloat: 2% seller fee</li>
 <li>DMarket: 2% seller fee</li>
-<li>Skinport: 12% seller fee</li>
+<li>Skinport: 8% seller fee</li>
 </ul>
 
 <p>Consider a trade-up with $100 total input cost and $115 expected output value. Looks like $15 profit. But after 2.5% buyer fees on inputs ($2.50) and 2% seller fee on output ($2.30), your actual profit is $10.20. On a worse outcome, fees can easily erase the entire margin.</p>
@@ -267,8 +267,9 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 `,
     faq: [
-      { question: "What are CS2 float values?", answer: "CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred." },
+      { question: "What are CS2 float values?", answer: "CS2 float values are permanent wear numbers from 0 to 1 that determine whether a skin is Factory New (0.00–0.07), Minimal Wear (0.07–0.15), Field-Tested (0.15–0.38), Well-Worn (0.38–0.45), or Battle-Scarred (0.45–1.00)." },
       { question: "What float is Factory New in CS2?", answer: "Factory New covers floats from 0.00 up to 0.07. Minimal Wear starts at 0.07, so tiny float differences near that boundary can create large price changes." },
+      { question: "What is adjusted float in CS2 trade-ups?", answer: "Adjusted float normalizes each input skin's float within its own min–max range: adjusted = (float − min) / (max − min). The 10 adjusted floats are averaged, then mapped onto the output skin's range to produce the output float." },
       { question: "How does adjusted float affect trade-ups?", answer: "Adjusted float normalizes each input within its own min and max range, averages those values, and maps the average onto the output skin range." },
     ],
   },
@@ -371,8 +372,8 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   },
   {
     slug: "cs2-trade-up-marketplace-fees",
-    title: "3 CS2 Marketplace Fees That Can Kill Trade-Up Profit",
-    excerpt: "Compare CSFloat, DMarket, and Skinport fees from 0% buyer fees to 12% seller cuts. Check fee traps before your next contract.",
+    title: "CSFloat, DMarket & Skinport Fees (2026) — Exact Buyer & Seller Percentages",
+    excerpt: "CSFloat charges 2% seller fee (2.8% + $0.30 buyer). DMarket: 2% seller, 2.5% buyer. Skinport: 8% seller, 0% buyer. Full CS2 marketplace fee breakdown for trade-ups.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
     author: "TradeUpBot Team",
@@ -388,13 +389,13 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>DMarket</strong> takes 2% from sellers and 2.5% from buyers, no flat fee. A $5 input costs $5.13. A $50 input costs $51.25. Clean percentage-based math with no penalty for small transactions.</p>
 
-<p><strong>Skinport</strong> charges 0% to buyers and 12% to sellers. Buying inputs on Skinport is as cheap as it gets — you pay the listed price, period. But selling on Skinport is brutal. A $100 output nets you only $88 after the 12% seller fee.</p>
+<p><strong>Skinport</strong> charges 0% to buyers and 8% to sellers (reduced from 12% in July 2025). Buying inputs on Skinport is as cheap as it gets — you pay the listed price, period. But selling on Skinport costs more than CSFloat or DMarket. A $100 output nets you $92 after the 8% seller fee.</p>
 
 <h2>Cheapest Marketplace Depends on Which Side You're On</h2>
 
 <p>For buying inputs, Skinport wins at every price point: $50 costs $50. DMarket is next: $50 costs $51.25. CSFloat is most expensive: $50 costs $51.70.</p>
 
-<p>For selling outputs, the ranking flips completely. CSFloat and DMarket both take 2% — a $100 output nets you $98 on either. Skinport takes 12% — that same output nets you $88. The difference is $10 on a single skin.</p>
+<p>For selling outputs, the ranking flips completely. CSFloat and DMarket both take 2% — a $100 output nets you $98 on either. Skinport takes 8% — that same output nets you $92. The difference is $6 on a single skin.</p>
 
 <p>The optimal strategy is obvious: buy inputs on Skinport (0% buyer fee), sell outputs on CSFloat or DMarket (2% seller fee). TradeUpBot calculates this automatically when showing profit — every input's buyer fee is included based on which marketplace it's listed on, and output values are adjusted for seller fees.</p>
 
@@ -416,7 +417,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>Actual profit: $93.10 - $83.31 = $9.79. That $15 "profit" is now under $10. And this assumes you get the expected output — if you hit a lower-value outcome, fees push you further into the red.</p>
 
-<p>If you had to sell on Skinport instead (maybe CSFloat doesn't have enough buyer demand for your output skin), that 12% fee changes things dramatically: $95 * 0.88 = $83.60. Profit: $83.60 - $83.31 = $0.29. Essentially breakeven.</p>
+<p>If you had to sell on Skinport instead (maybe CSFloat doesn't have enough buyer demand for your output skin), the 8% seller fee cuts the result significantly: $95 * 0.92 = $87.40. Profit: $87.40 - $83.31 = $4.09. That is more than half of the $9.79 you would keep on CSFloat — the 8% seller fee changes the contract from a solid return to a thin one.</p>
 
 <h2>The Flat Fee Problem on Cheap Inputs</h2>
 
@@ -434,7 +435,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Cross-Marketplace Arbitrage</h2>
 
-<p>Fee differences create opportunities beyond trade-ups. The same skin is often priced differently across CSFloat, DMarket, and Skinport — partly because sellers price to account for their marketplace's fee structure. A seller on Skinport knows they're losing 12%, so they list higher. A seller on CSFloat only loses 2%, so they can list lower and still net the same amount.</p>
+<p>Fee differences create opportunities beyond trade-ups. The same skin is often priced differently across CSFloat, DMarket, and Skinport — partly because sellers price to account for their marketplace's fee structure. A seller on Skinport knows they're losing 8%, so they list higher. A seller on CSFloat only loses 2%, so they can list lower and still net the same amount.</p>
 
 <p>For trade-up inputs, this means the "cheapest" listing isn't always on the marketplace with the lowest sticker price. A skin listed at $9.50 on Skinport (total cost: $9.50) is cheaper than the same skin at $9.00 on CSFloat (total cost: $9.00 * 1.028 + $0.30 = $9.55). Always compare total cost after fees, not listing price.</p>
 
@@ -442,20 +443,20 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>FAQ</h2>
 
-<h3>Which CS2 marketplace has the lowest buyer fee?</h3>
-<p>Skinport has no buyer fee, DMarket charges a 2.5% buyer fee, and CSFloat adds a 2.8% deposit fee plus a flat $0.30 cost.</p>
+<h3>What is the CSFloat seller fee?</h3>
+<p>CSFloat charges a 2% seller fee. Buyers also pay a 2.8% deposit fee plus a flat $0.30 per transaction.</p>
 
-<h3>Which marketplace is best for selling CS2 trade-up outputs?</h3>
-<p>CSFloat and DMarket usually net more for outputs because both charge 2% seller fees, while Skinport takes 12% from sellers.</p>
+<h3>What fees does Skinport charge?</h3>
+<p>Skinport charges 0% to buyers and 8% to sellers. A $100 output sold on Skinport nets $92 after the seller fee.</p>
 
-<h3>Do marketplace fees change trade-up EV?</h3>
-<p>Yes. Buyer fees raise input cost and seller fees reduce output value, so thin-margin trade-ups can turn negative after fees.</p>
+<h3>Which CS2 marketplace has the lowest fees for trade-ups?</h3>
+<p>For buying inputs, Skinport is cheapest (0% buyer fee). For selling outputs, CSFloat and DMarket are best (both 2% seller fee), compared to Skinport's 8% seller fee.</p>
 
 `,
     faq: [
-      { question: "Which CS2 marketplace has the lowest buyer fee?", answer: "Skinport has no buyer fee, DMarket charges a 2.5% buyer fee, and CSFloat adds a 2.8% deposit fee plus a flat $0.30 cost." },
-      { question: "Which marketplace is best for selling CS2 trade-up outputs?", answer: "CSFloat and DMarket usually net more for outputs because both charge 2% seller fees, while Skinport takes 12% from sellers." },
-      { question: "Do marketplace fees change trade-up EV?", answer: "Yes. Buyer fees raise input cost and seller fees reduce output value, so thin-margin trade-ups can turn negative after fees." },
+      { question: "What is the CSFloat seller fee?", answer: "CSFloat charges a 2% seller fee. Buyers also pay a 2.8% deposit fee plus a flat $0.30 per transaction." },
+      { question: "What fees does Skinport charge?", answer: "Skinport charges 0% to buyers and 8% to sellers. A $100 output sold on Skinport nets $92 after the seller fee." },
+      { question: "Which CS2 marketplace has the lowest fees for trade-ups?", answer: "For buying inputs, Skinport is cheapest (0% buyer fee). For selling outputs, CSFloat and DMarket are best (both 2% seller fee), compared to Skinport's 8% seller fee." },
     ],
   },
   {
