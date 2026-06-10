@@ -34,7 +34,7 @@ Written after an SEO audit driven by the Google Search Console export (2026-06-1
 | 015  | Port rescued VPS branch: housekeeping gate + dataviewer query rewrites (with inflation fix) | P2 | M | — | DONE (ca13b07..6cdac83 — orphan purge gated to every 10th cycle, /api/collections + /api/skin-data rewritten to prefiltered CTEs with the multi-collection inflation fixed (characterization test proven to fail against the branch's buggy version); one REVISE round: restored MIN(id)/GROUP BY name merging the rewrite had dropped — prod stores Doppler phases as 5-7 same-name skin rows, verified live before deploy) |
 | 016  | Port rescued KNN scoped loading (with param chunking + equivalence tests) | P2 | M–L | 007 | TODO |
 | 017  | Remove react-helmet-async (16 files; React 19 native head hoisting) | P3 | M | — | TODO |
-| 018  | cachedRoute: never cache/coalesce non-2xx responses | P3 | S | 006 | TODO |
+| 018  | cachedRoute: never cache/coalesce non-2xx responses | P3 | S | 006 | DONE (5e4b480 — res.json interceptor gates Redis set + single-flight resolve on statusCode<300, non-2xx resolves null so followers re-run the handler; 404-follower test proven red against pre-change code; status/json ordering surveyed across all 19 cachedRoute call sites) |
 | 019  | Worker signature precompute (fix sig-load timeout feedback loop) | P3 | M–L | 010 | TODO |
 
 Recommended order: 012 → 013 → 014 (the SEO batch, independent of each other but reviewed best in that order), then 015/018 (small), then 016/017/019. SEO effects need 2–6 weeks to show in GSC — re-export and compare after the batch lands.
