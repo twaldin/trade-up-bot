@@ -130,6 +130,12 @@ export function sitemapRouter(pool: pg.Pool): Router {
     const lastmod = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/xml");
     try {
+      const cached = await cacheGet<string>("sitemap_collections_xml").catch(() => null);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.send(cached);
+        return;
+      }
       const { rows } = await pool.query(`
         SELECT c.name
         FROM collections c
@@ -141,7 +147,9 @@ export function sitemapRouter(pool: pg.Pool): Router {
         )
         ORDER BY c.name
       `);
-      res.send(buildCollectionSitemap(BASE, rows, lastmod));
+      const xml = buildCollectionSitemap(BASE, rows, lastmod);
+      await cacheSet("sitemap_collections_xml", xml, 3600).catch(() => {});
+      res.send(xml);
     } catch (e) {
       console.error("Sitemap collections error:", e instanceof Error ? e.message : e);
       res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
@@ -179,6 +187,12 @@ export function sitemapRouter(pool: pg.Pool): Router {
     const lastmod = new Date().toISOString().split("T")[0];
     res.setHeader("Content-Type", "application/xml");
     try {
+      const cached = await cacheGet<string>("sitemap_coll_tu_xml").catch(() => null);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.send(cached);
+        return;
+      }
       const { rows } = await pool.query(`
         SELECT DISTINCT ti.collection_name AS name
         FROM trade_up_inputs ti
@@ -188,7 +202,9 @@ export function sitemapRouter(pool: pg.Pool): Router {
           AND t.profit_cents > 0
         ORDER BY name
       `);
-      res.send(buildCollectionTradeUpSitemap(BASE, rows, lastmod));
+      const xml = buildCollectionTradeUpSitemap(BASE, rows, lastmod);
+      await cacheSet("sitemap_coll_tu_xml", xml, 3600).catch(() => {});
+      res.send(xml);
     } catch (e) {
       console.error("Sitemap collection trade-ups error:", e instanceof Error ? e.message : e);
       res.send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
