@@ -5,6 +5,10 @@
  * plan-015 data.ts + collections.ts changes. The multi-collection inflation case
  * is the key invariant: a skin in 2 collections with N listings must return
  * listing_count === N, never 2N.
+ *
+ * Also covers same-name row merging: multiple skin rows sharing the same name
+ * (e.g. Doppler phases) must collapse to ONE response row with listing stats
+ * summed across all phases.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -25,6 +29,19 @@ const SKIN_SINGLE_ID = "skin-char-single";
 
 const MULTI_LISTING_COUNT = 4;  // listings for the multi-collection skin
 const SINGLE_LISTING_COUNT = 2; // listings for the single-collection skin
+
+// Doppler-phase merge constants
+const DOPPLER_NAME = "★ Test Knife | Doppler";
+const DOPPLER_PHASE_A_ID = "skin-doppler-phase-a";
+const DOPPLER_PHASE_B_ID = "skin-doppler-phase-b";
+const DOPPLER_PHASE_A_LISTING_COUNT = 3;
+const DOPPLER_PHASE_B_LISTING_COUNT = 2;
+// Phase A prices: 10000, 10100, 10200 — phase B prices: 20000, 20100
+const DOPPLER_MIN_PRICE = 10000;
+const DOPPLER_MAX_PRICE = 20100;
+// avg = (10000+10100+10200+20000+20100) / 5 = 70400 / 5 = 14080
+const DOPPLER_AVG_PRICE = 14080;
+const DOPPLER_TOTAL_LISTINGS = DOPPLER_PHASE_A_LISTING_COUNT + DOPPLER_PHASE_B_LISTING_COUNT; // 5
 
 async function seedCharacterizationData(pool: pg.Pool) {
   // Collections
@@ -79,6 +96,36 @@ async function seedCharacterizationData(pool: pg.Pool) {
       `INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source)
        VALUES ($1, $2, $3, $4, false, 'csfloat') ON CONFLICT DO NOTHING`,
       [`listing-char-single-${i}`, SKIN_SINGLE_ID, 3000 + i * 100, 0.20 + i * 0.05],
+    );
+  }
+
+  // Two Doppler-phase skin rows: same name, different ids, stattrak=false, Extraordinary
+  await pool.query(
+    `INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+     VALUES ($1, $2, $3, $4, $5, $6, false) ON CONFLICT DO NOTHING`,
+    [DOPPLER_PHASE_A_ID, DOPPLER_NAME, "Bayonet", "Extraordinary", 0.00, 1.00],
+  );
+  await pool.query(
+    `INSERT INTO skins (id, name, weapon, rarity, min_float, max_float, stattrak)
+     VALUES ($1, $2, $3, $4, $5, $6, false) ON CONFLICT DO NOTHING`,
+    [DOPPLER_PHASE_B_ID, DOPPLER_NAME, "Bayonet", "Extraordinary", 0.00, 1.00],
+  );
+
+  // 3 listings for phase A (prices 10000, 10100, 10200)
+  for (let i = 0; i < DOPPLER_PHASE_A_LISTING_COUNT; i++) {
+    await pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source)
+       VALUES ($1, $2, $3, $4, false, 'csfloat') ON CONFLICT DO NOTHING`,
+      [`listing-doppler-a-${i}`, DOPPLER_PHASE_A_ID, 10000 + i * 100, 0.05 + i * 0.01],
+    );
+  }
+
+  // 2 listings for phase B (prices 20000, 20100)
+  for (let i = 0; i < DOPPLER_PHASE_B_LISTING_COUNT; i++) {
+    await pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, source)
+       VALUES ($1, $2, $3, $4, false, 'csfloat') ON CONFLICT DO NOTHING`,
+      [`listing-doppler-b-${i}`, DOPPLER_PHASE_B_ID, 20000 + i * 100, 0.10 + i * 0.01],
     );
   }
 }
@@ -158,5 +205,33 @@ describe("dataviewer-counts: characterization tests", () => {
     expect(colB, "Char Collection Beta should appear").toBeDefined();
     // Collection B has only the multi-collection skin (4 listings)
     expect(colB!.listing_count).toBe(MULTI_LISTING_COUNT);
+  });
+
+  it("same-name skin rows (Doppler phases): collapse to ONE row with listing stats summed", async () => {
+    // Query with rarity=knife_glove to surface ★ items
+    const res = await request(ctx.app)
+      .get(`/api/skin-data?rarity=knife_glove&stattrak=0`)
+      .expect(200);
+
+    const skins: Array<{
+      name: string;
+      listing_count: number;
+      min_price: number;
+      avg_price: number;
+      max_price: number;
+    }> = res.body;
+
+    const dopplerRows = skins.filter((s) => s.name === DOPPLER_NAME);
+    // Must be exactly ONE merged row — not two separate rows for the two phases
+    expect(dopplerRows).toHaveLength(1);
+
+    const row = dopplerRows[0];
+    // listing_count must be sum of both phases (3 + 2 = 5)
+    expect(row.listing_count).toBe(DOPPLER_TOTAL_LISTINGS);
+    // min/max span both phases' listings
+    expect(row.min_price).toBe(DOPPLER_MIN_PRICE);
+    expect(row.max_price).toBe(DOPPLER_MAX_PRICE);
+    // avg = total_price_cents / total_count = (10000+10100+10200+20000+20100)/5 = 14080
+    expect(Number(row.avg_price)).toBe(DOPPLER_AVG_PRICE);
   });
 });

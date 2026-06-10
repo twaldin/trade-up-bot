@@ -113,9 +113,13 @@ export function dataRouter(
 
     // Filter skins first so selective search/collection pages only aggregate
     // listings for matching skins instead of scanning every listing.
-    // collection_names_by_skin is aggregated per skin_id BEFORE joining
-    // listing_stats so the listing_stats join is 1:1 (avoids count inflation
-    // for skins that belong to more than one collection).
+    // collection_names_by_name aggregates collection names per skin NAME (not per
+    // skin_id) so that same-name rows (e.g. Doppler phases: "★ Bayonet | Doppler"
+    // stored as one row per phase) share a single collection_names value.
+    // listing_stats remains per skin_id so the inflation fix is preserved:
+    // listings are counted once per skin row, not once per collection membership.
+    // The final SELECT merges by name — same-name skin rows collapse to one
+    // response row with listing stats summed across all their phases/ids.
     const { rows: skins } = await pool.query(`
       WITH filtered_skins AS MATERIALIZED (
         SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float
@@ -123,12 +127,12 @@ export function dataRouter(
         WHERE s.stattrak = $3::boolean ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
           ${searchFilter}
       ),
-      collection_names_by_skin AS (
-        SELECT sc.skin_id, STRING_AGG(DISTINCT c.name, ',') AS collection_names
+      collection_names_by_name AS (
+        SELECT fs.name, STRING_AGG(DISTINCT c.name, ',') AS collection_names
         FROM skin_collections sc
         JOIN collections c ON sc.collection_id = c.id
         JOIN filtered_skins fs ON sc.skin_id = fs.id
-        GROUP BY sc.skin_id
+        GROUP BY fs.name
       ),
       listing_stats AS (
         SELECT l.skin_id,
@@ -143,17 +147,18 @@ export function dataRouter(
         WHERE l.stattrak = $2::boolean
         GROUP BY l.skin_id
       )
-      SELECT fs.id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
+      SELECT MIN(fs.id) AS id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
         cn.collection_names,
-        COALESCE(ls.listing_count, 0) AS listing_count,
-        ls.min_price,
-        ROUND(ls.total_price_cents::numeric / NULLIF(ls.listing_count, 0)) AS avg_price,
-        ls.max_price,
-        ls.min_float_seen,
-        ls.max_float_seen
+        COALESCE(SUM(ls.listing_count), 0)::int AS listing_count,
+        MIN(ls.min_price) AS min_price,
+        ROUND(SUM(ls.total_price_cents)::numeric / NULLIF(SUM(ls.listing_count), 0)) AS avg_price,
+        MAX(ls.max_price) AS max_price,
+        MIN(ls.min_float_seen) AS min_float_seen,
+        MAX(ls.max_float_seen) AS max_float_seen
       FROM filtered_skins fs
-      LEFT JOIN collection_names_by_skin cn ON cn.skin_id = fs.id
+      LEFT JOIN collection_names_by_name cn ON cn.name = fs.name
       LEFT JOIN listing_stats ls ON ls.skin_id = fs.id
+      GROUP BY fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, cn.collection_names
       ORDER BY listing_count DESC
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `, params);
@@ -186,6 +191,11 @@ export function dataRouter(
             finishFilter = `AND s.name NOT LIKE '%|%'`;
           }
 
+          // collection_names_by_name aggregates per skin NAME so Doppler phases
+          // (multiple skin rows sharing the same name) share one collection_names
+          // value. listing_stats stays per skin_id to avoid multi-collection
+          // inflation. The final SELECT merges by name — same-name rows (e.g.
+          // Doppler phases) collapse to one response row with listing stats summed.
           const { rows: knifeSkins } = await pool.query(`
             WITH filtered_skins AS MATERIALIZED (
               SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float
@@ -193,12 +203,12 @@ export function dataRouter(
               WHERE s.stattrak = $3::boolean AND s.name LIKE '★%'
                 AND (${weaponPlaceholders}) ${finishFilter}
             ),
-            collection_names_by_skin AS (
-              SELECT sc.skin_id, STRING_AGG(DISTINCT c.name, ',') AS collection_names
+            collection_names_by_name AS (
+              SELECT fs.name, STRING_AGG(DISTINCT c.name, ',') AS collection_names
               FROM skin_collections sc
               JOIN collections c ON sc.collection_id = c.id
               JOIN filtered_skins fs ON sc.skin_id = fs.id
-              GROUP BY sc.skin_id
+              GROUP BY fs.name
             ),
             listing_stats AS (
               SELECT l.skin_id,
@@ -213,17 +223,18 @@ export function dataRouter(
               WHERE l.stattrak = $2::boolean
               GROUP BY l.skin_id
             )
-            SELECT fs.id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
+            SELECT MIN(fs.id) AS id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
               cn.collection_names,
-              COALESCE(ls.listing_count, 0) AS listing_count,
-              ls.min_price,
-              ROUND(ls.total_price_cents::numeric / NULLIF(ls.listing_count, 0)) AS avg_price,
-              ls.max_price,
-              ls.min_float_seen,
-              ls.max_float_seen
+              COALESCE(SUM(ls.listing_count), 0)::int AS listing_count,
+              MIN(ls.min_price) AS min_price,
+              ROUND(SUM(ls.total_price_cents)::numeric / NULLIF(SUM(ls.listing_count), 0)) AS avg_price,
+              MAX(ls.max_price) AS max_price,
+              MIN(ls.min_float_seen) AS min_float_seen,
+              MAX(ls.max_float_seen) AS max_float_seen
             FROM filtered_skins fs
-            LEFT JOIN collection_names_by_skin cn ON cn.skin_id = fs.id
+            LEFT JOIN collection_names_by_name cn ON cn.name = fs.name
             LEFT JOIN listing_stats ls ON ls.skin_id = fs.id
+            GROUP BY fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, cn.collection_names
             ORDER BY listing_count DESC
           `, knifeParams);
 
