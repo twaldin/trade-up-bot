@@ -15,6 +15,75 @@ async function recordSaleObservation(pool: pg.Pool, skinName: string, floatValue
   );
 }
 
+type SaleHistoryRow = {
+  id: string;
+  skinName: string;
+  condition: string;
+  price: number;
+  floatValue: number;
+  createdAt: string;
+};
+
+type ObservationRow = {
+  skinName: string;
+  floatValue: number;
+  price: number;
+  soldAt: string;
+};
+
+const SALE_BATCH_SIZE = 200;
+
+/**
+ * Multi-row INSERT for sale_history. Chunked at SALE_BATCH_SIZE rows.
+ * Uses ON CONFLICT DO NOTHING for dedup (matches per-row behaviour).
+ * Must be called on a transactional client.
+ */
+async function batchInsertSaleHistory(
+  client: pg.PoolClient,
+  rows: SaleHistoryRow[]
+): Promise<number> {
+  let inserted = 0;
+  for (let start = 0; start < rows.length; start += SALE_BATCH_SIZE) {
+    const chunk = rows.slice(start, start + SALE_BATCH_SIZE);
+    const values: unknown[] = [];
+    const placeholders = chunk.map((row, i) => {
+      const b = i * 6;
+      values.push(row.id, row.skinName, row.condition, row.price, row.floatValue, row.createdAt);
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},'csfloat')`;
+    }).join(",");
+    const result = await client.query(
+      `INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+      values
+    );
+    inserted += result.rowCount ?? 0;
+  }
+  return inserted;
+}
+
+/**
+ * Multi-row INSERT for price_observations. Chunked at SALE_BATCH_SIZE rows.
+ * Uses ON CONFLICT DO NOTHING for dedup (idx_price_obs_dedup unique index).
+ * Must be called on a transactional client to keep observations in sync with sale_history.
+ */
+async function batchInsertObservations(
+  client: pg.PoolClient,
+  rows: ObservationRow[]
+): Promise<void> {
+  for (let start = 0; start < rows.length; start += SALE_BATCH_SIZE) {
+    const chunk = rows.slice(start, start + SALE_BATCH_SIZE);
+    const values: unknown[] = [];
+    const placeholders = chunk.map((row, i) => {
+      const b = i * 4;
+      values.push(row.skinName, row.floatValue, row.price, row.soldAt);
+      return `($${b+1},$${b+2},$${b+3},'sale',$${b+4})`;
+    }).join(",");
+    await client.query(
+      `INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+      values
+    );
+  }
+}
+
 /**
  * Fetch sale history for a specific skin+condition from CSFloat.
  * Endpoint: GET /api/v1/history/{market_hash_name}/sales
@@ -184,29 +253,30 @@ export async function syncSaleHistory(
       // Got results — clear any previous empty-result tracking
       await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
-      // Store individual sales
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const sale of sales) {
-          if (sale.state !== "sold") continue;
-          if (sale.item.is_stattrak) continue;
-
-          const condition = pair.condition;
-          await client.query(`
-            INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-            ON CONFLICT DO NOTHING
-          `, [sale.id, pair.skinName, condition, sale.price, sale.item.float_value, sale.created_at]);
-          await recordSaleObservation(pool, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
-          totalSales++;
+      // Collect eligible sales then batch-insert to minimise round-trips
+      const saleHistoryRows: SaleHistoryRow[] = [];
+      const observationRows: ObservationRow[] = [];
+      for (const sale of sales) {
+        if (sale.state !== "sold") continue;
+        if (sale.item.is_stattrak) continue;
+        saleHistoryRows.push({ id: sale.id, skinName: pair.skinName, condition: pair.condition, price: sale.price, floatValue: sale.item.float_value, createdAt: sale.created_at });
+        observationRows.push({ skinName: pair.skinName, floatValue: sale.item.float_value, price: sale.price, soldAt: sale.created_at });
+      }
+      if (saleHistoryRows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await batchInsertSaleHistory(client, saleHistoryRows);
+          // Observations on same client — keeps them in sync with sale_history (same failure semantics as before)
+          await batchInsertObservations(client, observationRows);
+          totalSales += saleHistoryRows.length;
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
         }
-        await client.query('COMMIT');
-      } catch (txErr) {
-        await client.query('ROLLBACK');
-        throw txErr;
-      } finally {
-        client.release();
       }
 
       // Also save reference price if available (comes free with history)
@@ -410,25 +480,27 @@ export async function syncStatTrakSaleHistory(
       await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
       // Store ST sales (don't filter out is_stattrak — that's what we want)
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const sale of sales) {
-          if (sale.state !== "sold") continue;
-          await client.query(`
-            INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-            ON CONFLICT DO NOTHING
-          `, [sale.id, pair.skinName, pair.condition, sale.price, sale.item.float_value, sale.created_at]);
-          await recordSaleObservation(pool, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
-          totalSales++;
+      const stSaleRows: SaleHistoryRow[] = [];
+      const stObsRows: ObservationRow[] = [];
+      for (const sale of sales) {
+        if (sale.state !== "sold") continue;
+        stSaleRows.push({ id: sale.id, skinName: pair.skinName, condition: pair.condition, price: sale.price, floatValue: sale.item.float_value, createdAt: sale.created_at });
+        stObsRows.push({ skinName: pair.skinName, floatValue: sale.item.float_value, price: sale.price, soldAt: sale.created_at });
+      }
+      if (stSaleRows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await batchInsertSaleHistory(client, stSaleRows);
+          await batchInsertObservations(client, stObsRows);
+          totalSales += stSaleRows.length;
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
         }
-        await client.query('COMMIT');
-      } catch (txErr) {
-        await client.query('ROLLBACK');
-        throw txErr;
-      } finally {
-        client.release();
       }
 
       // Save reference price if available
@@ -624,26 +696,28 @@ export async function syncSaleHistoryForRarity(
       }
       await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const sale of sales) {
-          if (sale.state !== "sold") continue;
-          if (sale.item.is_stattrak) continue;
-          await client.query(`
-            INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-            ON CONFLICT DO NOTHING
-          `, [sale.id, pair.skinName, pair.condition, sale.price, sale.item.float_value, sale.created_at]);
-          await recordSaleObservation(pool, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
-          totalSales++;
+      const rarSaleRows: SaleHistoryRow[] = [];
+      const rarObsRows: ObservationRow[] = [];
+      for (const sale of sales) {
+        if (sale.state !== "sold") continue;
+        if (sale.item.is_stattrak) continue;
+        rarSaleRows.push({ id: sale.id, skinName: pair.skinName, condition: pair.condition, price: sale.price, floatValue: sale.item.float_value, createdAt: sale.created_at });
+        rarObsRows.push({ skinName: pair.skinName, floatValue: sale.item.float_value, price: sale.price, soldAt: sale.created_at });
+      }
+      if (rarSaleRows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await batchInsertSaleHistory(client, rarSaleRows);
+          await batchInsertObservations(client, rarObsRows);
+          totalSales += rarSaleRows.length;
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
         }
-        await client.query('COMMIT');
-      } catch (txErr) {
-        await client.query('ROLLBACK');
-        throw txErr;
-      } finally {
-        client.release();
       }
 
       if (sales[0]?.reference?.base_price) {
@@ -839,26 +913,28 @@ export async function syncKnifeGloveSaleHistory(
       }
       await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [pair.marketHashName]);
 
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const sale of sales) {
-          if (sale.state !== "sold") continue;
-          if (sale.item.is_stattrak) continue;
-          await client.query(`
-            INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-            VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-            ON CONFLICT DO NOTHING
-          `, [sale.id, pair.skinName, pair.condition, sale.price, sale.item.float_value, sale.created_at]);
-          await recordSaleObservation(pool, pair.skinName, sale.item.float_value, sale.price, sale.created_at);
-          totalSales++;
+      const kgSaleRows: SaleHistoryRow[] = [];
+      const kgObsRows: ObservationRow[] = [];
+      for (const sale of sales) {
+        if (sale.state !== "sold") continue;
+        if (sale.item.is_stattrak) continue;
+        kgSaleRows.push({ id: sale.id, skinName: pair.skinName, condition: pair.condition, price: sale.price, floatValue: sale.item.float_value, createdAt: sale.created_at });
+        kgObsRows.push({ skinName: pair.skinName, floatValue: sale.item.float_value, price: sale.price, soldAt: sale.created_at });
+      }
+      if (kgSaleRows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await batchInsertSaleHistory(client, kgSaleRows);
+          await batchInsertObservations(client, kgObsRows);
+          totalSales += kgSaleRows.length;
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
         }
-        await client.query('COMMIT');
-      } catch (txErr) {
-        await client.query('ROLLBACK');
-        throw txErr;
-      } finally {
-        client.release();
       }
 
       if (sales[0]?.reference?.base_price) {
@@ -1071,31 +1147,32 @@ export async function syncSaleHistoryRoundRobin(
             await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
 
             // Store sales — derive condition from each sale's float value
-            const client = await pool.connect();
-            try {
-              await client.query('BEGIN');
-              for (const sale of sales) {
-                if (sale.state !== "sold") continue;
-                if (sale.item.is_stattrak) continue;
-                const fv = sale.item.float_value;
-                if (!fv || fv <= 0) continue; // Skip sales with no float data
-                const cond = CONDITION_FROM_FLOAT.find(c => fv >= c.min && fv < c.max);
-                if (!cond) continue;
-
-                await client.query(`
-                  INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-                  VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-                  ON CONFLICT DO NOTHING
-                `, [sale.id, skin.name, cond.name, sale.price, fv, sale.created_at]);
-                await recordSaleObservation(pool, skin.name, fv, sale.price, sale.created_at);
-                totalSales++;
+            const vanSaleRows: SaleHistoryRow[] = [];
+            const vanObsRows: ObservationRow[] = [];
+            for (const sale of sales) {
+              if (sale.state !== "sold") continue;
+              if (sale.item.is_stattrak) continue;
+              const fv = sale.item.float_value;
+              if (!fv || fv <= 0) continue; // Skip sales with no float data
+              const cond = CONDITION_FROM_FLOAT.find(c => fv >= c.min && fv < c.max);
+              if (!cond) continue;
+              vanSaleRows.push({ id: sale.id, skinName: skin.name, condition: cond.name, price: sale.price, floatValue: fv, createdAt: sale.created_at });
+              vanObsRows.push({ skinName: skin.name, floatValue: fv, price: sale.price, soldAt: sale.created_at });
+            }
+            if (vanSaleRows.length > 0) {
+              const client = await pool.connect();
+              try {
+                await client.query('BEGIN');
+                await batchInsertSaleHistory(client, vanSaleRows);
+                await batchInsertObservations(client, vanObsRows);
+                totalSales += vanSaleRows.length;
+                await client.query('COMMIT');
+              } catch (txErr) {
+                await client.query('ROLLBACK');
+                throw txErr;
+              } finally {
+                client.release();
               }
-              await client.query('COMMIT');
-            } catch (txErr) {
-              await client.query('ROLLBACK');
-              throw txErr;
-            } finally {
-              client.release();
             }
 
             // Vanilla knives: save single ref price (condition-agnostic, pricing ignores float)
@@ -1192,27 +1269,28 @@ export async function syncSaleHistoryRoundRobin(
           await pool.query(`DELETE FROM sale_fetch_errors WHERE market_hash_name = $1 AND error_code = 0`, [marketHashName]);
 
           // Store individual sales
-          const client = await pool.connect();
-          try {
-            await client.query('BEGIN');
-            for (const sale of sales) {
-              if (sale.state !== "sold") continue;
-              if (sale.item.is_stattrak) continue;
-
-              await client.query(`
-                INSERT INTO sale_history (id, skin_name, condition, price_cents, float_value, sold_at, source)
-                VALUES ($1, $2, $3, $4, $5, $6, 'csfloat')
-                ON CONFLICT DO NOTHING
-              `, [sale.id, skin.name, cond.name, sale.price, sale.item.float_value, sale.created_at]);
-              await recordSaleObservation(pool, skin.name, sale.item.float_value, sale.price, sale.created_at);
-              totalSales++;
+          const rrSaleRows: SaleHistoryRow[] = [];
+          const rrObsRows: ObservationRow[] = [];
+          for (const sale of sales) {
+            if (sale.state !== "sold") continue;
+            if (sale.item.is_stattrak) continue;
+            rrSaleRows.push({ id: sale.id, skinName: skin.name, condition: cond.name, price: sale.price, floatValue: sale.item.float_value, createdAt: sale.created_at });
+            rrObsRows.push({ skinName: skin.name, floatValue: sale.item.float_value, price: sale.price, soldAt: sale.created_at });
+          }
+          if (rrSaleRows.length > 0) {
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              await batchInsertSaleHistory(client, rrSaleRows);
+              await batchInsertObservations(client, rrObsRows);
+              totalSales += rrSaleRows.length;
+              await client.query('COMMIT');
+            } catch (txErr) {
+              await client.query('ROLLBACK');
+              throw txErr;
+            } finally {
+              client.release();
             }
-            await client.query('COMMIT');
-          } catch (txErr) {
-            await client.query('ROLLBACK');
-            throw txErr;
-          } finally {
-            client.release();
           }
 
           // Save reference price if available
