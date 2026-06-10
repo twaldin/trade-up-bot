@@ -269,9 +269,10 @@ function AppShell({ user }: { user?: AuthUser | null }) {
   const prevTotalRef = useRef(0);
   const [globalNewData, setGlobalNewData] = useState(false);
 
-  // Fetch global stats on mount and every 60s
+  // Fetch global stats on mount and every 60s; skip while tab is hidden
   useEffect(() => {
-    const fetchStats = () =>
+    const fetchStats = () => {
+      if (document.hidden) return;
       fetch("/api/global-stats", { credentials: "include" })
         .then(r => r.json())
         .then((data: GlobalStats) => {
@@ -282,9 +283,12 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           prevTotalRef.current = data.total_trade_ups;
         })
         .catch(() => {});
+    };
     fetchStats();
     const interval = setInterval(fetchStats, 60_000);
-    return () => clearInterval(interval);
+    const onVis = () => { if (!document.hidden) fetchStats(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   const newDataHint = statusHint || globalNewData;

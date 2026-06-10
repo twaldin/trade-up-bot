@@ -27,6 +27,7 @@ export function LiveFeed() {
   useEffect(() => {
     let mounted = true;
     const poll = async () => {
+      if (document.hidden) return;
       try {
         const params = new URLSearchParams({ limit: "150" });
         if (lastCreatedRef.current) {

@@ -48,6 +48,7 @@ export function useStatus(enabled = true, pollInterval = 60_000) {
   useEffect(() => {
     if (!enabled) return;
     const checkInterval = setInterval(async () => {
+      if (document.hidden) return;
       const data = await fetchStatus();
       if (data && data.trade_ups_count !== prevCount.current) {
         setNewDataHint(true);
