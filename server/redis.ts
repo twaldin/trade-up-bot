@@ -166,6 +166,22 @@ export async function setCycleVersion(version: string): Promise<void> {
 }
 
 /**
+ * Module-level map of in-flight handler executions keyed by cache key.
+ * Followers await the leader's promise; on failure the leader resolves with null
+ * so followers fall through and run the handler independently.
+ */
+const _pending = new Map<string, Promise<string | null>>();
+
+/** Create a manually-resolved promise pair. */
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/**
  * Express middleware that caches route responses in Redis.
  *
  * Usage:
@@ -173,6 +189,13 @@ export async function setCycleVersion(version: string): Promise<void> {
  *
  * The keyFn receives the request and returns the cache key (or null to skip caching).
  * The handler should call res.json() as normal — the middleware intercepts the response.
+ *
+ * Single-flight coalescing: concurrent requests for the same key that all miss
+ * the cache will share one handler execution. Followers receive the same JSON
+ * string the leader produced (X-Cache: COALESCED). A leader that fails (throws
+ * or returns without calling res.json) resolves its deferred with null — followers
+ * then fall through and run the handler independently. The pending entry is always
+ * deleted in the leader's finally block.
  */
 export function cachedRoute(
   keyFn: string | ((req: Request) => string | null),
@@ -181,31 +204,63 @@ export function cachedRoute(
 ) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const key = typeof keyFn === "string" ? keyFn : keyFn(req);
-    if (!key || !_available) {
-      // No caching — run handler directly
+
+    // No key → no caching and no coalescing (e.g. keyFn returned null)
+    if (!key) {
       return handler(req, res, next);
     }
 
-    // Check Redis cache
-    try {
-      const cached = await _redis!.get(key);
-      if (cached !== null) {
-        res.setHeader("X-Cache", "HIT");
+    // Check Redis cache (only when Redis is up)
+    if (_available && _redis) {
+      try {
+        const cached = await _redis.get(key);
+        if (cached !== null) {
+          res.setHeader("X-Cache", "HIT");
+          res.setHeader("Content-Type", "application/json");
+          res.send(cached); // send raw string, skip re-serialization
+          return;
+        }
+      } catch { /* Redis error — fall through to single-flight path */ }
+    }
+
+    // Single-flight: check if another request is already executing the handler
+    const inflight = _pending.get(key);
+    if (inflight !== undefined) {
+      // Follower — wait for the leader to finish
+      const raw = await inflight;
+      if (raw !== null) {
+        // Leader succeeded — serve its result
+        res.setHeader("X-Cache", "COALESCED");
         res.setHeader("Content-Type", "application/json");
-        res.send(cached); // send raw string, skip re-serialization
+        res.send(raw);
         return;
       }
-    } catch { /* Redis error — fall through to handler */ }
+      // Leader failed — fall through and run the handler independently
+      try {
+        return await handler(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+      return;
+    }
 
-    // Cache miss — intercept res.json to capture the response
+    // Leader — become the in-flight entry for this key
+    const { promise, resolve } = deferred<string | null>();
+    _pending.set(key, promise);
+    let resolved = false;
+
+    // Intercept res.json to capture the response and resolve the deferred
     const originalJson = res.json.bind(res);
     res.json = function (data: unknown) {
       res.setHeader("X-Cache", "MISS");
+      const raw = JSON.stringify(data);
       // Store in Redis (fire-and-forget, don't block response)
       if (_available && _redis) {
-        const raw = JSON.stringify(data);
         _redis.set(key, raw, "EX", ttlSeconds).catch(() => {});
       }
+      // Resolve waiters with the raw JSON string
+      resolved = true;
+      resolve(raw);
       return originalJson(data);
     } as typeof res.json;
 
@@ -213,6 +268,13 @@ export function cachedRoute(
       return await handler(req, res, next);
     } catch (err) {
       next(err);
+    } finally {
+      // Always clean up the pending entry; resolve with null if handler never
+      // called res.json (error path) so followers don't hang.
+      if (!resolved) {
+        resolve(null);
+      }
+      _pending.delete(key);
     }
   };
 }
