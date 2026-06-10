@@ -246,6 +246,7 @@ describe("discovery condition-pool characterization (integration)", () => {
     // Sanity: structured path with 30 listings per collection should find results
     // (if not, the fixtures or price data are wrong)
     expect(Array.isArray(sigs)).toBe(true);
+    expect(sigs.length).toBeGreaterThan(0); // determinism check must not pass vacuously on an empty result set
   }, 120_000);
 
   it("produces identical output on the structured path (run 2 — determinism check)", async () => {
