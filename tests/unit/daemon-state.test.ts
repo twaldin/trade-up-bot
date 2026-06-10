@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "../../server/daemon/state.js";
 
+function freezeTime(isoTimestamp: string) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(isoTimestamp));
+}
+
 // ─── BudgetTracker ──────────────────────────────────────────────────────────
 
 describe("BudgetTracker", () => {
@@ -279,8 +284,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt very soon (<2 min) returns all usable", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker(100, 100);
       // resetAt in 60 seconds (<120s threshold)
       const resetAt = Math.floor(Date.now() / 1000) + 60;
@@ -289,8 +293,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt 1 hour away and 30-min cycle returns usable/2", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 3600; // 1 hour
       bt.setListingPool(100, resetAt, 200);
@@ -301,8 +304,7 @@ describe("BudgetTracker", () => {
     });
 
     it("enforces minimum of 5 calls", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 36000; // 10 hours
       bt.setListingPool(10, resetAt, 200);
@@ -333,8 +335,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt very soon (<2 min) returns all usable", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 30;
       bt.setSalePool(100, resetAt);
@@ -343,8 +344,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt 1 hour away paces across cycles", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 3600;
       bt.setSalePool(100, resetAt);
@@ -355,8 +355,7 @@ describe("BudgetTracker", () => {
     });
 
     it("enforces minimum of 3 calls", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 86400; // 24 hours
       bt.setSalePool(35, resetAt);
@@ -381,8 +380,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt very soon (<2 min) returns all usable", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 90;
       bt.setIndividualPool(5000, resetAt);
@@ -391,8 +389,7 @@ describe("BudgetTracker", () => {
     });
 
     it("with resetAt far away paces across cycles", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 7200; // 2 hours
       bt.setIndividualPool(10000, resetAt);
@@ -403,8 +400,7 @@ describe("BudgetTracker", () => {
     });
 
     it("enforces minimum of 50 calls", () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-03-21T12:00:00Z"));
+      freezeTime("2026-03-21T12:00:00Z");
       const bt = new BudgetTracker();
       const resetAt = Math.floor(Date.now() / 1000) + 86400;
       bt.setIndividualPool(200, resetAt);
