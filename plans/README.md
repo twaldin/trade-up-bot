@@ -22,6 +22,28 @@ The audit ran 9 parallel auditors (bundle build with sourcemap attribution, cold
 
 \* 002 can run before 001 if needed. \*\* 005 works without 004 (falls back to reading index.html once at boot) but lands cleaner after it.
 
+## Batch 2 (2026-06-10 evening) — SEO-focused pass + rescued-branch ports + investigate-list promotions
+
+Written after an SEO audit driven by the Google Search Console export (2026-06-10: 85 robots-blocked pages, 103 404s, 202 crawled-not-indexed, slash/host duplicates splitting signals, ~1,500 monthly impressions on calculator/fee queries converting at ~0%) and the review of the rescued VPS branch (`plans/notes/vps-local-changes-review-2026-06-10.md`).
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 012  | SEO crawl hygiene: nofollow auth links, prerender canonical consistency | P1 | S | — | TODO |
+| 013  | Indexing quality: sitemap hysteresis, stale-link pruning, bounded crawler pages | P1 | M | — | TODO |
+| 014  | CTR/content for money queries (fees post, /calculator, /trade-ups hub, FAQ schema) | P1 | M | — | TODO |
+| 015  | Port rescued VPS branch: housekeeping gate + dataviewer query rewrites (with inflation fix) | P2 | M | — | TODO |
+| 016  | Port rescued KNN scoped loading (with param chunking + equivalence tests) | P2 | M–L | 007 | TODO |
+| 017  | Remove react-helmet-async (16 files; React 19 native head hoisting) | P3 | M | — | TODO |
+| 018  | cachedRoute: never cache/coalesce non-2xx responses | P3 | S | 006 | TODO |
+| 019  | Worker signature precompute (fix sig-load timeout feedback loop) | P3 | M–L | 010 | TODO |
+
+Recommended order: 012 → 013 → 014 (the SEO batch, independent of each other but reviewed best in that order), then 015/018 (small), then 016/017/019. SEO effects need 2–6 weeks to show in GSC — re-export and compare after the batch lands.
+
+## Operator actions awaiting user decision (NOT in any plan)
+
+- **Drop `trade_up_collection_index` on prod** (2,439 MB table + active trigger `trg_trade_up_collection_index` taxing every daemon write; nothing reads it since the VPS reset). See `plans/notes/vps-local-changes-review-2026-06-10.md` for the inspect-then-drop SQL. Destructive — needs explicit sign-off.
+- **GSC console actions** after 012/013 deploy: start validation on the "Blocked by robots.txt" and "Page with redirect" cohorts; optionally use URL Inspection on the top slash-duplicate blog URLs to nudge consolidation.
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Dependency notes
@@ -60,10 +82,9 @@ All 11 plans executed, merged to main, and deployed the same day via the executo
 
 ## Investigate later (real signals, not yet plan-worthy)
 
-- cachedRoute HIT/COALESCED paths replay cached bodies with status 200 even when the original handler responded non-2xx (pre-existing for HIT, newly reachable with Redis down for COALESCED) — consider skipping cache/coalesce capture for non-2xx responses (plan 006 reviewer finding, 2026-06-10).
-- react-helmet-async removal (plan 003 Step 4) skipped via STOP gate: 16 files use `<Helmet>` — needs its own small plan if wanted (~6KB gz entry savings on React 19).
-
-- Worker signature-load timeout → duplicate-discovery feedback loop (`server/daemon/calc-worker.ts:113-130`); root fix is main-process sig precomputation (builds on plan 010).
+- ~~cachedRoute non-2xx caching~~ → promoted to plan 018.
+- ~~react-helmet-async removal~~ → promoted to plan 017.
+- ~~Worker signature-load timeout feedback loop~~ → promoted to plan 019.
 - Discovery memory: 6 rarity datasets × duplicated index arrays drive the 8GB heap (`engine/data-load.ts:75`, `daemon/index.ts:370`); streaming/partitioning is an L-effort redesign.
 - KNN observation window 180d → 90d (decay weight at 90d ≈ 0.11) — needs accuracy measurement before tuning.
 - Conditional `price_data` UPSERT (skip unchanged), DMarket per-item transactions, marketplace fetch parallelism (`daemon/phases/data-fetch.ts:181`).
