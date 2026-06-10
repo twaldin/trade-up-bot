@@ -29,7 +29,7 @@ Written after an SEO audit driven by the Google Search Console export (2026-06-1
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 012  | SEO crawl hygiene: nofollow auth links, prerender canonical consistency | P1 | S | — | DONE (9d5d44a..41f551e — 8 auth/api links gained rel=nofollow (9th already had it), blog prerender routes now slash-canonical, convention documented in canonical-redirects.ts; prerendered canonicals byte-identical pre/post) |
-| 013  | Indexing quality: sitemap hysteresis, stale-link pruning, bounded crawler pages | P1 | M | — | TODO |
+| 013  | Indexing quality: sitemap hysteresis, stale-link pruning, bounded crawler pages | P1 | M | — | DONE (13a4efc..40218c5 — sitemap/skins-hub thresholds 5→10 (noindex stays at 5: hysteresis), collection crawler query bounded LIMIT 120 + profit_cents>100 + preserved-stale excluded, sitemap-collection-tradeups + meta COUNT match; note: LIMIT 120 with DISTINCT ON is id-ordered — per-type bounding is the follow-up if >120-trade-up collections appear) |
 | 014  | CTR/content for money queries (fees post, /calculator, /trade-ups hub, FAQ schema) | P1 | M | — | TODO |
 | 015  | Port rescued VPS branch: housekeeping gate + dataviewer query rewrites (with inflation fix) | P2 | M | — | TODO |
 | 016  | Port rescued KNN scoped loading (with param chunking + equivalence tests) | P2 | M–L | 007 | TODO |
