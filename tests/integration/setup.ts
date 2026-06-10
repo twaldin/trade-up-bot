@@ -117,6 +117,8 @@ async function createSchema(bootstrapPool: pg.Pool) {
       output_repriced_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       ,input_sources TEXT[] NOT NULL DEFAULT '{}'
+      ,output_skin_names TEXT[] NOT NULL DEFAULT '{}'
+      ,collection_names TEXT[] NOT NULL DEFAULT '{}'
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (
@@ -338,10 +340,10 @@ export async function seedTestData(pool: pg.Pool, opts: SeedOptions = {}) {
     ]);
 
     const { rows } = await pool.query(`
-      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, outcomes_json, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, NOW() - INTERVAL '4 hours')
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, outcomes_json, output_skin_names, collection_names, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, NOW() - INTERVAL '4 hours')
       RETURNING id
-    `, [cost, ev, profit, roi, 0.8, type, profit + 500, -200, outcomes]);
+    `, [cost, ev, profit, roi, 0.8, type, profit + 500, -200, outcomes, ["AK-47 | Fire Serpent"], ["Test Collection Alpha"]]);
     tuId = rows[0].id;
 
     for (let j = 0; j < inputCount; j++) {
@@ -365,10 +367,10 @@ export async function seedTestData(pool: pg.Pool, opts: SeedOptions = {}) {
     ]);
 
     const { rows } = await pool.query(`
-      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, outcomes_json, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, NOW() - INTERVAL '4 hours')
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, outcomes_json, output_skin_names, collection_names, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, NOW() - INTERVAL '4 hours')
       RETURNING id
-    `, [cost, ev, profit, roi, 0.1, type, -500, -5000, outcomes]);
+    `, [cost, ev, profit, roi, 0.1, type, -500, -5000, outcomes, ["AK-47 | Fire Serpent"], ["Test Collection Beta"]]);
     const id = rows[0].id;
 
     for (let j = 0; j < inputCount; j++) {
@@ -392,10 +394,10 @@ export async function seedTestData(pool: pg.Pool, opts: SeedOptions = {}) {
     ]);
 
     const { rows } = await pool.query(`
-      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, preserved_at, outcomes_json, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'stale', NOW(), $9, NOW() - INTERVAL '4 hours')
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, listing_status, preserved_at, outcomes_json, output_skin_names, collection_names, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'stale', NOW(), $9, $10, $11, NOW() - INTERVAL '4 hours')
       RETURNING id
-    `, [cost, ev, profit, roi, 0.6, type, 3000, -1000, outcomes]);
+    `, [cost, ev, profit, roi, 0.6, type, 3000, -1000, outcomes, ["AK-47 | Fire Serpent"], ["Test Collection Alpha"]]);
     const id = rows[0].id;
 
     for (let j = 0; j < inputCount; j++) {

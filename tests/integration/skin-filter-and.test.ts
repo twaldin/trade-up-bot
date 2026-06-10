@@ -23,10 +23,10 @@ describe("/api/trade-ups AND filter logic", () => {
     }]);
 
     const { rows } = await ctx.pool.query(`
-      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, listing_status, outcomes_json, created_at)
-      VALUES (5000, 14000, 9000, 180, 0.5, 'covert_knife', 'active', $1, NOW() - INTERVAL '4 hours')
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, listing_status, outcomes_json, output_skin_names, collection_names, created_at)
+      VALUES (5000, 14000, 9000, 180, 0.5, 'covert_knife', 'active', $1, $2, $3, NOW() - INTERVAL '4 hours')
       RETURNING id
-    `, [outcomes]);
+    `, [outcomes, ["AK-47 | Fire Serpent", "M4A4 | Test Skin"], ["Test Collection Alpha", "Test Collection Beta"]]);
     const tuId = rows[0].id;
 
     // Mix of skins from both collections

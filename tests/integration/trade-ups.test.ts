@@ -207,12 +207,13 @@ describe("Trade-Ups List API", () => {
     expect(resPro.body.tier_config.delay).toBe(0);
     expect(resPro.body.tier_config.showListingIds).toBe(true);
 
+    // Legacy/unknown tiers (e.g. the retired "basic") fall back to the free config
     const resBasic = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife")
       .set("X-Test-User-Id", "user_basic")
       .set("X-Test-User-Tier", "basic");
     expect(resBasic.body.tier).toBe("basic");
-    expect(resBasic.body.tier_config.delay).toBe(30 * 60); // 30 min
+    expect(resBasic.body.tier_config.delay).toBe(3 * 60 * 60); // free-tier 3h delay
     expect(resBasic.body.tier_config.showListingIds).toBe(true);
   });
 
