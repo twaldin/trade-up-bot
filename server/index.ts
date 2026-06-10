@@ -1113,6 +1113,9 @@ registerCanonicalRedirectRoutes(app);
             res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
           } else if (filePath.endsWith(".html")) {
             res.setHeader("Cache-Control", "no-cache, must-revalidate");
+          } else if (/\.(png|jpe?g|webp|svg)$/i.test(filePath) && !filePath.includes("/assets/")) {
+            // Public images (not content-hashed): 1-day cache
+            res.setHeader("Cache-Control", "public, max-age=86400");
           }
         },
       },
