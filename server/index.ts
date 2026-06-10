@@ -988,8 +988,8 @@ registerCanonicalRedirectRoutes(app);
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtml, {
-          title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
-          description: "Find profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
+          title: "CS2 Trade-Ups — Live Profitable Contracts, Updated Daily | TradeUpBot",
+          description: "Find profitable CS2 trade-up contracts from real marketplace listings. Use the calculator, filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
           url: "https://tradeupbot.app/trade-ups",
         }));
         return;
@@ -1032,7 +1032,7 @@ registerCanonicalRedirectRoutes(app);
           { "@type": "Question", name: "Are these listings live?", acceptedAnswer: { "@type": "Answer", text: "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." } },
         ] };
         const html = buildSeoHtml({
-          title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
+          title: "CS2 Trade-Ups — Live Profitable Contracts, Updated Daily | TradeUpBot",
           description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({

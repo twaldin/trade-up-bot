@@ -8,9 +8,27 @@ export interface StaticSeoPage {
 export const STATIC_SEO_PAGES: StaticSeoPage[] = [
   {
     path: "/calculator",
-    title: "CS2 Trade-Up Calculator — Estimate Profit, EV & Float | TradeUpBot",
-    description: "Calculate CS2 trade-up contract cost, expected value, float outcomes, and profitability before buying inputs.",
-    bodyHtml: `<h1>CS2 Trade-Up Calculator</h1><p>The TradeUpBot CS2 trade-up calculator helps players estimate contract cost, expected value, output float, and potential profit before buying 10 inputs. Use it to compare rarity tiers, understand condition boundaries, and avoid contracts where marketplace fees erase the expected return.</p><p>Trade-up math depends on input skin prices, output probabilities, collection weighting, and the adjusted float formula. TradeUpBot pairs calculator logic with live listings from CSFloat, DMarket, and Skinport so you can move from theory to real buyable opportunities.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>`,
+    title: "Free CS2 Trade-Up Calculator — Profit, Float & EV | TradeUpBot",
+    description: "Free online CS2 trade-up calculator and simulator. Enter 10 skins to calculate profit, expected value, float outcomes, ROI and chance to profit — with live CSFloat, DMarket and Skinport pricing.",
+    bodyHtml: `<h1>CS2 Trade-Up Calculator</h1><p>The TradeUpBot CS2 trade-up calculator helps players estimate contract cost, expected value, output float, and potential profit before buying 10 inputs. Use it to compare rarity tiers, understand condition boundaries, and avoid contracts where marketplace fees erase the expected return.</p><p>Trade-up math depends on input skin prices, output probabilities, collection weighting, and the adjusted float formula. TradeUpBot pairs calculator logic with live listings from CSFloat, DMarket, and Skinport so you can move from theory to real buyable opportunities.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>
+<h2>What the calculator does</h2>
+<p>Enter up to 10 input skins — with their collection, rarity, exact float value, and current buy price — and the calculator outputs: expected value (EV), net profit after marketplace fees, return on investment (ROI), chance to profit, output float, and the full probability distribution across every possible output skin. Fees for CSFloat (2.8% + $0.30 buyer, 2% seller), DMarket (2.5% buyer, 2% seller), and Skinport (0% buyer, 8% seller) are applied automatically based on which marketplace each listing comes from.</p>
+<h2>Calculator, simulator, or generator?</h2>
+<p>Whether you call it a CS2 trade-up calculator, trade-up simulator, or trade-up generator, the tool does the same job: model a contract before you spend money. TradeUpBot uses all three terms because players search for each one — the underlying math (collection weighting, adjusted float formula, fee-adjusted profit) is identical regardless of the label.</p>
+<h2>How to use it</h2>
+<ol>
+<li><strong>Choose a rarity tier.</strong> Select the input rarity (Mil-Spec, Restricted, Classified, or Covert for knife/glove). All 10 inputs must share the same rarity.</li>
+<li><strong>Add each input skin.</strong> Enter the skin name, collection, exact float value, and the listing price from CSFloat, DMarket, or Skinport. Use real listing prices — not averages — because exact float determines output condition.</li>
+<li><strong>Review the output pool and float.</strong> The calculator shows every possible output skin with its probability and estimated value at the predicted float. Check that profitable outputs land safely inside the condition boundary you need (e.g., under 0.07 for Factory New).</li>
+<li><strong>Compare EV and chance-to-profit.</strong> Positive EV means the contract earns on average. High chance-to-profit means most individual attempts finish green. Small bankrolls usually benefit more from high chance-to-profit; larger bankrolls can tolerate lower-probability positive-EV plays.</li>
+</ol>
+<section><h2>FAQ</h2>
+<h3>Are marketplace fees included in the calculator?</h3>
+<p>Yes. The calculator adds buyer-side fees to each input's cost and deducts seller-side fees from each output's value. CSFloat buyer fee is 2.8% plus $0.30 flat. DMarket buyer fee is 2.5%. Skinport has no buyer fee. CSFloat and DMarket both charge 2% seller fees; Skinport charges 8%.</p>
+<h3>How precise is the float calculation?</h3>
+<p>The calculator uses the same deterministic formula CS2 uses: each input's adjusted float (normalized within its own min–max range) is averaged, then mapped onto each possible output skin's float range. Results are exact given the input floats you enter. Replacing one input with a different float changes the output condition prediction.</p>
+<h3>Which CS2 collections are eligible for trade-ups?</h3>
+<p>Any collection that contains skins at both the input rarity and the next higher rarity is eligible. Collections with no next-rarity skins cannot be used. The calculator validates collection eligibility automatically when you select inputs.</p></section>`,
   },
   {
     path: "/faq",
