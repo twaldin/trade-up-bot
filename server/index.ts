@@ -859,6 +859,11 @@ registerCanonicalRedirectRoutes(app);
   if (fs.existsSync(distPath)) {
     // Read index.html once for meta injection on list pages
     const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf-8");
+    // _shell.html is the pristine Vite output copied before prerender overwrites index.html.
+    // SPA routes inject meta into the shell; / serves the fully prerendered landing (indexHtml).
+    const shellPath = path.join(distPath, "_shell.html");
+    const shellHtml = fs.existsSync(shellPath) ? fs.readFileSync(shellPath, "utf-8") : indexHtml;
+    app.locals.shellHtml = shellHtml;
 
     // List pages: Googlebot gets server-rendered HTML with real DB data and NO JS bundle.
     // WRS executes JS which overwrites content with empty-state React render (API times out
@@ -868,7 +873,7 @@ registerCanonicalRedirectRoutes(app);
       const ua = req.headers["user-agent"] || "";
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(indexHtml, {
+        res.send(injectMetaIntoSpa(shellHtml, {
           title: "Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
           description: "Find profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
           url: "https://tradeupbot.app/trade-ups",
@@ -944,7 +949,7 @@ registerCanonicalRedirectRoutes(app);
       const ua = req.headers["user-agent"] || "";
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(indexHtml, {
+        res.send(injectMetaIntoSpa(shellHtml, {
           title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
           description: "Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.",
           url: "https://tradeupbot.app/collections",
@@ -971,7 +976,7 @@ registerCanonicalRedirectRoutes(app);
       const ua = req.headers["user-agent"] || "";
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(indexHtml, {
+        res.send(injectMetaIntoSpa(shellHtml, {
           title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
           description: "Browse CS2 skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential.",
           url: "https://tradeupbot.app/skins",
@@ -1029,7 +1034,7 @@ registerCanonicalRedirectRoutes(app);
           }));
           return;
         }
-        res.send(injectMetaIntoSpa(indexHtml, {
+        res.send(injectMetaIntoSpa(shellHtml, {
           title: staticPage.title,
           description: staticPage.description,
           url: `https://tradeupbot.app${staticPage.path}`,
@@ -1055,11 +1060,11 @@ registerCanonicalRedirectRoutes(app);
           bodyHtml,
         }));
       } else {
-        res.send(injectMetaIntoSpa(indexHtml, { title, description, url, bodyHtml }));
+        res.send(injectMetaIntoSpa(shellHtml, { title, description, url, bodyHtml }));
       }
     });
 
-    registerBlogRoutes(app, indexHtml);
+    registerBlogRoutes(app, shellHtml);
 
     app.get("/", async (_req, res, next) => {
       const indexPath = path.join(__dirname, "..", "dist", "index.html");
@@ -1108,7 +1113,8 @@ registerCanonicalRedirectRoutes(app);
     }));
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, must-revalidate");
-      res.sendFile(path.join(distPath, "index.html"));
+      res.setHeader("Content-Type", "text/html");
+      res.send(shellHtml);
     });
   }
 
