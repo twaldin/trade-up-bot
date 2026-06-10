@@ -40,17 +40,28 @@ export function initDb(): pg.Pool {
   return _pool;
 }
 
+// Bump this string whenever anything inside createTables changes.
+// CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
+// production will skip the migration on the next deploy.
+export const SCHEMA_VERSION = "2026-06-10.1";
+
 /** Create all tables if they don't exist. Run once at startup.
- *  Skips if tables already exist (fast path for normal restarts). */
+ *  Skips if tables already exist (fast path for normal restarts).
+ *  Short-circuits entirely when the DB schema_version matches SCHEMA_VERSION. */
 export async function createTables(pool: pg.Pool): Promise<void> {
+  // Fast path: skip the entire migration body if schema is already at this version.
+  // getSyncMeta may throw if sync_meta doesn't exist yet (fresh DB) — catch and fall through.
+  const current = await getSyncMeta(pool, "schema_version").catch(() => null);
+  if (current === SCHEMA_VERSION) return;
+
   // Serialize concurrent startup calls to prevent CREATE INDEX deadlocks when multiple
   // processes start simultaneously. Session advisory lock is released in finally.
   const lockClient = await pool.connect();
   try {
     await lockClient.query("SELECT pg_advisory_lock(1)");
-  // Fast check: if trade_ups table exists, schema is already set up — skip CREATE but still run migrations
+  // Fast check: if trade_ups table exists in the current schema, it's already set up — skip CREATE but still run migrations
   const { rows } = await pool.query(
-    "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' LIMIT 1"
+    "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' AND table_schema = current_schema() LIMIT 1"
   );
   const tablesExist = rows.length > 0;
   if (!tablesExist) {
@@ -635,6 +646,9 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       await pool.query("SET statement_timeout = '0'").catch(() => {});
     }
   }
+
+  // Record the schema version so subsequent boots short-circuit.
+  await setSyncMeta(pool, "schema_version", SCHEMA_VERSION);
 
   } finally {
     await lockClient.query("SELECT pg_advisory_unlock(1)");
