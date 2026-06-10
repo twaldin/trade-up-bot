@@ -340,7 +340,7 @@ registerCanonicalRedirectRoutes(app);
       ctCacheSet(`coll_tu_count:${collectionName}`, tradeUps.length, 1800).catch(() => {});
       void collTuCountKey; // referenced above for non-crawler; suppress unused warning
       res.send(collTuHtml);
-    } catch { next(); }
+    } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
 
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
@@ -407,7 +407,7 @@ registerCanonicalRedirectRoutes(app);
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
-    } catch { next(); }
+    } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
 
   // SEO: crawler handler for /collections/:slug pages — enriched
@@ -576,7 +576,7 @@ registerCanonicalRedirectRoutes(app);
         if (!shellHtmlLocal) return next();
         res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
-    } catch { next(); }
+    } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
 
   // SEO: crawler handler for /skins/:slug pages — enriched with structured data
@@ -943,7 +943,7 @@ registerCanonicalRedirectRoutes(app);
         if (!shellHtmlLocal) return next();
         res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
       }
-    } catch { next(); }
+    } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
 
   // Serve built frontend in production (Vite handles this in dev via proxy)
@@ -1034,7 +1034,7 @@ registerCanonicalRedirectRoutes(app);
         } catch { }
         res.setHeader("Content-Type", "text/html");
         res.send(html);
-      } catch { next(); }
+      } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
     });
 
     app.get("/collections", async (req, res, next) => {
@@ -1061,7 +1061,7 @@ registerCanonicalRedirectRoutes(app);
           url: "https://tradeupbot.app/collections",
           bodyHtml: renderCollectionsHub(collectionLinks),
         }));
-      } catch { next(); }
+      } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
     });
 
     app.get("/skins", async (req, res, next) => {
@@ -1110,7 +1110,7 @@ registerCanonicalRedirectRoutes(app);
         } catch { }
         res.setHeader("Content-Type", "text/html");
         res.send(html);
-      } catch { next(); }
+      } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
     });
 
     for (const staticPage of STATIC_SEO_PAGES) {
