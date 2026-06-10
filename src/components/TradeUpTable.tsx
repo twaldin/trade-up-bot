@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import type { TradeUp, TradeUpInput } from "../../shared/types.js";
 import { condAbbr, csfloatSearchUrl } from "../utils/format.js";
 import { useCurrency } from "../contexts/CurrencyContext.js";
@@ -458,7 +458,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   };
 
   // Prepare trade-up data (shared between desktop and mobile)
-  const preparedTradeUps = tradeUps.map((rawTu) => {
+  const preparedTradeUps = useMemo(() => tradeUps.map((rawTu) => {
     const override = priceOverrides.get(rawTu.id);
     const tu = {
       ...rawTu,
@@ -493,7 +493,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     };
   })
   // On "Your Claims" page, hide released trade-ups immediately
-  .filter(({ tu }) => !showMyClaims || claimedIds.has(tu.id));
+  .filter(({ tu }) => !showMyClaims || claimedIds.has(tu.id)),
+  [tradeUps, priceOverrides, loadedInputs, loadedOutcomes, showMyClaims, claimedIds]);
 
   return (
     <>
