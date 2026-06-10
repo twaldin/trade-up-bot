@@ -111,23 +111,49 @@ export function dataRouter(
     const offsetParam = paramIndex;
     paramIndex++;
 
-    // Fast query — no correlated subqueries. Listing stats via simple JOIN + GROUP BY.
+    // Filter skins first so selective search/collection pages only aggregate
+    // listings for matching skins instead of scanning every listing.
+    // collection_names_by_skin is aggregated per skin_id BEFORE joining
+    // listing_stats so the listing_stats join is 1:1 (avoids count inflation
+    // for skins that belong to more than one collection).
     const { rows: skins } = await pool.query(`
-      SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, $1::boolean as stattrak,
-        STRING_AGG(DISTINCT c.name, ',') as collection_names,
-        COUNT(DISTINCT l.id) as listing_count,
-        MIN(l.price_cents) as min_price,
-        ROUND(AVG(l.price_cents)) as avg_price,
-        MAX(l.price_cents) as max_price,
-        MIN(l.float_value) as min_float_seen,
-        MAX(l.float_value) as max_float_seen
-      FROM skins s
-      LEFT JOIN skin_collections sc ON s.id = sc.skin_id
-      LEFT JOIN collections c ON sc.collection_id = c.id
-      LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = $2::boolean
-      WHERE s.stattrak = $3::boolean ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
-        ${searchFilter}
-      GROUP BY s.name, s.rarity, s.weapon, s.min_float, s.max_float
+      WITH filtered_skins AS MATERIALIZED (
+        SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float
+        FROM skins s
+        WHERE s.stattrak = $3::boolean ${rarityFilter} ${outputWeaponFilter} ${collectionWhere}
+          ${searchFilter}
+      ),
+      collection_names_by_skin AS (
+        SELECT sc.skin_id, STRING_AGG(DISTINCT c.name, ',') AS collection_names
+        FROM skin_collections sc
+        JOIN collections c ON sc.collection_id = c.id
+        JOIN filtered_skins fs ON sc.skin_id = fs.id
+        GROUP BY sc.skin_id
+      ),
+      listing_stats AS (
+        SELECT l.skin_id,
+          COUNT(*)::int AS listing_count,
+          MIN(l.price_cents) AS min_price,
+          SUM(l.price_cents)::bigint AS total_price_cents,
+          MAX(l.price_cents) AS max_price,
+          MIN(l.float_value) AS min_float_seen,
+          MAX(l.float_value) AS max_float_seen
+        FROM listings l
+        JOIN filtered_skins fs ON fs.id = l.skin_id
+        WHERE l.stattrak = $2::boolean
+        GROUP BY l.skin_id
+      )
+      SELECT fs.id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
+        cn.collection_names,
+        COALESCE(ls.listing_count, 0) AS listing_count,
+        ls.min_price,
+        ROUND(ls.total_price_cents::numeric / NULLIF(ls.listing_count, 0)) AS avg_price,
+        ls.max_price,
+        ls.min_float_seen,
+        ls.max_float_seen
+      FROM filtered_skins fs
+      LEFT JOIN collection_names_by_skin cn ON cn.skin_id = fs.id
+      LEFT JOIN listing_stats ls ON ls.skin_id = fs.id
       ORDER BY listing_count DESC
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `, params);
@@ -161,21 +187,43 @@ export function dataRouter(
           }
 
           const { rows: knifeSkins } = await pool.query(`
-            SELECT MIN(s.id) as id, s.name, s.rarity, s.weapon, s.min_float, s.max_float, $1::boolean as stattrak,
-              STRING_AGG(DISTINCT c.name, ',') as collection_names,
-              COUNT(DISTINCT l.id) as listing_count,
-              MIN(l.price_cents) as min_price,
-              ROUND(AVG(l.price_cents)) as avg_price,
-              MAX(l.price_cents) as max_price,
-              MIN(l.float_value) as min_float_seen,
-              MAX(l.float_value) as max_float_seen
-            FROM skins s
-            LEFT JOIN skin_collections sc ON s.id = sc.skin_id
-            LEFT JOIN collections c ON sc.collection_id = c.id
-            LEFT JOIN listings l ON s.id = l.skin_id AND l.stattrak = $2::boolean
-            WHERE s.stattrak = $3::boolean AND s.name LIKE '★%'
-              AND (${weaponPlaceholders}) ${finishFilter}
-            GROUP BY s.name, s.rarity, s.weapon, s.min_float, s.max_float
+            WITH filtered_skins AS MATERIALIZED (
+              SELECT s.id, s.name, s.rarity, s.weapon, s.min_float, s.max_float
+              FROM skins s
+              WHERE s.stattrak = $3::boolean AND s.name LIKE '★%'
+                AND (${weaponPlaceholders}) ${finishFilter}
+            ),
+            collection_names_by_skin AS (
+              SELECT sc.skin_id, STRING_AGG(DISTINCT c.name, ',') AS collection_names
+              FROM skin_collections sc
+              JOIN collections c ON sc.collection_id = c.id
+              JOIN filtered_skins fs ON sc.skin_id = fs.id
+              GROUP BY sc.skin_id
+            ),
+            listing_stats AS (
+              SELECT l.skin_id,
+                COUNT(*)::int AS listing_count,
+                MIN(l.price_cents) AS min_price,
+                SUM(l.price_cents)::bigint AS total_price_cents,
+                MAX(l.price_cents) AS max_price,
+                MIN(l.float_value) AS min_float_seen,
+                MAX(l.float_value) AS max_float_seen
+              FROM listings l
+              JOIN filtered_skins fs ON fs.id = l.skin_id
+              WHERE l.stattrak = $2::boolean
+              GROUP BY l.skin_id
+            )
+            SELECT fs.id, fs.name, fs.rarity, fs.weapon, fs.min_float, fs.max_float, $1::boolean AS stattrak,
+              cn.collection_names,
+              COALESCE(ls.listing_count, 0) AS listing_count,
+              ls.min_price,
+              ROUND(ls.total_price_cents::numeric / NULLIF(ls.listing_count, 0)) AS avg_price,
+              ls.max_price,
+              ls.min_float_seen,
+              ls.max_float_seen
+            FROM filtered_skins fs
+            LEFT JOIN collection_names_by_skin cn ON cn.skin_id = fs.id
+            LEFT JOIN listing_stats ls ON ls.skin_id = fs.id
             ORDER BY listing_count DESC
           `, knifeParams);
 
@@ -191,19 +239,24 @@ export function dataRouter(
     const saleCountMap = new Map<string, number>();
     if (skinNames.length > 0) {
       const placeholders = skinNames.map((_: string, i: number) => `$${i + 1}`).join(",");
-      const ph2 = skinNames.map((_: string, i: number) => `$${skinNames.length + i + 1}`).join(",");
+      const valuePlaceholders = skinNames.map((_: string, i: number) => `($${i + 1})`).join(",");
       const [{ rows: allPrices }, { rows: saleCounts }] = await Promise.all([
         pool.query(`
           SELECT skin_name, source, condition, avg_price_cents
           FROM price_data WHERE skin_name IN (${placeholders}) AND avg_price_cents > 0
         `, skinNames),
         pool.query(`
-          SELECT skin_name, COUNT(*) as cnt FROM (
-            SELECT skin_name FROM sale_history WHERE skin_name IN (${placeholders})
-            UNION ALL
-            SELECT skin_name FROM price_observations WHERE skin_name IN (${ph2}) AND source IN ('sale', 'skinport_sale', 'buff_sale')
-          ) sub GROUP BY skin_name
-        `, [...skinNames, ...skinNames]),
+          WITH requested(skin_name) AS (VALUES ${valuePlaceholders}),
+          distinct_skins AS (SELECT DISTINCT skin_name FROM requested)
+          SELECT ds.skin_name,
+            (
+              (SELECT COUNT(*) FROM sale_history sh WHERE sh.skin_name = ds.skin_name)
+              + (SELECT COUNT(*) FROM price_observations po
+                 WHERE po.skin_name = ds.skin_name
+                   AND po.source IN ('sale', 'skinport_sale', 'buff_sale'))
+            ) as cnt
+          FROM distinct_skins ds
+        `, skinNames),
       ]);
       for (const p of allPrices) {
         if (!priceMap.has(p.skin_name)) priceMap.set(p.skin_name, {});
