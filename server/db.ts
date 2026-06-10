@@ -455,6 +455,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_theory_tracking_cooldown ON theory_tracking(cooldown_until);
     CREATE INDEX IF NOT EXISTS idx_price_obs_skin_float ON price_observations(skin_name, float_value);
     CREATE INDEX IF NOT EXISTS idx_price_obs_skin ON price_observations(skin_name);
+    CREATE INDEX IF NOT EXISTS idx_price_obs_skin_observed ON price_observations(skin_name, observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_skins_name_stattrak ON skins(name, stattrak);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);
     CREATE INDEX IF NOT EXISTS idx_skins_weapon_stattrak ON skins(weapon, stattrak);
