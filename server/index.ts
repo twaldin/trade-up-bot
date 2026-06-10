@@ -194,6 +194,24 @@ registerCanonicalRedirectRoutes(app);
   app.get("/trade-ups/collection/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     try {
+      // Redis cache: 1800s TTL. seo_coll_tu: full crawler HTML; coll_tu_count: non-crawler count.
+      const collTuCacheKey = `seo_coll_tu:${req.params.slug}`;
+      const collTuCountKey = `coll_tu_count:${req.params.slug}`;
+      const { cacheGet: ctCacheGet, cacheSet: ctCacheSet } = await import("./redis.js");
+
+      // Check crawler cache first
+      if (isCrawler(ua)) {
+        try {
+          const cached = await ctCacheGet<string>(collTuCacheKey);
+          if (cached) {
+            res.setHeader("Content-Type", "text/html");
+            res.setHeader("X-Cache", "HIT");
+            res.send(cached);
+            return;
+          }
+        } catch { /* Redis unavailable */ }
+      }
+
       const { getCollectionSlugMap } = await import("./routes/data.js");
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
@@ -202,8 +220,39 @@ registerCanonicalRedirectRoutes(app);
         return;
       }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
+      const pageUrl = `https://tradeupbot.app/trade-ups/collection/${req.params.slug}`;
 
-      // Get profitable trade-ups for this collection
+      if (!isCrawler(ua)) {
+        // Non-crawler: use a cheap cached COUNT instead of the unbounded DISTINCT ON join.
+        // Cache key is per-collection (not per-slug) since count depends on collectionName.
+        const nonCrawlerCountKey = `coll_tu_count:${collectionName}`;
+        let tuCount = 0;
+        try {
+          const cachedCount = await ctCacheGet<number>(nonCrawlerCountKey);
+          if (cachedCount !== null) {
+            tuCount = cachedCount;
+          } else {
+            const { rows: [countRow] } = await pool.query(`
+              SELECT COUNT(DISTINCT ti.trade_up_id)::int AS count
+              FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+              WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+            `, [collectionName]);
+            tuCount = countRow?.count || 0;
+            ctCacheSet(nonCrawlerCountKey, tuCount, 1800).catch(() => {});
+          }
+        } catch { /* Redis unavailable — tuCount stays 0 */ }
+        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+        if (!shellHtmlLocal) return next();
+        res.setHeader("Content-Type", "text/html");
+        res.send(injectMetaIntoSpa(shellHtmlLocal, {
+          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
+          description: `${tuCount} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
+          url: pageUrl,
+        }));
+        return;
+      }
+
+      // Crawler path: full query, build HTML, cache result.
       const { rows: tradeUps } = await pool.query(`
         SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents,
                t.roi_percentage, t.chance_to_profit, t.best_case_cents, t.worst_case_cents
@@ -212,94 +261,85 @@ registerCanonicalRedirectRoutes(app);
         ORDER BY t.id, t.profit_cents DESC
       `, [collectionName]);
 
-      const pageUrl = `https://tradeupbot.app/trade-ups/collection/${req.params.slug}`;
-
-      if (isCrawler(ua)) {
-        // Group by type for crawler HTML
-        const e = escapeHtml;
-        const byType = new Map<string, typeof tradeUps>();
-        for (const tu of tradeUps) {
-          if (!byType.has(tu.type)) byType.set(tu.type, []);
-          byType.get(tu.type)!.push(tu);
-        }
-
-        let tablesHtml = "";
-        const typeOrder = ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
-        for (const type of typeOrder) {
-          const tus = byType.get(type);
-          if (!tus || tus.length === 0) continue;
-          const sorted = [...tus].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 20);
-          const label = TRADE_UP_TYPE_LABELS[type] || type;
-          const rows = sorted.map((t: { id: number; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
-            `<tr><td><a href="/trade-ups/${t.id}">#${t.id}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
-          ).join("");
-          tablesHtml += `<h2>${e(label)} Trade-Ups (${tus.length})</h2><table><thead><tr><th>ID</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
-        }
-
-        const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
-        const collTuBreadcrumb = `<nav aria-label="Breadcrumb"><ol>`
-          + `<li><a href="/">Home</a></li>`
-          + `<li><a href="/trade-ups">Trade-Ups</a></li>`
-          + `<li><a href="/collections/${req.params.slug}">${e(displayName)} Collection</a></li>`
-          + `<li>${e(displayName)} Trade-Ups</li>`
-          + `</ol></nav>`;
-        const collTuRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
-          + `<li><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></li>`
-          + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
-          + `<li><a href="/collections">All CS2 collections</a></li>`
-          + `</ul></nav>`;
-        const bodyHtml = collTuBreadcrumb
-          + `<h1>${e(displayName)} Trade-Ups</h1>`
-          + `<p>${tradeUps.length} profitable trade-up contracts using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
-          + (bestProfit > 0 ? `<p>Best profit: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
-          + tablesHtml
-          + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
-          + collTuRelated;
-
-        // Top trade-ups for ItemList JSON-LD (up to 10, by profit)
-        const itemListTus = [...tradeUps].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 10);
-        const jsonLd: Record<string, unknown>[] = [
-          {
-            "@context": "https://schema.org", "@type": "BreadcrumbList",
-            itemListElement: [
-              { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
-              { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
-              { "@type": "ListItem", position: 3, name: `${displayName} Collection`, item: `https://tradeupbot.app/collections/${req.params.slug}` },
-              { "@type": "ListItem", position: 4, name: "Trade-Ups" },
-            ],
-          },
-          {
-            "@context": "https://schema.org", "@type": "ItemList",
-            name: `Best ${displayName} CS2 Trade-Up Contracts`,
-            description: `Top profitable trade-up contracts using skins from the ${displayName} collection, ranked by profit.`,
-            numberOfItems: tradeUps.length,
-            itemListElement: itemListTus.map((t, i) => ({
-              "@type": "ListItem",
-              position: i + 1,
-              url: `https://tradeupbot.app/trade-ups/${t.id}`,
-              name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} profit (${t.roi_percentage.toFixed(1)}% ROI)`,
-            })),
-          },
-        ];
-
-        res.send(buildSeoHtml({
-          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
-          description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection.${bestProfit > 0 ? ` Best profit: $${(bestProfit / 100).toFixed(2)}.` : ""} Real listings from CSFloat, DMarket, Skinport.`,
-          url: pageUrl,
-          bodyHtml,
-          jsonLd,
-        }));
-      } else {
-        // Non-crawler: serve SPA with injected meta
-        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
-        if (!shellHtmlLocal) return next();
-        res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(shellHtmlLocal, {
-          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
-          description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
-          url: pageUrl,
-        }));
+      // Group by type for crawler HTML
+      const e = escapeHtml;
+      const byType = new Map<string, typeof tradeUps>();
+      for (const tu of tradeUps) {
+        if (!byType.has(tu.type)) byType.set(tu.type, []);
+        byType.get(tu.type)!.push(tu);
       }
+
+      let tablesHtml = "";
+      const typeOrder = ["covert_knife", "classified_covert", "restricted_classified", "milspec_restricted", "industrial_milspec", "consumer_industrial"];
+      for (const type of typeOrder) {
+        const tus = byType.get(type);
+        if (!tus || tus.length === 0) continue;
+        const sorted = [...tus].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 20);
+        const label = TRADE_UP_TYPE_LABELS[type] || type;
+        const rows = sorted.map((t: { id: number; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
+          `<tr><td><a href="/trade-ups/${t.id}">#${t.id}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+        ).join("");
+        tablesHtml += `<h2>${e(label)} Trade-Ups (${tus.length})</h2><table><thead><tr><th>ID</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }
+
+      const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
+      const collTuBreadcrumb = `<nav aria-label="Breadcrumb"><ol>`
+        + `<li><a href="/">Home</a></li>`
+        + `<li><a href="/trade-ups">Trade-Ups</a></li>`
+        + `<li><a href="/collections/${req.params.slug}">${e(displayName)} Collection</a></li>`
+        + `<li>${e(displayName)} Trade-Ups</li>`
+        + `</ol></nav>`;
+      const collTuRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
+        + `<li><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></li>`
+        + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
+        + `<li><a href="/collections">All CS2 collections</a></li>`
+        + `</ul></nav>`;
+      const bodyHtml = collTuBreadcrumb
+        + `<h1>${e(displayName)} Trade-Ups</h1>`
+        + `<p>${tradeUps.length} profitable trade-up contracts using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
+        + (bestProfit > 0 ? `<p>Best profit: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
+        + tablesHtml
+        + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
+        + collTuRelated;
+
+      // Top trade-ups for ItemList JSON-LD (up to 10, by profit)
+      const itemListTus = [...tradeUps].sort((a, b) => b.profit_cents - a.profit_cents).slice(0, 10);
+      const jsonLd: Record<string, unknown>[] = [
+        {
+          "@context": "https://schema.org", "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+            { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
+            { "@type": "ListItem", position: 3, name: `${displayName} Collection`, item: `https://tradeupbot.app/collections/${req.params.slug}` },
+            { "@type": "ListItem", position: 4, name: "Trade-Ups" },
+          ],
+        },
+        {
+          "@context": "https://schema.org", "@type": "ItemList",
+          name: `Best ${displayName} CS2 Trade-Up Contracts`,
+          description: `Top profitable trade-up contracts using skins from the ${displayName} collection, ranked by profit.`,
+          numberOfItems: tradeUps.length,
+          itemListElement: itemListTus.map((t, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: `https://tradeupbot.app/trade-ups/${t.id}`,
+            name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} profit (${t.roi_percentage.toFixed(1)}% ROI)`,
+          })),
+        },
+      ];
+
+      const collTuHtml = buildSeoHtml({
+        title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
+        description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection.${bestProfit > 0 ? ` Best profit: $${(bestProfit / 100).toFixed(2)}.` : ""} Real listings from CSFloat, DMarket, Skinport.`,
+        url: pageUrl,
+        bodyHtml,
+        jsonLd,
+      });
+      ctCacheSet(collTuCacheKey, collTuHtml, 1800).catch(() => {});
+      // Also update the count cache so next non-crawler sees the fresh value
+      ctCacheSet(`coll_tu_count:${collectionName}`, tradeUps.length, 1800).catch(() => {});
+      void collTuCountKey; // referenced above for non-crawler; suppress unused warning
+      res.send(collTuHtml);
     } catch { next(); }
   });
 
@@ -374,6 +414,34 @@ registerCanonicalRedirectRoutes(app);
   app.get("/collections/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"] || "";
     try {
+      // Redis cache: 3600s TTL. seo_collection: full crawler HTML; seo_collection_meta: meta object.
+      const collCacheKey = `seo_collection:${req.params.slug}`;
+      const collMetaCacheKey = `seo_collection_meta:${req.params.slug}`;
+      const { cacheGet: collCacheGet, cacheSet: collCacheSet } = await import("./redis.js");
+      if (isCrawler(ua)) {
+        try {
+          const cached = await collCacheGet<string>(collCacheKey);
+          if (cached) {
+            res.setHeader("Content-Type", "text/html");
+            res.setHeader("X-Cache", "HIT");
+            res.send(cached);
+            return;
+          }
+        } catch { /* Redis unavailable */ }
+      } else {
+        try {
+          const cachedMeta = await collCacheGet<{ title: string; description: string; url: string; ogImage?: string }>(collMetaCacheKey);
+          if (cachedMeta) {
+            const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
+            if (!shellHtmlLocal) return next();
+            res.setHeader("Content-Type", "text/html");
+            res.setHeader("X-Cache", "HIT");
+            res.send(injectMetaIntoSpa(shellHtmlLocal, cachedMeta));
+            return;
+          }
+        } catch { /* Redis unavailable */ }
+      }
+
       const { getCollectionSlugMap } = await import("./routes/data.js");
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
@@ -495,9 +563,14 @@ registerCanonicalRedirectRoutes(app);
         jsonLd,
       };
 
+      // Cache both crawler HTML and meta object — 3600s TTL.
+      const collHtml = buildSeoHtml(meta);
+      const collMetaToCache = { title: meta.title, description: meta.description, url: meta.url, ogImage: meta.ogImage };
+      collCacheSet(collCacheKey, collHtml, 3600).catch(() => {});
+      collCacheSet(collMetaCacheKey, collMetaToCache, 3600).catch(() => {});
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
-        res.send(buildSeoHtml(meta));
+        res.send(collHtml);
       } else {
         const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
         if (!shellHtmlLocal) return next();
