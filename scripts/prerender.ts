@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import { createServer } from "http";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import { blogPosts } from "../src/data/blog-posts.js";
@@ -137,6 +137,10 @@ async function main(): Promise<void> {
     console.error("dist/ directory not found. Run `vite build` first.");
     process.exit(1);
   }
+
+  // Preserve the pristine Vite-built shell before any prerender run overwrites index.html.
+  // server/index.ts reads _shell.html for SPA routes; index.html becomes the prerendered landing.
+  copyFileSync(join(DIST_DIR, "index.html"), join(DIST_DIR, "_shell.html"));
 
   console.log("Starting prerender...");
 
