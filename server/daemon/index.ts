@@ -755,6 +755,27 @@ export async function main() {
       const { cacheInvalidatePrefix } = await import("../redis.js");
       await cacheInvalidatePrefix("tu:");
 
+      // Refresh type_counts so tab switches skip the heavy GROUP BY on cold cache
+      const { rows: countRows } = await pool.query(`
+        SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
+        FROM trade_ups WHERE is_theoretical = false AND listing_status = 'active'
+        GROUP BY type
+      `);
+      const typeCounts: Record<string, { total: number; profitable: number }> = {};
+      for (const r of countRows) {
+        typeCounts[r.type] = { total: parseInt(r.c), profitable: parseInt(r.profitable) || 0 };
+      }
+      await cacheSet("type_counts", typeCounts, 1800);
+
+      // Warm the route caches the web app reads first (was previously client-triggered).
+      // Self-HTTP so the API's own route logic + cache keys are reused; failures are non-fatal.
+      for (const url of [
+        "http://localhost:3001/api/collections",
+        "http://localhost:3001/api/skin-data?rarity=all&limit=200",
+      ]) {
+        await fetch(url).then(r => r.body?.cancel?.(), () => {}).catch(() => {});
+      }
+
       console.log(`  Redis cache pre-populated`);
     } catch (e) {
       console.error(`  Redis pre-populate failed: ${(e as Error).message}`);
