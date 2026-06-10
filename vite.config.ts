@@ -1,10 +1,29 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+function preloadGeist(): Plugin {
+  return {
+    name: "preload-geist",
+    transformIndexHtml: {
+      order: "post",
+      handler(html: string, ctx: { bundle?: Record<string, unknown> }) {
+        const file = Object.keys(ctx.bundle ?? {}).find(f =>
+          /geist-latin-wght-normal-.*\.woff2$/.test(f)
+        );
+        if (!file) return html;
+        return html.replace(
+          "</title>",
+          `</title><link rel="preload" href="/${file}" as="font" type="font/woff2" crossorigin>`
+        );
+      },
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), preloadGeist()],
   build: {
     rollupOptions: {
       output: {
