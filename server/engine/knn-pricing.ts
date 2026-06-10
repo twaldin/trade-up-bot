@@ -287,6 +287,112 @@ export function clearKnnCache() {
   _knnCacheLoadedAt = 0;
 }
 
+// Maximum (skin, condition-range) pairs per query chunk.
+// Each pair costs 4 bind params; PG cap is 65,535 params ≈ 16K pairs.
+// Use 2,000 to stay well under the limit.
+const KNN_SCOPED_CHUNK_SIZE = 2000;
+
+/**
+ * Load KNN observations scoped to only the (skin, condition-float-range) pairs
+ * present in `listings`. Uses a VALUES CTE + JOIN LATERAL so PG can use
+ * idx_price_obs_skin_observed. Chunked at KNN_SCOPED_CHUNK_SIZE pairs to
+ * stay under PG's 65,535 bind-parameter cap.
+ */
+async function loadInputKnnObservationRows(
+  pool: pg.Pool,
+  listings: { skin_name: string; float_value: number }[],
+): Promise<KnnObservationRow[]> {
+  // Deduplicate (skin, condition-bounds) pairs
+  const requestedPairs = new Map<string, {
+    skinName: string;
+    minFloat: number;
+    maxFloat: number;
+    includeMax: boolean;
+  }>();
+  for (const listing of listings) {
+    const condition = floatToCondition(listing.float_value);
+    const bounds = CONDITION_BOUNDS.find(b => b.name === condition);
+    if (!bounds) continue;
+    const key = `${listing.skin_name}\0${bounds.min}\0${bounds.max}`;
+    requestedPairs.set(key, {
+      skinName: listing.skin_name,
+      minFloat: bounds.min,
+      maxFloat: bounds.max,
+      includeMax: bounds.name === "Battle-Scarred",
+    });
+  }
+
+  if (requestedPairs.size === 0) return [];
+
+  const pairs = [...requestedPairs.values()];
+  const allRows: KnnObservationRow[] = [];
+
+  // Chunk to avoid exceeding PG's 65,535 bind-parameter limit (4 params per pair)
+  for (let offset = 0; offset < pairs.length; offset += KNN_SCOPED_CHUNK_SIZE) {
+    const chunk = pairs.slice(offset, offset + KNN_SCOPED_CHUNK_SIZE);
+    const params: unknown[] = [KNN_MAX_OBS_AGE_DAYS];
+    const values: string[] = [];
+    for (const pair of chunk) {
+      const skinParam = params.length + 1;
+      params.push(pair.skinName);
+      const minParam = params.length + 1;
+      params.push(pair.minFloat);
+      const maxParam = params.length + 1;
+      params.push(pair.maxFloat);
+      const includeMaxParam = params.length + 1;
+      params.push(pair.includeMax);
+      values.push(`($${skinParam}::text, $${minParam}::double precision, $${maxParam}::double precision, $${includeMaxParam}::boolean)`);
+    }
+
+    const { rows } = await pool.query<KnnObservationRow>(`
+      WITH requested(skin_name, min_float, max_float, include_max) AS (
+        VALUES ${values.join(",")}
+      ),
+      distinct_pairs AS MATERIALIZED (
+        SELECT DISTINCT skin_name, min_float, max_float, include_max
+        FROM requested
+      )
+      SELECT po.skin_name, po.float_value, po.price_cents, po.source,
+        EXTRACT(EPOCH FROM NOW() - po.observed_at::timestamptz) / 86400.0 as age_days
+      FROM distinct_pairs p
+      JOIN LATERAL (
+        SELECT skin_name, float_value, price_cents, source, observed_at
+        FROM price_observations
+        WHERE skin_name = p.skin_name
+          AND observed_at >= NOW() - ($1::int * INTERVAL '1 day')
+          AND source IN ('sale', 'skinport_sale', 'buff_sale')
+          AND float_value >= p.min_float
+          AND (float_value < p.max_float OR (p.include_max AND float_value <= p.max_float))
+      ) po ON true
+    `, params);
+
+    allRows.push(...rows);
+  }
+
+  return allRows;
+}
+
+/**
+ * Returns a scoped KNN cache for `listings` — loads only the distinct
+ * (skin, condition-float-range) pairs needed, rather than all skins.
+ * Falls back to the global _knnCache if it is already warm (TTL not expired).
+ */
+async function getInputKnnCache(
+  pool: pg.Pool,
+  listings: { skin_name: string; float_value: number }[],
+): Promise<KnnCacheMap> {
+  if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return _knnCache;
+
+  const skinNames = [...new Set(listings.map(l => l.skin_name))];
+  if (skinNames.length === 0) return new Map();
+
+  const t0 = Date.now();
+  const rows = await loadInputKnnObservationRows(pool, listings);
+  const built = buildKnnCache(rows);
+  console.log(`  [KNN scoped] ${rows.length} observations, ${built.cache.size}/${skinNames.length} skins — ${Date.now() - t0}ms`);
+  return built.cache;
+}
+
 const KNN_K = 12;
 const KNN_MIN_OBS = 3;
 const KNN_MIN_INTERP = 2;  // minimum for linear interpolation fallback
@@ -508,50 +614,84 @@ export async function knnOutputPriceAtFloat(
 }
 
 /**
+ * Binary search: find first index i where obs[i].float >= target.
+ * Requires obs sorted by float ascending (guaranteed by buildKnnCache).
+ */
+function lowerBoundFloat(obs: KnnObservation[], target: number): number {
+  let lo = 0;
+  let hi = obs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (obs[mid].float < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
  * Batch compute KNN fair-value estimates for input listings.
- * Uses the existing _knnCache (sales-only observations) to predict what each
- * listing SHOULD cost at its specific float. Returns a Map of listing_id → valueRatio.
+ * Uses a scoped DB load (only the (skin, condition-float-range) pairs present
+ * in `listings`), so user web requests do NOT trigger a full-table scan.
+ * Falls back to the warm global _knnCache when TTL has not expired.
+ *
+ * Returns a Map of listing_id → valueRatio.
  * valueRatio < 1.0 means underpriced (good deal), > 1.0 means overpriced.
  *
  * Uses simplified KNN: Gaussian-weighted mean of same-condition observations
  * within ±0.04 float. Skips freshness gate (input pricing is less critical than output).
  * Falls back to condition-level median for skins with few observations.
- *
- * Performance: purely in-memory computation using cached observations.
- * No DB queries — call ensureKnnCache(pool) before this.
  */
 export async function batchInputValueRatios(
   pool: pg.Pool,
   listings: { id: string; skin_name: string; float_value: number; price_cents: number }[]
 ): Promise<Map<string, number>> {
-  await ensureKnnCache(pool);
+  const inputKnnCache = await getInputKnnCache(pool, listings);
 
   const result = new Map<string, number>();
+  const conditionObsCache = new Map<string, KnnObservation[]>();
+  const conditionMedianCache = new Map<string, number>();
+
+  const getConditionObs = (skinName: string, condition: string): KnnObservation[] => {
+    const key = `${skinName}\0${condition}`;
+    const cached = conditionObsCache.get(key);
+    if (cached) return cached;
+    const obs = inputKnnCache.get(skinName);
+    const sameCondition = obs ? obs.filter(o => o.condition === condition) : [];
+    conditionObsCache.set(key, sameCondition);
+    return sameCondition;
+  };
+
+  const getConditionMedian = (key: string, obs: KnnObservation[]): number => {
+    const cached = conditionMedianCache.get(key);
+    if (cached !== undefined) return cached;
+    const condPrices = obs.map(o => o.price).sort((a, b) => a - b);
+    const median = condPrices[Math.floor(condPrices.length / 2)] ?? 0;
+    conditionMedianCache.set(key, median);
+    return median;
+  };
 
   for (const listing of listings) {
-    const obs = _knnCache.get(listing.skin_name);
-    if (!obs || obs.length < 2) {
+    const targetCondition = floatToCondition(listing.float_value);
+    const conditionKey = `${listing.skin_name}\0${targetCondition}`;
+    const sameCondition = getConditionObs(listing.skin_name, targetCondition);
+
+    if (sameCondition.length < 2) {
       result.set(listing.id, 1.0); // No data — neutral
       continue;
     }
 
-    const targetCondition = floatToCondition(listing.float_value);
-    const sameCondition = obs.filter(o => o.condition === targetCondition);
-
-    if (sameCondition.length < 2) {
-      result.set(listing.id, 1.0); // Not enough same-condition data
-      continue;
+    // Find nearby observations (within ±0.04 float) using binary search on sorted cache
+    const nearby: Array<KnnObservation & { dist: number }> = [];
+    const start = lowerBoundFloat(sameCondition, listing.float_value - 0.04);
+    for (let i = start; i < sameCondition.length; i++) {
+      const obs = sameCondition[i];
+      if (obs.float > listing.float_value + 0.04) break;
+      nearby.push({ ...obs, dist: Math.abs(obs.float - listing.float_value) });
     }
-
-    // Find nearby observations (within ±0.04 float)
-    const nearby = sameCondition
-      .map(o => ({ ...o, dist: Math.abs(o.float - listing.float_value) }))
-      .filter(o => o.dist <= 0.04);
 
     if (nearby.length < 2) {
       // Fall back to condition median
-      const condPrices = sameCondition.map(o => o.price).sort((a, b) => a - b);
-      const median = condPrices[Math.floor(condPrices.length / 2)];
+      const median = getConditionMedian(conditionKey, sameCondition);
       result.set(listing.id, median > 0 ? listing.price_cents / median : 1.0);
       continue;
     }
