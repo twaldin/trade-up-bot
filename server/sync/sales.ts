@@ -222,8 +222,10 @@ export async function syncSaleHistory(
           break;
         } catch (err: any) {
           if (err.status === 429 && retries < 1) {
-            const delay = 15000;
-            console.log(`    Rate limited, waiting 15s...`);
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
           } else if (err.status === 429) {
@@ -453,8 +455,11 @@ export async function syncStatTrakSaleHistory(
           break;
         } catch (err: any) {
           if (err.status === 429 && retries < 1) {
-            console.log(`    Rate limited, waiting 15s...`);
-            await new Promise(r => setTimeout(r, 15000));
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
+            await new Promise(r => setTimeout(r, delay));
             retries++;
           } else if (err.status === 429) {
             consecutiveRateLimits++;
@@ -669,8 +674,11 @@ export async function syncSaleHistoryForRarity(
           break;
         } catch (err: any) {
           if (err.status === 429 && retries < 1) {
-            console.log(`    Rate limited, waiting 15s...`);
-            await new Promise((r) => setTimeout(r, 15000));
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
+            await new Promise((r) => setTimeout(r, delay));
             retries++;
           } else if (err.status === 429) {
             consecutiveRateLimits++;
@@ -885,8 +893,10 @@ export async function syncKnifeGloveSaleHistory(
           break;
         } catch (err: any) {
           if (err.status === 429 && retries < 1) {
-            const delay = 30000;
-            console.log(`    Rate limited, waiting 30s...`);
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 30000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
           } else if (err.status === 429) {
@@ -1118,8 +1128,11 @@ export async function syncSaleHistoryRoundRobin(
               break;
             } catch (err: any) {
               if (err.status === 429 && retries < 1) {
-                console.log(`    Rate limited, waiting 15s...`);
-                await new Promise((r) => setTimeout(r, 15000));
+                const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+                const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+                const delay = base + Math.floor(Math.random() * 5000);
+                console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
+                await new Promise((r) => setTimeout(r, delay));
                 retries++;
               } else if (err.status === 429) {
                 consecutiveRateLimits++;
@@ -1237,8 +1250,11 @@ export async function syncSaleHistoryRoundRobin(
               break;
             } catch (err: any) {
               if (err.status === 429 && retries < 1) {
-                console.log(`    Rate limited, waiting 15s...`);
-                await new Promise((r) => setTimeout(r, 15000));
+                const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+                const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+                const delay = base + Math.floor(Math.random() * 5000);
+                console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
+                await new Promise((r) => setTimeout(r, delay));
                 retries++;
               } else if (err.status === 429) {
                 consecutiveRateLimits++;

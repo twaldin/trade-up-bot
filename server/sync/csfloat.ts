@@ -111,9 +111,11 @@ export async function syncListingsForRarity(
           break;
         } catch (err: any) {
           if (err.message?.includes("429") && retries < 1) {
-            // Single retry with short wait — bail fast when rate limited
-            const delay = 15000;
-            console.log(`  Rate limited, waiting 15s...`);
+            // Single retry — bail fast when rate limited; jitter avoids thundering herd
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`  Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
           } else {
@@ -246,9 +248,11 @@ export async function syncListingsForSkin(
           break;
         } catch (err: any) {
           if (err.message?.includes("429") && retries < 1) {
-            // Single retry with short wait — bail fast if rate limited
-            const delay = 15000;
-            console.log(`    Rate limited, waiting 15s...`);
+            // Single retry — bail fast if rate limited; jitter avoids thundering herd
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
             await new Promise((r) => setTimeout(r, delay));
             retries++;
             totalApiCalls++;
@@ -404,8 +408,12 @@ export async function syncLowFloatClassifiedListings(
           break;
         } catch (err: any) {
           if (err.message?.includes("429") && retries < 1) {
-            console.log(`    Rate limited, waiting 15s...`);
-            await new Promise((r) => setTimeout(r, 15000));
+            // Jitter avoids thundering herd when multiple fetch paths share the same bucket
+            const resetTs = err.retryInfo?.reset ? parseInt(err.retryInfo.reset) : 0;
+            const base = resetTs > 0 ? Math.max(0, resetTs * 1000 - Date.now()) : 15000;
+            const delay = base + Math.floor(Math.random() * 5000);
+            console.log(`    Rate limited, waiting ${Math.round(delay / 1000)}s...`);
+            await new Promise((r) => setTimeout(r, delay));
             retries++;
             totalApiCalls++;
           } else if (err.message?.includes("429")) {
@@ -893,7 +901,7 @@ export async function syncCovertOutputListings(
               if (resetTs > 0) {
                 delay = Math.min(Math.max(0, resetTs * 1000 - Date.now()) + 2000, 120000);
               } else {
-                delay = 30000;
+                delay = 30000 + Math.floor(Math.random() * 5000);
               }
               await new Promise((r) => setTimeout(r, delay));
               retries++;
