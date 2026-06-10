@@ -28,7 +28,7 @@ Written after an SEO audit driven by the Google Search Console export (2026-06-1
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 012  | SEO crawl hygiene: nofollow auth links, prerender canonical consistency | P1 | S | — | TODO |
+| 012  | SEO crawl hygiene: nofollow auth links, prerender canonical consistency | P1 | S | — | DONE (9d5d44a..41f551e — 8 auth/api links gained rel=nofollow (9th already had it), blog prerender routes now slash-canonical, convention documented in canonical-redirects.ts; prerendered canonicals byte-identical pre/post) |
 | 013  | Indexing quality: sitemap hysteresis, stale-link pruning, bounded crawler pages | P1 | M | — | TODO |
 | 014  | CTR/content for money queries (fees post, /calculator, /trade-ups hub, FAQ schema) | P1 | M | — | TODO |
 | 015  | Port rescued VPS branch: housekeeping gate + dataviewer query rewrites (with inflation fix) | P2 | M | — | TODO |
