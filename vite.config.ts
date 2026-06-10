@@ -5,6 +5,15 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "shared"),
