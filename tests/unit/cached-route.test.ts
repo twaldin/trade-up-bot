@@ -4,13 +4,12 @@
  * Redis is NOT available in this environment (unit tests run without Redis).
  * Coalescing must work in front of the Redis check so it applies regardless.
  */
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
 
-// Dynamically import so we get fresh module state per test suite when needed.
-// We use a stable import here since module state (_pending) is shared, which
-// is exactly what we need to test — concurrent requests sharing one in-flight.
+// Module state (_pending) is intentionally shared across tests — concurrent
+// requests must share one in-flight execution, which is what we test.
 import { cachedRoute } from "../../server/redis.js";
 
 function makeApp(
