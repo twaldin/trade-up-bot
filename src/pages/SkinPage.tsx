@@ -1,6 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
 import { collectionToSlug } from "../../shared/slugs.js";
 
 const DataViewer = lazy(() => import("../components/DataViewer.js").then(m => ({ default: m.DataViewer })));
@@ -32,15 +31,13 @@ export function SkinPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{skinName} Price & Float Data — CS2 | TradeUpBot</title>
-        <meta name="description" content={`${skinName} CS2 prices and float data across CSFloat, DMarket, and Skinport.`} />
-        <link rel="canonical" href={`https://tradeupbot.app/skins/${slug}`} />
-        <meta property="og:title" content={`${skinName} Price & Float Data — CS2 | TradeUpBot`} />
-        <meta property="og:description" content={`${skinName} CS2 prices and float data across CSFloat, DMarket, and Skinport.`} />
-        <meta property="og:url" content={`https://tradeupbot.app/skins/${slug}`} />
-        <meta property="og:type" content="product" />
-      </Helmet>
+      <title>{skinName} Price & Float Data — CS2 | TradeUpBot</title>
+      <meta name="description" content={`${skinName} CS2 prices and float data across CSFloat, DMarket, and Skinport.`} />
+      <link rel="canonical" href={`https://tradeupbot.app/skins/${slug}`} />
+      <meta property="og:title" content={`${skinName} Price & Float Data — CS2 | TradeUpBot`} />
+      <meta property="og:description" content={`${skinName} CS2 prices and float data across CSFloat, DMarket, and Skinport.`} />
+      <meta property="og:url" content={`https://tradeupbot.app/skins/${slug}`} />
+      <meta property="og:type" content="product" />
       <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
         <DataViewer
           initialSelectedSkin={skinName}

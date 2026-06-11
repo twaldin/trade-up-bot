@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
 import { Badge } from "@shared/components/ui/badge.js";
 import { Button } from "@shared/components/ui/button.js";
 import { Input } from "@shared/components/ui/input.js";
@@ -347,9 +346,7 @@ export function ListingSniperPage() {
 
   return (
     <>
-      <Helmet>
-        <title>Listing Sniper | TradeUpBot</title>
-      </Helmet>
+      <title>Listing Sniper | TradeUpBot</title>
 
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-foreground">Listing Sniper</h1>

@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Helmet } from "react-helmet-async";
 import type { TradeUp } from "../../shared/types.js";
 import { condAbbr } from "../utils/format.js";
 import { useCurrency } from "../contexts/CurrencyContext.js";
@@ -383,25 +382,23 @@ export function CalculatorPage() {
 
   return (
     <div>
-      <Helmet>
-        <title>CS2 Trade-Up Calculator — Float & Profit Calculator | TradeUpBot</title>
-        <meta name="description" content="Free CS2 (formerly CS:GO) trade-up calculator. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
-        <link rel="canonical" href="https://tradeupbot.app/calculator" />
-        <meta property="og:title" content="CS2 Trade-Up Calculator | TradeUpBot" />
-        <meta property="og:description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
-        <meta property="og:url" content="https://tradeupbot.app/calculator" />
-        <meta property="og:type" content="website" />
-        <script type="application/ld+json">{JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "WebApplication",
-          "name": "CS2 Trade-Up Calculator",
-          "url": "https://tradeupbot.app/calculator",
-          "applicationCategory": "GameApplication",
-          "operatingSystem": "Web",
-          "description": "Calculate CS2 trade-up contract outcomes including float prediction, output probabilities, expected value, and profit analysis.",
-          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
-        })}</script>
-      </Helmet>
+      <title>CS2 Trade-Up Calculator — Float & Profit Calculator | TradeUpBot</title>
+      <meta name="description" content="Free CS2 (formerly CS:GO) trade-up calculator. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
+      <link rel="canonical" href="https://tradeupbot.app/calculator" />
+      <meta property="og:title" content="CS2 Trade-Up Calculator | TradeUpBot" />
+      <meta property="og:description" content="Calculate CS2 trade-up outcomes. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
+      <meta property="og:url" content="https://tradeupbot.app/calculator" />
+      <meta property="og:type" content="website" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "CS2 Trade-Up Calculator",
+        "url": "https://tradeupbot.app/calculator",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web",
+        "description": "Calculate CS2 trade-up contract outcomes including float prediction, output probabilities, expected value, and profit analysis.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      })}} />
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>

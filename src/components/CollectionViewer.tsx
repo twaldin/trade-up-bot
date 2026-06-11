@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Helmet } from "react-helmet-async";
 import { collectionToSlug } from "../../shared/slugs.js";
 import { DataViewer } from "./DataViewer.js";
 import { TradeUpTable } from "./TradeUpTable.js";
@@ -89,15 +88,13 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
 
   return (
     <div>
-      <Helmet>
-        <title>{collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Trade-Ups & Skins | TradeUpBot</title>
-        <meta name="description" content={`${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} collection: browse skins and find profitable trade-ups.`} />
-        <link rel="canonical" href={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
-        <meta property="og:title" content={`${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Trade-Ups & Skins | TradeUpBot`} />
-        <meta property="og:description" content={`Browse skins and find profitable trade-ups from the ${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} collection.`} />
-        <meta property="og:url" content={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
-        <meta property="og:type" content="website" />
-      </Helmet>
+      <title>{collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Trade-Ups & Skins | TradeUpBot</title>
+      <meta name="description" content={`${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} collection: browse skins and find profitable trade-ups.`} />
+      <link rel="canonical" href={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
+      <meta property="og:title" content={`${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Trade-Ups & Skins | TradeUpBot`} />
+      <meta property="og:description" content={`Browse skins and find profitable trade-ups from the ${collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} collection.`} />
+      <meta property="og:url" content={`https://tradeupbot.app/collections/${collectionToSlug(collectionName)}`} />
+      <meta property="og:type" content="website" />
       {/* Header */}
       <div className="flex items-center gap-3 mb-3">
         <Button variant="outline" size="sm" onClick={onBack}>← Back</Button>

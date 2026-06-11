@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Helmet } from "react-helmet-async";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
@@ -77,15 +76,13 @@ export function PricingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Helmet>
-        <title>Pricing — TradeUpBot CS2 Trade-Up Plans</title>
-        <meta name="description" content="Free and Pro plans for TradeUpBot. Start finding profitable CS2 trade-ups for free, upgrade for real-time data and full marketplace access." />
-        <link rel="canonical" href="https://tradeupbot.app/pricing" />
-        <meta property="og:title" content="Pricing — TradeUpBot CS2 Trade-Up Plans" />
-        <meta property="og:description" content="Free and Pro plans. Start finding profitable CS2 trade-ups for free." />
-        <meta property="og:url" content="https://tradeupbot.app/pricing" />
-        <meta property="og:type" content="website" />
-      </Helmet>
+      <title>Pricing — TradeUpBot CS2 Trade-Up Plans</title>
+      <meta name="description" content="Free and Pro plans for TradeUpBot. Start finding profitable CS2 trade-ups for free, upgrade for real-time data and full marketplace access." />
+      <link rel="canonical" href="https://tradeupbot.app/pricing" />
+      <meta property="og:title" content="Pricing — TradeUpBot CS2 Trade-Up Plans" />
+      <meta property="og:description" content="Free and Pro plans. Start finding profitable CS2 trade-ups for free." />
+      <meta property="og:url" content="https://tradeupbot.app/pricing" />
+      <meta property="og:type" content="website" />
       <SiteNav />
 
       <main className="pt-24 pb-16">

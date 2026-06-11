@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Helmet } from "react-helmet-async";
 import { Input } from "@shared/components/ui/input.js";
 import { Button } from "@shared/components/ui/button.js";
 import type { SkinSummary } from "./data-viewer/types.js";
@@ -135,11 +134,9 @@ export function DataViewer({ onNavigateCollection, collectionFilter, initialSear
     <div className="mt-4">
       {!isEmbedded && (
         <>
-          <Helmet>
-            <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
-            <meta name="description" content="Browse CS2 (formerly CS:GO) skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential." />
-            <link rel="canonical" href="https://tradeupbot.app/skins" />
-          </Helmet>
+          <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
+          <meta name="description" content="Browse CS2 (formerly CS:GO) skins with live prices from CSFloat, DMarket, and Skinport. Float values, price charts, and trade-up potential." />
+          <link rel="canonical" href="https://tradeupbot.app/skins" />
           <h1 className="sr-only">CS2 Skin Prices & Float Data</h1>
         </>
       )}

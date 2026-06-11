@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
@@ -38,15 +37,14 @@ function FaqItem({ question, children }: { question: string; children: React.Rea
 export function FaqPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Helmet>
-        <title>FAQ — TradeUpBot CS2 Trade-Up Questions</title>
-        <meta name="description" content="Common questions about TradeUpBot, CS2 trade-up contracts, float mechanics, marketplace pricing, and how the platform works." />
-        <link rel="canonical" href="https://tradeupbot.app/faq" />
-        <meta property="og:title" content="FAQ — TradeUpBot CS2 Trade-Up Questions" />
-        <meta property="og:description" content="Common questions about TradeUpBot and CS2 trade-up contracts." />
-        <meta property="og:url" content="https://tradeupbot.app/faq" />
-        <meta property="og:type" content="website" />
-        <script type="application/ld+json">{JSON.stringify({
+      <title>FAQ — TradeUpBot CS2 Trade-Up Questions</title>
+      <meta name="description" content="Common questions about TradeUpBot, CS2 trade-up contracts, float mechanics, marketplace pricing, and how the platform works." />
+      <link rel="canonical" href="https://tradeupbot.app/faq" />
+      <meta property="og:title" content="FAQ — TradeUpBot CS2 Trade-Up Questions" />
+      <meta property="og:description" content="Common questions about TradeUpBot and CS2 trade-up contracts." />
+      <meta property="og:url" content="https://tradeupbot.app/faq" />
+      <meta property="og:type" content="website" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify({
           "@context": "https://schema.org",
           "@type": "FAQPage",
           "mainEntity": [
@@ -147,8 +145,7 @@ export function FaqPage() {
               }
             }
           ]
-        })}</script>
-      </Helmet>
+        })}} />
       <SiteNav />
 
       <main className="pt-24 pb-16">

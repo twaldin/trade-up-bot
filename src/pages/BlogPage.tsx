@@ -1,4 +1,3 @@
-import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import { blogMeta } from "../data/blog-meta.js";
 import { SiteNav } from "../components/SiteNav.js";
@@ -7,15 +6,13 @@ import { SiteFooter } from "../components/SiteFooter.js";
 export function BlogPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Helmet>
-        <title>Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot</title>
-        <meta name="description" content="Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups." />
-        <link rel="canonical" href="https://tradeupbot.app/blog" />
-        <meta property="og:title" content="Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot" />
-        <meta property="og:description" content="Guides and analysis on CS2 trade-up contracts, float mechanics, and marketplace strategy." />
-        <meta property="og:url" content="https://tradeupbot.app/blog" />
-        <meta property="og:type" content="website" />
-      </Helmet>
+      <title>Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot</title>
+      <meta name="description" content="Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups." />
+      <link rel="canonical" href="https://tradeupbot.app/blog" />
+      <meta property="og:title" content="Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot" />
+      <meta property="og:description" content="Guides and analysis on CS2 trade-up contracts, float mechanics, and marketplace strategy." />
+      <meta property="og:url" content="https://tradeupbot.app/blog" />
+      <meta property="og:type" content="website" />
       <SiteNav />
 
       <main className="pt-24 pb-16">

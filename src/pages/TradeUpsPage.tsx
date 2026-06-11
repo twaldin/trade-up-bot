@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
 import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
@@ -177,45 +176,43 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   return (
     <>
       <h1 className="sr-only">Profitable CS2 Trade-Up Contracts</h1>
-      <Helmet>
-        <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
-        <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
-        <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
-        <meta property="og:title" content="Profitable CS2 Trade-Ups — Live Contracts | TradeUpBot" />
-        <meta property="og:description" content="Browse profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity." />
-        <meta property="og:url" content="https://tradeupbot.app/trade-ups" />
-        <meta property="og:type" content="website" />
-        <script type="application/ld+json">{JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "WebApplication",
-          "name": "TradeUpBot — CS2 Trade-Up Finder",
-          "url": "https://tradeupbot.app/trade-ups",
-          "applicationCategory": "GameApplication",
-          "operatingSystem": "Web",
-          "description": "Find profitable CS2 trade-up contracts using real marketplace listings."
-        })}</script>
-        <script type="application/ld+json">{JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "FAQPage",
-          "mainEntity": [
-            {
-              "@type": "Question",
-              "name": "What is a CS2 trade-up contract?",
-              "acceptedAnswer": { "@type": "Answer", "text": "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection." }
-            },
-            {
-              "@type": "Question",
-              "name": "How does TradeUpBot find profitable trade-ups?",
-              "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
-            },
-            {
-              "@type": "Question",
-              "name": "Are these listings live?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." }
-            }
-          ]
-        })}</script>
-      </Helmet>
+      <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
+      <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
+      <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
+      <meta property="og:title" content="Profitable CS2 Trade-Ups — Live Contracts | TradeUpBot" />
+      <meta property="og:description" content="Browse profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity." />
+      <meta property="og:url" content="https://tradeupbot.app/trade-ups" />
+      <meta property="og:type" content="website" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "TradeUpBot — CS2 Trade-Up Finder",
+        "url": "https://tradeupbot.app/trade-ups",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web",
+        "description": "Find profitable CS2 trade-up contracts using real marketplace listings."
+      })}} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is a CS2 trade-up contract?",
+            "acceptedAnswer": { "@type": "Answer", "text": "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted by input count per collection." }
+          },
+          {
+            "@type": "Question",
+            "name": "How does TradeUpBot find profitable trade-ups?",
+            "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
+          },
+          {
+            "@type": "Question",
+            "name": "Are these listings live?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." }
+          }
+        ]
+      })}} />
 
       <section className="mb-5">
         <h2 className="text-base font-semibold mb-1.5">Find Profitable CS2 Trade-Up Contracts</h2>

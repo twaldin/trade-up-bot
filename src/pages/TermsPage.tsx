@@ -1,15 +1,12 @@
-import { Helmet } from "react-helmet-async";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
 export function TermsPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Helmet>
-        <title>Terms of Service — TradeUpBot</title>
-        <meta name="description" content="Terms of service for TradeUpBot, the CS2 trade-up contract analysis platform." />
-        <link rel="canonical" href="https://tradeupbot.app/terms" />
-      </Helmet>
+      <title>Terms of Service — TradeUpBot</title>
+      <meta name="description" content="Terms of service for TradeUpBot, the CS2 trade-up contract analysis platform." />
+      <link rel="canonical" href="https://tradeupbot.app/terms" />
       <SiteNav />
 
       <main className="pt-24 pb-16">

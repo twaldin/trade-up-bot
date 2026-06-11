@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { Helmet } from "react-helmet-async";
 import { useCurrency } from "../contexts/CurrencyContext.js";
 import { Input } from "@shared/components/ui/input.js";
 import { Badge } from "@shared/components/ui/badge.js";
@@ -65,11 +64,9 @@ export function CollectionListViewer({ onSelectCollection }: { onSelectCollectio
 
   return (
     <div className="mt-4">
-      <Helmet>
-        <title>CS2 Collections for Trade-Ups — Browse All Weapon Collections | TradeUpBot</title>
-        <meta name="description" content="Browse all CS2 (formerly CS:GO) weapon collections. See skin counts, listing data, and profitable trade-up opportunities for every collection." />
-        <link rel="canonical" href="https://tradeupbot.app/collections" />
-      </Helmet>
+      <title>CS2 Collections for Trade-Ups — Browse All Weapon Collections | TradeUpBot</title>
+      <meta name="description" content="Browse all CS2 (formerly CS:GO) weapon collections. See skin counts, listing data, and profitable trade-up opportunities for every collection." />
+      <link rel="canonical" href="https://tradeupbot.app/collections" />
       <h1 className="sr-only">CS2 Collections for Trade-Ups</h1>
       <div className="flex gap-2 items-center mb-3 flex-wrap">
         <div className="flex gap-0 w-fit">

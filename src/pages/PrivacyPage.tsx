@@ -1,15 +1,12 @@
-import { Helmet } from "react-helmet-async";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 
 export function PrivacyPage() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Helmet>
-        <title>Privacy Policy — TradeUpBot</title>
-        <meta name="description" content="Privacy policy for TradeUpBot. Learn what data we collect and how we use it." />
-        <link rel="canonical" href="https://tradeupbot.app/privacy" />
-      </Helmet>
+      <title>Privacy Policy — TradeUpBot</title>
+      <meta name="description" content="Privacy policy for TradeUpBot. Learn what data we collect and how we use it." />
+      <link rel="canonical" href="https://tradeupbot.app/privacy" />
       <SiteNav />
 
       <main className="pt-24 pb-16">
