@@ -99,7 +99,8 @@ describe("Step 1 — batchInputValueRatios equivalence snapshots", () => {
   // Skin C: "AWP | Dragon Lore" — Minimal Wear (0.07–0.15) — sparse (2 obs only → condition median)
   const SKIN_C = "AWP | Dragon Lore";
 
-  // Listings we'll price
+  // Listings we'll price — no `as const` so the inferred type is mutable and
+  // compatible with the function signature without any cast.
   const listings = [
     // Skin A: float 0.20 (FT) — should have KNN neighbors
     { id: "list-a-1", skin_name: SKIN_A, float_value: 0.20, price_cents: 4500 },
@@ -111,7 +112,7 @@ describe("Step 1 — batchInputValueRatios equivalence snapshots", () => {
     { id: "list-c-1", skin_name: SKIN_C, float_value: 0.10, price_cents: 50000 },
     // Skin D: no observations — neutral 1.0
     { id: "list-d-1", skin_name: "Glock-18 | Water Elemental", float_value: 0.15, price_cents: 1000 },
-  ] as const;
+  ];
 
   beforeAll(async () => {
     resetKnnCache();
@@ -144,67 +145,72 @@ describe("Step 1 — batchInputValueRatios equivalence snapshots", () => {
 
   it("returns Map with one entry per listing", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     expect(result.size).toBe(listings.length);
   });
 
   it("neutral ratio (1.0) for skin with no observations", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     expect(result.get("list-d-1")).toBe(1.0);
   });
 
   it("ratio > 0 for all listings", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     for (const [id, ratio] of result) {
       expect(ratio, `ratio for ${id}`).toBeGreaterThan(0);
     }
   });
 
-  // Equivalence assertions — verified against unchanged code; remain stable after port.
-  // age_days is computed from NOW() at query time → trailing-digit noise across runs.
-  // toBeCloseTo(v, 5) = within 1e-5; sufficient to catch any behavioral regression
-  // while tolerating sub-millisecond NOW() jitter in the Gaussian weight computation.
+  // Equivalence assertions — pinned to current code's exact IEEE-754 output values.
+  // age_days is computed from NOW() at query time; Gaussian weights include a
+  // time-decay term, so sub-millisecond NOW() jitter could shift the last ~16th
+  // significant digit. The measured run-to-run noise floor is ≈1e-16, so
+  // precision 8 (toBeCloseTo tolerance ±5×10⁻⁹) is safely attainable.
+  // All values below were anchored by running against the unmodified production
+  // code and recording the exact JS number output.
   it("skin A list-a-1 ratio is stable across port", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     const ratio = result.get("list-a-1")!;
     expect(typeof ratio).toBe("number");
     expect(ratio).toBeGreaterThan(0);
-    // ~0.9375: listing 4500 / predicted ~4801 (Gaussian-weighted, 4 obs within ±0.04 of 0.20)
-    expect(ratio).toBeCloseTo(0.9375, 2);
+    // listing 4500 / Gaussian-weighted predicted ~4799 (4 obs within ±0.04 of 0.20)
+    // Exact observed value: 0.9374693230084501
+    expect(ratio).toBeCloseTo(0.9374693230084501, 8);
   });
 
   it("skin A list-a-2 ratio is stable across port", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     const ratio = result.get("list-a-2")!;
     // listing 3000 at float 0.35; nearest FT obs: 0.26 (dist=0.09 > 0.04), none within window
     // → condition-median fallback: median of {5000,4800,4600,4400,4200} = 4600
-    // → ratio ≈ 3000/4600 ≈ 0.6522
-    expect(ratio).toBeCloseTo(0.652, 2);
+    // → ratio = 3000/4600 ≈ 0.6522
+    // Exact observed value: 0.6521739130434783
+    expect(ratio).toBeCloseTo(0.6521739130434783, 8);
   });
 
   it("skin B list-b-1 ratio is stable across port", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     const ratio = result.get("list-b-1")!;
     // listing 80000; 3 FN obs around 0.01-0.03, all within ±0.04 of 0.02
-    // predicted ~84700; ratio ≈ 80000/84700 ≈ 0.9446
-    expect(ratio).toBeCloseTo(0.9446, 2);
+    // predicted Gaussian-weighted; ratio = 80000/predicted
+    // Exact observed value: 0.9445839715221565
+    expect(ratio).toBeCloseTo(0.9445839715221565, 8);
   });
 
   it("skin C list-c-1 ratio (condition-median path) is stable across port", async () => {
     resetKnnCache();
-    const result = await batchInputValueRatios(pool, listings as unknown as { id: string; skin_name: string; float_value: number; price_cents: number }[]);
+    const result = await batchInputValueRatios(pool, listings);
     const ratio = result.get("list-c-1")!;
     // listing 50000; 2 MW obs (0.09 and 0.13); target 0.10
-    // Both obs are at dist 0.01 and 0.03, within ±0.04 → 2 nearby obs
-    // Gaussian-weighted: weights roughly equal; predicted ~mean weighted ≈ 108000-115000
-    // OR condition-median (if <2 pass outlier filter) ≈ (120000+100000)/2 = 110000
-    // ratio ≈ 50000/110000 ≈ 0.4545 or similar; previous snapshot was 0.4369
-    expect(ratio).toBeCloseTo(0.437, 2);
+    // Both obs within ±0.04 window → 2 nearby obs (meets minimum)
+    // Gaussian-weighted predicted price; ratio = 50000/predicted
+    // Exact observed value: 0.4368519961166087
+    expect(ratio).toBeCloseTo(0.4368519961166087, 8);
   });
 });
 
@@ -243,9 +249,11 @@ describe("Step 1 — window edge cases", () => {
     const result = await batchInputValueRatios(pool, [listing]);
     const ratio = result.get("edge-1")!;
     // 5 obs in window: 0.21(3000), 0.22(3100), 0.25(3200), 0.28(3050), 0.29(2900)
-    // predicted ≈ 3050 (Gaussian-weighted); ratio ≈ 3200/3050 ≈ 1.049 but closer to 1.0
-    // Captured value ≈ 1.023 — assert within 2% to tolerate NOW() jitter
-    expect(ratio).toBeCloseTo(1.023, 1);
+    // Boundary-inclusive window approved as a deviation from the pre-port behavior
+    // (plan 016 review): old code excluded exact ±0.04 boundaries via FP rounding;
+    // new lowerBoundFloat window includes them, matching the documented ±0.04 intent.
+    // Exact observed value (vs. pre-port snapshot 1.0229722119310771): 1.0264204920550151
+    expect(ratio).toBeCloseTo(1.0264204920550151, 8);
   });
 
   it("obs at 0.20 (outside -0.04 boundary) does not pollute ratio", async () => {
@@ -258,6 +266,48 @@ describe("Step 1 — window edge cases", () => {
     // If 9999-priced outlier was included, predicted price would be much higher → ratio << 1
     expect(ratio).toBeGreaterThan(0.5);
     expect(ratio).toBeLessThan(2.0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Step 1 additional: explicit boundary-inclusion pin
+// Verifies that observations EXACTLY ±0.04 away from a listing's float are
+// included in the window (new binary-search behavior, approved deviation from
+// pre-port FP-rounding exclusion).
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("Step 1 — boundary-inclusive window pin (plan 016 approved deviation)", () => {
+  const PIN_SKIN = "USP-S | Kill Confirmed";
+
+  beforeAll(async () => {
+    resetKnnCache();
+    // FT listing at 0.20; plant observations at EXACTLY the ±0.04 boundaries
+    // (0.16 and 0.24) plus interior (0.18 and 0.20) for KNN trigger.
+    // Asymmetric prices ensure computed ratio is unambiguously ≠ 1.0.
+    const pinObs = [
+      // Exactly at lower boundary: dist = |0.16 - 0.20| = 0.04 (must be INCLUDED)
+      makeObservation({ skinName: PIN_SKIN, float: 0.16, price: 6000, source: "sale", ageDays: 2 }),
+      makeObservation({ skinName: PIN_SKIN, float: 0.18, price: 5500, source: "sale", ageDays: 3 }),
+      makeObservation({ skinName: PIN_SKIN, float: 0.20, price: 5000, source: "sale", ageDays: 1 }),
+      // Exactly at upper boundary: dist = |0.24 - 0.20| = 0.04 (must be INCLUDED)
+      makeObservation({ skinName: PIN_SKIN, float: 0.24, price: 4000, source: "sale", ageDays: 4 }),
+    ];
+    for (const obs of pinObs) await insertObservation(pool, obs);
+  });
+
+  it("boundary-inclusive: obs at exactly ±0.04 are used in Gaussian weight", async () => {
+    // Boundary-inclusive window approved as a deviation from the pre-port behavior
+    // (plan 016 review): old code excluded exact ±0.04 boundaries via FP rounding;
+    // new lowerBoundFloat window includes them, matching the documented ±0.04 intent.
+    // All 4 observations (0.16, 0.18, 0.20, 0.24) participate in the Gaussian-weighted
+    // predicted price; their inclusion is proven by the specific ratio value below
+    // (if boundary obs were excluded, only 0.18 and 0.20 would be present → different ratio).
+    resetKnnCache();
+    const listing = { id: "pin-boundary", skin_name: PIN_SKIN, float_value: 0.20, price_cents: 5000 };
+    const result = await batchInputValueRatios(pool, [listing]);
+    const ratio = result.get("pin-boundary")!;
+    // Exact observed value anchored against current production code: 0.9692507959857792
+    expect(ratio).toBeCloseTo(0.9692507959857792, 8);
   });
 });
 
@@ -283,8 +333,12 @@ describe("Step 1 — empty condition pool", () => {
 describe("Step 3 — chunking: 2100 distinct skin/condition pairs", () => {
   // We need 2,100 unique (skin, condition-range) pairs.
   // Each synthetic skin gets one listing in FT (Field-Tested: 0.15–0.38).
-  // We seed one observation per synthetic skin so loadInputKnnObservationRows
-  // has something to fetch.
+  // We seed TWO observations per synthetic skin at intentionally LOW prices
+  // (both 800 cents) so the computed Gaussian-weighted predicted price is 800,
+  // giving ratio = listing_price(1000) / predicted(800) = 1.25.
+  // This is unambiguously ≠ 1.0, so if any chunk is dropped (losing its
+  // observations), those listings fall back to the neutral 1.0 path and are
+  // detectable by asserting zero ratios === 1.0.
   const SYNTHETIC_COUNT = 2100;
   const syntheticListings: { id: string; skin_name: string; float_value: number; price_cents: number }[] = [];
 
@@ -295,12 +349,13 @@ describe("Step 3 — chunking: 2100 distinct skin/condition pairs", () => {
       const skinName = `Synthetic Skin ${i.toString().padStart(5, "0")}`;
       const float = 0.20; // all FT
       syntheticListings.push({ id: `syn-${i}`, skin_name: skinName, float_value: float, price_cents: 1000 });
-      // Seed 2 obs per skin so condition-pool path fires (not neutral)
+      // Seed 2 obs per skin at 800 cents (below the 1000-cent listing price)
+      // so the computed ratio ≈ 1000/800 = 1.25, not 1.0.
       await insertObservation(pool,
-        makeObservation({ skinName, float: 0.19, price: 900, source: "sale", ageDays: 2 }),
+        makeObservation({ skinName, float: 0.19, price: 800, source: "sale", ageDays: 2 }),
       );
       await insertObservation(pool,
-        makeObservation({ skinName, float: 0.21, price: 1100, source: "sale", ageDays: 3 }),
+        makeObservation({ skinName, float: 0.21, price: 800, source: "sale", ageDays: 3 }),
       );
     }
   }, 60000); // 60s timeout — inserting 4200 rows
@@ -320,18 +375,44 @@ describe("Step 3 — chunking: 2100 distinct skin/condition pairs", () => {
     expect(missingOrInvalid).toBe(0);
   }, 60000);
 
-  it("spot-check: row counts match for a small subset vs unchunked control", async () => {
-    // Pick 5 skins and verify their ratios are identical whether fetched via
-    // the full 2100-listing call or a dedicated 5-listing call (both scoped).
+  it("no neutral fallbacks across all 2100 pairs (dropped-chunk detection)", async () => {
+    // Approach: assert 0 pairs returned the data-less neutral fallback (ratio === 1.0).
+    // Each synthetic skin has 2 observations at price 800, so every correctly-loaded
+    // pair computes a ratio ≈ 1.25 (listing 1000 / predicted ~800) — never exactly 1.0.
+    // If the chunk loop drops any chunk (silently losing observations), those skins
+    // get no data → neutral 1.0. This assertion would then fail, catching the sabotage.
+    // (Row-count comparison via a second loadInputKnnObservationRows call is not
+    // feasible because that function is not exported; this no-neutral-fallback
+    // assertion across all 2100 pairs is the accepted substitute per plan 016 review.)
     resetKnnCache();
-    const subset = syntheticListings.slice(0, 5);
-    const subsetResult = await batchInputValueRatios(pool, subset);
+    const result = await batchInputValueRatios(pool, syntheticListings);
+    let neutralCount = 0;
+    for (let i = 0; i < SYNTHETIC_COUNT; i++) {
+      const ratio = result.get(`syn-${i}`);
+      if (ratio === 1.0) neutralCount++;
+    }
+    expect(neutralCount).toBe(0);
+  }, 60000);
+
+  it("spot-check: ratios match unchunked control for first AND last chunks", async () => {
+    // Pick 5 skins from the FIRST chunk (indexes 0–4) and 5 from the LAST chunk
+    // (indexes 2000–2099, well into chunk 2). Verify their ratios are identical
+    // whether fetched via the full 2100-listing call or a dedicated subset call
+    // (both scoped). If a later chunk is silently dropped the last-chunk subset
+    // would return data-driven ratios while the full-call would return neutral 1.0,
+    // causing this assertion to fail.
+    resetKnnCache();
+    const firstChunkSubset = syntheticListings.slice(0, 5);
+    const lastChunkSubset = syntheticListings.slice(2000, 2005);
+    const combinedSubset = [...firstChunkSubset, ...lastChunkSubset];
+    const subsetResult = await batchInputValueRatios(pool, combinedSubset);
 
     resetKnnCache();
     const fullResult = await batchInputValueRatios(pool, syntheticListings);
 
-    for (const l of subset) {
-      expect(fullResult.get(l.id)).toBeCloseTo(subsetResult.get(l.id)!, 10);
+    for (const l of combinedSubset) {
+      expect(fullResult.get(l.id), `chunk spot-check mismatch for ${l.id}`)
+        .toBeCloseTo(subsetResult.get(l.id)!, 10);
     }
   }, 60000);
 });
