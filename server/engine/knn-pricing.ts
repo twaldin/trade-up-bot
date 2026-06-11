@@ -366,7 +366,7 @@ async function loadInputKnnObservationRows(
       ) po ON true
     `, params);
 
-    allRows.push(...rows);
+    for (const row of rows) allRows.push(row);
   }
 
   return allRows;

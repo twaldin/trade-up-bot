@@ -416,3 +416,52 @@ describe("Step 3 — chunking: 2100 distinct skin/condition pairs", () => {
     }
   }, 60000);
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Plan 020: Regression — large single-chunk result must not crash with
+// RangeError: Maximum call stack size exceeded (spread-push over unbounded rows)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("large single-chunk result (regression: spread-push RangeError)", () => {
+  const OVERFLOW_SKIN = "★ Stress Knife | Overflow";
+
+  beforeAll(async () => {
+    resetKnnCache();
+    // Seed 200,000 observations for a single FT (Field-Tested: 0.15–0.38) pair
+    // via a server-side INSERT/generate_series — fast (~1-2s), no client round-trips.
+    // Floats stay inside FT bounds; prices vary 1000–1499.
+    await pool.query(`
+      INSERT INTO price_observations (skin_name, float_value, price_cents, source, observed_at)
+      SELECT
+        $1,
+        0.15 + (random() * 0.23),
+        1000 + (g % 500),
+        'sale',
+        NOW() - (random() * INTERVAL '170 days')
+      FROM generate_series(1, 200000) g
+    `, [OVERFLOW_SKIN]);
+  }, 60000);
+
+  afterAll(async () => {
+    await pool.query(
+      `DELETE FROM price_observations WHERE skin_name = $1`,
+      [OVERFLOW_SKIN],
+    );
+  });
+
+  it("resolves with a finite ratio for a single FT listing (200K obs, no RangeError)", async () => {
+    resetKnnCache();
+    const listing = {
+      id: "overflow-1",
+      skin_name: OVERFLOW_SKIN,
+      float_value: 0.20,
+      price_cents: 1200,
+    };
+    const result = await batchInputValueRatios(pool, [listing]);
+    expect(result.size).toBe(1);
+    const ratio = result.get("overflow-1");
+    expect(typeof ratio).toBe("number");
+    expect(Number.isFinite(ratio)).toBe(true);
+    expect(ratio).toBeGreaterThan(0);
+  }, 60000);
+});
