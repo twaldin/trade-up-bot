@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import pg from "pg";
-import { batchInputValueRatios, clearKnnCache } from "../../server/engine/knn-pricing.js";
+import { batchInputValueRatios, clearKnnCache, knnOutputPriceAtFloat, expireKnnCacheTtl, getKnnCacheSize } from "../../server/engine/knn-pricing.js";
 import { makeObservation } from "../helpers/fixtures.js";
 
 const { Pool } = pg;
@@ -415,6 +415,64 @@ describe("Step 3 — chunking: 2100 distinct skin/condition pairs", () => {
         .toBeCloseTo(subsetResult.get(l.id)!, 10);
     }
   }, 60000);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Plan 021: stale global cache is freed by the scoped path
+// When the global _knnCache is warm but TTL-expired and the scoped path runs,
+// the stale global cache must be cleared (OOM relief for daemon Phase 5).
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("stale global cache is freed by the scoped path", () => {
+  const FREE_SKIN = "AK-47 | Fire Serpent";
+
+  beforeAll(async () => {
+    clearKnnCache();
+    // Seed one FT observation so the global cache warms (knnOutputPriceAtFloat
+    // calls ensureKnnCache which fills _knnCache and logs "[KNN cache] ...").
+    await insertObservation(pool,
+      makeObservation({ skinName: FREE_SKIN, float: 0.20, price: 15000, source: "sale", ageDays: 2 }),
+    );
+  });
+
+  it("global cache size > 0 after warming via knnOutputPriceAtFloat", async () => {
+    clearKnnCache();
+    await knnOutputPriceAtFloat(pool, FREE_SKIN, 0.20);
+    expect(getKnnCacheSize()).toBeGreaterThan(0);
+  });
+
+  it("global cache is emptied when scoped path runs after TTL expiry", async () => {
+    clearKnnCache();
+    // Warm the global cache
+    await knnOutputPriceAtFloat(pool, FREE_SKIN, 0.20);
+    expect(getKnnCacheSize()).toBeGreaterThan(0);
+
+    // Force-expire TTL without clearing the map (simulates the post-Phase-4c state)
+    expireKnnCacheTtl();
+    expect(getKnnCacheSize()).toBeGreaterThan(0); // map still populated, only timestamp zeroed
+
+    // Now call the scoped path — it should detect stale global cache and clear it
+    const listing = { id: "free-1", skin_name: FREE_SKIN, float_value: 0.20, price_cents: 15000 };
+    await batchInputValueRatios(pool, [listing]);
+
+    // Assert: stale global cache has been freed
+    expect(getKnnCacheSize()).toBe(0);
+  });
+
+  it("scoped path still returns valid ratios after clearing the stale global cache", async () => {
+    clearKnnCache();
+    // Warm the global cache, then expire TTL
+    await knnOutputPriceAtFloat(pool, FREE_SKIN, 0.20);
+    expireKnnCacheTtl();
+
+    const listing = { id: "free-2", skin_name: FREE_SKIN, float_value: 0.20, price_cents: 15000 };
+    const result = await batchInputValueRatios(pool, [listing]);
+    const ratio = result.get("free-2");
+
+    expect(typeof ratio).toBe("number");
+    expect(Number.isFinite(ratio)).toBe(true);
+    expect(ratio).toBeGreaterThan(0);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

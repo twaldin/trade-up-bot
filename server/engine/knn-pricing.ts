@@ -287,6 +287,16 @@ export function clearKnnCache() {
   _knnCacheLoadedAt = 0;
 }
 
+/** test seam — force-expires the TTL without clearing the map */
+export function expireKnnCacheTtl(): void { // test seam
+  _knnCacheLoadedAt = 0;
+}
+
+/** test seam — returns the current size of the global _knnCache */
+export function getKnnCacheSize(): number { // test seam
+  return _knnCache.size;
+}
+
 // Maximum (skin, condition-range) pairs per query chunk.
 // Each pair costs 4 bind params; PG cap is 65,535 params ≈ 16K pairs.
 // Use 2,000 to stay well under the limit.
@@ -382,6 +392,13 @@ async function getInputKnnCache(
   listings: { skin_name: string; float_value: number }[],
 ): Promise<KnnCacheMap> {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return _knnCache;
+
+  // Stale global cache: free it before building scoped caches so the two
+  // never coexist in memory (daemon Phase 5 OOM margin — see plan 021).
+  if (_knnCache.size > 0) {
+    _knnCache.clear();
+    _knnCacheLoadedAt = 0;
+  }
 
   const skinNames = [...new Set(listings.map(l => l.skin_name))];
   if (skinNames.length === 0) return new Map();
