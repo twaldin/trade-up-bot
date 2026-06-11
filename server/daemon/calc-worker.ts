@@ -22,6 +22,7 @@ import {
   exploreKnifeWithBudget,
 } from "../engine.js";
 import type { StrategyYieldEntry } from "../engine.js";
+import { loadSigsFromFile } from "./sig-file.js";
 
 const { Pool } = pg;
 
@@ -31,10 +32,11 @@ interface WorkerInput {
   cycleStartedAt?: number;
   discoveryFile?: string;
   strategyWeights?: number[];
+  sigFile?: string;
 }
 
 const input = JSON.parse(process.env.CALC_WORKER_DATA!) as WorkerInput;
-const { task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights } = input;
+const { task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights, sigFile } = input;
 const deadline = timeLimitMs ? Date.now() + timeLimitMs : undefined;
 
 // Create own PG pool — worker needs its own connection
@@ -109,31 +111,40 @@ const rarityMap: Record<string, string> = {
     console.log(`  [${task}] pre-sig rss=${(memBefore.rss / 1024 / 1024).toFixed(0)}MB heap=${(memBefore.heapUsed / 1024 / 1024).toFixed(0)}MB`);
 
     // Load existing listing signatures so discovery skips combos already in DB.
-    // Uses a dedicated client with statement_timeout to prevent runaway queries (GH #22:
-    // knife sig load took 174s vs normal 8s, likely due to DB pressure with no escape hatch).
+    // Preferred path: read from a pre-written sig file (no DB query, no timeout race).
+    // Fallback: dedicated DB client with statement_timeout (GH #22: knife sig load 174s).
     const tradeUpType = typeMap[task] ?? "classified_covert";
-    const existingSigs = new Set<string>();
-    const sigClient = await pool.connect();
-    try {
-      await sigClient.query("SET statement_timeout = '30000'");
-      const { rows: sigRows } = await sigClient.query(`
-        SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
-        FROM trade_up_inputs WHERE trade_up_id IN (
-          SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
-        ) GROUP BY trade_up_id
-      `, [tradeUpType]);
-      for (const row of sigRows) {
-        existingSigs.add(row.ids.split(",").sort().join(","));
+    let existingSigs = new Set<string>();
+    if (sigFile) {
+      // File written by main daemon before forking — no write pressure, no timeout risk.
+      existingSigs = await loadSigsFromFile(sigFile);
+      const sigMs = Date.now() - workerStart;
+      const memAfter = process.memoryUsage();
+      console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} from file (${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
+    } else {
+      // DB fallback — used when worker is invoked standalone (no sig file provided).
+      const sigClient = await pool.connect();
+      try {
+        await sigClient.query("SET statement_timeout = '30000'");
+        const { rows: sigRows } = await sigClient.query(`
+          SELECT trade_up_id, STRING_AGG(listing_id::text, ',' ORDER BY listing_id) as ids
+          FROM trade_up_inputs WHERE trade_up_id IN (
+            SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = false
+          ) GROUP BY trade_up_id
+        `, [tradeUpType]);
+        for (const row of sigRows) {
+          existingSigs.add(row.ids.split(",").sort().join(","));
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`  [${task}] sig load failed (${Date.now() - workerStart}ms): ${msg} — skipping dedup`);
+      } finally {
+        sigClient.release();
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`  [${task}] sig load failed (${Date.now() - workerStart}ms): ${msg} — skipping dedup`);
-    } finally {
-      sigClient.release();
+      const sigMs = Date.now() - workerStart;
+      const memAfter = process.memoryUsage();
+      console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
     }
-    const sigMs = Date.now() - workerStart;
-    const memAfter = process.memoryUsage();
-    console.log(`  Loaded ${existingSigs.size} existing signatures for ${task} (${sigMs}ms, rss=${(memAfter.rss / 1024 / 1024).toFixed(0)}MB)`);
 
     // Phase 1: Structured discovery
     const structuredStart = Date.now();

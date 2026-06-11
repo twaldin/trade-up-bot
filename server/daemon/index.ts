@@ -44,6 +44,8 @@ import {
   STRATEGY_COUNTS, FLOAT_BIASED_BY_TIER,
 } from "./adaptive-weights.js";
 import { runCompletenessAudit, logAuditResult } from "./completeness-audit.js";
+import { writeSignatureFile } from "./sig-file.js";
+import { parseSig } from "../engine.js";
 
 // ─── Graceful restart queue ──────────────────────────────────────────────────
 // SIGUSR2: queue restart at end of current cycle (PM2 auto-restarts after exit)
@@ -137,6 +139,7 @@ function runCalcWorker(
   cycleStartedAt?: number,
   discoveryFile?: string,
   strategyWeights?: number[],
+  sigFile?: string,
 ): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     const workerPath = fileURLToPath(new URL("./calc-worker.ts", import.meta.url));
@@ -158,7 +161,7 @@ function runCalcWorker(
       serialization: "advanced",
       env: {
         ...process.env,
-        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights }),
+        CALC_WORKER_DATA: JSON.stringify({ task, timeLimitMs, cycleStartedAt, discoveryFile, strategyWeights, sigFile }),
       },
     });
 
@@ -398,6 +401,40 @@ export async function main() {
       industrial: `/tmp/discovery-data-industrial-grade-collection_id.ndjson`,
       consumer: `/tmp/discovery-data-consumer-grade-collection_id.ndjson`,
     };
+
+    // Precompute existing trade-up signatures ONCE per cycle, write per-type files.
+    // Workers read these files instead of querying DB under write pressure (plan 019).
+    // Query shape mirrors mergeTradeUps' existingSigs read (same STRING_AGG GROUP BY).
+    const cycleKey = cycleCount;
+    const taskSigFile: Record<string, string> = {};
+    const sigFiles: string[] = [];
+    {
+      const sigPreStart = Date.now();
+      for (const [taskName, tradeUpType] of Object.entries(TASK_TYPE_MAP)) {
+        const filePath = `/tmp/worker-sigs-${taskName}-${cycleKey}.txt`;
+        try {
+          const { rows } = await pool.query(`
+            SELECT STRING_AGG(tui.listing_id::text, ',') as ids
+            FROM trade_ups t
+            JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+            WHERE t.type = $1 AND t.is_theoretical = false
+            GROUP BY t.id
+          `, [tradeUpType]);
+          const sigs = new Set<string>();
+          for (const row of rows) {
+            sigs.add(parseSig(row.ids));
+          }
+          await writeSignatureFile(filePath, sigs);
+          taskSigFile[taskName] = filePath;
+          sigFiles.push(filePath);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`  sig precompute failed for ${taskName}: ${msg} — workers will use DB fallback`);
+        }
+      }
+      console.log(`  Precomputed ${sigFiles.length} sig files (${((Date.now() - sigPreStart) / 1000).toFixed(1)}s)`);
+    }
+
     const revivalKnifeCache = new Map<string, FinishData[]>();
     {
       const itemTypes = new Set<string>();
@@ -464,10 +501,10 @@ export async function main() {
         await setDaemonStatus(pool, "calculating", statusDetail);
 
         const workers: Promise<WorkerResult>[] = [
-          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA], tierWeights[taskA]),
+          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA], tierWeights[taskA], taskSigFile[taskA]),
         ];
         if (taskB) {
-          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB], tierWeights[taskB]));
+          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB], tierWeights[taskB], taskSigFile[taskB]));
         }
         const results = await Promise.allSettled(workers);
 
@@ -657,8 +694,11 @@ export async function main() {
       console.log(`    Super-batch ${superBatchCount} done (${(batchMs / 1000).toFixed(1)}s)`);
     }
 
-    // Clean up pre-materialized discovery files
+    // Clean up pre-materialized discovery files and per-cycle sig files
     await cleanupDiscoveryFiles(discoveryFiles);
+    for (const f of sigFiles) {
+      try { fs.unlinkSync(f); } catch { /* already gone */ }
+    }
 
     // Persist per-tier yield data for adaptive weights (decay + accumulate)
     for (const tier of Object.keys(STRATEGY_COUNTS)) {
