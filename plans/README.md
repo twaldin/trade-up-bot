@@ -57,6 +57,8 @@ Written after a deep GSC re-analysis (`plans/notes/seo-diagnosis-2026-06-24.md`)
 
 Off-site (operator, not code): creator outreach (`offsite-growth-creator-outreach-2026-06-24.md`) — needs per-video budget + the ?ref system (now shipped in 027). Re-measure GSC + GA funnel at 4–8 weeks.
 
+**Round 3 status: all 6 plans deployed + verified live (027, 023, 023b, 024, 026, 025B).** 025 Workstream A (editorial pillar) deferred. **Impact checkpoint:** `plans/notes/round3-checkpoint-2026-06-24.md` — measurement plan + baselines; first read ~2026-07-23 (4wk), fuller signal ~2026-08-20 (8wk). A session cron (one-shot, 2026-07-23 09:07) re-invokes the agent to run it; the doc is the durable artifact if the session ends. **Operator action now:** mark `sign_up_start`/`begin_checkout`/`purchase` as GA4 Key Events or the funnel won't accumulate.
+
 ## Operator actions awaiting user decision (NOT in any plan)
 
 - ~~Drop `trade_up_collection_index` on prod~~ — **DONE 2026-06-11** (user-authorized): trigger `trg_trade_up_collection_index`, function `sync_trade_up_collection_index`, and the 2,439MB table dropped in one transaction; verified gone, daemon writes healthy.
