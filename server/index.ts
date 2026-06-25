@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 import { blogPosts } from "../src/data/blog-posts.js";
@@ -374,7 +374,12 @@ registerCanonicalRedirectRoutes(app);
         [req.params.id]
       );
       if (!row) {
-        res.status(404).send("Trade-up not found");
+        // Deleted/purged numeric IDs -> 410 Gone (drains from the index faster than 404);
+        // malformed/non-numeric -> 404. SEO detail route only; never the API or landing pages.
+        const status = deletedTradeUpStatus(String(req.params.id));
+        res.status(status).set("X-Robots-Tag", "noindex").send(
+          status === 410 ? "Trade-up no longer available" : "Trade-up not found"
+        );
         return;
       }
       const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;

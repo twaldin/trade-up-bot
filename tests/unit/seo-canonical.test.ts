@@ -50,11 +50,14 @@ describe("canonical and robots SEO helpers", () => {
 describe("server route canonical/noindex/404 behavior", () => {
   const source = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
 
-  it("dynamic collection, skin, and trade-up routes return 404 instead of falling through to SPA", () => {
+  it("dynamic collection, skin, and trade-up routes return 404/410 instead of falling through to SPA", () => {
     expect(source).toContain('res.status(404).send("Collection trade-up page not found")');
     expect(source).toContain('res.status(404).send("Collection not found")');
     expect(source).toContain('res.status(404).send("Skin not found")');
-    expect(source).toContain('res.status(404).send("Trade-up not found")');
+    // Trade-up DETAIL now distinguishes deleted (410) vs malformed (404) via deletedTradeUpStatus;
+    // both branches still return a hard status (no SPA fallthrough) with a noindex tombstone.
+    expect(source).toContain("deletedTradeUpStatus(String(req.params.id))");
+    expect(source).toContain('"Trade-up not found"');
   });
 
   it("non-crawler dynamic pages inject route-specific canonical metadata into the SPA", () => {

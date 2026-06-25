@@ -165,6 +165,17 @@ ${jsonLdTag}
 </head><body>${bodyContent}</body></html>`;
 }
 
+/**
+ * HTTP status for a missing trade-up DETAIL (/trade-ups/:id) row.
+ * A numeric ID with no row is a trade-up that existed and was deleted/stale-purged — return
+ * 410 Gone so Google drops it from the index faster than a bare 404. These IDs only ever come
+ * from our own prior sitemap/links. A non-numeric/malformed path was never a valid trade-up — 404.
+ * Applies ONLY to the SEO detail route, never the API route or collection landing pages.
+ */
+export function deletedTradeUpStatus(id: string): 404 | 410 {
+  return /^\d+$/.test(id) ? 410 : 404;
+}
+
 export interface CollectionHubLink {
   name: string;
   slug: string;
