@@ -41,6 +41,22 @@ Written after an SEO audit driven by the Google Search Console export (2026-06-1
 
 Recommended order: 012 → 013 → 014 (the SEO batch, independent of each other but reviewed best in that order), then 015/018 (small), then 016/017/019. SEO effects need 2–6 weeks to show in GSC — re-export and compare after the batch lands.
 
+## Round 3 (2026-06-24) — growth/KPI pass: funnel conversion + measurement + content moat
+
+Written after a deep GSC re-analysis (`plans/notes/seo-diagnosis-2026-06-24.md`) + GA4 funnel review (`round3-growth-kpis-2026-06-24.md`) + seo-audit skill (`seo-audit-report-2026-06-24.md`). Strategy centers on the float-exact pricing moat (`positioning-float-accuracy-2026-06-24.md`) and measures everything in signups/customers, not impressions. Each plan codex-reviewed before deploy (MUST-FIX sections appended). Execution order: 027 → 023 → 023b → 024 → 026 → 025.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 022  | Funnel conversion: CTAs from blog/money pages into signup + product | P1 | S | — | DONE (8fe5a3b — ProductCTA on blog + money pages, crawler-HTML CTA flowing equity to product, /auth nofollow only; verified live) |
+| 027  | GA4 funnel instrumentation: key events + ?ref attribution + verified Stripe purchase | P1 | M | — | DONE (c530457 — trackEvent/trackPurchase typed gtag wrapper; ?ref sanitized→localStorage→authHref on all 9 auth links (module-load capture + live-URL fallback); 4 key events (sign_up_start/calculator_run/tradeup_view/begin_checkout); users.signup_ref column (SCHEMA_VERSION bump + idempotent ALTER ×3 + first-write-wins persist); server-verified /api/checkout-session/:id (DB-fresh customer id, ownership+payment guarded, client dedupe); codex BLOCK×2 rounds fixed: stale-cache first-buyer purchase loss, ref-lost-on-landing, un-try'd DB read) |
+| 023  | On-page JSON-LD schema on bare money pages + /calculator depth | P1 | M | — | TODO |
+| 023b | Resolve keyword cannibalization + trim over-length titles | P1 | M | — | TODO |
+| 024  | Internal-linking overhaul + topical clusters (flow equity to money pages) | P2 | M | 023, 023b | TODO |
+| 025  | Long-tail content engine: float-exact profitability pages + comparison pillar | P2 | L | 023, 023b, 024, 026 | TODO |
+| 026  | Index-bloat hygiene: 410 for deleted trade-ups + thin-page indexability | P2 | M | — | TODO |
+
+Off-site (operator, not code): creator outreach (`offsite-growth-creator-outreach-2026-06-24.md`) — needs per-video budget + the ?ref system (now shipped in 027). Re-measure GSC + GA funnel at 4–8 weeks.
+
 ## Operator actions awaiting user decision (NOT in any plan)
 
 - ~~Drop `trade_up_collection_index` on prod~~ — **DONE 2026-06-11** (user-authorized): trigger `trg_trade_up_collection_index`, function `sync_trade_up_collection_index`, and the 2,439MB table dropped in one transaction; verified gone, daemon writes healthy.
