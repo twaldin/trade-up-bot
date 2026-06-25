@@ -442,8 +442,9 @@ registerCanonicalRedirectRoutes(app);
     const ua = req.headers["user-agent"] || "";
     try {
       // Redis cache: 3600s TTL. seo_collection: full crawler HTML; seo_collection_meta: meta object.
-      const collCacheKey = `seo_collection:${req.params.slug}`;
-      const collMetaCacheKey = `seo_collection_meta:${req.params.slug}`;
+      // _v2 suffix: bumped for plan 025 best-profit summary so the new HTML serves immediately.
+      const collCacheKey = `seo_collection_v2:${req.params.slug}`;
+      const collMetaCacheKey = `seo_collection_meta_v2:${req.params.slug}`;
       const { cacheGet: collCacheGet, cacheSet: collCacheSet } = await import("./redis.js");
       if (isCrawler(ua)) {
         try {
@@ -501,13 +502,30 @@ registerCanonicalRedirectRoutes(app);
 
       const totalListings = skins.reduce((sum: number, s: { listing_count: number }) => sum + s.listing_count, 0);
 
-      // Profitable trade-up count for this collection
+      // Profitable trade-up count for this collection. Public-facing claim, so it uses the
+      // strict predicate (profit_cents > 100 + non-stale) that the trade-up landing page uses,
+      // not the loose profit_cents > 0 — penny/stale contracts must not inflate the count.
       const { rows: [tuStats] } = await pool.query(`
         SELECT COUNT(DISTINCT ti.trade_up_id)::int as tu_count
         FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
-        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false
+          AND t.profit_cents > 100
+          AND (t.preserved_at IS NULL OR t.preserved_at > NOW() - INTERVAL '7 days')
       `, [collectionName]);
       const tuCount = tuStats?.tu_count || 0;
+
+      // Best profitable trade-up RIGHT NOW for this collection — the float-exact moat surface.
+      // Same strict predicate; one row, highest profit. Server-rendered so the landing page is
+      // uniquely valuable (real, fresh, float-exact priced) rather than a templated catalog.
+      const { rows: [bestTu] } = await pool.query(`
+        SELECT t.id, t.profit_cents, t.roi_percentage, t.chance_to_profit
+        FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
+        WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false
+          AND t.profit_cents > 100
+          AND (t.preserved_at IS NULL OR t.preserved_at > NOW() - INTERVAL '7 days')
+        ORDER BY t.profit_cents DESC
+        LIMIT 1
+      `, [collectionName]);
 
       // Group skins by rarity
       const e = escapeHtml;
@@ -529,6 +547,16 @@ registerCanonicalRedirectRoutes(app);
       }
 
       const tuLink = `<p><strong>${tuCount} profitable trade-ups</strong> currently use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">Explore ${displayName} trade-up contracts</a></p>`;
+
+      // Float-exact "best right now" summary — the differentiator. Only rendered when a genuinely
+      // profitable, non-stale contract exists, so it never shows a penny/stale claim.
+      const bestProfitHtml = bestTu
+        ? `<p><strong>Best profitable ${e(displayName)} trade-up right now:</strong> `
+          + `+$${(bestTu.profit_cents / 100).toFixed(2)} profit at ${Math.round((bestTu.chance_to_profit ?? 0) * 100)}% chance to profit`
+          + `${bestTu.roi_percentage != null ? ` (${bestTu.roi_percentage.toFixed(1)}% ROI)` : ""}, `
+          + `built from real, currently-listed marketplace inputs. `
+          + `<a href="/trade-ups/${bestTu.id}">View this ${e(displayName)} trade-up</a>.</p>`
+        : "";
 
       const collImageHtml = collectionImageUrl
         ? `<img src="${e(collectionImageUrl)}" alt="${e(displayName)} collection CS2" width="200" height="200" />`
@@ -557,6 +585,7 @@ registerCanonicalRedirectRoutes(app);
         + `There are currently ${totalListings.toLocaleString()} active listings across CSFloat, DMarket, and Skinport. `
         + (tuCount > 0 ? `The collection features in ${tuCount} profitable trade-up contracts, ` : "")
         + `Browse skins, compare prices, and find trade-up opportunities below.</p>`
+        + bestProfitHtml
         + collectionOverviewHtml
         + tuLink
         + skinTablesHtml
