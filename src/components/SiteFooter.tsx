@@ -4,10 +4,33 @@ export function SiteFooter() {
   return (
     <footer className="py-10 border-t border-border">
       <div className="mx-auto max-w-6xl px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-8 mb-8">
           <div>
             <div className="font-bold text-sm mb-3">TradeUpBot</div>
-            <p className="text-xs text-muted-foreground leading-relaxed">CS2 trade-up contract analyzer built from real marketplace listings.</p>
+            <p className="text-xs text-muted-foreground leading-relaxed mb-3">CS2 trade-up contract analyzer built from real marketplace listings.</p>
+            <div className="space-y-2 text-sm">
+              <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+              <a href="mailto:tradeupbot@gmail.com" className="block text-muted-foreground hover:text-foreground transition-colors">tradeupbot@gmail.com</a>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Tools</div>
+            <div className="space-y-2 text-sm">
+              <Link to="/calculator" className="block text-muted-foreground hover:text-foreground transition-colors">Trade-Up Calculator</Link>
+              <Link to="/trade-ups" className="block text-muted-foreground hover:text-foreground transition-colors">Live Trade-Ups</Link>
+              <Link to="/skins" className="block text-muted-foreground hover:text-foreground transition-colors">Skin Prices</Link>
+              <Link to="/collections" className="block text-muted-foreground hover:text-foreground transition-colors">Collections</Link>
+              <Link to="/listing-sniper" className="block text-muted-foreground hover:text-foreground transition-colors">Listing Sniper</Link>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Guides</div>
+            <div className="space-y-2 text-sm">
+              <Link to="/blog/how-cs2-trade-ups-work/" className="block text-muted-foreground hover:text-foreground transition-colors">How Trade-Ups Work</Link>
+              <Link to="/blog/profitable-trade-ups-theory-vs-reality/" className="block text-muted-foreground hover:text-foreground transition-colors">Why Calculators Disagree</Link>
+              <Link to="/blog/cs2-trade-up-marketplace-fees/" className="block text-muted-foreground hover:text-foreground transition-colors">Marketplace Fees</Link>
+              <Link to="/blog" className="block text-muted-foreground hover:text-foreground transition-colors">All Guides</Link>
+            </div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Product</div>
@@ -16,7 +39,6 @@ export function SiteFooter() {
               <Link to="/features" className="block text-muted-foreground hover:text-foreground transition-colors">Features</Link>
               <Link to="/pricing" className="block text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
               <Link to="/faq" className="block text-muted-foreground hover:text-foreground transition-colors">FAQ</Link>
-              <Link to="/blog" className="block text-muted-foreground hover:text-foreground transition-colors">Blog</Link>
             </div>
           </div>
           <div>
@@ -24,13 +46,6 @@ export function SiteFooter() {
             <div className="space-y-2 text-sm">
               <Link to="/terms" className="block text-muted-foreground hover:text-foreground transition-colors">Terms of Service</Link>
               <Link to="/privacy" className="block text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Contact</div>
-            <div className="space-y-2 text-sm">
-              <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
-              <a href="mailto:tradeupbot@gmail.com" className="block text-muted-foreground hover:text-foreground transition-colors">tradeupbot@gmail.com</a>
             </div>
           </div>
         </div>

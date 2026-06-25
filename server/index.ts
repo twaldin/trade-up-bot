@@ -1175,6 +1175,7 @@ registerCanonicalRedirectRoutes(app);
             url: `https://tradeupbot.app${staticPage.path}`,
             bodyHtml: staticPage.bodyHtml,
             jsonLd: staticPage.jsonLd,
+            includeFooter: true,
           }));
           return;
         }

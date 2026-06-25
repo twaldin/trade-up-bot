@@ -9,6 +9,10 @@ interface SeoMeta {
   /** Raw HTML body content (trusted, server-generated). Takes precedence over bodyText. */
   bodyHtml?: string;
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  /** Append the shared crawler footer link hub. Opt-in: only low-link pages (static, blog)
+   *  set this — high-cardinality pages (/skins hub, collection trade-ups) must NOT, to stay
+   *  under the ~100-links-per-page budget. */
+  includeFooter?: boolean;
 }
 
 export function escapeHtml(str: string): string {
@@ -137,6 +141,9 @@ export function buildSeoHtml(meta: SeoMeta): string {
   } else if (meta.bodyText) {
     bodyContent = `<main>${escapeHtml(meta.bodyText)}</main>`;
   }
+  if (meta.includeFooter) {
+    bodyContent += renderSeoFooter();
+  }
 
   return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8" />
@@ -177,6 +184,39 @@ const FALLBACK_COLLECTION_HUB_LINKS: CollectionHubLink[] = [
   { name: "Operation Broken Fang", slug: "operation-broken-fang" },
   { name: "Operation Riptide", slug: "operation-riptide" },
 ];
+
+// Curated guide links for the shared crawler footer (slugs verified against blog-posts).
+const SEO_FOOTER_GUIDES: { slug: string; title: string }[] = [
+  { slug: "how-cs2-trade-ups-work", title: "How CS2 Trade-Ups Work" },
+  { slug: "profitable-trade-ups-theory-vs-reality", title: "Why Calculators Disagree" },
+  { slug: "cs2-trade-up-marketplace-fees", title: "Marketplace Fees Explained" },
+  { slug: "best-cs2-collections-knife-trade-ups-2026", title: "Best Knife Collections" },
+];
+
+/**
+ * Shared crawler-HTML footer link hub. Categorized, descriptive anchors (~16 links) so
+ * money/content pages flow equity to the product without exceeding the per-page link budget.
+ * Opt-in via SeoMeta.includeFooter — never applied to high-cardinality pages.
+ */
+export function renderSeoFooter(): string {
+  const e = escapeHtml;
+  const collLinks = FALLBACK_COLLECTION_HUB_LINKS.slice(0, 6)
+    .map((c) => `<li><a href="/collections/${e(c.slug)}">${e(c.name)} trade-ups</a></li>`)
+    .join("");
+  const guideLinks = SEO_FOOTER_GUIDES
+    .map((g) => `<li><a href="/blog/${e(g.slug)}/">${e(g.title)}</a></li>`)
+    .join("");
+  return `<footer><nav aria-label="Site links">` +
+    `<h2>Tools</h2><ul>` +
+    `<li><a href="/calculator">CS2 Trade-Up Calculator</a></li>` +
+    `<li><a href="/trade-ups">Live Profitable Trade-Ups</a></li>` +
+    `<li><a href="/skins">CS2 Skin Prices &amp; Floats</a></li>` +
+    `<li><a href="/collections">CS2 Collections</a></li>` +
+    `<li><a href="/listing-sniper">Listing Sniper Alerts</a></li></ul>` +
+    `<h2>Top Collections</h2><ul>${collLinks}</ul>` +
+    `<h2>Guides</h2><ul>${guideLinks}<li><a href="/blog">All CS2 Trade-Up Guides</a></li></ul>` +
+    `</nav></footer>`;
+}
 
 export function renderCollectionsHub(collections: CollectionHubLink[]): string {
   const e = escapeHtml;

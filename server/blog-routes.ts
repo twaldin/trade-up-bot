@@ -64,6 +64,7 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
         url,
         bodyHtml: blogBodyHtml,
         ogType: "article",
+        includeFooter: true,
         jsonLd: [
           {
             "@context": "https://schema.org",
