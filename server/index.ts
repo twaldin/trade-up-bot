@@ -1097,7 +1097,7 @@ registerCanonicalRedirectRoutes(app);
         }));
         return;
       }
-      const cacheKey = "seo_skins_list";
+      const cacheKey = "seo_skins_list_v2"; // bumped for plan 023 ItemList/CollectionPage schema
       try {
         const { cacheGet, cacheSet } = await import("./redis.js");
         const cached = await cacheGet<string>(cacheKey);
@@ -1120,11 +1120,40 @@ registerCanonicalRedirectRoutes(app);
           const slug = toSlug(s.name);
           return `<li><a href="/skins/${slug}">${escapeHtml(s.name)}</a> (${s.listing_count} listings)</li>`;
         }).join("");
+        // ItemList JSON-LD (cap elements at 50 to keep the payload compact; numberOfItems = full count)
+        const itemListElement = rows.slice(0, 50).map((s: { name: string }, i: number) => ({
+          "@type": "ListItem",
+          position: i + 1,
+          url: `https://tradeupbot.app/skins/${toSlug(s.name)}`,
+          name: s.name,
+        }));
+        const jsonLd: Record<string, unknown>[] = [
+          {
+            "@context": "https://schema.org", "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+              { "@type": "ListItem", position: 2, name: "Skins", item: "https://tradeupbot.app/skins" },
+            ],
+          },
+          {
+            "@context": "https://schema.org", "@type": "CollectionPage",
+            name: "CS2 Skin Prices & Float Data",
+            description: `Browse ${rows.length}+ CS2 weapon skins with live prices and float data from CSFloat, DMarket, Skinport, and Buff.`,
+            url: "https://tradeupbot.app/skins",
+          },
+          {
+            "@context": "https://schema.org", "@type": "ItemList",
+            name: "CS2 Skins",
+            numberOfItems: rows.length,
+            itemListElement,
+          },
+        ];
         const html = buildSeoHtml({
           title: "CS2 Skin Prices & Float Data — All Skins | TradeUpBot",
           description: `Browse ${rows.length}+ CS2 skins with live prices from CSFloat, DMarket, and Skinport.`,
           url: "https://tradeupbot.app/skins",
           bodyHtml: `<h1>CS2 Skin Database — Prices, Floats, Trade-Ups</h1><p>Browse ${rows.length}+ CS2 weapon skins with live market prices and float data from CSFloat, DMarket, and Skinport.</p><ul>${links}</ul>`,
+          jsonLd,
         });
         try {
           const { cacheSet } = await import("./redis.js");
@@ -1145,6 +1174,7 @@ registerCanonicalRedirectRoutes(app);
             description: staticPage.description,
             url: `https://tradeupbot.app${staticPage.path}`,
             bodyHtml: staticPage.bodyHtml,
+            jsonLd: staticPage.jsonLd,
           }));
           return;
         }

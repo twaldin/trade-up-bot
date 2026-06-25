@@ -17,7 +17,7 @@ describe("H1 on listing pages (#9)", () => {
     // The /skins handler must include an H1 in its bodyHtml (not just bodyText)
     // We look for an h1 tag associated with the skins route context
     // The skins route bodyHtml should include <h1>CS2 Skin...
-    const skinsRouteMatch = source.match(/app\.get\("\/skins"[\s\S]{0,3000}?(?=app\.get)/);
+    const skinsRouteMatch = source.match(/app\.get\("\/skins"[\s\S]{0,5000}?(?=app\.get)/);
     expect(skinsRouteMatch, "could not find /skins route in server/index.ts").toBeTruthy();
     expect(skinsRouteMatch![0]).toContain("<h1>");
   });
