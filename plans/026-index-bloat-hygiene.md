@@ -53,3 +53,11 @@ The skin `noindex` floor is `<5` listings. Raise the INDEXABLE bar to align with
 ## Maintenance notes
 - After deploy: GSC "Not found (404)" cohort should shift to/through "410" and drain faster than 404; recheck next export.
 - Coordinate indexability rules with plan 025 so we don't index thin programmatic pages 025 hasn't enriched yet.
+
+## MUST-FIX before executing (codex adversarial review, 2026-06-24)
+1. **Do NOT 410 `/trade-ups/collection/:slug`** — that's a collection LANDING page, not a trade-up detail; unknown collection slugs correctly 404 (`server/index.ts:214,236`). 410-ing it would mark real collections "permanently gone." The 410 applies ONLY to the trade-up DETAIL route.
+2. **SEO route only — do NOT touch `/api/trade-ups/:id`** — SEO detail is `server/index.ts:369`; the API detail (`server/routes/trade-ups.ts:521`) returns 404 for missing and integration setup mounts the API routers (`tests/integration/setup.ts:472`), not the SEO handler. Change only the SEO route; say so explicitly.
+3. **Define "ID-shaped" concretely** — `trade_ups.id` is SERIAL integer (`server/db.ts:129`); the SEO route passes `req.params.id` straight into the query (`:372`). Rule: `/^\d+$/` → absent numeric row = **410**; non-numeric/malformed = keep **404**.
+4. **Skin indexability predicate must be concrete** — current rule is exactly `listingCount < 5` (`server/index.ts:658`); sitemap uses `>=10` (`sitemap.ts:89`). "Raise the bar" is too vague. Specify the actual predicate (e.g. `index` only if `listingCount >= 5 AND condPrices.length > 0` / has profitable-TU or collection data); do NOT mass-deindex the catalog. Keep GSC's top skin pages indexable (awp-dragon-lore, mp5-sd-savannah-halftone, m4a1-s-fade).
+5. **Cache invalidation** — skin crawler HTML + meta (incl. robots) cached under `seo_skin:*` / `seo_skin_meta:*` (`:610,955`, 3600s). Any robots/status change needs a cache-key bump or deploy-time Redis clear, or verification reads stale robots.
+6. **Red-first test update** — `tests/unit/seo-canonical.test.ts:69` asserts the exact `<5` skin robots expression and exactly two `noindex,follow` occurrences. A new predicate/410 body breaks it; update the expectation deliberately (red-first), don't leave it a surprise failure.

@@ -58,3 +58,12 @@ Each step is independently shippable; do NOT batch all into one deploy.
 ## Maintenance notes
 - This is the moat surface — quality over quantity. A few genuinely-useful data pages beat hundreds of templated ones.
 - Feeds the AI-citation channel (schema + original data). Re-measure long-tail positions in GSC at 4–8 weeks.
+
+## MUST-FIX before executing (codex adversarial review, 2026-06-24)
+1. **Sitemap scope** — new blog posts must be added to the hardcoded `BLOG_SLUGS` in `server/routes/sitemap.ts:8,62` (+ `tests/unit/sitemap.test.ts`), or they render but never appear in `/sitemap-static.xml`. Add those to scope.
+2. **FAQPage needs a `faq` array** — blog schema only emits FAQPage when `post.faq` exists (`server/blog-routes.ts:65`, `BlogPostPage.tsx:35`). Each new post must add a `faq` array, not just an "FAQ" heading.
+3. **Workstream B target is ambiguous AND partly already built** — `/trade-ups/collection/:slug` (`server/index.ts:214`) ALREADY renders a "Best profit" surface from live trade_ups (`:308,323`). The separate `/collections/:slug` handler (`:436`) only has a count/link (`:526`). **Specify which route gets the new "+$X at Y%" answer** — don't duplicate what exists; likely enrich `/collections/:slug`.
+4. **If B targets `/collections/:slug`, align the query** — that handler counts `profit_cents > 0` with NO stale filter (`:499`). Any PUBLIC "best profitable" claim must use `profit_cents > 100` + the `preserved_at` stale filter (matching `:277` + sitemap `:196`), or it'll show penny/stale trade-ups.
+5. **Make plan 026 a HARD dependency for Workstream B** (or do only Workstream A until 026 lands) — empty direct-crawled collection pages currently default to `index,follow` (`server/seo.ts:123`), so B would create thin indexable doorways (scaled-content risk) until 026's noindex rules exist.
+6. **Exact fees incl. Buff** — CSFloat 2.8%+$0.30/2%, DMarket 2.5%/2%, Skinport 0%/8%, Buff 3.5%+$0.15/2.5% (`fees.ts:8`). State include-or-exclude-Buff explicitly in any marketplace claim.
+7. **Reproducibility artifact** — for the A2 data study, check in a fixture/query note recording the selected `trade_ups.id`, `outcomes_json`, and fee assumptions, so the published numbers stay verifiable after live data refreshes.

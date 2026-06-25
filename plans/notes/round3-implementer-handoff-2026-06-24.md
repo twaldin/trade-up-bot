@@ -20,11 +20,11 @@ For a fresh implementer agent (Workflow-based or smithers). The advisor (this se
 | 023 | `plans/023-onpage-schema-and-calculator-depth.md` | ✅ reviewed, MUST-FIX section appended | Schema on /calculator,/faq,/pricing,/skins + calc depth. **Pricing corrected: Pro $6.99/$59.99/$74.99, no Basic.** |
 | 023b | `plans/023b-cannibalization-and-titles.md` | ✅ reviewed, MUST-FIX appended | Consolidate dup "how-it-works" posts; re-point simulator posts→/calculator; trim titles ≤60. |
 | 027 | `plans/027-ga4-funnel-instrumentation.md` | ✅ reviewed, MUST-FIX appended | GA key events + `?ref` attribution + Stripe purchase. **Measures everything downstream — do early.** |
-| 024 | `plans/024-internal-linking-and-clusters.md` | ⏳ codex review in `/tmp/codex-plan-reviews/024.txt` — FOLD must-fixes before executing | Footer hub + clusters (depends 023/023b). |
-| 025 | `plans/025-longtail-content-engine.md` | ⏳ `/tmp/codex-plan-reviews/025.txt` | Content moat. Ships public content — codex MUST verify every number vs engine/fees.ts. |
-| 026 | `plans/026-index-bloat-hygiene.md` | ⏳ not yet reviewed — review before executing | 410 tombstones + thin-page indexability. |
+| 024 | `plans/024-internal-linking-and-clusters.md` | ✅ reviewed, MUST-FIX appended | Footer hub + clusters (depends 023/023b). Footer must skip /skins (200 links) + collection-tu (120). |
+| 025 | `plans/025-longtail-content-engine.md` | ✅ reviewed, MUST-FIX appended | Content moat. Workstream B depends HARD on 026. Every number codex-verified vs engine/fees.ts. |
+| 026 | `plans/026-index-bloat-hygiene.md` | ✅ reviewed, MUST-FIX appended | 410 trade-up DETAIL only (not collection landing); numeric-ID rule; concrete skin predicate. |
 
-**Before executing 024/025/026:** read their `/tmp/codex-plan-reviews/*.txt`, fold the must-fixes into the plan (like 023/023b/027 already have), THEN execute. If the /tmp files are gone, re-run: `codex exec --skip-git-repo-check --sandbox read-only "<adversarial review prompt>" > review.txt`.
+**All six plans are codex-reviewed; each carries a "MUST-FIX before executing" section — read it, it's load-bearing.** Recommended execution order: **027** (instrument first, so the rest is measured) → **023** → **023b** → **024** → **026** → **025** (025 Workstream B needs 026 first).
 
 ## The per-plan loop (proven in batches 1–2 + plan 022)
 1. Drift check (each plan's header command). On drift, reconcile before dispatch.

@@ -54,3 +54,10 @@ In `src/data/blog-posts.ts`, ensure each post links to the specific collections/
 ## Maintenance notes
 - Keep the curated footer lists fresh quarterly (or make dynamic later).
 - New blog posts should link to the entities they mention.
+
+## MUST-FIX before executing (codex adversarial review, 2026-06-24)
+1. **Link-cap conflict** — `/skins` crawler HTML already emits up to **200** links (`server/index.ts:1112,1127`); `/trade-ups/collection/:slug` up to **120** (`:275,284,303`). A global footer hub would blow the ~100-link cap. **Scope the footer hub OUT of those high-cardinality pages** (apply it to /calculator, /faq, /pricing, blog, low-link pages) or reduce those bodies; add an anchor-count test.
+2. **Wrong line refs** — `server/index.ts:214` is `/trade-ups/collection/:slug`, NOT `/collections/:slug` (which starts at **`:436`**). Skin page is `:605`. Fix before sending the implementer to the wrong handler.
+3. **Cache invalidation** — collection/skin/hub crawler HTML is fully Redis-cached (`seo_coll_tu:*`, `seo_collection:*` `:588`, `seo_skin:*` `:608`, `seo_tradeups_list` `:997`, `seo_skins_list` `:1100`). The `curl -A Googlebot` verify can read STALE HTML. Bump the relevant cache keys (or flush those keys on deploy) so verification is real.
+4. **Gate order** — run `npm run build` BEFORE `npm run test:unit` (internal-cross-linking.test.ts reads dist/index.html). Final gate: red-first tests → `npm run build && npm run test:unit && npm run typecheck`.
+5. **Buff fees** — any new "all marketplaces" anchor/copy must include Buff (2.5%/3.5%+$0.15) or scope explicitly to the three named.
