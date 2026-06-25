@@ -21,7 +21,7 @@ describe("static SEO HTML normalization", () => {
     const route = expectedSeoRouteForPath("/blog/how-cs2-trade-ups-work/");
 
     expect(route?.canonical).toBe("https://tradeupbot.app/blog/how-cs2-trade-ups-work/");
-    expect(route?.title).toBe("How CS2 Trade-Ups Work: 10 Skins, Float & Profit | TradeUpBot Blog");
+    expect(route?.title).toBe("How CS2 Trade-Ups Work: 10 Skins, Float & Profit | TradeUpBot");
   });
 
   it("reports duplicate or mismatched head tags", () => {

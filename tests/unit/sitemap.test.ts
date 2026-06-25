@@ -24,9 +24,11 @@ describe("buildStaticSitemap", () => {
     expect(xml).toContain("tradeupbot.app/blog");
   });
 
-  it("includes the how do CS2 trade ups work blog post with trailing slash", () => {
+  it("includes the canonical how-cs2-trade-ups-work post and excludes the retired duplicate", () => {
     const xml = buildStaticSitemap("https://tradeupbot.app", "2026-03-24");
-    expect(xml).toContain("https://tradeupbot.app/blog/how-do-cs2-trade-ups-work/");
+    // 023b consolidated how-do-cs2-trade-ups-work -> how-cs2-trade-ups-work (301).
+    expect(xml).toContain("https://tradeupbot.app/blog/how-cs2-trade-ups-work/");
+    expect(xml).not.toContain("https://tradeupbot.app/blog/how-do-cs2-trade-ups-work/");
   });
 });
 

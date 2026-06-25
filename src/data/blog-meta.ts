@@ -42,7 +42,7 @@ export const blogMeta: BlogMeta[] = [
   },
   {
     slug: "cs2-trade-up-marketplace-fees",
-    title: "CSFloat, DMarket & Skinport Fees (2026) — Exact Buyer & Seller Percentages",
+    title: "CS2 Trade-Up Fees: CSFloat, DMarket & Skinport",
     excerpt: "CSFloat charges 2% seller fee (2.8% + $0.30 buyer). DMarket: 2% seller, 2.5% buyer. Skinport: 8% seller, 0% buyer. Full CS2 marketplace fee breakdown for trade-ups.",
     publishedAt: "2026-03-19",
     readTime: "5 min read",
@@ -68,14 +68,6 @@ export const blogMeta: BlogMeta[] = [
     slug: "cs2-trade-up-calculator-guide",
     title: "CS2 Trade Up Calculator Guide: Profits, Floats & Fees",
     excerpt: "Use this CS2 trade up calculator guide to test floats, odds, and fees before buying inputs. Start calculating smarter contracts today.",
-    publishedAt: "2026-05-12",
-    readTime: "8 min read",
-    author: "TradeUpBot Team",
-  },
-  {
-    slug: "how-do-cs2-trade-ups-work",
-    title: "How Do CS2 Trade Ups Work? Floats, Odds & Profit",
-    excerpt: "Learn how CS2 trade ups work from inputs to float math and odds. Use this beginner guide to check contracts before buying.",
     publishedAt: "2026-05-12",
     readTime: "8 min read",
     author: "TradeUpBot Team",

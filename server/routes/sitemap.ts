@@ -15,7 +15,6 @@ const BLOG_SLUGS = [
   "best-cs2-collections-knife-trade-ups-2026",
   "cs2-trade-up-probability-expected-value",
   "cs2-trade-up-calculator-guide",
-  "how-do-cs2-trade-ups-work",
   "best-cs2-trade-up-simulator",
 ];
 

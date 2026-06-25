@@ -8,7 +8,20 @@ const BLOG_POST_META: Record<string, BlogPost> = Object.fromEntries(
   blogPosts.map((post) => [post.slug, post]),
 );
 
+// Retired blog slugs 301'd to their canonical replacement (cannibalization consolidation).
+// Registered BEFORE the generic handlers so the removed slug 301s instead of 404ing.
+const RETIRED_BLOG_REDIRECTS: Record<string, string> = {
+  "how-do-cs2-trade-ups-work": "how-cs2-trade-ups-work",
+};
+
 export function registerBlogRoutes(app: Express, indexHtml: string): void {
+  // Retired-slug 301s (both slash forms) -> the canonical post's trailing-slash URL.
+  app.get(/^\/blog\/([^/]+)\/?$/, (req, res, next) => {
+    const target = RETIRED_BLOG_REDIRECTS[req.params[0]];
+    if (!target) return next();
+    res.redirect(301, `/blog/${target}/`);
+  });
+
   // Canonical blog post URLs always include a trailing slash. Use regex
   // routes so Express' default non-strict routing cannot serve both forms.
   app.get(/^\/blog\/([^/]+)$/, (req, res) => {
@@ -29,7 +42,7 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
       return;
     }
     const ua = req.headers["user-agent"] || "";
-    const title = `${post.title} | TradeUpBot Blog`;
+    const title = `${post.title} | TradeUpBot`;
     // Trailing slash matches the URL the server actually serves content
     // at; without it the canonical points at the redirected (non-trailing)
     // form and Google sees a redirect loop on the canonical chain (#95).

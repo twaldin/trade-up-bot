@@ -388,7 +388,7 @@ export function CalculatorPage() {
 
   return (
     <div>
-      <title>CS2 Trade-Up Calculator — Float & Profit Calculator | TradeUpBot</title>
+      <title>CS2 Trade-Up Calculator — Float & Profit | TradeUpBot</title>
       <meta name="description" content="Free CS2 (formerly CS:GO) trade-up calculator. Enter your input skins to see predicted float, output probabilities, expected value, and profit." />
       <link rel="canonical" href="https://tradeupbot.app/calculator" />
       <meta property="og:title" content="CS2 Trade-Up Calculator | TradeUpBot" />

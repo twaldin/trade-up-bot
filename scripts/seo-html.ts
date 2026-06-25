@@ -33,7 +33,7 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
     },
     ...blogPosts.map((post) => ({
       path: `/blog/${post.slug}`,
-      title: `${post.title} | TradeUpBot Blog`,
+      title: `${post.title} | TradeUpBot`,
       description: post.excerpt,
       canonical: `${BASE_URL}/blog/${post.slug}/`,
     })),

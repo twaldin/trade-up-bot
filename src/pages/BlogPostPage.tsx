@@ -47,10 +47,10 @@ export function BlogPostPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <title>{post.title} | TradeUpBot Blog</title>
+      <title>{post.title} | TradeUpBot</title>
       <meta name="description" content={post.excerpt} />
       <link rel="canonical" href={`https://tradeupbot.app/blog/${post.slug}/`} />
-      <meta property="og:title" content={`${post.title} | TradeUpBot Blog`} />
+      <meta property="og:title" content={`${post.title} | TradeUpBot`} />
       <meta property="og:description" content={post.excerpt} />
       <meta property="og:url" content={`https://tradeupbot.app/blog/${post.slug}/`} />
       <meta property="og:type" content="article" />
