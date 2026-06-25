@@ -34,7 +34,15 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
     // at; without it the canonical points at the redirected (non-trailing)
     // form and Google sees a redirect loop on the canonical chain (#95).
     const url = `https://tradeupbot.app/blog/${slug}/`;
-    const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1>${post.content}<p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p></article>`;
+    const ctaHtml = `<div style="margin-top:2rem;padding:1.5rem;border:1px solid #333;border-radius:0.75rem">` +
+      `<h2 style="margin:0 0 0.5rem">See live profitable trade-ups right now</h2>` +
+      `<p style="margin:0 0 1rem;color:#aaa">TradeUpBot scans CSFloat, DMarket, and Skinport continuously. ` +
+      `Every trade-up is built from real, buyable listings — fee-adjusted profit shown upfront. Free tier available.</p>` +
+      `<a href="/trade-ups">Browse trade-ups</a> &nbsp;&middot;&nbsp; ` +
+      `<a href="/calculator">Try the calculator</a> &nbsp;&middot;&nbsp; ` +
+      `<a href="/auth/steam" rel="nofollow">Sign in with Steam — free</a>` +
+      `</div>`;
+    const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1>${post.content}<p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p></article>${ctaHtml}`;
     res.setHeader("Content-Type", "text/html");
     if (isCrawler(String(ua))) {
       res.send(buildSeoHtml({

@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { getPostBySlug, blogPosts } from "../data/blog-posts.js";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
+import { ProductCTA } from "../components/ProductCTA.js";
 
 export function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -102,6 +103,9 @@ export function BlogPostPage() {
               prose-td:text-muted-foreground prose-td:px-3 prose-td:py-2 prose-td:border-b prose-td:border-border/50"
             dangerouslySetInnerHTML={{ __html: post.content }}
           />
+
+          {/* Post CTA — drive blog readers to product and signup */}
+          <ProductCTA variant="blog" />
 
           {/* Related posts */}
           {relatedPosts.length > 0 && (

@@ -6,6 +6,7 @@ import { OutcomeChart } from "../components/trade-up/OutcomeChart.js";
 import { OutcomeList } from "../components/trade-up/OutcomeList.js";
 import { Button } from "../../shared/components/ui/button.js";
 import { Badge } from "../../shared/components/ui/badge.js";
+import { ProductCTA } from "../components/ProductCTA.js";
 
 interface SearchResult {
   name: string;
@@ -546,6 +547,9 @@ export function CalculatorPage() {
           and conditions, and estimated output prices from CSFloat, DMarket, and Skinport market data.
         </p>
       </section>
+
+      {/* Cross-link to live trade-ups */}
+      <ProductCTA variant="calculator" />
     </div>
   );
 }
