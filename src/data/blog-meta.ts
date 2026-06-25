@@ -80,4 +80,20 @@ export const blogMeta: BlogMeta[] = [
     readTime: "9 min read",
     author: "TradeUpBot Team",
   },
+  {
+    slug: "why-cs2-trade-up-calculators-disagree",
+    title: "Why CS2 Trade-Up Calculators Disagree",
+    excerpt: "Two CS2 trade-up calculators, same 10 inputs, different profit. The reason is almost always how each tool prices the output skin: condition average versus float-exact.",
+    publishedAt: "2026-06-24",
+    readTime: "7 min read",
+    author: "TradeUpBot Team",
+  },
+  {
+    slug: "cs2-output-float-profit-impact",
+    title: "How Output Float Changes Trade-Up Profit",
+    excerpt: "Output float is not a rounding detail. Real CS2 data shows a tiny float change at the Factory New boundary can swing an output value by 10x or more.",
+    publishedAt: "2026-06-24",
+    readTime: "6 min read",
+    author: "TradeUpBot Team",
+  },
 ];

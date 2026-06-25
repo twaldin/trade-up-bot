@@ -30,6 +30,12 @@ describe("buildStaticSitemap", () => {
     expect(xml).toContain("https://tradeupbot.app/blog/how-cs2-trade-ups-work/");
     expect(xml).not.toContain("https://tradeupbot.app/blog/how-do-cs2-trade-ups-work/");
   });
+
+  it("includes the plan 025A editorial pillar posts", () => {
+    const xml = buildStaticSitemap("https://tradeupbot.app", "2026-03-24");
+    expect(xml).toContain("https://tradeupbot.app/blog/why-cs2-trade-up-calculators-disagree/");
+    expect(xml).toContain("https://tradeupbot.app/blog/cs2-output-float-profit-impact/");
+  });
 });
 
 describe("buildCollectionSitemap", () => {
