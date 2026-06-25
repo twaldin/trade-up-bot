@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { authHref } from "../lib/ref.js";
+import { trackEvent } from "../lib/analytics.js";
 
 type CTAVariant = "blog" | "calculator" | "trade-ups";
 
@@ -64,7 +66,8 @@ export function ProductCTA({ variant = "blog" }: ProductCTAProps) {
           {copy.secondaryLabel}
         </Link>
         <a
-          href={`/auth/steam?return=${encodeURIComponent(copy.steamReturn)}`}
+          href={authHref(copy.steamReturn)}
+          onClick={() => trackEvent("sign_up_start", { location: `cta_${variant}` })}
           rel="nofollow"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >

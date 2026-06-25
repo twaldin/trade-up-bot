@@ -43,7 +43,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-06-10.1";
+export const SCHEMA_VERSION = "2026-06-24.1";
 
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts).
@@ -362,6 +362,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       tier TEXT NOT NULL DEFAULT 'free',
       is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
+      signup_ref TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -396,6 +397,10 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   } // end if (!tablesExist)
 
   // Migrations for existing databases
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_ref TEXT;
+  `);
+
   await pool.query(`
     ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS input_sources TEXT[] NOT NULL DEFAULT '{}';
   `);

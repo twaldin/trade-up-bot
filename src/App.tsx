@@ -19,6 +19,9 @@ const BlogPostPage = lazy(() => import("./pages/BlogPostPage.js").then(m => ({ d
 import { SiteFooter } from "./components/SiteFooter.js";
 import { Button } from "../shared/components/ui/button.js";
 import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
+import { captureRefFromUrl, authHref } from "./lib/ref.js";
+import { reportPurchase } from "./lib/purchase.js";
+import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
@@ -336,7 +339,8 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             <UserMenu user={user} />
           ) : (
             <a
-              href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`}
+              href={authHref(window.location.pathname)}
+              onClick={() => trackEvent("sign_up_start", { location: "nav" })}
               rel="nofollow"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
             >
@@ -419,13 +423,14 @@ interface AuthUser {
 }
 
 function SignInRequired({ returnTo, message }: { returnTo: string; message: string }) {
-  const href = `/auth/steam?return=${encodeURIComponent(returnTo)}`;
+  const href = authHref(returnTo);
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center px-6 text-center gap-5">
       <h1 className="text-2xl font-semibold">Sign in required</h1>
       <p className="text-sm text-muted-foreground max-w-md">{message}</p>
       <a
         href={href}
+        onClick={() => trackEvent("sign_up_start", { location: "sign_in_required" })}
         rel="nofollow"
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
       >
@@ -482,6 +487,26 @@ function AuthGatedApp() {
 }
 
 export default function App() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Capture creator/campaign ?ref once on load so it survives to the Steam auth redirect.
+  useEffect(() => {
+    captureRefFromUrl();
+  }, []);
+
+  // Fire one verified GA4 purchase event when returning from Stripe checkout.
+  useEffect(() => {
+    const upgraded = searchParams.get("upgraded");
+    const sessionId = searchParams.get("session_id");
+    if (!upgraded || !sessionId) return;
+    reportPurchase(upgraded, sessionId).finally(() => {
+      const next = new URLSearchParams(searchParams);
+      next.delete("upgraded");
+      next.delete("session_id");
+      setSearchParams(next, { replace: true });
+    });
+  }, [searchParams, setSearchParams]);
+
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <Routes>

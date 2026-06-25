@@ -8,6 +8,7 @@ import pg from "pg";
 // SQLite only for session store — sessions stay in SQLite for simplicity
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
+import { sanitizeRef } from "../shared/ref.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -82,6 +83,7 @@ declare module "express-session" {
   interface SessionData {
     returnTo?: string;
     discordState?: string;
+    signupRef?: string;
   }
 }
 
@@ -122,10 +124,13 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       tier TEXT NOT NULL DEFAULT 'free',
       is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
+      signup_ref TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Idempotent migration: ensure signup_ref exists on pre-existing user tables.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_ref TEXT");
 
   // Migration: add is_admin column if missing + set admin flag
   const adminSteamId = process.env.ADMIN_STEAM_ID;
@@ -263,6 +268,9 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
       if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
         req.session.returnTo = returnTo;
       }
+      // Stash the creator/campaign ref so we can attribute the signup after the callback.
+      const ref = sanitizeRef(req.query.ref);
+      if (ref) req.session.signupRef = ref;
       passport.authenticate("steam")(req, res, next);
     });
     app.get("/auth/steam/callback", (req, res, next) => {
@@ -279,6 +287,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             return res.redirect("/?auth=failed");
           }
           console.log(`Steam login: ${user.display_name} (${user.steam_id})`);
+          // Persist the ref once, only if this user has never been attributed (first signup wins).
+          const ref = req.session.signupRef;
+          if (ref) {
+            delete req.session.signupRef;
+            pool.query(
+              "UPDATE users SET signup_ref = $1 WHERE steam_id = $2 AND signup_ref IS NULL",
+              [ref, user.steam_id]
+            ).catch((e: Error) => console.error("signup_ref persist failed:", e.message));
+          }
           const returnTo = req.session.returnTo || "/";
           delete req.session.returnTo;
           res.redirect(returnTo);

@@ -1,5 +1,7 @@
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
+import { authHref } from "../lib/ref.js";
+import { trackEvent } from "../lib/analytics.js";
 
 export function FeaturesPage() {
   return (
@@ -188,7 +190,8 @@ export function FeaturesPage() {
             <h2 className="text-xl font-bold mb-3">Ready to find profitable trade-ups?</h2>
             <p className="text-sm text-muted-foreground mb-6">Sign in with Steam to get started. Free tier available.</p>
             <a
-              href="/auth/steam"
+              href={authHref("/trade-ups")}
+              onClick={() => trackEvent("sign_up_start", { location: "features_cta" })}
               rel="nofollow"
               className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
             >

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
+import { authHref } from "../lib/ref.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const IconCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -37,9 +39,10 @@ function PricingFaqItem({ question, children }: { question: string; children: Re
   );
 }
 
-const login = () => { window.location.href = `/auth/steam?return=${encodeURIComponent(window.location.pathname)}`; };
+const login = () => { trackEvent("sign_up_start", { location: "pricing" }); window.location.href = authHref(window.location.pathname); };
 
 const subscribe = async (plan: string) => {
+  trackEvent("begin_checkout", { item_name: plan });
   const res = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ plan }) });
   const data = await res.json();
   if (data.url) window.location.href = data.url;

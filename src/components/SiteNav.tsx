@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { CurrencyPicker } from "./CurrencyPicker.js";
+import { authHref } from "../lib/ref.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const NAV_LINKS = [
   { to: "/features", label: "Features" },
@@ -221,7 +223,8 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
                 View Trade-Ups
               </Link>
               <a
-                href={`/auth/steam?return=${encodeURIComponent(location.pathname)}`}
+                href={authHref(location.pathname)}
+                onClick={() => trackEvent("sign_up_start", { location: "site_nav" })}
                 rel="nofollow"
                 className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
               >

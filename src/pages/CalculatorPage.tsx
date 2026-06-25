@@ -7,6 +7,7 @@ import { OutcomeList } from "../components/trade-up/OutcomeList.js";
 import { Button } from "../../shared/components/ui/button.js";
 import { Badge } from "../../shared/components/ui/badge.js";
 import { ProductCTA } from "../components/ProductCTA.js";
+import { trackEvent } from "../lib/analytics.js";
 
 interface SearchResult {
   name: string;
@@ -374,6 +375,10 @@ export function CalculatorPage() {
 
       setResult(data.trade_up);
       setStats(data.stats);
+      trackEvent("calculator_run", {
+        inputs: validInputs.length,
+        profitable: (data.trade_up?.profit_cents ?? 0) > 0,
+      });
     } catch (err) {
       setError("Network error");
     } finally {

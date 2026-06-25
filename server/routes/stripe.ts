@@ -4,7 +4,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import Stripe from "stripe";
 import pg from "pg";
-import { requireAuth, invalidateAllUserCache, type User } from "../auth.js";
+import { requireAuth, invalidateAllUserCache, invalidateUserCache, type User } from "../auth.js";
 import { syncDiscordRoles } from "../discord-rest.js";
 
 // Read at request time, not module load (env may not be loaded yet)
@@ -44,6 +44,8 @@ export function stripeRouter(pool: pg.Pool): Router {
         });
         customerId = customer.id;
         await pool.query("UPDATE users SET stripe_customer_id = $1 WHERE steam_id = $2", [customerId, user.steam_id]);
+        // Drop the cached Passport user so the post-checkout return reads the fresh customer id.
+        invalidateUserCache(user.steam_id);
       }
 
       const planInfo = getPlan(plan)!;
@@ -52,7 +54,7 @@ export function stripeRouter(pool: pg.Pool): Router {
         mode: planInfo.mode,
         line_items: [{ price: planInfo.priceId, quantity: 1 }],
         allow_promotion_codes: true,
-        success_url: `${process.env.BASE_URL}/?upgraded=${plan}`,
+        success_url: `${process.env.BASE_URL}/?upgraded=${plan}&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
       });
 
@@ -60,6 +62,41 @@ export function stripeRouter(pool: pg.Pool): Router {
     } catch (err: any) {
       console.error("Stripe checkout error:", err.message);
       res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
+  // Verified checkout lookup — the post-checkout return page calls this to fire a GA4
+  // `purchase` event with a SERVER-confirmed amount (the ?upgraded query alone is forgeable).
+  router.get("/api/checkout-session/:id", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as User;
+    try {
+      // Read the customer id FRESH from the DB — the cached Passport user can be stale for a
+      // first-time buyer whose customer id was created during this same checkout flow.
+      // Kept inside try so a DB rejection returns a controlled response (Express 4 won't
+      // catch an async rejection otherwise).
+      const { rows } = await pool.query("SELECT stripe_customer_id FROM users WHERE steam_id = $1", [user.steam_id]);
+      const customerId: string | null = rows[0]?.stripe_customer_id ?? null;
+      if (!customerId) {
+        res.status(404).json({ error: "No checkout session" });
+        return;
+      }
+      const cs = await stripe.checkout.sessions.retrieve(String(req.params.id));
+      // Ownership + payment guards: only the buyer can read it, and only once paid.
+      if (cs.customer !== customerId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      if (cs.payment_status !== "paid") {
+        res.status(409).json({ error: "Not paid" });
+        return;
+      }
+      res.json({
+        transaction_id: cs.id,
+        value: (cs.amount_total ?? 0) / 100,
+        currency: (cs.currency ?? "usd").toUpperCase(),
+      });
+    } catch {
+      res.status(404).json({ error: "Checkout session not found" });
     }
   });
 

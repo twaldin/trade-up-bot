@@ -9,6 +9,8 @@ import { OutcomeList } from "../components/trade-up/OutcomeList.js";
 import { VerifyResults } from "../components/trade-up/VerifyResults.js";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
+import { authHref } from "../lib/ref.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const TYPE_COLORS: Record<string, string> = {
   covert_knife: "text-yellow-500 border-yellow-500/30 bg-yellow-500/10",
@@ -77,6 +79,7 @@ export function TradeUpSharePage() {
           preserved_at: data.preserved_at ?? null,
           previous_inputs: data.previous_inputs ? JSON.parse(data.previous_inputs) : null,
         });
+        trackEvent("tradeup_view", { tradeup_id: String(data.id) });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -195,7 +198,8 @@ export function TradeUpSharePage() {
             <div className="flex items-center justify-between px-4 py-3 mb-4 bg-muted/50 border border-border rounded-lg">
               <span className="text-sm text-muted-foreground">Sign in to verify, claim, and purchase listings</span>
               <a
-                href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`}
+                href={authHref(window.location.pathname)}
+                onClick={() => trackEvent("sign_up_start", { location: "share_verify" })}
                 rel="nofollow"
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
               >
@@ -207,7 +211,7 @@ export function TradeUpSharePage() {
           {/* Toast for unauthenticated listing link clicks */}
           {linkToast && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium shadow-lg animate-in fade-in slide-in-from-bottom-4">
-              <a href={`/auth/steam?return=${encodeURIComponent(window.location.pathname)}`} rel="nofollow" className="hover:underline">
+              <a href={authHref(window.location.pathname)} onClick={() => trackEvent("sign_up_start", { location: "share_toast" })} rel="nofollow" className="hover:underline">
                 Sign in with Steam to view listing links
               </a>
             </div>
@@ -241,7 +245,8 @@ export function TradeUpSharePage() {
             <div className="text-center mt-8">
               <p className="text-sm text-muted-foreground mb-3">Find more profitable trade-ups on TradeUpBot</p>
               <a
-                href={`/auth/steam?return=/dashboard`}
+                href={authHref("/trade-ups")}
+                onClick={() => trackEvent("sign_up_start", { location: "share_bottom" })}
                 rel="nofollow"
                 className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all"
               >

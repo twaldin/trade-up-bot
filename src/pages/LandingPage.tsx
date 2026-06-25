@@ -3,6 +3,8 @@ import { DemoAnimation } from '../components/DemoAnimation.js';
 import { DemoAnimationMobile } from '../components/DemoAnimationMobile.js';
 import { SiteNav } from '../components/SiteNav.js';
 import { blogMeta } from '../data/blog-meta.js';
+import { authHref } from '../lib/ref.js';
+import { trackEvent } from '../lib/analytics.js';
 
 const IconSteam = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -61,7 +63,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
     fetch("/api/global-stats").then(r => r.json()).then(setStats).catch(() => {});
   }, []);
 
-  const login = () => { window.location.href = '/auth/steam'; };
+  const login = () => { trackEvent("sign_up_start", { location: "landing" }); window.location.href = authHref('/trade-ups'); };
   const goToDashboard = () => { window.location.href = '/trade-ups'; };
   const logout = () => { window.location.href = '/auth/logout'; };
 

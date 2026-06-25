@@ -199,6 +199,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       tier TEXT NOT NULL DEFAULT 'free',
       is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
+      signup_ref TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
