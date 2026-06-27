@@ -5,7 +5,7 @@ import {
   selectForFloatTarget,
   selectLowestFloat,
 } from "../../server/engine/selection.js";
-import { makeListing, makeOutcome } from "../helpers/fixtures.js";
+import { makeListing, makeOutcome, makeAdjustedListing } from "../helpers/fixtures.js";
 import type { AdjustedListing } from "../../server/engine/types.js";
 
 // ─── addAdjustedFloat ────────────────────────────────────────────────────────
@@ -161,6 +161,58 @@ describe("selectForFloatTarget", () => {
     expect(result).not.toBeNull();
     const ids = result!.map(l => l.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// ─── selectForFloatTarget — id-keyed quotas (gun-tier regression, Lever A) ───
+
+describe("selectForFloatTarget with id-keyed quotas (gun tiers)", () => {
+  // Gun tiers materialize byCol/quotas keyed by collection_id, which differs
+  // from each listing's collection_name. This guards the silent key-mismatch
+  // bug that disabled float-targeting on ~1M gun-tier trade-ups: the greedy
+  // picker read l.collection_name while quotas were id-keyed → 0 quota → null.
+  function makeIdKeyedPool(colId: string, colName: string, count: number): AdjustedListing[] {
+    return Array.from({ length: count }, (_, i) =>
+      makeAdjustedListing({
+        id: `${colId}-${i}`,
+        collection_id: colId,
+        collection_name: colName,
+        float_value: 0.05 + i * 0.01,
+        price_cents: 500 + i * 10,
+        min_float: 0,
+        max_float: 1,
+      })
+    );
+  }
+
+  it("selects listings when quotas are keyed by collection_id (≠ collection_name)", () => {
+    const byCol = new Map([["col-123", makeIdKeyedPool("col-123", "Fever", 20)]]);
+    const quotas = new Map([["col-123", 10]]);
+    const result = selectForFloatTarget(byCol, quotas, 0.5, 10);
+    expect(result).not.toBeNull();
+    expect(result!).toHaveLength(10);
+    expect(result!.every(l => l.collection_id === "col-123")).toBe(true);
+  });
+
+  it("respects multi-collection id-keyed quotas", () => {
+    const byCol = new Map([
+      ["col-1", makeIdKeyedPool("col-1", "Alpha", 15)],
+      ["col-2", makeIdKeyedPool("col-2", "Beta", 15)],
+    ]);
+    const quotas = new Map([["col-1", 6], ["col-2", 4]]);
+    const result = selectForFloatTarget(byCol, quotas, 0.5, 10);
+    expect(result).not.toBeNull();
+    expect(result!.filter(l => l.collection_id === "col-1")).toHaveLength(6);
+    expect(result!.filter(l => l.collection_id === "col-2")).toHaveLength(4);
+  });
+
+  it("still honors the float budget under id-keyed quotas", () => {
+    const byCol = new Map([["col-x", makeIdKeyedPool("col-x", "Xenon", 20)]]);
+    const quotas = new Map([["col-x", 10]]);
+    const result = selectForFloatTarget(byCol, quotas, 0.5, 10);
+    expect(result).not.toBeNull();
+    const avgFloat = result!.reduce((s, l) => s + l.adjustedFloat, 0) / result!.length;
+    expect(avgFloat).toBeLessThanOrEqual(0.5);
   });
 });
 

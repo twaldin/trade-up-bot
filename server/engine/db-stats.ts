@@ -4,7 +4,7 @@
 
 import pg from "pg";
 import { withRetry, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
-import { lookupOutputPrice, buildPriceCache } from "./pricing.js";
+import { lookupOutputPrice, buildPriceCache, warmOutputPriceCaches, type OutputPriceResult } from "./pricing.js";
 import type { TradeUpOutcome } from "../../shared/types.js";
 
 export async function updateCollectionScores(pool: pg.Pool) {
@@ -171,16 +171,151 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   return { updated };
 }
 
+/** A trade-up row eligible for repricing. */
+export interface RepriceRow {
+  id: number;
+  total_cost_cents: number;
+  expected_value_cents: number;
+  outcomes_json: string;
+}
+
+/** Outcome of repricing one trade-up: either a no-op freshness touch or a full update. */
+export type RepriceDecision =
+  | { kind: "touch"; id: number }
+  | {
+      kind: "update";
+      id: number;
+      expected_value_cents: number;
+      profit_cents: number;
+      roi_percentage: number;
+      chance_to_profit: number;
+      best_case_cents: number;
+      worst_case_cents: number;
+      outcomes_json: string;
+    };
+
+/** Injectable output-price lookup (production: lookupOutputPrice bound to a pool). */
+export type OutputLookup = (skinName: string, predictedFloat: number) => Promise<OutputPriceResult>;
+
+/**
+ * Pure repricing decision for a single trade-up. No DB writes, no shared state
+ * beyond whatever `lookup` reads — so it is safe to run concurrently and is
+ * deterministic over a fixed price cache. Mirrors the prior serial semantics
+ * exactly: any unpriceable outcome → touch; EV moved ≤1% → touch; else update.
+ */
+export async function computeRepriceDecision(row: RepriceRow, lookup: OutputLookup): Promise<RepriceDecision> {
+  const outcomes: TradeUpOutcome[] = JSON.parse(row.outcomes_json);
+  if (outcomes.length === 0) return { kind: "touch", id: row.id };
+
+  let newEv = 0;
+  const newOutcomes: TradeUpOutcome[] = [];
+  for (const o of outcomes) {
+    const output = await lookup(o.skin_name, o.predicted_float);
+    if (output.priceCents <= 0) return { kind: "touch", id: row.id };
+    newEv += o.probability * output.priceCents;
+    newOutcomes.push({ ...o, estimated_price_cents: output.priceCents, sell_marketplace: output.marketplace });
+  }
+
+  const newEvCents = Math.round(newEv);
+  // Only persist a full update if EV moved >1% (preserves prior write guard).
+  if (Math.abs(newEvCents - row.expected_value_cents) <= row.expected_value_cents * 0.01) {
+    return { kind: "touch", id: row.id };
+  }
+
+  const cost = row.total_cost_cents;
+  const profit = newEvCents - cost;
+  const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
+  const chance = computeChanceToProfit(newOutcomes, cost);
+  const { bestCase, worstCase } = computeBestWorstCase(newOutcomes, cost);
+
+  return {
+    kind: "update",
+    id: row.id,
+    expected_value_cents: newEvCents,
+    profit_cents: profit,
+    roi_percentage: roi,
+    chance_to_profit: chance,
+    best_case_cents: bestCase,
+    worst_case_cents: worstCase,
+    outcomes_json: JSON.stringify(newOutcomes),
+  };
+}
+
+/**
+ * Build a single coalesced UPDATE for a chunk of reprice updates, replacing N
+ * per-row round-trips with one statement. Returns null for an empty chunk.
+ */
+export function buildBulkRepriceUpdate(
+  updates: Extract<RepriceDecision, { kind: "update" }>[]
+): { text: string; values: unknown[] } | null {
+  if (updates.length === 0) return null;
+
+  const values: unknown[] = [];
+  const tuples: string[] = [];
+  updates.forEach((u, i) => {
+    const b = i * 8;
+    // First tuple carries casts so Postgres infers the VALUES column types.
+    const c = i === 0
+      ? ["::int", "::int", "::int", "::double precision", "::double precision", "::int", "::int", "::text"]
+      : ["", "", "", "", "", "", "", ""];
+    tuples.push(
+      `($${b + 1}${c[0]}, $${b + 2}${c[1]}, $${b + 3}${c[2]}, $${b + 4}${c[3]}, $${b + 5}${c[4]}, $${b + 6}${c[5]}, $${b + 7}${c[6]}, $${b + 8}${c[7]})`
+    );
+    values.push(
+      u.id, u.expected_value_cents, u.profit_cents, u.roi_percentage,
+      u.chance_to_profit, u.best_case_cents, u.worst_case_cents, u.outcomes_json
+    );
+  });
+
+  const text = `
+    UPDATE trade_ups AS t SET
+      expected_value_cents = v.ev,
+      profit_cents = v.profit,
+      roi_percentage = v.roi,
+      chance_to_profit = v.chance,
+      best_case_cents = v.best,
+      worst_case_cents = v.worst,
+      outcomes_json = v.outcomes,
+      output_repriced_at = NOW()
+    FROM (VALUES ${tuples.join(", ")}) AS v(id, ev, profit, roi, chance, best, worst, outcomes)
+    WHERE t.id = v.id
+  `;
+
+  return { text, values };
+}
+
+/** Run `fn` over `items` with at most `concurrency` in flight; results keep input order. */
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 /**
  * Batch re-evaluate output pricing for trade-ups using current price cache + KNN.
  * Picks the oldest-repriced active trade-ups, re-lookups each outcome's price
  * at its predicted float, and updates EV/profit/ROI if changed.
+ *
+ * Compute runs with bounded concurrency over read-only price caches; writes are
+ * coalesced into bulk statements (one UPDATE per ~200 changed rows, one touch
+ * UPDATE per ~2000 unchanged rows) instead of one round-trip per trade-up.
  */
 export async function repriceTradeUpOutputs(
   pool: pg.Pool,
   limit: number = 500
 ): Promise<{ updated: number; checked: number }> {
   await buildPriceCache(pool);
+  // Pre-warm lazily-built caches before concurrent repricing so every concurrent
+  // worker reads a fully-built float-ceiling cache (matches the old serial path).
+  await warmOutputPriceCaches(pool);
 
   const { rows } = await pool.query(`
     SELECT id, type, total_cost_cents, expected_value_cents, outcomes_json, output_repriced_at
@@ -196,71 +331,53 @@ export async function repriceTradeUpOutputs(
 
   if (rows.length === 0) return { updated: 0, checked: 0 };
 
-  let updated = 0;
-  const BATCH = 100;
+  // Compute decisions with bounded concurrency. The price compute reads only
+  // module-global caches (built above), so concurrent calls are lock-free and
+  // deterministic; the only DB I/O on this path is vanilla-knife pricing.
+  const COMPUTE_CONCURRENCY = 8;
+  const lookup: OutputLookup = (skinName, predictedFloat) => lookupOutputPrice(pool, skinName, predictedFloat);
+  const decisions = await mapWithConcurrency(rows, COMPUTE_CONCURRENCY, (r: RepriceRow) =>
+    computeRepriceDecision(
+      {
+        id: r.id,
+        total_cost_cents: r.total_cost_cents,
+        expected_value_cents: r.expected_value_cents,
+        outcomes_json: r.outcomes_json,
+      },
+      lookup
+    )
+  );
 
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
+  // Coalesce writes: one bulk UPDATE per chunk of changed rows, one bulk touch
+  // for the rest — replaces ~one round-trip per trade-up with a handful.
+  const updates = decisions.filter(
+    (d): d is Extract<RepriceDecision, { kind: "update" }> => d.kind === "update"
+  );
+  const touchIds = decisions.filter(d => d.kind === "touch").map(d => d.id);
+
+  let updated = 0;
+  const WRITE_CHUNK = 200;
+  for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
+    const sql = buildBulkRepriceUpdate(updates.slice(i, i + WRITE_CHUNK));
+    if (!sql) continue;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-
-      for (const tu of batch) {
-        const outcomes: TradeUpOutcome[] = JSON.parse(tu.outcomes_json);
-        if (outcomes.length === 0) {
-          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
-          continue;
-        }
-
-        let newEv = 0;
-        let priceable = true;
-        const newOutcomes: TradeUpOutcome[] = [];
-
-        for (const o of outcomes) {
-          const output = await lookupOutputPrice(pool, o.skin_name, o.predicted_float);
-          if (output.priceCents <= 0) { priceable = false; break; }
-          newEv += o.probability * output.priceCents;
-          newOutcomes.push({
-            ...o,
-            estimated_price_cents: output.priceCents,
-            sell_marketplace: output.marketplace,
-          });
-        }
-
-        if (!priceable) {
-          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
-          continue;
-        }
-
-        const newEvCents = Math.round(newEv);
-        const cost = tu.total_cost_cents;
-        const profit = newEvCents - cost;
-        const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
-        const chance = computeChanceToProfit(newOutcomes as { estimated_price_cents: number; probability: number }[], cost);
-        const { bestCase: best, worstCase: worst } = computeBestWorstCase(newOutcomes as { estimated_price_cents: number; probability: number }[], cost);
-
-        // Only write if EV changed by more than 1%
-        if (Math.abs(newEvCents - tu.expected_value_cents) > tu.expected_value_cents * 0.01) {
-          await client.query(`
-            UPDATE trade_ups SET
-              expected_value_cents = $1, profit_cents = $2, roi_percentage = $3,
-              chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6,
-              outcomes_json = $7, output_repriced_at = NOW()
-            WHERE id = $8
-          `, [newEvCents, profit, roi, chance, best, worst, JSON.stringify(newOutcomes), tu.id]);
-          updated++;
-        } else {
-          await client.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = $1", [tu.id]);
-        }
-      }
-
+      await client.query(sql.text, sql.values);
       await client.query("COMMIT");
+      updated += Math.min(WRITE_CHUNK, updates.length - i);
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
     } finally {
       client.release();
     }
+  }
+
+  const TOUCH_CHUNK = 2000;
+  for (let i = 0; i < touchIds.length; i += TOUCH_CHUNK) {
+    const ids = touchIds.slice(i, i + TOUCH_CHUNK);
+    await pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]);
   }
 
   return { updated, checked: rows.length };

@@ -105,13 +105,39 @@ const MAX_WORKER_TIME = 300_000; // 5 min maximum
 /** Kill timeout buffer — SIGTERM workers that exceed their time limit by this margin. */
 const WORKER_KILL_BUFFER = 30_000; // 30s grace period
 
-/** Worker round definitions: pairs of tiers to run in parallel. */
-const WORKER_ROUNDS: ([string, string] | [string, null])[] = [
-  ["knife", "classified"],
-  ["knife", "restricted"],
-  ["milspec", "industrial"],
-  ["consumer", null],
-];
+/**
+ * Worker tasks per super-batch, in priority order (knife runs twice). Rounds are
+ * built dynamically by chunking this list at the chosen worker concurrency.
+ */
+const SUPER_BATCH_TASKS = ["knife", "classified", "restricted", "knife", "milspec", "industrial", "consumer"];
+
+/**
+ * Discovery worker concurrency is memory-gated. Each worker peaks ~2.2GB RSS in
+ * deep exploration, so a 3rd concurrent worker only runs when /proc/meminfo
+ * MemAvailable leaves a buffer after it; otherwise we stay 2-wide (OOM-safe).
+ * Auto-upgrades to 3-wide on a higher-RAM box with zero code change.
+ */
+const MIN_WORKER_CONCURRENCY = 2;
+const MAX_WORKER_CONCURRENCY = 3;
+const WORKER_PEAK_BYTES = 2.3 * 1024 ** 3;
+const WORKER_MEM_BUFFER_BYTES = 2 * 1024 ** 3;
+
+function readMemAvailableBytes(): number | null {
+  try {
+    const m = fs.readFileSync("/proc/meminfo", "utf8").match(/MemAvailable:\s+(\d+)\s+kB/);
+    return m ? parseInt(m[1], 10) * 1024 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Pick worker concurrency from available memory (2-wide default; 3-wide when RAM allows). */
+function pickWorkerConcurrency(): number {
+  const avail = readMemAvailableBytes();
+  if (avail === null) return MIN_WORKER_CONCURRENCY;
+  const needFor3 = MAX_WORKER_CONCURRENCY * WORKER_PEAK_BYTES + WORKER_MEM_BUFFER_BYTES;
+  return avail >= needFor3 ? MAX_WORKER_CONCURRENCY : MIN_WORKER_CONCURRENCY;
+}
 
 /** Trade-up type for each worker task. */
 const TASK_TYPE_MAP: Record<string, string> = {
@@ -347,12 +373,13 @@ export async function main() {
       }
     }
 
-    // Phase 4c: Reprice output values with current KNN + price cache
-    // 20000/cycle at ~7ms each = ~140s. Covers new discovery + works through backlog.
+    // Phase 4c: Reprice output values with current KNN + price cache.
+    // Writes are coalesced (bulk UPDATE) so per-cycle coverage rose 20k→30k at
+    // roughly the same wall-clock; cuts full-table reprice latency / stale ranking.
     {
       const t4c = Date.now();
       const { repriceTradeUpOutputs } = await import("../engine.js");
-      const repriceResult = await repriceTradeUpOutputs(pool, 20000);
+      const repriceResult = await repriceTradeUpOutputs(pool, 30000);
       const repriceMs = Date.now() - t4c;
       if (repriceResult.checked > 0) {
         console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s)`);
@@ -482,34 +509,37 @@ export async function main() {
       console.log(`\n  -- Super-batch ${superBatchCount} --`);
       await setDaemonStatus(pool, "calculating", `Phase 5: Super-batch ${superBatchCount}`);
 
-      // Run worker rounds (1-2 workers per round)
-      for (let roundIdx = 0; roundIdx < WORKER_ROUNDS.length; roundIdx++) {
+      // Memory-gated worker concurrency → build this batch's rounds.
+      const workerConcurrency = pickWorkerConcurrency();
+      const rounds: string[][] = [];
+      for (let i = 0; i < SUPER_BATCH_TASKS.length; i += workerConcurrency) {
+        rounds.push(SUPER_BATCH_TASKS.slice(i, i + workerConcurrency));
+      }
+      const availGb = (readMemAvailableBytes() ?? 0) / 1024 ** 3;
+      console.log(`    worker concurrency: ${workerConcurrency}-wide (${rounds.length} rounds, MemAvailable ${availGb.toFixed(1)}GB)`);
+
+      // Run worker rounds (memory-gated 2-3 workers per round)
+      for (let roundIdx = 0; roundIdx < rounds.length; roundIdx++) {
         if (Date.now() >= engineEnd - 30_000) break;
 
-        const [taskA, taskB] = WORKER_ROUNDS[roundIdx];
+        const round = rounds[roundIdx];
 
         const isFirstBatch = superBatchCount === 1;
         const remainingMs = engineEnd - Date.now();
-        const remainingRounds = WORKER_ROUNDS.length - roundIdx;
+        const remainingRounds = rounds.length - roundIdx;
         const workerTimeLimit = isFirstBatch
           ? Math.min(MAX_WORKER_TIME, Math.floor(remainingMs / remainingRounds))
           : MIN_WORKER_TIME;
 
-        const statusDetail = taskB
-          ? `Phase 5: ${taskA} + ${taskB} (${Math.round(workerTimeLimit / 1000)}s)`
-          : `Phase 5: ${taskA} (${Math.round(workerTimeLimit / 1000)}s)`;
-        await setDaemonStatus(pool, "calculating", statusDetail);
+        await setDaemonStatus(pool, "calculating", `Phase 5: ${round.join(" + ")} (${Math.round(workerTimeLimit / 1000)}s)`);
 
-        const workers: Promise<WorkerResult>[] = [
-          runCalcWorker(taskA as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskA], tierWeights[taskA], taskSigFile[taskA]),
-        ];
-        if (taskB) {
-          workers.push(runCalcWorker(taskB as "classified", workerTimeLimit, cycleStarted, taskDiscoveryFile[taskB], tierWeights[taskB], taskSigFile[taskB]));
-        }
+        const workers: Promise<WorkerResult>[] = round.map(task =>
+          runCalcWorker(task as "knife", workerTimeLimit, cycleStarted, taskDiscoveryFile[task], tierWeights[task], taskSigFile[task])
+        );
         const results = await Promise.allSettled(workers);
 
         // Merge results for each worker
-        const taskNames = taskB ? [taskA, taskB] : [taskA];
+        const taskNames = round;
         for (let i = 0; i < taskNames.length; i++) {
           const r = results[i];
           const taskName = taskNames[i];

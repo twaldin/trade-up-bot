@@ -258,8 +258,20 @@ function buildKnnCache(rows: KnnObservationRow[]): {
   return { cache, freshness, csfloatSales, buffSales };
 }
 
-async function ensureKnnCache(pool: pg.Pool) {
+let _knnCacheBuildPromise: Promise<void> | null = null;
+
+/** Build-or-join: collapses concurrent cold builds onto one in-flight promise so
+ *  parallel callers (e.g. concurrent repricing) don't trigger N redundant heavy
+ *  KNN rebuilds (CPU + memory spike); all callers read the same warm cache. */
+async function ensureKnnCache(pool: pg.Pool): Promise<void> {
   if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
+  if (!_knnCacheBuildPromise) {
+    _knnCacheBuildPromise = buildAndStoreKnnCache(pool).finally(() => { _knnCacheBuildPromise = null; });
+  }
+  return _knnCacheBuildPromise;
+}
+
+async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
   const t0 = Date.now();
   _knnCache.clear();
   _knnFreshnessCache.clear();

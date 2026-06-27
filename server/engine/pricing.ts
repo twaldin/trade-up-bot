@@ -281,6 +281,7 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   conditionPricesCache.clear();
   _floatCeilingCache.clear();
   _floatCeilingCacheBuiltAt = 0;
+  _floatCeilingEpoch++; // invalidate any in-flight float-ceiling build (built against old refPriceCache)
 
   const { cached: refCached, totalRows: csfloatRefCount } = await loadCsfloatRefPrices(pool);
   const salesGapFills = await fillCsfloatSalesGaps(pool);
@@ -297,6 +298,15 @@ export async function buildPriceCache(pool: pg.Pool, force = false) {
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
   console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, 0 steam, 0 skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size}, curves: ${curveCount})`);
+}
+
+/**
+ * Pre-warm lazily-built output-price caches (currently the float-ceiling cache)
+ * so concurrent callers read a fully-built cache identical to the serial path
+ * and never race the lazy builder. Call once, serially, before parallel pricing.
+ */
+export async function warmOutputPriceCaches(pool: pg.Pool): Promise<void> {
+  await ensureFloatCeilingCache(pool);
 }
 
 async function buildSourceFloorCaches(pool: pg.Pool) {
@@ -353,9 +363,24 @@ const _floatCeilingCache = new Map<string, { float: number; price: number }[]>()
 let _floatCeilingCacheBuiltAt = 0;
 const FLOAT_CEILING_CACHE_TTL_MS = 5 * 60 * 1000;
 
+let _floatCeilingBuildPromise: Promise<void> | null = null;
+let _floatCeilingEpoch = 0;
+
+/** Build-or-join: collapses concurrent cold builds onto one in-flight promise so
+ *  parallel callers never duplicate-append into the per-skin ceiling arrays. */
 async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
   if (_floatCeilingCache.size > 0 && Date.now() - _floatCeilingCacheBuiltAt < FLOAT_CEILING_CACHE_TTL_MS) return;
-  _floatCeilingCache.clear();
+  if (!_floatCeilingBuildPromise) {
+    _floatCeilingBuildPromise = buildFloatCeilingCache(pool).finally(() => { _floatCeilingBuildPromise = null; });
+  }
+  return _floatCeilingBuildPromise;
+}
+
+async function buildFloatCeilingCache(pool: pg.Pool): Promise<void> {
+  // Capture the invalidation epoch; build into a local map and only commit if a
+  // buildPriceCache() did not clear/rebuild underneath us mid-query.
+  const epoch = _floatCeilingEpoch;
+  const next = new Map<string, { float: number; price: number }[]>();
 
   // Listings-only ceiling: active market offers represent current reality.
   // Historical sales excluded — they introduce noise from below-market transactions
@@ -410,11 +435,15 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
         }
       }
     }
-    let arr = _floatCeilingCache.get(row.skin_name);
-    if (!arr) { arr = []; _floatCeilingCache.set(row.skin_name, arr); }
+    let arr = next.get(row.skin_name);
+    if (!arr) { arr = []; next.set(row.skin_name, arr); }
     arr.push({ float: row.float_value, price: row.price_cents });
   }
   if (buffFiltered > 0 || dmarketFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff + ${dmarketFiltered} DMarket outlier listings (>5x ref)`);
+  // Discard if invalidated mid-build; otherwise swap in atomically (no await between).
+  if (epoch !== _floatCeilingEpoch) return;
+  _floatCeilingCache.clear();
+  for (const [skin, arr] of next) _floatCeilingCache.set(skin, arr);
   _floatCeilingCacheBuiltAt = Date.now();
 }
 

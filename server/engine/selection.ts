@@ -46,8 +46,11 @@ export function selectForFloatTarget(
 ): AdjustedListing[] | null {
   const totalBudget = count * maxAvgAdjusted;
 
-  // Merge eligible listings from all collections
-  const candidates: AdjustedListing[] = [];
+  // Merge eligible listings from all collections, tagging each candidate with
+  // its quota key (the byCol/quotas map key — collection_id for gun tiers,
+  // collection_name for knife). The greedy loop must key off this, NOT
+  // l.collection_name, or id-keyed gun tiers silently match 0 quota → null.
+  const candidates: { listing: AdjustedListing; colId: string }[] = [];
   for (const [colId, quota] of quotas) {
     if (quota <= 0) continue;
     const pool = byCol.get(colId);
@@ -55,13 +58,13 @@ export function selectForFloatTarget(
     for (const l of pool) {
       // Individual listing can't exceed remaining possible budget
       if (l.adjustedFloat <= totalBudget) {
-        candidates.push(l);
+        candidates.push({ listing: l, colId });
       }
     }
   }
 
   // Sort by price ascending
-  candidates.sort((a, b) => a.price_cents - b.price_cents);
+  candidates.sort((a, b) => a.listing.price_cents - b.listing.price_cents);
 
   // Greedy selection respecting quotas and float budget
   const picked = new Map<string, number>();
@@ -69,18 +72,18 @@ export function selectForFloatTarget(
   let usedFloat = 0;
   const usedIds = new Set<string>();
 
-  for (const l of candidates) {
+  for (const { listing: l, colId } of candidates) {
     if (result.length >= count) break;
 
-    const colPicked = picked.get(l.collection_name) ?? 0;
-    const colQuota = quotas.get(l.collection_name) ?? 0;
+    const colPicked = picked.get(colId) ?? 0;
+    const colQuota = quotas.get(colId) ?? 0;
     if (colPicked >= colQuota) continue;
     if (usedIds.has(l.id)) continue;
 
     if (usedFloat + l.adjustedFloat <= totalBudget) {
       result.push(l);
       usedFloat += l.adjustedFloat;
-      picked.set(l.collection_name, colPicked + 1);
+      picked.set(colId, colPicked + 1);
       usedIds.add(l.id);
     }
   }

@@ -8,12 +8,7 @@ Time-bounded discovery engine. `TARGET_CYCLE_MS = 30 min` (matches Basic-tier de
 3. **Phase 4 — Data Fetch**: round-robin sale history + listings (skipped if all pools rate-limited).
 4. **Phase 4b — Recalc**: trade-up costs where input prices changed (DMarket/Skinport updates).
 5. **Phase 4c — Reprice**: 20K trade-up outputs with current KNN + price cache (profitable first, then oldest).
-6. **Phase 5 — Time-Bounded Engine**: all remaining time, ends 30s before cycle deadline. Repeating super-batches; each batch runs `WORKER_ROUNDS`:
-    - knife + classified
-    - knife + restricted
-    - milspec + industrial
-    - consumer (alone)
-   Then merge → revival (1000 knife + 1000 per gun type) → expired-claim cleanup → DMarket staleness (every other batch).
+6. **Phase 5 — Time-Bounded Engine**: all remaining time, ends 30s before cycle deadline. Repeating super-batches; each batch chunks `SUPER_BATCH_TASKS` (`knife, classified, restricted, knife, milspec, industrial, consumer`) into rounds at a **memory-gated** worker concurrency (`pickWorkerConcurrency` reads `/proc/meminfo` MemAvailable: 2-wide default, auto 3-wide when RAM allows; knife runs twice per batch, never doubled within a round). Then merge → revival (1000 knife + 1000 per gun type) → expired-claim cleanup → DMarket staleness (every other batch).
 
 CSFloat individual-pool staleness checks run in a **separate** `csfloat-checker` process — not in this daemon.
 
@@ -29,7 +24,7 @@ Time limits (`MIN_WORKER_TIME = 3 min`, `MAX_WORKER_TIME = 5 min`): the first su
 NDJSON pre-materialization: main process writes `/tmp/discovery-data-<rarity>-<key>.ndjson`; workers read the file instead of re-querying Postgres (~15s saved per worker).
 
 ## Files
-- `index.ts` — main cycle loop, `WORKER_ROUNDS`, `TASK_TYPE_MAP`, super-batch driver.
+- `index.ts` — main cycle loop, `SUPER_BATCH_TASKS` + memory-gated `pickWorkerConcurrency`, `TASK_TYPE_MAP`, super-batch driver.
 - `calc-worker.ts` — forked child that runs discovery for one tier.
 - `state.ts` — `BudgetTracker`, `FreshnessTracker`, `TARGET_CYCLE_MS`, safety buffers.
 - `utils.ts` — logging, rate-limit detection, cycle stats.
