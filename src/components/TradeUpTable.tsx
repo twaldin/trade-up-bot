@@ -281,6 +281,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
 
   const columns = [
+    { key: "trade_up_score", label: "Score" },
     { key: "profit", label: "Profit" },
     { key: "roi", label: "ROI" },
     { key: "chance", label: "Chance" },
@@ -561,6 +562,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
             {/* Metrics row */}
             <div className="px-3.5 pb-3 pt-1.5 flex items-center gap-3 flex-wrap">
+              <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${(tu.trade_up_score ?? 0) > 0 ? "bg-blue-500/15 text-blue-400" : "bg-muted text-muted-foreground"}`} title="Trade Up Score">
+                {tu.trade_up_score ?? 0}
+              </span>
               <span className={`text-base font-bold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {formatPrice(tu.profit_cents)}
               </span>
@@ -670,6 +674,11 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   )}
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
+                  <span className={`inline-block px-2 py-0.5 rounded font-bold text-[0.8rem] ${(tu.trade_up_score ?? 0) > 0 ? "bg-blue-500/15 text-blue-400" : "bg-muted text-muted-foreground"}`} title="Trade Up Score — chance-to-profit × ROI, downside-penalized (higher is better)">
+                    {tu.trade_up_score ?? 0}
+                  </span>
+                </td>
+                <td className="px-3.5 py-2.5 border-b border-border/70 whitespace-nowrap">
                   <span className={`font-semibold ${tu.profit_cents >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatPrice(tu.profit_cents)}
                   </span>
@@ -734,7 +743,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
               </tr>
               {expandedId === tu.id && (
                 <tr key={`${tu.id}-expanded`}>
-                  <td colSpan={10} className="p-0">
+                  <td colSpan={11} className="p-0">
                     {renderExpanded(tu)}
                   </td>
                 </tr>

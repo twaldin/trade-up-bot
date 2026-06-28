@@ -54,7 +54,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [type, setType] = useState<TradeUpType>(initialType);
   const [page, setPage] = useState(() => parseInt(searchParams.get("page") || "1"));
   const [perPage] = useState(50);
-  const [sort, setSort] = useState(() => searchParams.get("sort") || "profit");
+  const [sort, setSort] = useState(() => searchParams.get("sort") || "trade_up_score");
   const [order, setOrder] = useState<"asc" | "desc">(() => (searchParams.get("order") as "asc" | "desc") || "desc");
   const [includeStale, setIncludeStale] = useState(() => searchParams.get("stale") === "true");
   // Filters from URL
@@ -86,7 +86,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   // Sync state to URL search params
   useEffect(() => {
     const params = filtersToParams(filters);
-    if (sort !== "profit") params.set("sort", sort);
+    if (sort !== "trade_up_score") params.set("sort", sort);
     if (order !== "desc") params.set("order", order);
     if (page > 1) params.set("page", String(page));
     if (includeStale) params.set("stale", "true");

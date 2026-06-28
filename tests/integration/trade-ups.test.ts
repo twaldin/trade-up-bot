@@ -19,9 +19,9 @@ describe("Trade-Ups List API", () => {
     await ctx.cleanup();
   });
 
-  // ─── 1. Returns trade-ups sorted by profit descending by default ──────
+  // ─── 1. Default sort = trade_up_score (E1); profit on explicit request ──
 
-  it("returns trade-ups sorted by profit descending by default", async () => {
+  it("returns trade-ups sorted by trade_up_score descending by default (E1)", async () => {
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife")
       .set("X-Test-User-Id", "user_pro")
@@ -30,8 +30,22 @@ describe("Trade-Ups List API", () => {
     expect(res.status).toBe(200);
     expect(res.body.trade_ups.length).toBeGreaterThan(0);
 
-    // Verify descending order by profit
-    const profits = res.body.trade_ups.map((tu: any) => tu.profit_cents);
+    // Default sort is now trade_up_score DESC (the frozen composite metric)
+    const scores = res.body.trade_ups.map((tu: { trade_up_score?: number }) => tu.trade_up_score ?? 0);
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+    }
+  });
+
+  it("sorts by profit descending when sort=profit is requested", async () => {
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?type=covert_knife&sort=profit")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups.length).toBeGreaterThan(0);
+    const profits = res.body.trade_ups.map((tu: { profit_cents: number }) => tu.profit_cents);
     for (let i = 1; i < profits.length; i++) {
       expect(profits[i]).toBeLessThanOrEqual(profits[i - 1]);
     }

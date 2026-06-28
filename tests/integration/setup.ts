@@ -119,6 +119,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       ,input_sources TEXT[] NOT NULL DEFAULT '{}'
       ,output_skin_names TEXT[] NOT NULL DEFAULT '{}'
       ,collection_names TEXT[] NOT NULL DEFAULT '{}'
+      ,trade_up_score INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (
@@ -255,6 +256,27 @@ async function createSchema(bootstrapPool: pg.Pool) {
     CREATE INDEX IF NOT EXISTS idx_listings_skin_stattrak ON listings(skin_id, stattrak);
     CREATE INDEX IF NOT EXISTS idx_skin_collections_skin ON skin_collections(skin_id);
     CREATE INDEX IF NOT EXISTS idx_user_trade_ups_user ON user_trade_ups(user_id, status);
+  `);
+
+  // E1: trade_up_score trigger — mirrors the production migration in server/db.ts.
+  await bootstrapPool.query(`
+    CREATE OR REPLACE FUNCTION compute_trade_up_score() RETURNS trigger AS $$
+    BEGIN
+      NEW.trade_up_score := CASE WHEN NEW.total_cost_cents > 0
+        THEN round(1000.0 * NEW.chance_to_profit
+                   * (NEW.profit_cents::numeric / NEW.total_cost_cents)
+                   / (1 + GREATEST(0, -NEW.worst_case_cents)::numeric / NEW.total_cost_cents))::int
+        ELSE 0 END;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+  await bootstrapPool.query(`DROP TRIGGER IF EXISTS trg_trade_up_score ON trade_ups;`);
+  await bootstrapPool.query(`
+    CREATE TRIGGER trg_trade_up_score
+      BEFORE INSERT OR UPDATE OF profit_cents, chance_to_profit, worst_case_cents, total_cost_cents
+      ON trade_ups
+      FOR EACH ROW EXECUTE FUNCTION compute_trade_up_score();
   `);
 
   return schema;

@@ -43,7 +43,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-06-24.1";
+export const SCHEMA_VERSION = "2026-06-28.1";
 
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts).
@@ -417,6 +417,46 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS output_repriced_at TIMESTAMPTZ;
   `);
 
+  // E1: trade_up_score — frozen composite ranking metric (chance-weighted, downside-
+  // penalized ROI). Maintained by a BEFORE trigger from profit/chance/worst/cost so
+  // every write path (save / reprice / revive) stays consistent with zero app-code
+  // changes. NOT a pricing change — derived from already-final per-contract values.
+  await pool.query(`
+    ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS trade_up_score INTEGER;
+  `);
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION compute_trade_up_score() RETURNS trigger AS $$
+    BEGIN
+      NEW.trade_up_score := CASE WHEN NEW.total_cost_cents > 0
+        THEN round(1000.0 * NEW.chance_to_profit
+                   * (NEW.profit_cents::numeric / NEW.total_cost_cents)
+                   / (1 + GREATEST(0, -NEW.worst_case_cents)::numeric / NEW.total_cost_cents))::int
+        ELSE 0 END;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_trade_up_score ON trade_ups;`);
+  await pool.query(`
+    CREATE TRIGGER trg_trade_up_score
+      BEFORE INSERT OR UPDATE OF profit_cents, chance_to_profit, worst_case_cents, total_cost_cents
+      ON trade_ups
+      FOR EACH ROW EXECUTE FUNCTION compute_trade_up_score();
+  `);
+  // One-time backfill for pre-existing rows (the trigger only covers future
+  // writes). Runs once per SCHEMA_VERSION bump; WHERE ... IS NULL makes it a
+  // no-op on fresh/empty DBs and on rows already populated by a manual
+  // pre-migration. On a LARGE existing DB, pre-populate trade_up_score (batched)
+  // before deploy so this stays a no-op and does not block startup.
+  await pool.query(`
+    UPDATE trade_ups SET trade_up_score = CASE WHEN total_cost_cents > 0
+      THEN round(1000.0 * chance_to_profit
+                 * (profit_cents::numeric / total_cost_cents)
+                 / (1 + GREATEST(0, -worst_case_cents)::numeric / total_cost_cents))::int
+      ELSE 0 END
+    WHERE trade_up_score IS NULL;
+  `);
+
   // User trade-up lifecycle tracking (My Trade-Ups)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_trade_ups (
@@ -464,6 +504,10 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_chance ON trade_ups(type, chance_to_profit DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_best ON trade_ups(type, best_case_cents DESC);
     CREATE INDEX IF NOT EXISTS idx_trade_ups_type_worst ON trade_ups(type, worst_case_cents DESC);
+    -- trade_up_score indexes: on a large existing DB pre-build these CONCURRENTLY
+    -- before deploy so this startup CREATE (which takes a write lock during build)
+    -- is a no-op via IF NOT EXISTS. On fresh/empty DBs the build is instant.
+    CREATE INDEX IF NOT EXISTS idx_trade_ups_type_score ON trade_ups(type, trade_up_score DESC);
     CREATE INDEX IF NOT EXISTS idx_sale_history_skin ON sale_history(skin_name, condition);
     CREATE INDEX IF NOT EXISTS idx_sale_history_sold ON sale_history(sold_at);
     CREATE INDEX IF NOT EXISTS idx_theory_validations_status ON theory_validations(status);
@@ -513,6 +557,8 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_tu_active_best ON trade_ups(best_case_cents DESC)
       WHERE is_theoretical = false AND listing_status = 'active';
     CREATE INDEX IF NOT EXISTS idx_tu_active_worst ON trade_ups(worst_case_cents DESC)
+      WHERE is_theoretical = false AND listing_status = 'active';
+    CREATE INDEX IF NOT EXISTS idx_tu_active_score ON trade_ups(trade_up_score DESC)
       WHERE is_theoretical = false AND listing_status = 'active';
     CREATE INDEX IF NOT EXISTS idx_tu_active_sources ON trade_ups USING GIN(input_sources)
       WHERE is_theoretical = false AND listing_status = 'active';

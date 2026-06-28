@@ -126,7 +126,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     return "tu:" + JSON.stringify(req.query) + (req.user?.steam_id || "anon") + (req.user?.tier || "free");
   }, 1800, async (req, res) => { // 30 min TTL — matches cycle time, daemon invalidates after each cycle
     const {
-      sort = "profit",
+      sort = "trade_up_score",
       order = "desc",
       page = "1",
       per_page = "50",
@@ -340,6 +340,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }
 
     const sortMap: Record<string, string> = {
+      trade_up_score: "t.trade_up_score",
+      score: "t.trade_up_score",
       profit: "t.profit_cents",
       roi: "t.roi_percentage",
       chance: "t.chance_to_profit",
@@ -349,7 +351,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       best: "t.best_case_cents",
       worst: "t.worst_case_cents",
     };
-    const sortCol = sortMap[sort] ?? "t.profit_cents";
+    const sortCol = sortMap[sort] ?? "t.trade_up_score";
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
     // Fast path: for default queries (type filter only, no extra filters), use Redis-cached
@@ -368,9 +370,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
+              t.trade_up_score,
               0 as outcome_count
        FROM trade_ups t ${collectionJoin} ${where}
-       ORDER BY ${sortCol} ${sortOrder}
+       ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
        LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, perPage, offset]
     );
@@ -481,6 +484,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         chance_to_profit: row.chance_to_profit ?? 0,
         best_case_cents: row.best_case_cents ?? 0,
         worst_case_cents: row.worst_case_cents ?? 0,
+        trade_up_score: row.trade_up_score ?? 0,
         outcome_count: row.outcome_count ?? 0,
         listing_status: listingStatus,
         missing_inputs: missingCount,
