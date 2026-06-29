@@ -13,4 +13,5 @@ export { phase1Housekeeping } from "./phases/housekeeping.js";
 export { phase3ApiProbe, phase4DataFetch } from "./phases/data-fetch.js";
 export {
   phase5GenericCalc,
+  phase5cStaircase,
 } from "./phases/classified-calc.js";

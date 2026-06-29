@@ -9,6 +9,19 @@ export function timestamp() {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
+// Staircase (50 Classified → 5 Covert → 1 Knife) discovery is a heavy,
+// query-intensive pass (it re-scans up to 5000 classified→covert trade-ups and
+// evaluates thousands of combos), so it is run only every Nth cycle to amortize
+// its cost. It depends on Phase 5 classified_covert data, and cycleCount starts
+// at 1, so it never fires on cycle 0.
+export const STAIRCASE_EVERY_N_CYCLES = 4;
+export function shouldRunStaircase(
+  cycleCount: number,
+  every: number = STAIRCASE_EVERY_N_CYCLES
+): boolean {
+  return every > 0 && cycleCount > 0 && cycleCount % every === 0;
+}
+
 // Module-level daemon metadata — set once on startup, included in every status update
 let _daemonCycle = 0;
 let _daemonStartedAt = "";

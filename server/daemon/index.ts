@@ -35,7 +35,7 @@ import {
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
 import {
   timestamp, setDaemonStatus, setDaemonMeta, updateExplorationStats, printCoverageReport,
-  ensureStatsTable, saveCycleStats, printPerformanceComparison,
+  ensureStatsTable, saveCycleStats, printPerformanceComparison, shouldRunStaircase,
   type CycleStats,
 } from "./utils.js";
 import type { StrategyYieldEntry } from "../engine.js";
@@ -83,6 +83,7 @@ import {
   phase1Housekeeping,
   phase3ApiProbe,
   phase4DataFetch,
+  phase5cStaircase,
 } from "./phases.js";
 import { initAlertState, checkAndFireAlerts, refreshAlertTops } from "./discord-alerts.js";
 
@@ -759,6 +760,16 @@ export async function main() {
       } catch (e: unknown) {
         console.error(`  completeness audit failed: ${e instanceof Error ? e.message : e}`);
       }
+    }
+
+    // Staircase pass (50 Classified → 5 Covert → 1 Knife): runs every Nth cycle
+    // (heavy, query-intensive) now that Phase 5 has refreshed classified_covert
+    // data. phase5cStaircase is internally try/catch-wrapped so a failure only
+    // logs and never aborts the cycle; we time it to watch its cost.
+    if (shouldRunStaircase(cycleCount)) {
+      const stairT0 = Date.now();
+      await phase5cStaircase(pool);
+      console.log(`  Staircase pass took ${((Date.now() - stairT0) / 1000).toFixed(1)}s`);
     }
 
     // Post-engine: update collection scores + global trim
