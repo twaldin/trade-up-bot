@@ -4,6 +4,7 @@ import {
   getConditionTransitions,
   selectForFloatTarget,
   selectLowestFloat,
+  selectKnapsackUnderBoundary,
 } from "../../server/engine/selection.js";
 import { makeListing, makeOutcome, makeAdjustedListing } from "../helpers/fixtures.js";
 import type { AdjustedListing } from "../../server/engine/types.js";
@@ -272,5 +273,147 @@ describe("selectLowestFloat", () => {
     expect(result).not.toBeNull();
     const ids = new Set(result!.map(l => l.id));
     expect(ids.size).toBe(10);
+  });
+});
+
+// ─── selectKnapsackUnderBoundary (E3: boundary-knapsack) ─────────────────────
+
+describe("selectKnapsackUnderBoundary", () => {
+  const mk = (id: string, price: number, adjFloat: number, col = "colA"): AdjustedListing =>
+    makeAdjustedListing({ id, price_cents: price, adjustedFloat: adjFloat, collection_id: col });
+  const sumFloat = (xs: AdjustedListing[]) => xs.reduce((s, l) => s + l.adjustedFloat, 0);
+  const sumCost = (xs: AdjustedListing[]) => xs.reduce((s, l) => s + l.price_cents, 0);
+
+  it("returns count items within the float budget (basic)", () => {
+    const pool = Array.from({ length: 12 }, (_, i) => mk(`a${i}`, 100 + i, 0.05));
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.05, 10); // budget 0.50
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(sumFloat(res!)).toBeLessThanOrEqual(0.5 + 1e-9);
+  });
+
+  it("recovers a feasible low-float set that the price-greedy misses (additive)", () => {
+    // budget 0.30: ten low-float-but-pricey items + two cheap-but-high-float ones.
+    const good = Array.from({ length: 10 }, (_, i) => mk(`g${i}`, 100, 0.02)); // sum 0.20
+    const cheapHigh = [mk("c0", 10, 0.15), mk("c1", 10, 0.15)];
+    const byCol = new Map([["colA", [...cheapHigh, ...good]]]);
+    const quotas = new Map([["colA", 10]]);
+
+    // Price-greedy grabs the two cheap-high items first, then can't fit 8 more → null.
+    expect(selectForFloatTarget(byCol, quotas, 0.03, 10)).toBeNull();
+
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.03, 10);
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(sumFloat(res!)).toBeLessThanOrEqual(0.30 + 1e-9);
+  });
+
+  it("respects per-collection quotas and the budget (multi-collection)", () => {
+    const a = Array.from({ length: 6 }, (_, i) => mk(`a${i}`, 50 + i, 0.03, "colA"));
+    const b = Array.from({ length: 8 }, (_, i) => mk(`b${i}`, 70 + i, 0.04, "colB"));
+    const byCol = new Map([["colA", a], ["colB", b]]);
+    const quotas = new Map([["colA", 3], ["colB", 7]]);
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.05, 10); // budget 0.50
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(res!.filter(l => l.collection_id === "colA")).toHaveLength(3);
+    expect(res!.filter(l => l.collection_id === "colB")).toHaveLength(7);
+    expect(sumFloat(res!)).toBeLessThanOrEqual(0.5 + 1e-9);
+  });
+
+  it("returns null when even the lowest-float set exceeds the budget", () => {
+    const pool = Array.from({ length: 12 }, (_, i) => mk(`a${i}`, 100, 0.20)); // 10×0.20 = 2.0
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    expect(selectKnapsackUnderBoundary(byCol, quotas, 0.05, 10)).toBeNull(); // budget 0.50
+  });
+
+  it("returns null when a pool is smaller than its quota", () => {
+    const pool = Array.from({ length: 5 }, (_, i) => mk(`a${i}`, 100, 0.02));
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    expect(selectKnapsackUnderBoundary(byCol, quotas, 0.5, 10)).toBeNull();
+  });
+
+  it("is feasibility-complete: returns a valid set whenever the greedy does", () => {
+    // E3 is additive — tried alongside the greedy, never replacing it. Its
+    // contract is feasibility-completeness, not cost-dominance: whenever the
+    // price-greedy succeeds, E3 must also return a valid in-budget count-set.
+    const pool = [
+      ...Array.from({ length: 10 }, (_, i) => mk(`hi${i}`, 10, 0.40)),  // cheap, high float
+      ...Array.from({ length: 10 }, (_, i) => mk(`lo${i}`, 100, 0.02)), // pricey, low float
+    ];
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    const greedy = selectForFloatTarget(byCol, quotas, 0.25, 10); // budget 2.5
+    expect(greedy).not.toBeNull();
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.25, 10);
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(sumFloat(res!)).toBeLessThanOrEqual(2.5 + 1e-9);
+  });
+
+  it("on the cheapest frontier, never costlier than the lowest-float fallback", () => {
+    // The parametric pick should be no worse on cost than the naive lowest-float
+    // set (α=1 extreme): when α=0 (cheapest) already fits, it must be returned.
+    const pool = [
+      ...Array.from({ length: 10 }, (_, i) => mk(`cheap${i}`, 10, 0.03)),  // cheap AND low float
+      ...Array.from({ length: 10 }, (_, i) => mk(`pricey${i}`, 500, 0.02)),
+    ];
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    const lowestFloat = selectLowestFloat(byCol, quotas, 10);
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.05, 10); // budget 0.5; 10 cheap = 0.30 fits
+    expect(res).not.toBeNull();
+    expect(sumCost(res!)).toBeLessThanOrEqual(sumCost(lowestFloat!));
+    // α=0 fits (10 cheap, float 0.30 ≤ 0.5) → should pick the 10 cheap items.
+    expect(sumCost(res!)).toBe(100);
+  });
+
+  it("is deterministic across calls", () => {
+    const pool = Array.from({ length: 20 }, (_, i) =>
+      mk(`a${i}`, 50 + (i % 5), 0.02 + (i % 7) * 0.01));
+    const byCol = new Map([["colA", pool]]);
+    const quotas = new Map([["colA", 10]]);
+    const r1 = selectKnapsackUnderBoundary(byCol, quotas, 0.10, 10);
+    const r2 = selectKnapsackUnderBoundary(byCol, quotas, 0.10, 10);
+    expect(r1).not.toBeNull();
+    expect(r1!.map(l => l.id).sort()).toEqual(r2!.map(l => l.id).sort());
+  });
+});
+
+// ─── selectKnapsackUnderBoundary — fixes from adversarial review ─────────────
+
+describe("selectKnapsackUnderBoundary review-fix invariants", () => {
+  const mk = (id: string, price: number, adjFloat: number, col = "colA"): AdjustedListing =>
+    makeAdjustedListing({ id, price_cents: price, adjustedFloat: adjFloat, collection_id: col });
+
+  it("never returns the same listing twice even if a pool has duplicate rows", () => {
+    const base = Array.from({ length: 10 }, (_, i) => mk(`a${i}`, 100 + i, 0.03));
+    const dupes = [base[0], base[1]]; // same ids repeated
+    const byCol = new Map([["colA", [...dupes, ...base]]]);
+    const quotas = new Map([["colA", 10]]);
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.05, 10);
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(new Set(res!.map(l => l.id)).size).toBe(10);
+  });
+
+  it("prefilter still finds the feasible low-float set hidden in a large pool", () => {
+    // 200 cheap BUT high-float items + 10 pricey low-float ones. Only the
+    // low-float set fits the budget; those items are NOT among the cheapest-N,
+    // so this guards that the lowest-float candidates survive the prefilter.
+    const cheapHigh = Array.from({ length: 200 }, (_, i) => mk(`h${i}`, 1, 0.50));
+    const priceyLow = Array.from({ length: 10 }, (_, i) => mk(`l${i}`, 5000, 0.02));
+    const byCol = new Map([["colA", [...cheapHigh, ...priceyLow]]]);
+    const quotas = new Map([["colA", 10]]);
+    const res = selectKnapsackUnderBoundary(byCol, quotas, 0.03, 10); // budget 0.30
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(res!.reduce((s, l) => s + l.adjustedFloat, 0)).toBeLessThanOrEqual(0.30 + 1e-9);
+    // must be the low-float items (the only feasible set)
+    expect(res!.every(l => l.id.startsWith("l"))).toBe(true);
   });
 });

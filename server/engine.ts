@@ -42,7 +42,7 @@ export {
 export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache, serializeDiscoveryData, loadDiscoveryDataFromFile, cleanupDiscoveryFiles } from "./engine/data-load.js";
 
 // === Selection ===
-export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat } from "./engine/selection.js";
+export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat, selectKnapsackUnderBoundary } from "./engine/selection.js";
 
 // === Evaluation ===
 export { evaluateTradeUp } from "./engine/evaluation.js";

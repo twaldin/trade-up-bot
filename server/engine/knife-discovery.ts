@@ -5,7 +5,7 @@ import { CONDITION_BOUNDS } from "./types.js";
 import { CASE_KNIFE_MAP, KNIFE_WEAPONS } from "./knife-data.js";
 import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { loadDiscoveryData, buildWeightedPool } from "./data-load.js";
-import { selectForFloatTarget, selectLowestFloat } from "./selection.js";
+import { selectForFloatTarget, selectLowestFloat, selectKnapsackUnderBoundary } from "./selection.js";
 import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
@@ -105,8 +105,11 @@ export async function findProfitableKnifeTradeUps(
   const knifeTransitionPoints = [...new Set(baseTransitions)].sort((a, b) => a - b);
 
   // Knife selection helpers use the parameterized versions from selection.ts with count=5
+  // Greedy first; E3 boundary-knapsack recovers a feasible 5-set when the
+  // greedy fails to fit the float budget (additive coverage).
   const selectForKnifeFloat = (quotas: Map<string, number>, maxAvgAdjusted: number) =>
-    selectForFloatTarget(byColAdj, quotas, maxAvgAdjusted, 5);
+    selectForFloatTarget(byColAdj, quotas, maxAvgAdjusted, 5)
+    ?? selectKnapsackUnderBoundary(byColAdj, quotas, maxAvgAdjusted, 5);
   const selectLowestKnifeFloat = (quotas: Map<string, number>) =>
     selectLowestFloat(byColAdj, quotas, 5);
 
@@ -627,7 +630,8 @@ export async function randomKnifeExplore(
           if (list.length < 5) break;
           const targetAdjFloat = Math.random() * 0.15;
           const quotas = new Map([[col, 5]]);
-          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5);
+          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5)
+            ?? selectKnapsackUnderBoundary(byColAdj, quotas, targetAdjFloat, 5);
           if (selected && selected.length === 5) inputs = selected;
           break;
         }
@@ -858,7 +862,8 @@ export async function exploreKnifeWithBudget(
           const countB = 5 - countA;
           const target = Math.random() * 0.5;
           const quotas = new Map([[colA, countA], [colB, countB]]);
-          const selected = selectForFloatTarget(byColAdj, quotas, target, 5);
+          const selected = selectForFloatTarget(byColAdj, quotas, target, 5)
+            ?? selectKnapsackUnderBoundary(byColAdj, quotas, target, 5);
           if (selected && selected.length === 5) inputs = selected;
           break;
         }
@@ -917,7 +922,8 @@ export async function exploreKnifeWithBudget(
           // Target very low adjusted floats (FN/MW output territory)
           const targetAdjFloat = Math.random() * 0.15; // heavily biased toward low floats
           const quotas = new Map([[col, 5]]);
-          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5);
+          const selected = selectForFloatTarget(byColAdj, quotas, targetAdjFloat, 5)
+            ?? selectKnapsackUnderBoundary(byColAdj, quotas, targetAdjFloat, 5);
           if (selected && selected.length === 5) inputs = selected;
           break;
         }

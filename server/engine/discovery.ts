@@ -7,7 +7,7 @@ import type { DbSkinOutcome, ListingWithCollection } from "./types.js";
 import { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./types.js";
 import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./data-load.js";
-import { getConditionTransitions, selectForFloatTarget, selectLowestFloat } from "./selection.js";
+import { getConditionTransitions, selectForFloatTarget, selectLowestFloat, selectKnapsackUnderBoundary } from "./selection.js";
 import { TradeUpStore } from "./store.js";
 import { evaluateTradeUp } from "./evaluation.js";
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
@@ -240,12 +240,19 @@ export async function findProfitableTradeUps(
         await tryEval(valueSorted.slice(offset, offset + 10), outcomes);
       }
 
-      // Float-targeted: for each transition point, select optimal listings
+      // Float-targeted: for each transition point, select optimal listings.
+      // Run BOTH the price-greedy and the E3 boundary-knapsack (additive — the
+      // knapsack recovers feasible low-float sets the greedy misses; store
+      // dedups by signature so an identical pick is a no-op eval).
       const quotas = new Map([[colId, 10]]);
       for (const target of transitions) {
         const selected = selectForFloatTarget(byColAdj, quotas, target);
         if (selected) {
           await tryEval(selected, outcomes);
+        }
+        const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
+        if (knapsack) {
+          await tryEval(knapsack, outcomes);
         }
       }
 
@@ -385,12 +392,17 @@ export async function findProfitableTradeUps(
             ], outcomes);
           }
 
-          // Float-targeted: for each transition, find cheapest listings within budget
+          // Float-targeted: for each transition, find cheapest listings within
+          // budget; E3 boundary-knapsack runs alongside (additive, dedup'd).
           const quotas = new Map([[colA, countA], [colB, countB]]);
           for (const target of transitions) {
             const selected = selectForFloatTarget(byColAdj, quotas, target);
             if (selected) {
               await tryEval(selected, outcomes);
+            }
+            const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
+            if (knapsack) {
+              await tryEval(knapsack, outcomes);
             }
           }
 
