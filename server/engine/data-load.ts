@@ -146,8 +146,8 @@ export async function loadDiscoveryDataFromFile(filePath: string): Promise<Disco
     adjList.push(l);
     byColAdj.set(key, adjList);
   }
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const byColValue = new Map<string, ListingWithCollection[]>();
   for (const [key, list] of byCollection) {
     byColValue.set(key, [...list].sort((a, b) => (a.valueRatio ?? 1) - (b.valueRatio ?? 1)));
@@ -245,8 +245,8 @@ export async function loadDiscoveryData(
   }
 
   // Sort both maps by price within each group (for greedy selection)
-  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents);
-  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents);
+  for (const [, list] of byCollection) list.sort((a, b) => a.price_cents - b.price_cents || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const [, list] of byColAdj) list.sort((a, b) => a.price_cents - b.price_cents || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   // Also create value-sorted maps for strategies that want underpriced listings first
   const byColValue = new Map<string, ListingWithCollection[]>();

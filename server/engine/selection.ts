@@ -63,8 +63,14 @@ export function selectForFloatTarget(
     }
   }
 
-  // Sort by price ascending
-  candidates.sort((a, b) => a.listing.price_cents - b.listing.price_cents);
+  // Sort by price ascending, with deterministic float/id tiebreaks so price
+  // ties resolve identically regardless of input pool order.
+  candidates.sort(
+    (a, b) =>
+      a.listing.price_cents - b.listing.price_cents ||
+      a.listing.adjustedFloat - b.listing.adjustedFloat ||
+      (a.listing.id < b.listing.id ? -1 : a.listing.id > b.listing.id ? 1 : 0)
+  );
 
   // Greedy selection respecting quotas and float budget
   const picked = new Map<string, number>();
@@ -253,9 +259,13 @@ export function selectLowestFloat(
     const pool = byCol.get(colId);
     if (!pool || pool.length < quota) return null;
 
-    // Sort by adjusted float ascending, then price ascending
+    // Sort by adjusted float ascending, then price, then id — the id tiebreak
+    // keeps the pick deterministic when float and price both tie.
     const sorted = [...pool].sort(
-      (a, b) => a.adjustedFloat - b.adjustedFloat || a.price_cents - b.price_cents
+      (a, b) =>
+        a.adjustedFloat - b.adjustedFloat ||
+        a.price_cents - b.price_cents ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     );
 
     let picked = 0;

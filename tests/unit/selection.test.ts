@@ -417,3 +417,84 @@ describe("selectKnapsackUnderBoundary review-fix invariants", () => {
     expect(res!.every(l => l.id.startsWith("l"))).toBe(true);
   });
 });
+
+// E4 — both selectors must honor 3-key quotas (the contract the 3-collection
+// discovery step depends on: one quota entry per anchor collection).
+describe("3-collection quotas (E4 dependency)", () => {
+  const mk = (id: string, price: number, adjFloat: number, col: string): AdjustedListing =>
+    makeAdjustedListing({ id, price_cents: price, adjustedFloat: adjFloat, collection_id: col });
+
+  const threeColPools = () =>
+    new Map([
+      ["colA", Array.from({ length: 12 }, (_, i) => mk(`a${i}`, 100 + i, 0.04, "colA"))],
+      ["colB", Array.from({ length: 12 }, (_, i) => mk(`b${i}`, 200 + i, 0.05, "colB"))],
+      ["colC", Array.from({ length: 12 }, (_, i) => mk(`c${i}`, 300 + i, 0.06, "colC"))],
+    ]);
+
+  it("selectForFloatTarget fills a 3-collection quota with distinct ids", () => {
+    const quotas = new Map([["colA", 4], ["colB", 3], ["colC", 3]]);
+    const res = selectForFloatTarget(threeColPools(), quotas, 0.20, 10);
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(new Set(res!.map(l => l.id)).size).toBe(10);
+    const byCol = (c: string) => res!.filter(l => l.collection_id === c).length;
+    expect(byCol("colA")).toBe(4);
+    expect(byCol("colB")).toBe(3);
+    expect(byCol("colC")).toBe(3);
+  });
+
+  it("selectKnapsackUnderBoundary fills a 3-collection quota within budget", () => {
+    const quotas = new Map([["colA", 4], ["colB", 3], ["colC", 3]]);
+    const res = selectKnapsackUnderBoundary(threeColPools(), quotas, 0.06, 10); // budget 0.60
+    expect(res).not.toBeNull();
+    expect(res!).toHaveLength(10);
+    expect(new Set(res!.map(l => l.id)).size).toBe(10);
+    expect(res!.reduce((s, l) => s + l.adjustedFloat, 0)).toBeLessThanOrEqual(0.60 + 1e-9);
+    const byCol = (c: string) => res!.filter(l => l.collection_id === c).length;
+    expect(byCol("colA")).toBe(4);
+    expect(byCol("colB")).toBe(3);
+    expect(byCol("colC")).toBe(3);
+  });
+
+  it("returns null when one of the three collections can't meet its quota", () => {
+    const pools = threeColPools();
+    pools.set("colC", [mk("c0", 300, 0.06, "colC")]); // only 1, need 3
+    const quotas = new Map([["colA", 4], ["colB", 3], ["colC", 3]]);
+    expect(selectForFloatTarget(pools, quotas, 0.20, 10)).toBeNull();
+    expect(selectKnapsackUnderBoundary(pools, quotas, 0.20, 10)).toBeNull();
+  });
+});
+
+// Deterministic tie-resolution: equal-price / equal-float listings must resolve
+// by id so selection is reproducible regardless of input pool order (the
+// determinism invariant the 3-collection discovery step relies on).
+describe("selection determinism on ties", () => {
+  const mk = (id: string, price: number, adjFloat: number): AdjustedListing =>
+    makeAdjustedListing({ id, price_cents: price, adjustedFloat: adjFloat, collection_id: "colA" });
+
+  it("selectForFloatTarget picks the same ids whatever the input order (price ties)", () => {
+    // 12 listings, all same price + float → fully tied; only id breaks the tie.
+    const ids = Array.from({ length: 12 }, (_, i) => `z${String(i).padStart(2, "0")}`);
+    const ordered = ids.map(id => mk(id, 100, 0.05));
+    const reversed = [...ordered].reverse();
+    const quotas = new Map([["colA", 10]]);
+    const a = selectForFloatTarget(new Map([["colA", ordered]]), quotas, 0.05, 10);
+    const b = selectForFloatTarget(new Map([["colA", reversed]]), quotas, 0.05, 10);
+    expect(a).not.toBeNull();
+    expect(a!.map(l => l.id)).toEqual(b!.map(l => l.id));
+    // Lowest 10 ids in sorted order.
+    expect(a!.map(l => l.id)).toEqual(ids.slice(0, 10));
+  });
+
+  it("selectLowestFloat picks the same ids whatever the input order (float+price ties)", () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `z${String(i).padStart(2, "0")}`);
+    const ordered = ids.map(id => mk(id, 100, 0.05));
+    const reversed = [...ordered].reverse();
+    const quotas = new Map([["colA", 10]]);
+    const a = selectLowestFloat(new Map([["colA", ordered]]), quotas, 10);
+    const b = selectLowestFloat(new Map([["colA", reversed]]), quotas, 10);
+    expect(a).not.toBeNull();
+    expect(a!.map(l => l.id)).toEqual(b!.map(l => l.id));
+    expect(a!.map(l => l.id)).toEqual(ids.slice(0, 10));
+  });
+});

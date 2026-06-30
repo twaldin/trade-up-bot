@@ -36,6 +36,48 @@ function biasedFloatTarget(premiumRatio: number): number {
   return Math.random() * 0.5;
 }
 
+// ─── E4: bounded 3-collection discovery ──────────────────────────────────────
+//
+// The structured scan covers single (Step 1) and pair (Step 2) collection
+// combos. Step 3 opens three-collection mixed-input combos, but a naive triple
+// loop is O(N^3) over collections. These two constants ARE the bound:
+//   • STEP3_TOP_K  — anchor the triple loop to the K highest-value collections,
+//     so it iterates C(K,3) triples instead of C(N,3).
+//   • STEP3_SPLITS — a small fixed set of (a,b,c) input splits (each ≥1, sum 10)
+//     instead of all 36 compositions. Balanced splits dominate because a
+//     3-collection combo's value is the diversity of its three outputs.
+// Step 3 is additionally deadline-gated (see findProfitableTradeUps) so it can
+// never run unbounded.
+
+/** Number of top-value collections to anchor the 3-collection triple loop on. */
+export const STEP3_TOP_K = 10;
+
+/** Per-collection input-count splits for 3-collection combos (each ≥1, sum 10). */
+export const STEP3_SPLITS: readonly (readonly [number, number, number])[] = [
+  [4, 3, 3], [3, 4, 3], [3, 3, 4],
+  [2, 4, 4], [4, 2, 4], [4, 4, 2],
+  [6, 2, 2], [2, 6, 2], [2, 2, 6],
+];
+
+/** Low-float (high-value) transition targets to try per 3-collection split. */
+export const STEP3_MAX_TARGETS = 8;
+
+/**
+ * E4 — return the `k` collections with the highest `valueOf`, value-descending
+ * with a deterministic id tiebreak. Pure; bounds the triple enumeration to
+ * C(k,3). Does not mutate `colIds`.
+ */
+export function topKByValue(
+  colIds: string[],
+  valueOf: (id: string) => number,
+  k: number,
+): string[] {
+  if (k <= 0) return [];
+  return [...colIds]
+    .sort((a, b) => valueOf(b) - valueOf(a) || (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, k);
+}
+
 /** Per-strategy yield stats from exploration. */
 export interface StrategyYieldEntry {
   strategyId: number;
@@ -456,6 +498,88 @@ export async function findProfitableTradeUps(
       `${inputRarity}: pairs done (${store.getSignatureCount()} signatures, ${store.total} trade-ups)`,
       70, 100
     );
+
+    // Step 3: Bounded three-collection combos (E4). DEADLINE-GATED — runs only
+    // when the caller supplies a deadline (the worker discovery path always
+    // does); the deadline-less inline fallback skips it, so this heaviest step
+    // can never run unbounded. Additive (new signatures only — store dedups).
+    // Anchored to the top-K highest-value collections with a fixed split set to
+    // bound the otherwise-O(N^3) triple enumeration; pastDeadline() is checked
+    // at every triple and split so it consumes only the time Steps 1-2 left.
+    if (options.deadlineMs !== undefined && !pastDeadline()) {
+      // Rank collections by best output value (max output price across
+      // conditions), precomputed once so topKByValue's comparator is cheap.
+      const valueByCol = new Map<string, number>();
+      for (const colId of colIds) {
+        let best = 0;
+        for (const o of outcomesByCol.get(colId) ?? []) {
+          for (const cond of CONDITION_BOUNDS) {
+            const p = globalPriceCache.get(`${o.name}:${cond.name}`) ?? 0;
+            if (p > best) best = p;
+          }
+        }
+        valueByCol.set(colId, best);
+      }
+      const anchors = topKByValue(colIds, (id) => valueByCol.get(id) ?? 0, STEP3_TOP_K);
+
+      // A skin can belong to multiple collections, so byCollection pools across
+      // the three anchors can share a listing id. Only evaluate combos of 10
+      // DISTINCT listings (the selectors already dedup; this also guards the
+      // baseline concat, which otherwise could double-count one market listing).
+      const tryEvalUnique = async (inputs: ListingWithCollection[], outs: DbSkinOutcome[]) => {
+        if (new Set(inputs.map((l) => l.id)).size !== inputs.length) return;
+        await tryEval(inputs, outs);
+      };
+
+      let triplesProcessed = 0;
+      for (let i = 0; i < anchors.length && !pastDeadline(); i++) {
+        for (let j = i + 1; j < anchors.length && !pastDeadline(); j++) {
+          for (let k = j + 1; k < anchors.length && !pastDeadline(); k++) {
+            const colA = anchors[i], colB = anchors[j], colC = anchors[k];
+            const listingsA = byCollection.get(colA) ?? [];
+            const listingsB = byCollection.get(colB) ?? [];
+            const listingsC = byCollection.get(colC) ?? [];
+
+            const outcomes = outcomesForCols(colA, colB, colC);
+            if (outcomes.length === 0) continue;
+            // Cap to the low-float (high-value FN/MW) transition head — that is
+            // where landing just under a boundary pays, and it bounds per-split cost.
+            const transitions = getConditionTransitions(outcomes).slice(0, STEP3_MAX_TARGETS);
+            triplesProcessed++;
+
+            for (const [cA, cB, cC] of STEP3_SPLITS) {
+              if (pastDeadline()) break;
+              if (listingsA.length < cA || listingsB.length < cB || listingsC.length < cC) continue;
+
+              // Baseline: cheapest from each collection.
+              await tryEvalUnique([
+                ...listingsA.slice(0, cA),
+                ...listingsB.slice(0, cB),
+                ...listingsC.slice(0, cC),
+              ], outcomes);
+
+              // Float-targeted: price-greedy + E3 boundary-knapsack (additive, dedup'd).
+              const quotas = new Map([[colA, cA], [colB, cB], [colC, cC]]);
+              for (const target of transitions) {
+                const selected = selectForFloatTarget(byColAdj, quotas, target);
+                if (selected) await tryEvalUnique(selected, outcomes);
+                const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
+                if (knapsack) await tryEvalUnique(knapsack, outcomes);
+              }
+
+              // Lowest-float selection (best possible output condition).
+              const lowestFloat = selectLowestFloat(byColAdj, quotas);
+              if (lowestFloat) await tryEvalUnique(lowestFloat, outcomes);
+            }
+          }
+        }
+      }
+
+      options.onProgress?.(
+        `${inputRarity}: triples done (${triplesProcessed} anchored, ${store.getSignatureCount()} sigs, ${store.total} trade-ups)`,
+        85, 100
+      );
+    }
 
     options.onProgress?.(
       `${inputRarity}: done (${store.total} trade-ups, ${store.getSignatureCount()} signatures)`,
