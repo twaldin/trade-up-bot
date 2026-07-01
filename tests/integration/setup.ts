@@ -120,6 +120,7 @@ async function createSchema(bootstrapPool: pg.Pool) {
       ,output_skin_names TEXT[] NOT NULL DEFAULT '{}'
       ,collection_names TEXT[] NOT NULL DEFAULT '{}'
       ,trade_up_score INTEGER
+      ,discovered_via TEXT
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (

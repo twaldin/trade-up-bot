@@ -75,11 +75,15 @@ export async function findProfitableKnifeTradeUps(
   /** Compute listing-combo signature for pre-evaluation sig-skipping. */
   const sigOf = (inputs: { id: string }[]) => listingSig(inputs.map(i => i.id));
 
-  /** Evaluate only if this listing combo is new (skip evaluation for known combos). */
-  const tryEvalKnife = async (inputs: ListingWithCollection[]) => {
+  /** Evaluate only if this listing combo is new (skip evaluation for known combos).
+   *  `via` is the provenance label ("k1:greedy", "k2:knapsack", ...) stamped on
+   *  the trade-up so saved rows record which mechanism found them. */
+  const tryEvalKnife = async (inputs: ListingWithCollection[], via: string) => {
     const sig = sigOf(inputs);
     if (seen.has(sig)) { skippedExisting++; return; }
-    tryAdd(await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache));
+    const tu = await evaluateKnifeTradeUp(pool, inputs, knifeFinishCache);
+    if (tu) tu.discovered_via = via;
+    tryAdd(tu);
   };
 
   // Collections that have knife or glove mappings
@@ -106,10 +110,21 @@ export async function findProfitableKnifeTradeUps(
 
   // Knife selection helpers use the parameterized versions from selection.ts with count=5
   // Greedy first; E3 boundary-knapsack recovers a feasible 5-set when the
-  // greedy fails to fit the float budget (additive coverage).
-  const selectForKnifeFloat = (quotas: Map<string, number>, maxAvgAdjusted: number) =>
-    selectForFloatTarget(byColAdj, quotas, maxAvgAdjusted, 5)
-    ?? selectKnapsackUnderBoundary(byColAdj, quotas, maxAvgAdjusted, 5);
+  // greedy fails to fit the float budget (additive coverage). Counters record
+  // how often the fallback fires / recovers (logged at end of the run).
+  let knifeKnapsackFallbacks = 0;
+  let knifeKnapsackRecovered = 0;
+  const selectForKnifeFloat = (
+    quotas: Map<string, number>,
+    maxAvgAdjusted: number
+  ): { picks: ListingWithCollection[] | null; via: "greedy" | "knapsack" } => {
+    const greedy = selectForFloatTarget(byColAdj, quotas, maxAvgAdjusted, 5);
+    if (greedy) return { picks: greedy, via: "greedy" };
+    knifeKnapsackFallbacks++;
+    const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, maxAvgAdjusted, 5);
+    if (knapsack) knifeKnapsackRecovered++;
+    return { picks: knapsack, via: "knapsack" };
+  };
   const selectLowestKnifeFloat = (quotas: Map<string, number>) =>
     selectLowestFloat(byColAdj, quotas, 5);
 
@@ -124,7 +139,7 @@ export async function findProfitableKnifeTradeUps(
 
     // Sliding windows (cheapest) — cap at 15
     for (let offset = 0; offset + 5 <= listings.length && offset < 15; offset++) {
-      await tryEvalKnife(listings.slice(offset, offset + 5));
+      await tryEvalKnife(listings.slice(offset, offset + 5), "k1:window");
     }
 
     // Value-sorted: sort by lowest adjusted float (best output condition), then cheapest.
@@ -137,19 +152,19 @@ export async function findProfitableKnifeTradeUps(
       }
     );
     for (let offset = 0; offset + 5 <= valueSorted.length && offset < 15; offset += 5) {
-      await tryEvalKnife(valueSorted.slice(offset, offset + 5));
+      await tryEvalKnife(valueSorted.slice(offset, offset + 5), "k1:valuesort");
     }
 
     // Float-targeted: for each transition point
     const quotas = new Map([[colName, 5]]);
     for (const target of knifeTransitionPoints) {
-      const selected = selectForKnifeFloat(quotas, target);
-      if (selected) await tryEvalKnife(selected);
+      const { picks, via } = selectForKnifeFloat(quotas, target);
+      if (picks) await tryEvalKnife(picks, `k1:${via}`);
     }
 
     // Lowest-float selection
     const lowestFloat = selectLowestKnifeFloat(quotas);
-    if (lowestFloat) await tryEvalKnife(lowestFloat);
+    if (lowestFloat) await tryEvalKnife(lowestFloat, "k1:lowfloat");
 
     // Condition-pure groups — deeper windows to find combos systematic cheapest misses.
     // Random explore proved $100 trade-ups hide in non-cheapest condition groups.
@@ -168,7 +183,7 @@ export async function findProfitableKnifeTradeUps(
       for (let window = 0; window < maxWindows; window++) {
         const off = window * 5;
         if (condListings.length >= off + 5) {
-          await tryEvalKnife(condListings.slice(off, off + 5));
+          await tryEvalKnife(condListings.slice(off, off + 5), "k1:cond");
         }
       }
     }
@@ -184,7 +199,7 @@ export async function findProfitableKnifeTradeUps(
     // Try each skin individually (if enough listings)
     for (const [, skinListings] of bySkin) {
       if (skinListings.length >= 5) {
-        await tryEvalKnife(skinListings.slice(0, 5));
+        await tryEvalKnife(skinListings.slice(0, 5), "k1:skin");
         // Also try per-condition within the skin
         const skinByCondition = new Map<string, ListingWithCollection[]>();
         for (const l of skinListings) {
@@ -195,7 +210,7 @@ export async function findProfitableKnifeTradeUps(
         }
         for (const [, condSkinListings] of skinByCondition) {
           if (condSkinListings.length >= 5) {
-            await tryEvalKnife(condSkinListings.slice(0, 5));
+            await tryEvalKnife(condSkinListings.slice(0, 5), "k1:skincond");
           }
         }
       }
@@ -206,7 +221,7 @@ export async function findProfitableKnifeTradeUps(
       const pooled = skinGroups.flatMap(g => g.slice(0, 3)).sort((a, b) => a.price_cents - b.price_cents);
       if (pooled.length >= 5) {
         for (let off = 0; off + 5 <= pooled.length && off < 15; off += 3) {
-          await tryEvalKnife(pooled.slice(off, off + 5));
+          await tryEvalKnife(pooled.slice(off, off + 5), "k1:skinpool");
         }
       }
     }
@@ -249,14 +264,14 @@ export async function findProfitableKnifeTradeUps(
         await tryEvalKnife([
           ...listingsA.slice(0, countA),
           ...listingsB.slice(0, countB),
-        ]);
+        ], "k2:base");
 
         // Offset combos
         if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
           await tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(5, 5 + countB),
-          ]);
+          ], "k2:offset");
         }
 
         // Mixed: cheap A + offset B
@@ -264,25 +279,25 @@ export async function findProfitableKnifeTradeUps(
           await tryEvalKnife([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(5, 5 + countB),
-          ]);
+          ], "k2:mixed");
         }
         if (listingsA.length >= countA + 5) {
           await tryEvalKnife([
             ...listingsA.slice(5, 5 + countA),
             ...listingsB.slice(0, countB),
-          ]);
+          ], "k2:mixed");
         }
 
         // Float-targeted
         const quotas = new Map([[colA, countA], [colB, countB]]);
         for (const target of knifeTransitionPoints) {
-          const selected = selectForKnifeFloat(quotas, target);
-          if (selected) await tryEvalKnife(selected);
+          const { picks, via } = selectForKnifeFloat(quotas, target);
+          if (picks) await tryEvalKnife(picks, `k2:${via}`);
         }
 
         // Lowest-float
         const lowestFloat = selectLowestKnifeFloat(quotas);
-        if (lowestFloat) await tryEvalKnife(lowestFloat);
+        if (lowestFloat) await tryEvalKnife(lowestFloat, "k2:lowfloat");
 
         // Condition-targeted pairs: use hoisted pools instead of re-filtering
         for (const cond of CONDITION_BOUNDS.map(c => c.name)) {
@@ -292,7 +307,7 @@ export async function findProfitableKnifeTradeUps(
             await tryEvalKnife([
               ...condA.slice(0, countA),
               ...condB.slice(0, countB),
-            ]);
+            ], "k2:cond");
           }
         }
 
@@ -302,12 +317,12 @@ export async function findProfitableKnifeTradeUps(
           const poolA = condPoolsA.get(c1) ?? [];
           const poolB = condPoolsB.get(c2) ?? [];
           if (poolA.length >= countA && poolB.length >= countB) {
-            await tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)]);
+            await tryEvalKnife([...poolA.slice(0, countA), ...poolB.slice(0, countB)], "k2:crosscond");
           }
           const poolAr = condPoolsA.get(c2) ?? [];
           const poolBr = condPoolsB.get(c1) ?? [];
           if (poolAr.length >= countA && poolBr.length >= countB) {
-            await tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)]);
+            await tryEvalKnife([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], "k2:crosscond");
           }
         }
       }
@@ -319,6 +334,9 @@ export async function findProfitableKnifeTradeUps(
   if (skippedExisting > 0) {
     console.log(`  Knife discovery: skipped ${skippedExisting} combos already in DB`);
   }
+  // E3 telemetry: how often the greedy failed and the boundary-knapsack
+  // fallback fired / recovered a feasible 5-set.
+  console.log(`  Knife: knapsack fallback ${knifeKnapsackRecovered}/${knifeKnapsackFallbacks} recovered`);
 
   // Sort by profit
   results.sort((a, b) => b.profit_cents - a.profit_cents);
@@ -656,13 +674,14 @@ export async function randomKnifeExplore(
         const inputSources = [...new Set(result.inputs.map(i => i.source ?? "csfloat"))].sort();
         const outputSkinNames = [...new Set(result.outcomes.map(o => o.skin_name))].sort();
         const { rows: infoRows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources, output_skin_names)
-          VALUES ($1, $2, $3, $4, $5, 'covert_knife', $6, $7, 'explore', $8, $9, $10)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources, output_skin_names, discovered_via)
+          VALUES ($1, $2, $3, $4, $5, 'covert_knife', $6, $7, 'explore', $8, $9, $10, $11)
           RETURNING id
         `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          bestCaseNew, worstCaseNew, JSON.stringify(result.outcomes), inputSources, outputSkinNames
+          bestCaseNew, worstCaseNew, JSON.stringify(result.outcomes), inputSources, outputSkinNames,
+          `knife-explore:S${strategy}`
         ]);
         const tuId = infoRows[0].id;
         for (const input of result.inputs) {
@@ -1202,6 +1221,7 @@ export async function exploreKnifeWithBudget(
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
+      result.discovered_via = `knife-explore:S${strategy}`;
       results.push(result);
       stratTotal[strategy]++;
       if (result.profit_cents > 0) stratProfitable[strategy]++;

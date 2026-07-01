@@ -196,13 +196,17 @@ export async function findProfitableTradeUps(
   /** Compute listing-combo signature. Used to skip evaluation for known combos. */
   const sigOf = (inputs: { id: string }[]) => listingSig(inputs.map(i => i.id));
 
-  /** Evaluate only if this listing combo is new (not in existing signatures). */
+  /** Evaluate only if this listing combo is new (not in existing signatures).
+   *  `via` is the provenance label ("s1:greedy", "s3:knapsack", ...) stamped on
+   *  the trade-up so saved rows record which mechanism found them. */
   let _evalAttempts = 0;
   let _evalSkipped = 0;
-  const tryEval = async (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[]) => {
+  const tryEval = async (inputs: ListingWithCollection[], outcomes: DbSkinOutcome[], via: string) => {
     _evalAttempts++;
     if (store.hasSig(sigOf(inputs))) { _evalSkipped++; return; }
-    tryAdd(await evaluateTradeUp(pool, inputs, outcomes));
+    const tu = await evaluateTradeUp(pool, inputs, outcomes);
+    if (tu) tu.discovered_via = via;
+    tryAdd(tu);
   };
 
   const pastDeadline = () => options.deadlineMs !== undefined && Date.now() >= options.deadlineMs;
@@ -249,6 +253,13 @@ export async function findProfitableTradeUps(
 
     console.log(`  ${colIds.length} eligible collections, ${allAdjusted.length} listings`);
 
+    // E3 knapsack telemetry (per rarity): how often the boundary-knapsack finds
+    // a feasible set, and how often it recovers one the price-greedy missed —
+    // the direct measure of E3's unique coverage.
+    let knapsackAttempts = 0;
+    let knapsackHits = 0;
+    let knapsackRecovered = 0;
+
     // Step 1: Single-collection (baseline + float-targeted)
     options.onProgress?.(`${inputRarity}: single-collection scan...`, 0, 100);
 
@@ -267,7 +278,7 @@ export async function findProfitableTradeUps(
 
       // Baseline: sliding windows of cheapest
       for (let offset = 0; offset + 10 <= colListings.length && offset < 50; offset += 5) {
-        await tryEval(colListings.slice(offset, offset + 10), outcomes);
+        await tryEval(colListings.slice(offset, offset + 10), outcomes, "s1:window");
       }
 
       // Value-sorted: lowest adjusted float first (best output condition, may cost more)
@@ -279,7 +290,7 @@ export async function findProfitableTradeUps(
         }
       );
       for (let offset = 0; offset + 10 <= valueSorted.length && offset < 30; offset += 10) {
-        await tryEval(valueSorted.slice(offset, offset + 10), outcomes);
+        await tryEval(valueSorted.slice(offset, offset + 10), outcomes, "s1:valuesort");
       }
 
       // Float-targeted: for each transition point, select optimal listings.
@@ -290,18 +301,21 @@ export async function findProfitableTradeUps(
       for (const target of transitions) {
         const selected = selectForFloatTarget(byColAdj, quotas, target);
         if (selected) {
-          await tryEval(selected, outcomes);
+          await tryEval(selected, outcomes, "s1:greedy");
         }
+        knapsackAttempts++;
         const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
         if (knapsack) {
-          await tryEval(knapsack, outcomes);
+          knapsackHits++;
+          if (!selected) knapsackRecovered++;
+          await tryEval(knapsack, outcomes, "s1:knapsack");
         }
       }
 
       // Lowest-float selection (best possible output condition)
       const lowestFloat = selectLowestFloat(byColAdj, quotas);
       if (lowestFloat) {
-        await tryEval(lowestFloat, outcomes);
+        await tryEval(lowestFloat, outcomes, "s1:lowfloat");
       }
 
       // Condition-pure groups — deeper windows catch non-cheapest profitable combos
@@ -325,7 +339,7 @@ export async function findProfitableTradeUps(
         for (let window = 0; window < maxWindows; window++) {
           const off = window * 10;
           if (condListings.length >= off + 10) {
-            await tryEval(condListings.slice(off, off + 10), outcomes);
+            await tryEval(condListings.slice(off, off + 10), outcomes, "s1:cond");
           }
         }
       }
@@ -345,7 +359,7 @@ export async function findProfitableTradeUps(
           .sort((a, b) => a.price_cents - b.price_cents);
         if (pooled.length >= 10) {
           for (let offset = 0; offset + 10 <= pooled.length && offset < 30; offset += 5) {
-            await tryEval(pooled.slice(offset, offset + 10), outcomes);
+            await tryEval(pooled.slice(offset, offset + 10), outcomes, "s1:skinpool");
           }
         }
       }
@@ -404,20 +418,20 @@ export async function findProfitableTradeUps(
           await tryEval([
             ...listingsA.slice(0, countA),
             ...listingsB.slice(0, countB),
-          ], outcomes);
+          ], outcomes, "s2:base");
 
           // Baseline: offset combos
           if (listingsA.length >= countA + 5 && listingsB.length >= countB + 5) {
             await tryEval([
               ...listingsA.slice(5, 5 + countA),
               ...listingsB.slice(5, 5 + countB),
-            ], outcomes);
+            ], outcomes, "s2:offset");
           }
           if (listingsA.length >= countA + 10 && listingsB.length >= countB + 10) {
             await tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(10, 10 + countB),
-            ], outcomes);
+            ], outcomes, "s2:offset");
           }
 
           // Mixed: cheap A + offset B, and vice versa
@@ -425,13 +439,13 @@ export async function findProfitableTradeUps(
             await tryEval([
               ...listingsA.slice(0, countA),
               ...listingsB.slice(10, 10 + countB),
-            ], outcomes);
+            ], outcomes, "s2:mixed");
           }
           if (listingsA.length >= countA + 10) {
             await tryEval([
               ...listingsA.slice(10, 10 + countA),
               ...listingsB.slice(0, countB),
-            ], outcomes);
+            ], outcomes, "s2:mixed");
           }
 
           // Float-targeted: for each transition, find cheapest listings within
@@ -440,18 +454,21 @@ export async function findProfitableTradeUps(
           for (const target of transitions) {
             const selected = selectForFloatTarget(byColAdj, quotas, target);
             if (selected) {
-              await tryEval(selected, outcomes);
+              await tryEval(selected, outcomes, "s2:greedy");
             }
+            knapsackAttempts++;
             const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
             if (knapsack) {
-              await tryEval(knapsack, outcomes);
+              knapsackHits++;
+              if (!selected) knapsackRecovered++;
+              await tryEval(knapsack, outcomes, "s2:knapsack");
             }
           }
 
           // Lowest-float selection
           const lowestFloat = selectLowestFloat(byColAdj, quotas);
           if (lowestFloat) {
-            await tryEval(lowestFloat, outcomes);
+            await tryEval(lowestFloat, outcomes, "s2:lowfloat");
           }
 
           // Condition-targeted pairs: use hoisted pools instead of re-filtering
@@ -462,7 +479,7 @@ export async function findProfitableTradeUps(
               await tryEval([
                 ...condA.slice(0, countA),
                 ...condB.slice(0, countB),
-              ], outcomes);
+              ], outcomes, "s2:cond");
             }
           }
 
@@ -474,13 +491,13 @@ export async function findProfitableTradeUps(
             const poolA = condPoolsA.get(c1) ?? [];
             const poolB = condPoolsB.get(c2) ?? [];
             if (poolA.length >= countA && poolB.length >= countB) {
-              await tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes);
+              await tryEval([...poolA.slice(0, countA), ...poolB.slice(0, countB)], outcomes, "s2:crosscond");
             }
             // Also try reversed (B cond from A, A cond from B)
             const poolAr = condPoolsA.get(c2) ?? [];
             const poolBr = condPoolsB.get(c1) ?? [];
             if (poolAr.length >= countA && poolBr.length >= countB) {
-              await tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes);
+              await tryEval([...poolAr.slice(0, countA), ...poolBr.slice(0, countB)], outcomes, "s2:crosscond");
             }
           }
         }
@@ -526,12 +543,13 @@ export async function findProfitableTradeUps(
       // the three anchors can share a listing id. Only evaluate combos of 10
       // DISTINCT listings (the selectors already dedup; this also guards the
       // baseline concat, which otherwise could double-count one market listing).
-      const tryEvalUnique = async (inputs: ListingWithCollection[], outs: DbSkinOutcome[]) => {
+      const tryEvalUnique = async (inputs: ListingWithCollection[], outs: DbSkinOutcome[], via: string) => {
         if (new Set(inputs.map((l) => l.id)).size !== inputs.length) return;
-        await tryEval(inputs, outs);
+        await tryEval(inputs, outs, via);
       };
 
       let triplesProcessed = 0;
+      const step3Before = store.total;
       for (let i = 0; i < anchors.length && !pastDeadline(); i++) {
         for (let j = i + 1; j < anchors.length && !pastDeadline(); j++) {
           for (let k = j + 1; k < anchors.length && !pastDeadline(); k++) {
@@ -556,20 +574,25 @@ export async function findProfitableTradeUps(
                 ...listingsA.slice(0, cA),
                 ...listingsB.slice(0, cB),
                 ...listingsC.slice(0, cC),
-              ], outcomes);
+              ], outcomes, "s3:base");
 
               // Float-targeted: price-greedy + E3 boundary-knapsack (additive, dedup'd).
               const quotas = new Map([[colA, cA], [colB, cB], [colC, cC]]);
               for (const target of transitions) {
                 const selected = selectForFloatTarget(byColAdj, quotas, target);
-                if (selected) await tryEvalUnique(selected, outcomes);
+                if (selected) await tryEvalUnique(selected, outcomes, "s3:greedy");
+                knapsackAttempts++;
                 const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, target);
-                if (knapsack) await tryEvalUnique(knapsack, outcomes);
+                if (knapsack) {
+                  knapsackHits++;
+                  if (!selected) knapsackRecovered++;
+                  await tryEvalUnique(knapsack, outcomes, "s3:knapsack");
+                }
               }
 
               // Lowest-float selection (best possible output condition).
               const lowestFloat = selectLowestFloat(byColAdj, quotas);
-              if (lowestFloat) await tryEvalUnique(lowestFloat, outcomes);
+              if (lowestFloat) await tryEvalUnique(lowestFloat, outcomes, "s3:lowfloat");
             }
           }
         }
@@ -579,7 +602,16 @@ export async function findProfitableTradeUps(
         `${inputRarity}: triples done (${triplesProcessed} anchored, ${store.getSignatureCount()} sigs, ${store.total} trade-ups)`,
         85, 100
       );
+      // console.log (not just onProgress): the worker discovery path passes no
+      // onProgress callback, so this is the line that actually reaches pm2 logs.
+      console.log(`  ${inputRarity}: Step 3 done (${triplesProcessed} triples, +${store.total - step3Before} stored)`);
+    } else if (options.deadlineMs !== undefined) {
+      console.log(`  ${inputRarity}: Step 3 skipped (deadline exhausted by Steps 1-2)`);
     }
+
+    // E3 telemetry: does the boundary-knapsack ever fire, and does it recover
+    // feasible sets the greedy missed? (Worker path has no onProgress → console.)
+    console.log(`  ${inputRarity}: knapsack ${knapsackHits}/${knapsackAttempts} feasible, ${knapsackRecovered} greedy-null recoveries`);
 
     options.onProgress?.(
       `${inputRarity}: done (${store.total} trade-ups, ${store.getSignatureCount()} signatures)`,
@@ -981,13 +1013,14 @@ export async function randomExplore(
         const inputSources = [...new Set(result.inputs.map(i => i.source ?? "csfloat"))].sort();
         const outputSkinNames = [...new Set(result.outcomes.map(o => o.skin_name))].sort();
         const { rows: infoRows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources, output_skin_names)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9, $10, $11)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, source, outcomes_json, input_sources, output_skin_names, discovered_via)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'explore', $9, $10, $11, $12)
           RETURNING id
         `, [
           result.total_cost_cents, result.expected_value_cents,
           result.profit_cents, result.roi_percentage, chanceToProfit,
-          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes), inputSources, outputSkinNames
+          tradeUpType, bestCase, worstCase, JSON.stringify(result.outcomes), inputSources, outputSkinNames,
+          `explore:S${strategy}`
         ]);
         const tuId = infoRows[0].id;
         for (const input of result.inputs) {
@@ -1733,6 +1766,7 @@ export async function exploreWithBudget(
       if (result.profit_cents <= 0 && (result.chance_to_profit ?? 0) < 0.25) continue;
 
       existingSignatures.add(sig);
+      result.discovered_via = `explore:S${strategy}`;
       results.push(result);
       stratTotal[strategy]++;
       if (result.profit_cents > 0) stratProfitable[strategy]++;

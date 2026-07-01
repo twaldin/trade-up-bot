@@ -153,6 +153,7 @@ export interface TradeUp {
   best_case_cents?: number; // best outcome minus cost (pre-computed)
   worst_case_cents?: number; // worst outcome minus cost (pre-computed)
   trade_up_score?: number; // frozen composite ranking metric (chance + bounded-downside weighted ROI)
+  discovered_via?: string | null; // discovery mechanism provenance ("s1:greedy", "s3:knapsack", "explore:S16", ...); NULL = pre-provenance row
   outcome_count?: number; // number of possible outcomes (pre-computed, avoids loading full outcomes)
   profit_streak?: number; // consecutive cycles this trade-up has been profitable
   peak_profit_cents?: number; // highest profit ever seen for this trade-up

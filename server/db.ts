@@ -43,7 +43,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-06-28.1";
+export const SCHEMA_VERSION = "2026-07-01.1";
 
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts).
@@ -148,6 +148,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       ,input_sources TEXT[] NOT NULL DEFAULT '{}'
       ,output_skin_names TEXT[] NOT NULL DEFAULT '{}'
+      ,discovered_via TEXT
     );
 
     CREATE TABLE IF NOT EXISTS trade_up_inputs (
@@ -415,6 +416,14 @@ export async function createTables(pool: pg.Pool): Promise<void> {
 
   await pool.query(`
     ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS output_repriced_at TIMESTAMPTZ;
+  `);
+
+  // Provenance lever: which discovery mechanism found each contract
+  // ("s1:greedy", "s3:knapsack", "explore:S16", ...). Nullable — NULL means the
+  // row predates provenance tagging. Set on INSERT only (first-discoverer
+  // attribution); merge UPDATEs never overwrite it.
+  await pool.query(`
+    ALTER TABLE trade_ups ADD COLUMN IF NOT EXISTS discovered_via TEXT;
   `);
 
   // E1: trade_up_score — frozen composite ranking metric (chance-weighted, downside-

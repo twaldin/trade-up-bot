@@ -107,8 +107,8 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
         const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
 
         const { rows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, discovered_via)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
           RETURNING id
         `, [
           tu.total_cost_cents,
@@ -125,6 +125,7 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
           inputSources,
           outputSkinNames,
           collectionNames,
+          tu.discovered_via ?? null,
         ]);
         const tradeUpId = rows[0].id;
 
@@ -262,10 +263,10 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
           // Semantics: only set when profitable (matches former: UPDATE only ran when profit > 0).
           const peakProfit = Math.max(tu.profit_cents, 0);
           const { rows } = await client.query(`
-            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, peak_profit_cents)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12, $13)
+            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, peak_profit_cents, discovered_via)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12, $13, $14)
             RETURNING id
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames, peakProfit]);
+          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames, peakProfit, tu.discovered_via ?? null]);
           const tradeUpId = rows[0].id;
           if (tu.profit_cents > 0) {
             const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
