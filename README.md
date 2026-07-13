@@ -1,5 +1,7 @@
 # CS2 Trade-Up Bot
 
+<img src=".github/social-card.png" alt="trade-up-bot" width="100%" />
+
 Real-time CS2 trade-up contract analyzer. Continuously discovers profitable trade-ups across all 6 rarity tiers by combining live market data from CSFloat, DMarket, and Skinport with a time-bounded discovery engine that evaluates thousands of listing combinations per cycle.
 
 **Live at [tradeupbot.app](https://tradeupbot.app)**
