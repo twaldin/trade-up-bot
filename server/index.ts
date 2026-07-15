@@ -20,7 +20,7 @@ import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus, buildSkinResearchParagraphs } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 import { blogPosts } from "../src/data/blog-posts.js";
@@ -839,9 +839,6 @@ registerCanonicalRedirectRoutes(app);
       if (listingCount > 0) {
         naturalParagraph += ` There are currently ${listingCount.toLocaleString()} active listings across CSFloat, DMarket, and Skinport, with prices ranging from $${minPrice} to $${maxPrice}.`;
       }
-      const researchParagraph = `<p>Use this ${e(skinName)} page as a crawler-readable reference for price research, float planning, and collection context before building a trade-up contract. The listing range shows the current low and high market prices available to TradeUpBot, while the float range shows which wear conditions this skin can naturally support. For trade-up inputs, that float range matters because ten input floats are normalized and averaged to determine the output condition. A cheaper listing is not always the best input if its float pushes the contract away from a valuable boundary, so compare price, condition, collection, rarity, and active supply together.</p>`
-        + `<p>${e(skinName)} also connects into the broader CS2 collection graph. Collection links help you inspect sibling skins, identify compatible rarity tiers, and move from a single skin page into collection-level trade-up opportunities. When profitable contracts exist, the trade-up table below summarizes the best examples using this skin as an input, including cost, expected profit, ROI, and chance to profit. These figures are market-sensitive and should be checked against live listings before purchase.</p>`;
-
       let priceTable = "";
       if (condPrices.length > 0) {
         const rows = condPrices.map((p: { condition: string; avg_price_cents: number; median_price_cents: number; min_price_cents: number }) =>
@@ -878,6 +875,23 @@ registerCanonicalRedirectRoutes(app);
       };
       const outputTier = rarityOutputTier[skinMeta.rarity] || "a higher rarity tier";
       const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map((t: { profit_cents: number }) => t.profit_cents)) : 0;
+
+      // Data-driven research prose (replaces the identical two-paragraph boilerplate that
+      // previously rendered on every skin page). Grounded in this skin's own float range,
+      // conditions, rarity tier path, collection, and live trade-up role.
+      const researchParagraph = buildSkinResearchParagraphs({
+        skinName,
+        rarity: skinMeta.rarity,
+        minFloat: skinMeta.min_float,
+        maxFloat: skinMeta.max_float,
+        availableConditions,
+        collectionDisplay: collDisplay || null,
+        // null for terminal items (knives/gloves) so the copy doesn't claim they trade up.
+        outputTier: rarityOutputTier[skinMeta.rarity] ?? null,
+        inputTuCount,
+        outputTuCount,
+        bestProfitCents: bestProfit,
+      });
       const goodInputAnswer = (() => {
         if (inputTuCount === 0) {
           return `${skinName} is not currently used in any profitable trade-up contracts. It is a ${skinMeta.rarity} skin, which trades up into ${outputTier} outputs, but no profitable contracts are available at current market prices.`;

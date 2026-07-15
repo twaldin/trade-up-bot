@@ -53,7 +53,7 @@ describe("robots.txt and sitemap consistency", () => {
       buildStaticSitemap(BASE, LASTMOD),
       buildCollectionSitemap(BASE, [{ name: "The Dreams & Nightmares Collection" }], LASTMOD),
       buildCollectionTradeUpSitemap(BASE, [{ name: "The Fracture Collection" }], LASTMOD),
-      buildSkinSitemap(BASE, [{ name: "AK-47 | Redline", listing_count: 10 }], LASTMOD),
+      buildSkinSitemap(BASE, [{ name: "AK-47 | Redline", listing_count: 10, is_tradeup_input: true }], LASTMOD),
     ];
     const locs = sitemaps.flatMap(extractLocs);
 
@@ -68,7 +68,7 @@ describe("robots.txt and sitemap consistency", () => {
 
   it("skin sitemap excludes low-listing noindex skin pages", () => {
     const xml = buildSkinSitemap(BASE, [
-      { name: "AK-47 | Redline", listing_count: 10 },
+      { name: "AK-47 | Redline", listing_count: 10, is_tradeup_input: true },
       { name: "Glock-18 | Low Listings", listing_count: 9 },
     ], LASTMOD);
     const locs = extractLocs(xml);
@@ -82,7 +82,7 @@ describe("robots.txt and sitemap consistency", () => {
       buildStaticSitemap(BASE, LASTMOD),
       buildCollectionSitemap(BASE, [{ name: "The Dreams & Nightmares Collection" }], LASTMOD),
       buildCollectionTradeUpSitemap(BASE, [{ name: "The Fracture Collection" }], LASTMOD),
-      buildSkinSitemap(BASE, [{ name: "AK-47 | Redline", listing_count: 10 }], LASTMOD),
+      buildSkinSitemap(BASE, [{ name: "AK-47 | Redline", listing_count: 10, is_tradeup_input: true }], LASTMOD),
     ];
 
     for (const xml of sitemaps) {

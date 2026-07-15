@@ -69,7 +69,7 @@ describe("internal cross-linking SEO guarantees", () => {
     const base = "https://tradeupbot.app";
     const lastmod = "2026-05-13";
     const collections = Array.from({ length: 12 }, (_, index) => ({ name: `Test Collection ${index + 1}` }));
-    const skins = Array.from({ length: 60 }, (_, index) => ({ name: `AK-47 | Test Skin ${index + 1}`, listing_count: 10 }));
+    const skins = Array.from({ length: 60 }, (_, index) => ({ name: `AK-47 | Test Skin ${index + 1}`, listing_count: 10, obs30: 30 }));
 
     const index = buildSitemapIndex(base, lastmod);
     expect(index).toContain(`${base}/sitemap-static.xml`);
