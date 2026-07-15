@@ -131,3 +131,77 @@ describe("repriceTradeUpOutputs — Phase 4c selection priority", () => {
     );
   });
 });
+
+describe("repriceTradeUpOutputs — chunked fetch (cap-raise lever)", () => {
+  let ctx: TestContext;
+
+  beforeEach(async () => {
+    ctx = await createTestApp({ defaultTier: "pro" });
+  });
+
+  afterEach(async () => {
+    await ctx.cleanup();
+  });
+
+  it("returns timing instrumentation (cacheMs/computeMs/writeMs)", async () => {
+    await insertTU(ctx.pool, { profitCents: 1000, outputRepricedAt: null });
+
+    const result = await repriceTradeUpOutputs(ctx.pool, 10, 2);
+
+    expect(result.checked).toBe(1);
+    expect(result.cacheMs).toBeGreaterThanOrEqual(0);
+    expect(result.computeMs).toBeGreaterThanOrEqual(0);
+    expect(result.writeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("processes every eligible row exactly once when limit spans multiple chunks", async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      ids.push(await insertTU(ctx.pool, { profitCents: 1000 + i, outputRepricedAt: null }));
+    }
+
+    const result = await repriceTradeUpOutputs(ctx.pool, 10, 2); // 3 chunks: 2+2+1
+
+    expect(result.checked).toBe(5);
+    const { rows } = await ctx.pool.query(
+      "SELECT count(*)::int AS n FROM trade_ups WHERE id = ANY($1::int[]) AND output_repriced_at > NOW() - INTERVAL '1 minute'",
+      [ids]
+    );
+    expect(rows[0].n).toBe(5);
+  });
+
+  it("respects the total limit across chunks and keeps the priority order", async () => {
+    // 3 profitable (priority bucket: profit > 500) + 1 unprofitable; limit 3 with chunk 2
+    // must process exactly the 3 profitable ones — the unprofitable row stays untouched.
+    const p1 = await insertTU(ctx.pool, { profitCents: 3000, outputRepricedAt: null });
+    const p2 = await insertTU(ctx.pool, { profitCents: 2000, outputRepricedAt: null });
+    const p3 = await insertTU(ctx.pool, { profitCents: 1000, outputRepricedAt: null });
+    const u = await insertTU(ctx.pool, { profitCents: -500, outputRepricedAt: null });
+
+    const result = await repriceTradeUpOutputs(ctx.pool, 3, 2); // chunks: 2+1
+
+    expect(result.checked).toBe(3);
+    const { rows: prof } = await ctx.pool.query(
+      "SELECT count(*)::int AS n FROM trade_ups WHERE id = ANY($1::int[]) AND output_repriced_at IS NOT NULL",
+      [[p1, p2, p3]]
+    );
+    const { rows: unprof } = await ctx.pool.query(
+      "SELECT output_repriced_at FROM trade_ups WHERE id = $1", [u]
+    );
+    expect(prof[0].n).toBe(3);
+    expect(unprof[0].output_repriced_at).toBeNull();
+  });
+
+  it("stops early when the eligible pool is exhausted mid-chunk", async () => {
+    await insertTU(ctx.pool, { profitCents: 1000, outputRepricedAt: null });
+    await insertTU(ctx.pool, { profitCents: 900, outputRepricedAt: null });
+    await insertTU(ctx.pool, {
+      profitCents: 800,
+      outputRepricedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // fresh — ineligible
+    });
+
+    const result = await repriceTradeUpOutputs(ctx.pool, 100, 2);
+
+    expect(result.checked).toBe(2); // only the 2 stale ones, no infinite loop
+  });
+});

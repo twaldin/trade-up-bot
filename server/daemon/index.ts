@@ -375,15 +375,18 @@ export async function main() {
     }
 
     // Phase 4c: Reprice output values with current KNN + price cache.
-    // Writes are coalesced (bulk UPDATE) so per-cycle coverage rose 20k→30k at
-    // roughly the same wall-clock; cuts full-table reprice latency / stale ranking.
+    // Cap 30k→60k (2026-07-15 cap-raise lever): halves full-pass reprice
+    // latency. The fetch is chunked inside repriceTradeUpOutputs so the main
+    // process never holds 60k outcomes_json rows at once (MemAvailable sits
+    // near the 8.9GB 3-wide worker gate). Timing split logged to size the
+    // fixed cache-build cost vs the per-row cost.
     {
       const t4c = Date.now();
       const { repriceTradeUpOutputs } = await import("../engine.js");
-      const repriceResult = await repriceTradeUpOutputs(pool, 30000);
+      const repriceResult = await repriceTradeUpOutputs(pool, 60000);
       const repriceMs = Date.now() - t4c;
       if (repriceResult.checked > 0) {
-        console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s)`);
+        console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s: cache ${(repriceResult.cacheMs / 1000).toFixed(1)}s, compute ${(repriceResult.computeMs / 1000).toFixed(1)}s, write ${(repriceResult.writeMs / 1000).toFixed(1)}s)`);
       }
     }
 

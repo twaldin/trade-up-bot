@@ -304,81 +304,106 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
  * Picks the oldest-repriced active trade-ups, re-lookups each outcome's price
  * at its predicted float, and updates EV/profit/ROI if changed.
  *
+ * Rows are fetched in chunks of `fetchChunkSize` so the main process never
+ * holds `limit` outcomes_json payloads in memory at once (batch-start
+ * MemAvailable sits near the 3-wide worker gate). Processed rows get
+ * output_repriced_at = NOW() (update or touch), which removes them from the
+ * eligibility predicate — so each re-query naturally continues where the
+ * previous chunk left off, with no double-processing.
+ *
  * Compute runs with bounded concurrency over read-only price caches; writes are
  * coalesced into bulk statements (one UPDATE per ~200 changed rows, one touch
  * UPDATE per ~2000 unchanged rows) instead of one round-trip per trade-up.
  */
 export async function repriceTradeUpOutputs(
   pool: pg.Pool,
-  limit: number = 500
-): Promise<{ updated: number; checked: number }> {
+  limit: number = 500,
+  fetchChunkSize: number = 10_000
+): Promise<{ updated: number; checked: number; cacheMs: number; computeMs: number; writeMs: number }> {
+  const tCache = Date.now();
   await buildPriceCache(pool);
   // Pre-warm lazily-built caches before concurrent repricing so every concurrent
   // worker reads a fully-built float-ceiling cache (matches the old serial path).
   await warmOutputPriceCaches(pool);
-
-  const { rows } = await pool.query(`
-    SELECT id, type, total_cost_cents, expected_value_cents, outcomes_json, output_repriced_at
-    FROM trade_ups
-    WHERE is_theoretical = false AND listing_status = 'active'
-      AND outcomes_json IS NOT NULL
-      AND (output_repriced_at IS NULL OR output_repriced_at < NOW() - INTERVAL '2 hours')
-    ORDER BY
-      CASE WHEN profit_cents > 500 THEN 0 ELSE 1 END,
-      output_repriced_at ASC NULLS FIRST
-    LIMIT $1
-  `, [limit]);
-
-  if (rows.length === 0) return { updated: 0, checked: 0 };
-
-  // Compute decisions with bounded concurrency. The price compute reads only
-  // module-global caches (built above), so concurrent calls are lock-free and
-  // deterministic; the only DB I/O on this path is vanilla-knife pricing.
-  const COMPUTE_CONCURRENCY = 8;
-  const lookup: OutputLookup = (skinName, predictedFloat) => lookupOutputPrice(pool, skinName, predictedFloat);
-  const decisions = await mapWithConcurrency(rows, COMPUTE_CONCURRENCY, (r: RepriceRow) =>
-    computeRepriceDecision(
-      {
-        id: r.id,
-        total_cost_cents: r.total_cost_cents,
-        expected_value_cents: r.expected_value_cents,
-        outcomes_json: r.outcomes_json,
-      },
-      lookup
-    )
-  );
-
-  // Coalesce writes: one bulk UPDATE per chunk of changed rows, one bulk touch
-  // for the rest — replaces ~one round-trip per trade-up with a handful.
-  const updates = decisions.filter(
-    (d): d is Extract<RepriceDecision, { kind: "update" }> => d.kind === "update"
-  );
-  const touchIds = decisions.filter(d => d.kind === "touch").map(d => d.id);
+  const cacheMs = Date.now() - tCache;
 
   let updated = 0;
-  const WRITE_CHUNK = 200;
-  for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
-    const sql = buildBulkRepriceUpdate(updates.slice(i, i + WRITE_CHUNK));
-    if (!sql) continue;
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(sql.text, sql.values);
-      await client.query("COMMIT");
-      updated += Math.min(WRITE_CHUNK, updates.length - i);
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
+  let checked = 0;
+  let computeMs = 0;
+  let writeMs = 0;
+
+  while (checked < limit) {
+    const take = Math.min(fetchChunkSize, limit - checked);
+    const { rows } = await pool.query(`
+      SELECT id, type, total_cost_cents, expected_value_cents, outcomes_json, output_repriced_at
+      FROM trade_ups
+      WHERE is_theoretical = false AND listing_status = 'active'
+        AND outcomes_json IS NOT NULL
+        AND (output_repriced_at IS NULL OR output_repriced_at < NOW() - INTERVAL '2 hours')
+      ORDER BY
+        CASE WHEN profit_cents > 500 THEN 0 ELSE 1 END,
+        output_repriced_at ASC NULLS FIRST
+      LIMIT $1
+    `, [take]);
+
+    if (rows.length === 0) break;
+    checked += rows.length;
+
+    // Compute decisions with bounded concurrency. The price compute reads only
+    // module-global caches (built above), so concurrent calls are lock-free and
+    // deterministic; the only DB I/O on this path is vanilla-knife pricing.
+    const tCompute = Date.now();
+    const COMPUTE_CONCURRENCY = 8;
+    const lookup: OutputLookup = (skinName, predictedFloat) => lookupOutputPrice(pool, skinName, predictedFloat);
+    const decisions = await mapWithConcurrency(rows, COMPUTE_CONCURRENCY, (r: RepriceRow) =>
+      computeRepriceDecision(
+        {
+          id: r.id,
+          total_cost_cents: r.total_cost_cents,
+          expected_value_cents: r.expected_value_cents,
+          outcomes_json: r.outcomes_json,
+        },
+        lookup
+      )
+    );
+    computeMs += Date.now() - tCompute;
+
+    // Coalesce writes: one bulk UPDATE per chunk of changed rows, one bulk touch
+    // for the rest — replaces ~one round-trip per trade-up with a handful.
+    const tWrite = Date.now();
+    const updates = decisions.filter(
+      (d): d is Extract<RepriceDecision, { kind: "update" }> => d.kind === "update"
+    );
+    const touchIds = decisions.filter(d => d.kind === "touch").map(d => d.id);
+
+    const WRITE_CHUNK = 200;
+    for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
+      const sql = buildBulkRepriceUpdate(updates.slice(i, i + WRITE_CHUNK));
+      if (!sql) continue;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(sql.text, sql.values);
+        await client.query("COMMIT");
+        updated += Math.min(WRITE_CHUNK, updates.length - i);
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     }
+
+    const TOUCH_CHUNK = 2000;
+    for (let i = 0; i < touchIds.length; i += TOUCH_CHUNK) {
+      const ids = touchIds.slice(i, i + TOUCH_CHUNK);
+      await pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]);
+    }
+    writeMs += Date.now() - tWrite;
+
+    // Short chunk = eligible pool exhausted; a full chunk may have more behind it.
+    if (rows.length < take) break;
   }
 
-  const TOUCH_CHUNK = 2000;
-  for (let i = 0; i < touchIds.length; i += TOUCH_CHUNK) {
-    const ids = touchIds.slice(i, i + TOUCH_CHUNK);
-    await pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]);
-  }
-
-  return { updated, checked: rows.length };
+  return { updated, checked, cacheMs, computeMs, writeMs };
 }
