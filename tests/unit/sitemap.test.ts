@@ -58,11 +58,11 @@ describe("buildCollectionSitemap", () => {
 });
 
 describe("buildSkinSitemap", () => {
-  it("generates URLs for skins using slugs", () => {
+  it("generates URLs for index-worthy skins using slugs", () => {
     const skins = [
-      { name: "AK-47 | Redline", listing_count: 10 },
-      { name: "M4A4 | Howl", listing_count: 20 },
-      { name: "Glock-18 | Fade", listing_count: 2 },
+      { name: "AK-47 | Redline", listing_count: 10, is_tradeup_input: true },
+      { name: "M4A4 | Howl", listing_count: 20, obs30: 50 },
+      { name: "Glock-18 | Fade", listing_count: 2, is_tradeup_output: true }, // sub-floor
     ];
     const xml = buildSkinSitemap("https://tradeupbot.app", skins, "2026-03-24", 5);
     expect(xml).toContain("tradeupbot.app/skins/ak-47-redline");

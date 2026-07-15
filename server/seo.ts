@@ -23,6 +23,75 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export interface SkinResearchInput {
+  skinName: string;
+  rarity: string;
+  minFloat: number;
+  maxFloat: number;
+  /** Human-ordered condition names this skin can appear in (Factory New → Battle-Scarred). */
+  availableConditions: string[];
+  /** Cleaned collection name (no "The"/"Collection" affixes), or null if uncollected. */
+  collectionDisplay: string | null;
+  /** The rarity tier this skin trades up INTO (e.g. Classified → Covert), or null for
+   *  terminal items (knives/gloves) that are a trade-up result and never an input. */
+  outputTier: string | null;
+  inputTuCount: number;
+  outputTuCount: number;
+  bestProfitCents: number;
+}
+
+/**
+ * Two data-driven research paragraphs for a /skins/:slug crawler page. Every clause is
+ * grounded in this skin's own float range, conditions, rarity, collection, and live
+ * trade-up role, so the prose varies materially page-to-page instead of the identical
+ * boilerplate that made ~900 skin pages read as near-duplicates to Googlebot.
+ */
+export function buildSkinResearchParagraphs(i: SkinResearchInput): string {
+  const e = escapeHtml;
+  const name = e(i.skinName);
+  const rarity = e(i.rarity);
+  const lo = i.minFloat.toFixed(2);
+  const hi = i.maxFloat.toFixed(2);
+
+  const conds = i.availableConditions;
+  const condList = conds.length <= 1
+    ? (conds[0] ?? "a single")
+    : `${conds.slice(0, -1).join(", ")} and ${conds[conds.length - 1]}`;
+  const worst = conds[conds.length - 1] ?? "a heavier wear";
+
+  const para1 = conds.length <= 1
+    ? `<p>${name} carries a float range of ${lo}–${hi}, so it only appears in ${e(condList)} condition. `
+      + `In a trade-up, ten input floats are averaged and normalized to the output's own range, so ${name}'s narrow float band keeps the resulting output condition tightly constrained. `
+      + `That predictability is exactly why float, not just the sticker price, matters when using ${name} as an input.</p>`
+    : `<p>${name} carries a float range of ${lo}–${hi}, so it can appear in ${e(condList)} conditions. `
+      + `In a trade-up, ten input floats are averaged and normalized to the output's own range: an input near ${lo} contributes the cleanest float it can, while one near ${hi} drags the average toward ${e(worst)}. `
+      + `That makes float, not just the sticker price, a deciding factor when using ${name} as an input.</p>`;
+
+  const collPhrase = i.collectionDisplay ? ` from the ${e(i.collectionDisplay)} collection` : "";
+  const collDraw = i.collectionDisplay ? ` drawn from the ${e(i.collectionDisplay)} collection` : "";
+  let para2 = `<p>${name} is a ${rarity} skin${collPhrase}. `;
+  // Terminal items (knives/gloves) have no output tier — they are a trade-up result, not an
+  // input — so we must not claim they "trade up into" anything.
+  para2 += i.outputTier
+    ? `Ten ${rarity} inputs${collDraw} trade up into a ${e(i.outputTier)} output, so ${name} sits one tier below the results it helps produce.`
+    : `As a top-tier item it is a trade-up result rather than an input, so it appears as the payoff of a contract rather than a feeder into one.`;
+  if (i.inputTuCount > 0) {
+    para2 += ` At current market prices it appears as an input in ${i.inputTuCount} profitable contract${i.inputTuCount !== 1 ? "s" : ""}`;
+    para2 += i.bestProfitCents > 0 ? `, the best worth $${(i.bestProfitCents / 100).toFixed(2)} in modeled profit.` : ".";
+  }
+  if (i.outputTuCount > 0) {
+    para2 += ` ${i.outputTuCount} profitable contract${i.outputTuCount !== 1 ? "s" : ""} can produce ${name} as an output.`;
+  }
+  if (i.inputTuCount === 0 && i.outputTuCount === 0) {
+    para2 += i.collectionDisplay
+      ? ` No profitable contracts use ${name} at current market prices, but its collection and float profile still shape which contracts become viable as prices move.`
+      : ` No profitable contracts use ${name} at current market prices, but its float profile still shapes which contracts become viable as prices move.`;
+  }
+  para2 += `</p>`;
+
+  return para1 + para2;
+}
+
 export function dedupeHead(html: string): string {
   const headMatch = html.match(/<head[^>]*>[\s\S]*?<\/head>/i);
   if (!headMatch || headMatch.index === undefined) return html;

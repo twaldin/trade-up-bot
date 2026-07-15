@@ -87,9 +87,31 @@ ${urls}
 </urlset>`;
 }
 
-export function buildSkinSitemap(base: string, skins: { name: string; listing_count: number }[], lastmod: string, minListings: number = 10): string {
+export interface SkinSitemapRow {
+  name: string;
+  listing_count: number;
+  /** True when the skin is an input of at least one active, profitable, non-theoretical trade-up. */
+  is_tradeup_input?: boolean;
+  /** True when the skin is produced as an output of such a trade-up. */
+  is_tradeup_output?: boolean;
+  /** Count of price observations in the trailing 30 days (recent market liquidity). */
+  obs30?: number;
+}
+
+/**
+ * A skin page earns a sitemap slot (and index-worthiness) only when it carries content a
+ * generic price-catalog page would not: it participates in the trade-up graph, or it has
+ * substantive recent price history. Listing count alone is a near-useless signal here —
+ * nearly every skin has 100+ listings — so it is only a spam floor, not the bar.
+ */
+export function isSkinIndexworthy(row: SkinSitemapRow, minListings = 10, minObs = 20): boolean {
+  if ((row.listing_count ?? 0) < minListings) return false;
+  return Boolean(row.is_tradeup_input) || Boolean(row.is_tradeup_output) || (row.obs30 ?? 0) >= minObs;
+}
+
+export function buildSkinSitemap(base: string, skins: SkinSitemapRow[], lastmod: string, minListings = 10, minObs = 20): string {
   const urls = skins
-    .filter(s => s.listing_count >= minListings)
+    .filter(s => isSkinIndexworthy(s, minListings, minObs))
     .map(s =>
       `  <url><loc>${base}/skins/${toSlug(s.name)}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.6</priority></url>`
     ).join("\n");
@@ -167,11 +189,35 @@ export function sitemapRouter(pool: pg.Pool): Router {
         res.send(cached);
         return;
       }
+      // Signals per skin: listing count (spam floor), recent price-observation volume,
+      // and whether the skin participates in the profitable trade-up graph. Only skins
+      // that clear the quality bar (see isSkinIndexworthy) are advertised — a generic
+      // price-lookup page adds no unique value on a young site and dilutes crawl budget.
       const { rows } = await pool.query(`
-        SELECT s.name, COUNT(l.id)::int as listing_count
-        FROM skins s LEFT JOIN listings l ON s.id = l.skin_id
+        SELECT s.name,
+               COUNT(l.id)::int AS listing_count,
+               COALESCE(po.obs30, 0)::int AS obs30,
+               EXISTS (
+                 SELECT 1 FROM trade_up_inputs ti
+                 JOIN trade_ups t ON ti.trade_up_id = t.id
+                 WHERE ti.skin_name = s.name
+                   AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+               ) AS is_tradeup_input,
+               EXISTS (
+                 SELECT 1 FROM trade_ups t
+                 WHERE t.output_skin_names @> ARRAY[s.name]::text[]
+                   AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+               ) AS is_tradeup_output
+        FROM skins s
+        LEFT JOIN listings l ON s.id = l.skin_id
+        LEFT JOIN (
+          SELECT skin_name, COUNT(*) AS obs30
+          FROM price_observations
+          WHERE observed_at > NOW() - INTERVAL '30 days'
+          GROUP BY skin_name
+        ) po ON po.skin_name = s.name
         WHERE s.stattrak = false
-        GROUP BY s.name
+        GROUP BY s.name, po.obs30
         ORDER BY s.name
       `);
       const xml = buildSkinSitemap(BASE, rows, lastmod);
