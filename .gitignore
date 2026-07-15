@@ -56,3 +56,9 @@ handoffs/
 AGENTS.md
 server/**/AGENTS.md
 scripts/generate-daily-content.sh
+
+# agent scratch + campaign drafts stay local
+plans/
+handoffs/
+content/
+docs/superpowers/
