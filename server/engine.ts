@@ -49,7 +49,7 @@ export { evaluateTradeUp } from "./engine/evaluation.js";
 export { getKnifeFinishesWithPrices, evaluateKnifeTradeUp, buildKnifeFinishCache } from "./engine/knife-evaluation.js";
 
 // === Discovery ===
-export { findProfitableTradeUps, randomExplore, exploreWithBudget, topKByValue, STEP3_SPLITS, STEP3_TOP_K, STEP3_MAX_TARGETS } from "./engine/discovery.js";
+export { findProfitableTradeUps, randomExplore, exploreWithBudget, topKByValue, STEP3_SPLITS, STEP3_TOP_K, STEP3_MAX_TARGETS, enumerateBoundaryTargets, E2_MAX_TARGETS } from "./engine/discovery.js";
 export { findProfitableKnifeTradeUps, randomKnifeExplore, exploreKnifeWithBudget } from "./engine/knife-discovery.js";
 export { findStaircaseTradeUps } from "./engine/staircase.js";
 

@@ -78,6 +78,72 @@ export function topKByValue(
     .slice(0, k);
 }
 
+// ─── E2: reverse output-targeting ────────────────────────────────────────────
+//
+// Instead of scanning collections forward and hoping to land under a valuable
+// condition boundary, E2 enumerates the (collection, output-skin, boundary)
+// triples with the LARGEST price cliff and targets them directly. It runs
+// FIRST in the rarity loop: E4's Step 3 proved that passes placed after
+// Steps 1-2 are deadline-starved and never execute in prod workers.
+
+/** Max reverse targets attempted per rarity (bounds the E2 pass). */
+export const E2_MAX_TARGETS = 16;
+
+/** One reverse target: land `skinName`'s output float just under `boundary`. */
+export interface BoundaryTarget {
+  collectionId: string;
+  skinName: string;
+  boundary: number; // raw float boundary (CONDITION_BOUNDS[i].max)
+  adjTarget: number; // adjusted-float target for the selectors (margin applied)
+  valueJumpCents: number; // price(cond below boundary) − price(cond above)
+}
+
+/**
+ * E2 — rank output condition-boundary price cliffs, largest first, and convert
+ * each to an adjusted-float selection target. Pure: prices come from the
+ * injected `priceOf` (production: the global price cache). Uses the same
+ * target convention as getConditionTransitions: t = (boundary − min)/range −
+ * 0.002 (4dp), valid iff 0.001 < t ≤ 1.0. Deterministic tiebreaks so equal
+ * jumps rank identically regardless of map insertion order.
+ */
+export function enumerateBoundaryTargets(
+  outcomesByCol: Map<string, DbSkinOutcome[]>,
+  priceOf: (skinName: string, condition: string) => number,
+  k: number = E2_MAX_TARGETS,
+): BoundaryTarget[] {
+  const targets: BoundaryTarget[] = [];
+  for (const [collectionId, outcomes] of outcomesByCol) {
+    for (const o of outcomes) {
+      const range = o.max_float - o.min_float;
+      if (range <= 0) continue;
+      // Boundaries between adjacent conditions: below = better condition.
+      for (let i = 0; i < 4; i++) {
+        const boundary = CONDITION_BOUNDS[i].max;
+        const jump =
+          priceOf(o.name, CONDITION_BOUNDS[i].name) -
+          priceOf(o.name, CONDITION_BOUNDS[i + 1].name);
+        if (jump <= 0) continue;
+        // Validate the RAW ratio first, subtract the margin after, keep if
+        // > 0 — the exact getConditionTransitions order (selection.ts), so E2
+        // targets the same boundary set Steps 1/3 would.
+        const raw = (boundary - o.min_float) / range;
+        if (raw <= 0.001 || raw > 1.0) continue;
+        const adjTarget = Math.round((raw - 0.002) * 10000) / 10000;
+        if (adjTarget <= 0) continue;
+        targets.push({ collectionId, skinName: o.name, boundary, adjTarget, valueJumpCents: jump });
+      }
+    }
+  }
+  targets.sort(
+    (a, b) =>
+      b.valueJumpCents - a.valueJumpCents ||
+      (a.skinName < b.skinName ? -1 : a.skinName > b.skinName ? 1 : 0) ||
+      a.boundary - b.boundary ||
+      (a.collectionId < b.collectionId ? -1 : a.collectionId > b.collectionId ? 1 : 0)
+  );
+  return targets.slice(0, Math.max(0, k));
+}
+
 /** Per-strategy yield stats from exploration. */
 export interface StrategyYieldEntry {
   strategyId: number;
@@ -259,6 +325,45 @@ export async function findProfitableTradeUps(
     let knapsackAttempts = 0;
     let knapsackHits = 0;
     let knapsackRecovered = 0;
+
+    // Step E2: reverse output-targeting — runs FIRST (before Steps 1-3) so the
+    // highest-value boundary targets are guaranteed evaluation before the
+    // deadline can starve them (E4's Step 3 ran 0/153 times when placed last).
+    // INTENTIONAL TRADEOFF: E2 consumes a bounded slice of the structured
+    // budget (≤E2_MAX_TARGETS targets ≈ seconds), so under a tight deadline
+    // Steps 1-3 lose exactly that slice off their tail — trading the LOWEST
+    // priority forward work for the HIGHEST-value reverse targets.
+    // Single-collection quotas keep the probability of hitting the targeted
+    // output maximal. Deadline-gated like Step 3 so the deadline-less inline
+    // fallback path is unchanged.
+    if (options.deadlineMs !== undefined && !pastDeadline()) {
+      const e2Targets = enumerateBoundaryTargets(
+        outcomesByCol,
+        (name, cond) => globalPriceCache.get(`${name}:${cond}`) ?? 0
+      );
+      const e2Before = store.total;
+      let e2Evals = 0;
+      for (const t of e2Targets) {
+        if (pastDeadline()) break;
+        const outcomes = outcomesForCols(t.collectionId);
+        if (outcomes.length === 0) continue;
+        const quotas = new Map([[t.collectionId, 10]]);
+        const greedy = selectForFloatTarget(byColAdj, quotas, t.adjTarget);
+        if (greedy) {
+          await tryEval(greedy, outcomes, "e2:greedy");
+          e2Evals++;
+        }
+        knapsackAttempts++;
+        const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, t.adjTarget);
+        if (knapsack) {
+          knapsackHits++;
+          if (!greedy) knapsackRecovered++;
+          await tryEval(knapsack, outcomes, "e2:knapsack");
+          e2Evals++;
+        }
+      }
+      console.log(`  ${inputRarity}: E2 reverse-targeting done (${e2Targets.length} targets, ${e2Evals} evals, +${store.total - e2Before} stored)`);
+    }
 
     // Step 1: Single-collection (baseline + float-targeted)
     options.onProgress?.(`${inputRarity}: single-collection scan...`, 0, 100);
