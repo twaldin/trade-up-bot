@@ -82,10 +82,60 @@ interface DMarketItem {
   inMarket?: boolean;
 }
 
-interface DMarketSearchResponse {
-  objects: DMarketItem[];
-  total?: { items?: string };
+/** v2 /marketplace-api/v2/offers response item (2026-07: v1 retired with 410). */
+export interface DMarketV2Offer {
+  offerId: string;
+  priceCents: string; // USD cents as string
+  createdAt?: string;
+  locked?: boolean;
+  attributes?: {
+    title?: string;
+    name?: string;
+    categoryPath?: string;
+    cs2?: {
+      category?: string; // "CATEGORY_NORMAL" | "CATEGORY_SOUVENIR" | ...
+      exterior?: string;
+      float?: string; // stringified float
+      paintSeed?: number;
+      phase?: string;
+      inspectInGameUri?: string;
+    };
+  };
+}
+
+interface DMarketV2SearchResponse {
+  items: DMarketV2Offer[];
+  total?: { offers?: string; items?: string };
   cursor?: string;
+}
+
+/**
+ * Map a v2 offer onto the legacy DMarketItem shape so every downstream
+ * consumer (sync loop, fetcher, staleness, routes) stays unchanged.
+ * Missing float maps to NaN, which the sync loop's
+ * `!floatValue && floatValue !== 0` guard rejects. CATEGORY_SOUVENIR maps to
+ * the legacy "souvenir" marker the sync loop checks for.
+ * NOTE: v2 Doppler phase format is unverified (sample data had phase "");
+ * the raw value is passed through — revisit if Doppler listings misprice.
+ */
+export function mapV2Offer(offer: DMarketV2Offer): DMarketItem {
+  const attrs = offer.attributes ?? {};
+  const cs2 = attrs.cs2 ?? {};
+  return {
+    itemId: offer.offerId,
+    title: attrs.title ?? "",
+    price: { USD: offer.priceCents },
+    extra: {
+      floatValue: parseFloat(cs2.float ?? ""),
+      exterior: cs2.exterior ?? "",
+      paintSeed: cs2.paintSeed ?? 0,
+      phase: cs2.phase,
+      inspectInGame: cs2.inspectInGameUri,
+      category: cs2.category === "CATEGORY_SOUVENIR" ? "souvenir" : cs2.category,
+      categoryPath: attrs.categoryPath,
+      name: attrs.name,
+    },
+  };
 }
 
 /**
@@ -124,7 +174,10 @@ export async function fetchDMarketListings(
   });
   if (options.cursor) params.set("cursor", options.cursor);
 
-  const path = `/exchange/v1/market/items?${params.toString()}`;
+  // 2026-07-16: /exchange/v1/market/items was retired (HTTP 410). The v2
+  // endpoint takes the same query params + Ed25519 signing; only the response
+  // shape changed (mapV2Offer restores the legacy DMarketItem shape).
+  const path = `/marketplace-api/v2/offers?${params.toString()}`;
   const headers = signRequest("GET", path);
 
   const res = await rateLimitedFetch(`${DMARKET_API}${path}`, {
@@ -137,8 +190,8 @@ export async function fetchDMarketListings(
     throw new Error(`DMarket API ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const data = await res.json() as DMarketSearchResponse;
-  return { items: data.objects ?? [], cursor: data.cursor };
+  const data = await res.json() as DMarketV2SearchResponse;
+  return { items: (data.items ?? []).map(mapV2Offer), cursor: data.cursor };
 }
 
 /**
