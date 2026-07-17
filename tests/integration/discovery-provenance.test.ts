@@ -3,7 +3,7 @@
  *
  * Every trade-up produced by structured discovery must carry a `discovered_via`
  * label identifying the mechanism that found it (step + selector, e.g.
- * "s1:greedy", "s3:knapsack"), exploration results must carry "explore:S<id>",
+ * "s1:greedy", "s2:knapsack"), exploration results must carry "explore:S<id>",
  * and the label must persist through saveTradeUps / mergeTradeUps inserts.
  * Merge UPDATEs must NOT clobber the original label (first-discoverer
  * attribution) — re-discovery of a known signature keeps the stored value.
@@ -22,7 +22,7 @@ import { makeTradeUp } from "../helpers/fixtures.js";
 
 const { Pool } = pg;
 
-const STRUCTURED_LABEL = /^s[123]:[a-z]+$/;
+const STRUCTURED_LABEL = /^s[12]:[a-z]+$/;
 const EXPLORE_LABEL = /^explore:S\d+$/;
 
 async function createSchema(pool: pg.Pool): Promise<string> {
@@ -130,7 +130,8 @@ async function createSchema(pool: pg.Pool): Promise<string> {
 
 // Three Classified collections, each with one Classified input skin (30 listings
 // across all conditions) and one profitable Covert output skin (mirrors the E4
-// three-collection fixture so Steps 1-3 all fire).
+// three-collection fixture; Steps 1-2 fire, and the persistence tests below
+// use legacy s3:* labels only as opaque stored values).
 async function seedFixtures(pool: pg.Pool) {
   const cols = [
     { id: "col-a", name: "Collection Alpha", inSkin: "skin-class-a", inName: "AK-47 | Alpha Skin", weaponIn: "AK-47", outName: "AWP | Fire Serpent", outSkin: "skin-covert-a", weaponOut: "AWP" },
@@ -224,12 +225,9 @@ describe("discovery provenance — discovered_via (integration)", () => {
     for (const tu of results) {
       expect(tu.discovered_via, `untagged trade-up (inputs ${tu.inputs.map(i => i.listing_id).join(",")})`).toMatch(STRUCTURED_LABEL);
     }
-    // 3-collection combos can only come from Step 3 → must carry s3:* labels.
-    const triCombos = results.filter(tu => distinctCollections(tu) === 3);
-    expect(triCombos.length).toBeGreaterThan(0);
-    for (const tu of triCombos) {
-      expect(tu.discovered_via).toMatch(/^s3:/);
-    }
+    // Step 3 was removed (Iteration 8, E4 cleanup: 0 prod runs in 153+ cycles) —
+    // structured discovery produces only 1- and 2-collection combos now.
+    expect(results.every(tu => distinctCollections(tu) <= 2)).toBe(true);
   }, 120_000);
 
   it("tags exploration results with explore:S<id>", async () => {
