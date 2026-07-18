@@ -9,17 +9,21 @@ export function timestamp() {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-// Staircase (50 Classified → 5 Covert → 1 Knife) discovery is a heavy,
-// query-intensive pass (it re-scans up to 5000 classified→covert trade-ups and
-// evaluates thousands of combos), so it is run only every Nth cycle to amortize
-// its cost. It depends on Phase 5 classified_covert data, and cycleCount starts
-// at 1, so it never fires on cycle 0.
-export const STAIRCASE_EVERY_N_CYCLES = 4;
+// Staircase (50 Classified → 5 Covert → 1 Knife) discovery re-scans up to 5000
+// classified→covert trade-ups, so it runs only every Nth cycle to amortize its
+// cost. Measured pass cost in prod is 10-23s (far below the 1-3 min estimated
+// when every-4 was chosen) while the staircase pool decays 30-73% between
+// refreshes, so the cadence is every 2nd cycle. Cycle 1 also fires so a daemon
+// restart doesn't open a multi-cycle staircase blackout; cycle 0 never fires
+// (the pass depends on Phase 5 classified_covert data, and cycleCount starts
+// at 1).
+export const STAIRCASE_EVERY_N_CYCLES = 2;
 export function shouldRunStaircase(
   cycleCount: number,
   every: number = STAIRCASE_EVERY_N_CYCLES
 ): boolean {
-  return every > 0 && cycleCount > 0 && cycleCount % every === 0;
+  if (every <= 0 || cycleCount <= 0) return false;
+  return cycleCount === 1 || cycleCount % every === 0;
 }
 
 // Module-level daemon metadata — set once on startup, included in every status update
