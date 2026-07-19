@@ -44,8 +44,13 @@ function biasedFloatTarget(premiumRatio: number): number {
 // FIRST in the rarity loop: E4's Step 3 proved that passes placed after
 // Steps 1-2 are deadline-starved and never execute in prod workers.
 
-/** Max reverse targets attempted per rarity (bounds the E2 pass). */
-export const E2_MAX_TARGETS = 16;
+/**
+ * Max reverse targets attempted per rarity (bounds the E2 pass). Raised 16→24
+ * (2026-07-19): prod telemetry showed enumeration cap-saturated at 16/16 on
+ * every gun-tier run while the whole pass stayed at ~1.4 evals/target
+ * (seconds), so the cap — not the market — was the binding constraint.
+ */
+export const E2_MAX_TARGETS = 24;
 
 /** One reverse target: land `skinName`'s output float just under `boundary`. */
 export interface BoundaryTarget {
