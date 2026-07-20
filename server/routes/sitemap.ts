@@ -193,31 +193,40 @@ export function sitemapRouter(pool: pg.Pool): Router {
       // and whether the skin participates in the profitable trade-up graph. Only skins
       // that clear the quality bar (see isSkinIndexworthy) are advertised — a generic
       // price-lookup page adds no unique value on a young site and dilutes crawl budget.
+      // Input/output membership is computed ONCE via CTEs, not per-skin correlated
+      // EXISTS: at prod scale (6.9M trade_up_inputs, 760K trade_ups) the correlated
+      // form ran >87s and 504'd behind nginx's 60s proxy timeout (2026-07-20).
+      // This CTE form runs in ~3s and returns identical signals.
       const { rows } = await pool.query(`
-        SELECT s.name,
-               COUNT(l.id)::int AS listing_count,
-               COALESCE(po.obs30, 0)::int AS obs30,
-               EXISTS (
-                 SELECT 1 FROM trade_up_inputs ti
-                 JOIN trade_ups t ON ti.trade_up_id = t.id
-                 WHERE ti.skin_name = s.name
-                   AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
-               ) AS is_tradeup_input,
-               EXISTS (
-                 SELECT 1 FROM trade_ups t
-                 WHERE t.output_skin_names @> ARRAY[s.name]::text[]
-                   AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
-               ) AS is_tradeup_output
-        FROM skins s
-        LEFT JOIN listings l ON s.id = l.skin_id
-        LEFT JOIN (
+        WITH inp AS (
+          SELECT DISTINCT ti.skin_name
+          FROM trade_up_inputs ti
+          JOIN trade_ups t ON ti.trade_up_id = t.id
+          WHERE t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 0
+        ),
+        outp AS (
+          SELECT DISTINCT unnest(output_skin_names) AS skin_name
+          FROM trade_ups
+          WHERE listing_status = 'active' AND is_theoretical = false AND profit_cents > 0
+        ),
+        po AS (
           SELECT skin_name, COUNT(*) AS obs30
           FROM price_observations
           WHERE observed_at > NOW() - INTERVAL '30 days'
           GROUP BY skin_name
-        ) po ON po.skin_name = s.name
+        )
+        SELECT s.name,
+               COUNT(l.id)::int AS listing_count,
+               COALESCE(MAX(po.obs30), 0)::int AS obs30,
+               BOOL_OR(inp.skin_name IS NOT NULL) AS is_tradeup_input,
+               BOOL_OR(outp.skin_name IS NOT NULL) AS is_tradeup_output
+        FROM skins s
+        LEFT JOIN listings l ON s.id = l.skin_id
+        LEFT JOIN po ON po.skin_name = s.name
+        LEFT JOIN inp ON inp.skin_name = s.name
+        LEFT JOIN outp ON outp.skin_name = s.name
         WHERE s.stattrak = false
-        GROUP BY s.name, po.obs30
+        GROUP BY s.name
         ORDER BY s.name
       `);
       const xml = buildSkinSitemap(BASE, rows, lastmod);
