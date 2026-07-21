@@ -28,7 +28,6 @@ NDJSON pre-materialization: main process writes `/tmp/discovery-data-<rarity>-<k
 - `calc-worker.ts` — forked child that runs discovery for one tier.
 - `state.ts` — `BudgetTracker`, `FreshnessTracker`, `TARGET_CYCLE_MS`, safety buffers.
 - `utils.ts` — logging, rate-limit detection, cycle stats.
-- `loops.ts` — inner-loop helpers (cooldown explore).
 - `adaptive-weights.ts` — strategy-yield → per-tier weights.
 - `completeness-audit.ts` — diagnostic counter for skin-coverage gaps.
 - `discord-alerts.ts` — webhook alerts for new all-time-best trade-ups.
