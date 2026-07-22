@@ -190,9 +190,18 @@ function FilterPill({ label, summary, active, onClear, children }: {
         {active && (
           <span
             role="button"
+            tabIndex={0}
             aria-label={`Clear ${label} filter`}
             className="text-blue-400/70 hover:text-blue-200 text-sm leading-none -mr-1 px-0.5"
-            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            onClick={(e) => { e.stopPropagation(); setExpanded(false); onClear(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                setExpanded(false);
+                onClear();
+              }
+            }}
           >&times;</span>
         )}
       </button>
@@ -212,12 +221,15 @@ function FilterPill({ label, summary, active, onClear, children }: {
   );
 }
 
-function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, unit }: {
+function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, onClear, step, unit }: {
   label: string;
   minVal: string;
   maxVal: string;
   onMinChange: (v: string) => void;
   onMaxChange: (v: string) => void;
+  /** Clears min AND max in ONE filters update — two sequential onMinChange/onMaxChange
+   *  calls would each spread the same stale filters object and resurrect the other value. */
+  onClear: () => void;
   step: number;
   unit: string;
 }) {
@@ -231,7 +243,7 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
       label={label}
       summary={summary}
       active={hasValue}
-      onClear={() => { onMinChange(""); onMaxChange(""); }}
+      onClear={onClear}
     >
       <div className="flex gap-2">
         <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
@@ -379,22 +391,28 @@ export function FilterBar({ filters, onFiltersChange }: {
           <MarketFilter selected={filters.markets} onChange={(m) => update({ markets: m })} />
           <RangeFilter label="Profit" unit="$" step={1}
             minVal={filters.minProfit} maxVal={filters.maxProfit}
-            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })} />
+            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })}
+            onClear={() => update({ minProfit: "", maxProfit: "" })} />
           <RangeFilter label="ROI" unit="%" step={1}
             minVal={filters.minRoi} maxVal={filters.maxRoi}
-            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })} />
+            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })}
+            onClear={() => update({ minRoi: "", maxRoi: "" })} />
           <RangeFilter label="Cost" unit="$" step={10}
             minVal={filters.minCost} maxVal={filters.maxCost}
-            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })} />
+            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })}
+            onClear={() => update({ minCost: "", maxCost: "" })} />
           <RangeFilter label="Chance" unit="%" step={5}
             minVal={filters.minChance} maxVal={filters.maxChance}
-            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })} />
+            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })}
+            onClear={() => update({ minChance: "", maxChance: "" })} />
           <RangeFilter label="Max Loss" unit="$" step={10}
             minVal={filters.maxLoss} maxVal=""
-            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}} />
+            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}}
+            onClear={() => update({ maxLoss: "" })} />
           <RangeFilter label="Best Win" unit="$" step={10}
             minVal={filters.minWin} maxVal=""
-            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}} />
+            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}}
+            onClear={() => update({ minWin: "" })} />
         </div>
       </div>
     </div>
