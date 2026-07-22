@@ -503,8 +503,35 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       };
     });
 
+    // Coherence guard: the WHERE filtered on the listing_status COLUMN, but canonical
+    // status was just recomputed from live listings (batchLoadInputCounts). A listing
+    // deleted without cascadeTradeUpStatuses running (race, crashed fetcher) leaves the
+    // column 'active' — the row passes the WHERE, then renders partial/stale in the
+    // default view. Drop leaked rows from the page and write the corrected status back
+    // (self-healing: the next uncached query excludes them in SQL). Rows claimed by the
+    // requesting user stay visible — the claimer must see their inputs went missing.
+    const leakedIds = new Set<number>();
+    if (!includeStale && my_claims !== "true") {
+      const leaked = tradeUps.filter(tu => tu.listing_status !== "active" && !tu.claimed_by_me);
+      if (leaked.length > 0) {
+        for (const tu of leaked) leakedIds.add(tu.id);
+        const staleIds = leaked.filter(tu => tu.listing_status === "stale").map(tu => tu.id);
+        await pool.query(
+          `UPDATE trade_ups SET
+             listing_status = CASE WHEN id = ANY($2::int[]) THEN 'stale' ELSE 'partial' END,
+             preserved_at = COALESCE(preserved_at, NOW())
+           WHERE id = ANY($1::int[]) AND listing_status = 'active'
+             AND NOT EXISTS (
+               SELECT 1 FROM trade_up_claims tc
+               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+             )`,
+          [[...leakedIds], staleIds]
+        );
+      }
+    }
+
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    const filteredTradeUps = tradeUps.filter(tu => !tu.claimed_by_other);
+    const filteredTradeUps = tradeUps.filter(tu => !tu.claimed_by_other && !leakedIds.has(tu.id));
     const removedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {

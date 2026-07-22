@@ -92,7 +92,7 @@ export function PricingPage() {
         <div className="mx-auto max-w-4xl px-6">
           <h1 className="text-3xl sm:text-4xl font-bold mb-2 text-center">Pricing</h1>
           <p className="text-muted-foreground mb-12 text-center">
-            Start free. Upgrade when you're ready to act on opportunities.
+            Start free. Upgrade when the 3-hour delay costs you trade-ups.
           </p>
 
           {/* Billing interval toggle */}
@@ -234,23 +234,23 @@ export function PricingPage() {
 
             <PricingFaqItem question="What payment methods are accepted?">
               <p>
-                We accept all major credit and debit cards (Visa, Mastercard, American Express) through
-                Stripe. All payments are processed securely — we never see or store your card details.
+                All major credit and debit cards (Visa, Mastercard, American Express) through
+                Stripe. Card details never touch our servers.
               </p>
             </PricingFaqItem>
 
             <PricingFaqItem question="Is there a free trial for Pro?">
               <p>
-                There's no separate trial — the Free tier itself serves as a permanent trial. You can
-                use the Free tier for as long as you want to explore the platform. When you're ready
-                to act on trade-ups with real-time data, upgrade to Pro.
+                No separate trial. The Free tier has no time limit: same trade-ups, full filters
+                and listing links, on a 3-hour delay. Upgrade when you want real-time data,
+                verification, and claims.
               </p>
             </PricingFaqItem>
 
             <PricingFaqItem question="What do the data delays mean?">
               <p>
-                Free users see trade-ups 3 hours after they're discovered. Pro users see them immediately.
-                Shorter delays mean you can act on opportunities before other users see them.
+                Free users see trade-ups 3 hours after discovery. Pro users see them immediately.
+                On a 3-hour delay, the best listings are often already bought.
               </p>
             </PricingFaqItem>
 

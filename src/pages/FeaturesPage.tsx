@@ -19,7 +19,7 @@ export function FeaturesPage() {
         <div className="mx-auto max-w-4xl px-6">
           <h1 className="text-3xl sm:text-4xl font-bold mb-2">Features</h1>
           <p className="text-muted-foreground mb-12 max-w-2xl">
-            Everything TradeUpBot does to find, analyze, and help you execute profitable CS2 trade-up contracts.
+            How TradeUpBot finds, prices, and locks profitable CS2 trade-up contracts.
           </p>
 
           {/* Feature sections */}
@@ -29,14 +29,14 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Real marketplace listings</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Every trade-up on TradeUpBot is built from actual, currently-listed skins on three marketplaces:
-                CSFloat, DMarket, and Skinport. No theoretical calculations, no idealized floats, no
-                average prices. Each input links to a specific listing you can purchase right now.
+                Every trade-up is built from skins currently listed on CSFloat, DMarket, and Skinport.
+                Each input links to a specific listing with its actual float and price, so the cost
+                you see is the cost you pay.
               </p>
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="border border-border rounded-lg p-4">
                   <div className="text-sm font-semibold mb-1">CSFloat</div>
-                  <p className="text-xs text-muted-foreground">Primary source for Covert skins and sale-based output pricing. Highest-confidence price data in the ecosystem.</p>
+                  <p className="text-xs text-muted-foreground">Primary source for Covert skins and sale-based output pricing. Sale history gives the most reliable price signal of the three sources.</p>
                 </div>
                 <div className="border border-border rounded-lg p-4">
                   <div className="text-sm font-semibold mb-1">DMarket</div>
@@ -53,15 +53,13 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Outcome analysis with probability charts</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Expand any trade-up to see every possible output skin, its probability, estimated value,
-                and whether it produces a profit or loss. The outcome distribution chart shows the full
-                picture at a glance — which outcomes are likely, which are valuable, and what your
-                downside looks like.
+                Expand any trade-up to see every possible output skin, its probability, its estimated
+                value, and its profit or loss. The distribution chart shows which outcomes are likely
+                and how deep the downside runs.
               </p>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Each outcome's value accounts for the output skin's float range, the exact output float
-                your inputs would produce, the resulting condition, and marketplace seller fees. No
-                surprises when you get your result.
+                Each outcome's value accounts for the exact output float your inputs would produce,
+                the resulting wear condition, and marketplace seller fees.
               </p>
             </section>
 
@@ -69,14 +67,13 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Float-targeted discovery across 45+ targets</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                The discovery engine doesn't just test one float value and hope for the best. It evaluates
-                each input combination across 45+ float targets, densely clustered around condition boundaries
-                (Factory New/Minimal Wear at 0.07, Minimal Wear/Field-Tested at 0.15, etc.).
+                Each input combination is evaluated at 45+ float targets, clustered around condition
+                boundaries (Factory New/Minimal Wear at 0.07, Minimal Wear/Field-Tested at 0.15, and so on).
               </p>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                This finds the exact crossing point where an output flips from one condition to another —
-                identifying opportunities that manual calculations and single-target tools miss entirely.
-                Swap optimization further improves existing trade-ups by testing replacement inputs each cycle.
+                That locates the crossing point where an output flips to a better condition, which
+                single-target calculators miss. Swap optimization retests replacement inputs on
+                existing trade-ups each cycle.
               </p>
             </section>
 
@@ -84,9 +81,9 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Verify system</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Before committing money, hit Verify to check every input listing in real time. Verify calls
-                each marketplace's API to confirm that listings still exist and at what price. The trade-up's
-                profit, cost, and EV update instantly based on current data.
+                Before spending money, hit Verify. It calls each marketplace's API to confirm every
+                input listing still exists and at what price. The trade-up's cost, profit, and EV
+                update from the response.
               </p>
               <div className="flex gap-6 text-sm">
                 <div>
@@ -100,9 +97,8 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Claim system</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Pro users can claim a trade-up to hide its listings from all other TradeUpBot users for
-                30 minutes. This gives you an uncontested window to purchase each input without worrying
-                about another user buying them first.
+                Pro users can claim a trade-up to hide its listings from all other TradeUpBot users
+                for 30 minutes. During that window, no other user can see or buy those inputs.
               </p>
               <div className="flex gap-6 text-sm flex-wrap">
                 <div>
@@ -124,8 +120,8 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">All rarity tiers covered</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                TradeUpBot discovers profitable trade-ups across every rarity tier in CS2, from
-                cheap Mil-Spec inputs to high-value Knife and Glove contracts.
+                TradeUpBot discovers trade-ups in every CS2 rarity tier, from Consumer inputs
+                costing cents to Knife and Glove contracts.
               </p>
               <div className="space-y-2">
                 {[
@@ -148,10 +144,10 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Price intelligence from 3 data sources</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Output pricing is CSFloat-primary — sale history from CSFloat is the highest-confidence
-                price data available. DMarket and Skinport listing data fill gaps when CSFloat has
-                no coverage for a particular skin or condition. Knife and glove output pricing uses a
-                KNN model trained on 120,000+ price observations for float-precise estimates.
+                Output pricing uses CSFloat sale history first. DMarket and Skinport listing data
+                fill gaps when CSFloat has no coverage for a skin or condition. Knife and glove
+                output pricing uses a KNN model trained on 120,000+ price observations for
+                float-precise estimates.
               </p>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Input pricing uses actual listing prices with marketplace-specific buyer fees applied:
@@ -165,10 +161,9 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Collection browser with knife/glove pool info</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Browse every CS2 collection with detailed information: which knife and glove finishes
-                are in each collection's pool, how many listings exist per rarity tier, and which
-                collections currently have profitable trade-ups. Filter by knife collections, glove
-                collections, or profitability to narrow your focus.
+                Browse every CS2 collection: which knife and glove finishes are in its pool, how many
+                listings exist per rarity tier, and which collections currently have profitable
+                trade-ups. Filter by knives, gloves, or profitability.
               </p>
             </section>
 
@@ -176,19 +171,18 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Continuously updated</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                The discovery engine runs in approximately 20-minute cycles, scanning for new listings
-                and recalculating trade-ups each cycle. DMarket data is fetched continuously at 2
-                requests per second in a separate process. Skinport data streams in via a live WebSocket
-                connection. Between fresh discovery, swap optimization, and revival of stale trade-ups,
-                the data is always moving toward the current market state.
+                The discovery engine runs in roughly 20-minute cycles, scanning new listings and
+                recalculating trade-ups. DMarket is fetched continuously at 2 requests per second in
+                a separate process; Skinport streams in over a live WebSocket. Each cycle also runs
+                swap optimization on existing trade-ups and rebuilds ones whose listings sold.
               </p>
             </section>
           </div>
 
           {/* CTA */}
           <div className="mt-16 pt-10 border-t border-border text-center">
-            <h2 className="text-xl font-bold mb-3">Ready to find profitable trade-ups?</h2>
-            <p className="text-sm text-muted-foreground mb-6">Sign in with Steam to get started. Free tier available.</p>
+            <h2 className="text-xl font-bold mb-3">Start free</h2>
+            <p className="text-sm text-muted-foreground mb-6">Sign in with Steam. The free tier shows every trade-up on a 3-hour delay.</p>
             <a
               href={authHref("/trade-ups")}
               onClick={() => trackEvent("sign_up_start", { location: "features_cta" })}

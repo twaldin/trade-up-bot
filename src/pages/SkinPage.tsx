@@ -12,13 +12,17 @@ export function SkinPage() {
 
   useEffect(() => {
     if (!slug) return;
+    let cancelled = false;
+    setSkinName(null);
+    setNotFound(false);
     fetch(`/api/skin-by-slug/${encodeURIComponent(slug)}`)
       .then(r => {
-        if (!r.ok) { setNotFound(true); return null; }
+        if (!r.ok) { if (!cancelled) setNotFound(true); return null; }
         return r.json();
       })
-      .then(data => { if (data?.name) setSkinName(data.name); })
-      .catch(() => setNotFound(true));
+      .then(data => { if (!cancelled && data?.name) setSkinName(data.name); })
+      .catch(() => { if (!cancelled) setNotFound(true); });
+    return () => { cancelled = true; };
   }, [slug]);
 
   if (notFound) {

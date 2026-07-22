@@ -65,8 +65,17 @@ function SkinSearchInput({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const debounceRef = useRef<number | undefined>(undefined);
+  const abortRef = useRef<AbortController | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Cancel pending debounce/fetch on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     setQuery(value);
@@ -84,29 +93,34 @@ function SkinSearchInput({
   }, []);
 
   const search = useCallback((q: string) => {
+    abortRef.current?.abort();
     if (q.length < 2) {
       setResults([]);
       setIsOpen(false);
+      setLoading(false);
       return;
     }
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setLoading(true);
-    fetch(`/api/calculator/search?q=${encodeURIComponent(q)}`)
+    fetch(`/api/calculator/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(data => {
+        if (ctrl.signal.aborted) return;
         setResults(data.results || []);
         setIsOpen(true);
         setLoading(false);
       })
       .catch(() => {
-        setLoading(false);
+        if (!ctrl.signal.aborted) setLoading(false);
       });
   }, []);
 
   const handleChange = (val: string) => {
     setQuery(val);
     if (resolved) onClear();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => search(val), 250);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => search(val), 250);
   };
 
   const handleSelect = (result: SearchResult) => {

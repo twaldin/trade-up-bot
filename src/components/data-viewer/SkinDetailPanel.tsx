@@ -61,19 +61,24 @@ export function SkinDetailPanel({ skinName, stattrak, onClose, onNavigateCollect
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
+    const ctrl = new AbortController();
     setLoading(true);
     const stParam = stattrak ? "&stattrak=1" : "";
-    fetch(`/api/skin-data/${encodeURIComponent(skinName)}?_=${Date.now()}${stParam}`)
+    fetch(`/api/skin-data/${encodeURIComponent(skinName)}?_=${Date.now()}${stParam}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(setDetail)
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
   }, [skinName, stattrak]);
 
   useEffect(() => {
     setFloatRange({ min: null, max: null });
     setTimeRange({ from: null, to: null });
     setFiltersOpen(false);
+    // A phase selected on a previous Doppler skin would filter every listing
+    // of the next skin out (non-Doppler listings have no phase)
+    setSelectedPhase(null);
   }, [skinName]);
 
   const toggleSeries = (key: SeriesKey) => {

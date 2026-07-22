@@ -43,16 +43,19 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
 
   useEffect(() => {
+    const ctrl = new AbortController();
     setLoading(true);
-    fetch(`/api/collection/${collectionToSlug(collectionName)}`)
+    fetch(`/api/collection/${collectionToSlug(collectionName)}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(data => setKnifePool(data.knifePool || null))
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
   }, [collectionName]);
 
   // Fetch trade-ups with collection filter + type + filters
   useEffect(() => {
+    const ctrl = new AbortController();
     setTradeUpsLoading(true);
     const params = filtersToParams(filters);
     params.set("collection", collectionName);
@@ -63,14 +66,15 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
     params.set("include_stale", "true");
     if (tuType !== "all") params.set("type", tuType);
 
-    fetch(`/api/trade-ups?${params}`, { credentials: "include" })
+    fetch(`/api/trade-ups?${params}`, { credentials: "include", signal: ctrl.signal })
       .then(r => r.json())
       .then(data => {
         setTradeUps(data.trade_ups || []);
         setTradeUpTotal(data.total || 0);
       })
       .catch(() => {})
-      .finally(() => setTradeUpsLoading(false));
+      .finally(() => { if (!ctrl.signal.aborted) setTradeUpsLoading(false); });
+    return () => ctrl.abort();
   }, [collectionName, tuSort, tuOrder, tuType, tuPage, filters]);
 
   const handleTuSort = (column: string) => {

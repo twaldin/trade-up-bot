@@ -15,12 +15,16 @@ export function useStatus(enabled = true, pollInterval = 60_000) {
   const [newDataHint, setNewDataHint] = useState(false);
   const prevCount = useRef(0);
   const prevStatus = useRef<SyncStatus | null>(null);
+  const fetchSeq = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     if (!enabled) return null;
+    const seq = ++fetchSeq.current;
     try {
       const res = await fetch("/api/status");
       const data: SyncStatus = await res.json();
+      // A newer fetch (manual refresh vs poll) finished first — drop this stale response
+      if (seq !== fetchSeq.current) return null;
       // Compute diffs against previous status
       if (prevStatus.current) {
         const p = prevStatus.current;

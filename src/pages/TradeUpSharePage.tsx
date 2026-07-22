@@ -47,13 +47,16 @@ export function TradeUpSharePage() {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     fetch(`/api/trade-ups/${id}`)
       .then(r => {
         if (!r.ok) throw new Error(r.status === 404 ? "Trade-up not found" : "Failed to load");
         return r.json();
       })
       .then(data => {
+        if (cancelled) return;
         const outcomes = data.outcomes || (data.outcomes_json ? JSON.parse(data.outcomes_json) : []);
         setTu({
           id: data.id,
@@ -81,8 +84,9 @@ export function TradeUpSharePage() {
         });
         trackEvent("tradeup_view", { tradeup_id: String(data.id) });
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch(err => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
   const handleCopy = () => {
