@@ -102,8 +102,8 @@ describe("enumerateBoundaryTargets (E2)", () => {
     expect(a).toEqual(b); // insertion-order independent (deterministic tiebreak)
   });
 
-  it("caps at 24 targets (Iteration 10: raised from 16 — enumeration was cap-saturated every run)", () => {
-    expect(E2_MAX_TARGETS).toBe(24);
+  it("caps at 32 targets (It10 16→24, It12 24→32 — enumeration stayed cap-saturated at both)", () => {
+    expect(E2_MAX_TARGETS).toBe(32);
   });
 
   it("defaults k to E2_MAX_TARGETS", () => {

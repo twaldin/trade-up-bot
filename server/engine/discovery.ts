@@ -46,11 +46,14 @@ function biasedFloatTarget(premiumRatio: number): number {
 
 /**
  * Max reverse targets attempted per rarity (bounds the E2 pass). Raised 16→24
- * (2026-07-19): prod telemetry showed enumeration cap-saturated at 16/16 on
- * every gun-tier run while the whole pass stayed at ~1.4 evals/target
- * (seconds), so the cap — not the market — was the binding constraint.
+ * (2026-07-19) after prod showed 16/16 saturation on every run; raised 24→32
+ * (2026-07-22) as the next bounded probe after 24 ALSO stayed saturated on
+ * every run (~1.3 evals/target, seconds per pass) and mint flow accelerated.
+ * Targets are ranked by price cliff, so marginal targets carry smaller cliffs
+ * — if raising further, cache per-collection sorted pools first (selector
+ * re-sorts per target).
  */
-export const E2_MAX_TARGETS = 24;
+export const E2_MAX_TARGETS = 32;
 
 /** One reverse target: land `skinName`'s output float just under `boundary`. */
 export interface BoundaryTarget {
