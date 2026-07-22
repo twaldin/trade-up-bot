@@ -61,7 +61,7 @@ export function FaqPage() {
               "name": "How does TradeUpBot find profitable trade-ups?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Unlike other tools that use theoretical calculations with idealized float values, TradeUpBot builds every trade-up from real, buyable listings on CSFloat, DMarket, and Skinport. Our engine continuously scans marketplace listings, tests thousands of input combinations across 45+ float targets, and evaluates the expected profit and probability of each outcome. Every trade-up you see on the platform links to actual listings you can purchase right now, with exact floats, exact prices, and deterministic outcomes."
+                "text": "TradeUpBot builds every trade-up from real, buyable listings on CSFloat, DMarket, Skinport, and Buff.market. The engine scans marketplace listings continuously, tests thousands of input combinations across 45+ float targets, and computes the expected profit and probability of each outcome. Every trade-up links to listings you can purchase right now, with exact floats and exact prices."
               }
             },
             {
@@ -85,7 +85,7 @@ export function FaqPage() {
               "name": "What does \"Verify\" do?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Verify checks whether all the input listings for a trade-up are still available on their respective marketplaces and at what price. This gives you up-to-the-moment confirmation before you commit to buying. If a listing has been sold or delisted, verification will flag it so you know the trade-up may no longer be viable."
+                "text": "Verify checks whether all input listings for a trade-up are still available on their marketplaces and at what price. If a listing has been sold or delisted, verification flags it so you know the trade-up may no longer be viable. The trade-up's cost, profit, and ROI update from the response."
               }
             },
             {
@@ -101,7 +101,7 @@ export function FaqPage() {
               "name": "How often is data updated?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Data is updated continuously. The discovery engine runs in approximately 20-minute cycles, scanning for new listings and recalculating trade-ups each cycle. DMarket listings are fetched continuously at 2 requests per second in a separate process. Skinport data streams in via a live WebSocket connection."
+                "text": "The discovery engine runs in approximately 20-minute cycles, scanning for new listings and recalculating trade-ups each cycle. DMarket listings are fetched continuously at 2 requests per second in a separate process. Skinport data streams in via a live WebSocket connection."
               }
             },
             {
@@ -109,7 +109,7 @@ export function FaqPage() {
               "name": "What marketplaces are supported?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "TradeUpBot sources input listings from three marketplaces: CSFloat (primary source for Covert skins and sale-based pricing), DMarket (broad coverage across all rarity tiers at 2 req/s), and Skinport (passive WebSocket feed, no rate limits). Each marketplace has different buyer fees which are factored into the total input cost calculations."
+                "text": "TradeUpBot sources input listings from four marketplaces: CSFloat (primary source for Covert skins and sale-based pricing), DMarket (broad coverage across all rarity tiers at 2 req/s), Skinport (passive WebSocket feed, no rate limits), and Buff.market (buy-now listings fetched continuously in a separate process). Each marketplace has different buyer fees which are factored into the total input cost calculations."
               }
             },
             {
@@ -117,7 +117,7 @@ export function FaqPage() {
               "name": "Why are some trade-ups marked as stale or partial?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Listings on marketplaces are constantly being bought and delisted. When one or more inputs in a trade-up are no longer available, the trade-up is marked as partial (some inputs missing) or stale (not updated in recent cycles). The engine attempts to find replacement listings each cycle, but availability depends on market conditions."
+                "text": "Marketplace listings get bought and delisted constantly. Partial means some of a trade-up's inputs are no longer available — sold, delisted, or claimed by another user. Stale means none of them are. The engine searches for replacement listings each cycle and updates the status when it finds them."
               }
             },
             {
@@ -141,7 +141,7 @@ export function FaqPage() {
               "name": "What are the rate limits?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Rate limits apply to Pro tier actions. Verify: 20/hour. Claim: 10/hour (up to 5 active claims). These limits exist to ensure fair access and prevent abuse of marketplace APIs."
+                "text": "Rate limits apply to Pro tier actions. Verify: 20/hour. Claim: 10/hour, up to 5 active claims. Limits keep marketplace API usage within bounds."
               }
             }
           ]
@@ -175,15 +175,14 @@ export function FaqPage() {
 
             <FaqItem question="How does TradeUpBot find profitable trade-ups?">
               <p>
-                Unlike other tools that use theoretical calculations with idealized float values,
                 TradeUpBot builds every trade-up from real, buyable listings on CSFloat, DMarket,
-                and Skinport. Our engine continuously scans marketplace listings, tests thousands
-                of input combinations across 45+ float targets, and evaluates the expected profit
+                Skinport, and Buff.market. The engine scans marketplace listings continuously, tests thousands
+                of input combinations across 45+ float targets, and computes the expected profit
                 and probability of each outcome.
               </p>
               <p>
-                Every trade-up you see on the platform links to actual listings you can purchase
-                right now, with exact floats, exact prices, and deterministic outcomes.
+                Every trade-up links to listings you can purchase right now, with exact floats
+                and exact prices.
               </p>
               <BlogLink slug="profitable-trade-ups-theory-vs-reality" title="Theory vs Reality" />
             </FaqItem>
@@ -223,10 +222,10 @@ export function FaqPage() {
 
             <FaqItem question='What does "Verify" do?'>
               <p>
-                Verify checks whether all the input listings for a trade-up are still available
-                on their respective marketplaces and at what price. This gives you up-to-the-moment
-                confirmation before you commit to buying. If a listing has been sold or delisted,
-                verification will flag it so you know the trade-up may no longer be viable.
+                Verify checks whether all input listings for a trade-up are still available on
+                their marketplaces and at what price. If a listing has been sold or delisted,
+                verification flags it so you know the trade-up may no longer be viable. The
+                trade-up's cost, profit, and ROI update from the response.
               </p>
             </FaqItem>
 
@@ -241,21 +240,22 @@ export function FaqPage() {
 
             <FaqItem question="How often is data updated?">
               <p>
-                Data is updated continuously. The discovery engine runs in approximately 20-minute
-                cycles, scanning for new listings and recalculating trade-ups each cycle.
-                DMarket listings are fetched continuously at 2 requests per second in a separate
-                process. Skinport data streams in via a live WebSocket connection.
+                The discovery engine runs in approximately 20-minute cycles, scanning for new
+                listings and recalculating trade-ups each cycle. DMarket listings are fetched
+                continuously at 2 requests per second in a separate process. Skinport data
+                streams in via a live WebSocket connection.
               </p>
             </FaqItem>
 
             <FaqItem question="What marketplaces are supported?">
               <p>
-                TradeUpBot sources input listings from three marketplaces:
+                TradeUpBot sources input listings from four marketplaces:
               </p>
               <ul className="list-disc list-inside ml-2 space-y-1">
                 <li><strong className="text-foreground">CSFloat</strong> — primary source for Covert skins and sale-based pricing</li>
                 <li><strong className="text-foreground">DMarket</strong> — broad coverage across all rarity tiers at 2 req/s</li>
                 <li><strong className="text-foreground">Skinport</strong> — passive WebSocket feed, no rate limits</li>
+                <li><strong className="text-foreground">Buff.market</strong> — buy-now listings fetched continuously in a separate process</li>
               </ul>
               <p>
                 Each marketplace has different buyer fees which are factored into the total
@@ -266,11 +266,11 @@ export function FaqPage() {
 
             <FaqItem question="Why are some trade-ups marked as stale or partial?">
               <p>
-                Listings on marketplaces are constantly being bought and delisted. When one or
-                more inputs in a trade-up are no longer available, the trade-up is marked as
-                partial (some inputs missing) or stale (not updated in recent cycles). The engine
-                attempts to find replacement listings each cycle, but availability depends on
-                market conditions.
+                Marketplace listings get bought and delisted constantly. <strong className="text-foreground">Partial</strong> means
+                some of a trade-up's inputs are no longer available — sold, delisted, or claimed by
+                another user. <strong className="text-foreground">Stale</strong> means none of them are. The engine searches
+                for replacement listings each cycle and updates
+                the status when it finds them.
               </p>
             </FaqItem>
 
@@ -313,7 +313,7 @@ export function FaqPage() {
                 <li><strong className="text-foreground">Claim</strong> — 10/hour (up to 5 active claims)</li>
               </ul>
               <p>
-                These limits exist to ensure fair access and prevent abuse of marketplace APIs.
+                Limits keep marketplace API usage within bounds.
               </p>
             </FaqItem>
           </div>

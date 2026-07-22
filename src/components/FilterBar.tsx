@@ -113,12 +113,21 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
     <div className="relative w-[200px]" ref={ref}>
       <Input
         type="text"
-        className="h-8 text-sm"
+        className={`h-8 text-sm ${query ? "pr-7" : ""}`}
         placeholder={placeholder}
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
       />
+      {query && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-sm leading-none cursor-pointer"
+          onClick={() => { setQuery(""); setOpen(false); }}
+        >&times;</button>
+      )}
       {open && filtered.length > 0 && (
         <div className="absolute top-full left-0 right-0 z-[200] bg-popover border border-border border-t-0 rounded-b-md max-h-60 overflow-y-auto shadow-lg">
           {filtered.map(item => (
@@ -141,20 +150,23 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
   );
 }
 
-function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, unit }: {
+/**
+ * Shared popover-pill shell: trigger button + sibling clear button (when active)
+ * inside a non-interactive pill-styled wrapper — nesting the clear control in the
+ * trigger would violate the button content model and hide it from AT.
+ * Click-outside dismissal and a positioned popover with a header close.
+ * RangeFilter and MarketFilter supply only their popover body via children.
+ */
+function FilterPill({ label, summary, active, onClear, children }: {
   label: string;
-  minVal: string;
-  maxVal: string;
-  onMinChange: (v: string) => void;
-  onMaxChange: (v: string) => void;
-  step: number;
-  unit: string;
-  sliderMin?: number;
-  sliderMax?: number;
+  summary: string;
+  active: boolean;
+  onClear: () => void;
+  children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const hasValue = !!(minVal || maxVal);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Click outside to dismiss
   useEffect(() => {
@@ -166,23 +178,36 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
     return () => document.removeEventListener("mousedown", handler);
   }, [expanded]);
 
-  const summary = hasValue
-    ? `${minVal ? `${unit}${minVal}` : "any"} – ${maxVal ? `${unit}${maxVal}` : "any"}`
-    : "any";
-
   return (
     <div className="relative" ref={ref}>
-      <button
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border whitespace-nowrap transition-colors cursor-pointer ${
-          hasValue
+      <div
+        className={`flex items-center rounded-full border whitespace-nowrap transition-colors ${
+          active
             ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
             : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
         }`}
-        onClick={() => setExpanded(e => !e)}
       >
-        <span className="font-medium">{label}</span>
-        <span className={`text-[0.72rem] ${hasValue ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
-      </button>
+        <button
+          ref={triggerRef}
+          className={`flex items-center gap-1.5 pl-3 py-1.5 text-xs cursor-pointer ${active ? "pr-1" : "pr-3"}`}
+          onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
+        >
+          <span className="font-medium">{label}</span>
+          <span className={`text-[0.72rem] ${active ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
+        </button>
+        {active && (
+          <button
+            aria-label={`Clear ${label} filter`}
+            className="pr-2.5 pl-1 py-1.5 text-sm leading-none text-blue-400/70 hover:text-blue-200 cursor-pointer"
+            onClick={() => {
+              setExpanded(false);
+              onClear();
+              triggerRef.current?.focus(); // clear button unmounts — keep focus in the pill
+            }}
+          >&times;</button>
+        )}
+      </div>
       {expanded && (
         <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[220px] shadow-lg">
           <div className="flex items-center justify-between mb-2">
@@ -190,29 +215,52 @@ function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, step, un
             <button
               className="text-muted-foreground hover:text-foreground text-sm cursor-pointer leading-none px-1"
               onClick={() => setExpanded(false)}
-            >×</button>
+            >&times;</button>
           </div>
-          <div className="flex gap-2">
-            <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
-              <span>Min</span>
-              <Input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
-                placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
-            </label>
-            <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
-              <span>Max</span>
-              <Input type="number" value={maxVal} onChange={(e) => onMaxChange(e.target.value)}
-                placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
-            </label>
-          </div>
-          {hasValue && (
-            <button
-              className="mt-2 text-[0.68rem] text-muted-foreground hover:text-foreground cursor-pointer"
-              onClick={() => { onMinChange(""); onMaxChange(""); }}
-            >Clear</button>
-          )}
+          {children}
         </div>
       )}
     </div>
+  );
+}
+
+function RangeFilter({ label, minVal, maxVal, onMinChange, onMaxChange, onClear, step, unit }: {
+  label: string;
+  minVal: string;
+  maxVal: string;
+  onMinChange: (v: string) => void;
+  onMaxChange: (v: string) => void;
+  /** Clears min AND max in ONE filters update — two sequential onMinChange/onMaxChange
+   *  calls would each spread the same stale filters object and resurrect the other value. */
+  onClear: () => void;
+  step: number;
+  unit: string;
+}) {
+  const hasValue = !!(minVal || maxVal);
+  const summary = hasValue
+    ? `${minVal ? `${unit}${minVal}` : "any"} – ${maxVal ? `${unit}${maxVal}` : "any"}`
+    : "any";
+
+  return (
+    <FilterPill
+      label={label}
+      summary={summary}
+      active={hasValue}
+      onClear={onClear}
+    >
+      <div className="flex gap-2">
+        <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
+          <span>Min</span>
+          <Input type="number" value={minVal} onChange={(e) => onMinChange(e.target.value)}
+            placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
+        </label>
+        <label className="flex flex-col gap-1 text-[0.72rem] text-muted-foreground flex-1">
+          <span>Max</span>
+          <Input type="number" value={maxVal} onChange={(e) => onMaxChange(e.target.value)}
+            placeholder={unit || "any"} step={step} className="h-7 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
+        </label>
+      </div>
+    </FilterPill>
   );
 }
 
@@ -220,76 +268,38 @@ function MarketFilter({ selected, onChange }: {
   selected: string[];
   onChange: (markets: string[]) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const hasValue = selected.length > 0;
-
-  useEffect(() => {
-    if (!expanded) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setExpanded(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [expanded]);
-
   const summary = hasValue
     ? selected.map(m => AVAILABLE_MARKETS.find(am => am.value === m)?.label || m).join(", ")
     : "any";
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border whitespace-nowrap transition-colors cursor-pointer ${
-          hasValue
-            ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
-            : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
-        }`}
-        onClick={() => setExpanded(e => !e)}
-      >
-        <span className="font-medium">Market</span>
-        <span className={`text-[0.72rem] ${hasValue ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
-      </button>
-      {expanded && (
-        <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[180px] shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-foreground">Market</span>
-            <button
-              className="text-muted-foreground hover:text-foreground text-sm cursor-pointer leading-none px-1"
-              onClick={() => setExpanded(false)}
-            >×</button>
-          </div>
-          <div className="flex flex-col gap-2">
-            {AVAILABLE_MARKETS.map(m => (
-              <label key={m.value} className="flex items-center gap-2 text-xs text-popover-foreground cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(m.value)}
-                  onChange={(e) => {
-                    const next = e.target.checked
-                      ? [...selected, m.value]
-                      : selected.filter(x => x !== m.value);
-                    onChange(next);
-                  }}
-                  className="rounded border-border"
-                />
-                {m.label}
-              </label>
-            ))}
-          </div>
-          {hasValue && (
-            <button
-              className="mt-2 text-[0.68rem] text-muted-foreground hover:text-foreground cursor-pointer"
-              onClick={() => onChange([])}
-            >Clear</button>
-          )}
-        </div>
-      )}
-    </div>
+    <FilterPill label="Market" summary={summary} active={hasValue} onClear={() => onChange([])}>
+      <div className="flex flex-col gap-2">
+        {AVAILABLE_MARKETS.map(m => (
+          <label key={m.value} className="flex items-center gap-2 text-xs text-popover-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={selected.includes(m.value)}
+              onChange={(e) => {
+                const next = e.target.checked
+                  ? [...selected, m.value]
+                  : selected.filter(x => x !== m.value);
+                onChange(next);
+              }}
+              className="rounded border-border"
+            />
+            {m.label}
+          </label>
+        ))}
+      </div>
+    </FilterPill>
   );
 }
 
 export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate: (f: Filters) => void }) {
+  // Range/market filters are represented (and cleared) on their pills.
+  // Chips exist only for selections without a pill: skins and collections.
   const chips: { label: string; onRemove: () => void }[] = [];
 
   for (const s of filters.skins) {
@@ -298,30 +308,8 @@ export function FilterChips({ filters, onUpdate }: { filters: Filters; onUpdate:
   for (const c of filters.collections) {
     chips.push({ label: `Collection: ${c}`, onRemove: () => onUpdate({ ...filters, collections: filters.collections.filter(x => x !== c) }) });
   }
-  if (filters.minProfit || filters.maxProfit) {
-    const lbl = `Profit: ${filters.minProfit ? `$${filters.minProfit}` : "any"} – ${filters.maxProfit ? `$${filters.maxProfit}` : "any"}`;
-    chips.push({ label: lbl, onRemove: () => onUpdate({ ...filters, minProfit: "", maxProfit: "" }) });
-  }
-  if (filters.minRoi || filters.maxRoi) {
-    const lbl = `ROI: ${filters.minRoi ? `${filters.minRoi}%` : "any"} – ${filters.maxRoi ? `${filters.maxRoi}%` : "any"}`;
-    chips.push({ label: lbl, onRemove: () => onUpdate({ ...filters, minRoi: "", maxRoi: "" }) });
-  }
-  if (filters.minCost || filters.maxCost) {
-    const lbl = `Cost: ${filters.minCost ? `$${filters.minCost}` : "any"} – ${filters.maxCost ? `$${filters.maxCost}` : "any"}`;
-    chips.push({ label: lbl, onRemove: () => onUpdate({ ...filters, minCost: "", maxCost: "" }) });
-  }
-  if (filters.minChance || filters.maxChance) {
-    const lbl = `Chance: ${filters.minChance ? `${filters.minChance}%` : "any"} – ${filters.maxChance ? `${filters.maxChance}%` : "any"}`;
-    chips.push({ label: lbl, onRemove: () => onUpdate({ ...filters, minChance: "", maxChance: "" }) });
-  }
-  if (filters.maxLoss) {
-    chips.push({ label: `Max Loss: $${filters.maxLoss}`, onRemove: () => onUpdate({ ...filters, maxLoss: "" }) });
-  }
-  if (filters.minWin) {
-    chips.push({ label: `Min Best Win: $${filters.minWin}`, onRemove: () => onUpdate({ ...filters, minWin: "" }) });
-  }
 
-  if (chips.length === 0) return null;
+  if (chips.length === 0 && !hasActiveFilters(filters)) return null;
 
   return (
     <div className="flex gap-1.5 flex-wrap mt-2 mb-1 items-center">
@@ -406,22 +394,28 @@ export function FilterBar({ filters, onFiltersChange }: {
           <MarketFilter selected={filters.markets} onChange={(m) => update({ markets: m })} />
           <RangeFilter label="Profit" unit="$" step={1}
             minVal={filters.minProfit} maxVal={filters.maxProfit}
-            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })} />
+            onMinChange={(v) => update({ minProfit: v })} onMaxChange={(v) => update({ maxProfit: v })}
+            onClear={() => update({ minProfit: "", maxProfit: "" })} />
           <RangeFilter label="ROI" unit="%" step={1}
             minVal={filters.minRoi} maxVal={filters.maxRoi}
-            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })} />
+            onMinChange={(v) => update({ minRoi: v })} onMaxChange={(v) => update({ maxRoi: v })}
+            onClear={() => update({ minRoi: "", maxRoi: "" })} />
           <RangeFilter label="Cost" unit="$" step={10}
             minVal={filters.minCost} maxVal={filters.maxCost}
-            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })} />
+            onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })}
+            onClear={() => update({ minCost: "", maxCost: "" })} />
           <RangeFilter label="Chance" unit="%" step={5}
             minVal={filters.minChance} maxVal={filters.maxChance}
-            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })} />
+            onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })}
+            onClear={() => update({ minChance: "", maxChance: "" })} />
           <RangeFilter label="Max Loss" unit="$" step={10}
             minVal={filters.maxLoss} maxVal=""
-            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}} />
+            onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}}
+            onClear={() => update({ maxLoss: "" })} />
           <RangeFilter label="Best Win" unit="$" step={10}
             minVal={filters.minWin} maxVal=""
-            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}} />
+            onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}}
+            onClear={() => update({ minWin: "" })} />
         </div>
       </div>
     </div>

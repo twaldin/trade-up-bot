@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { TradeUp, TradeUpListResponse, SyncStatus } from "../../shared/types.js";
+import type { TradeUp, SyncStatus } from "../../shared/types.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../components/FilterBar.js";
 import type { Filters } from "../components/FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
 import { ProductCTA } from "../components/ProductCTA.js";
+import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec" | "consumer_industrial";
 
 interface TypeOption {
@@ -22,6 +23,11 @@ interface Props {
   onNavigateSkin: (skinName: string) => void;
   onNavigateCollection: (name: string) => void;
 }
+
+// URL params this page owns; anything else (e.g. ref= attribution) is preserved on sync.
+const OWNED_PARAMS = ["skin", "collection", "min_profit", "max_profit", "min_roi", "max_roi",
+  "min_cost", "max_cost", "min_chance", "max_chance", "max_loss", "min_win", "markets",
+  "sort", "order", "page", "stale", "type"];
 
 function UpgradeBanner({ message }: { message: string }) {
   return (
@@ -78,26 +84,33 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     if (marketsParam) f.markets = marketsParam.split(",");
     return f;
   });
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const debouncedFilters = useDebouncedValue(filters, 300);
+  // Referential equality: true on mount and once the debounce settles. While false,
+  // the fetch effect is gated — otherwise a synchronous page/type change during the
+  // 300ms window would fire a request with the PREVIOUS filters and commit stale
+  // results over controls that already show the new ones.
+  const filtersSettled = filters === debouncedFilters;
 
   const isFree = tier === "free";
-  const isPro = tier === "pro" || tier === "admin";
 
-  // Sync state to URL search params
+  // Sync state to URL search params without clobbering params owned by other features
   useEffect(() => {
-    const params = filtersToParams(filters);
-    if (sort !== "trade_up_score") params.set("sort", sort);
-    if (order !== "desc") params.set("order", order);
-    if (page > 1) params.set("page", String(page));
-    if (includeStale) params.set("stale", "true");
-    if (type !== types[0]?.value) params.set("type", type);
-    setSearchParams(params, { replace: true });
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      for (const key of OWNED_PARAMS) params.delete(key);
+      for (const [key, value] of filtersToParams(filters)) params.set(key, value);
+      if (sort !== "trade_up_score") params.set("sort", sort);
+      if (order !== "desc") params.set("order", order);
+      if (page > 1) params.set("page", String(page));
+      if (includeStale) params.set("stale", "true");
+      if (type !== types[0]?.value) params.set("type", type);
+      return params;
+    }, { replace: true });
   }, [sort, order, page, includeStale, filters, type, setSearchParams, types]);
 
   const handleFiltersChange = useCallback((f: Filters) => {
-    setFilters(f);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setPage(1), 300);
+    setFilters(f); // controlled inputs update immediately
+    setPage(1); // reset synchronously; the fetch waits on debouncedFilters
   }, []);
 
   // Cancel in-flight requests when sort/filter/type changes
@@ -111,7 +124,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
 
     if (!silent) setLoading(true);
     try {
-      const params = filtersToParams(filters);
+      const params = filtersToParams(debouncedFilters);
       params.set("sort", sort);
       params.set("order", order);
       params.set("page", String(page));
@@ -140,12 +153,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     } finally {
       if (!controller.signal.aborted && !silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, filters, type, includeStale, refreshKey]);
+  }, [sort, order, page, perPage, debouncedFilters, type, includeStale, refreshKey]);
 
   useEffect(() => {
+    if (!filtersSettled) return; // reruns when the debounce settles
     fetchTradeUps();
     return () => { if (abortRef.current) abortRef.current.abort(); };
-  }, [fetchTradeUps]);
+  }, [fetchTradeUps, filtersSettled]);
 
   const handleSort = (column: string) => {
     if (sort === column) {
@@ -157,8 +171,6 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     setPage(1);
   };
 
-  // Server handles sorting for all tiers now
-  const sortedTradeUps = tradeUps;
 
   const handleTypeChange = (newType: TradeUpType) => {
     // Batch state updates: set loading with type change so old data
@@ -168,17 +180,13 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     setLoading(true);
   };
 
-  const handleClaimChange = useCallback((delta: number) => {
-    // no-op tracking; claims page is now separate
-  }, []);
-
   const totalPages = Math.ceil(total / perPage);
 
   return (
     <>
       <h1 className="sr-only">Profitable CS2 Trade-Up Contracts</h1>
       <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
-      <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
+      <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, Skinport, and Buff.market." />
       <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
       <meta property="og:title" content="Profitable CS2 Trade-Ups — Live Contracts | TradeUpBot" />
       <meta property="og:description" content="Browse profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity." />
@@ -205,7 +213,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           {
             "@type": "Question",
             "name": "How does TradeUpBot find profitable trade-ups?",
-            "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
+            "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, Skinport, and Buff.market. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
           },
           {
             "@type": "Question",
@@ -218,7 +226,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <section className="mb-5">
         <h2 className="text-base font-semibold mb-1.5">Find Profitable CS2 Trade-Up Contracts</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Browse profitable CS2 trade-up contracts built from real, buyable listings across all rarity tiers — Knife, Glove, Covert, Classified, Restricted, Mil-Spec. Every entry uses live pricing from CSFloat, DMarket, and Skinport with marketplace fees already factored in.
+          Every contract below is built from real, buyable listings on CSFloat, DMarket, Skinport, and Buff.market, with marketplace fees on both sides already priced in. Filter by profit, ROI, cost, or outcome odds across every rarity tier — Knife, Glove, Covert, Classified, Restricted, Mil-Spec.
         </p>
       </section>
 
@@ -250,7 +258,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           <div className="flex-1 min-w-0">
             <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
           </div>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none whitespace-nowrap shrink-0" title="Show trade-ups with missing input listings (sold/delisted)">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none whitespace-nowrap shrink-0" title="Include trade-ups whose input listings have sold or been delisted since discovery">
             <input
               type="checkbox"
               checked={includeStale}
@@ -279,33 +287,32 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           {status?.daemon_status?.phase === "calculating" ? (
             <>
               <div className="text-4xl mb-3 opacity-50">&#9881;</div>
-              <p className="mb-2">Calculating trade-ups...</p>
+              <p className="mb-2">Calculating trade-ups from current listings...</p>
               <p className="text-sm text-muted-foreground/70">{status.daemon_status.detail}</p>
             </>
           ) : status?.daemon_status?.phase === "fetching" ? (
             <>
               <div className="text-4xl mb-3 opacity-50">&#8635;</div>
-              <p className="mb-2">Fetching listing data from CSFloat...</p>
-              <p className="text-sm text-muted-foreground/70">Trade-ups will appear after the first calculation cycle.</p>
+              <p className="mb-2">Fetching listings from CSFloat...</p>
+              <p className="text-sm text-muted-foreground/70">Trade-ups appear after the first calculation cycle, usually within a few minutes.</p>
             </>
           ) : (
             <>
               <div className="text-4xl mb-3 opacity-50">&#128200;</div>
-              <p className="mb-2">No trade-ups match the current filters.</p>
-              <p className="text-sm text-muted-foreground/70">Try adjusting the filters above, or wait for the daemon to collect more data.</p>
+              <p className="mb-2">No trade-ups match these filters.</p>
+              <p className="text-sm text-muted-foreground/70">Widen a range, clear a filter, or check Show stale to include sold-out contracts.</p>
             </>
           )}
         </div>
       ) : (
         <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
           <TradeUpTable
-            tradeUps={sortedTradeUps}
+            tradeUps={tradeUps}
             sort={sort}
             order={order}
             onSort={handleSort}
             onNavigateSkin={onNavigateSkin}
             onNavigateCollection={onNavigateCollection}
-            onClaimChange={isPro ? handleClaimChange : undefined}
             tier={tier}
             claimLimit={claimLimit}
             verifyLimit={verifyLimit}
@@ -344,7 +351,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           </div>
           <div>
             <h3 className="text-sm font-medium mb-1">How does TradeUpBot find profitable trade-ups?</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates the expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides — only surfaces contracts where the numbers work.</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">TradeUpBot scans real marketplace listings across CSFloat, DMarket, Skinport, and Buff.market. For each valid combination of 10 inputs, it calculates the expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides — only surfaces contracts where the numbers work.</p>
           </div>
           <div>
             <h3 className="text-sm font-medium mb-1">Are these listings live?</h3>

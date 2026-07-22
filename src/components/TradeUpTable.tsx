@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { Fragment, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { TradeUp, TradeUpInput } from "../../shared/types.js";
 import { condAbbr, csfloatSearchUrl } from "../utils/format.js";
 import { useCurrency } from "../contexts/CurrencyContext.js";
@@ -159,6 +159,7 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
       const diff = new Date(expiresAt).getTime() - Date.now();
       setMinsLeft(Math.max(0, Math.ceil(diff / 60000)));
     };
+    tick();
     const id = setInterval(tick, 15000);
     return () => clearInterval(id);
   }, [expiresAt]);
@@ -225,30 +226,37 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
   const [loadedInputs, setLoadedInputs] = useState<Map<number, TradeUp["inputs"]>>(new Map());
+  // Guard against duplicate in-flight detail fetches (rapid collapse/re-expand)
+  const inflightDetails = useRef(new Set<string>());
 
   const handleExpand = useCallback(async (tuId: number) => {
     if (expandedId === tuId) { setExpandedId(null); return; }
     setExpandedId(tuId);
-    // Load outcomes + inputs if not cached
+    // Load outcomes + inputs if not cached; results are keyed by trade-up id,
+    // so a late response can never land in another row's state.
     const promises: Promise<void>[] = [];
-    if (!loadedOutcomes.has(tuId)) {
+    const outcomesKey = `o:${tuId}`;
+    if (!loadedOutcomes.has(tuId) && !inflightDetails.current.has(outcomesKey)) {
+      inflightDetails.current.add(outcomesKey);
       promises.push(
         fetch(`/api/trade-up/${tuId}/outcomes`).then(async res => {
           if (res.ok) {
             const data = await res.json();
             setLoadedOutcomes(prev => new Map(prev).set(tuId, data.outcomes || []));
           }
-        }).catch(() => {})
+        }).catch(() => {}).finally(() => { inflightDetails.current.delete(outcomesKey); })
       );
     }
-    if (!loadedInputs.has(tuId)) {
+    const inputsKey = `i:${tuId}`;
+    if (!loadedInputs.has(tuId) && !inflightDetails.current.has(inputsKey)) {
+      inflightDetails.current.add(inputsKey);
       promises.push(
         fetch(`/api/trade-up/${tuId}/inputs`).then(async res => {
           if (res.ok) {
             const data = await res.json();
             setLoadedInputs(prev => new Map(prev).set(tuId, data.inputs || []));
           }
-        }).catch(() => {})
+        }).catch(() => {}).finally(() => { inflightDetails.current.delete(inputsKey); })
       );
     }
     await Promise.all(promises);
@@ -607,9 +615,8 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
         </thead>
         <tbody>
           {preparedTradeUps.map(({ tu, chance, best, worst, inputSummary, inputCount, realInputCount, missingCount, displayStatus, collections, age }) => (
-            <>
+            <Fragment key={tu.id}>
               <tr
-                key={tu.id}
                 className={`cursor-pointer hover:bg-muted group/row ${displayStatus === 'stale' ? 'opacity-55 border-l-[3px] border-l-red-500' : displayStatus === 'partial' ? 'border-l-[3px] border-l-yellow-500' : ''}`}
                 onClick={() => handleExpand(tu.id)}
               >
@@ -742,13 +749,13 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 </td>
               </tr>
               {expandedId === tu.id && (
-                <tr key={`${tu.id}-expanded`}>
+                <tr>
                   <td colSpan={11} className="p-0">
                     {renderExpanded(tu)}
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

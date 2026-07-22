@@ -19,7 +19,7 @@ const COPY: Record<CTAVariant, {
 }> = {
   blog: {
     headline: "See live profitable trade-ups right now",
-    subtext: "TradeUpBot scans CSFloat, DMarket, and Skinport continuously. Every trade-up is built from real, buyable listings — fee-adjusted profit shown upfront. Free tier available.",
+    subtext: "TradeUpBot scans CSFloat, DMarket, and Skinport continuously. Every trade-up is built from live listings, with marketplace fees factored into profit. Free tier available.",
     primaryLabel: "Browse trade-ups",
     primaryHref: "/trade-ups",
     secondaryLabel: "Try the calculator",
@@ -28,7 +28,7 @@ const COPY: Record<CTAVariant, {
   },
   calculator: {
     headline: "Want pre-built profitable trade-ups?",
-    subtext: "TradeUpBot scans live marketplace listings and surfaces the contracts that actually profit — with fee-adjusted EV and float-precise output pricing. Free tier available.",
+    subtext: "TradeUpBot scans live marketplace listings and lists the contracts with positive fee-adjusted EV and float-precise output pricing. Free tier available.",
     primaryLabel: "Browse trade-ups",
     primaryHref: "/trade-ups",
     secondaryLabel: "See features",
@@ -37,7 +37,7 @@ const COPY: Record<CTAVariant, {
   },
   "trade-ups": {
     headline: "Build your own trade-up from scratch",
-    subtext: "Paste any 10 skins, set your floats and prices, and the calculator shows you exact output probabilities, expected value, and fee-adjusted profit — before you spend a cent.",
+    subtext: "Enter any 10 skins with floats and prices. The calculator returns exact output probabilities, expected value, and fee-adjusted profit before you buy anything.",
     primaryLabel: "Try the calculator",
     primaryHref: "/calculator",
     secondaryLabel: "See features",

@@ -15,12 +15,19 @@ export function useStatus(enabled = true, pollInterval = 60_000) {
   const [newDataHint, setNewDataHint] = useState(false);
   const prevCount = useRef(0);
   const prevStatus = useRef<SyncStatus | null>(null);
+  const fetchSeq = useRef(0);
+  const lastAppliedSeq = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     if (!enabled) return null;
+    const seq = ++fetchSeq.current;
     try {
       const res = await fetch("/api/status");
       const data: SyncStatus = await res.json();
+      // A newer fetch (manual refresh vs poll) already applied its response — drop this stale one.
+      // Failed requests never bump lastAppliedSeq, so an older in-flight success still lands.
+      if (seq <= lastAppliedSeq.current) return null;
+      lastAppliedSeq.current = seq;
       // Compute diffs against previous status
       if (prevStatus.current) {
         const p = prevStatus.current;

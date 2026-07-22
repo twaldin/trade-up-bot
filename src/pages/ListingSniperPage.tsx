@@ -428,7 +428,7 @@ export function ListingSniperPage() {
           <div className="text-4xl mb-3 opacity-50">&#x1F3AF;</div>
           <p className="mb-2">No underpriced listings found.</p>
           <p className="text-sm text-muted-foreground/70">
-            Try adjusting filters, or the KNN model may not have sufficient data for the selected skins.
+            Widen the filters or lower the min diff. Skins without enough sale data have no price estimate and never appear here.
           </p>
         </div>
       ) : (

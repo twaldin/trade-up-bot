@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@shared/components/ui/button.js";
 import { TradeUpTable } from "../components/TradeUpTable.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, Condition } from "../../shared/types.js";
@@ -84,32 +84,39 @@ export default function MyTradeUpsPage() {
   const [salePrice, setSalePrice] = useState("");
   const [saleMarketplace, setSaleMarketplace] = useState("csfloat");
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      if (activeTab === "claims") {
-        const res = await fetch("/api/trade-ups?my_claims=true&per_page=50", { credentials: "include" });
-        const data = await res.json();
-        setClaimTradeUps(data.trade_ups || []);
-      } else {
-        const statusParam = activeTab === "purchased" ? "purchased" : "executed,sold";
-        const res = await fetch(`/api/my-trade-ups?status=${statusParam}`, { credentials: "include" });
-        const data = await res.json();
-        setEntries(data.trade_ups || []);
-      }
-
-      const statsRes = await fetch("/api/my-trade-ups/stats", { credentials: "include" });
-      const statsData = await statsRes.json();
-      setStats(statsData);
+      const mainReq = activeTab === "claims"
+        ? fetch("/api/trade-ups?my_claims=true&per_page=50", { credentials: "include", signal })
+        : fetch(`/api/my-trade-ups?status=${activeTab === "purchased" ? "purchased" : "executed,sold"}`, { credentials: "include", signal });
+      // Start stats in parallel, but never let its failure block the table
+      const statsReq = fetch("/api/my-trade-ups/stats", { credentials: "include", signal })
+        .then((r) => r.json())
+        .then((statsData: UserTradeUpStats) => {
+          if (!signal?.aborted) setStats(statsData);
+        })
+        .catch((e) => {
+          if (!signal?.aborted) console.error("Failed to fetch trade-up stats", e);
+        });
+      const res = await mainReq;
+      const data = await res.json();
+      if (signal?.aborted) return;
+      if (activeTab === "claims") setClaimTradeUps(data.trade_ups || []);
+      else setEntries(data.trade_ups || []);
+      await statsReq;
     } catch (e) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", e);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [activeTab]);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, [fetchData]);
 
   // Action handlers
@@ -189,10 +196,11 @@ export default function MyTradeUpsPage() {
     }
   };
 
-  // Map entries for table display
-  const mappedTradeUps = entries.map(userTradeUpToTradeUp);
+  // Map entries for table display (memoized: a fresh array every render would
+  // retrigger TradeUpTable's claim-state reset effect on each parent render)
+  const mappedTradeUps = useMemo(() => entries.map(userTradeUpToTradeUp), [entries]);
   // Keep a lookup from TradeUp.id → UserTradeUp for action bar rendering
-  const entryById = new Map(entries.map(e => [e.id, e]));
+  const entryById = useMemo(() => new Map(entries.map(e => [e.id, e])), [entries]);
 
   // Purchased tab action bar
   const renderPurchasedActions = useCallback((tu: TradeUp) => {
