@@ -90,15 +90,21 @@ export default function MyTradeUpsPage() {
       const mainReq = activeTab === "claims"
         ? fetch("/api/trade-ups?my_claims=true&per_page=50", { credentials: "include", signal })
         : fetch(`/api/my-trade-ups?status=${activeTab === "purchased" ? "purchased" : "executed,sold"}`, { credentials: "include", signal });
-      const [res, statsRes] = await Promise.all([
-        mainReq,
-        fetch("/api/my-trade-ups/stats", { credentials: "include", signal }),
-      ]);
-      const [data, statsData] = await Promise.all([res.json(), statsRes.json()]);
+      // Start stats in parallel, but never let its failure block the table
+      const statsReq = fetch("/api/my-trade-ups/stats", { credentials: "include", signal })
+        .then((r) => r.json())
+        .then((statsData: UserTradeUpStats) => {
+          if (!signal?.aborted) setStats(statsData);
+        })
+        .catch((e) => {
+          if (!signal?.aborted) console.error("Failed to fetch trade-up stats", e);
+        });
+      const res = await mainReq;
+      const data = await res.json();
       if (signal?.aborted) return;
       if (activeTab === "claims") setClaimTradeUps(data.trade_ups || []);
       else setEntries(data.trade_ups || []);
-      setStats(statsData);
+      await statsReq;
     } catch (e) {
       if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", e);

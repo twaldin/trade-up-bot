@@ -151,8 +151,10 @@ function AutocompleteInput({ placeholder, items, selected, onAdd, onRemove, rend
 }
 
 /**
- * Shared popover-pill shell: trigger pill (with inline clear × when active),
- * click-outside dismissal, and a positioned popover with a header close.
+ * Shared popover-pill shell: trigger button + sibling clear button (when active)
+ * inside a non-interactive pill-styled wrapper — nesting the clear control in the
+ * trigger would violate the button content model and hide it from AT.
+ * Click-outside dismissal and a positioned popover with a header close.
  * RangeFilter and MarketFilter supply only their popover body via children.
  */
 function FilterPill({ label, summary, active, onClear, children }: {
@@ -164,6 +166,7 @@ function FilterPill({ label, summary, active, onClear, children }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Click outside to dismiss
   useEffect(() => {
@@ -177,34 +180,34 @@ function FilterPill({ label, summary, active, onClear, children }: {
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border whitespace-nowrap transition-colors cursor-pointer ${
+      <div
+        className={`flex items-center rounded-full border whitespace-nowrap transition-colors ${
           active
             ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
             : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
         }`}
-        onClick={() => setExpanded(e => !e)}
       >
-        <span className="font-medium">{label}</span>
-        <span className={`text-[0.72rem] ${active ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
+        <button
+          ref={triggerRef}
+          className={`flex items-center gap-1.5 pl-3 py-1.5 text-xs cursor-pointer ${active ? "pr-1" : "pr-3"}`}
+          onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
+        >
+          <span className="font-medium">{label}</span>
+          <span className={`text-[0.72rem] ${active ? "text-blue-400" : "text-muted-foreground/60"}`}>{summary}</span>
+        </button>
         {active && (
-          <span
-            role="button"
-            tabIndex={0}
+          <button
             aria-label={`Clear ${label} filter`}
-            className="text-blue-400/70 hover:text-blue-200 text-sm leading-none -mr-1 px-0.5"
-            onClick={(e) => { e.stopPropagation(); setExpanded(false); onClear(); }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                setExpanded(false);
-                onClear();
-              }
+            className="pr-2.5 pl-1 py-1.5 text-sm leading-none text-blue-400/70 hover:text-blue-200 cursor-pointer"
+            onClick={() => {
+              setExpanded(false);
+              onClear();
+              triggerRef.current?.focus(); // clear button unmounts — keep focus in the pill
             }}
-          >&times;</span>
+          >&times;</button>
         )}
-      </button>
+      </div>
       {expanded && (
         <div className="absolute top-[calc(100%+4px)] left-0 z-[200] bg-popover border border-border rounded-md p-3 min-w-[220px] shadow-lg">
           <div className="flex items-center justify-between mb-2">

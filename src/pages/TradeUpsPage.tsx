@@ -85,6 +85,11 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     return f;
   });
   const debouncedFilters = useDebouncedValue(filters, 300);
+  // Referential equality: true on mount and once the debounce settles. While false,
+  // the fetch effect is gated — otherwise a synchronous page/type change during the
+  // 300ms window would fire a request with the PREVIOUS filters and commit stale
+  // results over controls that already show the new ones.
+  const filtersSettled = filters === debouncedFilters;
 
   const isFree = tier === "free";
 
@@ -151,9 +156,10 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   }, [sort, order, page, perPage, debouncedFilters, type, includeStale, refreshKey]);
 
   useEffect(() => {
+    if (!filtersSettled) return; // reruns when the debounce settles
     fetchTradeUps();
     return () => { if (abortRef.current) abortRef.current.abort(); };
-  }, [fetchTradeUps]);
+  }, [fetchTradeUps, filtersSettled]);
 
   const handleSort = (column: string) => {
     if (sort === column) {
@@ -180,7 +186,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     <>
       <h1 className="sr-only">Profitable CS2 Trade-Up Contracts</h1>
       <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
-      <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport." />
+      <meta name="description" content="Browse profitable CS2 (formerly CS:GO) trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, Skinport, and Buff.market." />
       <link rel="canonical" href="https://tradeupbot.app/trade-ups" />
       <meta property="og:title" content="Profitable CS2 Trade-Ups — Live Contracts | TradeUpBot" />
       <meta property="og:description" content="Browse profitable CS2 trade-up contracts from real marketplace listings. Filter by profit, ROI, cost, and rarity." />
@@ -207,7 +213,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           {
             "@type": "Question",
             "name": "How does TradeUpBot find profitable trade-ups?",
-            "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
+            "acceptedAnswer": { "@type": "Answer", "text": "TradeUpBot scans real marketplace listings across CSFloat, DMarket, Skinport, and Buff.market. For each valid combination of 10 inputs, it calculates expected output value using the actual float formula and accounts for marketplace fees on both the buy and sell sides." }
           },
           {
             "@type": "Question",
@@ -220,7 +226,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <section className="mb-5">
         <h2 className="text-base font-semibold mb-1.5">Find Profitable CS2 Trade-Up Contracts</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Every contract below is built from real, buyable listings on CSFloat, DMarket, and Skinport, with marketplace fees on both sides already priced in. Filter by profit, ROI, cost, or outcome odds across every rarity tier — Knife, Glove, Covert, Classified, Restricted, Mil-Spec.
+          Every contract below is built from real, buyable listings on CSFloat, DMarket, Skinport, and Buff.market, with marketplace fees on both sides already priced in. Filter by profit, ROI, cost, or outcome odds across every rarity tier — Knife, Glove, Covert, Classified, Restricted, Mil-Spec.
         </p>
       </section>
 
@@ -345,7 +351,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
           </div>
           <div>
             <h3 className="text-sm font-medium mb-1">How does TradeUpBot find profitable trade-ups?</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates the expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides — only surfaces contracts where the numbers work.</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">TradeUpBot scans real marketplace listings across CSFloat, DMarket, Skinport, and Buff.market. For each valid combination of 10 inputs, it calculates the expected output value using the actual CS2 float formula and accounts for marketplace fees on both the buy and sell sides — only surfaces contracts where the numbers work.</p>
           </div>
           <div>
             <h3 className="text-sm font-medium mb-1">Are these listings live?</h3>

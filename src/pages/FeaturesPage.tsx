@@ -29,14 +29,14 @@ export function FeaturesPage() {
             <section>
               <h2 className="text-xl font-bold mb-3">Real marketplace listings</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Every trade-up is built from skins currently listed on CSFloat, DMarket, and Skinport.
+                Every trade-up is built from skins currently listed on CSFloat, DMarket, Skinport, and Buff.market.
                 Each input links to a specific listing with its actual float and price, so the cost
                 you see is the cost you pay.
               </p>
-              <div className="grid sm:grid-cols-3 gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div className="border border-border rounded-lg p-4">
                   <div className="text-sm font-semibold mb-1">CSFloat</div>
-                  <p className="text-xs text-muted-foreground">Primary source for Covert skins and sale-based output pricing. Sale history gives the most reliable price signal of the three sources.</p>
+                  <p className="text-xs text-muted-foreground">Primary source for Covert skins and sale-based output pricing. Sale history gives the most reliable price signal.</p>
                 </div>
                 <div className="border border-border rounded-lg p-4">
                   <div className="text-sm font-semibold mb-1">DMarket</div>
@@ -45,6 +45,10 @@ export function FeaturesPage() {
                 <div className="border border-border rounded-lg p-4">
                   <div className="text-sm font-semibold mb-1">Skinport</div>
                   <p className="text-xs text-muted-foreground">Passive WebSocket feed with no rate limits. Provides additional price data and listing availability.</p>
+                </div>
+                <div className="border border-border rounded-lg p-4">
+                  <div className="text-sm font-semibold mb-1">Buff.market</div>
+                  <p className="text-xs text-muted-foreground">Buy-now listings fetched continuously in a separate process. Extends input coverage beyond the other three.</p>
                 </div>
               </div>
             </section>
@@ -82,7 +86,7 @@ export function FeaturesPage() {
               <h2 className="text-xl font-bold mb-3">Verify system</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
                 Before spending money, hit Verify. It calls each marketplace's API to confirm every
-                input listing still exists and at what price. The trade-up's cost, profit, and EV
+                input listing still exists and at what price. The trade-up's cost, profit, and ROI
                 update from the response.
               </p>
               <div className="flex gap-6 text-sm">
@@ -98,7 +102,8 @@ export function FeaturesPage() {
               <h2 className="text-xl font-bold mb-3">Claim system</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
                 Pro users can claim a trade-up to hide its listings from all other TradeUpBot users
-                for 30 minutes. During that window, no other user can see or buy those inputs.
+                for 30 minutes. Anyone shopping the marketplace directly can still buy the inputs —
+                a claim removes your TradeUpBot competition, not the listings themselves.
               </p>
               <div className="flex gap-6 text-sm flex-wrap">
                 <div>
@@ -182,7 +187,7 @@ export function FeaturesPage() {
           {/* CTA */}
           <div className="mt-16 pt-10 border-t border-border text-center">
             <h2 className="text-xl font-bold mb-3">Start free</h2>
-            <p className="text-sm text-muted-foreground mb-6">Sign in with Steam. The free tier shows every trade-up on a 3-hour delay.</p>
+            <p className="text-sm text-muted-foreground mb-6">Sign in with Steam. The free tier shows trade-up data on a 3-hour delay; contracts whose inputs sell in the meantime drop out.</p>
             <a
               href={authHref("/trade-ups")}
               onClick={() => trackEvent("sign_up_start", { location: "features_cta" })}

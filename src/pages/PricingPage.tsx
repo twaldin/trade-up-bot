@@ -241,23 +241,23 @@ export function PricingPage() {
 
             <PricingFaqItem question="Is there a free trial for Pro?">
               <p>
-                No separate trial. The Free tier has no time limit: same trade-ups, full filters
-                and listing links, on a 3-hour delay. Upgrade when you want real-time data,
+                No separate trial. The Free tier has no time limit: full filters and listing
+                links, with trade-up data delayed 3 hours. Upgrade when you want real-time data,
                 verification, and claims.
               </p>
             </PricingFaqItem>
 
             <PricingFaqItem question="What do the data delays mean?">
               <p>
-                Free users see trade-ups 3 hours after discovery. Pro users see them immediately.
-                On a 3-hour delay, the best listings are often already bought.
+                Free users see trade-up data delayed 3 hours — contracts whose inputs sell in the
+                meantime drop out. Pro users see everything immediately, before the best listings get bought.
               </p>
             </PricingFaqItem>
 
             <PricingFaqItem question="Do claims reserve listings on the marketplace?">
               <p>
                 No. Claims only hide trade-up listings from other TradeUpBot users. Other buyers on
-                CSFloat, DMarket, or Skinport who aren't using TradeUpBot can still purchase the listings.
+                CSFloat, DMarket, Skinport, or Buff.market who aren't using TradeUpBot can still purchase the listings.
                 Claims reduce your competition, but don't guarantee availability.
               </p>
             </PricingFaqItem>

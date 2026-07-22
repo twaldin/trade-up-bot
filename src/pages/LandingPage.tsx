@@ -70,7 +70,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
-      <meta name="description" content="Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, and Skinport." />
+      <meta name="description" content="Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, Skinport, and Buff.market." />
       <link rel="canonical" href="https://tradeupbot.app/" />
       <meta property="og:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
       <meta property="og:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
@@ -100,7 +100,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             "name": "TradeUpBot",
             "url": "https://tradeupbot.app",
             "logo": "https://tradeupbot.app/favicon.svg",
-            "description": "CS2 trade-up contract analysis platform using real marketplace data from CSFloat, DMarket, and Skinport."
+            "description": "CS2 trade-up contract analysis platform using real marketplace data from CSFloat, DMarket, Skinport, and Buff.market."
           }
         ]
       })}} />
@@ -124,7 +124,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
                 Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each contract from listings currently for sale.
               </p>
               <p className="text-sm text-muted-foreground/70 mb-8 max-w-xl">
-                Every input links to a specific listing on CSFloat, DMarket, or Skinport, with its exact float and price. The output float is computed from your inputs, not estimated.
+                Every input links to a specific listing on CSFloat, DMarket, Skinport, or Buff.market, with its exact float and price. The output float is computed from your inputs, not estimated.
               </p>
               <div className="flex items-center gap-4">
                 {user ? (
@@ -177,7 +177,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <div className="grid sm:grid-cols-3 gap-6 text-left">
               <div className="border border-border rounded-lg p-5">
                 <div className="text-green-500 text-sm font-semibold mb-2">Real listings</div>
-                <p className="text-sm text-muted-foreground">Each input links to a live listing on CSFloat, DMarket, or Skinport.</p>
+                <p className="text-sm text-muted-foreground">Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market.</p>
               </div>
               <div className="border border-border rounded-lg p-5">
                 <div className="text-green-500 text-sm font-semibold mb-2">Verify before buying</div>
@@ -185,7 +185,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
               </div>
               <div className="border border-border rounded-lg p-5">
                 <div className="text-green-500 text-sm font-semibold mb-2">Claim to lock</div>
-                <p className="text-sm text-muted-foreground">Pro users can claim a trade-up for 30 minutes, hiding its listings from other users while they buy.</p>
+                <p className="text-sm text-muted-foreground">Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy.</p>
               </div>
             </div>
           </div>
@@ -234,9 +234,9 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <h2 className="text-2xl font-bold mb-10 text-center">How it works</h2>
             <div className="grid md:grid-cols-3 gap-8">
               {[
-                { n: "01", title: "Scan", desc: "Listings pulled from CSFloat, DMarket, and Skinport every cycle. Continuous DMarket coverage at 2 req/s." },
+                { n: "01", title: "Scan", desc: "Listings pulled from CSFloat, DMarket, Skinport, and Buff.market every cycle. Continuous DMarket coverage at 2 req/s." },
                 { n: "02", title: "Discover", desc: "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle." },
-                { n: "03", title: "Claim", desc: "Pro users see results instantly. Claim a trade-up to lock listings for 30 minutes while you buy." },
+                { n: "03", title: "Claim", desc: "Pro users see results instantly. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy." },
               ].map((s, i) => (
                 <div key={i}>
                   <div className="text-xs text-muted-foreground/50 font-mono mb-2">{s.n}</div>
@@ -387,11 +387,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <h2 className="text-2xl font-bold mb-10 text-center">Frequently Asked Questions</h2>
             <div className="space-y-4">
               {[
-                { q: "How does TradeUpBot find profitable trade-ups?", a: "We continuously scan CSFloat, DMarket, and Skinport for real listings, then test thousands of input combinations across 45+ float targets. Every result is built only from listings currently for sale." },
+                { q: "How does TradeUpBot find profitable trade-ups?", a: "We continuously scan CSFloat, DMarket, Skinport, and Buff.market for real listings, then test thousands of input combinations across 45+ float targets. Every result is built only from listings currently for sale." },
                 { q: "How accurate are the prices?", a: "Prices come from real marketplace data: CSFloat sale history (primary), DMarket listing floors, and Skinport prices. All prices are estimates — actual prices may differ at time of purchase, especially after trade lock periods." },
                 { q: "Can I lose money on a trade-up?", a: "Yes. All prices are estimates based on current market data. Items purchased from marketplaces have trade lock periods during which prices can change. \"Profitable\" means profitable at current estimated prices, not guaranteed profit." },
-                { q: "What does Verify do?", a: "Verify checks whether every input listing still exists on its marketplace and at what price. The trade-up's cost, profit, and EV update from the response." },
-                { q: "What does Claim do?", a: "Pro users can claim a trade-up to lock its listings for 30 minutes. While claimed, those listings are hidden from other users so no one can buy them while you're purchasing." },
+                { q: "What does Verify do?", a: "Verify checks whether every input listing still exists on its marketplace and at what price. The trade-up's cost, profit, and ROI update from the response." },
+                { q: "What does Claim do?", a: "Pro users can claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while they buy. Buyers on the marketplaces themselves can still purchase the inputs — a claim removes TradeUpBot competition, it doesn't reserve listings." },
               ].map((item, i) => (
                 <details key={i} className="group border border-border rounded-lg">
                   <summary className="flex items-center justify-between cursor-pointer px-5 py-4 text-sm font-medium select-none">
