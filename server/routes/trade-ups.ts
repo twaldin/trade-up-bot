@@ -3,7 +3,7 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { cachedRoute, getRateLimit } from "../redis.js";
+import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
@@ -365,7 +365,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Data query always runs (fast: index scan + LIMIT).
     // Correlated subqueries for real_input_count / missing_count have been moved to a
     // single batched query after the page rows resolve (see batchLoadInputCounts).
-    const dataPromise = pool.query(
+    const dataSql =
       `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
@@ -374,9 +374,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               0 as outcome_count
        FROM trade_ups t ${collectionJoin} ${where}
        ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
-       LIMIT $${limitParam} OFFSET $${offsetParam}`,
-      [...params, perPage, offset]
-    );
+       LIMIT $${limitParam} OFFSET $${offsetParam}`;
+    const dataParams = [...params, perPage, offset];
+    const dataPromise = pool.query(dataSql, dataParams);
 
     let total: number;
     let totalProfitable: number;
@@ -415,12 +415,65 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
     }
 
-    const rows = (await dataPromise).rows;
+    let rows = (await dataPromise).rows;
 
     // Batch-load real_input_count and missing_count for all page rows in one query.
     // This replaces the two correlated subqueries that were inlined in the SELECT above.
+    let inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
+
+    // Coherence guard: the WHERE filtered on the listing_status COLUMN, but canonical
+    // status is recomputed from live listings (batchLoadInputCounts). A listing deleted
+    // without cascadeTradeUpStatuses running (race, crashed fetcher) leaves the column
+    // 'active' — the row passes the WHERE, then renders partial/stale in the default
+    // view. Heal the column (the UPDATE revalidates missing counts in the same
+    // statement, so a listing reinserted since the batch count can't be mis-marked),
+    // invalidate cached pages that may still hold the leaked rows, and requery once so
+    // the page has no holes. Rows claimed by the requesting user stay visible — the
+    // claimer must see their inputs went missing.
+    if (!includeStale && my_claims !== "true") {
+      const leakedIds = rows
+        .filter((r: { id: number }) => {
+          const c = inputCountsById.get(r.id);
+          return c !== undefined && c.missing_count > 0 && !claimedByMe.has(r.id);
+        })
+        .map((r: { id: number }) => r.id);
+      if (leakedIds.length > 0) {
+        const { rows: healed } = await pool.query(
+          `WITH live AS (
+             SELECT tui.trade_up_id,
+                    COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%')::int AS real_inputs,
+                    COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL)::int AS missing
+             FROM trade_up_inputs tui
+             LEFT JOIN listings l ON tui.listing_id = l.id
+             WHERE tui.trade_up_id = ANY($1::int[])
+             GROUP BY tui.trade_up_id
+           )
+           UPDATE trade_ups t SET
+             listing_status = CASE WHEN live.missing >= live.real_inputs THEN 'stale' ELSE 'partial' END,
+             preserved_at = COALESCE(t.preserved_at, NOW())
+           FROM live
+           WHERE t.id = live.trade_up_id
+             AND t.listing_status = 'active'
+             AND live.missing > 0
+             AND NOT EXISTS (
+               SELECT 1 FROM trade_up_claims tc
+               WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+             )
+           RETURNING t.id`,
+          [leakedIds]
+        );
+        if (healed.length > 0) {
+          await cacheInvalidatePrefix("tu:");
+          // Healed rows are excluded by the WHERE now — refill the page slots.
+          rows = (await pool.query(dataSql, dataParams)).rows;
+          inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
+          // The count queries ran against the pre-heal set.
+          total = Math.max(0, total - healed.length);
+        }
+      }
+    }
+
     const tuIds = rows.map((r: { id: number }) => r.id);
-    const inputCountsById = await batchLoadInputCounts(pool, tuIds);
 
     // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
     // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
@@ -458,9 +511,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Status is maintained by cascadeTradeUpStatuses (on listing delete/claim).
-    // No read-time auto-correct needed — trust listing_status column.
-    // Missing input counts computed on-demand when user expands a row (inputs endpoint).
+    // Canonical status may still disagree with the column for rows the heal skipped
+    // (claim-guarded) or for deletions racing the requery — those residuals are dropped
+    // below rather than healed again (bounded to one requery per request).
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
@@ -503,35 +556,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       };
     });
 
-    // Coherence guard: the WHERE filtered on the listing_status COLUMN, but canonical
-    // status was just recomputed from live listings (batchLoadInputCounts). A listing
-    // deleted without cascadeTradeUpStatuses running (race, crashed fetcher) leaves the
-    // column 'active' — the row passes the WHERE, then renders partial/stale in the
-    // default view. Drop leaked rows from the page and write the corrected status back
-    // (self-healing: the next uncached query excludes them in SQL). Rows claimed by the
-    // requesting user stay visible — the claimer must see their inputs went missing.
-    const leakedIds = new Set<number>();
+    const residualLeaks = new Set<number>();
     if (!includeStale && my_claims !== "true") {
-      const leaked = tradeUps.filter(tu => tu.listing_status !== "active" && !tu.claimed_by_me);
-      if (leaked.length > 0) {
-        for (const tu of leaked) leakedIds.add(tu.id);
-        const staleIds = leaked.filter(tu => tu.listing_status === "stale").map(tu => tu.id);
-        await pool.query(
-          `UPDATE trade_ups SET
-             listing_status = CASE WHEN id = ANY($2::int[]) THEN 'stale' ELSE 'partial' END,
-             preserved_at = COALESCE(preserved_at, NOW())
-           WHERE id = ANY($1::int[]) AND listing_status = 'active'
-             AND NOT EXISTS (
-               SELECT 1 FROM trade_up_claims tc
-               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
-             )`,
-          [[...leakedIds], staleIds]
-        );
+      for (const tu of tradeUps) {
+        if (tu.listing_status !== "active" && !tu.claimed_by_me) residualLeaks.add(tu.id);
       }
     }
 
     // Hide trade-ups claimed by other users (they shouldn't see claimed opportunities)
-    const filteredTradeUps = tradeUps.filter(tu => !tu.claimed_by_other && !leakedIds.has(tu.id));
+    const filteredTradeUps = tradeUps.filter(tu => !tu.claimed_by_other && !residualLeaks.has(tu.id));
     const removedOnPage = tradeUps.length - filteredTradeUps.length;
 
     const result = {
