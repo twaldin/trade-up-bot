@@ -19,7 +19,7 @@ export function FeaturesPage() {
         <div className="mx-auto max-w-4xl px-6">
           <h1 className="text-3xl sm:text-4xl font-bold mb-2">Features</h1>
           <p className="text-muted-foreground mb-12 max-w-2xl">
-            How TradeUpBot finds, prices, and locks profitable CS2 trade-up contracts.
+            How TradeUpBot finds, prices, and verifies profitable CS2 trade-up contracts.
           </p>
 
           {/* Feature sections */}
