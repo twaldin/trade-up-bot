@@ -7,6 +7,7 @@ import { OutcomeChart } from "./trade-up/OutcomeChart.js";
 import { InputList } from "./trade-up/InputList.js";
 import { OutcomeList } from "./trade-up/OutcomeList.js";
 import { VerifyResults } from "./trade-up/VerifyResults.js";
+import { trackEvent } from "../lib/analytics.js";
 
 interface VerifyResult {
   trade_up_id: number;
@@ -232,6 +233,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   const handleExpand = useCallback(async (tuId: number) => {
     if (expandedId === tuId) { setExpandedId(null); return; }
     setExpandedId(tuId);
+    trackEvent("tradeup_view", { tradeup_id: String(tuId), location: "list" });
     // Load outcomes + inputs if not cached; results are keyed by trade-up id,
     // so a late response can never land in another row's state.
     const promises: Promise<void>[] = [];
