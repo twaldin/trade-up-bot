@@ -2,7 +2,7 @@ import pg from "pg";
 import { floatToCondition, type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import type { ListingWithCollection, AdjustedListing } from "./types.js";
 import { CONDITION_BOUNDS } from "./types.js";
-import { CASE_KNIFE_MAP, KNIFE_WEAPONS } from "./knife-data.js";
+import { CASE_KNIFE_MAP, KNIFE_WEAPONS, GLOVE_GEN_SKINS, type FinishData } from "./knife-data.js";
 import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { loadDiscoveryData, buildWeightedPool } from "./data-load.js";
 import { selectForFloatTarget, selectLowestFloat, selectKnapsackUnderBoundary } from "./selection.js";
@@ -10,6 +10,73 @@ import { evaluateKnifeTradeUp, buildKnifeFinishCache } from "./knife-evaluation.
 import { pick, shuffle, listingSig, computeChanceToProfit, computeBestWorstCase, pickWeightedStrategy } from "./utils.js";
 import { comboCurveScore, shouldUseValueRatio, type ComboOutcome } from "./curve-classification.js";
 import type { StrategyYieldEntry } from "./discovery.js";
+
+/**
+ * Iteration 13 — knife-tier E2 analog (value-first ordering).
+ *
+ * Rank knife input-collections by the max output value they can mint so the
+ * deadline-bounded structured scan (findProfitableKnifeTradeUps Step 1) evaluates
+ * the highest-value collections FIRST — any deadline cut then starves only the
+ * lowest-value ones. This is the bounded, sync-safe realization of the gun-E2
+ * value-first principle (enumerateBoundaryTargets): a full reverse-boundary pass
+ * is infeasible in the knife tier because per-condition knife prices need async
+ * lookupOutputPrice, not a sync cache read. Pure ordering — `valueOf` is injected
+ * so it stays unit-testable. Deterministic name tiebreak; input not mutated.
+ */
+export function orderKnifeCollectionsByValue(
+  collections: string[],
+  valueOf: (collection: string) => number,
+): string[] {
+  return [...collections].sort(
+    (a, b) => valueOf(b) - valueOf(a) || (a < b ? -1 : a > b ? 1 : 0)
+  );
+}
+
+/**
+ * Max mintable output value for a knife input-collection: the highest finish
+ * avgPrice across ONLY the finishes the collection can actually mint. Mirrors
+ * the finish filter in evaluateKnifeTradeUp exactly — knives are restricted to
+ * `m.knifeFinishes` (matched by the name after " | ", else "Vanilla"), gloves to
+ * `GLOVE_GEN_SKINS[gloveGen]` (matched by full name) — so a collection never
+ * inherits a Chroma/Gamma/Doppler value from a shared knife-type cache entry it
+ * cannot produce. Reads only the already-built finish cache (no new price math).
+ * Returns 0 if unmapped or unpriced (ranks last, never drops the collection).
+ */
+export function knifeCollectionValue(
+  collection: string,
+  finishCache: Map<string, FinishData[]>,
+): number {
+  const m = CASE_KNIFE_MAP[collection];
+  if (!m) return 0;
+  let best = 0;
+
+  // Knives: only the finishes this case can mint (evaluateKnifeTradeUp guards on
+  // knifeFinishes.length > 0 and keys cached finishes by the post-" | " name).
+  if (m.knifeTypes.length > 0 && m.knifeFinishes.length > 0) {
+    const allowed = new Set(m.knifeFinishes);
+    for (const knifeType of m.knifeTypes) {
+      for (const f of finishCache.get(knifeType) ?? []) {
+        const finishName = f.name.includes(" | ") ? f.name.split(" | ")[1] : "Vanilla";
+        if (allowed.has(finishName) && f.avgPrice > best) best = f.avgPrice;
+      }
+    }
+  }
+
+  // Gloves: generation-wide enumeration is the allowed output set; the evaluator
+  // matches cached gloves by full name "★ <gloveType> | <finish>".
+  if (m.gloveGen !== null) {
+    const genSkins = GLOVE_GEN_SKINS[m.gloveGen];
+    if (genSkins) {
+      for (const [gloveType, finishNames] of Object.entries(genSkins)) {
+        const allowedFull = new Set(finishNames.map(fn => `★ ${gloveType} | ${fn}`));
+        for (const f of finishCache.get(gloveType) ?? []) {
+          if (allowedFull.has(f.name) && f.avgPrice > best) best = f.avgPrice;
+        }
+      }
+    }
+  }
+  return best;
+}
 
 /**
  * Discover profitable knife trade-ups.
@@ -86,12 +153,20 @@ export async function findProfitableKnifeTradeUps(
     tryAdd(tu);
   };
 
-  // Collections that have knife or glove mappings
-  const knifeCollections = [...byCollection.keys()].filter(name => {
-    const m = CASE_KNIFE_MAP[name];
-    return m && (m.knifeTypes.length > 0 || m.gloveGen !== null);
-  });
-  console.log(`  ${knifeCollections.length} collections with knife/glove mappings`);
+  // Collections that have knife or glove mappings, ORDERED value-first (It13):
+  // the structured scan below is deadline-bounded, so evaluate the highest-value
+  // collections first and let any deadline cut starve only the cheapest ones.
+  const knifeCollections = orderKnifeCollectionsByValue(
+    [...byCollection.keys()].filter(name => {
+      const m = CASE_KNIFE_MAP[name];
+      return m && (m.knifeTypes.length > 0 || m.gloveGen !== null);
+    }),
+    name => knifeCollectionValue(name, knifeFinishCache)
+  );
+  const topByValue = knifeCollections
+    .slice(0, 3)
+    .map(c => `${c} ($${(knifeCollectionValue(c, knifeFinishCache) / 100).toFixed(0)})`);
+  console.log(`  ${knifeCollections.length} collections with knife/glove mappings (value-first; top: ${topByValue.join(", ")})`);
 
   // Dense float targets — condition boundaries are where profit lives.
   // FT at 0.16 is worth way more than FT at 0.37. 30 points catches the sweet spots.
