@@ -47,6 +47,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [total, setTotal] = useState(0);
   const [totalProfitable, setTotalProfitable] = useState(0);
   const [loading, setLoading] = useState(true); // Start loading to prevent empty state flash
+  const [signedIn, setSignedIn] = useState<boolean>(true); // optimistic: avoid nudge flash for signed-in users
   const [tier, setTier] = useState<string>(() => {
     // Persist tier to avoid "free tier" upgrade banner flash on mount
     if (typeof window !== "undefined") return localStorage.getItem("user_tier") || "free";
@@ -144,6 +145,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       setTotalProfitable(data.total_profitable ?? 0);
       const newTier = data.tier || "free";
       setTier(newTier);
+      setSignedIn(Boolean(data.signed_in));
       try { localStorage.setItem("user_tier", newTier); } catch {}
       if (data.claim_limit) setClaimLimit(data.claim_limit);
       if (data.verify_limit) setVerifyLimit(data.verify_limit);
@@ -306,6 +308,9 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         </div>
       ) : (
         <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
+          {isFree && !loading && (
+            <UpgradeBanner message="Free view: contracts are delayed 3 hours. Pro sees them the moment they're found." />
+          )}
           <TradeUpTable
             tradeUps={tradeUps}
             sort={sort}
@@ -314,16 +319,12 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
             onNavigateSkin={onNavigateSkin}
             onNavigateCollection={onNavigateCollection}
             tier={tier}
+            signedIn={signedIn}
             claimLimit={claimLimit}
             verifyLimit={verifyLimit}
             onClaimLimitUpdate={setClaimLimit}
             onVerifyLimitUpdate={setVerifyLimit}
           />
-
-          {/* Free tier: upgrade banner */}
-          {isFree && !loading && (
-            <UpgradeBanner message="Upgrade to Pro for real-time data, verification, and claims" />
-          )}
 
           {/* Pagination — all tiers */}
           {totalPages > 1 && (
