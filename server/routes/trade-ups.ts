@@ -574,6 +574,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
+      signed_in: Boolean(req.user),
       tier_config: { delay: tierConfig.delay, limit: tierConfig.limit, showListingIds: tierConfig.showListingIds },
       my_claim_count: myClaimCount,
       claim_limit: effectiveTier === "pro" ? await getRateLimit(userId, "claim", 10) : null,

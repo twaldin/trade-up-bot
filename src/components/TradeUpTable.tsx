@@ -8,6 +8,7 @@ import { InputList } from "./trade-up/InputList.js";
 import { OutcomeList } from "./trade-up/OutcomeList.js";
 import { VerifyResults } from "./trade-up/VerifyResults.js";
 import { trackEvent } from "../lib/analytics.js";
+import { authHref } from "../lib/ref.js";
 
 interface VerifyResult {
   trade_up_id: number;
@@ -40,6 +41,8 @@ interface Props {
   onNavigateCollection?: (collectionName: string) => void;
   onClaimChange?: (delta: number) => void;
   tier?: string;
+  /** false = anonymous visitor; gates the expanded-row Steam sign-in nudge */
+  signedIn?: boolean;
   showMyClaims?: boolean;
   claimLimit?: RateLimitInfo | null;
   verifyLimit?: RateLimitInfo | null;
@@ -173,7 +176,7 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate, renderActions }: Props) {
+export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, onNavigateCollection, onClaimChange, tier = "pro", signedIn = true, showMyClaims = false, claimLimit, verifyLimit, onClaimLimitUpdate, onVerifyLimitUpdate, renderActions }: Props) {
   const { formatPrice } = useCurrency();
   const isFree = tier === "free";
   const isPro = tier === "pro" || tier === "admin";
@@ -315,6 +318,19 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
     return (
     <div className="bg-card">
+        {!signedIn && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 bg-blue-950/30 border border-blue-500/30 rounded-md text-xs text-blue-200">
+            <span>Claim these listings before someone else does.</span>
+            <a
+              href={authHref(typeof window !== "undefined" ? window.location.pathname : "/trade-ups")}
+              rel="nofollow"
+              onClick={() => trackEvent("sign_up_start", { location: "expanded_row" })}
+              className="font-medium text-blue-400 hover:text-blue-300 whitespace-nowrap"
+            >
+              Sign in with Steam →
+            </a>
+          </div>
+        )}
       {renderActions ? (
         <div className="px-4 sm:px-5 py-2 border-b border-border/50 bg-muted/30">
           {renderActions(tu)}
@@ -555,7 +571,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                   {age && <span className="text-[0.6rem] text-muted-foreground/40">{age}</span>}
                   {(claimedIds.has(tu.id)) && <span className="text-[0.6rem] text-purple-400">🔒</span>}
                   {tu.claimed_by_other && <span className="text-[0.6rem] text-muted-foreground">🔒</span>}
-                  <span className="text-muted-foreground/30 text-xs">{expandedId === tu.id ? "▼" : "▶"}</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-border text-[0.7rem] text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors">Details<span className="text-[0.6rem]">{expandedId === tu.id ? "▼" : "▶"}</span></span>
                 </div>
               </div>
               {/* Collection badges */}
@@ -623,7 +639,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
                 onClick={() => handleExpand(tu.id)}
               >
                 <td className="px-3.5 py-2.5 border-b border-border/70">
-                  {expandedId === tu.id ? "\u25BC" : "\u25B6"}
+                  <span className="inline-flex items-center gap-1">Details<span className="text-[0.6rem]">{expandedId === tu.id ? "\u25BC" : "\u25B6"}</span></span>
                 </td>
                 <td className="px-3.5 py-2.5 border-b border-border/70">
                   {inputCount === 0 ? (
