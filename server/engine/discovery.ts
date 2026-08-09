@@ -3,7 +3,7 @@ import {
   floatToCondition,
   type TradeUp,
 } from "../../shared/types.js";
-import type { DbSkinOutcome, ListingWithCollection } from "./types.js";
+import type { AdjustedListing, DbSkinOutcome, ListingWithCollection } from "./types.js";
 import { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./types.js";
 import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./data-load.js";
@@ -108,6 +108,19 @@ export function enumerateBoundaryTargets(
       (a.collectionId < b.collectionId ? -1 : a.collectionId > b.collectionId ? 1 : 0)
   );
   return targets.slice(0, Math.max(0, k));
+}
+
+/**
+ * Select one E2 reverse-boundary candidate. Production provenance showed the
+ * price-greedy candidate never minted an E2 contract, so this path evaluates
+ * only the feasibility-complete boundary-knapsack result.
+ */
+export function selectE2Target(
+  byColAdj: Map<string, AdjustedListing[]>,
+  quotas: Map<string, number>,
+  adjTarget: number,
+): AdjustedListing[] | null {
+  return selectKnapsackUnderBoundary(byColAdj, quotas, adjTarget);
 }
 
 /** Per-strategy yield stats from exploration. */
@@ -314,16 +327,12 @@ export async function findProfitableTradeUps(
         const outcomes = outcomesForCols(t.collectionId);
         if (outcomes.length === 0) continue;
         const quotas = new Map([[t.collectionId, 10]]);
-        const greedy = selectForFloatTarget(byColAdj, quotas, t.adjTarget);
-        if (greedy) {
-          await tryEval(greedy, outcomes, "e2:greedy");
-          e2Evals++;
-        }
+        const knapsack = selectE2Target(byColAdj, quotas, t.adjTarget);
         knapsackAttempts++;
-        const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, t.adjTarget);
         if (knapsack) {
           knapsackHits++;
-          if (!greedy) knapsackRecovered++;
+          // With no greedy E2 candidate, every hit is now a recovery.
+          knapsackRecovered++;
           await tryEval(knapsack, outcomes, "e2:knapsack");
           e2Evals++;
         }
