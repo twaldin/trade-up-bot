@@ -3,7 +3,7 @@ import {
   floatToCondition,
   type TradeUp,
 } from "../../shared/types.js";
-import type { DbSkinOutcome, ListingWithCollection } from "./types.js";
+import type { AdjustedListing, DbSkinOutcome, ListingWithCollection } from "./types.js";
 import { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./types.js";
 import { buildPriceCache, priceCache as globalPriceCache } from "./pricing.js";
 import { getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool } from "./data-load.js";
@@ -108,6 +108,19 @@ export function enumerateBoundaryTargets(
       (a.collectionId < b.collectionId ? -1 : a.collectionId > b.collectionId ? 1 : 0)
   );
   return targets.slice(0, Math.max(0, k));
+}
+
+/**
+ * Select one E2 reverse-boundary candidate. Production provenance showed the
+ * price-greedy candidate never minted an E2 contract, so this path evaluates
+ * only the feasibility-complete boundary-knapsack result.
+ */
+export function selectE2Target(
+  byColAdj: Map<string, AdjustedListing[]>,
+  quotas: Map<string, number>,
+  adjTarget: number,
+): AdjustedListing[] | null {
+  return selectKnapsackUnderBoundary(byColAdj, quotas, adjTarget);
 }
 
 /** Per-strategy yield stats from exploration. */
@@ -285,9 +298,9 @@ export async function findProfitableTradeUps(
 
     console.log(`  ${colIds.length} eligible collections, ${allAdjusted.length} listings`);
 
-    // E3 knapsack telemetry (per rarity): how often the boundary-knapsack finds
-    // a feasible set, and how often it recovers one the price-greedy missed —
-    // the direct measure of E3's unique coverage.
+    // Boundary-knapsack telemetry: feasible hits across E2 and Steps 1-2.
+    // Recoveries count every knapsack-only E2 hit plus Step 1-2 hits whose
+    // price-greedy candidate was null.
     let knapsackAttempts = 0;
     let knapsackHits = 0;
     let knapsackRecovered = 0;
@@ -314,16 +327,12 @@ export async function findProfitableTradeUps(
         const outcomes = outcomesForCols(t.collectionId);
         if (outcomes.length === 0) continue;
         const quotas = new Map([[t.collectionId, 10]]);
-        const greedy = selectForFloatTarget(byColAdj, quotas, t.adjTarget);
-        if (greedy) {
-          await tryEval(greedy, outcomes, "e2:greedy");
-          e2Evals++;
-        }
+        const knapsack = selectE2Target(byColAdj, quotas, t.adjTarget);
         knapsackAttempts++;
-        const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, t.adjTarget);
         if (knapsack) {
           knapsackHits++;
-          if (!greedy) knapsackRecovered++;
+          // With no greedy E2 candidate, every hit is now a recovery.
+          knapsackRecovered++;
           await tryEval(knapsack, outcomes, "e2:knapsack");
           e2Evals++;
         }
@@ -593,9 +602,8 @@ export async function findProfitableTradeUps(
     // the explore strategies. E2's value-first boundary targeting supersedes
     // its thesis. See .monitoring/autoresearch-log.md, 2026-07-17.)
 
-    // E3 telemetry: does the boundary-knapsack ever fire, and does it recover
-    // feasible sets the greedy missed? (Worker path has no onProgress → console.)
-    console.log(`  ${inputRarity}: knapsack ${knapsackHits}/${knapsackAttempts} feasible, ${knapsackRecovered} greedy-null recoveries`);
+    // Recovery semantics: all E2 hits plus Step 1-2 greedy-null hits.
+    console.log(`  ${inputRarity}: knapsack ${knapsackHits}/${knapsackAttempts} feasible, ${knapsackRecovered} recoveries (E2 hits + S1/S2 greedy-null)`);
 
     options.onProgress?.(
       `${inputRarity}: done (${store.total} trade-ups, ${store.getSignatureCount()} signatures)`,

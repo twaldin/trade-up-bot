@@ -9,8 +9,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { enumerateBoundaryTargets, E2_MAX_TARGETS } from "../../server/engine/discovery.js";
-import { makeOutcome } from "../helpers/fixtures.js";
+import { enumerateBoundaryTargets, E2_MAX_TARGETS, selectE2Target } from "../../server/engine/discovery.js";
+import { selectForFloatTarget, selectKnapsackUnderBoundary } from "../../server/engine/selection.js";
+import { makeAdjustedListing, makeOutcome } from "../helpers/fixtures.js";
 import type { DbSkinOutcome } from "../../server/engine/types.js";
 
 // CONDITION_BOUNDS boundaries: FN max 0.07, MW max 0.15, FT max 0.38, WW max 0.45
@@ -117,5 +118,55 @@ describe("enumerateBoundaryTargets (E2)", () => {
     }
     const targets = enumerateBoundaryTargets(byCol(...cols), priceOf);
     expect(targets).toHaveLength(E2_MAX_TARGETS);
+  });
+});
+
+describe("selectE2Target", () => {
+  it("returns only the deterministic knapsack candidate when greedy finds a dominated set", () => {
+    const pool = [
+      0.75, 0.25, 0.625, 0.75, 0.75, 1,
+      0.625, 1, 0.625, 0.625, 0.125, 0.375,
+    ].map((adjustedFloat, index) => makeAdjustedListing({
+      id: `listing-${index}`,
+      collection_id: "col-e2",
+      price_cents: (index + 1) * 100,
+      adjustedFloat,
+    }));
+    const quotas = new Map([["col-e2", 10]]);
+    const byColAdj = new Map([["col-e2", pool]]);
+
+    const greedy = selectForFloatTarget(byColAdj, quotas, 0.625);
+    const knapsack = selectKnapsackUnderBoundary(byColAdj, quotas, 0.625);
+    const selected = selectE2Target(byColAdj, quotas, 0.625);
+
+    expect(greedy).not.toBeNull();
+    expect(knapsack).not.toBeNull();
+    expect(selected).toEqual(knapsack);
+    expect(selected).not.toEqual(greedy);
+    expect(selected!.reduce((sum, item) => sum + item.price_cents, 0))
+      .toBeLessThan(greedy!.reduce((sum, item) => sum + item.price_cents, 0));
+    expect(selected!.reduce((sum, item) => sum + item.adjustedFloat, 0))
+      .toBeLessThan(greedy!.reduce((sum, item) => sum + item.adjustedFloat, 0));
+
+    const reversed = selectE2Target(
+      new Map([["col-e2", [...pool].reverse()]]),
+      quotas,
+      0.625,
+    );
+    expect(reversed).toEqual(selected);
+  });
+
+  it("returns null when the knapsack selector cannot satisfy the quota", () => {
+    const pool = Array.from({ length: 9 }, (_, index) => makeAdjustedListing({
+      id: `listing-${index}`,
+      collection_id: "col-e2",
+      adjustedFloat: 0.01,
+    }));
+
+    expect(selectE2Target(
+      new Map([["col-e2", pool]]),
+      new Map([["col-e2", 10]]),
+      0.1,
+    )).toBeNull();
   });
 });
