@@ -61,6 +61,11 @@ try {
     atomicWriteJson(resultPath, result);
     exitStatus = 0;
   } else {
+    const maxTime = process.env.AUTORESEARCH_MAX_TIME ?? "330m";
+    if (!/^[1-9]\d*(?:s|m|h)?$/.test(maxTime)) {
+      throw new Error(`AUTORESEARCH_MAX_TIME must be positive integer seconds or one duration unit (for example 19800, 330m, or 5h); received ${JSON.stringify(maxTime)}`);
+    }
+
     const databasePreflight = spawnSync(process.execPath, [
       fileURLToPath(new URL("./check-test-database.mjs", import.meta.url)),
     ], {
@@ -85,7 +90,7 @@ try {
       "--print",
       "--cwd", repoDir,
       "--approval-mode", "yolo",
-      "--max-time", process.env.AUTORESEARCH_MAX_TIME ?? "5h30m",
+      "--max-time", maxTime,
       "--no-title",
       "--no-session",
     ];

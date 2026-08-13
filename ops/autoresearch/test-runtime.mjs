@@ -71,9 +71,22 @@ try {
 
   const heartbeatDir = join(state, "heartbeats");
   mkdirSync(heartbeatDir, { recursive: true });
+  const malformedDuration = run("autoresearch-fire.mjs", [], 1, {
+    AUTORESEARCH_MAX_TIME: "5h30m",
+    TEST_DATABASE_URL: "",
+  });
+  assert.match(malformedDuration.stderr, /one duration unit/);
+  const malformedDurationHeartbeat = JSON.parse(
+    readFileSync(join(heartbeatDir, "daily.jsonl"), "utf8").trim().split("\n").at(-1),
+  );
+  assert.equal(malformedDurationHeartbeat.exitStatus, 1);
+  assert.match(malformedDurationHeartbeat.error, /received \"5h30m\"/);
+
   const failedFire = run("autoresearch-fire.mjs", [], 1, { TEST_DATABASE_URL: "" });
   assert.match(failedFire.stderr, /TEST_DATABASE_URL is required/);
-  const failedHeartbeat = JSON.parse(readFileSync(join(heartbeatDir, "daily.jsonl"), "utf8").trim());
+  const failedHeartbeat = JSON.parse(
+    readFileSync(join(heartbeatDir, "daily.jsonl"), "utf8").trim().split("\n").at(-1),
+  );
   assert.equal(failedHeartbeat.exitStatus, 1);
   assert.match(failedHeartbeat.error, /TEST_DATABASE_URL is required/);
 

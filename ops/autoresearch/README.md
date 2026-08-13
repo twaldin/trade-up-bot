@@ -20,6 +20,8 @@ The units use `/home/tim/omp-firstmate/projects/trade-up-bot`, an explicit PATH 
 
 The daily unit's `EnvironmentFile` is mandatory. The monitor/watchdog references are deliberately optional so loss of the DB configuration breaks the daily fire but cannot also kill the failure reporters; they retain safe default state paths and freshness limits. Install/verify still reject a missing file.
 
+`AUTORESEARCH_MAX_TIME` defaults to `330m`. Overrides must be positive integer seconds or one unit (`19800`, `330m`, or `5h`); compound durations such as `5h30m` are rejected before the database or agent starts, and the failed attempt is heartbeated.
+
 ### Service privilege boundary
 
 All services set `NoNewPrivileges=true`, empty capability/ambient-capability sets, `PrivateTmp=true`, `PrivateDevices=true`, `ProtectSystem=strict`, `ProtectHome=read-only`, native syscall architecture, no realtime scheduling, and kernel/control-group/clock/hostname protections. The daily agent may write only the authoritative checkout, autoresearch state, OMP/package caches, and its user runtime directory. It needs ordinary outbound TCP/Unix sockets for the localhost test database, GitHub/`gh`, OMP authentication, and SSH to the VPS; it reads the existing gh and SSH configuration but cannot write either. The monitor gets outbound network plus only the state directory writable. The watchdog has no Internet address family and can write only state.
