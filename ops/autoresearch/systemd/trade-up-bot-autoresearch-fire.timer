@@ -1,0 +1,11 @@
+[Unit]
+Description=Run TradeUpBot autoresearch daily at 10:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 10:30:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=trade-up-bot-autoresearch-fire.service
+
+[Install]
+WantedBy=timers.target

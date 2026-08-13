@@ -12,8 +12,11 @@ tradeup.db
 # Claude Code config
 .claude/
 
-# Monitoring logs
-.monitoring/
+# Monitoring runtime output stays local; the three governance sources are durable.
+.monitoring/*
+!.monitoring/autoresearch-operating-contract.md
+!.monitoring/autoresearch-handoff.md
+!.monitoring/autoresearch-results.tsv
 
 # Personal notes / internal docs
 improvements.md

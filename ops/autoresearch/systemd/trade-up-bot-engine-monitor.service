@@ -1,0 +1,13 @@
+[Unit]
+Description=TradeUpBot read-only production engine monitoring check
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/tim/omp-firstmate/projects/trade-up-bot
+Environment="PATH=/home/tim/.nvm/versions/node/v24.18.0/bin:/home/tim/.bun/bin:/home/tim/.local/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=-%h/.config/trade-up-bot/autoresearch.env
+ExecStart=/usr/bin/env node /home/tim/omp-firstmate/projects/trade-up-bot/ops/autoresearch/bin/engine-monitor.mjs
+TimeoutStartSec=5min
+UMask=0077

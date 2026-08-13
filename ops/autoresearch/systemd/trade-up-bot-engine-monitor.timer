@@ -1,0 +1,11 @@
+[Unit]
+Description=Run TradeUpBot engine monitoring at minutes 11 and 41 UTC
+
+[Timer]
+OnCalendar=*-*-* *:11,41:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=trade-up-bot-engine-monitor.service
+
+[Install]
+WantedBy=timers.target

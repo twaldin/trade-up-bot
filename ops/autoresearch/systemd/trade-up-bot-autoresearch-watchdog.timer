@@ -1,0 +1,11 @@
+[Unit]
+Description=Check TradeUpBot autoresearch heartbeats every 15 minutes UTC
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=trade-up-bot-autoresearch-watchdog.service
+
+[Install]
+WantedBy=timers.target
