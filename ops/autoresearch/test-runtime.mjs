@@ -27,9 +27,56 @@ function run(script, args = [], expectedStatus = 0, extraEnvironment = {}) {
   return result;
 }
 
+function assertUnitHardening() {
+  const systemdDir = join(here, "systemd");
+  for (const name of [
+    "trade-up-bot-autoresearch-fire.service",
+    "trade-up-bot-engine-monitor.service",
+    "trade-up-bot-autoresearch-watchdog.service",
+  ]) {
+    const unit = readFileSync(join(systemdDir, name), "utf8");
+    for (const directive of [
+      "NoNewPrivileges=true",
+      "PrivateTmp=true",
+      "PrivateDevices=true",
+      "ProtectSystem=strict",
+      "ProtectHome=read-only",
+      "CapabilityBoundingSet=",
+      "AmbientCapabilities=",
+      "InaccessiblePaths=-/var/run/docker.sock -/run/docker.sock",
+    ]) {
+      assert.match(unit, new RegExp(`^${directive.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), `${name} lacks ${directive}`);
+    }
+  }
+
+  const daily = readFileSync(join(systemdDir, "trade-up-bot-autoresearch-fire.service"), "utf8");
+  assert.match(daily, /^EnvironmentFile=%h\/\.config\/trade-up-bot\/autoresearch\.env$/m);
+  assert.match(daily, /^ReadWritePaths=.*projects\/trade-up-bot.*\.local\/state\/trade-up-bot\/autoresearch/m);
+  assert.doesNotMatch(daily, /ReadWritePaths=.*\.ssh/);
+  assert.doesNotMatch(daily, /ReadWritePaths=.*\.config\/gh/);
+
+  const watchdog = readFileSync(join(systemdDir, "trade-up-bot-autoresearch-watchdog.service"), "utf8");
+  assert.match(watchdog, /^RestrictAddressFamilies=AF_UNIX$/m);
+  assert.doesNotMatch(watchdog, /RestrictAddressFamilies=.*AF_INET/);
+}
+
 try {
+  assertUnitHardening();
+  const missingDatabase = run("check-test-database.mjs", [], 1, { TEST_DATABASE_URL: "" });
+  assert.match(missingDatabase.stderr, /TEST_DATABASE_URL is required/);
+  const productionShapedDatabase = run("check-test-database.mjs", [], 1, {
+    TEST_DATABASE_URL: "postgresql://role:password@127.0.0.1:5432/tradeupbot",
+  });
+  assert.match(productionShapedDatabase.stderr, /dedicated tradeupbot_test database/);
+
   const heartbeatDir = join(state, "heartbeats");
   mkdirSync(heartbeatDir, { recursive: true });
+  const failedFire = run("autoresearch-fire.mjs", [], 1, { TEST_DATABASE_URL: "" });
+  assert.match(failedFire.stderr, /TEST_DATABASE_URL is required/);
+  const failedHeartbeat = JSON.parse(readFileSync(join(heartbeatDir, "daily.jsonl"), "utf8").trim());
+  assert.equal(failedHeartbeat.exitStatus, 1);
+  assert.match(failedHeartbeat.error, /TEST_DATABASE_URL is required/);
+
   const oldTimestamp = "2026-08-10T00:00:00.000Z";
   const oldBase = {
     schemaVersion: 1,
@@ -56,6 +103,15 @@ try {
   assert.equal(fresh.status, "OK");
   assert.deepEqual(fresh.checks.map((check) => check.status), ["OK", "OK"]);
 
+  const freshRead = JSON.parse(run("read-watchdog.mjs", ["--now", fresh.generatedAt]).stdout);
+  assert.equal(freshRead.status, "OK");
+  assert.equal(freshRead.expiresAt, fresh.expiresAt);
+
+  const afterExpiry = new Date(Date.parse(fresh.expiresAt) + 1000).toISOString();
+  const expiredRead = JSON.parse(run("read-watchdog.mjs", ["--now", afterExpiry], 2).stdout);
+  assert.equal(expiredRead.status, "STALE");
+  assert.match(expiredRead.reason, /own timer may be silent/);
+
   const dailyLines = readFileSync(join(heartbeatDir, "daily.jsonl"), "utf8").trim().split("\n");
   const freshDaily = JSON.parse(dailyLines.at(-1));
   assert.equal(freshDaily.exitStatus, 0);
@@ -64,7 +120,7 @@ try {
   assert.match(freshDaily.gitHeadAfter, /^[0-9a-f]{40}$/);
   assert.match(freshDaily.whatItDid, /heartbeat path/);
 
-  process.stdout.write(`PASS stale=${stale.status} fresh=${fresh.status} dailyHeartbeat=${freshDaily.timestamp}\n`);
+  process.stdout.write(`PASS heartbeatStale=${stale.status} fresh=${fresh.status} artifactExpired=${expiredRead.status} dailyHeartbeat=${freshDaily.timestamp}\n`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }

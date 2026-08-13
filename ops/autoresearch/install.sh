@@ -8,6 +8,7 @@ readonly SOURCE_UNIT_DIR="${SCRIPT_DIR}/systemd"
 readonly USER_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly TARGET_UNIT_DIR="${USER_CONFIG_HOME}/systemd/user"
 readonly STATE_DIR="${AUTORESEARCH_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/trade-up-bot/autoresearch}"
+readonly ENV_FILE="${USER_CONFIG_HOME}/trade-up-bot/autoresearch.env"
 
 readonly -a TIMERS=(
   trade-up-bot-autoresearch-fire.timer
@@ -33,6 +34,27 @@ require_command() {
 assert_expected_checkout() {
   [[ "${REPO_DIR}" == "${EXPECTED_REPO}" ]] || fail "install must run from ${EXPECTED_REPO}; observed ${REPO_DIR}"
   [[ "$(git -C "${REPO_DIR}" rev-parse --show-toplevel)" == "${EXPECTED_REPO}" ]] || fail "expected checkout is not a git worktree"
+}
+
+assert_environment_and_database() {
+  local mode owner line found=""
+  [[ -f "${ENV_FILE}" && -r "${ENV_FILE}" ]] || fail "required environment file is missing or unreadable: ${ENV_FILE}"
+  mode="$(stat -c '%a' "${ENV_FILE}")"
+  owner="$(stat -c '%U' "${ENV_FILE}")"
+  [[ "${mode}" == "600" ]] || fail "${ENV_FILE} mode=${mode}, expected 600"
+  [[ "${owner}" == "$(id -un)" ]] || fail "${ENV_FILE} owner=${owner}, expected $(id -un)"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    case "${line}" in
+      TEST_DATABASE_URL=*)
+        TEST_DATABASE_URL="${line#TEST_DATABASE_URL=}"
+        found="yes"
+        ;;
+    esac
+  done < "${ENV_FILE}"
+  [[ "${found}" == "yes" && -n "${TEST_DATABASE_URL:-}" ]] || fail "${ENV_FILE} must define TEST_DATABASE_URL"
+  export TEST_DATABASE_URL
+  node "${SCRIPT_DIR}/bin/check-test-database.mjs" || fail "dedicated unprivileged test database preflight failed"
 }
 
 assert_loaded() {
@@ -68,24 +90,27 @@ assert_service_success() {
 }
 
 assert_fresh_artifacts() {
-  AUTORESEARCH_STATE_DIR="${STATE_DIR}" node --input-type=module -e '
-    import { readFileSync } from "node:fs";
-    import { join } from "node:path";
-    const state = process.env.AUTORESEARCH_STATE_DIR;
-    const status = JSON.parse(readFileSync(join(state, "watchdog-status.json"), "utf8"));
-    if (status.status !== "OK") throw new Error(`watchdog status is ${status.status}`);
-    for (const check of status.checks) {
-      if (check.status !== "OK" || check.latestExitStatus !== 0) throw new Error(`${check.kind} is ${check.status}`);
-    }
-    process.stdout.write(`verified watchdog artifact: ${join(state, "watchdog-status.json")} status=OK\n`);
-  '
+  AUTORESEARCH_STATE_DIR="${STATE_DIR}" node "${SCRIPT_DIR}/bin/read-watchdog.mjs" \
+    || fail "watchdog artifact is non-OK, expired, missing, or invalid"
 }
 
 run_runtime_proof() {
   node "${SCRIPT_DIR}/test-runtime.mjs"
 }
 
+preflight_host() {
+  local command
+  for command in node systemd-analyze stat id; do
+    require_command "${command}"
+  done
+  assert_environment_and_database
+  run_runtime_proof
+  systemd-analyze verify "${SOURCE_UNIT_DIR}"/*.service "${SOURCE_UNIT_DIR}"/*.timer
+  printf 'preflight passed: environment, unprivileged test database, runtime proofs, and hardened unit syntax\n'
+}
+
 verify_installed() {
+  assert_environment_and_database
   assert_loaded
   assert_service_success "${SERVICES[@]}"
   assert_timer_finite
@@ -94,12 +119,11 @@ verify_installed() {
 
 install_units() {
   assert_expected_checkout
-  for command in git node omp gh ssh systemctl systemd-analyze date install; do
+  for command in git node omp gh ssh systemctl systemd-analyze date install stat id; do
     require_command "${command}"
   done
-
-  run_runtime_proof
-  systemd-analyze verify "${SOURCE_UNIT_DIR}"/*.service "${SOURCE_UNIT_DIR}"/*.timer
+  preflight_host
+  install -d -m 0700 "${STATE_DIR}"
   install -d -m 0755 "${TARGET_UNIT_DIR}"
   for unit in "${UNITS[@]}"; do
     install -m 0644 "${SOURCE_UNIT_DIR}/${unit}" "${TARGET_UNIT_DIR}/${unit}"
@@ -119,7 +143,7 @@ install_units() {
 
   systemctl --user enable --now "${TIMERS[@]}"
   verify_installed
-  printf 'installed and verified; read status with: cat %q\n' "${STATE_DIR}/watchdog-status.json"
+  printf 'installed and verified; read expiry-aware status with: node %q\n' "${SCRIPT_DIR}/bin/read-watchdog.mjs"
 }
 
 rollback_units() {
@@ -131,13 +155,14 @@ rollback_units() {
   done
   systemctl --user daemon-reload
   systemctl --user reset-failed "${UNITS[@]}" >/dev/null 2>&1 || true
-  printf 'rolled back units; preserved state at %s and optional environment at %s\n' \
-    "${STATE_DIR}" "${USER_CONFIG_HOME}/trade-up-bot/autoresearch.env"
+  printf 'rolled back units; preserved state at %s and required environment at %s\n' \
+    "${STATE_DIR}" "${ENV_FILE}"
 }
 
 case "${1:-}" in
+  preflight) preflight_host ;;
   install) install_units ;;
   verify) verify_installed ;;
   rollback) rollback_units ;;
-  *) fail "usage: $0 {install|verify|rollback}" ;;
+  *) fail "usage: $0 {preflight|install|verify|rollback}" ;;
 esac

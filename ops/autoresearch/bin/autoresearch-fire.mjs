@@ -3,6 +3,7 @@
 import { closeSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   appendHeartbeat,
   atomicWriteJson,
@@ -60,6 +61,19 @@ try {
     atomicWriteJson(resultPath, result);
     exitStatus = 0;
   } else {
+    const databasePreflight = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./check-test-database.mjs", import.meta.url)),
+    ], {
+      cwd: repoDir,
+      env: process.env,
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    if (databasePreflight.error) throw databasePreflight.error;
+    if (databasePreflight.status !== 0) {
+      throw new Error((databasePreflight.stderr || "test database preflight failed").trim());
+    }
+
     const promptTemplate = readFileSync(new URL("../daily-fire-prompt.md", import.meta.url), "utf8");
     const prompt = promptTemplate
       .replaceAll("{{RUN_ID}}", runId)

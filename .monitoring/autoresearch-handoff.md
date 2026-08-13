@@ -34,17 +34,21 @@ Deckbox is authoritative. The committed units live under `ops/autoresearch/syste
 
 - `trade-up-bot-engine-monitor.timer`: minute 11 and 41 of every UTC hour. Its service performs read-only SSH/DB collection and appends `heartbeats/monitor.jsonl`.
 - `trade-up-bot-autoresearch-fire.timer`: 10:30 UTC daily. Its service invokes OMP non-interactively and is the only scheduled job allowed to ship a lever; it appends `heartbeats/daily.jsonl`.
-- `trade-up-bot-autoresearch-watchdog.timer`: every 15 minutes UTC. It writes `watchdog-status.json`, with STALE thresholds of 90 minutes for monitoring and 26 hours for the daily fire.
+- `trade-up-bot-autoresearch-watchdog.timer`: every 15 minutes UTC. It writes `watchdog-status.json`, with STALE thresholds of 90 minutes for monitoring and 26 hours for the daily fire. The artifact expires after 30 minutes so watchdog silence cannot leave a frozen green result.
 
 All calendar timers use `Persistent=true`. The calendar primitive gives a finite next elapse and catches up a missed activation after downtime; `OnBootSec` plus `OnUnitActiveSec` is not used because an already-elapsed boot trigger cannot seed a timer that has never run.
 
 State defaults to `~/.local/state/trade-up-bot/autoresearch/`. The first mate reads the silence/failure signal in one command:
 
 ```bash
-cat ~/.local/state/trade-up-bot/autoresearch/watchdog-status.json
+node ops/autoresearch/bin/read-watchdog.mjs
 ```
 
 Prepared does not mean installed. The first mate runs `ops/autoresearch/install.sh install` after publication; it proves stale/fresh behavior, executes real one-shots, verifies loaded units and finite next elapses, then enables the timers. Roll back with `ops/autoresearch/install.sh rollback`.
+
+Before install, Deckbox must have the `tim`-owned mode-0600 `~/.config/trade-up-bot/autoresearch.env` with `TEST_DATABASE_URL` for the dedicated localhost-only `tradeupbot_test` role/database. The installer and daily wrapper verify the file, test-shaped database name, role identity, and live connection; a miss fails rather than skipping integration.
+
+The services run with `NoNewPrivileges`, no capabilities, read-only system/home mounts, private temp/devices, and explicit write allowlists. Docker sockets are inaccessible. The daily worker can write its checkout, state, OMP/package caches, and user runtime; it can use ordinary network access for the unprivileged test DB, GitHub/OMP, and SSH to the documented VPS. It can read but not write the Deckbox gh/SSH configuration and cannot use `sudo`.
 
 GSC/GA4 is not a fourth timer. It remains bound to the captain's authenticated browser/CDP session and must be supplied separately; the engine loop neither blocks silently on it nor claims it as automated evidence.
 
@@ -52,7 +56,7 @@ GSC/GA4 is not a fourth timer. It remains bound to the captain's authenticated b
 
 ## 4. Daily-fire protocol (the contract, condensed)
 
-1. **Gate:** require a clean/synced checkout plus fresh successful monitor/watchdog evidence. If the prior lever is under 24 hours old, record OBSERVE and ship nothing.
+1. **Gate:** require the dedicated unprivileged test-database preflight, a clean/synced checkout, and fresh successful monitor/expiry-aware-watchdog evidence. Missing or expired artifacts stop the fire. If the prior lever is under 24 hours old, record OBSERVE and ship nothing.
 2. **Evaluate first:** formally KEEP or REVERT the last lever against its declared watch items. Production crash/OOM/restart-loop/DB/cadence failure caused by the lever means immediate revert/redeploy and no new work.
 3. **Pick at most one:** additive, bounded, measurable, and evidence-backed. HOLD or an investigation is a valid complete fire.
 4. **Execute:** branch from current `main`; TDD red→green; run typecheck, unit, and integration gates; obtain a fresh OMP adversarial review with zero unresolved blockers.

@@ -13,7 +13,7 @@ Run identity and paths:
 
 Read `AGENTS.md`, `.monitoring/autoresearch-operating-contract.md`, `.monitoring/autoresearch-handoff.md`, and `.monitoring/autoresearch-results.tsv` before acting. The operating contract wins. Never depend on a Claude/Codex conversation, a captain-laptop file, GSC, GA4, Chrome, or copied browser credentials. GSC/GA4 are explicitly outside this automated engine lane.
 
-Read the newest engine-monitor heartbeat and `watchdog-status.json` under the durable state directory. If monitoring is missing, stale, degraded, or production is unhealthy, do not start a lever. Diagnose with read-only probes; apply the contract's revert rule if the last deployment caused the named break signal.
+Run `node ops/autoresearch/bin/read-watchdog.mjs` and read the newest engine-monitor heartbeat under the durable state directory. If the expiry-aware reader is missing, stale, degraded, or production is unhealthy, do not start a lever. Never trust a raw former-OK artifact after its `expiresAt`. Diagnose with read-only probes; apply the contract's revert rule if the last deployment caused the named break signal.
 
 ## Boundaries
 
@@ -28,7 +28,7 @@ Read the newest engine-monitor heartbeat and `watchdog-status.json` under the du
 
 1. Confirm the checkout is clean, fetch `origin`, switch to `main`, and update with `git pull --ff-only`. If it is not safe to do that, fail loudly instead of stashing or deleting anything.
 2. Evaluate the last shipped lever first using its own recorded baseline/watch items and at least 24 hours of stabilization evidence. Record KEEP, REVERT, OBSERVE, or HOLD honestly.
-3. If eligible, select one additive/bounded/measurable/high-confidence lever from durable evidence. Investigation-only is a valid complete fire. For an implementation, create `autoresearch/YYYY-MM-DD-<lever>` from current `main`, use TDD red→green, and run `npm run typecheck`, `npm run test:unit`, and `npm run test:integration`.
+3. If eligible, select one additive/bounded/measurable/high-confidence lever from durable evidence. Investigation-only is a valid complete fire. For an implementation, create `autoresearch/YYYY-MM-DD-<lever>` from current `main`, use TDD red→green, and run `npm run typecheck`, `npm run test:unit`, and `npm run test:integration` against the already-preflighted dedicated `tradeupbot_test` DSN. A missing/failing test database fails the fire; never skip the integration gate or point it at production.
 4. Run a fresh adversarial review agent against the full change and the acceptance/revert criteria. Address every concrete blocker and re-review. A crashed/missing/unparseable review is not approval.
 5. Re-fetch before publication. Rebase the private branch over current `origin/main` only when conflict-free and semantically safe; otherwise stop loudly. Push the branch, open a concise PR, and squash-merge it only after the gates and adversarial review are clean. Use the `twaldin` GitHub credential without switching the globally active account.
 6. Wait for the repository's `deploy` GitHub Actions workflow on the merge commit to succeed. Verify `/opt/trade-up-bot` on `root@178.156.239.58` is at that exact commit. The workflow reloads only `api`; if daemon/engine code changed, clear `/root/.cache/tsx` and restart `daemon`, then verify it is online and cycling. These are the only authorized production mutations.

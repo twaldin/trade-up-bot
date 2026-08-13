@@ -17,6 +17,12 @@ function argumentValue(name) {
 const nowArgument = argumentValue("--now");
 const now = nowArgument ? new Date(nowArgument) : new Date();
 if (!Number.isFinite(now.getTime())) throw new Error("--now must be an ISO-8601 timestamp");
+const maximumArtifactAgeSeconds = positiveNumber(
+  process.env.AUTORESEARCH_WATCHDOG_MAX_AGE_SECONDS,
+  30 * 60,
+  "AUTORESEARCH_WATCHDOG_MAX_AGE_SECONDS",
+);
+const expiresAt = new Date(now.getTime() + maximumArtifactAgeSeconds * 1000);
 
 const sources = [
   {
@@ -91,6 +97,8 @@ const artifact = {
   schemaVersion: 1,
   status,
   generatedAt: isoUtc(now),
+  expiresAt: isoUtc(expiresAt),
+  maximumArtifactAgeSeconds,
   exitStatus,
   checks,
 };
