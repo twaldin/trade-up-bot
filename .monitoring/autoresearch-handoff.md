@@ -1,6 +1,6 @@
 # Autoresearch Loop — Handoff
 
-> What this loop is, how it runs, and how to pick it up. Updated 2026-08-13 after the scheduler continuity incident.
+> What this loop is, how it runs, and how to pick it up. Updated 2026-08-14 after the first scheduled Deckbox fire shipped It15.
 > Durable companions: `autoresearch-operating-contract.md` (SOURCE OF TRUTH), `autoresearch-results.tsv` (iteration ledger), and `../ops/autoresearch/` (host artifacts/runtime).
 > These three governance files are tracked in git. Raw agent logs, heartbeats, and per-check monitoring dumps are runtime evidence and remain outside git.
 
@@ -131,18 +131,19 @@ Original backlog (E1–E4, cadence) was exhausted by It9; everything since is se
 | 12 | E2 target cap 24 → 32 (still saturated; flow accelerated) | KEEP-confirmed |
 | 13 | Knife-tier value-first collection ordering (`orderKnifeCollectionsByValue`) | **KEEP-confirmed (2026-07-27)** |
 | 14 | E2 dead-greedy path removal | **KEEP — manual dispatch, PR #129, squash `b6edba8`, 24h clean (2026-08-11)** |
+| 15 | S20 deep-rank swap explore strategy (`swapInputAtRank`, ranks 2–8) | **shipped-stabilizing (2026-08-14, PR #130, squash `8a84704`)** |
 
 Key recurring thesis: **many candidate collections, one deadline** → order/target the highest-value work FIRST so a deadline cut starves only the cheapest work (E4-Step-3 / gun-E2 / knife-ordering all share this shape).
 
 ---
 
-## 10. Current state & next action (2026-08-13)
+## 10. Current state & next action (2026-08-14)
 
-- Iteration 14 was shipped manually through PR #129 and squash `b6edba8`; its 24-hour fallout was clean and the owed KEEP row is now reconciled in the TSV.
-- The removed `e2:greedy` path produced zero rows ever, so an M2 regression through that removal is mechanically impossible. `e2:knapsack` provenance continued to flow.
-- The historical session scheduler is dead. Do not recreate `CronCreate` jobs or describe them as durable.
-- After these artifacts are published, the first mate installs/verifies/enables the Deckbox units with `ops/autoresearch/install.sh install`. Until that succeeds, contract status remains PREPARED rather than ACTIVE.
-- The first real scheduled fire must begin from the reconciled It14 state, fresh monitor evidence, and the one-lever/day gate; it must not re-ship It14.
+- The Deckbox units are installed and live: this It15 ship was executed end-to-end by the scheduled 10:30 UTC fire (run `daily-2026-08-14T103002-567Z-1066914`), gated on a fresh OK watchdog and engine-monitor heartbeat.
+- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing`: PR #130, squash `8a84704`, deploy workflow green, VPS verified at that head, tsx cache cleared, daemon restarted and cycling.
+- Evidence base: S10 (rank-0 swap) and S16 (rank-1 swap) mint 62 of the 63 active `ge50` contracts; ranks 2–8 were never mutated. First new-code cycle: classified `S20:3/5` at floor allocation (3 active `explore:S20` rows, max score 33); restricted `S20:0/1018`.
+- Watch items for the next fire's KEEP/REVERT: `explore:S20` mint flow and score distribution; S20 allocation dynamics (first-cycle 60% sample rate will pull a large softmax share — verify it settles rather than starving S16/S10 minting); cycle times ~33 min; no crash/OOM/restart-loop/DB errors. Baseline: M1=50, ge50=63, ge10=5014, avg cycle 33.4 min.
+- Note for interpretation: the padded new strategy opens at the dead-strategy softmax share, which on the real concentrated classified history is the ~0.1% floor (the ~1.8% figure in the test docblock applies to the flatter test fixture).
 
 ---
 
