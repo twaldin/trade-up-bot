@@ -123,6 +123,59 @@ export function selectE2Target(
   return selectKnapsackUnderBoundary(byColAdj, quotas, adjTarget);
 }
 
+/** One input row of a swap-pool trade-up (inputs sorted most-expensive-first). */
+export interface SwapPoolInput {
+  listing_id: string;
+  skin_name: string;
+  collection_id: string;
+  price_cents: number;
+}
+
+/**
+ * S20 — deep-rank swap (It15). S10 mutates the most expensive input (rank 0)
+ * of a known-profitable trade-up and S16 the second (rank 1); production
+ * provenance shows these two mutations mint nearly every score>=50 contract,
+ * with S16 out-yielding S10 5-8x. Ranks 2..8 were never mutated by any
+ * strategy. This helper generalizes the mutation: replace the input at `rank`
+ * with a cheaper, unused, same-collection listing drawn from the 20 cheapest
+ * alternatives (byCollection lists are price-ascending), mirroring S10/S16.
+ *
+ * Returns the reconstructed full input set, or null when the rank is out of
+ * range, no cheaper alternative exists, or a non-swapped listing can no
+ * longer be found in `allListings` (stale swap-pool row).
+ */
+export function swapInputAtRank(
+  inputs: SwapPoolInput[],
+  rank: number,
+  byCollection: Map<string, ListingWithCollection[]>,
+  allListings: ListingWithCollection[],
+  rng: () => number = Math.random,
+): ListingWithCollection[] | null {
+  if (rank < 0 || rank >= inputs.length) return null;
+  const target = inputs[rank];
+
+  const colListings = byCollection.get(target.collection_id);
+  if (!colListings || colListings.length < 2) return null;
+
+  const cheaper = colListings.filter(l =>
+    l.price_cents < target.price_cents &&
+    l.id !== target.listing_id &&
+    !inputs.some(inp => inp.listing_id === l.id)
+  );
+  if (cheaper.length === 0) return null;
+
+  const pool = cheaper.slice(0, 20);
+  const replacement = pool[Math.floor(rng() * pool.length)];
+
+  const reconstructed: ListingWithCollection[] = [];
+  for (const inp of inputs) {
+    const wanted = inp.listing_id === target.listing_id ? replacement.id : inp.listing_id;
+    const found = allListings.find(l => l.id === wanted);
+    if (found) reconstructed.push(found);
+  }
+  return reconstructed.length === inputs.length ? reconstructed : null;
+}
+
 /** Per-strategy yield stats from exploration. */
 export interface StrategyYieldEntry {
   strategyId: number;
@@ -1157,7 +1210,7 @@ export async function exploreWithBudget(
   }
 
   // Load profitable trade-ups + inputs for swap optimization (1 query total)
-  const swapPool: { id: number; inputs: { listing_id: string; skin_name: string; collection_id: string; price_cents: number }[] }[] = [];
+  const swapPool: { id: number; inputs: SwapPoolInput[] }[] = [];
   try {
     const { rows: profInputs } = await pool.query(`
       SELECT tu.id as trade_up_id, tui.listing_id, tui.skin_name,
@@ -1222,7 +1275,7 @@ export async function exploreWithBudget(
   // High-float bias: strategies 0 (random pair+offset), 2 (condition-pure) — targets WW/BS outputs
   // Strategy 15 (underpriced+filler) gets 3x weight via FLOAT_BIASED_CASES
   const FLOAT_BIASED_CASES = options.preferHighFloat ? [0, 2] : [5, 7, 8, 12, 13, 15, 15];
-  const TOTAL_STRATEGIES = 20;
+  const TOTAL_STRATEGIES = 21; // It15: S20 deep-rank swap
   const adaptiveWeights = options.strategyWeights?.length === TOTAL_STRATEGIES ? options.strategyWeights : undefined;
 
   const results: TradeUp[] = [];
@@ -1712,6 +1765,18 @@ export async function exploreWithBudget(
           }
           break;
         }
+
+        case 20: {
+          // S20 (It15) — deep-rank swap: S10/S16 mutate ranks 0/1 of profitable
+          // trade-ups and mint nearly all score>=50 contracts; ranks 2..8 were
+          // unexplored. Swap a uniformly random deep-rank input for a cheaper
+          // same-collection listing.
+          if (swapPool.length === 0) break;
+          const tu = pick(swapPool);
+          const rank = 2 + Math.floor(Math.random() * 7); // ranks 2..8
+          inputs = swapInputAtRank(tu.inputs, rank, byCollection, allListings);
+          break;
+        }
       }
 
       // Curve-aware override: swap listing source based on output curve shape
@@ -1735,8 +1800,11 @@ export async function exploreWithBudget(
               inputs = repicked.slice(0, 10);
             }
           }
-          // If curve says price-sort but we used value-ratio, re-pick from byCollection
-          if (useValue === false && strategy >= 12) {
+          // If curve says price-sort but we used value-ratio, re-pick from byCollection.
+          // S20 is exempt: it is already price-sorted (a deep-rank swap of a profitable
+          // trade-up), and replacing its inputs here would tag generic re-picks with
+          // explore:S20, contaminating the lever's provenance measurement (It15).
+          if (useValue === false && strategy >= 12 && strategy !== 20) {
             const repicked = usedCols.flatMap(c => (byCollection.get(c) ?? []).slice(0, 5));
             if (repicked.length >= 10) {
               repicked.sort((a, b) => a.price_cents - b.price_cents);

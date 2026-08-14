@@ -188,11 +188,11 @@ export function formatYieldSummary(
 /** Strategy counts per tier type. */
 export const STRATEGY_COUNTS: Record<string, number> = {
   knife: 17,
-  classified: 20,
-  restricted: 20,
-  milspec: 20,
-  industrial: 20,
-  consumer: 20,
+  classified: 21,   // It15: S20 deep-rank swap
+  restricted: 21,
+  milspec: 21,
+  industrial: 21,
+  consumer: 21,
 };
 
 /** Float-biased strategy indices per tier (used as fallback). */
