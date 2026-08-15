@@ -137,13 +137,13 @@ Key recurring thesis: **many candidate collections, one deadline** → order/tar
 
 ---
 
-## 10. Current state & next action (2026-08-14)
+## 10. Current state & next action (2026-08-15)
 
-- The Deckbox units are installed and live: this It15 ship was executed end-to-end by the scheduled 10:30 UTC fire (run `daily-2026-08-14T103002-567Z-1066914`), gated on a fresh OK watchdog and engine-monitor heartbeat.
-- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing`: PR #130, squash `8a84704`, deploy workflow green, VPS verified at that head, tsx cache cleared, daemon restarted and cycling.
-- Evidence base: S10 (rank-0 swap) and S16 (rank-1 swap) mint 62 of the 63 active `ge50` contracts; ranks 2–8 were never mutated. First new-code cycle: classified `S20:3/5` at floor allocation (3 active `explore:S20` rows, max score 33); restricted `S20:0/1018`.
-- Watch items for the next fire's KEEP/REVERT: `explore:S20` mint flow and score distribution; S20 allocation dynamics (first-cycle 60% sample rate will pull a large softmax share — verify it settles rather than starving S16/S10 minting); cycle times ~33 min; no crash/OOM/restart-loop/DB errors. Baseline: M1=50, ge50=63, ge10=5014, avg cycle 33.4 min.
-- Note for interpretation: the padded new strategy opens at the dead-strategy softmax share, which on the real concentrated classified history is the ~0.1% floor (the ~1.8% figure in the test docblock applies to the flatter test fixture).
+- The Deckbox units are installed and live; the 2026-08-15 fire (run `daily-2026-08-15T103012-016Z-2616585`) was an observe-only fire per the <24h stabilization gate.
+- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing` at ~22.8h: PR #130, squash `8a84704`, prod at `b3bd037`. Observed healthy: daemon online, 0 unstable restarts, error log 0 bytes, no OOM/crash/DB signals, 41 cycles at 31.9–35.4 min (avg ~33.6 vs 33.4 baseline).
+- S20 watch-item evidence (read-only, 2026-08-15 ~10:30 UTC): mint flow 41,484 rows/24h with 3,352 at ge50 (current score) and max 174; active `explore:S20` 26,089 rows / 1,157 ge50. Classified softmax share saturated at **98%** — earned by real yield (23–396 mints per ~6k samples/pass), not the padding artifact. S16/S10 are NOT starved: 3,382 / 2,143 rows minted in 24h with continuous hourly flow; they hold 874 / 962 active ge50 rows.
+- Board M1=82 / ge50=3004 / ge10=23,419 / max=175 / nulls=0 vs It15 baseline M1=50 / ge50=63. Interpretation caution: much of the board-wide rise is reprice/regime movement (S10/S16 rows older than 24h were rescored upward), so do not attribute the full delta to S20; S20's fresh ge50 mints are the directly attributable component.
+- **Next fire:** make the formal It15 KEEP/REVERT decision (window complete). Specifically confirm the 98% classified share is not collapsing classified-tier diversity over a longer horizon, and that cycle times stay ~33 min.
 
 ---
 
