@@ -1,6 +1,6 @@
 # Autoresearch Loop — Handoff
 
-> What this loop is, how it runs, and how to pick it up. Updated 2026-08-14 after the first scheduled Deckbox fire shipped It15.
+> What this loop is, how it runs, and how to pick it up. Updated 2026-08-15 after the observe-only fire for It15 stabilization.
 > Durable companions: `autoresearch-operating-contract.md` (SOURCE OF TRUTH), `autoresearch-results.tsv` (iteration ledger), and `../ops/autoresearch/` (host artifacts/runtime).
 > These three governance files are tracked in git. Raw agent logs, heartbeats, and per-check monitoring dumps are runtime evidence and remain outside git.
 
@@ -140,10 +140,11 @@ Key recurring thesis: **many candidate collections, one deadline** → order/tar
 ## 10. Current state & next action (2026-08-15)
 
 - The Deckbox units are installed and live; the 2026-08-15 fire (run `daily-2026-08-15T103012-016Z-2616585`) was an observe-only fire per the <24h stabilization gate.
-- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing` at ~22.8h: PR #130, squash `8a84704`, prod at `b3bd037`. Observed healthy: daemon online, 0 unstable restarts, error log 0 bytes, no OOM/crash/DB signals, 41 cycles at 31.9–35.4 min (avg ~33.6 vs 33.4 baseline).
-- S20 watch-item evidence (read-only, 2026-08-15 ~10:30 UTC): mint flow 41,484 rows/24h with 3,352 at ge50 (current score) and max 174; active `explore:S20` 26,089 rows / 1,157 ge50. Classified softmax share saturated at **98%** — earned by real yield (23–396 mints per ~6k samples/pass), not the padding artifact. S16/S10 are NOT starved: 3,382 / 2,143 rows minted in 24h with continuous hourly flow; they hold 874 / 962 active ge50 rows.
-- Board M1=82 / ge50=3004 / ge10=23,419 / max=175 / nulls=0 vs It15 baseline M1=50 / ge50=63. Interpretation caution: much of the board-wide rise is reprice/regime movement (S10/S16 rows older than 24h were rescored upward), so do not attribute the full delta to S20; S20's fresh ge50 mints are the directly attributable component.
-- **Next fire:** make the formal It15 KEEP/REVERT decision (window complete). Specifically confirm the 98% classified share is not collapsing classified-tier diversity over a longer horizon, and that cycle times stay ~33 min.
+- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing`: PR #130, squash `8a84704` (2026-08-14 11:10 UTC, 23.3h before this fire), daemon restarted 11:14 UTC (22.9h — both anchors under the 24h gate), prod at `b3bd037`. Observed healthy: daemon online, 0 unstable restarts, error log 0 bytes, no OOM/crash/DB signals, 41 cycles at 31.9–35.4 min (avg ~33.6 vs 33.4 baseline).
+- S20 watch-item evidence (read-only, 2026-08-15 ~10:30 UTC): mint flow 41,484 rows/24h with 3,352 at ge50 (current score) and max 174; active `explore:S20` 26,089 rows / 1,157 ge50. Classified softmax share saturated at **98%** — earned by real yield (58–396 mints per pass), not the padding artifact. (Reminder: the padded strategy opens at the dead-strategy share, the ~0.1% floor on the real concentrated classified history — the ~1.8% figure in the `adaptive-weights.test.ts` docblock applies only to the flatter test fixture.)
+- Starvation scoping (classified tier, last 6 passes): S10 still mints 2–8 per pass at floor allocation (~4–12 samples); S16 mints 0 at floor. Board-wide (all tiers), S16/S10 minted 3,382 / 2,143 rows in 24h with continuous hourly flow and hold 874 / 962 active ge50 rows — so board-wide flow is healthy, but classified-tier S16 minting has effectively stopped under the 98% S20 share. This is the pre-existing adaptive-weight mechanism responding to yield, not new It15 code; judge it at the formal decision on total ge50 flow.
+- Board (read-only, 2026-08-15 ~10:30 UTC): M1=82 / ge50=3004 / ge10=23,419 / max=175 / nulls=0 vs It15 baseline M1=50 / ge50=63. Interpretation caution: much of the board-wide rise is reprice/regime movement (S10/S16 rows older than 24h were rescored upward), so do not attribute the full delta to S20; S20's fresh ge50 mints are the directly attributable component.
+- **Next fire:** make the formal It15 KEEP/REVERT decision (window complete). Specifically judge the 98% classified share on total classified ge50 flow (S20's floor-vs-share tradeoff), and confirm cycle times stay ~33 min.
 
 ---
 
