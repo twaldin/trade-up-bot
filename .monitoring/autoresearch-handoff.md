@@ -1,6 +1,6 @@
 # Autoresearch Loop — Handoff
 
-> What this loop is, how it runs, and how to pick it up. Updated 2026-08-15 after the observe-only fire for It15 stabilization.
+> What this loop is, how it runs, and how to pick it up. Updated 2026-08-16 after the It15 formal-KEEP + knife-S20-analog NO-GO fire.
 > Durable companions: `autoresearch-operating-contract.md` (SOURCE OF TRUTH), `autoresearch-results.tsv` (iteration ledger), and `../ops/autoresearch/` (host artifacts/runtime).
 > These three governance files are tracked in git. Raw agent logs, heartbeats, and per-check monitoring dumps are runtime evidence and remain outside git.
 
@@ -131,20 +131,22 @@ Original backlog (E1–E4, cadence) was exhausted by It9; everything since is se
 | 12 | E2 target cap 24 → 32 (still saturated; flow accelerated) | KEEP-confirmed |
 | 13 | Knife-tier value-first collection ordering (`orderKnifeCollectionsByValue`) | **KEEP-confirmed (2026-07-27)** |
 | 14 | E2 dead-greedy path removal | **KEEP — manual dispatch, PR #129, squash `b6edba8`, 24h clean (2026-08-11)** |
-| 15 | S20 deep-rank swap explore strategy (`swapInputAtRank`, ranks 2–8) | **shipped-stabilizing (2026-08-14, PR #130, squash `8a84704`)** |
+| 15 | S20 deep-rank swap explore strategy (`swapInputAtRank`, ranks 2–8) | **KEEP-confirmed (2026-08-16)** |
+| 16-inv | knife-tier S20 deep-rank-swap analog | **investigation-NOGO (2026-08-16)** — precondition absent now, see §10; the number 16 stays free for the next shipped lever |
 
 Key recurring thesis: **many candidate collections, one deadline** → order/target the highest-value work FIRST so a deadline cut starves only the cheapest work (E4-Step-3 / gun-E2 / knife-ordering all share this shape).
 
 ---
 
-## 10. Current state & next action (2026-08-15)
+## 10. Current state & next action (2026-08-16)
 
-- The Deckbox units are installed and live; the 2026-08-15 fire (run `daily-2026-08-15T103012-016Z-2616585`) was an observe-only fire per the <24h stabilization gate.
-- Iteration 15 (S20 deep-rank swap) is `shipped-stabilizing`: PR #130, squash `8a84704` (2026-08-14 11:10 UTC) and daemon restart 11:14 UTC — both ~23.3h before this fire, under the 24h gate; prod at `b3bd037`. Observed healthy: daemon online, 0 unstable restarts, error log 0 bytes, no OOM/crash/DB signals, 41 cycles at 31.9–35.4 min (avg ~33.6 vs 33.4 baseline).
-- S20 watch-item evidence (read-only, 2026-08-15 ~10:30 UTC): mint flow 41,484 rows/24h with 3,352 at ge50 (current score) and max 174; active `explore:S20` 26,089 rows / 1,157 ge50. Classified softmax share saturated at **98%** — earned by real yield (58–396 mints per pass), not the padding artifact. (Reminder: the padded strategy opens at the dead-strategy share, the ~0.1% floor on the real concentrated classified history — the ~1.8% figure in the `adaptive-weights.test.ts` docblock applies only to the flatter test fixture.)
-- Starvation scoping (classified tier, last 6 passes): S10 still mints 2–8 per pass at floor allocation (~4–12 samples); S16 mints 0 at floor. Board-wide (all tiers), S16/S10 minted 3,382 / 2,143 rows in 24h with continuous hourly flow and hold 874 / 962 active ge50 rows — so board-wide flow is healthy, but classified-tier S16 minting has effectively stopped under the 98% S20 share. This is the pre-existing adaptive-weight mechanism responding to yield, not new It15 code; judge it at the formal decision on total ge50 flow.
-- Board (read-only, 2026-08-15 ~10:30 UTC): M1=82 / ge50=3004 / ge10=23,419 / max=175 / nulls=0 vs It15 baseline M1=50 / ge50=63. Interpretation caution: much of the board-wide rise is reprice/regime movement (S10/S16 rows older than 24h were rescored upward), so do not attribute the full delta to S20; S20's fresh ge50 mints are the directly attributable component.
-- **Next fire:** make the formal It15 KEEP/REVERT decision (window complete). Specifically judge the 98% classified share on total classified ge50 flow (S20's floor-vs-share tradeoff), and confirm cycle times stay ~33 min.
+- The 2026-08-16 fire (run `daily-2026-08-16T103000-567Z-3490709`) made the formal **It15 KEEP** decision and recorded a **NO-GO investigation** on the knife-tier S20 analog. No new lever shipped; nothing is stabilizing.
+- **It15 KEEP evidence (~47h):** 0 crash/OOM/restart-loop/DB errors, daemon error log 0 bytes, last-12-cycle sample (cycles 73–84) 30.5–35.6 min (avg ~33.3 vs 33.4 baseline). `explore:S20` is the TOP ge50 provenance holder: 1290 of 3348 active ge50 rows, max 174 (board max 175). No starvation: gun `explore:S10`/`explore:S16` hold 1084/961 active ge50 and minted 3421/1631 rows in 24h; the classified softmax share self-corrected 98% → 69% (S10 back to 28.7%, S16 down to 0.5%, near the ~0.1% floor) as the dislocation harvest depleted — the adaptive mechanism worked as designed.
+- **Board (live, 2026-08-16 ~10:35 UTC):** M1=82 / ge50=3348 / ge10=27,686 / max=175 / nulls=0 / active=589,127 vs It15 ship baseline M1=50 / ge50=63. Prod/VPS head verified at `6b4b2b3` (= this fire's starting `main`); daemon online since the It15 restart (2026-08-14 11:14 UTC), 0 unstable restarts.
+- **Regime caution (next fire's watch item):** board-wide fresh-mint ge50 flow was 0 in the last 24h (fresh-mint max 48) across ALL strategies including S10/S16/s2 — post-dislocation market regime, not S20. The ge50 stock is aging; if the regime persists, expect M2 to decay via housekeeping/repricing. Judge future levers on flow, not stock.
+- **It16-inv NO-GO (knife S20 analog):** covert_knife has 0 profitable rows **currently** in the table (all statuses; a snapshot cannot prove "ever" — reprice mutates `profit_cents` and the Phase-1 purge deletes rows). Knife swap-pool strategies hold no profitable row: `knife-explore:S13` rank-1 swap 766 all-time rows max −6; `knife-explore:S14` cross-market 73; `knife-explore:S15` float-shift 0 rows; `knife-explore:S16` collection-swap 9. S13's 766 rows imply the swap pool (loaded from `type='covert_knife' AND profit_cents > 0`) was non-empty at some past mint times — the precondition is regime-cyclical, which is why the re-open trigger below is the right mechanism. Deep-rank swap amplifies existing profitable swap-pool TUs — the knife tier has no winners to amplify today. Positive-score mass is effectively all in `classified_covert` (31,706 profitable / 27,664 ge10 active); the other tiers (incl. staircase) are max ≤ 0 with 0 profitable. The ~22-row ge10 gap vs the board query above is live-churn skew between non-transactional snapshots taken ~2 min apart. **Re-open trigger:** `covert_knife` rows with `profit_cents > 0` appearing.
+- **Retired/blocked levers:** E2 cap raise (ceiling per It14-inv), D&N dedup (flagged-for-Tim), dead knife swap-strategy removal (adaptive weights already floor them at ~0.1%; payoff nil).
+- **Next fire:** no stabilization gate active — free to pick a lever if evidence supports one. Start from the regime watch item (ge50 flow vs stock) and per-tier telemetry; investigation-only remains a valid outcome.
 
 ---
 
