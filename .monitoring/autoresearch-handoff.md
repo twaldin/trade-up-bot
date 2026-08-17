@@ -1,6 +1,6 @@
 # Autoresearch Loop — Handoff
 
-> What this loop is, how it runs, and how to pick it up. Updated 2026-08-16 after the It15 formal-KEEP + knife-S20-analog NO-GO fire.
+> What this loop is, how it runs, and how to pick it up. Updated 2026-08-17 after the post-dislocation regime-HOLD investigation fire.
 > Durable companions: `autoresearch-operating-contract.md` (SOURCE OF TRUTH), `autoresearch-results.tsv` (iteration ledger), and `../ops/autoresearch/` (host artifacts/runtime).
 > These three governance files are tracked in git. Raw agent logs, heartbeats, and per-check monitoring dumps are runtime evidence and remain outside git.
 
@@ -113,6 +113,7 @@ ssh root@178.156.239.58 'cd /opt/trade-up-bot && \
 - **pm2-logrotate at midnight** — `cat` the rotated `daemon-out__YYYY-MM-DD_00-00-00.log` **together with** `daemon-out.log` to see across the boundary.
 - **Phase-1 Housekeeping purge** — drops expired *preserved* trade-ups (>24h); causes benign dips in `*_active` counts that recover.
 - **Restart resets `cycleCount`** → staircase fires on cycle 1 by design (It9 first-cycle rule).
+- **Monitor `latestLoopOrCycle` regex misread** — `engine-monitor.mjs:124` takes the LAST `/(?:loop|cycle)\s+#?(\d+)/gi` match in the daemon log tail; fetcher lines like `Listings: … (loop N)` (`data-fetch.ts`) log later within a cycle and reliably shadow the true `Cycle N` header. A "low" heartbeat cycle number is NOT a stall/restart signal — verify against `Cycle N` lines in the log directly (found 2026-08-17: heartbeat said 70, log said 129).
 
 ---
 
@@ -132,21 +133,22 @@ Original backlog (E1–E4, cadence) was exhausted by It9; everything since is se
 | 13 | Knife-tier value-first collection ordering (`orderKnifeCollectionsByValue`) | **KEEP-confirmed (2026-07-27)** |
 | 14 | E2 dead-greedy path removal | **KEEP — manual dispatch, PR #129, squash `b6edba8`, 24h clean (2026-08-11)** |
 | 15 | S20 deep-rank swap explore strategy (`swapInputAtRank`, ranks 2–8) | **KEEP-confirmed (2026-08-16)** |
-| 16-inv | knife-tier S20 deep-rank-swap analog | **investigation-NOGO (2026-08-16)** — precondition absent now, see §10; the number 16 stays free for the next shipped lever |
+| 16-inv | knife-tier S20 deep-rank-swap analog | **investigation-NOGO (2026-08-16)** — precondition absent now, full evidence in the `16-inv` TSV row; the number 16 stays free for the next shipped lever |
 
 Key recurring thesis: **many candidate collections, one deadline** → order/target the highest-value work FIRST so a deadline cut starves only the cheapest work (E4-Step-3 / gun-E2 / knife-ordering all share this shape).
 
 ---
 
-## 10. Current state & next action (2026-08-16)
+## 10. Current state & next action (2026-08-17)
 
-- The 2026-08-16 fire (run `daily-2026-08-16T103000-567Z-3490709`) made the formal **It15 KEEP** decision and recorded a **NO-GO investigation** on the knife-tier S20 analog. No new lever shipped; nothing is stabilizing.
-- **It15 KEEP evidence (~47h):** 0 crash/OOM/restart-loop/DB errors, daemon error log 0 bytes, last-12-cycle sample (cycles 73–84) 30.5–35.6 min (avg ~33.3 vs 33.4 baseline). `explore:S20` is the TOP ge50 provenance holder: 1290 of 3348 active ge50 rows, max 174 (board max 175). No starvation: gun `explore:S10`/`explore:S16` hold 1084/961 active ge50 and minted 3421/1631 rows in 24h; the classified softmax share self-corrected 98% → 69% (S10 back to 28.7%, S16 down to 0.5%, near the ~0.1% floor) as the dislocation harvest depleted — the adaptive mechanism worked as designed.
-- **Board (live, 2026-08-16 ~10:35 UTC):** M1=82 / ge50=3348 / ge10=27,686 / max=175 / nulls=0 / active=589,127 vs It15 ship baseline M1=50 / ge50=63. Prod/VPS head verified at `6b4b2b3` (= this fire's starting `main`); daemon online since the It15 restart (2026-08-14 11:14 UTC), 0 unstable restarts.
-- **Regime caution (next fire's watch item):** board-wide fresh-mint ge50 flow was 0 in the last 24h (fresh-mint max 48) across ALL strategies including S10/S16/s2 — post-dislocation market regime, not S20. The ge50 stock is aging; if the regime persists, expect M2 to decay via housekeeping/repricing. Judge future levers on flow, not stock.
-- **It16-inv NO-GO (knife S20 analog):** covert_knife has 0 profitable rows **currently** in the table (all statuses; a snapshot cannot prove "ever" — reprice mutates `profit_cents` and the Phase-1 purge deletes rows). Knife swap-pool strategies hold no profitable row: `knife-explore:S13` rank-1 swap 766 all-time rows max −6; `knife-explore:S14` cross-market 73; `knife-explore:S15` float-shift 0 rows; `knife-explore:S16` collection-swap 9. S13's 766 rows imply the swap pool (loaded from `type='covert_knife' AND profit_cents > 0`) was non-empty at some past mint times — the precondition is regime-cyclical, which is why the re-open trigger below is the right mechanism. Deep-rank swap amplifies existing profitable swap-pool TUs — the knife tier has no winners to amplify today. Positive-score mass is effectively all in `classified_covert` (31,706 profitable / 27,664 ge10 active); the other tiers (incl. staircase) are max ≤ 0 with 0 profitable. The ~22-row ge10 gap vs the board query above is live-churn skew between non-transactional snapshots taken ~2 min apart. **Re-open trigger:** `covert_knife` rows with `profit_cents > 0` appearing.
-- **Retired/blocked levers:** E2 cap raise (ceiling per It14-inv), D&N dedup (flagged-for-Tim), dead knife swap-strategy removal (adaptive weights already floor them at ~0.1%; payoff nil).
-- **Next fire:** no stabilization gate active — free to pick a lever if evidence supports one. Start from the regime watch item (ge50 flow vs stock) and per-tier telemetry; investigation-only remains a valid outcome.
+- The 2026-08-17 fire (run `daily-2026-08-17T103018-433Z-484717`) was **investigation-only: post-dislocation regime HOLD**. No lever shipped; nothing is stabilizing.
+- **Regime evidence (live, 2026-08-17 ~10:33 UTC):** 0 fresh ge50 mints in **~69h** across ALL strategies — last ge50-minting hour was 2026-08-14 13:00 UTC (dislocation-harvest tail); the two 24h windows queried directly held 66,551 and 47,364 mints with 0 ge50 each. Last-24h mint max score 31 (`explore:S1`, milspec_restricted — the only fresh ge30: 2 rows); fresh ge10 flow concentrated in classified_covert (`explore:S20` 1663, `explore:S10` 236; S19 4, S5 1, plus S1's 2 ge30 rows elsewhere). Every strategy family still mints (no starvation, no engine regression) — the market currently lacks dislocations.
+- **Stock decay mechanics:** active ge50 3348 → 2061 in ~24h (~−38%/day) via reprice-down plus active→partial churn (08-14 dislocation cohort: 13,246 rows still active, 807 still ge50; board-wide 1249 ge50 rows sit in `partial`). Restart status-refresh churn (the It4-obs1 signature) is EXCLUDED: pm2 daemon start unchanged at 2026-08-14 11:14:32 UTC (restartCount 3, unstable 0, same as the It15-KEEP fire) and live cycle 129 ≈ the ~128 expected from unbroken 71.3h uptime at 33.4 min/cycle. Youngest active ge50 row is from 08-14. Expect M2 to keep decaying toward the aged-stock floor while the regime persists — honest market reality, NOT a code regression; do not "fix" it with a discovery lever.
+- **Knife re-open trigger re-checked:** 0 profitable `covert_knife` rows (all statuses) → the It16-inv NO-GO on the knife S20 analog stands (full evidence in the 16-inv TSV row).
+- **Lever policy in this regime:** discovery-side levers are unmeasurable on the frozen M1/M2 signal while board-wide fresh ge50 flow is 0 — a ship would conflate lever effect with regime recovery. **Re-arm criteria:** (a) fresh-mint ge50 flow resumes (>0 board-wide; judge candidate levers on flow), or (b) a regime-independent, mechanically-safe lever with its own keep signal emerges from durable evidence (It8/It11/It14 dead-code precedent — none currently known or queued).
+- **Board (live, 2026-08-17 ~10:33 UTC):** M1=80 / ge50=2061 / ge10=24,893 / max=175 / nulls=0 / active=571,244. Prod/VPS head verified at `77ab223` (= this fire's starting `main`); daemon online since 2026-08-14 11:14 UTC, live Cycle 129 (Cycle 128 completed in 32.4 min; cycle counter re-probed 10:40 UTC after the 10:11 heartbeat caveat), err log 0 bytes, 0 OOM/crash/DB/restart-loop signals. **Monitor caveat:** the 10:11 heartbeat's `latestLoopOrCycle=70` was a regex misread — `engine-monitor.mjs` matches any `loop|cycle N` in the log tail and caught a fetcher "loop 70" line, not the daemon Cycle counter; verified against the log's `Cycle 128/129` lines directly (now recorded as a §8 benign pattern).
+- **Retired/blocked levers:** unchanged — E2 cap raise (ceiling per It14-inv), D&N dedup (flagged-for-Tim), dead knife swap-strategy removal (payoff nil), knife S20 analog (NO-GO until profitable covert_knife rows reappear).
+- **Next fire:** no stabilization gate active. Check the re-arm criteria first; investigation/HOLD remains valid while the regime persists.
 
 ---
 
