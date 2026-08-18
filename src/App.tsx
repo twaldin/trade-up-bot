@@ -28,7 +28,7 @@ const CollectionListViewer = lazy(() => import("./components/CollectionListViewe
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 const TradeUpSharePage = lazy(() => import("./pages/TradeUpSharePage.js").then(m => ({ default: m.TradeUpSharePage })));
 const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
-const PreviewTradeUpsPage = lazy(() => import("./pages/PreviewTradeUpsPage.js").then(m => ({ default: m.PreviewTradeUpsPage })));
+const PreviewApp = lazy(() => import("./preview/PreviewApp.js").then(m => ({ default: m.PreviewApp })));
 
 interface GlobalStats {
   total_trade_ups: number;
@@ -140,21 +140,6 @@ function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; r
     />
   );
 }
-
-function PreviewTradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; refreshKey?: number }) {
-  const navigate = useNavigate();
-  return (
-    <PreviewTradeUpsPage
-      types={TRADE_UP_TYPES}
-      defaultType="all"
-      status={status}
-      refreshKey={refreshKey}
-      onNavigateSkin={(name) => navigate(`/skins?search=${encodeURIComponent(name)}`)}
-      onNavigateCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
-    />
-  );
-}
-
 
 function UserMenu({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false);
@@ -401,11 +386,6 @@ function AppShell({ user }: { user?: AuthUser | null }) {
 
       <Routes>
         <Route path="/trade-ups" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
-        <Route path="/preview/trade-ups" element={
-          <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-            <PreviewTradeUpsMainPage status={status} refreshKey={refreshKey} />
-          </Suspense>
-        } />
         <Route path="/skins/:slug" element={
           <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
             <SkinPage />
@@ -530,6 +510,7 @@ export default function App() {
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <Routes>
+        <Route path="/preview/*" element={<PreviewApp />} />
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/pricing" element={<PricingPage />} />

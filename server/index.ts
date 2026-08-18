@@ -108,7 +108,16 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "data:"],
+      imgSrc: [
+        "'self'",
+        "https://avatars.steamstatic.com",
+        "https://community.fastly.steamstatic.com",
+        "https://community.akamai.steamstatic.com",
+        "https://cdn.steamstatic.com",
+        "https://steamcdn-a.akamaihd.net",
+        "https://community.cloudflare.steamstatic.com",
+        "data:",
+      ],
       connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com", "https://open.er-api.com"],
       frameSrc: ["https://checkout.stripe.com"],
     },
@@ -1316,18 +1325,20 @@ registerCanonicalRedirectRoutes(app);
         },
       },
     }));
-    app.get("/preview/trade-ups", (_req, res) => {
+    const sendPreviewShell = (req: express.Request, res: express.Response) => {
       res.setHeader("X-Robots-Tag", "noindex, nofollow");
       res.setHeader("Content-Type", "text/html");
       res.setHeader("Cache-Control", "no-cache, must-revalidate");
       res.send(injectMetaIntoSpa(shellHtml, {
-        title: "Trade-Ups Preview — TradeUpBot",
-        description: "Internal design preview of the trade-up board. Not an indexable product page.",
-        url: "https://tradeupbot.app/preview/trade-ups",
+        title: "Preview — TradeUpBot",
+        description: "Internal design preview. Not an indexable product page.",
+        url: `https://tradeupbot.app${req.path}`,
         robots: "noindex, nofollow",
         bodyHtml: "<p>Internal design preview. This route is not part of the public site.</p>",
       }));
-    });
+    };
+    app.get("/preview", sendPreviewShell);
+    app.get("/preview/*", sendPreviewShell);
 
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, must-revalidate");

@@ -2,6 +2,8 @@ import { Router } from "express";
 import pg from "pg";
 import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
 import { toSlug, collectionToSlug } from "../../shared/slugs.js";
+import { resolveSkinImageMap } from "../preview/skin-images.js";
+import { facesFromOutcomeRows, parseFaceIds } from "../preview/contract-faces.js";
 
 type CollectionKnifePool = Map<string, { knifeTypes: string[]; gloveTypes: string[]; knifeFinishes: string[]; gloveFinishes: string[]; finishCount: number }>;
 type KnifeTypeToCases = Map<string, string[]>;
@@ -547,11 +549,29 @@ export function dataRouter(
        ORDER BY name, image_url NULLS LAST`,
       [names],
     );
-    const images: Record<string, string | null> = {};
-    for (const name of names) images[name] = null;
-    for (const row of rows) images[row.name] = row.image_url ?? null;
+    const stored: Record<string, string | null> = {};
+    for (const name of names) stored[name] = null;
+    for (const row of rows) stored[row.name] = row.image_url ?? null;
+    const images = await resolveSkinImageMap(names, stored);
     res.json({ images });
   }));
+
+  router.get("/api/preview/contract-faces", async (req, res) => {
+    const ids = parseFaceIds(String(req.query.ids || ""));
+    if (ids.length === 0) {
+      res.json({ faces: {} });
+      return;
+    }
+    try {
+      const { rows } = await pool.query(
+        "SELECT id, outcomes_json FROM trade_ups WHERE id = ANY($1)",
+        [ids],
+      );
+      res.json({ faces: facesFromOutcomeRows(rows) });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
 
   router.get("/api/skin-by-slug/:slug", async (req, res) => {
     try {
