@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
-import { DN_API_MAX_PER_SIGNATURE } from "../../server/routes/dn-diversity.js";
+import { API_MAX_PER_COLLECTION_COMBO } from "../../server/routes/dn-diversity.js";
 import { createTestApp, type TestContext } from "./setup.js";
 
 const DN = "The Dreams & Nightmares Collection";
@@ -119,10 +119,10 @@ describe("D&N diversity on /api/trade-ups", () => {
     const dnRows = rows.filter((tu) => tu.input_summary.collections.includes(DN));
     const fractureRows = rows.filter((tu) => tu.input_summary.collections.includes(FRACTURE));
 
-    expect(dnRows.length).toBe(DN_API_MAX_PER_SIGNATURE);
+    expect(dnRows.length).toBe(API_MAX_PER_COLLECTION_COMBO);
     expect(fractureRows.length).toBe(5);
     expect(fractureRows.map((tu) => tu.id).sort()).toEqual([...fractureIds].sort());
-    expect(res.body.total).toBe(DN_API_MAX_PER_SIGNATURE + 5);
+    expect(res.body.total).toBe(API_MAX_PER_COLLECTION_COMBO + 5);
   });
 
   it("keeps the highest-score D&N clones when the signature overflows", async () => {
@@ -140,7 +140,7 @@ describe("D&N diversity on /api/trade-ups", () => {
       .filter((tu) => tu.input_summary.collections.includes(DN))
       .map((tu) => tu.trade_up_score);
 
-    expect(dnScores).toHaveLength(DN_API_MAX_PER_SIGNATURE);
+    expect(dnScores).toHaveLength(API_MAX_PER_COLLECTION_COMBO);
     for (let i = 1; i < dnScores.length; i++) {
       expect(dnScores[i]).toBeLessThanOrEqual(dnScores[i - 1]);
     }
@@ -158,6 +158,55 @@ describe("D&N diversity on /api/trade-ups", () => {
     expect(res.status).toBe(200);
     expect(res.body.trade_ups).toHaveLength(25);
     expect(res.body.total).toBe(25);
+  });
+
+  it("caps a non-D&N collection-combo the same way (API analog is not D&N-only)", async () => {
+    for (let i = 0; i < 25; i++) {
+      await insertActiveTradeUp(ctx.pool, {
+        collections: [FRACTURE],
+        profitCents: 3_000 - i * 10,
+        listingPrefix: `frac-cap-${i}`,
+      });
+    }
+
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?type=classified_covert&per_page=50")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups).toHaveLength(API_MAX_PER_COLLECTION_COMBO);
+    expect(res.body.total).toBe(API_MAX_PER_COLLECTION_COMBO);
+  });
+
+  it("Check 131 shape: 50 D&N clones cannot fill a 50-row first page when others exist", async () => {
+    for (let i = 0; i < 50; i++) {
+      await insertActiveTradeUp(ctx.pool, {
+        collections: [DN],
+        profitCents: 80_000 - i * 100,
+        listingPrefix: `dn131-${i}`,
+      });
+    }
+    for (let i = 0; i < 10; i++) {
+      await insertActiveTradeUp(ctx.pool, {
+        collections: [FRACTURE],
+        profitCents: 800 - i * 10,
+        listingPrefix: `frac131-${i}`,
+      });
+    }
+
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?type=classified_covert&per_page=50")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+
+    expect(res.status).toBe(200);
+    const rows = res.body.trade_ups as Array<{ input_summary: { collections: string[] } }>;
+    const dnCount = rows.filter((tu) => tu.input_summary.collections.includes(DN)).length;
+    const otherCount = rows.length - dnCount;
+    expect(dnCount).toBe(API_MAX_PER_COLLECTION_COMBO);
+    expect(dnCount).toBeLessThan(50);
+    expect(otherCount).toBe(10);
   });
 
   it("leaves a board with no D&N rows unchanged", async () => {
