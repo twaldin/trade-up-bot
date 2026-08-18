@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
 import { mergeContractFaces } from "../../../shared/preview-board.js";
+import { readJsonIfJson } from "../../../shared/http-json.js";
 import { EMPTY_FILTERS, filtersToParams, type Filters } from "../../components/FilterBar.js";
 
 export interface PreviewContractsState {
@@ -15,19 +16,55 @@ export interface PreviewContractsState {
   setVerifyLimit: (limit: { remaining: number; total: number; resetIn: number | null }) => void;
 }
 
+async function hydrateFromOutcomeRoutes(
+  tradeUps: TradeUp[],
+  ids: number[],
+  signal?: AbortSignal,
+): Promise<TradeUp[]> {
+  const faces: Record<string, TradeUpOutcome[]> = {};
+  await Promise.all(ids.map(async id => {
+    try {
+      const res = await fetch(`/api/trade-up/${id}/outcomes`, {
+        credentials: "include",
+        signal,
+      });
+      const data = await readJsonIfJson<{ outcomes?: TradeUpOutcome[] }>(res);
+      faces[id] = data?.outcomes ?? [];
+    } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
+      faces[id] = [];
+    }
+  }));
+  return mergeContractFaces(tradeUps, faces);
+}
+
 export async function hydrateTradeUpsFromFaces(
   tradeUps: TradeUp[],
   signal?: AbortSignal,
 ): Promise<TradeUp[]> {
   const ids = tradeUps.filter(tu => !tu.outcomes?.length).map(tu => tu.id);
   if (ids.length === 0) return tradeUps;
-  const res = await fetch(`/api/preview/contract-faces?ids=${ids.join(",")}`, {
-    credentials: "include",
-    signal,
-  });
-  if (!res.ok) return tradeUps;
-  const data = await res.json() as { faces?: Record<string, TradeUpOutcome[]> };
-  return mergeContractFaces(tradeUps, data.faces ?? {});
+  try {
+    const res = await fetch(`/api/preview/contract-faces?ids=${ids.join(",")}`, {
+      credentials: "include",
+      signal,
+    });
+    const data = await readJsonIfJson<{ faces?: Record<string, TradeUpOutcome[]> }>(res);
+    if (data?.faces) {
+      const merged = mergeContractFaces(tradeUps, data.faces);
+      const stillMissing = merged.some(tu => !tu.outcomes?.length && ids.includes(tu.id));
+      if (!stillMissing) return merged;
+    }
+    return await hydrateFromOutcomeRoutes(tradeUps, ids, signal);
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    try {
+      return await hydrateFromOutcomeRoutes(tradeUps, ids, signal);
+    } catch (inner) {
+      if ((inner as Error).name === "AbortError") throw inner;
+      return tradeUps;
+    }
+  }
 }
 
 export function usePreviewContracts(args: {
@@ -70,8 +107,24 @@ export function usePreviewContracts(args: {
         credentials: "include",
         signal: controller.signal,
       });
-      const data = await res.json();
-      const hydrated = await hydrateTradeUpsFromFaces(data.trade_ups ?? [], controller.signal);
+      const data = await readJsonIfJson<{
+        trade_ups?: TradeUp[];
+        total?: number;
+        tier?: string;
+        signed_in?: boolean;
+        claim_limit?: { remaining: number; total: number; resetIn: number | null };
+        verify_limit?: { remaining: number; total: number; resetIn: number | null };
+      }>(res);
+      if (!data) return;
+      const list = data.trade_ups ?? [];
+      let hydrated = list;
+      try {
+        hydrated = await hydrateTradeUpsFromFaces(list, controller.signal);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        hydrated = list;
+      }
+      if (controller.signal.aborted) return;
       setTradeUps(hydrated);
       setTotal(data.total ?? 0);
       const newTier = data.tier || "free";

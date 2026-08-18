@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -16,6 +16,9 @@ import {
 } from "../../shared/preview-board.js";
 import { parseFaceIds, facesFromOutcomeRows } from "../../server/preview/contract-faces.js";
 import { resetBymykelCatalogCache, resolveSkinImageMap } from "../../server/preview/skin-images.js";
+import { hydrateTradeUpsFromFaces } from "../../src/preview/board/usePreviewContracts.js";
+import { isJsonContentType, readJsonIfJson } from "../../shared/http-json.js";
+import { lookupPreviewSkinImages, resetClientSkinCatalog } from "../../src/preview/images/client-skin-images.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -136,7 +139,9 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
   it("reuses the live list API and hydrates faces", () => {
     expect(previewHook).toContain('fetch(`/api/trade-ups?${params}`');
     expect(previewHook).toContain("/api/preview/contract-faces");
+    expect(previewHook).toContain("/api/trade-up/");
     expect(previewHook).toContain("hydrateTradeUpsFromFaces");
+    expect(previewHook).toContain("readJsonIfJson");
     expect(previewHook).toContain("mergeContractFaces");
     expect(previewHook).toContain("AbortController");
     expect(previewTradeUps).toContain("useDebouncedValue");
@@ -261,6 +266,7 @@ describe("preview images resolve stored URL then Steam/ByMykel", () => {
     expect(tradeUpsApi).not.toContain("/api/preview/contract-faces");
     expect(skinImages).toContain("ByMykel");
     expect(skinImages).toContain("skins.json");
+    expect(readSrc("src/hooks/useSkinImages.ts")).toContain("lookupPreviewSkinImages");
   });
 
   it("allows Steam economy image hosts in CSP", () => {
@@ -391,6 +397,103 @@ describe("preview contract faces and board helpers", () => {
       covert: rarityFadeHex("Covert"),
       gold: rarityFadeHex("Extraordinary"),
     })).not.toContain("#b5f63d");
+  });
+});
+
+describe("preview hydration survives Vite HTML fallbacks to prod", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetClientSkinCatalog();
+  });
+
+  it("only parses JSON when content-type is JSON", async () => {
+    const html = new Response("<!doctype html><html><div id='root'></div></html>", {
+      status: 200,
+      headers: { "content-type": "text/html; charset=UTF-8" },
+    });
+    const json = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+    expect(isJsonContentType(html)).toBe(false);
+    expect(isJsonContentType(json)).toBe(true);
+    expect(await readJsonIfJson(html)).toBe(null);
+    expect(await readJsonIfJson(json)).toEqual({ ok: true });
+  });
+
+  it("falls back to /api/trade-up/:id/outcomes when contract-faces is HTML and keeps the list", async () => {
+    const list = [
+      makeTradeUp({ id: 9, outcomes: [] }),
+      makeTradeUp({ id: 11, outcomes: [] }),
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/preview/contract-faces")) {
+        return new Response("<!doctype html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      if (url.includes("/api/trade-up/9/outcomes")) {
+        return new Response(JSON.stringify({
+          outcomes: [{
+            skin_id: "out-1",
+            skin_name: "AK-47 | Fire Serpent",
+            collection_name: "The Bravo Collection",
+            probability: 1,
+            predicted_float: 0.15,
+            predicted_condition: "Field-Tested",
+            estimated_price_cents: 10000,
+          }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("/api/trade-up/11/outcomes")) {
+        return new Response(JSON.stringify({ outcomes: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const hydrated = await hydrateTradeUpsFromFaces(list);
+    expect(hydrated).toHaveLength(2);
+    expect(hydrated[0].outcomes[0]?.skin_name).toBe("AK-47 | Fire Serpent");
+    expect(hydrated[1].outcomes).toEqual([]);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("returns the original list when faces and outcomes are both HTML", async () => {
+    const list = [makeTradeUp({ id: 7, outcomes: [] })];
+    vi.stubGlobal("fetch", async () => new Response("<!doctype html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    }));
+    await expect(hydrateTradeUpsFromFaces(list)).resolves.toEqual(list);
+  });
+
+  it("resolves images from ByMykel when /api/skin-images is HTML", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/skin-images")) {
+        return new Response("<!doctype html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      if (url.includes("skins.json")) {
+        return new Response(JSON.stringify([
+          { name: "AK-47 | Redline", image: "https://community.akamai.steamstatic.com/economy/image/redline" },
+        ]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const images = await lookupPreviewSkinImages(
+      ["AK-47 | Redline", "Unknown Skin | Invented"],
+      fetchMock,
+    );
+    expect(images.get("AK-47 | Redline")).toBe("https://community.akamai.steamstatic.com/economy/image/redline");
+    expect(images.get("Unknown Skin | Invented")).toBe(null);
   });
 });
 

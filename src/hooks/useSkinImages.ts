@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { isUsableImageUrl } from "../utils/skin-image.js";
+import { lookupPreviewSkinImages } from "../preview/images/client-skin-images.js";
 
-/** Batch-lookup stored `skins.image_url` values. Missing names stay null. */
+/** Batch-lookup stored `skins.image_url` values, then ByMykel/Steam. Missing names stay null. */
 export function useSkinImages(names: string[]): Map<string, string | null> {
   const [images, setImages] = useState<Map<string, string | null>>(() => new Map());
   const key = names.join("||");
@@ -14,17 +14,13 @@ export function useSkinImages(names: string[]): Map<string, string | null> {
     if (unknown.length === 0) return;
 
     const controller = new AbortController();
-    fetch(`/api/skin-images?names=${encodeURIComponent(unknown.join("||"))}`, {
-      credentials: "include",
-      signal: controller.signal,
-    })
-      .then(r => (r.ok ? r.json() : { images: {} }))
-      .then((data: { images?: Record<string, string | null> }) => {
+    lookupPreviewSkinImages(unknown)
+      .then(resolved => {
+        if (controller.signal.aborted) return;
         setImages(prev => {
           const next = new Map(prev);
           for (const name of unknown) {
-            const raw = data.images?.[name];
-            next.set(name, isUsableImageUrl(raw) ? raw : null);
+            if (!next.has(name)) next.set(name, resolved.get(name) ?? null);
           }
           return next;
         });
