@@ -383,3 +383,16 @@ export function rarityLabel(type: string | undefined): string {
     default: return "Trade-up";
   }
 }
+
+/** The tier the ten inputs come from — always one below the output tier. */
+export function inputRarityLabel(type: string | undefined): string {
+  switch (type) {
+    case "covert_knife": return "Covert";
+    case "classified_covert": return "Classified";
+    case "restricted_classified": return "Restricted";
+    case "milspec_restricted": return "Mil-Spec";
+    case "industrial_milspec": return "Industrial";
+    case "consumer_industrial": return "Consumer";
+    default: return "Inputs";
+  }
+}

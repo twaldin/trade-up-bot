@@ -441,6 +441,22 @@
   margin-left: auto;
 }
 
+.preview-card--expanded .preview-card__head {
+  min-height: 46px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.preview-card--expanded .preview-card__head .preview-figures {
+  margin-left: 20px;
+  padding-left: 20px;
+  border-left: 1px solid var(--line-soft);
+}
+
+.preview-card--expanded .preview-card__head .preview-figures__profit {
+  margin-left: 0;
+}
+
 .preview-rarity {
   display: inline-flex;
   align-items: center;
@@ -542,7 +558,7 @@
 
 .preview-payoff {
   position: relative;
-  height: 76px;
+  height: 84px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--sunken);
@@ -550,7 +566,7 @@
 }
 
 .preview-payoff--tall {
-  height: 112px;
+  height: 100px;
 }
 
 .preview-payoff--empty {
@@ -559,15 +575,21 @@
   justify-content: center;
 }
 
-.preview-payoff__wash {
+/* A loss-to-profit heat rail under the axis, not a wash over the whole well. */
+.preview-payoff__rail {
   position: absolute;
-  inset: 0;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: var(--r-control);
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--danger) 16%, transparent),
-    transparent 38%,
-    transparent 62%,
-    color-mix(in srgb, var(--success) 16%, transparent)
+    color-mix(in srgb, var(--danger) 34%, transparent),
+    color-mix(in srgb, var(--danger) 6%, transparent) 42%,
+    color-mix(in srgb, var(--success) 6%, transparent) 58%,
+    color-mix(in srgb, var(--success) 34%, transparent)
   );
 }
 
@@ -582,8 +604,8 @@
 
 .preview-payoff__mark {
   position: absolute;
-  top: 14px;
-  bottom: 15px;
+  top: 16px;
+  bottom: 17px;
   width: 1px;
   background: var(--line-hard);
   transform: translateX(-50%);
@@ -591,7 +613,7 @@
 
 .preview-payoff__mark.is-ev {
   width: 2px;
-  background: var(--accent-border);
+  background: var(--text);
 }
 
 .preview-payoff__mark.is-med {
@@ -604,9 +626,10 @@
 
 .preview-payoff__mark span {
   position: absolute;
-  bottom: -14px;
+  bottom: -15px;
   left: 50%;
   transform: translateX(-50%);
+  padding: 0 3px;
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--text-muted);
@@ -643,17 +666,6 @@
 
 .preview-payoff__dot em[data-side="over"] { bottom: calc(100% + 5px); }
 .preview-payoff__dot em[data-side="under"] { top: calc(100% + 5px); }
-
-.preview-payoff__end {
-  position: absolute;
-  top: 5px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text-muted);
-}
-
-.preview-payoff__end.is-lo { left: 7px; }
-.preview-payoff__end.is-hi { right: 7px; }
 
 /* ---------------------------------------------------------- outcome bars */
 
@@ -764,6 +776,10 @@
   grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
 }
 
+.preview-skins--compact {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+
 .preview-skin {
   --skin-tint: var(--text-muted);
   --skin-ink: color-mix(in srgb, var(--skin-tint) 66%, #0b0b0a);
@@ -869,8 +885,7 @@
 
 .preview-skin__index,
 .preview-skin__lead,
-.preview-skin__trail,
-.preview-skin__wear {
+.preview-skin__trail {
   position: absolute;
   padding: 1px 4px;
   border-radius: var(--r-chip);
@@ -900,21 +915,6 @@
   color: var(--text-muted);
 }
 
-.preview-skin__wear {
-  top: 4px;
-  right: 4px;
-  background: none;
-  padding: 1px 2px;
-  color: var(--text-subtle);
-  font-size: 9px;
-}
-
-.preview-skin__trail ~ .preview-skin__wear {
-  top: auto;
-  bottom: 5px;
-  right: 5px;
-}
-
 .preview-skin__index ~ .preview-skin__lead {
   left: auto;
   right: 4px;
@@ -926,8 +926,29 @@
   display: grid;
   grid-template-columns: 268px minmax(0, 1fr) 316px;
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
   margin-top: 10px;
+}
+
+/* Stretch means the three columns close on the same line, and the slack is
+   spent on taller charts rather than on a ragged gutter under the short one. */
+.preview-expand > .preview-panel { height: 100%; }
+.preview-expand__viz > .preview-viz-grid { flex: 1; min-height: 0; }
+.preview-expand__viz > .preview-readouts,
+.preview-expand__viz > .preview-subpanel { flex: 0 0 auto; }
+.preview-expand__viz .preview-viz-grid .preview-subpanel { height: 100%; }
+
+.preview-figure--fill {
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+
+.preview-plot--fill {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 @media (max-width: 1320px) {
@@ -1052,18 +1073,31 @@
   background: var(--band-panel);
 }
 
+.preview-subpanel--split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px 20px;
+}
+
+@media (min-width: 900px) {
+  .preview-subpanel--split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ------------------------------------------------------------- waterfall */
 
 .preview-wf {
   --wf-cols: 4;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 5px;
+  min-height: 0;
 }
 
 .preview-wf__plot {
   position: relative;
-  height: 184px;
+  flex: 1;
+  min-height: 200px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--sunken);
@@ -1091,9 +1125,10 @@
 
 .preview-wf__bar {
   position: absolute;
-  left: 24%;
-  width: 52%;
+  left: 50%;
+  width: min(46%, 34px);
   min-height: 2px;
+  transform: translateX(-50%);
   border-radius: var(--r-control);
 }
 
@@ -1101,11 +1136,8 @@
 .preview-wf__bar.is-minus { background: var(--danger); }
 
 .preview-wf__bar.is-total {
-  background: repeating-linear-gradient(
-    135deg,
-    var(--accent-border) 0 5px,
-    color-mix(in srgb, var(--accent-border) 62%, var(--sunken)) 5px 10px
-  );
+  width: min(54%, 40px);
+  background: var(--neutral);
 }
 
 .preview-wf__value {
@@ -1125,12 +1157,10 @@
 
 .preview-wf__link {
   position: absolute;
-  left: 76%;
-  width: 48%;
+  left: calc(50% + min(23%, 17px));
+  right: calc(-50% + min(23%, 17px));
   border-top: 1px dashed var(--line-hard);
 }
-
-.preview-wf__col.is-total .preview-wf__bar { left: 20%; width: 60%; }
 
 .preview-wf__ticks {
   display: grid;
@@ -1157,12 +1187,19 @@
 
 .preview-cdf {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 5px;
+  min-height: 0;
   padding: 4px 2px 0;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--sunken);
+}
+
+.preview-cdf > :first-child {
+  flex: 1;
+  min-height: 186px;
 }
 
 .preview-cdf .preview-note {
@@ -1277,7 +1314,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 2px 0 0;
+  margin: auto 0 0;
   padding-top: 7px;
   border-top: 1px solid var(--line-soft);
 }

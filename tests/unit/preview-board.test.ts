@@ -11,7 +11,9 @@ import {
   inputListingHrefs,
   inputQty,
   inputRarityColor,
+  inputRarityLabel,
   listingTotals,
+  rarityLabel,
   medianProfitCents,
   openGroupedListings,
   outputHref,
@@ -176,6 +178,22 @@ describe("preview rarity is one tier apart", () => {
     for (const [type, input, output] of pairs) {
       expect(inputRarityColor(type)).toBe(input);
       expect(outputRarityColor(type)).toBe(output);
+    }
+  });
+
+  it("names the input tier one below the output tier", () => {
+    const pairs: Array<[string, string, string]> = [
+      ["covert_knife", "Covert", "Knife / Gloves"],
+      ["classified_covert", "Classified", "Covert"],
+      ["restricted_classified", "Restricted", "Classified"],
+      ["milspec_restricted", "Mil-Spec", "Restricted"],
+      ["industrial_milspec", "Industrial", "Mil-Spec"],
+      ["consumer_industrial", "Consumer", "Industrial"],
+    ];
+    for (const [type, inputs, outputs] of pairs) {
+      expect(inputRarityLabel(type)).toBe(inputs);
+      expect(rarityLabel(type)).toBe(outputs);
+      expect(inputRarityLabel(type)).not.toBe(rarityLabel(type));
     }
   });
 

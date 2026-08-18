@@ -88,6 +88,10 @@ try {
     const outTile = document.querySelector(".preview-skin--output");
     const img = document.querySelector(".preview-skin img");
     const box = (el) => (el ? { w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null);
+    const ink = (tile) => {
+      const label = tile?.querySelector(".preview-skin__label b");
+      return label ? getComputedStyle(label).color : null;
+    };
     return {
       cards: document.querySelectorAll(".preview-card").length,
       card: box(first),
@@ -96,8 +100,8 @@ try {
       img: box(img),
       bodyText: document.body.innerText.slice(0, 400),
       hasContract: /\bcontracts?\b/i.test(document.body.innerText),
-      inputColor: inTile ? getComputedStyle(inTile.querySelector(".preview-skin__name")).color : null,
-      outColor: outTile ? getComputedStyle(outTile.querySelector(".preview-skin__name")).color : null,
+      inputInk: ink(inTile),
+      outputInk: ink(outTile),
     };
   });
   console.log(JSON.stringify(metrics, null, 2));

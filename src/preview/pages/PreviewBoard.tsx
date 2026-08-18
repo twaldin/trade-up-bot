@@ -14,6 +14,7 @@ import {
   inputCostCents,
   inputListingHrefs,
   inputRarityColor,
+  inputRarityLabel,
   listingTotals,
   medianProfitCents,
   openGroupedListings,
@@ -69,11 +70,15 @@ function SkinFace({ name }: { name: string }) {
   return <div className="preview-skin__ph" />;
 }
 
-function SkinLabel({ name }: { name: string }) {
+function SkinLabel({ name, wear }: { name: string; wear?: string }) {
   const { weapon, finish } = splitSkinName(name);
   return (
     <span className="preview-skin__label">
-      {weapon && <em>{weapon}</em>}
+      <em>
+        {weapon}
+        {weapon && wear ? " · " : ""}
+        {wear}
+      </em>
       <b>{finish}</b>
     </span>
   );
@@ -108,8 +113,7 @@ function SkinTile({
       {index !== undefined && <span className="preview-skin__index">{String(index).padStart(2, "0")}</span>}
       {leadBadge && <span className="preview-skin__lead">{leadBadge}</span>}
       {trailBadge && <span className="preview-skin__trail">{trailBadge}</span>}
-      {wear && <span className="preview-skin__wear">{wear}</span>}
-      <SkinLabel name={name} />
+      <SkinLabel name={name} wear={wear} />
     </>
   );
   const style = { "--skin-tint": rarity } as CSSProperties;
@@ -221,6 +225,10 @@ function PayoffStrip({
   const hi = max + pad;
   const [probIdx, absIdx] = payoffLabelIndexes(points);
   const maxP = Math.max(...points.map((point) => point.probability), 0.01);
+  const zeroX = axisPercent(0, lo, hi);
+  const evX = axisPercent(evCents, lo, hi);
+  // Two labels this close would print on top of each other; EV carries more.
+  const showZeroLabel = Math.abs(evX - zeroX) > 17;
   return (
     <ChartFigure
       title="Outcome payoff by probability"
@@ -231,18 +239,20 @@ function PayoffStrip({
       }}
     >
       <div className={`preview-payoff ${tall ? "preview-payoff--tall" : ""}`}>
-        <div className="preview-payoff__wash" />
+        <div className="preview-payoff__rail" />
         <div className="preview-payoff__axis" />
-        <div className="preview-payoff__mark is-zero" style={{ left: `${axisPercent(0, lo, hi)}%` }}>
-          <span>break-even</span>
+        <div className="preview-payoff__mark is-zero" style={{ left: `${zeroX}%` }}>
+          {showZeroLabel && <span>break-even</span>}
         </div>
-        <div className="preview-payoff__mark is-ev" style={{ left: `${axisPercent(evCents, lo, hi)}%` }}>
+        <div className="preview-payoff__mark is-ev" style={{ left: `${evX}%` }}>
           <span>EV {signedDollars(evCents)}</span>
         </div>
         {medianCents !== null && (
-          <div className="preview-payoff__mark is-med" style={{ left: `${axisPercent(medianCents, lo, hi)}%` }}>
-            <span>median</span>
-          </div>
+          <div
+            className="preview-payoff__mark is-med"
+            style={{ left: `${axisPercent(medianCents, lo, hi)}%` }}
+            title={`Median P/L ${signedDollars(medianCents)}`}
+          />
         )}
         {points.map((point, index) => {
           const size = 9 + (point.probability / maxP) * 13;
@@ -266,8 +276,6 @@ function PayoffStrip({
             </div>
           );
         })}
-        <span className="preview-payoff__end is-lo">{signedDollars(Math.round(lo))}</span>
-        <span className="preview-payoff__end is-hi">{signedDollars(Math.round(hi))}</span>
       </div>
     </ChartFigure>
   );
@@ -330,6 +338,8 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
       description="Probability-weighted profit and loss of each outcome, walked to total EV."
       captionVisible
       captionClassName="preview-panel__title"
+      className="preview-figure--fill"
+      plotClassName="preview-plot--fill"
       data={{
         columns: ["Outcome", "Probability %", "EV contribution $"],
         rows: [
@@ -386,21 +396,29 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   if (cdf.length === 0) return null;
   const data = cdf.map((point) => ({ x: point.x / 100, p: Math.round(point.p * 1000) / 10 }));
   const pProfit = Math.round(chanceOfProfit(points) * 100);
+  const xs = data.map((row) => row.x);
+  const span = Math.max(...xs) - Math.min(...xs);
+  // A $0.60-wide P/L range rounded to whole dollars prints "+$9" four times.
+  const decimals = span >= 40 ? 0 : span >= 4 ? 1 : 2;
+  const money = (value: number) =>
+    `${value < 0 ? "-" : "+"}$${Math.abs(value).toFixed(decimals)}`;
   return (
     <ChartFigure
       title="Probability of clearing a P/L"
       description={`Step curve of P(return ≥ x). Chance of profit ${pProfit}%.`}
       captionVisible
       captionClassName="preview-panel__title"
+      className="preview-figure--fill"
+      plotClassName="preview-plot--fill"
       data={{ columns: ["P/L $", "P ≥ x %"], rows: data.map((row) => [row.x, row.p]) }}
     >
       <div className="preview-cdf">
-        <ResponsiveContainer width="100%" height={168}>
-          <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="pv-cdf-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--series-2)" stopOpacity={0.34} />
-                <stop offset="100%" stopColor="var(--series-2)" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="var(--series-2)" stopOpacity={0.55} />
+                <stop offset="100%" stopColor="var(--series-2)" stopOpacity={0.06} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="var(--line-soft)" />
@@ -409,10 +427,11 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
               type="number"
               domain={["dataMin", "dataMax"]}
               tick={{ fontSize: 10, fill: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-              tickFormatter={(value: number) => (value >= 0 ? `+$${value.toFixed(0)}` : `-$${Math.abs(value).toFixed(0)}`)}
+              tickFormatter={money}
               axisLine={false}
               tickLine={false}
               height={18}
+              minTickGap={24}
             />
             <YAxis
               domain={[0, 100]}
@@ -537,6 +556,27 @@ export function TradeUpCard({
   const evPnL = tu.expected_value_cents - tu.total_cost_cents;
   const { drivers, drags } = evDrivers(points, 4);
   const totals = listingTotals(tu.inputs);
+  const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
+
+  const figures = (
+    <div className="preview-figures">
+      <div>
+        <em>Cost</em>
+        <b>{formatDollars(inputCostCents(tu))}</b>
+      </div>
+      <div>
+        <em>EV</em>
+        <b>{formatDollars(tu.expected_value_cents)}</b>
+      </div>
+      <div className="preview-figures__profit">
+        <em>Profit</em>
+        <b className={signClass(tu.profit_cents)}>
+          {signedDollars(tu.profit_cents)}
+          <small>{tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}% ROI</small>
+        </b>
+      </div>
+    </div>
+  );
 
   return (
     <article
@@ -549,10 +589,11 @@ export function TradeUpCard({
           {rarityLabel(tu.type)}
         </span>
         <span className="preview-card__flow">
-          <span style={{ color: inColor }}>{rarityLabel(tu.type) === "Knife / Gloves" ? "Covert" : "inputs"}</span>
+          <span style={{ color: inColor }}>{inputRarityLabel(tu.type)}</span>
           <ArrowRight size={11} aria-hidden />
           <span style={{ color: outColor }}>{rarityLabel(tu.type)}</span>
         </span>
+        {expanded && figures}
         <button
           type="button"
           className="preview-btn preview-btn--quiet"
@@ -562,30 +603,16 @@ export function TradeUpCard({
         </button>
       </header>
 
-      <div className="preview-figures">
-        <div>
-          <em>Cost</em>
-          <b>{formatDollars(inputCostCents(tu))}</b>
-        </div>
-        <div>
-          <em>EV</em>
-          <b>{formatDollars(tu.expected_value_cents)}</b>
-        </div>
-        <div className="preview-figures__profit">
-          <em>Profit</em>
-          <b className={signClass(tu.profit_cents)}>
-            {signedDollars(tu.profit_cents)}
-            <small>{tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}% ROI</small>
-          </b>
-        </div>
-      </div>
+      {!expanded && figures}
 
-      <p className="preview-substats">
-        <span>Chance of profit <b>{chance === null ? "—" : `${Math.round(chance * 100)}%`}</b></span>
-        <span>Median <b className={median === null ? "" : signClass(median)}>{median === null ? "—" : signedDollars(median)}</b></span>
-        <span>Worst <b className={worst === null ? "" : signClass(worst)}>{worst === null ? "—" : signedDollars(worst)}</b></span>
-        <span>Best <b className={best === null ? "" : signClass(best)}>{best === null ? "—" : signedDollars(best)}</b></span>
-      </p>
+      {!expanded && (
+        <p className="preview-substats">
+          <span>Chance of profit <b>{chance === null ? "—" : `${Math.round(chance * 100)}%`}</b></span>
+          <span>Median <b className={median === null ? "" : signClass(median)}>{median === null ? "—" : signedDollars(median)}</b></span>
+          <span>Worst <b className={worst === null ? "" : signClass(worst)}>{worst === null ? "—" : signedDollars(worst)}</b></span>
+          <span>Best <b className={best === null ? "" : signClass(best)}>{best === null ? "—" : signedDollars(best)}</b></span>
+        </p>
+      )}
 
       {points.length > 0 ? (
         <>
@@ -601,7 +628,7 @@ export function TradeUpCard({
       {!expanded && inputs.length > 0 && (
         <div className="preview-lane">
           <p className="preview-lane__label">
-            Inputs<i style={{ background: inColor }} />
+            {inputRarityLabel(tu.type)} inputs<i style={{ background: inColor }} />
           </p>
           <div className="preview-skins preview-skins--in">
             {inputs.map((group) => (
@@ -622,7 +649,7 @@ export function TradeUpCard({
       {!expanded && outputs.length > 0 && (
         <div className="preview-lane">
           <p className="preview-lane__label">
-            Outputs<i style={{ background: outColor }} />
+            {rarityLabel(tu.type)} outputs<i style={{ background: outColor }} />
           </p>
           <div className="preview-skins preview-skins--out">
             {outputs.map((outcome) => (
@@ -648,9 +675,9 @@ export function TradeUpCard({
                 title="Inputs"
                 meta={`${totals.count || inputs.reduce((sum, group) => sum + group.count, 0)} skins · ${formatDollars(inputCostCents(tu))}`}
               >
-                <div className="preview-skins preview-skins--in">
-                  {tu.inputs.length > 0
-                    ? tu.inputs.map((row, index) => (
+                <div className="preview-skins preview-skins--in preview-skins--compact">
+                  {orderedInputs.length > 0
+                    ? orderedInputs.map((row, index) => (
                         <SkinTile
                           key={`${row.listing_id}-${row.skin_name}-${index}`}
                           name={row.skin_name}
@@ -709,13 +736,9 @@ export function TradeUpCard({
                     <CdfChart tu={tu} points={points} />
                   </div>
                 </div>
-                <div className="preview-viz-grid">
-                  <div className="preview-subpanel">
-                    <RankedList title="Top EV drivers" points={drivers} empty="No positive contributors." />
-                  </div>
-                  <div className="preview-subpanel">
-                    <RankedList title="Largest drags" points={drags} empty="No negative contributors." />
-                  </div>
+                <div className="preview-subpanel preview-subpanel--split">
+                  <RankedList title="Top EV drivers" points={drivers} empty="No outcome adds EV." />
+                  <RankedList title="Largest drags" points={drags} empty="No outcome costs EV." />
                 </div>
               </div>
 
@@ -725,7 +748,7 @@ export function TradeUpCard({
                 meta={totals.count > 0 ? `${totals.count} · ${formatDollars(totals.totalCents)}` : "loading"}
               >
                 <div className="preview-listings">
-                  {tu.inputs.map((row, index) => (
+                  {orderedInputs.map((row, index) => (
                     <ListingRow key={`${row.listing_id}-${row.skin_name}-${index}`} input={row} index={index} />
                   ))}
                 </div>
