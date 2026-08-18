@@ -1076,12 +1076,10 @@
   overflow: hidden;
 }
 
+/* Eight readouts on one line truncate every label in the middle column, so
+   they run as two clean rows of four. */
 @media (min-width: 700px) {
   .preview-readouts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (min-width: 1180px) {
-  .preview-readouts { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
 
 .preview-readout {
@@ -1091,9 +1089,13 @@
   min-width: 0;
   padding: 8px 10px;
   border-left: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
 }
 
 .preview-readout:first-child { border-left: 0; }
+
+/* The wrapped rows share one ground, so only interior edges get a rule. */
+.preview-readouts > .preview-readout:nth-child(-n + 4) { border-top: 0; }
 
 .preview-readout em {
   font-style: normal;
