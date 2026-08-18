@@ -12,6 +12,7 @@ import {
   computeBestWorstCase,
 } from "../engine.js";
 import type { ListingWithCollection, DbSkinOutcome } from "../engine/types.js";
+import { resolveCalculatorExample } from "./calculator-example.js";
 
 interface CalculatorInput {
   skinName: string;
@@ -32,6 +33,15 @@ interface SkinRow {
 
 export function calculatorRouter(pool: pg.Pool): Router {
   const router = Router();
+
+  router.get("/api/calculator/example", async (_req, res) => {
+    const example = await resolveCalculatorExample(pool);
+    if (!example) {
+      res.status(404).json({ error: "No example contract is available" });
+      return;
+    }
+    res.json(example);
+  });
 
   // --- Skin search autocomplete ---
   router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, async (req, res) => {
