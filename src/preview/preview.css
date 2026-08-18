@@ -690,16 +690,20 @@
   overflow: hidden;
 }
 
-.pv-card-details,
-.pv-inspect-block,
-.pv-card-actions {
-  padding: 0 16px 16px;
+.pv-card-details {
+  padding: 0 14px 12px;
+}
+
+.pv-inspect-block {
+  padding: 0 0 8px;
 }
 
 .pv-card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  padding: 8px 0 4px;
 }
 
 .pv-statrow {
@@ -763,20 +767,28 @@
 
 .pv-listing-grid,
 .pv-listing-links {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 4px;
   margin-top: 8px;
   font-size: 12px;
 }
 
 .pv-listing-row {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto auto;
-  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 6px;
   align-items: center;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--pv-rule);
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--pv-rule);
+  background: var(--pv-bg);
+}
+
+.pv-listing-row span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pv-src {

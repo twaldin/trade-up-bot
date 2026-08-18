@@ -208,6 +208,12 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
     expect(inspectJsx).toContain("<details");
     expect(inspectJsx).toContain("Distribution");
     expect(inspectJsx.indexOf("OutcomeChart")).toBeGreaterThan(inspectJsx.indexOf("Distribution"));
+    expect(inspectJsx).toContain("pv-listing-grid");
+    expect(inspectJsx).toContain("listingUrl");
+    expect(inspectJsx).toContain("Claim");
+    expect(inspectJsx).toContain("Verify");
+    expect(previewCss).toMatch(/\.pv-listing-grid[^{]*\{[^}]*grid-template-columns/);
+    expect(previewCss).not.toMatch(/\.pv-listing-grid[^{]*\{[^}]*flex-direction:\s*column/);
   });
 
   it("does not auto-select the first row", () => {

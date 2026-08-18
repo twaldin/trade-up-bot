@@ -26,7 +26,9 @@ export function listingUrlsForSkin(inputs: TradeUpInput[], skinName: string): st
 }
 
 /** In-app float/price page for that exact outcome skin. */
-export function outputWorthPath(outcome: Pick<TradeUpOutcome, "skin_name" | "predicted_float" | "estimated_price_cents">): string {
+export function outputWorthPath(
+  outcome: Pick<TradeUpOutcome, "skin_name"> & Partial<Pick<TradeUpOutcome, "predicted_float" | "estimated_price_cents">>,
+): string {
   const params = new URLSearchParams();
   if (outcome.predicted_float != null) params.set("float", String(outcome.predicted_float));
   if (outcome.estimated_price_cents != null) params.set("price", String(outcome.estimated_price_cents));

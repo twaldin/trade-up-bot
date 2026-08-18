@@ -6,10 +6,7 @@ import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { OutcomeChart } from "../../components/trade-up/OutcomeChart.js";
 import { Button } from "../../../shared/components/ui/button.js";
-import { chanceToProfit, groupInputSkins, rarityForTradeUpRole, uniqueOutcomes } from "../../../shared/preview-board.js";
-import { PreviewSkinTile } from "../tiles/PreviewSkinTile.js";
 import { PreviewModal } from "../chrome/PreviewModal.js";
-import { PreviewOddsChart } from "./PreviewOddsChart.js";
 
 interface RateLimitInfo {
   remaining: number;
@@ -32,9 +29,6 @@ interface VerifyResult {
 
 export function PreviewInspectDrawer({
   tu,
-  images,
-  onInputSkin,
-  onOutputSkin,
   signedIn,
   isPro,
   claimed,
@@ -51,7 +45,7 @@ export function PreviewInspectDrawer({
   onAskUpgrade,
 }: {
   tu: TradeUp;
-  images: Map<string, string | null>;
+  images?: Map<string, string | null>;
   onInputSkin?: (name: string) => void;
   onOutputSkin?: (outcome: TradeUp["outcomes"][number]) => void;
   signedIn: boolean;
@@ -72,81 +66,26 @@ export function PreviewInspectDrawer({
   const { formatPrice } = useCurrency();
   const [signInOpen, setSignInOpen] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
-  const inputs = groupInputSkins(tu);
-  const outputs = uniqueOutcomes(tu.outcomes);
-  const chance = chanceToProfit(tu);
   const atLimit = claimLimit && claimLimit.remaining <= 0;
-  const inputRarity = rarityForTradeUpRole(tu.type, "input");
-  const outputRarity = rarityForTradeUpRole(tu.type, "output");
 
   return (
     <div className="pv-card-details">
-      <dl className="pv-statrow">
-        <div><dt>Cost</dt><dd className="pv-tabular">{formatPrice(tu.total_cost_cents)}</dd></div>
-        <div><dt>EV</dt><dd className="pv-tabular">{formatPrice(tu.expected_value_cents)}</dd></div>
-        <div>
-          <dt>Profit</dt>
-          <dd className={`pv-tabular ${tu.profit_cents > 0 ? "pv-profit" : tu.profit_cents < 0 ? "pv-loss" : ""}`}>
-            {formatPrice(tu.profit_cents)}
-          </dd>
-        </div>
-        <div><dt>Chance</dt><dd className="pv-tabular">{(chance * 100).toFixed(0)}%</dd></div>
-      </dl>
-
-      <div className="pv-inspect-block">
-        <div className="pv-kicker">Inputs</div>
-        <div className="pv-tile-row">
-          {inputs.map(skin => (
-            <PreviewSkinTile
-              key={skin.name}
-              name={skin.name}
-              url={images.get(skin.name)}
-              badge={`×${skin.count}`}
-              rarity={inputRarity}
-              size="in"
-              onActivate={() => onInputSkin?.(skin.name)}
-            />
-          ))}
-        </div>
-        <div className="pv-listing-grid">
-          {tu.inputs.map(input => (
-            <a
-              key={input.listing_id}
-              className="pv-listing-row"
-              href={listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="pv-src">{sourceLabel(input.source)}</span>
-              <span>{input.skin_name}</span>
-              <span className="pv-tabular">{formatPrice(input.price_cents)}</span>
-              <span aria-hidden="true">↗</span>
-            </a>
-          ))}
-        </div>
-      </div>
-
-      <div className="pv-inspect-block">
-        <div className="pv-kicker">Outputs</div>
-        {outputs.length === 0 ? (
-          <p className="pv-muted pv-face-missing">Outcome faces not loaded for this contract.</p>
-        ) : (
-          <div className="pv-tile-row">
-            {outputs.map(outcome => (
-              <PreviewSkinTile
-                key={outcome.skin_id + outcome.skin_name}
-                name={outcome.skin_name}
-                url={images.get(outcome.skin_name)}
-                badge={`${(outcome.probability * 100).toFixed(0)}%`}
-                price={formatPrice(outcome.estimated_price_cents)}
-                rarity={outputRarity}
-                size="out"
-                onActivate={() => onOutputSkin?.(outcome)}
-              />
-            ))}
-          </div>
-        )}
-        <PreviewOddsChart tu={tu} />
+      <div className="pv-kicker">Live listings</div>
+      <div className="pv-listing-grid">
+        {tu.inputs.map(input => (
+          <a
+            key={input.listing_id}
+            className="pv-listing-row"
+            href={listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${input.skin_name} · ${input.condition} · ${input.float_value.toFixed(4)}`}
+          >
+            <span className="pv-src">{sourceLabel(input.source)}</span>
+            <span className="pv-tabular">{formatPrice(input.price_cents)}</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+        ))}
       </div>
 
       <div className="pv-card-actions">
