@@ -47,6 +47,14 @@ export function chanceToProfit(tu: TradeUp): number {
     sum + (outcome.estimated_price_cents > tu.total_cost_cents ? outcome.probability : 0), 0);
 }
 
+/** Lime if that outcome beats contract cost; charcoal otherwise. No third color. */
+export function outcomeSegmentClass(
+  outcome: Pick<TradeUpOutcome, "estimated_price_cents">,
+  totalCostCents: number,
+): "pv-seg-lime" | "pv-seg-charcoal" {
+  return outcome.estimated_price_cents > totalCostCents ? "pv-seg-lime" : "pv-seg-charcoal";
+}
+
 /** Discrete profit vs loss mass. Not a dollar-bin histogram. */
 export function profitLossSplit(tu: TradeUp): { profit: number; loss: number } {
   if (tu.outcomes.length === 0) {

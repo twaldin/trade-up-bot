@@ -1,5 +1,5 @@
 import type { TradeUp } from "../../../shared/types.js";
-import { profitLossSplit, uniqueOutcomes } from "../../../shared/preview-board.js";
+import { outcomeSegmentClass, profitLossSplit, uniqueOutcomes } from "../../../shared/preview-board.js";
 
 export function PreviewOddsChart({ tu }: { tu: TradeUp }) {
   const split = profitLossSplit(tu);
@@ -23,10 +23,10 @@ export function PreviewOddsChart({ tu }: { tu: TradeUp }) {
       </div>
       {outcomes.length > 0 && (
         <div className="pv-outcome-stack" title="Per-outcome probability">
-          {outcomes.map((outcome, i) => (
+          {outcomes.map(outcome => (
             <span
               key={outcome.skin_id + outcome.skin_name}
-              className={i % 3 === 0 ? "pv-seg-lime" : i % 3 === 1 ? "pv-seg-charcoal" : "pv-seg-gray"}
+              className={outcomeSegmentClass(outcome, tu.total_cost_cents)}
               style={{ width: `${Math.max(2, outcome.probability * 100)}%` }}
             />
           ))}

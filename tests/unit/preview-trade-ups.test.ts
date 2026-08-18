@@ -8,6 +8,7 @@ import {
   chanceToProfit,
   groupInputSkins,
   mergeContractFaces,
+  outcomeSegmentClass,
   profitLossSplit,
   uniqueOutcomes,
 } from "../../shared/preview-board.js";
@@ -140,8 +141,11 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
 
   it("uses a profit/loss + per-outcome split, not a dollar histogram", () => {
     expect(previewOdds).toContain("profitLossSplit");
+    expect(previewOdds).toContain("outcomeSegmentClass");
     expect(previewOdds).toContain("pv-split");
     expect(previewOdds).toContain("pv-outcome-stack");
+    expect(previewOdds).not.toContain("i % 3");
+    expect(previewOdds).not.toContain("pv-seg-gray");
     expect(previewOdds).not.toContain("OutcomeChart");
     expect(previewCard).toContain("PreviewOddsChart");
     const inspectJsx = previewInspect.slice(previewInspect.indexOf("return ("));
@@ -295,6 +299,36 @@ describe("preview contract faces and board helpers", () => {
     ]);
     expect(profitLossSplit(tu)).toEqual({ profit: 0.6, loss: 0.4 });
     expect(chanceToProfit(tu)).toBe(0.6);
+  });
+
+  it("colors each outcome segment lime only when that outcome beats contract cost", () => {
+    const profitOutcome = {
+      skin_id: "out-win",
+      skin_name: "M4A4 | Howl",
+      collection_name: "The Huntsman Collection",
+      probability: 0.6,
+      predicted_float: 0.18,
+      predicted_condition: "Field-Tested" as const,
+      estimated_price_cents: 20000,
+    };
+    const lossOutcome = {
+      skin_id: "out-lose",
+      skin_name: "AK-47 | Fire Serpent",
+      collection_name: "The Bravo Collection",
+      probability: 0.3,
+      predicted_float: 0.2,
+      predicted_condition: "Field-Tested" as const,
+      estimated_price_cents: 8000,
+    };
+    const evenOutcome = {
+      ...lossOutcome,
+      skin_id: "out-even",
+      skin_name: "AWP | Redline",
+      estimated_price_cents: 10000,
+    };
+    expect(outcomeSegmentClass(profitOutcome, 10000)).toBe("pv-seg-lime");
+    expect(outcomeSegmentClass(lossOutcome, 10000)).toBe("pv-seg-charcoal");
+    expect(outcomeSegmentClass(evenOutcome, 10000)).toBe("pv-seg-charcoal");
   });
 });
 
