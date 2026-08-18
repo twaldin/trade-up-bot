@@ -133,6 +133,13 @@ describe("stale-leak coherence guard", () => {
       staleCount: 0,
       type: "covert_knife",
     });
+    // seedTestData uses one collection-combo; the API list caps at 20 per combo.
+    // Unique combos keep the refill assertion about healing, not diversity.
+    await ctx.pool.query(`
+      UPDATE trade_ups
+      SET collection_names = ARRAY['Test Collection Alpha', 'Combo ' || id::text]
+      WHERE type = 'covert_knife' AND listing_status = 'active'
+    `);
     const brokenId = await breakOneTradeUp();
 
     const res = await request(ctx.app)
