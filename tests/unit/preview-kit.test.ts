@@ -136,6 +136,14 @@ describe("preview craft bar", () => {
     expect(device).toContain("board-mobile-light.webp");
   });
 
+  it("labels charts with the Outlay kicker, not a ChartFigure data table", () => {
+    expect(board).not.toContain("ChartFigure");
+    expect(board).not.toContain("data table");
+    expect(board).toContain("o-kicker");
+    // Chrome will not clip a table caption with overflow alone.
+    expect(css).toMatch(/\[data-preview\] \.sr-only[\s\S]*clip-path: inset\(50%\)/);
+  });
+
   it("keeps production chrome utilities out of every preview surface", () => {
     const leaks = [
       "rounded-md", "rounded-lg", "rounded-xl", "rounded-full",

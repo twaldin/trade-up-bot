@@ -61,6 +61,22 @@
   background: var(--bg);
 }
 
+/* Chrome does not clip a `display: table-caption` child with `overflow:
+   hidden`, so a `.sr-only` <table> leaked its "— data table" caption onto the
+   card. Clip-path holds where overflow does not. */
+[data-preview] .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 /* The kit theme colours the skip link but never parks it, so it was painting
    itself over the wordmark on every route. */
 [data-preview] .skip-link {
@@ -211,7 +227,8 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
-  margin: 32px 0 0;
+  align-self: stretch;
+  margin: 20px 0 0;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--panel-rule);
@@ -812,12 +829,18 @@
   transition: border-color var(--t-control) var(--ease), transform var(--t-control) var(--ease);
 }
 
-/* The art is the buy target; the name below it is the data-page target. */
+/* The art is the buy target; the name below it is the data-page target. Both
+   need a real box, so the art row is the anchor and the badges stay absolute
+   against the tile. */
 .preview-skin__buy {
-  display: contents;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
   border: 0;
   background: none;
-  padding: 0;
   color: inherit;
   cursor: pointer;
 }
@@ -860,8 +883,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  margin-top: 8px;
+  padding-top: 8px;
 }
 
 .preview-skin img {

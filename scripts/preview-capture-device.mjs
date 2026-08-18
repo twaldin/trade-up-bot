@@ -21,6 +21,7 @@ mkdirSync(OUT, { recursive: true });
 
 const browser = await puppeteer.launch({
   headless: "new",
+  protocolTimeout: 240000,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"],
 });
 

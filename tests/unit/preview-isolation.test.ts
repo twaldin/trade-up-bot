@@ -21,8 +21,18 @@ describe("preview isolation", () => {
     expect(previewAppSource).toContain('path="/preview/trade-ups"');
     expect(previewAppSource).toContain('path="/preview/calculator"');
     expect(previewAppSource).toContain('path="/preview/account"');
+    expect(previewAppSource).toContain('path="/preview/skins"');
+    expect(previewAppSource).toContain('path="/preview/collections"');
     expect(previewAppSource).toMatch(/noindex/);
     expect(siteNavSource).not.toContain("/preview");
+  });
+
+  it("leaves the production favicon and shared CurrencyPicker alone", () => {
+    const favicon = readFileSync(resolve(testDir, "../../public/favicon.svg"), "utf8");
+    const picker = readFileSync(resolve(testDir, "../../src/components/CurrencyPicker.tsx"), "utf8");
+    expect(favicon).toContain("#22c55e");
+    expect(favicon).toContain("<rect");
+    expect(picker).toContain("rounded-md");
   });
 
   it("does not iframe or restyle production chrome", () => {
@@ -62,7 +72,10 @@ describe("preview isolation", () => {
       "pages/PreviewCalculator.tsx",
       "pages/PreviewAccount.tsx",
       "pages/PreviewLanding.tsx",
+      "pages/PreviewSkins.tsx",
       "components/DeviceScreen.tsx",
+      "components/PreviewCurrency.tsx",
+      "components/PreviewMark.tsx",
     ];
     for (const file of files) {
       const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");

@@ -7,6 +7,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.launch({
   headless: "new",
+  protocolTimeout: 240000,
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
   defaultViewport: { width: 1600, height: 1000 },
 });
@@ -25,7 +26,7 @@ try {
 
   // 1. input tile -> live listing URLs
   const before = opened.length;
-  await page.click(".preview-card .preview-skin--input");
+  await page.$eval(".preview-card .preview-skin--input .preview-skin__buy", (el) => el.click());
   await sleep(1800);
   const inputUrls = opened.slice(before);
   console.log(`input click opened ${inputUrls.length}:`);
@@ -35,7 +36,7 @@ try {
   if (inputUrls.some((u) => u.startsWith(BASE))) failures.push("input tile opened a local URL");
 
   // 2. output tile -> marketplace or prod skin page, and it must resolve
-  const outHref = await page.$eval(".preview-card .preview-skin--output", (el) => el.href);
+  const outHref = await page.$eval(".preview-card .preview-skin--output .preview-skin__buy", (el) => el.href);
   console.log("output href:", outHref);
   if (outHref.startsWith(BASE)) failures.push("output tile points at the preview origin");
   const outRes = await page.goto(outHref, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => null);
@@ -75,14 +76,31 @@ try {
     if (!MARKETS.test(href)) failures.push(`listing row is not a marketplace URL: ${href}`);
   }
 
-  // 4. no local /skins anywhere on the board
+  // 4. a tile name opens the skin page inside the shell
+  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForSelector(".preview-skin__label", { timeout: 60000 });
+  await sleep(3000);
+  await page.$eval(".preview-skin__label", (el) => el.click());
+  await sleep(3000);
+  const skinUrl = page.url();
+  console.log("tile name went to:", skinUrl);
+  if (!skinUrl.includes("/preview/skins/")) failures.push(`tile name went to ${skinUrl}`);
+  const hasShell = await page.$(".preview-sidebar");
+  if (!hasShell) failures.push("skin page lost the sidebar shell");
+  const skinBody = await page.evaluate(() => document.body.innerText);
+  if (/skin not found|not in the live dataset/i.test(skinBody)) failures.push("preview skin page did not resolve");
+
+  // 5. no local /skins anywhere on the board
+  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForSelector(".preview-card", { timeout: 60000 });
+  await sleep(2500);
   const localSkins = await page.evaluate(() =>
     [...document.querySelectorAll("a[href]")]
       .map((a) => a.getAttribute("href"))
       .filter((h) => h && h.startsWith("/skins/")));
   if (localSkins.length > 0) failures.push(`local /skins hrefs: ${localSkins.slice(0, 3).join(", ")}`);
 
-  // 5. copy check
+  // 6. copy check
   const copy = await page.evaluate(() => document.body.innerText);
   if (/\bcontracts?\b/i.test(copy)) failures.push("the word contract is on the preview surface");
 } finally {

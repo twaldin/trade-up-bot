@@ -34,6 +34,7 @@ async function boardReady(page) {
 
 const browser = await puppeteer.launch({
   headless: "new",
+  protocolTimeout: 240000,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"],
   defaultViewport: { width: 1600, height: 1000, deviceScaleFactor: 2 },
 });

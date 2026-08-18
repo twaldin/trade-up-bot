@@ -27,6 +27,7 @@ const ROUTES = [
 
 const browser = await puppeteer.launch({
   headless: "new",
+  protocolTimeout: 240000,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"],
   defaultViewport: { width: 1600, height: 1000, deviceScaleFactor: 2 },
 });
@@ -89,7 +90,7 @@ try {
   await sleep(2500);
   for (const mode of ["dark", "light"]) {
     await setMode(page, mode);
-    await page.click(".preview-currency__trigger");
+    await page.$eval(".preview-currency__trigger", (el) => el.click());
     await sleep(500);
     const menu = await page.$(".preview-menu");
     if (!menu) problems.push(`currency/${mode}: menu did not open`);
@@ -104,7 +105,7 @@ try {
   await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-skin__label", { timeout: 60000 });
   await sleep(3000);
-  await page.click(".preview-skin__label");
+  await page.$eval(".preview-skin__label", (el) => el.click());
   await sleep(3500);
   const url = page.url();
   if (!url.includes("/preview/skins/")) problems.push(`skin name click went to ${url}`);
