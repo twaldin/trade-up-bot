@@ -5,6 +5,7 @@ import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
+import { applyDnDiversityToListSql, shouldApplyDnDiversity } from "./dn-diversity.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 function canonicalListingStatus(
@@ -354,8 +355,25 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const sortCol = sortMap[sort] ?? "t.trade_up_score";
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
+    // D&N API-surface diversity: cap near-duplicate Dreams & Nightmares
+    // signatures on the default board. Collection filters and my_claims skip it.
+    const applyDn = shouldApplyDnDiversity({
+      collection,
+      myClaims: my_claims === "true",
+    });
+    const dnSql = applyDnDiversityToListSql({
+      where,
+      sortCol,
+      sortOrder,
+      apply: applyDn,
+      startParamIndex: paramIndex,
+    });
+    paramIndex = dnSql.nextParamIndex;
+    params.push(...dnSql.params);
+
     // Fast path: for default queries (type filter only, no extra filters), use Redis-cached
     // counts per type. The daemon pre-populates these every cycle. Avoids COUNT on 300K-664K rows.
+    // Diversity changes the visible total, so the raw type_counts cache cannot be used then.
     const hasExtraFilters = !!(min_profit || max_profit || min_roi || max_roi || max_cost || min_cost ||
       min_chance || max_chance || max_outcomes || skin || collection || max_loss || min_win || my_claims === "true" || markets);
 
@@ -372,7 +390,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               t.trade_up_score,
               0 as outcome_count
-       FROM trade_ups t ${collectionJoin} ${where}
+       ${dnSql.fromWhere}
        ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
        LIMIT $${limitParam} OFFSET $${offsetParam}`;
     const dataParams = [...params, perPage, offset];
@@ -381,7 +399,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     let total: number;
     let totalProfitable: number;
 
-    if (!hasExtraFilters && type) {
+    if (!hasExtraFilters && type && !applyDn) {
       // Try Redis-cached counts first (populated by daemon every cycle + API startup)
       const { cacheGet, cacheSet } = await import("../redis.js");
       const cachedCounts = await cacheGet<Record<string, { total: number; profitable: number }>>("type_counts");
@@ -406,9 +424,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         totalProfitable = counts[type]?.profitable ?? 0;
       }
     } else {
-      // Capped COUNT: stop scanning after 10,001 rows for filtered queries
+      // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
       const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c FROM (SELECT 1 FROM trade_ups t ${collectionJoin} ${where} LIMIT 10001) sub`,
+        `SELECT COUNT(*) as c FROM (SELECT 1 ${dnSql.fromWhere} LIMIT 10001) sub`,
         params
       );
       total = parseInt(countRow?.c) || 0;
