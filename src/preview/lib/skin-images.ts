@@ -1,5 +1,7 @@
 /** Cached name → Steam / stored image_url. Never fetches ByMykel JSON. */
 
+import { toSlug } from "../../../shared/slugs.js";
+
 export const BYMYKEL_URL_RE = /bymykel|CSGO-API/i;
 
 export type FaceMap = Map<string, string>;
@@ -38,6 +40,17 @@ export function facesRequestUrl(names: string[]): string {
   return `/api/preview/faces?names=${encodeURIComponent(unique.join("||"))}`;
 }
 
+function extractStoredImage(html: string): string | null {
+  const og = html.match(/property="og:image"\s+content="([^"]+)"/) ?? html.match(/content="([^"]+)"\s+property="og:image"/);
+  const url = og?.[1] ?? null;
+  if (!url || isBlockedCatalogUrl(url)) return null;
+  return url;
+}
+
+function skinPagePath(name: string): string {
+  return `/skins/${toSlug(name)}`;
+}
+
 export async function loadFaces(
   names: string[],
   cache: FaceMap,
@@ -46,17 +59,35 @@ export async function loadFaces(
   const missing = names.filter((name) => name && !cache.has(name));
   if (missing.length === 0) return cache;
 
+  let facesMissing = false;
   try {
     const res = await fetchFn(facesRequestUrl(missing), { credentials: "include" });
-    if (res.status === 404) return cache;
     const type = res.headers.get("content-type") ?? "";
-    if (!listSurvivesFaceError(res.status, type)) return cache;
-    if (!res.ok) return cache;
-    if (type.includes("text/html")) return cache;
-    const data = (await res.json()) as { faces?: Record<string, string | null> };
-    if (data.faces) rememberFaces(cache, data.faces);
+    if (res.status === 404 || type.includes("text/html")) {
+      facesMissing = true;
+    } else if (res.ok && !type.includes("text/html")) {
+      const data = (await res.json()) as { faces?: Record<string, string | null> };
+      if (data.faces) rememberFaces(cache, data.faces);
+    }
   } catch {
-    // Missing preview faces route or network — list still renders.
+    facesMissing = true;
+  }
+
+  const stillMissing = missing.filter((name) => !cache.has(name));
+  if (facesMissing && stillMissing.length > 0) {
+    await Promise.all(stillMissing.slice(0, 24).map(async (name) => {
+      try {
+        const res = await fetchFn(skinPagePath(name), { credentials: "include" });
+        const type = res.headers.get("content-type") ?? "";
+        if (!listSurvivesFaceError(res.status, type)) return;
+        if (res.status === 404) return;
+        if (!type.includes("text/html")) return;
+        const url = extractStoredImage(await res.text());
+        if (url) rememberFaces(cache, { [name]: url });
+      } catch {
+        // HTML 404 / network — keep the list.
+      }
+    }));
   }
   return cache;
 }

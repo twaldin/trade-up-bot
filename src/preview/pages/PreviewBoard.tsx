@@ -257,11 +257,13 @@ export function usePreviewTradeUps() {
       const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
       const rows = data.trade_ups ?? [];
       setIsFree((data.tier ?? "free") === "free");
-      const names = rows.flatMap((tu) => [
+      const hydrated = await Promise.all(rows.map((tu) => hydrateOutcomesIfNeeded(tu)));
+      const names = hydrated.flatMap((tu) => [
         ...(tu.input_summary?.skins.map((s) => s.name) ?? []),
+        ...tu.outcomes.map((o) => o.skin_name),
       ]);
       await loadFaces(names, FACE_CACHE);
-      setTradeUps(rows);
+      setTradeUps(hydrated);
     } catch {
       setTradeUps([]);
     } finally {

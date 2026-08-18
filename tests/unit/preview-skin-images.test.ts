@@ -44,12 +44,13 @@ describe("preview skin image cache", () => {
 
   it("keeps the list alive when the faces route is missing or returns HTML 404", async () => {
     const cache = createFaceCache();
-    const html404 = vi.fn(async () =>
-      new Response("<!doctype html><title>404</title>", {
+    const html404 = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).not.toMatch(BYMYKEL_URL_RE);
+      return new Response("<!doctype html><title>404</title>", {
         status: 404,
         headers: { "content-type": "text/html; charset=utf-8" },
-      }),
-    );
+      });
+    });
     await loadFaces(["AK-47 | Redline"], cache, html404 as unknown as typeof fetch);
     expect(faceFor(cache, "AK-47 | Redline")).toBeNull();
     expect(listSurvivesFaceError(404, "text/html")).toBe(true);
