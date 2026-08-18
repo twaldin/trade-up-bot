@@ -552,7 +552,8 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--pv-ink);
+  color: #f8f8f6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
 .pv-tile-name {
@@ -564,12 +565,8 @@
   font-size: 11px;
   font-weight: 650;
   line-height: 1.2;
-  color: var(--pv-ink);
-}
-
-.pv-app[data-theme="dark"] .pv-tile-name,
-.pv-app[data-theme="dark"] .pv-tile-badge {
-  color: #f4f4f0;
+  color: #f8f8f6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
 .pv-empty {
