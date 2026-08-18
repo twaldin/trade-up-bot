@@ -69,6 +69,14 @@ try {
     await sleep(700);
     await page.screenshot({ path: shot("board-expanded") });
     console.log("board-expanded ok");
+
+    await setMode(page, "light");
+    await page.evaluate(() => {
+      document.querySelector(".preview-card--expanded")?.scrollIntoView({ block: "start" });
+    });
+    await sleep(700);
+    await page.screenshot({ path: shot("board-expanded-light") });
+    console.log("board-expanded-light ok");
   } else {
     console.log("EXPAND BUTTON NOT FOUND");
   }

@@ -565,7 +565,7 @@
 
 .preview-payoff {
   position: relative;
-  height: 84px;
+  height: 92px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--sunken);
@@ -573,7 +573,7 @@
 }
 
 .preview-payoff--tall {
-  height: 100px;
+  height: 108px;
 }
 
 .preview-payoff--empty {
