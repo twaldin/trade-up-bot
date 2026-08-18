@@ -5,9 +5,10 @@ import { listingUrl, sourceLabel } from "../../utils/format.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { OutcomeChart } from "../../components/trade-up/OutcomeChart.js";
-import { expandInputSlots, pickHeroOutcome } from "../../../shared/preview-board.js";
+import { chanceToProfit, groupInputSkins, uniqueOutcomes } from "../../../shared/preview-board.js";
 import { SkinRender } from "../images/SkinRender.js";
 import { PreviewModal } from "../chrome/PreviewModal.js";
+import { PreviewOddsChart } from "./PreviewOddsChart.js";
 
 interface RateLimitInfo {
   remaining: number;
@@ -66,24 +67,19 @@ export function PreviewInspectDrawer({
   const { formatPrice } = useCurrency();
   const [signInOpen, setSignInOpen] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
-  const hero = pickHeroOutcome(tu.outcomes);
-  const slots = expandInputSlots(tu);
-  const chance = tu.chance_to_profit ?? tu.outcomes.reduce((sum, o) =>
-    sum + (o.estimated_price_cents > tu.total_cost_cents ? o.probability : 0), 0);
+  const inputs = groupInputSkins(tu);
+  const outputs = uniqueOutcomes(tu.outcomes);
+  const chance = chanceToProfit(tu);
   const atLimit = claimLimit && claimLimit.remaining <= 0;
 
   return (
     <aside className="pv-inspect">
-      <div style={{ padding: 14, borderBottom: "1px solid #262626" }}>
+      <div className="pv-inspect-head">
         <div className="pv-kicker">Inspect · {tu.id}</div>
-        <div className="pv-card-name" style={{ marginTop: 8 }}>{hero?.skin_name ?? "Contract"}</div>
+        <div className="pv-card-name">Contract</div>
       </div>
 
-      <div className="pv-hero-skin" style={{ height: 140 }}>
-        <SkinRender name={hero?.skin_name ?? "Output"} url={hero ? images.get(hero.skin_name) : null} />
-      </div>
-
-      <dl className="pv-statrow" style={{ padding: 14 }}>
+      <dl className="pv-statrow">
         <div><dt>Cost</dt><dd className="pv-tabular">{formatPrice(tu.total_cost_cents)}</dd></div>
         <div><dt>EV</dt><dd className="pv-tabular">{formatPrice(tu.expected_value_cents)}</dd></div>
         <div>
@@ -95,23 +91,28 @@ export function PreviewInspectDrawer({
         <div><dt>Chance</dt><dd className="pv-tabular">{(chance * 100).toFixed(0)}%</dd></div>
       </dl>
 
-      <div style={{ padding: "0 14px 14px" }}>
-        <div className="pv-kicker" style={{ marginBottom: 8 }}>Inputs</div>
-        <div className="pv-slots">
-          {slots.map((name, i) => (
-            <div key={`${name}-${i}`} className="pv-slot">
-              <SkinRender name={name} url={name ? images.get(name) : null} />
+      <div className="pv-inspect-block">
+        <div className="pv-kicker">Inputs</div>
+        <div className="pv-grouped">
+          {inputs.map(skin => (
+            <div key={skin.name} className="pv-grouped-item">
+              <div className="pv-thumb">
+                <SkinRender name={skin.name} url={images.get(skin.name)} />
+              </div>
+              <div className="pv-grouped-meta">
+                <div className="pv-grouped-name">{skin.name}</div>
+                <div className="pv-tabular pv-muted">×{skin.count}</div>
+              </div>
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="pv-listing-links">
           {tu.inputs.map(input => (
             <a
               key={input.listing_id}
               href={listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontSize: 12, display: "flex", justifyContent: "space-between", gap: 8 }}
             >
               <span>{input.skin_name}</span>
               <span className="pv-muted">{sourceLabel(input.source)} · {formatPrice(input.price_cents)}</span>
@@ -120,31 +121,26 @@ export function PreviewInspectDrawer({
         </div>
       </div>
 
-      <div style={{ padding: "0 14px 14px" }}>
-        <div className="pv-kicker" style={{ marginBottom: 8 }}>Outcomes</div>
-        <div className="pv-prob" aria-label="Outcome probabilities">
-          {tu.outcomes.map(o => (
-            <span
-              key={o.skin_id + o.skin_name}
-              className={o.estimated_price_cents > tu.total_cost_cents ? "pv-win" : "pv-lose"}
-              style={{ width: `${Math.max(2, o.probability * 100)}%` }}
-              title={`${o.skin_name} ${(o.probability * 100).toFixed(1)}%`}
-            />
-          ))}
-        </div>
-        <div className="pv-outcome-grid" style={{ marginTop: 10 }}>
-          {tu.outcomes.map(o => (
-            <div key={o.skin_id + o.skin_name} className="pv-rule" style={{ padding: 8 }}>
-              <div className="pv-slot" style={{ aspectRatio: "4/3" }}>
-                <SkinRender name={o.skin_name} url={images.get(o.skin_name)} />
+      <div className="pv-inspect-block">
+        <div className="pv-kicker">Outputs</div>
+        {outputs.length === 0 ? (
+          <p className="pv-muted pv-face-missing">Outcome faces not loaded for this contract.</p>
+        ) : (
+          <div className="pv-grouped">
+            {outputs.map(outcome => (
+              <div key={outcome.skin_id + outcome.skin_name} className="pv-grouped-item">
+                <div className="pv-thumb">
+                  <SkinRender name={outcome.skin_name} url={images.get(outcome.skin_name)} />
+                </div>
+                <div className="pv-grouped-meta">
+                  <div className="pv-grouped-name">{outcome.skin_name}</div>
+                  <div className="pv-tabular pv-muted">{(outcome.probability * 100).toFixed(0)}% · {formatPrice(outcome.estimated_price_cents)}</div>
+                </div>
               </div>
-              <div style={{ fontSize: 11, marginTop: 6 }}>{o.skin_name}</div>
-              <div className="pv-muted pv-tabular" style={{ fontSize: 11 }}>
-                {(o.probability * 100).toFixed(0)}% · {formatPrice(o.estimated_price_cents)}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
+        <PreviewOddsChart tu={tu} />
       </div>
 
       <div style={{ padding: 14, borderTop: "1px solid #262626", display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -206,7 +202,7 @@ export function PreviewInspectDrawer({
       {signInOpen && (
         <PreviewModal title="Sign in with Steam" onClose={() => setSignInOpen(false)}>
           <p className="pv-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-            Claim locks the ten listings for 30 minutes while you buy. Preview uses the same Steam auth as production.
+            Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy.
           </p>
           <a
             href={authHref("/preview/trade-ups")}

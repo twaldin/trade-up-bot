@@ -7,7 +7,7 @@ import {
 import { useCurrency } from "../../contexts/CurrencyContext.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { OutcomeChart } from "../../components/trade-up/OutcomeChart.js";
-import { collectPreviewSkinNames, pickHeroOutcome } from "../../../shared/preview-board.js";
+import { collectPreviewSkinNames, uniqueOutcomes } from "../../../shared/preview-board.js";
 import { useSkinImages } from "../../hooks/useSkinImages.js";
 import { SkinRender } from "../images/SkinRender.js";
 
@@ -235,16 +235,15 @@ export function PreviewCalculatorPage() {
     }
   };
 
-  const hero = result ? pickHeroOutcome(result.outcomes) : null;
+  const calcOutputs = result ? uniqueOutcomes(result.outcomes) : [];
 
   return (
     <div>
       <title>Calculator Preview — TradeUpBot</title>
       <meta name="robots" content="noindex, nofollow" />
-      <div className="pv-kicker">Float model</div>
-      <h1 style={{ margin: "6px 0 8px", fontSize: 28, letterSpacing: "-0.03em" }}>Calculator</h1>
-      <p className="pv-muted" style={{ fontSize: 13, maxWidth: 560, marginBottom: 16 }}>
-        Same math as production. Empty on first load. Load example fills slots; Calculate is the only run.
+      <h1 className="pv-page-title">CS2 Trade-Up Calculator</h1>
+      <p className="pv-muted pv-page-lead">
+        Add skins to predict trade-up outcomes, EV, profit, and probabilities.
       </p>
 
       <div className="pv-calc-grid">
@@ -295,8 +294,18 @@ export function PreviewCalculatorPage() {
 
       {result && stats && (
         <div>
-          <div className="pv-hero-skin" style={{ marginBottom: 12 }}>
-            <SkinRender name={hero?.skin_name ?? "Output"} url={hero ? resultImages.get(hero.skin_name) : null} />
+          <div className="pv-grouped" style={{ marginBottom: 12 }}>
+            {calcOutputs.map(outcome => (
+              <div key={outcome.skin_id + outcome.skin_name} className="pv-grouped-item">
+                <div className="pv-thumb">
+                  <SkinRender name={outcome.skin_name} url={resultImages.get(outcome.skin_name)} />
+                </div>
+                <div className="pv-grouped-meta">
+                  <div className="pv-grouped-name">{outcome.skin_name}</div>
+                  <div className="pv-tabular pv-muted">{(outcome.probability * 100).toFixed(0)}%</div>
+                </div>
+              </div>
+            ))}
           </div>
           <dl className="pv-statrow" style={{ marginBottom: 16 }}>
             <div><dt>Cost</dt><dd className="pv-tabular">{formatPrice(result.total_cost_cents)}</dd></div>

@@ -35,6 +35,7 @@ interface Props {
   verifyLimit: RateLimitInfo | null;
   onClaimLimitUpdate: (limit: RateLimitInfo) => void;
   onVerifyLimitUpdate: (limit: RateLimitInfo) => void;
+  inspectable?: boolean;
 }
 
 export function PreviewTradeUpBoard({
@@ -46,6 +47,7 @@ export function PreviewTradeUpBoard({
   verifyLimit,
   onClaimLimitUpdate,
   onVerifyLimitUpdate,
+  inspectable = true,
 }: Props) {
   const isPro = tier === "pro" || tier === "admin";
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -158,19 +160,19 @@ export function PreviewTradeUpBoard({
   const selected = prepared.find(tu => tu.id === selectedId) ?? null;
 
   return (
-    <div className={`pv-board${loading ? " pv-faint" : ""}`}>
+    <div className={`pv-board${inspectable ? "" : " pv-board-console"}${loading ? " pv-faint" : ""}`}>
       <div className="pv-cards">
         {prepared.map(tu => (
           <PreviewContractCard
             key={tu.id}
             tu={tu}
             images={images}
-            open={tu.id === selectedId}
-            onOpen={() => { void handleSelect(tu.id); }}
+            open={inspectable && tu.id === selectedId}
+            onOpen={inspectable ? () => { void handleSelect(tu.id); } : undefined}
           />
         ))}
       </div>
-      {selected ? (
+      {inspectable && selected ? (
         <PreviewInspectDrawer
           tu={selected}
           images={images}
@@ -198,7 +200,7 @@ export function PreviewTradeUpBoard({
           }}
           onClaimLimitUpdate={onClaimLimitUpdate}
         />
-      ) : (
+      ) : inspectable ? (
         <aside className="pv-inspect">
           <div className="pv-inspect-empty">
             Pick a contract. Nothing is selected until you do.
@@ -209,7 +211,7 @@ export function PreviewTradeUpBoard({
             )}
           </div>
         </aside>
-      )}
+      ) : null}
     </div>
   );
 }

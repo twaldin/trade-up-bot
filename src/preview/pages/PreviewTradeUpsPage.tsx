@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
 import { FilterBar, FilterChips, EMPTY_FILTERS, filtersToParams } from "../../components/FilterBar.js";
 import type { Filters } from "../../components/FilterBar.js";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue.js";
 import { TRADE_UP_TYPE_TABS } from "../../utils/rarity.js";
 import { PreviewTradeUpBoard } from "../board/PreviewTradeUpBoard.js";
+import { usePreviewContracts } from "../board/usePreviewContracts.js";
 
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec" | "consumer_industrial";
 
@@ -13,22 +13,19 @@ const OWNED_PARAMS = ["skin", "collection", "min_profit", "max_profit", "min_roi
   "min_cost", "max_cost", "min_chance", "max_chance", "max_loss", "min_win", "markets",
   "sort", "order", "page", "stale", "type"];
 
-export function PreviewTradeUpsPage() {
+export function PreviewTradeUpsDashboard({
+  inspectable = true,
+  showFilters = true,
+  perPage = 24,
+}: {
+  inspectable?: boolean;
+  showFilters?: boolean;
+  perPage?: number;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [signedIn, setSignedIn] = useState(true);
-  const [tier, setTier] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("user_tier") || "free";
-    return "free";
-  });
-  const [claimLimit, setClaimLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
-  const [verifyLimit, setVerifyLimit] = useState<{ remaining: number; total: number; resetIn: number | null } | null>(null);
   const initialType = (searchParams.get("type") as TradeUpType) || "all";
   const [type, setType] = useState<TradeUpType>(initialType);
   const [page, setPage] = useState(() => parseInt(searchParams.get("page") || "1"));
-  const [perPage] = useState(24);
   const [sort] = useState(() => searchParams.get("sort") || "trade_up_score");
   const [order] = useState<"asc" | "desc">(() => (searchParams.get("order") as "asc" | "desc") || "desc");
   const [includeStale, setIncludeStale] = useState(() => searchParams.get("stale") === "true");
@@ -54,9 +51,20 @@ export function PreviewTradeUpsPage() {
   });
   const debouncedFilters = useDebouncedValue(filters, 300);
   const filtersSettled = filters === debouncedFilters;
-  const isFree = tier === "free";
+  const contracts = usePreviewContracts({
+    filters: debouncedFilters,
+    type,
+    page,
+    perPage,
+    sort,
+    order,
+    includeStale,
+    filtersSettled,
+  });
+  const isFree = contracts.tier === "free";
 
   useEffect(() => {
+    if (!showFilters) return;
     setSearchParams(prev => {
       const params = new URLSearchParams(prev);
       for (const key of OWNED_PARAMS) params.delete(key);
@@ -68,81 +76,30 @@ export function PreviewTradeUpsPage() {
       if (type !== "all") params.set("type", type);
       return params;
     }, { replace: true });
-  }, [sort, order, page, includeStale, filters, type, setSearchParams]);
+  }, [sort, order, page, includeStale, filters, type, setSearchParams, showFilters]);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const handleFiltersChange = useCallback((next: Filters) => {
+    setFilters(next);
+    setPage(1);
+  }, []);
 
-  const fetchTradeUps = useCallback(async (silent = false) => {
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    if (!silent) setLoading(true);
-    try {
-      const params = filtersToParams(debouncedFilters);
-      params.set("sort", sort);
-      params.set("order", order);
-      params.set("page", String(page));
-      params.set("per_page", String(perPage));
-      if (type !== "all") params.set("type", type);
-      if (includeStale) params.set("include_stale", "true");
-
-      const res = await fetch(`/api/trade-ups?${params}`, {
-        credentials: "include",
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      let next: TradeUp[] = data.trade_ups ?? [];
-      const ids = next.filter(tu => !tu.outcomes?.length).map(tu => tu.id);
-      if (ids.length) {
-        const facesRes = await fetch(`/api/preview/contract-faces?ids=${ids.join(",")}`, {
-          credentials: "include",
-          signal: controller.signal,
-        });
-        if (facesRes.ok) {
-          const facesData = await facesRes.json() as { faces?: Record<string, TradeUpOutcome[]> };
-          next = next.map(tu => {
-            const faces = facesData.faces?.[tu.id] ?? facesData.faces?.[String(tu.id)];
-            return faces?.length ? { ...tu, outcomes: faces } : tu;
-          });
-        }
-      }
-      setTradeUps(next);
-      setTotal(data.total ?? 0);
-      const newTier = data.tier || "free";
-      setTier(newTier);
-      setSignedIn(Boolean(data.signed_in));
-      try { localStorage.setItem("user_tier", newTier); } catch {}
-      if (data.claim_limit) setClaimLimit(data.claim_limit);
-      if (data.verify_limit) setVerifyLimit(data.verify_limit);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-    } finally {
-      if (!controller.signal.aborted && !silent) setLoading(false);
-    }
-  }, [sort, order, page, perPage, debouncedFilters, type, includeStale]);
-
-  useEffect(() => {
-    if (!filtersSettled) return;
-    fetchTradeUps();
-    return () => { if (abortRef.current) abortRef.current.abort(); };
-  }, [fetchTradeUps, filtersSettled]);
-
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const totalPages = Math.max(1, Math.ceil(contracts.total / perPage));
 
   return (
     <div data-preview-trade-ups>
-      <title>Board Preview — TradeUpBot</title>
-      <meta name="robots" content="noindex, nofollow" />
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
-        <div>
-          <div className="pv-kicker">Contracts</div>
-          <h1 style={{ margin: "6px 0 0", fontSize: 28, letterSpacing: "-0.03em" }}>Trade-up board</h1>
-        </div>
-        <label className="pv-muted" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+      <section className="pv-page-intro">
+        <h2>Find Profitable CS2 Trade-Up Contracts</h2>
+        <p>
+          Every contract below is built from real, buyable listings on CSFloat, DMarket, Skinport, and Buff.market, with marketplace fees on both sides already priced in. Filter by profit, ROI, cost, or outcome odds across every rarity tier — Knife, Glove, Covert, Classified, Restricted, Mil-Spec.
+        </p>
+      </section>
+
+      {showFilters && (
+        <label className="pv-stale">
           <input type="checkbox" checked={includeStale} onChange={e => { setIncludeStale(e.target.checked); setPage(1); }} />
           Show stale
         </label>
-      </div>
+      )}
 
       <div className="pv-typebar">
         {TRADE_UP_TYPE_TABS.map(t => (
@@ -150,46 +107,59 @@ export function PreviewTradeUpsPage() {
             key={t.value}
             type="button"
             className={type === t.value ? "pv-active" : ""}
-            onClick={() => { setType(t.value); setPage(1); setLoading(true); }}
+            onClick={() => { setType(t.value); setPage(1); }}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      <div className="pv-filters">
-        <FilterBar filters={filters} onFiltersChange={f => { setFilters(f); setPage(1); }} />
-        <FilterChips filters={filters} onUpdate={f => { setFilters(f); setPage(1); }} />
-      </div>
+      {showFilters && (
+        <div className="pv-filters">
+          <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
+          <FilterChips filters={filters} onUpdate={handleFiltersChange} />
+        </div>
+      )}
 
-      {isFree && !loading && (
-        <div className="pv-rule" style={{ padding: "10px 12px", marginBottom: 12, fontSize: 13 }}>
+      {isFree && !contracts.loading && (
+        <div className="pv-banner">
           Free view: contracts are delayed 3 hours. Pro sees them the moment they're found.
         </div>
       )}
 
-      {!loading && tradeUps.length === 0 ? (
-        <div className="pv-muted" style={{ padding: 48, textAlign: "center" }}>No trade-ups match these filters.</div>
+      {!contracts.loading && contracts.tradeUps.length === 0 ? (
+        <div className="pv-muted pv-empty-board">No trade-ups match these filters.</div>
       ) : (
         <PreviewTradeUpBoard
-          tradeUps={tradeUps}
-          loading={loading}
-          tier={tier}
-          signedIn={signedIn}
-          claimLimit={claimLimit}
-          verifyLimit={verifyLimit}
-          onClaimLimitUpdate={setClaimLimit}
-          onVerifyLimitUpdate={setVerifyLimit}
+          tradeUps={contracts.tradeUps}
+          loading={contracts.loading}
+          tier={contracts.tier}
+          signedIn={contracts.signedIn}
+          claimLimit={contracts.claimLimit}
+          verifyLimit={contracts.verifyLimit}
+          onClaimLimitUpdate={contracts.setClaimLimit}
+          onVerifyLimitUpdate={contracts.setVerifyLimit}
+          inspectable={inspectable}
         />
       )}
 
-      {totalPages > 1 && (
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16, fontSize: 13 }}>
+      {showFilters && totalPages > 1 && (
+        <div className="pv-pager">
           <button type="button" className="pv-btn pv-btn-ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</button>
           <span className="pv-muted pv-tabular">Page {page} of {totalPages}</span>
           <button type="button" className="pv-btn pv-btn-ghost" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
         </div>
       )}
+    </div>
+  );
+}
+
+export function PreviewTradeUpsPage() {
+  return (
+    <div>
+      <title>Profitable CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot</title>
+      <meta name="robots" content="noindex, nofollow" />
+      <PreviewTradeUpsDashboard />
     </div>
   );
 }

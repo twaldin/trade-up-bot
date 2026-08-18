@@ -17,14 +17,15 @@ export function parseFaceIds(raw: string): number[] {
 
 export function facesFromOutcomeRows(
   rows: { id: number; outcomes_json: string | null }[],
-): Record<number, TradeUpOutcome[]> {
-  const faces: Record<number, TradeUpOutcome[]> = {};
+): Record<string, TradeUpOutcome[]> {
+  const faces: Record<string, TradeUpOutcome[]> = {};
   for (const row of rows) {
+    const key = String(row.id);
     try {
       const parsed = JSON.parse(row.outcomes_json || "[]") as unknown;
-      faces[row.id] = Array.isArray(parsed) ? parsed as TradeUpOutcome[] : [];
+      faces[key] = Array.isArray(parsed) ? parsed as TradeUpOutcome[] : [];
     } catch {
-      faces[row.id] = [];
+      faces[key] = [];
     }
   }
   return faces;

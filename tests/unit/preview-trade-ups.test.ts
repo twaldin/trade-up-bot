@@ -4,7 +4,13 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { buildStaticSitemap } from "../../server/routes/sitemap.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
-import { expandInputSlots, pickHeroOutcome } from "../../shared/preview-board.js";
+import {
+  chanceToProfit,
+  groupInputSkins,
+  mergeContractFaces,
+  profitLossSplit,
+  uniqueOutcomes,
+} from "../../shared/preview-board.js";
 import { parseFaceIds, facesFromOutcomeRows } from "../../server/preview/contract-faces.js";
 import { resetBymykelCatalogCache, resolveSkinImageMap } from "../../server/preview/skin-images.js";
 
@@ -31,18 +37,19 @@ const previewLanding = readSrc("src/preview/pages/PreviewLandingPage.tsx");
 const previewShell = readSrc("src/preview/chrome/PreviewShell.tsx");
 const previewBoard = readSrc("src/preview/board/PreviewTradeUpBoard.tsx");
 const previewCard = readSrc("src/preview/board/PreviewContractCard.tsx");
+const previewOdds = readSrc("src/preview/board/PreviewOddsChart.tsx");
 const previewInspect = readSrc("src/preview/board/PreviewInspectDrawer.tsx");
 const previewTradeUps = readSrc("src/preview/pages/PreviewTradeUpsPage.tsx");
 const previewCalc = readSrc("src/preview/pages/PreviewCalculatorPage.tsx");
 const previewAccount = readSrc("src/preview/pages/PreviewAccountPage.tsx");
 const previewCss = readSrc("src/preview/preview.css");
+const previewHook = readSrc("src/preview/board/usePreviewContracts.ts");
 const skinImages = readSrc("server/preview/skin-images.ts");
 
 describe("preview is a separate app mounted only under /preview/*", () => {
   it("mounts PreviewApp at /preview/* and keeps preview out of AppShell", () => {
     expect(app).toContain('path="/preview/*"');
     expect(app).toContain("PreviewApp");
-    expect(app).not.toContain("PreviewTradeUpsPage");
     expect(app).not.toContain("PreviewTradeUpsMainPage");
     expect(app).not.toContain('path="/preview/trade-ups"');
     expect(app).not.toMatch(/to:\s*"\/preview/);
@@ -68,6 +75,7 @@ describe("preview is a separate app mounted only under /preview/*", () => {
   it("deletes the v1 cards-only restyle that lived inside AppShell", () => {
     expect(existsSync(join(__dir, "../../src/pages/PreviewTradeUpsPage.tsx"))).toBe(false);
     expect(existsSync(join(__dir, "../../src/components/preview/PreviewTradeUpBoard.tsx"))).toBe(false);
+    expect(existsSync(join(__dir, "../../src/preview/mock/PreviewHeroMock.tsx"))).toBe(false);
   });
 });
 
@@ -78,8 +86,6 @@ describe("preview routes live under one coherent app", () => {
     expect(previewApp).toContain("PreviewCalculatorPage");
     expect(previewApp).toContain("PreviewAccountPage");
     expect(previewApp).toContain("noindex, nofollow");
-    expect(previewApp).not.toContain('classList.add("app-shell")');
-    expect(previewApp).not.toMatch(/className="[^"]*app-shell/);
   });
 
   it("uses a sidebar shell on app pages, not the prod top-tab bar", () => {
@@ -88,65 +94,79 @@ describe("preview routes live under one coherent app", () => {
     expect(previewShell).toContain("/preview/calculator");
     expect(previewShell).toContain("/preview/account");
     expect(previewShell).toContain("PreviewAccountMenu");
-    expect(previewShell).not.toContain("CS2 Trade-Up Bot");
     expect(previewShell).not.toContain("Listing Sniper");
   });
 });
 
-describe("preview landing is a TradeUpBot marketing page", () => {
-  it("uses a laptop-in-hero product mock, not a pasted dashboard-saas page", () => {
+describe("preview landing reuses prod copy and the real board", () => {
+  it("reuses production headlines and puts the live dashboard in the laptop", () => {
+    expect(previewLanding).toContain("CS2 trade-ups built from");
+    expect(previewLanding).toContain("Most calculators price trade-ups with idealized floats");
+    expect(previewLanding).toContain("What you see is what you pay");
+    expect(previewLanding).toContain("View Trade-Ups");
+    expect(previewLanding).toContain("Free — no account needed");
+    expect(previewLanding).toContain("PreviewTradeUpsDashboard");
     expect(previewLanding).toContain("pv-laptop");
-    expect(previewLanding).toContain("PreviewHeroMock");
-    expect(previewLanding).toMatch(/TradeUpBot|trade-up/i);
-    expect(previewLanding).not.toContain("Net cash position");
-    expect(previewLanding).not.toContain("evals/s");
-    expect(previewLanding).not.toContain("Halcyon");
-    expect(previewLanding).not.toContain("ledger graphite");
+    expect(previewLanding).not.toContain("PreviewHeroMock");
+    expect(previewLanding).not.toContain("See the ten skins before they become one");
   });
 });
 
-describe("preview trade-ups board is image-first cards", () => {
-  it("reuses the live list API and a preview-only face batch", () => {
-    expect(previewTradeUps).toContain('fetch(`/api/trade-ups?${params}`');
-    expect(previewTradeUps).toContain("AbortController");
+describe("preview trade-ups board is a grouped-outcome dashboard", () => {
+  it("reuses the live list API and hydrates faces", () => {
+    expect(previewHook).toContain('fetch(`/api/trade-ups?${params}`');
+    expect(previewHook).toContain("/api/preview/contract-faces");
+    expect(previewHook).toContain("hydrateTradeUpsFromFaces");
+    expect(previewHook).toContain("mergeContractFaces");
+    expect(previewHook).toContain("AbortController");
     expect(previewTradeUps).toContain("useDebouncedValue");
     expect(previewTradeUps).toContain('const OWNED_PARAMS = ["skin", "collection", "min_profit"');
     expect(previewTradeUps).toContain("delayed 3 hours");
-    expect(previewTradeUps).toContain("/api/preview/contract-faces");
+    expect(previewTradeUps).toContain("Find Profitable CS2 Trade-Up Contracts");
   });
 
-  it("renders cards with an output hero and a 10-slot input strip", () => {
-    expect(previewCard).toContain("pv-card");
-    expect(previewCard).toContain("expandInputSlots");
-    expect(previewCard).toContain("pickHeroOutcome");
+  it("groups inputs as Skin ×N and shows every unique output", () => {
+    expect(previewCard).toContain("groupInputSkins");
+    expect(previewCard).toContain("uniqueOutcomes");
+    expect(previewCard).toContain("×{skin.count}");
+    expect(previewCard).toContain("Outcome faces not loaded");
+    expect(previewCard).not.toContain("expandInputSlots");
+    expect(previewCard).not.toContain("pickHeroOutcome");
+    expect(previewCard).not.toContain("Output pending");
     expect(previewCard).toMatch(/Cost/);
-    expect(previewCard).toMatch(/EV|Profit/);
+    expect(previewCard).toMatch(/Profit/);
     expect(previewCard).toMatch(/Chance/);
-    expect(previewBoard).not.toContain("h-10");
-    expect(previewBoard).not.toContain("Found");
-    expect(previewBoard).not.toContain("Profitable");
-    expect(previewBoard).not.toContain("1.9M");
-    expect(previewBoard).not.toContain("1,284");
   });
 
-  it("does not auto-select the first row or lead inspect with the histogram", () => {
-    expect(previewBoard).not.toMatch(/setSelectedId\(tradeUps\[0\]/);
-    expect(previewBoard).not.toMatch(/selectedId == null && tradeUps\[0\]/);
+  it("uses a profit/loss + per-outcome split, not a dollar histogram", () => {
+    expect(previewOdds).toContain("profitLossSplit");
+    expect(previewOdds).toContain("pv-split");
+    expect(previewOdds).toContain("pv-outcome-stack");
+    expect(previewOdds).not.toContain("OutcomeChart");
+    expect(previewCard).toContain("PreviewOddsChart");
     const inspectJsx = previewInspect.slice(previewInspect.indexOf("return ("));
     expect(inspectJsx).toContain("<details");
     expect(inspectJsx).toContain("Distribution");
     expect(inspectJsx.indexOf("OutcomeChart")).toBeGreaterThan(inspectJsx.indexOf("Distribution"));
-    expect(previewBoard).toContain("/api/verify-trade-up/");
-    expect(previewInspect).toContain("/api/trade-ups/");
   });
 
-  it("stays on Quanta tokens: sharp rules, verdict-only green/red", () => {
-    expect(previewCss).toMatch(/--pv-rule|#262626/);
+  it("does not auto-select the first row", () => {
+    expect(previewBoard).not.toMatch(/setSelectedId\(tradeUps\[0\]/);
+    expect(previewBoard).not.toMatch(/selectedId == null && tradeUps\[0\]/);
+    expect(previewBoard).toContain("/api/verify-trade-up/");
+  });
+});
+
+describe("preview uses Outlay cream / charcoal / lime", () => {
+  it("locks the Outlay tokens and keeps lime off rarity", () => {
+    expect(previewCss).toContain("#b5f63d");
+    expect(previewCss).toContain("#F8F8F6");
+    expect(previewCss).toContain("#1a1a1a");
+    expect(previewCard).not.toContain("border-yellow-500");
+    expect(previewCard).not.toContain("border-pink-500");
     expect(previewBoard + previewCard).not.toContain("shadow-");
     expect(previewBoard).not.toContain("LATE");
     expect(previewBoard).not.toContain("ON TIME");
-    expect(previewCard).not.toContain("border-yellow-500");
-    expect(previewCard).not.toContain("border-pink-500");
   });
 });
 
@@ -158,6 +178,8 @@ describe("preview calculator keeps the Load example product rule", () => {
     expect(previewCalc).toContain("/api/calculator/search");
     expect(previewCalc).toContain("emptyCalculatorSlots");
     expect(previewCalc).toContain("Price (cents)");
+    expect(previewCalc).toContain("CS2 Trade-Up Calculator");
+    expect(previewCalc).toContain("Add skins to predict trade-up outcomes");
     expect(previewCalc).not.toMatch(/useEffect\([^)]*\/api\/calculator\/example/);
     const loadExampleFn = previewCalc.slice(previewCalc.indexOf("loadExample"));
     const nextFn = loadExampleFn.search(/\n  const [a-zA-Z]/);
@@ -213,7 +235,7 @@ describe("preview images resolve stored URL then Steam/ByMykel", () => {
 });
 
 describe("preview contract faces and board helpers", () => {
-  it("caps face ids at 50 and reads stored outcomes only", () => {
+  it("caps face ids at 50 and hydrates empty list outcomes", () => {
     const ids = parseFaceIds(["1", "2", "nope", "-3", ...Array.from({ length: 60 }, (_, i) => String(i + 10))].join(","));
     expect(ids).toHaveLength(50);
     expect(ids[0]).toBe(1);
@@ -221,12 +243,19 @@ describe("preview contract faces and board helpers", () => {
       { id: 9, outcomes_json: JSON.stringify([{ skin_name: "AK-47 | Fire Serpent", probability: 1, estimated_price_cents: 10000 }]) },
       { id: 10, outcomes_json: "not-json" },
     ]);
-    expect(faces[9][0]?.skin_name).toBe("AK-47 | Fire Serpent");
-    expect(faces[10]).toEqual([]);
+    expect(faces["9"][0]?.skin_name).toBe("AK-47 | Fire Serpent");
+    expect(faces["10"]).toEqual([]);
+    const hydrated = mergeContractFaces(
+      [makeTradeUp({ id: 9, outcomes: [] }), makeTradeUp({ id: 11, outcomes: [] })],
+      faces,
+    );
+    expect(hydrated[0].outcomes[0]?.skin_name).toBe("AK-47 | Fire Serpent");
+    expect(hydrated[1].outcomes).toEqual([]);
   });
 
-  it("expands named inputs into a slot strip and picks the distinctive output hero", () => {
+  it("groups inputs and unique outputs instead of a 10-slot hero strip", () => {
     const tu = makeTradeUp({
+      total_cost_cents: 10000,
       input_summary: {
         skins: [
           { name: "AK-47 | Redline", count: 6, condition: "Field-Tested" },
@@ -243,7 +272,7 @@ describe("preview contract faces and board helpers", () => {
           probability: 0.4,
           predicted_float: 0.2,
           predicted_condition: "Field-Tested",
-          estimated_price_cents: 80000,
+          estimated_price_cents: 8000,
         },
         {
           skin_id: "out-2",
@@ -252,17 +281,20 @@ describe("preview contract faces and board helpers", () => {
           probability: 0.6,
           predicted_float: 0.18,
           predicted_condition: "Field-Tested",
-          estimated_price_cents: 120000,
+          estimated_price_cents: 20000,
         },
       ],
     });
-    expect(expandInputSlots(tu)).toEqual([
-      "AK-47 | Redline", "AK-47 | Redline", "AK-47 | Redline",
-      "AK-47 | Redline", "AK-47 | Redline", "AK-47 | Redline",
-      "M4A4 | Desert-Strike", "M4A4 | Desert-Strike",
-      "M4A4 | Desert-Strike", "M4A4 | Desert-Strike",
+    expect(groupInputSkins(tu)).toEqual([
+      { name: "AK-47 | Redline", count: 6 },
+      { name: "M4A4 | Desert-Strike", count: 4 },
     ]);
-    expect(pickHeroOutcome(tu.outcomes)?.skin_name).toBe("M4A4 | Howl");
+    expect(uniqueOutcomes(tu.outcomes).map(o => o.skin_name)).toEqual([
+      "M4A4 | Howl",
+      "AK-47 | Fire Serpent",
+    ]);
+    expect(profitLossSplit(tu)).toEqual({ profit: 0.6, loss: 0.4 });
+    expect(chanceToProfit(tu)).toBe(0.6);
   });
 });
 
