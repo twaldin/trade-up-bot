@@ -106,7 +106,7 @@ export function PreviewCalculator() {
     <div className="preview-board">
       <h1 className="text-2xl font-semibold tracking-tight">Calculator</h1>
       <p className="text-sm mt-1 mb-4" style={{ color: "var(--text-muted)" }}>
-        Same live calculator API as production. Add skins, then evaluate the contract.
+        Same live calculator API as production. Add skins, then evaluate the trade-up.
       </p>
       <div className="flex flex-wrap gap-2 mb-4">
         <input

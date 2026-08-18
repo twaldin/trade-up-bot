@@ -4,6 +4,14 @@ import { csfloatSearchUrl, listingUrl } from "../../utils/format.js";
 
 export const PREVIEW_PROD_ORIGIN = "https://tradeupbot.app";
 
+const CONSUMER = "#b0c3d9";
+const INDUSTRIAL = "#5e98d9";
+const MILSPEC = "#4b69ff";
+const RESTRICTED = "#8847ff";
+const CLASSIFIED = "#d32ce6";
+const COVERT = "#eb4b4b";
+const KNIFE = "#d4a017";
+
 export type TileKind = "input" | "output" | "chrome";
 
 export type TileClick = { action: "open-listing"; href: string } | { action: "open-outcome"; href: string } | { action: "none" };
@@ -12,14 +20,24 @@ export type InputGroup = {
   name: string;
   count: number;
   listings: TradeUpInput[];
+  unitPriceCents: number;
 };
 
-export type OddsSegment = {
-  key: string;
+export type PayoffPoint = {
   name: string;
   probability: number;
-  color: string;
   priceCents: number;
+  profitCents: number;
+  evContributionCents: number;
+};
+
+export type CdfPoint = { x: number; p: number };
+
+export type EvWaterfall = {
+  steps: PayoffPoint[];
+  totalEvCents: number;
+  topShare: number;
+  concentrationNote: string | null;
 };
 
 /** Tile clicks never toggle expand — only the dedicated expand control does. */
@@ -130,16 +148,22 @@ export function inputQty(tu: TradeUp): number {
   return 0;
 }
 
+function unitPrice(listings: TradeUpInput[]): number {
+  if (listings.length === 0) return 0;
+  return Math.round(listings.reduce((sum, row) => sum + row.price_cents, 0) / listings.length);
+}
+
 export function uniqueInputs(tu: TradeUp): InputGroup[] {
   if (tu.inputs.length > 0) {
     const map = new Map<string, InputGroup>();
-    for (const input of tu.inputs) {
-      const existing = map.get(input.skin_name);
+    for (const row of tu.inputs) {
+      const existing = map.get(row.skin_name);
       if (existing) {
         existing.count += 1;
-        existing.listings.push(input);
+        existing.listings.push(row);
+        existing.unitPriceCents = unitPrice(existing.listings);
       } else {
-        map.set(input.skin_name, { name: input.skin_name, count: 1, listings: [input] });
+        map.set(row.skin_name, { name: row.skin_name, count: 1, listings: [row], unitPriceCents: row.price_cents });
       }
     }
     return [...map.values()].sort((a, b) => b.count - a.count);
@@ -148,6 +172,7 @@ export function uniqueInputs(tu: TradeUp): InputGroup[] {
     name: skin.name,
     count: skin.count,
     listings: [],
+    unitPriceCents: 0,
   }));
 }
 
@@ -167,27 +192,109 @@ export function uniqueOutputs(tu: TradeUp): TradeUpOutcome[] {
   return [...map.values()];
 }
 
-export function oddsBarSegments(tu: TradeUp): OddsSegment[] {
+export function payoffPoints(tu: TradeUp): PayoffPoint[] {
+  const cost = tu.total_cost_cents;
   return uniqueOutputs(tu)
     .filter((outcome) => outcome.probability > 0)
-    .map((outcome, index) => ({
-      key: `out-${index}`,
-      name: outcome.skin_name,
-      probability: outcome.probability,
-      color: outcome.estimated_price_cents >= tu.total_cost_cents ? "#d7fe52" : "#6b6b66",
-      priceCents: outcome.estimated_price_cents,
-    }));
+    .map((outcome) => {
+      const profitCents = outcome.estimated_price_cents - cost;
+      return {
+        name: outcome.skin_name,
+        probability: outcome.probability,
+        priceCents: outcome.estimated_price_cents,
+        profitCents,
+        evContributionCents: Math.round(outcome.probability * profitCents),
+      };
+    })
+    .sort((a, b) => a.profitCents - b.profitCents);
 }
 
-export function rarityColor(type: string | undefined): string {
+export function medianProfitCents(points: PayoffPoint[]): number | null {
+  if (points.length === 0) return null;
+  let cumulative = 0;
+  for (const point of points) {
+    cumulative += point.probability;
+    if (cumulative >= 0.5) return point.profitCents;
+  }
+  return points[points.length - 1]?.profitCents ?? null;
+}
+
+export function chanceOfProfit(points: PayoffPoint[]): number {
+  return points.reduce((sum, point) => sum + (point.profitCents > 0 ? point.probability : 0), 0);
+}
+
+export function worstBest(points: PayoffPoint[]): { worst: number; best: number } | null {
+  if (points.length === 0) return null;
+  const profits = points.map((point) => point.profitCents);
+  return { worst: Math.min(...profits), best: Math.max(...profits) };
+}
+
+export function evWaterfall(tu: TradeUp): EvWaterfall {
+  const steps = payoffPoints(tu);
+  const totalEvCents = steps.reduce((sum, step) => sum + step.evContributionCents, 0);
+  const top = [...steps].sort((a, b) => b.evContributionCents - a.evContributionCents)[0] ?? null;
+  const topShare = top && totalEvCents !== 0 ? top.evContributionCents / totalEvCents : 0;
+  const concentrationNote = top && totalEvCents > 0 && topShare > 0.5
+    ? `This is only +EV because of ${top.name}`
+    : null;
+  return { steps, totalEvCents, topShare, concentrationNote };
+}
+
+export function cdfCurve(tu: TradeUp): CdfPoint[] {
+  const points = payoffPoints(tu);
+  if (points.length === 0) return [];
+  const xs = [...new Set(points.map((point) => point.profitCents))].sort((a, b) => a - b);
+  return xs.map((x) => ({
+    x,
+    p: points.filter((point) => point.profitCents >= x).reduce((sum, point) => sum + point.probability, 0),
+  }));
+}
+
+export function payoffLabelIndexes(points: PayoffPoint[]): number[] {
+  if (points.length === 0) return [];
+  let bestProb = 0;
+  let bestAbs = 0;
+  let probIdx = 0;
+  let absIdx = 0;
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    if (!point) continue;
+    if (point.probability > bestProb) {
+      bestProb = point.probability;
+      probIdx = i;
+    }
+    if (Math.abs(point.profitCents) > bestAbs) {
+      bestAbs = Math.abs(point.profitCents);
+      absIdx = i;
+    }
+  }
+  return [...new Set([probIdx, absIdx])];
+}
+
+/** Inputs are one CS2 rarity below the trade-up output tier. Lime is never a rarity. */
+export function inputRarityColor(type: string | undefined): string {
   switch (type) {
-    case "covert_knife": return "#d4a017";
-    case "classified_covert": return "#eb4b4b";
-    case "restricted_classified": return "#d32ce6";
-    case "milspec_restricted": return "#8847ff";
-    case "industrial_milspec": return "#4b69ff";
-    case "consumer_industrial": return "#5e98d9";
-    default: return "#d7fe52";
+    case "covert_knife": return COVERT;
+    case "classified_covert": return CLASSIFIED;
+    case "restricted_classified": return RESTRICTED;
+    case "milspec_restricted": return MILSPEC;
+    case "industrial_milspec": return INDUSTRIAL;
+    case "consumer_industrial": return CONSUMER;
+    case "staircase": return CLASSIFIED;
+    default: return CONSUMER;
+  }
+}
+
+export function outputRarityColor(type: string | undefined): string {
+  switch (type) {
+    case "covert_knife": return KNIFE;
+    case "classified_covert": return COVERT;
+    case "restricted_classified": return CLASSIFIED;
+    case "milspec_restricted": return RESTRICTED;
+    case "industrial_milspec": return MILSPEC;
+    case "consumer_industrial": return INDUSTRIAL;
+    case "staircase": return KNIFE;
+    default: return INDUSTRIAL;
   }
 }
 

@@ -52,6 +52,25 @@ describe("preview isolation", () => {
     expect(previewAppSource).toContain("PREVIEW_FAQ");
   });
 
+  it("says trade-up, not contract, on the preview surface", () => {
+    const files = [
+      "PreviewApp.tsx",
+      "PreviewShell.tsx",
+      "lib/copy.ts",
+      "lib/board.ts",
+      "pages/PreviewBoard.tsx",
+      "pages/PreviewCalculator.tsx",
+      "pages/PreviewAccount.tsx",
+      "pages/PreviewLanding.tsx",
+      "components/DeviceScreen.tsx",
+    ];
+    for (const file of files) {
+      const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");
+      expect(source, file).not.toMatch(/\b[Cc]ontracts?\b/);
+    }
+    expect(PREVIEW_HEADLINE).toBe("CS2 trade-ups built from real, buyable listings");
+  });
+
   it("noindexes preview in robots.txt and keeps it out of the sitemap", () => {
     expect(ROBOTS_TXT).toContain("Disallow: /preview");
     expect(publicRobots).toContain("Disallow: /preview");

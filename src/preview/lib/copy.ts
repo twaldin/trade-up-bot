@@ -3,7 +3,7 @@
 export const PREVIEW_HEADLINE = "CS2 trade-ups built from real, buyable listings";
 
 export const PREVIEW_LEDE =
-  "Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each contract from listings currently for sale.";
+  "Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each trade-up from listings currently for sale.";
 
 export const PREVIEW_SUBLEDE =
   "Every input links to a specific listing on CSFloat, DMarket, Skinport, or Buff.market, with its exact float and price. The output float is computed from your inputs, not estimated.";
@@ -33,4 +33,4 @@ export const PREVIEW_FAQ: { q: string; a: string }[] = [
   },
 ];
 
-export const DELAY_BANNER = "Free view: contracts are delayed 3 hours. Pro sees them the moment they're found.";
+export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees them the moment they're found.";

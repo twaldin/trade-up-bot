@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
+  cdfCurve,
+  chanceOfProfit,
+  evWaterfall,
   inputCostCents,
   inputListingHrefs,
   inputQty,
-  oddsBarSegments,
+  inputRarityColor,
+  medianProfitCents,
   openGroupedListings,
   outputHref,
+  outputRarityColor,
+  payoffPoints,
   uniqueInputs,
   uniqueOutputs,
   verifyClaimHref,
@@ -41,7 +47,7 @@ function outcome(overrides: Partial<TradeUpOutcome>): TradeUpOutcome {
 }
 
 describe("preview board numbers", () => {
-  it("uses the contract input total as cost, not an outcome price", () => {
+  it("uses the trade-up input total as cost, not an outcome price", () => {
     const tu = makeTradeUp({
       total_cost_cents: 12345,
       expected_value_cents: 99999,
@@ -50,7 +56,7 @@ describe("preview board numbers", () => {
     expect(inputCostCents(tu)).toBe(12345);
   });
 
-  it("uses the 10-skin contract qty, not the first group count", () => {
+  it("uses the 10-skin trade-up qty, not the first group count", () => {
     const tu = makeTradeUp({
       input_summary: {
         input_count: 10,
@@ -79,7 +85,7 @@ describe("preview board numbers", () => {
   it("keeps every unique input and output — not a two-skin or hero slice", () => {
     const tu = makeTradeUp({
       inputs: [
-        ...Array.from({ length: 4 }, (_, i) => input({ listing_id: `a${i}`, skin_name: "Skin A" })),
+        ...Array.from({ length: 4 }, (_, i) => input({ listing_id: `a${i}`, skin_name: "Skin A", price_cents: 200 })),
         ...Array.from({ length: 3 }, (_, i) => input({ listing_id: `b${i}`, skin_name: "Skin B" })),
         ...Array.from({ length: 3 }, (_, i) => input({ listing_id: `c${i}`, skin_name: "Skin C" })),
       ],
@@ -91,6 +97,7 @@ describe("preview board numbers", () => {
     });
     expect(uniqueInputs(tu).map((g) => g.name)).toEqual(["Skin A", "Skin B", "Skin C"]);
     expect(uniqueInputs(tu).map((g) => g.count)).toEqual([4, 3, 3]);
+    expect(uniqueInputs(tu)[0]?.unitPriceCents).toBe(200);
     expect(uniqueOutputs(tu).map((o) => o.skin_name)).toEqual(["Out 1", "Out 2", "Out 3"]);
   });
 
@@ -108,27 +115,6 @@ describe("preview board numbers", () => {
       },
     });
     expect(uniqueInputs(tu).map((g) => `${g.name}×${g.count}`)).toEqual(["Skin A×4", "Skin B×3", "Skin C×3"]);
-  });
-
-  it("builds stacked-bar segments from actual outcome probabilities", () => {
-    const tu = makeTradeUp({
-      total_cost_cents: 500,
-      outcomes: [
-        outcome({ skin_name: "Cheap", probability: 0.7, estimated_price_cents: 100 }),
-        outcome({ skin_name: "Jackpot", probability: 0.3, estimated_price_cents: 900 }),
-      ],
-    });
-    const segs = oddsBarSegments(tu);
-    expect(segs).toHaveLength(2);
-    expect(segs[0]?.probability).toBeCloseTo(0.7);
-    expect(segs[1]?.probability).toBeCloseTo(0.3);
-    expect(segs.reduce((s, g) => s + g.probability, 0)).toBeCloseTo(1);
-    expect(segs.every((g) => g.color.startsWith("#"))).toBe(true);
-  });
-
-  it("returns no odds-bar segments when outcomes are not hydrated yet", () => {
-    const tu = makeTradeUp({ outcomes: [] });
-    expect(oddsBarSegments(tu)).toEqual([]);
   });
 
   it("opens every distinct listing URL for a grouped input", () => {
@@ -163,5 +149,103 @@ describe("preview board numbers", () => {
 
   it("keeps Verify/Claim on prod trade-ups, not the preview SPA", () => {
     expect(verifyClaimHref(42)).toBe("https://tradeupbot.app/trade-ups/42");
+  });
+});
+
+describe("preview rarity is one tier apart", () => {
+  it("paints Covert trade-up inputs Classified pink, not Covert red", () => {
+    expect(inputRarityColor("classified_covert")).toBe("#d32ce6");
+    expect(outputRarityColor("classified_covert")).toBe("#eb4b4b");
+  });
+
+  it("maps every trade-up type to the CS2 input/output pair", () => {
+    const pairs: Array<[string, string, string]> = [
+      ["covert_knife", "#eb4b4b", "#d4a017"],
+      ["classified_covert", "#d32ce6", "#eb4b4b"],
+      ["restricted_classified", "#8847ff", "#d32ce6"],
+      ["milspec_restricted", "#4b69ff", "#8847ff"],
+      ["industrial_milspec", "#5e98d9", "#4b69ff"],
+      ["consumer_industrial", "#b0c3d9", "#5e98d9"],
+    ];
+    for (const [type, input, output] of pairs) {
+      expect(inputRarityColor(type)).toBe(input);
+      expect(outputRarityColor(type)).toBe(output);
+    }
+  });
+
+  it("never uses lime as a rarity color", () => {
+    const types = [
+      "covert_knife",
+      "classified_covert",
+      "restricted_classified",
+      "milspec_restricted",
+      "industrial_milspec",
+      "consumer_industrial",
+      undefined,
+      "staircase",
+    ];
+    for (const type of types) {
+      expect(inputRarityColor(type).toLowerCase()).not.toBe("#d7fe52");
+      expect(outputRarityColor(type).toLowerCase()).not.toBe("#d7fe52");
+    }
+  });
+});
+
+describe("preview payoff from real outcomes", () => {
+  const tu = makeTradeUp({
+    total_cost_cents: 1000,
+    expected_value_cents: 1160,
+    profit_cents: 160,
+    outcomes: [
+      outcome({ skin_id: "a", skin_name: "Cheap", probability: 0.4, estimated_price_cents: 400 }),
+      outcome({ skin_id: "b", skin_name: "Mid", probability: 0.35, estimated_price_cents: 1000 }),
+      outcome({ skin_id: "c", skin_name: "Jackpot", probability: 0.25, estimated_price_cents: 2800 }),
+    ],
+  });
+
+  it("sorts payoff points by P/L and keeps integer-cent profits", () => {
+    const points = payoffPoints(tu);
+    expect(points.map((p) => p.name)).toEqual(["Cheap", "Mid", "Jackpot"]);
+    expect(points.map((p) => p.profitCents)).toEqual([-600, 0, 1800]);
+    expect(points.every((p) => Number.isInteger(p.profitCents))).toBe(true);
+    expect(points.every((p) => Number.isInteger(p.evContributionCents))).toBe(true);
+  });
+
+  it("walks cumulative probability to the median P/L", () => {
+    expect(medianProfitCents(payoffPoints(tu))).toBe(0);
+  });
+
+  it("computes chance of profit from outcomes that beat cost", () => {
+    expect(chanceOfProfit(payoffPoints(tu))).toBeCloseTo(0.25);
+  });
+
+  it("decomposes EV as p_i * profit_i and flags a concentrated jackpot", () => {
+    const wf = evWaterfall(tu);
+    expect(wf.steps.map((s) => s.name)).toEqual(["Cheap", "Mid", "Jackpot"]);
+    expect(wf.steps[0]?.evContributionCents).toBe(-240);
+    expect(wf.steps[1]?.evContributionCents).toBe(0);
+    expect(wf.steps[2]?.evContributionCents).toBe(450);
+    expect(wf.totalEvCents).toBe(210);
+    expect(wf.topShare).toBeGreaterThan(0.5);
+    expect(wf.concentrationNote).toMatch(/Jackpot/);
+  });
+
+  it("builds a real CDF of P(return ≥ x), not an invented series", () => {
+    const cdf = cdfCurve(tu);
+    expect(cdf.length).toBeGreaterThan(1);
+    const atZero = cdf.find((p) => p.x === 0);
+    expect(atZero?.p).toBeCloseTo(0.6);
+    const atJackpot = cdf.find((p) => p.x === 1800);
+    expect(atJackpot?.p).toBeCloseTo(0.25);
+    expect(cdf.every((p, i) => i === 0 || p.x >= (cdf[i - 1]?.x ?? p.x))).toBe(true);
+  });
+
+  it("returns empty payoff artifacts when outcomes are not hydrated", () => {
+    const empty = makeTradeUp({ outcomes: [] });
+    expect(payoffPoints(empty)).toEqual([]);
+    expect(medianProfitCents([])).toBeNull();
+    expect(cdfCurve(empty)).toEqual([]);
+    expect(evWaterfall(empty).steps).toEqual([]);
+    expect(evWaterfall(empty).concentrationNote).toBeNull();
   });
 });

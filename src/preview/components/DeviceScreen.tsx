@@ -49,13 +49,13 @@ export function DeviceScreen({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`tub-console ${compact ? "tub-console--phone" : ""}`}>
       <aside className="tub-console__nav">
-        {["Overview", "Contracts", "Listings", "Rails", "Controls"].map((item, i) => (
+        {["Overview", "Trade-ups", "Listings", "Rails", "Controls"].map((item, i) => (
           <span key={item} data-active={i === 1}>{item}</span>
         ))}
       </aside>
       <div className="tub-console__main">
         <header className="tub-console__head">
-          <strong>Live contracts</strong>
+          <strong>Live trade-ups</strong>
           <span>CSFloat · DMarket · Skinport · Buff</span>
         </header>
         <div className="tub-console__kpis">

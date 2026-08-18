@@ -29,7 +29,7 @@ function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: 
         </Link>
         <nav className="preview-nav__links" aria-label="Preview">
           <a className="preview-btn preview-btn--ghost" href="#faq">FAQ</a>
-          <Link className="preview-btn preview-btn--ghost" to="/preview/trade-ups">Contracts</Link>
+          <Link className="preview-btn preview-btn--ghost" to="/preview/trade-ups">Trade-ups</Link>
           <a className="preview-btn preview-btn--ghost" href="/pricing">Pricing</a>
         </nav>
         <div className="preview-nav__actions">

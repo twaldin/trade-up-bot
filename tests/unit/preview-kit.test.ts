@@ -34,19 +34,26 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(board).toContain("DELAY_BANNER");
   });
 
-  it("keeps board tiles compact and drops the fake P/L spark", () => {
+  it("keeps board tiles compact and drops fake / flat odds charts", () => {
     const board = read("../../src/preview/pages/PreviewBoard.tsx");
     const css = read("../../src/preview/preview.css");
     const lib = read("../../src/preview/lib/board.ts");
     expect(board).not.toContain("ProfitSpark");
     expect(board).not.toContain("profitLossSeries");
-    expect(board).toContain("oddsBarSegments");
+    expect(board).not.toContain("oddsBarSegments");
+    expect(board).not.toContain("OddsBar");
+    expect(board).toContain("payoffPoints");
+    expect(board).toContain("evWaterfall");
+    expect(board).toContain("cdfCurve");
     expect(lib).not.toContain("profitLossSeries");
+    expect(lib).not.toContain("oddsBarSegments");
     expect(lib).not.toContain("Math.sin");
     expect(css).not.toContain("min-height: 280px");
     expect(css).not.toContain("min-height: 140px");
     expect(css).not.toMatch(/220px/);
     expect(css).toContain("preview-skin--input");
     expect(css).toContain("preview-skin--output");
+    expect(css).toContain("preview-payoff");
+    expect(css).toContain("var(--r-panel)");
   });
 });
