@@ -319,6 +319,7 @@
 }
 
 .preview-kpi small {
+  display: block;
   font-weight: 500;
   color: var(--text-muted);
 }
