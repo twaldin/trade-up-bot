@@ -1,11 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { CurrencyPicker } from "../components/CurrencyPicker.js";
+import { PreviewCurrency } from "./components/PreviewCurrency.js";
+import { PreviewMark } from "./components/PreviewMark.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
 import { PreviewCalculator } from "./pages/PreviewCalculator.js";
 import { PreviewLanding } from "./pages/PreviewLanding.js";
+import {
+  PreviewCollectionPage,
+  PreviewCollectionsPage,
+  PreviewSkinPage,
+  PreviewSkinsPage,
+} from "./pages/PreviewSkins.js";
 import { PreviewShell } from "./PreviewShell.js";
 import "./preview.css";
 
@@ -23,20 +30,21 @@ function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: 
       <meta name="robots" content="noindex, nofollow" />
       <meta name="description" content="Internal TradeUpBot preview. Not for production navigation." />
       <header className="preview-nav">
-        <Link to="/preview" className="preview-nav__brand">
-          <img src="/favicon.svg" alt="" />
+        <Link to="/preview" className="preview-brand">
+          <PreviewMark size={20} />
           TradeUpBot
         </Link>
         <nav className="preview-nav__links" aria-label="Preview">
-          <a className="preview-btn preview-btn--ghost" href="#faq">FAQ</a>
-          <Link className="preview-btn preview-btn--ghost" to="/preview/trade-ups">Trade-ups</Link>
-          <a className="preview-btn preview-btn--ghost" href="/pricing">Pricing</a>
+          <Link className="preview-btn preview-btn--quiet" to="/preview/trade-ups">Board</Link>
+          <Link className="preview-btn preview-btn--quiet" to="/preview/skins">Skins</Link>
+          <Link className="preview-btn preview-btn--quiet" to="/preview/collections">Collections</Link>
+          <a className="preview-btn preview-btn--quiet" href="#faq">FAQ</a>
         </nav>
-        <div className="preview-nav__actions">
+        <div className="preview-bar__actions">
           <button type="button" className="preview-btn" onClick={onMode}>
             {mode === "dark" ? "Light" : "Dark"}
           </button>
-          <CurrencyPicker />
+          <PreviewCurrency />
           <Link className="preview-btn preview-btn--lime" to="/preview/trade-ups">Open the console</Link>
         </div>
       </header>
@@ -62,7 +70,7 @@ export default function PreviewApp() {
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const location = useLocation();
-  const inConsole = /\/preview\/(trade-ups|calculator|account)/.test(location.pathname);
+  const inConsole = /\/preview\/(trade-ups|calculator|account|skins|collections)/.test(location.pathname);
 
   useEffect(() => {
     document.getElementById("root")?.classList.remove("app-shell");
@@ -72,12 +80,20 @@ export default function PreviewApp() {
   const onMode = () => setMode((m) => (m === "dark" ? "light" : "dark"));
   const routes = (
     <Routes>
-      <Route index element={<PreviewLanding stats={stats} />} />
+      <Route index element={<PreviewLanding stats={stats} mode={mode} />} />
       <Route path="trade-ups" element={<BoardRoute />} />
+      <Route path="skins" element={<PreviewSkinsPage />} />
+      <Route path="skins/:slug" element={<PreviewSkinPage />} />
+      <Route path="collections" element={<PreviewCollectionsPage />} />
+      <Route path="collections/:name" element={<PreviewCollectionPage />} />
       <Route path="calculator" element={<PreviewCalculator />} />
       <Route path="account" element={<PreviewAccount />} />
-      <Route path="/preview" element={<PreviewLanding stats={stats} />} />
+      <Route path="/preview" element={<PreviewLanding stats={stats} mode={mode} />} />
       <Route path="/preview/trade-ups" element={<BoardRoute />} />
+      <Route path="/preview/skins" element={<PreviewSkinsPage />} />
+      <Route path="/preview/skins/:slug" element={<PreviewSkinPage />} />
+      <Route path="/preview/collections" element={<PreviewCollectionsPage />} />
+      <Route path="/preview/collections/:name" element={<PreviewCollectionPage />} />
       <Route path="/preview/calculator" element={<PreviewCalculator />} />
       <Route path="/preview/account" element={<PreviewAccount />} />
       <Route path="*" element={<Navigate to="/preview" replace />} />

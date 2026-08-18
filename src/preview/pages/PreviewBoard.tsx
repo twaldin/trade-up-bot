@@ -1,16 +1,17 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
-import { ChartFigure } from "../kit/primitives/chart-figure.js";
 import {
   bentoColumns,
   cdfCurve,
   chanceOfProfit,
   conditionShort,
   evDrivers,
+  formatFloat,
   inputCostCents,
   inputListingHrefs,
   inputRarityColor,
@@ -22,6 +23,7 @@ import {
   outputRarityColor,
   payoffPoints,
   percentileProfitCents,
+  previewSkinHref,
   rarityLabel,
   splitSkinName,
   uniqueInputs,
@@ -32,24 +34,15 @@ import {
   type PayoffPoint,
 } from "../lib/board.js";
 import { DELAY_BANNER } from "../lib/copy.js";
-import {
-  createFaceCache,
-  faceCacheKey,
-  faceFor,
-  hydrateOutcomesIfNeeded,
-  loadFaces,
-  namesFromCacheKey,
-} from "../lib/skin-images.js";
+import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
-
-/** Outcome rows shown on a collapsed card before it rolls up the tail. */
-const COLLAPSED_BARS = 4;
 
 function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
 }
 
+/** Lime is profit, --loss is loss. No third colour anywhere on the board. */
 function signClass(cents: number): string {
   return cents >= 0 ? "is-plus" : "is-minus";
 }
@@ -58,6 +51,10 @@ function axisPercent(value: number, lo: number, hi: number): number {
   const span = hi - lo;
   if (span <= 0) return 50;
   return ((value - lo) / span) * 100;
+}
+
+function stop(event: { stopPropagation: () => void }) {
+  event.stopPropagation();
 }
 
 function SkinFace({ name }: { name: string }) {
@@ -76,112 +73,122 @@ function SkinFace({ name }: { name: string }) {
   return <div className="preview-skin__ph" />;
 }
 
-function SkinLabel({ name, wear }: { name: string; wear?: string }) {
-  const { weapon, finish } = splitSkinName(name);
-  return (
-    <span className="preview-skin__label">
-      <em>
-        {weapon}
-        {weapon && wear ? " · " : ""}
-        {wear}
-      </em>
-      <b>{finish}</b>
-    </span>
-  );
-}
-
+/**
+ * A tile is two targets: the art buys this exact float on its marketplace, the
+ * name opens the skin data page inside the preview shell.
+ */
 function SkinTile({
   name,
   rarity,
   variant,
   index,
-  leadBadge,
-  trailBadge,
+  lead,
+  trail,
   wear,
-  href,
-  onClick,
+  float,
+  buyHref,
+  onBuy,
+  hot,
+  onHover,
 }: {
   name: string;
   rarity: string;
   variant: "input" | "output";
   index?: number;
-  leadBadge?: string;
-  trailBadge?: string;
+  lead?: string;
+  trail?: string;
   wear?: string;
-  href?: string;
-  onClick?: () => void;
+  float?: string | null;
+  buyHref?: string;
+  onBuy?: () => void;
+  hot?: boolean;
+  onHover?: (name: string | null) => void;
 }) {
-  const body = (
+  const { weapon, finish } = splitSkinName(name);
+  const art = (
     <>
       <span className="preview-skin__art">
         <SkinFace name={name} />
       </span>
       {index !== undefined && <span className="preview-skin__index">{String(index).padStart(2, "0")}</span>}
-      {leadBadge && <span className="preview-skin__lead">{leadBadge}</span>}
-      {trailBadge && <span className="preview-skin__trail">{trailBadge}</span>}
-      <SkinLabel name={name} wear={wear} />
+      {lead && <span className="preview-skin__lead">{lead}</span>}
+      {trail && <span className="preview-skin__trail">{trail}</span>}
+      {float && <span className="preview-skin__float">{float}</span>}
+      {wear && <span className="preview-skin__wear">{wear}</span>}
     </>
   );
-  const style = { "--skin-tint": rarity } as CSSProperties;
-  const className = `preview-skin preview-skin--${variant}`;
-  if (href) {
-    return (
-      <a
-        className={className}
-        style={style}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={name}
-        onClick={(event) => event.stopPropagation()}
-      >
-        {body}
-      </a>
-    );
-  }
   return (
-    <button
-      type="button"
-      className={className}
-      style={style}
-      title={name}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick?.();
-      }}
+    <div
+      className={`preview-skin preview-skin--${variant} ${hot ? "is-hot" : ""}`}
+      style={{ "--skin-tint": rarity } as CSSProperties}
+      onMouseEnter={() => onHover?.(name)}
+      onMouseLeave={() => onHover?.(null)}
     >
-      {body}
-    </button>
+      {buyHref ? (
+        <a
+          className="preview-skin__buy"
+          href={buyHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Buy this float on the marketplace — ${name}`}
+          onClick={stop}
+        >
+          {art}
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="preview-skin__buy"
+          title={`Open the live listings for ${name}`}
+          onClick={(event) => {
+            stop(event);
+            onBuy?.();
+          }}
+        >
+          {art}
+        </button>
+      )}
+      <Link
+        className="preview-skin__label"
+        to={previewSkinHref(name)}
+        title={`${name} — skin data`}
+        onClick={stop}
+      >
+        <em>{weapon}</em>
+        <b>{finish}</b>
+      </Link>
+    </div>
   );
 }
 
 function InputTile({
-  name,
-  count,
-  unitPriceCents,
-  condition,
-  listings,
+  group,
   rarity,
   onNeedExpand,
+  hot,
+  onHover,
 }: {
-  name: string;
-  count: number;
-  unitPriceCents: number;
-  condition?: string;
-  listings: TradeUpInput[];
+  group: ReturnType<typeof uniqueInputs>[number];
   rarity: string;
   onNeedExpand: () => void;
+  hot?: boolean;
+  onHover?: (name: string | null) => void;
 }) {
-  const hrefs = inputListingHrefs(listings);
+  const hrefs = inputListingHrefs(group.listings);
+  const float = formatFloat(group.avgFloat);
+  const wear = conditionShort(group.condition ?? undefined);
   return (
     <SkinTile
-      name={name}
+      name={group.name}
       rarity={rarity}
       variant="input"
-      leadBadge={unitPriceCents > 0 ? formatDollars(unitPriceCents) : undefined}
-      trailBadge={`×${count}`}
-      wear={conditionShort(condition)}
-      onClick={() => {
+      lead={group.unitPriceCents > 0 ? formatDollars(group.unitPriceCents) : undefined}
+      trail={`×${group.count}`}
+      wear={wear}
+      float={float}
+      hot={hot}
+      onHover={onHover}
+      onBuy={() => {
         if (hrefs.length === 0) {
           onNeedExpand();
           return;
@@ -193,127 +200,101 @@ function InputTile({
   );
 }
 
-function OutputTile({ outcome, rarity }: { outcome: TradeUpOutcome; rarity: string }) {
+function OutputTile({
+  outcome,
+  rarity,
+  hot,
+  onHover,
+}: {
+  outcome: TradeUpOutcome;
+  rarity: string;
+  hot?: boolean;
+  onHover?: (name: string | null) => void;
+}) {
+  const float = formatFloat(outcome.predicted_float);
+  const wear = conditionShort(outcome.predicted_condition);
   return (
     <SkinTile
       name={outcome.skin_name}
       rarity={rarity}
       variant="output"
-      href={outputHref(outcome)}
-      leadBadge={formatDollars(outcome.estimated_price_cents)}
-      trailBadge={`${Math.round(outcome.probability * 100)}%`}
-      wear={conditionShort(outcome.predicted_condition)}
+      buyHref={outputHref(outcome)}
+      lead={formatDollars(outcome.estimated_price_cents)}
+      trail={`${Math.round(outcome.probability * 100)}%`}
+      wear={wear}
+      float={float}
+      hot={hot}
+      onHover={onHover}
     />
   );
 }
 
 /**
- * Every outcome placed on one P/L axis: x is profit, dot area is probability,
- * with the break-even, EV and median reads marked on the same scale.
+ * Slim P/L axis. One tick per outcome in output-tile order, height scaled by
+ * probability, over the loss-to-profit rail. Hovering a tile lights its tick.
  */
 function PayoffStrip({
-  points,
+  outcomes,
+  costCents,
   evCents,
-  medianCents,
   tall = false,
+  hot,
+  onHover,
 }: {
-  points: PayoffPoint[];
+  outcomes: TradeUpOutcome[];
+  costCents: number;
   evCents: number;
-  medianCents: number | null;
   tall?: boolean;
+  hot?: string | null;
+  onHover?: (name: string | null) => void;
 }) {
-  if (points.length === 0) return null;
-  const profits = points.map((point) => point.profitCents);
-  const min = Math.min(0, evCents, medianCents ?? 0, ...profits);
-  const max = Math.max(0, evCents, medianCents ?? 0, ...profits);
+  if (outcomes.length === 0) return null;
+  const profits = outcomes.map((outcome) => outcome.estimated_price_cents - costCents);
+  const min = Math.min(0, evCents, ...profits);
+  const max = Math.max(0, evCents, ...profits);
   const pad = Math.max((max - min) * 0.12, 50);
   const lo = min - pad;
   const hi = max + pad;
-  const maxP = Math.max(...points.map((point) => point.probability), 0.01);
+  const maxP = Math.max(...outcomes.map((outcome) => outcome.probability), 0.01);
   const zeroX = axisPercent(0, lo, hi);
   const evX = axisPercent(evCents, lo, hi);
-  // Two labels this close would print on top of each other; EV carries more.
-  const showZeroLabel = Math.abs(evX - zeroX) > 17;
+  const showZero = Math.abs(evX - zeroX) > 16;
   return (
-    <ChartFigure
-      title="Outcome payoff by probability"
-      description="Each outcome placed on the profit and loss axis, sized by its probability."
-      data={{
-        columns: ["Outcome", "Probability %", "P/L $"],
-        rows: points.map((point) => [point.name, Math.round(point.probability * 1000) / 10, point.profitCents / 100]),
-      }}
-    >
-      <div className={`preview-payoff ${tall ? "preview-payoff--tall" : ""}`}>
-        <div className="preview-payoff__rail" />
-        <div className="preview-payoff__axis" />
-        <div className="preview-payoff__mark is-zero" style={{ left: `${zeroX}%` }}>
-          {showZeroLabel && <span>break-even</span>}
-        </div>
-        <div className="preview-payoff__mark is-ev" style={{ left: `${evX}%` }}>
-          <span>EV {signedDollars(evCents)}</span>
-        </div>
-        {medianCents !== null && (
-          <div
-            className="preview-payoff__mark is-med"
-            style={{ left: `${axisPercent(medianCents, lo, hi)}%` }}
-            title={`Median P/L ${signedDollars(medianCents)}`}
-          />
-        )}
-        {points.map((point) => {
-          const size = 9 + (point.probability / maxP) * 13;
-          return (
-            <div
-              key={point.name}
-              className={`preview-payoff__dot ${signClass(point.profitCents)}`}
-              style={{
-                left: `${axisPercent(point.profitCents, lo, hi)}%`,
-                width: size,
-                height: size,
-              }}
-              title={`${point.name} · ${Math.round(point.probability * 100)}% · ${signedDollars(point.profitCents)}`}
-            />
-          );
-        })}
+    <div className={`preview-strip ${tall ? "preview-strip--tall" : ""}`} role="img" aria-label={`Payoff from ${signedDollars(Math.min(...profits))} to ${signedDollars(Math.max(...profits))}, expected ${signedDollars(evCents)}`}>
+      <div className="preview-strip__rail" />
+      <div className={`preview-strip__mark is-zero ${showZero ? "" : "is-bare"}`} style={{ left: `${zeroX}%` }}>
+        <span>$0</span>
       </div>
-    </ChartFigure>
+      <div className="preview-strip__mark is-ev" style={{ left: `${evX}%` }}>
+        <span>EV {signedDollars(evCents)}</span>
+      </div>
+      {outcomes.map((outcome) => {
+        const profit = outcome.estimated_price_cents - costCents;
+        return (
+          <i
+            key={outcome.skin_id + outcome.skin_name}
+            className={`preview-strip__tick ${signClass(profit)} ${hot === outcome.skin_name ? "is-hot" : ""}`}
+            style={{
+              left: `${axisPercent(profit, lo, hi)}%`,
+              height: 10 + (outcome.probability / maxP) * 8,
+            }}
+            title={`${outcome.skin_name} · ${Math.round(outcome.probability * 100)}% · ${signedDollars(profit)}`}
+            onMouseEnter={() => onHover?.(outcome.skin_name)}
+            onMouseLeave={() => onHover?.(null)}
+          />
+        );
+      })}
+    </div>
   );
 }
 
-function PayoffBars({ points, limit }: { points: PayoffPoint[]; limit?: number }) {
-  if (points.length === 0) return null;
-  const maxAbs = Math.max(1, ...points.map((point) => Math.abs(point.profitCents)));
-  const ranked = [...points].sort((a, b) => b.probability - a.probability);
-  const shown = limit ? ranked.slice(0, limit) : ranked;
-  const hidden = ranked.length - shown.length;
+function Figure({ label, note, children }: { label: string; note?: ReactNode; children: ReactNode }) {
   return (
-    <div className="preview-paybars">
-      {shown.map((point) => {
-        const width = (Math.abs(point.profitCents) / maxAbs) * 50;
-        return (
-          <div className="preview-paybar" key={point.name}>
-            <span className="preview-paybar__name" title={point.name}>{point.name}</span>
-            <span className="preview-paybar__odds">{Math.round(point.probability * 100)}%</span>
-            <div className="preview-paybar__track">
-              <i className="preview-paybar__zero" />
-              <i
-                className={`preview-paybar__fill ${signClass(point.profitCents)}`}
-                style={point.profitCents >= 0
-                  ? { left: "50%", width: `${width}%` }
-                  : { right: "50%", width: `${width}%` }}
-              />
-            </div>
-            <span className={`preview-paybar__amt ${signClass(point.profitCents)}`}>
-              {signedDollars(point.profitCents)}
-            </span>
-          </div>
-        );
-      })}
-      {hidden > 0 && (
-        <p className="preview-note">
-          +{hidden} further outcome{hidden === 1 ? "" : "s"} — expand for the full decomposition
-        </p>
-      )}
-    </div>
+    <figure className="preview-figure">
+      <figcaption className="o-kicker">{label}</figcaption>
+      {children}
+      {note && <p className="preview-note">{note}</p>}
+    </figure>
   );
 }
 
@@ -329,24 +310,14 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
   const hi = max + pad;
   const y = (value: number) => `${100 - axisPercent(value, lo, hi)}%`;
   const height = (a: number, b: number) => `${Math.max(Math.abs(axisPercent(a, lo, hi) - axisPercent(b, lo, hi)), 0.8)}%`;
-  const columns = bars.length + 1;
   return (
-    <ChartFigure
-      title="EV contribution by outcome"
-      description="Probability-weighted profit and loss of each outcome, walked to total EV."
-      captionVisible
-      captionClassName="preview-panel__title"
-      className="preview-figure--fill"
-      plotClassName="preview-plot--fill"
-      data={{
-        columns: ["Outcome", "Probability %", "EV contribution $"],
-        rows: [
-          ...bars.map((bar) => [bar.name, Math.round(bar.probability * 1000) / 10, bar.evContributionCents / 100]),
-          ["Total EV", 100, totalEvCents / 100],
-        ],
-      }}
-    >
-      <div className="preview-wf" style={{ "--wf-cols": columns } as CSSProperties}>
+    <Figure label="EV contribution by outcome">
+      <div
+        className="preview-wf"
+        style={{ "--wf-cols": bars.length + 1 } as CSSProperties}
+        role="img"
+        aria-label={`Cumulative expected value walk closing on ${signedDollars(totalEvCents)}`}
+      >
         <div className="preview-wf__plot">
           <i className="preview-wf__grid" style={{ top: y(max) }} />
           <i className="preview-wf__zero" style={{ top: y(0) }} />
@@ -368,7 +339,7 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
               </div>
             );
           })}
-          <div className="preview-wf__col is-total" style={{ "--wf-i": bars.length } as CSSProperties}>
+          <div className="preview-wf__col" style={{ "--wf-i": bars.length } as CSSProperties}>
             <i
               className={`preview-wf__bar is-total ${signClass(totalEvCents)}`}
               style={{ top: y(Math.max(0, totalEvCents)), height: height(0, totalEvCents) }}
@@ -385,7 +356,7 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
           <span className="is-total">Total EV</span>
         </div>
       </div>
-    </ChartFigure>
+    </Figure>
   );
 }
 
@@ -398,25 +369,19 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   const span = Math.max(...xs) - Math.min(...xs);
   // A $0.60-wide P/L range rounded to whole dollars prints "+$9" four times.
   const decimals = span >= 40 ? 0 : span >= 4 ? 1 : 2;
-  const money = (value: number) =>
-    `${value < 0 ? "-" : "+"}$${Math.abs(value).toFixed(decimals)}`;
+  const money = (value: number) => `${value < 0 ? "-" : "+"}$${Math.abs(value).toFixed(decimals)}`;
   return (
-    <ChartFigure
-      title="Probability of clearing a P/L"
-      description={`Step curve of P(return ≥ x). Chance of profit ${pProfit}%.`}
-      captionVisible
-      captionClassName="preview-panel__title"
-      className="preview-figure--fill"
-      plotClassName="preview-plot--fill"
-      data={{ columns: ["P/L $", "P ≥ x %"], rows: data.map((row) => [row.x, row.p]) }}
+    <Figure
+      label="Probability of clearing a P/L"
+      note={<>Break-even or better on <b>{pProfit}%</b> of rolls.</>}
     >
-      <div className="preview-cdf">
+      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit} percent.`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="pv-cdf-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--series-2)" stopOpacity={0.55} />
-                <stop offset="100%" stopColor="var(--series-2)" stopOpacity={0.06} />
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.5} />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.04} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="var(--line-soft)" />
@@ -440,22 +405,19 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
               axisLine={false}
               tickLine={false}
             />
-            <ReferenceLine x={0} stroke="var(--line-hard)" strokeDasharray="3 3" />
+            <ReferenceLine x={0} stroke="var(--loss)" strokeDasharray="3 3" />
             <Area
               type="stepAfter"
               dataKey="p"
-              stroke="var(--series-2)"
+              stroke="var(--profit-edge)"
               strokeWidth={2.5}
               fill="url(#pv-cdf-fill)"
               isAnimationActive={false}
             />
           </AreaChart>
         </ResponsiveContainer>
-        <p className="preview-note">
-          Break-even or better on <b>{pProfit}%</b> of rolls.
-        </p>
       </div>
-    </ChartFigure>
+    </Figure>
   );
 }
 
@@ -472,12 +434,14 @@ function Readout({ label, value, note, tone }: { label: string; value: string; n
 function RankedList({ title, points, empty }: { title: string; points: PayoffPoint[]; empty: string }) {
   return (
     <div className="preview-rank">
-      <p className="preview-panel__title">{title}</p>
+      <p className="o-kicker">{title}</p>
       {points.length === 0 && <p className="preview-note">{empty}</p>}
       {points.map((point, index) => (
         <div className="preview-rank__row" key={`${title}-${point.name}`}>
           <span className="preview-rank__n">{index + 1}</span>
-          <span className="preview-rank__name" title={point.name}>{point.name}</span>
+          <Link className="preview-rank__name" to={previewSkinHref(point.name)} title={point.name} onClick={stop}>
+            {point.name}
+          </Link>
           <span className="preview-rank__odds">{Math.round(point.probability * 100)}%</span>
           <span className={`preview-rank__amt ${signClass(point.evContributionCents)}`}>
             {signedDollars(point.evContributionCents)}
@@ -500,14 +464,23 @@ function ListingRow({ input, index }: { input: TradeUpInput; index: number }) {
     input.stattrak,
   );
   const { weapon, finish } = splitSkinName(input.skin_name);
+  const float = formatFloat(input.float_value);
   return (
-    <a className="preview-listing" href={href} target="_blank" rel="noopener noreferrer">
+    <a
+      className="preview-listing"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={stop}
+      title={typeof input.float_value === "number" ? `Float ${input.float_value}` : undefined}
+    >
       <span className="preview-listing__n">{String(index + 1).padStart(2, "0")}</span>
       <span className="preview-listing__name">
         {weapon && <em>{weapon}</em>}
         <b>{finish}</b>
       </span>
-      <span className="preview-chip" data-source={input.source}>{sourceLabel(input.source)}</span>
+      <span className="preview-chip">{sourceLabel(input.source)}</span>
+      <span className="preview-listing__float">{float ?? "—"}</span>
       <span className="preview-listing__price">{formatDollars(input.price_cents)}</span>
       <ExternalLink size={11} aria-hidden />
     </a>
@@ -523,7 +496,7 @@ function Panel({ title, meta, children, className }: {
   return (
     <section className={`preview-panel ${className ?? ""}`}>
       <header className="preview-panel__head">
-        <p className="preview-panel__title">{title}</p>
+        <p className="o-kicker">{title}</p>
         {meta && <span className="preview-panel__meta">{meta}</span>}
       </header>
       {children}
@@ -540,6 +513,7 @@ export function TradeUpCard({
   expanded: boolean;
   onExpand: (id: number | null) => void;
 }) {
+  const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
   const outputs = uniqueOutputs(tu);
   const points = payoffPoints(tu);
@@ -555,75 +529,18 @@ export function TradeUpCard({
   const { drivers, drags } = evDrivers(points, 4);
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
-
-  const figures = (
-    <div className="preview-figures">
-      <div>
-        <em>Cost</em>
-        <b>{formatDollars(inputCostCents(tu))}</b>
-      </div>
-      <div>
-        <em>EV</em>
-        <b>{formatDollars(tu.expected_value_cents)}</b>
-      </div>
-      <div className="preview-figures__profit">
-        <em>Profit</em>
-        <b className={signClass(tu.profit_cents)}>
-          {signedDollars(tu.profit_cents)}
-          <small>{tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}% ROI</small>
-        </b>
-      </div>
-    </div>
-  );
+  const toggle = () => onExpand(expanded ? null : tu.id);
 
   return (
     <article
       className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""}`}
-      style={{ "--card-tint": outColor } as CSSProperties}
+      onClick={toggle}
     >
-      <header className="preview-card__head">
-        <span className="preview-rarity" style={{ "--skin-tint": outColor } as CSSProperties}>
-          <i />
-          {rarityLabel(tu.type)}
-        </span>
-        <span className="preview-card__flow">
-          <span style={{ color: inColor }}>{inputRarityLabel(tu.type)}</span>
-          <ArrowRight size={11} aria-hidden />
-          <span style={{ color: outColor }}>{rarityLabel(tu.type)}</span>
-        </span>
-        {expanded && figures}
-        <button
-          type="button"
-          className="preview-btn preview-btn--quiet"
-          onClick={() => onExpand(expanded ? null : tu.id)}
-        >
-          {expanded ? "Collapse" : "Expand"}
-        </button>
-      </header>
+      <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
+        {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
+      </button>
 
-      {!expanded && figures}
-
-      {!expanded && (
-        <p className="preview-substats">
-          <span>Chance of profit <b>{chance === null ? "—" : `${Math.round(chance * 100)}%`}</b></span>
-          <span>Median <b className={median === null ? "" : signClass(median)}>{median === null ? "—" : signedDollars(median)}</b></span>
-          <span>Worst <b className={worst === null ? "" : signClass(worst)}>{worst === null ? "—" : signedDollars(worst)}</b></span>
-          <span>Best <b className={best === null ? "" : signClass(best)}>{best === null ? "—" : signedDollars(best)}</b></span>
-        </p>
-      )}
-
-      {points.length > 0 ? (
-        <>
-          <PayoffStrip points={points} evCents={evPnL} medianCents={median} tall={expanded} />
-          {!expanded && <PayoffBars points={points} limit={COLLAPSED_BARS} />}
-        </>
-      ) : (
-        <div className="preview-payoff preview-payoff--empty">
-          <span className="preview-note">Outcomes loading…</span>
-        </div>
-      )}
-
-      {!expanded && inputs.length > 0 && (
+      {inputs.length > 0 && (
         <div className="preview-lane">
           <p className="preview-lane__label">
             {inputRarityLabel(tu.type)} inputs<i style={{ background: inColor }} />
@@ -632,29 +549,65 @@ export function TradeUpCard({
             {inputs.map((group) => (
               <InputTile
                 key={group.name}
-                name={group.name}
-                count={group.count}
-                unitPriceCents={group.unitPriceCents}
-                condition={group.listings[0]?.condition}
-                listings={group.listings}
+                group={group}
                 rarity={inColor}
+                hot={hot === group.name}
+                onHover={setHot}
                 onNeedExpand={() => onExpand(tu.id)}
               />
             ))}
           </div>
         </div>
       )}
-      {!expanded && outputs.length > 0 && (
+
+      {outputs.length > 0 && (
         <div className="preview-lane">
           <p className="preview-lane__label">
             {rarityLabel(tu.type)} outputs<i style={{ background: outColor }} />
           </p>
           <div className="preview-skins preview-skins--out">
             {outputs.map((outcome) => (
-              <OutputTile key={outcome.skin_id + outcome.skin_name} outcome={outcome} rarity={outColor} />
+              <OutputTile
+                key={outcome.skin_id + outcome.skin_name}
+                outcome={outcome}
+                rarity={outColor}
+                hot={hot === outcome.skin_name}
+                onHover={setHot}
+              />
             ))}
           </div>
         </div>
+      )}
+
+      {outputs.length > 0 ? (
+        <PayoffStrip
+          outcomes={outputs}
+          costCents={tu.total_cost_cents}
+          evCents={evPnL}
+          tall={expanded}
+          hot={hot}
+          onHover={setHot}
+        />
+      ) : (
+        <div className="preview-strip preview-strip--empty">
+          <span className="preview-note">Outcomes loading…</span>
+        </div>
+      )}
+
+      {!expanded && (
+        <p className="preview-cardline">
+          Cost <b>{formatDollars(inputCostCents(tu))}</b>
+          <i />
+          <b className={signClass(tu.profit_cents)}>
+            {signedDollars(tu.profit_cents)} / {tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}%
+          </b>
+          {chance !== null && (
+            <>
+              <i />
+              {Math.round(chance * 100)}% chance of profit
+            </>
+          )}
+        </p>
       )}
 
       <AnimatePresence initial={false}>
@@ -671,7 +624,7 @@ export function TradeUpCard({
               <Panel
                 className="preview-expand__inputs"
                 title="Inputs"
-                meta={`${totals.count || inputs.reduce((sum, group) => sum + group.count, 0)} skins · ${formatDollars(inputCostCents(tu))}`}
+                meta={`${totals.count || inputs.reduce((sum, group) => sum + group.count, 0)} skins`}
               >
                 <div className="preview-skins preview-skins--in preview-skins--compact">
                   {orderedInputs.length > 0
@@ -682,9 +635,10 @@ export function TradeUpCard({
                           rarity={inColor}
                           variant="input"
                           index={index + 1}
-                          leadBadge={formatDollars(row.price_cents)}
+                          lead={formatDollars(row.price_cents)}
                           wear={conditionShort(row.condition)}
-                          href={listingUrl(
+                          float={formatFloat(row.float_value)}
+                          buyHref={listingUrl(
                             row.listing_id,
                             row.skin_name,
                             row.condition,
@@ -699,26 +653,18 @@ export function TradeUpCard({
                     : inputs.map((group) => (
                         <InputTile
                           key={group.name}
-                          name={group.name}
-                          count={group.count}
-                          unitPriceCents={group.unitPriceCents}
-                          condition={group.listings[0]?.condition}
-                          listings={group.listings}
+                          group={group}
                           rarity={inColor}
                           onNeedExpand={() => onExpand(tu.id)}
                         />
                       ))}
                 </div>
-                <p className="preview-panel__title preview-panel__title--sub">Outputs</p>
-                <div className="preview-skins preview-skins--out">
-                  {outputs.map((outcome) => (
-                    <OutputTile key={outcome.skin_id + outcome.skin_name} outcome={outcome} rarity={outColor} />
-                  ))}
-                </div>
               </Panel>
 
               <div className="preview-expand__viz">
                 <div className="preview-readouts">
+                  <Readout label="Cost" value={formatDollars(inputCostCents(tu))} note={`${totals.count || 10} listings`} />
+                  <Readout label="Expected value" value={formatDollars(tu.expected_value_cents)} note="probability-weighted" />
                   <Readout label="Expected P/L" value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
                   <Readout label="Median P/L" value={median === null ? "—" : signedDollars(median)} note="50th percentile" tone={median === null ? "" : signClass(median)} />
                   <Readout label="Chance of profit" value={chance === null ? "—" : `${Math.round(chance * 100)}%`} note="P(P/L > $0)" />
@@ -765,6 +711,7 @@ export function TradeUpCard({
                   href={verifyClaimHref(tu.id)}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={stop}
                 >
                   Verify / Claim trade-up
                 </a>
@@ -800,13 +747,13 @@ export function PreviewBoard({
   const cols = bentoColumns(width);
 
   return (
-    <div className="preview-board">
-      <header className="preview-board__head">
+    <div className="preview-page">
+      <header className="preview-page__head">
         <div>
           <h1>Live trade-ups</h1>
           <p>Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.</p>
         </div>
-        <div className="preview-board__meta">
+        <div className="preview-page__meta">
           <span>{tradeUps.length} ranked</span>
           <i />
           <span>{cols}-column</span>
@@ -826,19 +773,6 @@ export function PreviewBoard({
       </div>
     </div>
   );
-}
-
-/** Warms the shared face cache for a fixed set of names (landing device mock). */
-export function useFaces(names: string[]): void {
-  const key = faceCacheKey(names);
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    void loadFaces(namesFromCacheKey(key), FACE_CACHE).then(() => {
-      if (live) setTick((tick) => tick + 1);
-    });
-    return () => { live = false; };
-  }, [key]);
 }
 
 async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {

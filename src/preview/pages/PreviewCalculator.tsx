@@ -1,8 +1,16 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
-import { outputHref } from "../lib/board.js";
+import {
+  conditionShort,
+  formatFloat,
+  outputHref,
+  outputRarityColor,
+  previewSkinHref,
+  splitSkinName,
+} from "../lib/board.js";
 
 interface SearchResult {
   name: string;
@@ -102,16 +110,19 @@ export function PreviewCalculator() {
     }
   };
 
+  const profit = result ? result.profit_cents : 0;
+
   return (
-    <div className="preview-board">
-      <h1 className="text-2xl font-semibold tracking-tight">Calculator</h1>
-      <p className="text-sm mt-1 mb-4" style={{ color: "var(--text-muted)" }}>
-        Same live calculator API as production. Add skins, then evaluate the trade-up.
-      </p>
-      <div className="flex flex-wrap gap-2 mb-4">
+    <div className="preview-page">
+      <header className="preview-page__head">
+        <div>
+          <h1>Calculator</h1>
+          <p>Same live calculator API as production. Add skins, then evaluate the trade-up.</p>
+        </div>
+      </header>
+      <div className="preview-toolbar">
         <input
-          className="o-input"
-          style={{ minWidth: 240 }}
+          className="preview-input"
           value={query}
           placeholder="Search a skin"
           onChange={(event) => {
@@ -129,52 +140,88 @@ export function PreviewCalculator() {
         </button>
       </div>
       {results.length > 0 && (
-        <ul className="preview-listings mb-4">
+        <div className="preview-rows">
           {results.slice(0, 8).map((item) => (
-            <li key={item.name}>
-              <button type="button" className="preview-listing w-full text-left" onClick={() => addResult(item)}>
-                <span>{item.name}</span>
-                <span className="ml-auto" style={{ color: "var(--text-muted)" }}>{item.rarity}</span>
-              </button>
-            </li>
+            <button type="button" key={item.name} className="preview-row" onClick={() => addResult(item)}>
+              <span className="preview-row__name">{item.name}</span>
+              <span className="preview-chip">{item.rarity}</span>
+              <span className="preview-row__num">
+                {item.floor_price_cents === null ? "—" : formatDollars(item.floor_price_cents)}
+              </span>
+            </button>
           ))}
-        </ul>
+        </div>
       )}
-      <div className="preview-listings mb-4">
-        {slots.filter((slot) => slot.resolved).map((slot, i) => (
-          <div key={`${slot.skinName}-${i}`} className="preview-listing">
-            <span className="truncate">{slot.skinName}</span>
-            <span className="tabular-nums">{slot.floatValue}</span>
-            <span className="ml-auto tabular-nums">{formatDollars(parseInt(slot.priceCents, 10) || 0)}</span>
-          </div>
-        ))}
-      </div>
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
+      <section className="preview-panel">
+        <header className="preview-panel__head">
+          <p className="o-kicker">Inputs</p>
+          <span className="preview-panel__meta">{slots.filter((slot) => slot.resolved).length} / 10</span>
+        </header>
+        <div className="preview-listings">
+          {slots.filter((slot) => slot.resolved).map((slot, i) => (
+            <div key={`${slot.skinName}-${i}`} className="preview-listing">
+              <span className="preview-listing__n">{String(i + 1).padStart(2, "0")}</span>
+              <span className="preview-listing__name"><b>{slot.skinName}</b></span>
+              <span className="preview-chip">input</span>
+              <span className="preview-listing__float">
+                {formatFloat(parseFloat(slot.floatValue)) ?? "—"}
+              </span>
+              <span className="preview-listing__price">{formatDollars(parseInt(slot.priceCents, 10) || 0)}</span>
+              <span />
+            </div>
+          ))}
+          {slots.every((slot) => !slot.resolved) && (
+            <p className="preview-note">Search a skin above, or load the worked example.</p>
+          )}
+        </div>
+      </section>
+      {error && <p className="preview-error">{error}</p>}
       {result && (
-        <div className="preview-kpis mb-4">
-          <div className="preview-kpi"><em>Cost</em><b>{formatDollars(result.total_cost_cents)}</b></div>
-          <div className="preview-kpi"><em>EV</em><b>{formatDollars(result.expected_value_cents)}</b></div>
-          <div className="preview-kpi"><em>Profit</em><b>{formatDollars(result.profit_cents)}</b></div>
-          <div className="preview-kpi"><em>Chance</em><b>{stats ? `${Math.round(stats.chance_to_profit * 100)}%` : "—"}</b></div>
+        <div className="preview-readouts">
+          <Readout label="Cost" value={formatDollars(result.total_cost_cents)} />
+          <Readout label="Expected value" value={formatDollars(result.expected_value_cents)} />
+          <Readout label="Profit" value={formatDollars(profit)} tone={profit >= 0 ? "is-plus" : "is-minus"} />
+          <Readout label="Chance of profit" value={stats ? `${Math.round(stats.chance_to_profit * 100)}%` : "—"} />
         </div>
       )}
       {result && (
         <div className="preview-skins preview-skins--out">
           {result.outcomes.map((outcome: TradeUpOutcome) => (
-            <a
+            <div
               key={outcome.skin_id + outcome.skin_name}
               className="preview-skin preview-skin--output"
-              href={outputHref(outcome)}
-              target="_blank"
-              rel="noopener noreferrer"
+              style={{ "--skin-tint": outputRarityColor(result.type) } as CSSProperties}
             >
-              <span className="preview-skin__price">{formatDollars(outcome.estimated_price_cents)}</span>
-              <span className="preview-skin__odds">{Math.round(outcome.probability * 100)}%</span>
-              <span className="preview-skin__name">{outcome.skin_name}</span>
-            </a>
+              <a
+                className="preview-skin__buy"
+                href={outputHref(outcome)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Buy ${outcome.skin_name} on the marketplace`}
+              >
+                <span className="preview-skin__art" />
+                <span className="preview-skin__lead">{formatDollars(outcome.estimated_price_cents)}</span>
+                <span className="preview-skin__trail">{Math.round(outcome.probability * 100)}%</span>
+              </a>
+              <Link className="preview-skin__label" to={previewSkinHref(outcome.skin_name)}>
+                <em>
+                  {conditionShort(outcome.predicted_condition)} {formatFloat(outcome.predicted_float)}
+                </em>
+                <b>{splitSkinName(outcome.skin_name).finish}</b>
+              </Link>
+            </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function Readout({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="preview-readout">
+      <em>{label}</em>
+      <b className={tone}>{value}</b>
     </div>
   );
 }

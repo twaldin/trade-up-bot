@@ -22,7 +22,7 @@ async function setMode(page, mode) {
 }
 
 async function boardReady(page) {
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   // outcomes hydrate after the first paint
   await page.waitForFunction(
@@ -54,11 +54,11 @@ try {
 
   // expanded row, dark
   await setMode(page, "dark");
+  // the card itself is the toggle now — no header button
   const expanded = await page.evaluate(() => {
-    const btn = [...document.querySelectorAll(".preview-card button")]
-      .find((b) => b.textContent.trim() === "Expand");
-    if (!btn) return false;
-    btn.click();
+    const card = document.querySelector(".preview-card");
+    if (!card) return false;
+    card.click();
     return true;
   });
   if (expanded) {
@@ -82,7 +82,7 @@ try {
   }
 
   // landing
-  await page.goto(`${BASE}/preview`, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.goto(`${BASE}/preview`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await sleep(2500);
   await setMode(page, "dark");
   await page.screenshot({ path: shot("landing-laptop") });

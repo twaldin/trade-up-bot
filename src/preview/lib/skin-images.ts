@@ -50,8 +50,7 @@ export function namesFromCacheKey(key: string): string[] {
 }
 
 export function facesRequestUrl(names: string[]): string {
-  const unique = [...new Set(names.filter(Boolean))].sort();
-  return `/api/preview/faces?names=${encodeURIComponent(unique.join("||"))}`;
+  return `/api/preview/faces?names=${encodeURIComponent(namesFromCacheKey(faceCacheKey(names)).join("||"))}`;
 }
 
 function extractStoredImage(html: string): string | null {
@@ -70,7 +69,7 @@ export async function loadFaces(
   cache: FaceMap,
   fetchFn: typeof fetch = fetch,
 ): Promise<FaceMap> {
-  const missing = names.filter((name) => name && !cache.has(name));
+  const missing = namesFromCacheKey(faceCacheKey(names)).filter((name) => !cache.has(name));
   if (missing.length === 0) return cache;
 
   let facesMissing = false;

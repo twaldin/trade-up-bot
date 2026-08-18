@@ -19,7 +19,7 @@ try {
   browser.on("targetcreated", async (target) => {
     if (target.type() === "page") opened.push(target.url());
   });
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-skin--output", { timeout: 60000 });
   await sleep(2500);
 
@@ -46,17 +46,15 @@ try {
   if (/skin not found/i.test(outBody)) failures.push("output href says skin not found");
 
   // 3. expand -> verify/claim + listing rows
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   await sleep(2500);
-  await page.evaluate(() => {
-    [...document.querySelectorAll(".preview-card button")].find((b) => b.textContent.trim() === "Expand")?.click();
-  });
+  await page.evaluate(() => { document.querySelector(".preview-card")?.click(); });
   await sleep(3000);
   const expandInfo = await page.evaluate(() => {
     const card = document.querySelector(".preview-card--expanded");
     return {
-      hasStrip: !!card?.querySelector(".preview-payoff--tall"),
+      hasStrip: !!card?.querySelector(".preview-strip--tall"),
       hasWaterfall: !!card?.querySelector(".preview-wf"),
       hasCdf: !!card?.querySelector(".preview-cdf"),
       listings: card?.querySelectorAll(".preview-listing").length ?? 0,

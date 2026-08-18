@@ -1,8 +1,11 @@
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
-import { toSlug } from "../../../shared/slugs.js";
+import { collectionToSlug, toSlug } from "../../../shared/slugs.js";
 import { csfloatSearchUrl, listingUrl } from "../../utils/format.js";
 
 export const PREVIEW_PROD_ORIGIN = "https://tradeupbot.app";
+
+/** Marketplaces publish four decimals; the 14-digit inspect float is hover only. */
+export const FLOAT_DP = 4;
 
 const CONSUMER = "#b0c3d9";
 const INDUSTRIAL = "#5e98d9";
@@ -21,6 +24,9 @@ export type InputGroup = {
   count: number;
   listings: TradeUpInput[];
   unitPriceCents: number;
+  /** Mean float of the group's listings. Null until the listings hydrate. */
+  avgFloat: number | null;
+  condition: string | null;
 };
 
 export type PayoffPoint = {
@@ -101,6 +107,15 @@ export function prodSkinHref(skinName: string): string {
   return `${PREVIEW_PROD_ORIGIN}/skins/${toSlug(skinName)}`;
 }
 
+/** Skin data page inside the preview shell — never an unprefixed /skins/ 404. */
+export function previewSkinHref(skinName: string): string {
+  return `/preview/skins/${toSlug(skinName)}`;
+}
+
+export function previewCollectionHref(collectionName: string): string {
+  return `/preview/collections/${collectionToSlug(collectionName)}`;
+}
+
 /** Marketplace float/price URL when we have one; otherwise the prod skin page. Never a local /skins path. */
 export function outputHref(outcome: TradeUpOutcome): string {
   const market = outcome.sell_marketplace;
@@ -158,6 +173,21 @@ function unitPrice(listings: TradeUpInput[]): number {
   return Math.round(listings.reduce((sum, row) => sum + row.price_cents, 0) / listings.length);
 }
 
+/** Mean float of a group. Null rather than 0 when the listings are not loaded. */
+export function averageFloat(listings: TradeUpInput[]): number | null {
+  const floats = listings
+    .map((row) => row.float_value)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (floats.length === 0) return null;
+  return floats.reduce((sum, value) => sum + value, 0) / floats.length;
+}
+
+/** Four decimals, the number every marketplace prints. Null stays null. */
+export function formatFloat(value: number | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value.toFixed(FLOAT_DP);
+}
+
 export function uniqueInputs(tu: TradeUp): InputGroup[] {
   if (tu.inputs.length > 0) {
     const map = new Map<string, InputGroup>();
@@ -167,8 +197,16 @@ export function uniqueInputs(tu: TradeUp): InputGroup[] {
         existing.count += 1;
         existing.listings.push(row);
         existing.unitPriceCents = unitPrice(existing.listings);
+        existing.avgFloat = averageFloat(existing.listings);
       } else {
-        map.set(row.skin_name, { name: row.skin_name, count: 1, listings: [row], unitPriceCents: row.price_cents });
+        map.set(row.skin_name, {
+          name: row.skin_name,
+          count: 1,
+          listings: [row],
+          unitPriceCents: row.price_cents,
+          avgFloat: averageFloat([row]),
+          condition: row.condition ?? null,
+        });
       }
     }
     return [...map.values()].sort((a, b) => b.count - a.count);
@@ -178,6 +216,8 @@ export function uniqueInputs(tu: TradeUp): InputGroup[] {
     count: skin.count,
     listings: [],
     unitPriceCents: 0,
+    avgFloat: null,
+    condition: skin.condition ?? null,
   }));
 }
 
@@ -348,6 +388,22 @@ export function outputRarityColor(type: string | undefined): string {
     case "consumer_industrial": return INDUSTRIAL;
     case "staircase": return KNIFE;
     default: return INDUSTRIAL;
+  }
+}
+
+/** CS2 rarity name (as the data API spells it) → its tile tint. Never lime. */
+export function rarityTint(rarity: string | undefined): string {
+  switch (rarity) {
+    case "Consumer Grade": return CONSUMER;
+    case "Industrial Grade": return INDUSTRIAL;
+    case "Mil-Spec Grade":
+    case "Mil-Spec": return MILSPEC;
+    case "Restricted": return RESTRICTED;
+    case "Classified": return CLASSIFIED;
+    case "Covert": return COVERT;
+    case "Extraordinary":
+    case "Contraband": return KNIFE;
+    default: return CONSUMER;
   }
 }
 

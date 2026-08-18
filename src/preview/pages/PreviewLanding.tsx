@@ -19,27 +19,45 @@ interface GlobalStats {
   total_cycles: number;
 }
 
-export function PreviewLanding({ stats }: { stats: GlobalStats | null }) {
+const VALUE = [
+  ["Real listings", "Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market."],
+  ["Verify before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
+  ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
+] as const;
+
+const STEPS = [
+  ["01", "Scan", "Listings pulled from CSFloat, DMarket, Skinport, and Buff.market every cycle. Continuous DMarket coverage at 2 req/s."],
+  ["02", "Discover", "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle."],
+  ["03", "Claim", "Pro users see results instantly. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy."],
+] as const;
+
+export function PreviewLanding({
+  stats,
+  mode = "dark",
+}: {
+  stats: GlobalStats | null;
+  mode?: "light" | "dark";
+}) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
 
   return (
     <main id="main">
       <section className="preview-hero">
-        <p className="o-arrive" style={{ color: "var(--text-muted)", fontSize: 12, "--stagger": 0 } as CSSProperties}>
+        <p className="o-kicker o-arrive" style={{ "--stagger": 0 } as CSSProperties}>
           Live listings · CSFloat · DMarket · Skinport · Buff.market
         </p>
         <h1 className="o-arrive" style={{ "--stagger": 1 } as CSSProperties}>{PREVIEW_HEADLINE}</h1>
-        <p className="o-arrive mt-5 text-[1.05rem] leading-relaxed" style={{ "--stagger": 2 } as CSSProperties}>
+        <p className="preview-hero__lede o-arrive" style={{ "--stagger": 2 } as CSSProperties}>
           {PREVIEW_LEDE}
         </p>
-        <p className="o-arrive mt-3 text-sm" style={{ "--stagger": 3 } as CSSProperties}>
+        <p className="preview-hero__sub o-arrive" style={{ "--stagger": 3 } as CSSProperties}>
           {PREVIEW_SUBLEDE}
         </p>
-        <div className="o-arrive mt-7 flex flex-wrap gap-3" style={{ "--stagger": 4 } as CSSProperties}>
-          <Link to="/preview/trade-ups" className="preview-btn preview-btn--lime">
-            Open the console →
+        <div className="preview-toolbar o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
+          <Link to="/preview/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
+            Open the console
           </Link>
-          <a href="#how" className="preview-btn preview-btn--ghost">How it works</a>
+          <a href="#how" className="preview-btn preview-btn--lg">How it works</a>
         </div>
         {stats && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 5 } as CSSProperties}>
@@ -51,59 +69,54 @@ export function PreviewLanding({ stats }: { stats: GlobalStats | null }) {
         )}
       </section>
 
-      <div className="preview-laptop px-6">
+      <div className="preview-laptop">
         <Laptop>
-          <DeviceScreen />
+          <DeviceScreen mode={mode} />
         </Laptop>
       </div>
-      <div className="preview-phone px-6">
+      <div className="preview-phone">
         <Phone>
-          <DeviceScreen compact />
+          <DeviceScreen compact mode={mode} />
         </Phone>
       </div>
 
-      <section className="preview-section" style={{ background: "var(--panel)" }}>
-        <h2 className="text-3xl font-semibold tracking-tight mb-3">{PREVIEW_VALUE_HEADLINE}</h2>
-        <p className="max-w-2xl" style={{ color: "var(--text-muted)" }}>
+      <section className="preview-section preview-section--band">
+        <p className="o-kicker">What you get</p>
+        <h2>{PREVIEW_VALUE_HEADLINE}</h2>
+        <p className="preview-section__lede">
           Costs come from live listings, not price averages. Click any input to open the listing and buy it.
         </p>
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {[
-            ["Real listings", "Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market."],
-            ["Verify before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
-            ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
-          ].map(([title, body]) => (
+        <div className="preview-tiles">
+          {VALUE.map(([title, body]) => (
             <article key={title} className="preview-tile">
-              <h3 className="font-semibold">{title}</h3>
-              <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>{body}</p>
+              <h3>{title}</h3>
+              <p>{body}</p>
             </article>
           ))}
         </div>
       </section>
 
       <section ref={pinRef} className="preview-section" id="how">
-        <h2 className="text-3xl font-semibold tracking-tight mb-10">How it works</h2>
-        <div className="grid gap-8 md:grid-cols-3">
-          {[
-            ["01", "Scan", "Listings pulled from CSFloat, DMarket, Skinport, and Buff.market every cycle. Continuous DMarket coverage at 2 req/s."],
-            ["02", "Discover", "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle."],
-            ["03", "Claim", "Pro users see results instantly. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy."],
-          ].map(([n, title, desc]) => (
-            <div key={n}>
-              <div className="text-xs mb-2" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{n}</div>
-              <h3 className="font-semibold mb-2">{title}</h3>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>{desc}</p>
+        <p className="o-kicker">Pipeline</p>
+        <h2>How it works</h2>
+        <div className="preview-steps">
+          {STEPS.map(([n, title, desc]) => (
+            <div key={n} className="preview-step">
+              <span className="preview-step__n">{n}</span>
+              <h3>{title}</h3>
+              <p>{desc}</p>
             </div>
           ))}
         </div>
       </section>
 
       <section id="faq" className="preview-section preview-faq">
-        <h2 className="text-3xl font-semibold tracking-tight mb-8">Frequently Asked Questions</h2>
+        <p className="o-kicker">FAQ</p>
+        <h2>Frequently asked questions</h2>
         {PREVIEW_FAQ.map((item) => (
           <details key={item.q}>
             <summary>{item.q}</summary>
-            <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>{item.a}</p>
+            <p>{item.a}</p>
           </details>
         ))}
       </section>

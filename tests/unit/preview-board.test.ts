@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
+  averageFloat,
   cdfCurve,
   chanceOfProfit,
   conditionShort,
+  formatFloat,
+  previewCollectionHref,
+  previewSkinHref,
   evDrivers,
   evWaterfall,
   inputCostCents,
@@ -348,6 +352,57 @@ describe("preview tile labels", () => {
     expect(conditionShort("Well-Worn")).toBe("WW");
     expect(conditionShort("Battle-Scarred")).toBe("BS");
     expect(conditionShort("")).toBe("");
+  });
+});
+
+describe("preview float and price on inputs", () => {
+  it("averages price and float across a grouped input's listings", () => {
+    const tu = makeTradeUp({
+      inputs: [
+        input({ listing_id: "a1", skin_name: "Skin A", price_cents: 500, float_value: 0.0691 }),
+        input({ listing_id: "a2", skin_name: "Skin A", price_cents: 520, float_value: 0.0695 }),
+        input({ listing_id: "b1", skin_name: "Skin B", price_cents: 300, float_value: 0.4 }),
+      ],
+    });
+    const group = uniqueInputs(tu).find((row) => row.name === "Skin A");
+    expect(group?.unitPriceCents).toBe(510);
+    expect(formatFloat(group?.avgFloat)).toBe("0.0693");
+    expect(group?.condition).toBe("Field-Tested");
+  });
+
+  it("omits the average float instead of inventing 0 before listings hydrate", () => {
+    const tu = makeTradeUp({
+      inputs: [],
+      input_summary: {
+        input_count: 10,
+        collections: ["A"],
+        skins: [{ name: "Skin A", count: 10, condition: "Well-Worn" }],
+      },
+    });
+    const group = uniqueInputs(tu)[0];
+    expect(group?.avgFloat).toBeNull();
+    expect(formatFloat(group?.avgFloat)).toBeNull();
+    expect(averageFloat([])).toBeNull();
+  });
+
+  it("prints four decimals, the number the marketplaces print", () => {
+    expect(formatFloat(0.06931234567)).toBe("0.0693");
+    expect(formatFloat(0)).toBe("0.0000");
+    expect(formatFloat(undefined)).toBeNull();
+    expect(formatFloat(Number.NaN)).toBeNull();
+  });
+});
+
+describe("preview in-shell data pages", () => {
+  it("links skin names into the preview shell, never an unprefixed /skins path", () => {
+    expect(previewSkinHref("AK-47 | Nightwish")).toBe("/preview/skins/ak-47-nightwish");
+    expect(previewSkinHref("AK-47 | Nightwish").startsWith("/preview/")).toBe(true);
+  });
+
+  it("links collections into the preview shell", () => {
+    const href = previewCollectionHref("The Dreams & Nightmares Collection");
+    expect(href.startsWith("/preview/collections/")).toBe(true);
+    expect(href).not.toContain(" ");
   });
 });
 

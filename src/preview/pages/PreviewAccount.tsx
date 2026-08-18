@@ -46,36 +46,60 @@ export function PreviewAccount() {
   }, [user]);
 
   return (
-    <div className="preview-board">
-      <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
-      <p className="text-sm mt-1 mb-4" style={{ color: "var(--text-muted)" }}>
-        Live auth and claims APIs, rendered in the preview shell.
-      </p>
-      {user === undefined && <p style={{ color: "var(--text-muted)" }}>Checking session…</p>}
+    <div className="preview-page">
+      <header className="preview-page__head">
+        <div>
+          <h1>Account</h1>
+          <p>Live auth and claims APIs, rendered in the preview shell.</p>
+        </div>
+      </header>
+      {user === undefined && <p className="preview-note">Checking session…</p>}
       {user === null && (
-        <a className="preview-btn preview-btn--lime" href={authHref("/preview/account")} rel="nofollow">
-          Sign in with Steam
-        </a>
+        <div className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Session</p>
+          </header>
+          <p className="preview-note">Sign in to see claims and Pro delivery.</p>
+          <a
+            className="preview-btn preview-btn--lime preview-btn--block"
+            href={authHref("/preview/account")}
+            rel="nofollow"
+          >
+            Sign in with Steam
+          </a>
+        </div>
       )}
       {user && (
-        <div className="preview-kpis mb-4">
-          <div className="preview-kpi"><em>Player</em><b>{user.display_name}</b></div>
-          <div className="preview-kpi"><em>Tier</em><b>{user.tier}</b></div>
-          <div className="preview-kpi"><em>Steam</em><b className="truncate">{user.steam_id}</b></div>
+        <div className="preview-readouts">
+          <div className="preview-readout"><em>Player</em><b>{user.display_name}</b></div>
+          <div className="preview-readout"><em>Tier</em><b>{user.tier}</b></div>
+          <div className="preview-readout"><em>Steam ID</em><b>{user.steam_id}</b></div>
         </div>
       )}
-      {claimsNote && <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>{claimsNote}</p>}
+      {claimsNote && <p className="preview-note">{claimsNote}</p>}
       {claims.length > 0 && (
-        <div className="preview-listings">
-          {claims.map((row) => (
-            <div key={row.id} className="preview-listing">
-              <span>{row.status}</span>
-              <span className="ml-auto tabular-nums">{formatDollars(row.total_cost_cents)} → {formatDollars(row.expected_value_cents)}</span>
-            </div>
-          ))}
-        </div>
+        <section className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Claims</p>
+            <span className="preview-panel__meta">{claims.length}</span>
+          </header>
+          <div className="preview-listings">
+            {claims.map((row) => (
+              <div key={row.id} className="preview-listing">
+                <span className="preview-listing__n">{row.id}</span>
+                <span className="preview-listing__name"><b>{row.status}</b></span>
+                <span className="preview-chip">claim</span>
+                <span className="preview-listing__float" />
+                <span className="preview-listing__price">
+                  {formatDollars(row.total_cost_cents)} → {formatDollars(row.expected_value_cents)}
+                </span>
+                <span />
+              </div>
+            ))}
+          </div>
+        </section>
       )}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="preview-toolbar">
         <a className="preview-btn" href="/pricing">Pricing</a>
         <a className="preview-btn" href="/auth/logout">Sign out</a>
       </div>
