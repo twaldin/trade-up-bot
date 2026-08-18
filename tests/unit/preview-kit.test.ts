@@ -105,6 +105,21 @@ describe("preview craft bar", () => {
     expect(css).not.toContain(".preview-kpis");
   });
 
+  it("keeps lime a CTA fill and a focus ring — never a rarity, status, or series", () => {
+    const limeSelectors = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter((rule) => /var\(--accent\)/.test(rule[2] ?? ""))
+      .map((rule) => (rule[1] ?? "").trim());
+    expect(limeSelectors.length).toBeGreaterThan(0);
+    for (const selector of limeSelectors) {
+      expect(selector, selector).toContain("preview-btn--lime");
+    }
+    const accentBorderProps = [...css.matchAll(/([a-z-]+)\s*:[^;{}]*var\(--accent-border\)/g)]
+      .map((match) => match[1]);
+    expect([...new Set(accentBorderProps)]).toEqual(["outline"]);
+    expect(css).not.toContain("var(--accent-text)");
+    expect(board).not.toContain("--accent");
+  });
+
   it("shows no invented time series on the landing device", () => {
     const device = read("../../src/preview/components/DeviceScreen.tsx");
     expect(device).not.toMatch(/\bW[1-8]\b/);

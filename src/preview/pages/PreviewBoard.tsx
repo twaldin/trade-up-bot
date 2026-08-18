@@ -823,7 +823,7 @@ export function PreviewBoard({
       </header>
       {isFree && (
         <p className="preview-delay">
-          <span className="preview-chip preview-chip--accent">Free</span>
+          <span className="preview-chip">Free tier</span>
           {DELAY_BANNER}
         </p>
       )}

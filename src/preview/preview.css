@@ -374,12 +374,6 @@
   white-space: nowrap;
 }
 
-.preview-chip--accent {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
 .preview-note {
   margin: 0;
   font-size: 11px;
