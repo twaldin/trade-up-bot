@@ -1,9 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { CurrencyPicker } from "../components/CurrencyPicker.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
+import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
+import { PreviewCalculator } from "./pages/PreviewCalculator.js";
 import { PreviewLanding } from "./pages/PreviewLanding.js";
+import { PreviewShell } from "./PreviewShell.js";
 import "./preview.css";
 
 interface GlobalStats {
@@ -15,7 +18,7 @@ interface GlobalStats {
 
 function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: "light" | "dark"; onMode: () => void }) {
   return (
-    <div data-preview data-system="outlay" data-mode={mode}>
+    <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
       <title>TradeUpBot preview — kit landing</title>
       <meta name="robots" content="noindex, nofollow" />
       <meta name="description" content="Internal TradeUpBot preview. Not for production navigation." />
@@ -58,24 +61,44 @@ function BoardRoute() {
 export default function PreviewApp() {
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [stats, setStats] = useState<GlobalStats | null>(null);
+  const location = useLocation();
+  const inConsole = /\/preview\/(trade-ups|calculator|account)/.test(location.pathname);
 
   useEffect(() => {
     document.getElementById("root")?.classList.remove("app-shell");
     fetch("/api/global-stats").then((r) => r.json()).then(setStats).catch(() => {});
   }, []);
 
+  const onMode = () => setMode((m) => (m === "dark" ? "light" : "dark"));
+  const routes = (
+    <Routes>
+      <Route index element={<PreviewLanding stats={stats} />} />
+      <Route path="trade-ups" element={<BoardRoute />} />
+      <Route path="calculator" element={<PreviewCalculator />} />
+      <Route path="account" element={<PreviewAccount />} />
+      <Route path="/preview" element={<PreviewLanding stats={stats} />} />
+      <Route path="/preview/trade-ups" element={<BoardRoute />} />
+      <Route path="/preview/calculator" element={<PreviewCalculator />} />
+      <Route path="/preview/account" element={<PreviewAccount />} />
+      <Route path="*" element={<Navigate to="/preview" replace />} />
+    </Routes>
+  );
+
+  if (inConsole) {
+    return (
+      <PreviewShell mode={mode} onMode={onMode}>
+        <span className="sr-only">{PREVIEW_HEADLINE}</span>
+        <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
+        {routes}
+      </PreviewShell>
+    );
+  }
+
   return (
-    <PreviewChrome mode={mode} onMode={() => setMode((m) => (m === "dark" ? "light" : "dark"))}>
-      {/* Keep production copy identifiers in this module for isolation tests. */}
+    <PreviewChrome mode={mode} onMode={onMode}>
       <span className="sr-only">{PREVIEW_HEADLINE}</span>
       <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
-      <Routes>
-        <Route index element={<PreviewLanding stats={stats} />} />
-        <Route path="trade-ups" element={<BoardRoute />} />
-        <Route path="/preview" element={<PreviewLanding stats={stats} />} />
-        <Route path="/preview/trade-ups" element={<BoardRoute />} />
-        <Route path="*" element={<Navigate to="/preview" replace />} />
-      </Routes>
+      {routes}
     </PreviewChrome>
   );
 }

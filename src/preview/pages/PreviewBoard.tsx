@@ -1,89 +1,129 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { ChartFigure } from "../kit/primitives/chart-figure.js";
 import {
   bentoColumns,
-  groupedInputs,
-  inputListingHref,
-  outcomeHref,
-  primaryOutcome,
-  profitFill,
-  profitLossSeries,
+  inputCostCents,
+  inputListingHrefs,
+  inputQty,
+  oddsBarSegments,
+  openGroupedListings,
+  outputHref,
   rarityColor,
-  tileClick,
+  rarityLabel,
+  uniqueInputs,
+  uniqueOutputs,
+  verifyClaimHref,
 } from "../lib/board.js";
 import { DELAY_BANNER } from "../lib/copy.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
 
-function SkinTile({
+function SkinFace({ name }: { name: string }) {
+  const src = faceFor(FACE_CACHE, name);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        onError={(event) => {
+          event.currentTarget.style.visibility = "hidden";
+        }}
+      />
+    );
+  }
+  return <div className="preview-skin__ph" />;
+}
+
+function InputTile({
   name,
   count,
-  href,
+  listings,
   color,
-  kind,
+  onNeedExpand,
 }: {
   name: string;
-  count?: number;
-  href: string;
+  count: number;
+  listings: TradeUpInput[];
   color: string;
-  kind: "input" | "output";
+  onNeedExpand: () => void;
 }) {
-  const src = faceFor(FACE_CACHE, name);
-  const click = tileClick(kind, href);
+  const hrefs = inputListingHrefs(listings);
+  return (
+    <button
+      type="button"
+      className="preview-skin preview-skin--input"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (hrefs.length === 0) {
+          onNeedExpand();
+          return;
+        }
+        const result = openGroupedListings(hrefs, (url, target) => window.open(url, target));
+        if (result.blocked.length > 0) onNeedExpand();
+      }}
+    >
+      <span className="preview-skin__qty">×{count}</span>
+      <SkinFace name={name} />
+      <span className="preview-skin__name" style={{ color }}>{name}</span>
+    </button>
+  );
+}
+
+function OutputTile({
+  outcome,
+  color,
+}: {
+  outcome: TradeUpOutcome;
+  color: string;
+}) {
+  const href = outputHref(outcome);
   return (
     <a
-      className="preview-skin"
-      href={click.action === "none" ? undefined : click.href}
-      target={kind === "input" ? "_blank" : undefined}
-      rel={kind === "input" ? "noopener noreferrer" : undefined}
-      onClick={(e) => e.stopPropagation()}
+      className="preview-skin preview-skin--output"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(event) => event.stopPropagation()}
     >
-      {src ? (
-        <img
-          src={src}
-          alt=""
-          onError={(event) => {
-            event.currentTarget.style.visibility = "hidden";
-          }}
-        />
-      ) : (
-        <div style={{ width: 160, height: 120 }} />
-      )}
-      <div className="preview-skin__name" style={{ color }}>
-        {name}
-        {count && count > 1 ? ` ×${count}` : ""}
-      </div>
+      <span className="preview-skin__price">{formatDollars(outcome.estimated_price_cents)}</span>
+      <span className="preview-skin__odds">{Math.round(outcome.probability * 100)}%</span>
+      <SkinFace name={outcome.skin_name} />
+      <span className="preview-skin__name" style={{ color }}>{outcome.skin_name}</span>
     </a>
   );
 }
 
-function ProfitSpark({ profitCents }: { profitCents: number }) {
-  const data = profitLossSeries(profitCents);
-  const fill = profitFill(profitCents);
-  const tone = fill === "lime" ? "#d7fe52" : "#2a2a28";
+function OddsBar({ tu }: { tu: TradeUp }) {
+  const segs = oddsBarSegments(tu);
+  if (segs.length === 0) return null;
+  const row: Record<string, string | number> = { label: "odds" };
+  for (const seg of segs) row[seg.key] = seg.probability;
   return (
     <ChartFigure
-      title="Profit and loss"
-      description={`Current profit ${formatDollars(profitCents)}.`}
-      data={{ columns: ["Step", "P/L"], rows: data.map((d) => [d.i, d.v]) }}
+      title="Odds"
+      description={segs.map((seg) => `${seg.name} ${Math.round(seg.probability * 100)}%`).join(", ")}
+      captionVisible
+      captionClassName="preview-oddsbar__label"
+      data={{
+        columns: ["Outcome", "Odds"],
+        rows: segs.map((seg) => [seg.name, seg.probability]),
+      }}
     >
-      <div className="preview-spark" style={{ height: 100 }}>
-        <ResponsiveContainer width="100%" height={100}>
-          <AreaChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id={`pl-${fill}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={tone} stopOpacity={0.45} />
-                <stop offset="100%" stopColor={tone} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area type="monotone" dataKey="v" stroke={tone} strokeWidth={2} fill={`url(#pl-${fill})`} isAnimationActive={false} />
-          </AreaChart>
+      <div className="preview-oddsbar">
+        <ResponsiveContainer width="100%" height={72}>
+          <BarChart data={[row]} layout="vertical" margin={{ top: 8, right: 4, left: 4, bottom: 8 }} barSize={18}>
+            <XAxis type="number" hide domain={[0, 1]} />
+            <YAxis type="category" dataKey="label" hide />
+            {segs.map((seg) => (
+              <Bar key={seg.key} dataKey={seg.key} stackId="odds" fill={seg.color} isAnimationActive={false} />
+            ))}
+          </BarChart>
         </ResponsiveContainer>
       </div>
     </ChartFigure>
@@ -135,10 +175,10 @@ export function PreviewBoard({
   return (
     <div>
       {isFree && <div className="preview-delay">{DELAY_BANNER}</div>}
-      <div className="preview-section" style={{ paddingTop: 24 }}>
-        <div className="flex items-end justify-between gap-4 mb-6">
+      <div className="preview-board">
+        <div className="flex items-end justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Live contracts</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Live contracts</h1>
             <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
               Built from buyable listings on CSFloat, DMarket, Skinport, and Buff. {cols}-column bento.
             </p>
@@ -148,59 +188,17 @@ export function PreviewBoard({
         <div className="preview-bento">
           {tradeUps.map((tu) => {
             const expanded = expandedId === tu.id;
-            const outcome = primaryOutcome(tu.outcomes);
-            const groups = tu.inputs.length > 0
-              ? groupedInputs(tu.inputs)
-              : (tu.input_summary?.skins ?? []).map((s) => ({
-                  name: s.name,
-                  count: s.count,
-                  sample: {
-                    listing_id: "",
-                    skin_id: "",
-                    skin_name: s.name,
-                    collection_name: "",
-                    price_cents: 0,
-                    float_value: 0,
-                    condition: s.condition as TradeUpInput["condition"],
-                    source: "csfloat",
-                  } satisfies TradeUpInput,
-                }));
+            const inputs = uniqueInputs(tu);
+            const outputs = uniqueOutputs(tu);
             const color = rarityColor(tu.type);
+            const profitPositive = tu.profit_cents >= 0;
             return (
               <article
                 key={tu.id}
                 className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""}`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="preview-card__price">{formatDollars(outcome?.estimated_price_cents ?? tu.expected_value_cents)}</div>
-                  <div className="preview-card__odds">
-                    {outcome ? `${Math.round(outcome.probability * 100)}%` : `${tu.outcome_count ?? 0} outs`}
-                    {groups[0]?.count ? ` · ×${groups[0].count}` : ""}
-                  </div>
-                </div>
-                <SkinTile
-                  name={outcome?.skin_name ?? groups[0]?.name ?? "Trade-up"}
-                  href={outcome ? outcomeHref(tu.id, outcome.skin_name) : "#"}
-                  color={color}
-                  kind="output"
-                />
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {groups.slice(0, 2).map((g) => (
-                    <SkinTile
-                      key={g.name}
-                      name={g.name}
-                      count={g.count}
-                      href={g.sample.listing_id ? inputListingHref(g.sample) : "#"}
-                      color={color}
-                      kind="input"
-                    />
-                  ))}
-                </div>
-                <ProfitSpark profitCents={tu.profit_cents} />
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className="text-sm" style={{ color: tu.profit_cents >= 0 ? "var(--accent-text)" : "var(--text-muted)" }}>
-                    {formatDollars(tu.profit_cents)} · {tu.roi_percentage.toFixed(1)}% ROI
-                  </span>
+                <div className="preview-card__head">
+                  <span className="o-kicker">{rarityLabel(tu.type)}</span>
                   <button
                     type="button"
                     className="preview-btn"
@@ -209,6 +207,49 @@ export function PreviewBoard({
                     {expanded ? "Collapse" : "Expand"}
                   </button>
                 </div>
+                <div className="preview-kpis">
+                  <div className="preview-kpi">
+                    <em>Cost</em>
+                    <b>{formatDollars(inputCostCents(tu))}</b>
+                  </div>
+                  <div className="preview-kpi">
+                    <em>Qty</em>
+                    <b>×{inputQty(tu)}</b>
+                  </div>
+                  <div className="preview-kpi">
+                    <em>EV</em>
+                    <b>{formatDollars(tu.expected_value_cents)}</b>
+                  </div>
+                  <div className="preview-kpi">
+                    <em>Profit</em>
+                    <b style={{ color: profitPositive ? "var(--accent-text)" : "var(--text-muted)" }}>
+                      {formatDollars(tu.profit_cents)}
+                      <small> {tu.roi_percentage.toFixed(1)}% ROI</small>
+                    </b>
+                  </div>
+                </div>
+                {inputs.length > 0 && (
+                  <div className="preview-skins preview-skins--in">
+                    {inputs.map((group) => (
+                      <InputTile
+                        key={group.name}
+                        name={group.name}
+                        count={group.count}
+                        listings={group.listings}
+                        color={color}
+                        onNeedExpand={() => onExpand(tu.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {outputs.length > 0 && (
+                  <div className="preview-skins preview-skins--out">
+                    {outputs.map((outcome) => (
+                      <OutputTile key={outcome.skin_id + outcome.skin_name} outcome={outcome} color={color} />
+                    ))}
+                  </div>
+                )}
+                <OddsBar tu={tu} />
                 <AnimatePresence initial={false}>
                   {expanded && (
                     <motion.div
@@ -220,17 +261,19 @@ export function PreviewBoard({
                       style={{ overflow: "hidden" }}
                     >
                       <div className="preview-listings">
-                        {tu.inputs.map((input) => (
-                          <ListingRow key={input.listing_id + input.skin_name} input={input} />
+                        {tu.inputs.map((row) => (
+                          <ListingRow key={row.listing_id + row.skin_name} input={row} />
                         ))}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <a className="preview-btn preview-btn--lime" href={`/trade-ups/${tu.id}`}>Verify / Claim</a>
-                        {tu.outcomes.slice(0, 4).map((o: TradeUpOutcome) => (
-                          <a key={o.skin_id + o.skin_name} className="preview-btn" href={outcomeHref(tu.id, o.skin_name)}>
-                            {o.skin_name}
-                          </a>
-                        ))}
+                        <a
+                          className="preview-btn preview-btn--lime"
+                          href={verifyClaimHref(tu.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Verify / Claim
+                        </a>
                       </div>
                     </motion.div>
                   )}
@@ -242,6 +285,18 @@ export function PreviewBoard({
       </div>
     </div>
   );
+}
+
+async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {
+  if (tu.inputs.length > 0) return tu;
+  try {
+    const res = await fetch(`/api/trade-up/${tu.id}/inputs`, { credentials: "include" });
+    if (!res.ok) return tu;
+    const data = await res.json() as { inputs?: TradeUpInput[] };
+    return { ...tu, inputs: data.inputs ?? [] };
+  } catch {
+    return tu;
+  }
 }
 
 export function usePreviewTradeUps() {
@@ -258,11 +313,17 @@ export function usePreviewTradeUps() {
       const rows = data.trade_ups ?? [];
       setIsFree((data.tier ?? "free") === "free");
       setTradeUps(rows);
-      const inputNames = rows.flatMap((tu) => tu.input_summary?.skins.map((s) => s.name) ?? []);
-      await loadFaces(inputNames.slice(0, 16), FACE_CACHE);
-      const hydrated = await Promise.all(rows.map((tu) => hydrateOutcomesIfNeeded(tu)));
-      const outcomeNames = hydrated.flatMap((tu) => tu.outcomes.map((o) => o.skin_name));
-      await loadFaces(outcomeNames.slice(0, 16), FACE_CACHE);
+      const summaryNames = rows.flatMap((tu) => tu.input_summary?.skins.map((s) => s.name) ?? []);
+      await loadFaces(summaryNames, FACE_CACHE);
+      const hydrated = await Promise.all(rows.map(async (tu) => {
+        const withOutcomes = await hydrateOutcomesIfNeeded(tu);
+        return hydrateInputsIfNeeded(withOutcomes);
+      }));
+      const names = hydrated.flatMap((tu) => [
+        ...tu.inputs.map((input) => input.skin_name),
+        ...tu.outcomes.map((outcome) => outcome.skin_name),
+      ]);
+      await loadFaces(names, FACE_CACHE);
       setTradeUps(hydrated);
     } catch {
       setTradeUps([]);
@@ -279,22 +340,13 @@ export function usePreviewTradeUps() {
     const current = tradeUps.find((t) => t.id === id);
     if (!current) return;
     const withOutcomes = await hydrateOutcomesIfNeeded(current);
-    let inputs = withOutcomes.inputs;
-    if (inputs.length === 0) {
-      try {
-        const res = await fetch(`/api/trade-up/${id}/inputs`, { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json() as { inputs?: TradeUpInput[] };
-          inputs = data.inputs ?? [];
-        }
-      } catch { /* keep list */ }
-    }
+    const withInputs = await hydrateInputsIfNeeded(withOutcomes);
     const names = [
-      ...inputs.map((i) => i.skin_name),
-      ...withOutcomes.outcomes.map((o) => o.skin_name),
+      ...withInputs.inputs.map((i) => i.skin_name),
+      ...withInputs.outcomes.map((o) => o.skin_name),
     ];
     await loadFaces(names, FACE_CACHE);
-    setTradeUps((prev) => prev.map((tu) => (tu.id === id ? { ...withOutcomes, inputs } : tu)));
+    setTradeUps((prev) => prev.map((tu) => (tu.id === id ? withInputs : tu)));
   }, [tradeUps]);
 
   return useMemo(() => ({ tradeUps, loading, isFree, expandedId, onExpand }), [tradeUps, loading, isFree, expandedId, onExpand]);

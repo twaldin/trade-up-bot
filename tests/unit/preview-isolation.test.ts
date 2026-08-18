@@ -19,8 +19,22 @@ describe("preview isolation", () => {
     expect(appSource).toContain('path="/preview/*"');
     expect(previewAppSource).toContain('path="/preview"');
     expect(previewAppSource).toContain('path="/preview/trade-ups"');
+    expect(previewAppSource).toContain('path="/preview/calculator"');
+    expect(previewAppSource).toContain('path="/preview/account"');
     expect(previewAppSource).toMatch(/noindex/);
     expect(siteNavSource).not.toContain("/preview");
+  });
+
+  it("does not iframe or restyle production chrome", () => {
+    const previewDir = resolve(testDir, "../../src/preview");
+    const shell = readFileSync(resolve(previewDir, "PreviewShell.tsx"), "utf8");
+    const app = readFileSync(resolve(previewDir, "PreviewApp.tsx"), "utf8");
+    const board = readFileSync(resolve(previewDir, "pages/PreviewBoard.tsx"), "utf8");
+    expect(app).not.toContain("pv-embed");
+    expect(shell).not.toContain("pv-embed");
+    expect(shell).toContain("o-nav-item");
+    expect(board).not.toContain("/skins/${");
+    expect(board).not.toContain("`/trade-ups/");
   });
 
   it("does not change production landing, trade-ups, or calculator sources", () => {
