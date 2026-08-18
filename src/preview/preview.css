@@ -645,6 +645,7 @@
 .preview-payoff__dot {
   position: absolute;
   top: 50%;
+  z-index: 2;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 0 1.5px var(--sunken);
@@ -652,21 +653,6 @@
 
 .preview-payoff__dot.is-plus { background: var(--success); }
 .preview-payoff__dot.is-minus { background: var(--danger); }
-
-.preview-payoff__dot em {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-style: normal;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.preview-payoff__dot em[data-side="over"] { bottom: calc(100% + 5px); }
-.preview-payoff__dot em[data-side="under"] { top: calc(100% + 5px); }
 
 /* ---------------------------------------------------------- outcome bars */
 

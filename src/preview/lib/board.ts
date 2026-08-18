@@ -324,27 +324,6 @@ export function cdfCurve(tu: TradeUp): CdfPoint[] {
   }));
 }
 
-export function payoffLabelIndexes(points: PayoffPoint[]): number[] {
-  if (points.length === 0) return [];
-  let bestProb = 0;
-  let bestAbs = 0;
-  let probIdx = 0;
-  let absIdx = 0;
-  for (let i = 0; i < points.length; i++) {
-    const point = points[i];
-    if (!point) continue;
-    if (point.probability > bestProb) {
-      bestProb = point.probability;
-      probIdx = i;
-    }
-    if (Math.abs(point.profitCents) > bestAbs) {
-      bestAbs = Math.abs(point.profitCents);
-      absIdx = i;
-    }
-  }
-  return [...new Set([probIdx, absIdx])];
-}
-
 /** Inputs are one CS2 rarity below the trade-up output tier. Lime is never a rarity. */
 export function inputRarityColor(type: string | undefined): string {
   switch (type) {

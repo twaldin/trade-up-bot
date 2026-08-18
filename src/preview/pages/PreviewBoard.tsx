@@ -20,7 +20,6 @@ import {
   openGroupedListings,
   outputHref,
   outputRarityColor,
-  payoffLabelIndexes,
   payoffPoints,
   percentileProfitCents,
   rarityLabel,
@@ -230,7 +229,6 @@ function PayoffStrip({
   const pad = Math.max((max - min) * 0.12, 50);
   const lo = min - pad;
   const hi = max + pad;
-  const [probIdx, absIdx] = payoffLabelIndexes(points);
   const maxP = Math.max(...points.map((point) => point.probability), 0.01);
   const zeroX = axisPercent(0, lo, hi);
   const evX = axisPercent(evCents, lo, hi);
@@ -261,9 +259,8 @@ function PayoffStrip({
             title={`Median P/L ${signedDollars(medianCents)}`}
           />
         )}
-        {points.map((point, index) => {
+        {points.map((point) => {
           const size = 9 + (point.probability / maxP) * 13;
-          const label = index === probIdx ? "over" : index === absIdx ? "under" : null;
           return (
             <div
               key={point.name}
@@ -274,13 +271,7 @@ function PayoffStrip({
                 height: size,
               }}
               title={`${point.name} · ${Math.round(point.probability * 100)}% · ${signedDollars(point.profitCents)}`}
-            >
-              {label && (
-                <em data-side={label}>
-                  {Math.round(point.probability * 100)}% {signedDollars(point.profitCents)}
-                </em>
-              )}
-            </div>
+            />
           );
         })}
       </div>
