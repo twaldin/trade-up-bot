@@ -10,6 +10,8 @@ import {
   mergeContractFaces,
   outcomeSegmentClass,
   profitLossSplit,
+  rarityFadeHex,
+  rarityForTradeUpRole,
   uniqueOutcomes,
 } from "../../shared/preview-board.js";
 import { parseFaceIds, facesFromOutcomeRows } from "../../server/preview/contract-faces.js";
@@ -46,6 +48,10 @@ const previewAccount = readSrc("src/preview/pages/PreviewAccountPage.tsx");
 const previewCss = readSrc("src/preview/preview.css");
 const previewHook = readSrc("src/preview/board/usePreviewContracts.ts");
 const skinImages = readSrc("server/preview/skin-images.ts");
+const previewTheme = readSrc("src/preview/theme/PreviewTheme.tsx");
+const previewLogo = readSrc("src/preview/chrome/PreviewLogo.tsx");
+const previewTile = readSrc("src/preview/tiles/PreviewSkinTile.tsx");
+const previewStory = readSrc("src/preview/landing/PreviewListingsStory.tsx");
 
 describe("preview is a separate app mounted only under /preview/*", () => {
   it("mounts PreviewApp at /preview/* and keeps preview out of AppShell", () => {
@@ -86,6 +92,10 @@ describe("preview routes live under one coherent app", () => {
     expect(previewApp).toContain("PreviewTradeUpsPage");
     expect(previewApp).toContain("PreviewCalculatorPage");
     expect(previewApp).toContain("PreviewAccountPage");
+    expect(previewApp).toContain("PreviewMyTradeUpsPage");
+    expect(previewApp).toContain("PreviewSkinsPage");
+    expect(previewApp).toContain("PreviewCollectionsPage");
+    expect(previewApp).toContain("PreviewListingSniperPage");
     expect(previewApp).toContain("noindex, nofollow");
   });
 
@@ -94,21 +104,30 @@ describe("preview routes live under one coherent app", () => {
     expect(previewShell).toContain("/preview/trade-ups");
     expect(previewShell).toContain("/preview/calculator");
     expect(previewShell).toContain("/preview/account");
+    expect(previewShell).toContain("/preview/my-trade-ups");
+    expect(previewShell).toContain("/preview/skins");
+    expect(previewShell).toContain("/preview/collections");
+    expect(previewShell).toContain("/preview/listing-sniper");
     expect(previewShell).toContain("PreviewAccountMenu");
-    expect(previewShell).not.toContain("Listing Sniper");
+    expect(previewShell).toContain("PreviewThemeToggle");
+    expect(previewShell).toContain("PreviewLogo");
   });
 });
 
 describe("preview landing reuses prod copy and the real board", () => {
-  it("reuses production headlines and puts the live dashboard in the laptop", () => {
+  it("reuses production headlines and a dashboard image in the laptop", () => {
     expect(previewLanding).toContain("CS2 trade-ups built from");
     expect(previewLanding).toContain("Most calculators price trade-ups with idealized floats");
     expect(previewLanding).toContain("What you see is what you pay");
     expect(previewLanding).toContain("View Trade-Ups");
     expect(previewLanding).toContain("Free — no account needed");
-    expect(previewLanding).toContain("PreviewTradeUpsDashboard");
     expect(previewLanding).toContain("pv-laptop");
+    expect(previewLanding).toContain("/preview-board-laptop.png");
+    expect(previewLanding).toContain("/preview-board-phone.png");
+    expect(previewLanding).toContain("PreviewListingsStory");
+    expect(previewLanding).not.toContain("PreviewTradeUpsDashboard");
     expect(previewLanding).not.toContain("PreviewHeroMock");
+    expect(previewLanding).not.toContain("1.9M");
     expect(previewLanding).not.toContain("See the ten skins before they become one");
   });
 });
@@ -129,7 +148,8 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
   it("groups inputs as Skin ×N and shows every unique output", () => {
     expect(previewCard).toContain("groupInputSkins");
     expect(previewCard).toContain("uniqueOutcomes");
-    expect(previewCard).toContain("×{skin.count}");
+    expect(previewCard).toContain("PreviewSkinTile");
+    expect(previewCard).toContain('badge={`×${skin.count}`}');
     expect(previewCard).toContain("Outcome faces not loaded");
     expect(previewCard).not.toContain("expandInputSlots");
     expect(previewCard).not.toContain("pickHeroOutcome");
@@ -137,6 +157,23 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
     expect(previewCard).toMatch(/Cost/);
     expect(previewCard).toMatch(/Profit/);
     expect(previewCard).toMatch(/Chance/);
+  });
+
+  it("uses large unboxed CSFloat tiles and expands the card in place", () => {
+    expect(previewTile).toContain("pv-tile-in");
+    expect(previewTile).toContain("pv-tile-out");
+    expect(previewTile).toContain("pv-tile-badge");
+    expect(previewTile).toContain("pv-tile-name");
+    expect(previewTile).toContain("rarityFadeHex");
+    expect(previewTile).not.toContain("pv-thumb");
+    expect(previewCss).toMatch(/\.pv-tile-out\s*\{[^}]*140px/);
+    expect(previewCss).toMatch(/\.pv-tile-in\s*\{[^}]*96px/);
+    expect(previewCss).not.toContain(".pv-thumb");
+    expect(previewCard).toContain("pv-tile-row");
+    expect(previewBoard).toContain("PreviewInspectDrawer");
+    expect(previewBoard).not.toContain("Pick a contract");
+    expect(previewBoard).not.toContain("pv-inspect-empty");
+    expect(previewBoard).not.toContain("pv-board-console");
   });
 
   it("uses a profit/loss + per-outcome split, not a dollar histogram", () => {
@@ -172,26 +209,34 @@ describe("preview uses Outlay cream / charcoal / lime", () => {
     expect(previewBoard).not.toContain("LATE");
     expect(previewBoard).not.toContain("ON TIME");
   });
+
+  it("persists a first-class dark and light theme and recolours the existing mark lime", () => {
+    expect(previewTheme).toContain('localStorage.getItem("pv-theme")');
+    expect(previewTheme).toContain('localStorage.setItem("pv-theme"');
+    expect(previewTheme).toContain('"dark"');
+    expect(previewTheme).toContain('"light"');
+    expect(previewCss).toContain('[data-theme="dark"]');
+    expect(previewLogo).toContain("#b5f63d");
+    expect(previewLogo).not.toContain("#22c55e");
+    expect(previewStory).toContain("listingUrl");
+    expect(previewStory).toContain("sourceLabel");
+    expect(previewStory).toContain("/api/trade-up/");
+  });
 });
 
 describe("preview calculator keeps the Load example product rule", () => {
-  it("uses the same APIs without first-load prefill or auto-run", () => {
-    expect(previewCalc).toContain("Load example");
-    expect(previewCalc).toContain("/api/calculator/example");
-    expect(previewCalc).toContain("/api/calculator");
-    expect(previewCalc).toContain("/api/calculator/search");
-    expect(previewCalc).toContain("emptyCalculatorSlots");
-    expect(previewCalc).toContain("Price (cents)");
-    expect(previewCalc).toContain("CS2 Trade-Up Calculator");
-    expect(previewCalc).toContain("Add skins to predict trade-up outcomes");
-    expect(previewCalc).not.toMatch(/useEffect\([^)]*\/api\/calculator\/example/);
-    const loadExampleFn = previewCalc.slice(previewCalc.indexOf("loadExample"));
-    const nextFn = loadExampleFn.search(/\n  const [a-zA-Z]/);
+  it("reuses CalculatorPage so Load example stays no-prefill and no auto-run", () => {
+    expect(previewCalc).toContain("CalculatorPage");
+    expect(calculator).toContain("Load example");
+    expect(calculator).toContain("/api/calculator/example");
+    expect(calculator).toContain("emptyCalculatorSlots");
+    expect(calculator).toContain("useState<InputSlot[]>([{ ...EMPTY_INPUT }])");
+    expect(calculator).not.toMatch(/useEffect\([^)]*\/api\/calculator\/example/);
+    const loadExampleFn = calculator.slice(calculator.indexOf("loadExample"));
+    const nextFn = loadExampleFn.search(/\n  (async )?function |\n  const [a-zA-Z]/);
     const loadBody = nextFn === -1 ? loadExampleFn : loadExampleFn.slice(0, nextFn);
     expect(loadBody).not.toContain("calculator_run");
     expect(loadBody).not.toContain("calculate(");
-    const calculateFn = previewCalc.slice(previewCalc.indexOf("const calculate"));
-    expect(calculateFn).toContain('trackEvent("calculator_run"');
   });
 });
 
@@ -329,6 +374,23 @@ describe("preview contract faces and board helpers", () => {
     expect(outcomeSegmentClass(profitOutcome, 10000)).toBe("pv-seg-lime");
     expect(outcomeSegmentClass(lossOutcome, 10000)).toBe("pv-seg-charcoal");
     expect(outcomeSegmentClass(evenOutcome, 10000)).toBe("pv-seg-charcoal");
+  });
+
+  it("maps trade-up roles to CS2 rarity hues, never lime", () => {
+    expect(rarityForTradeUpRole("classified_covert", "input")).toBe("Classified");
+    expect(rarityForTradeUpRole("classified_covert", "output")).toBe("Covert");
+    expect(rarityForTradeUpRole("covert_knife", "output")).toBe("Extraordinary");
+    expect(rarityFadeHex("Covert")).toBe("#eb4b4b");
+    expect(rarityFadeHex("Classified")).toBe("#d32ce6");
+    expect(Object.values({
+      consumer: rarityFadeHex("Consumer Grade"),
+      industrial: rarityFadeHex("Industrial Grade"),
+      milspec: rarityFadeHex("Mil-Spec"),
+      restricted: rarityFadeHex("Restricted"),
+      classified: rarityFadeHex("Classified"),
+      covert: rarityFadeHex("Covert"),
+      gold: rarityFadeHex("Extraordinary"),
+    })).not.toContain("#b5f63d");
   });
 });
 

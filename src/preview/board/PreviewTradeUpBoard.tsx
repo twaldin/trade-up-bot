@@ -88,7 +88,7 @@ export function PreviewTradeUpBoard({
   }, [tradeUps, selectedId]);
 
   const handleSelect = useCallback(async (tuId: number) => {
-    setSelectedId(tuId);
+    setSelectedId(current => (current === tuId ? null : tuId));
     const promises: Promise<void>[] = [];
     const outcomesKey = `o:${tuId}`;
     if (!loadedOutcomes.has(tuId) && !inflightDetails.current.has(outcomesKey)) {
@@ -157,10 +157,9 @@ export function PreviewTradeUpBoard({
 
   const imageNames = useMemo(() => collectPreviewSkinNames(prepared), [prepared]);
   const images = useSkinImages(imageNames);
-  const selected = prepared.find(tu => tu.id === selectedId) ?? null;
 
   return (
-    <div className={`pv-board${inspectable ? "" : " pv-board-console"}${loading ? " pv-faint" : ""}`}>
+    <div className={`pv-board${loading ? " pv-faint" : ""}`}>
       <div className="pv-cards">
         {prepared.map(tu => (
           <PreviewContractCard
@@ -169,49 +168,41 @@ export function PreviewTradeUpBoard({
             images={images}
             open={inspectable && tu.id === selectedId}
             onOpen={inspectable ? () => { void handleSelect(tu.id); } : undefined}
+            details={inspectable && tu.id === selectedId ? (
+              <PreviewInspectDrawer
+                tu={tu}
+                images={images}
+                signedIn={signedIn}
+                isPro={isPro}
+                claimed={claimedIds.has(tu.id)}
+                claimedByOther={!!tu.claimed_by_other && !claimedIds.has(tu.id)}
+                claimExpiresAt={claimExpiries.get(tu.id)}
+                claimLimit={claimLimit}
+                verifyLimit={verifyLimit}
+                verifying={verifying === tu.id}
+                verifyResult={verifyResults.get(tu.id)}
+                onVerify={() => { void handleVerify(tu.id); }}
+                onAskUpgrade={() => setUpgradeMsg(tu.id)}
+                onClaimed={(expiresAt) => {
+                  setClaimedIds(prev => new Set(prev).add(tu.id));
+                  if (expiresAt) setClaimExpiries(prev => new Map(prev).set(tu.id, expiresAt));
+                }}
+                onReleased={() => {
+                  setClaimedIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(tu.id);
+                    return next;
+                  });
+                }}
+                onClaimLimitUpdate={onClaimLimitUpdate}
+              />
+            ) : undefined}
           />
         ))}
       </div>
-      {inspectable && selected ? (
-        <PreviewInspectDrawer
-          tu={selected}
-          images={images}
-          signedIn={signedIn}
-          isPro={isPro}
-          claimed={claimedIds.has(selected.id)}
-          claimedByOther={!!selected.claimed_by_other && !claimedIds.has(selected.id)}
-          claimExpiresAt={claimExpiries.get(selected.id)}
-          claimLimit={claimLimit}
-          verifyLimit={verifyLimit}
-          verifying={verifying === selected.id}
-          verifyResult={verifyResults.get(selected.id)}
-          onVerify={() => { void handleVerify(selected.id); }}
-          onAskUpgrade={() => setUpgradeMsg(selected.id)}
-          onClaimed={(expiresAt) => {
-            setClaimedIds(prev => new Set(prev).add(selected.id));
-            if (expiresAt) setClaimExpiries(prev => new Map(prev).set(selected.id, expiresAt));
-          }}
-          onReleased={() => {
-            setClaimedIds(prev => {
-              const next = new Set(prev);
-              next.delete(selected.id);
-              return next;
-            });
-          }}
-          onClaimLimitUpdate={onClaimLimitUpdate}
-        />
-      ) : inspectable ? (
-        <aside className="pv-inspect">
-          <div className="pv-inspect-empty">
-            Pick a contract. Nothing is selected until you do.
-            {upgradeMsg != null && (
-              <div style={{ marginTop: 12 }}>
-                Upgrade to Pro to claim listings while you buy.
-              </div>
-            )}
-          </div>
-        </aside>
-      ) : null}
+      {upgradeMsg != null && (
+        <p className="pv-muted">Upgrade to Pro to claim listings while you buy.</p>
+      )}
     </div>
   );
 }

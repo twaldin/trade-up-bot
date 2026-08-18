@@ -47,6 +47,46 @@ export function chanceToProfit(tu: TradeUp): number {
     sum + (outcome.estimated_price_cents > tu.total_cost_cents ? outcome.probability : 0), 0);
 }
 
+export type Cs2Rarity =
+  | "Consumer Grade"
+  | "Industrial Grade"
+  | "Mil-Spec"
+  | "Restricted"
+  | "Classified"
+  | "Covert"
+  | "Extraordinary";
+
+const TYPE_RARITY: Record<string, { input: Cs2Rarity; output: Cs2Rarity }> = {
+  covert_knife: { input: "Covert", output: "Extraordinary" },
+  classified_covert: { input: "Classified", output: "Covert" },
+  restricted_classified: { input: "Restricted", output: "Classified" },
+  milspec_restricted: { input: "Mil-Spec", output: "Restricted" },
+  industrial_milspec: { input: "Industrial Grade", output: "Mil-Spec" },
+  consumer_industrial: { input: "Consumer Grade", output: "Industrial Grade" },
+};
+
+const RARITY_HEX: Record<Cs2Rarity, string> = {
+  "Consumer Grade": "#b0c3d9",
+  "Industrial Grade": "#5e98d9",
+  "Mil-Spec": "#4b69ff",
+  Restricted: "#8847ff",
+  Classified: "#d32ce6",
+  Covert: "#eb4b4b",
+  Extraordinary: "#e4ae39",
+};
+
+export function rarityForTradeUpRole(
+  type: string | undefined,
+  role: "input" | "output",
+): Cs2Rarity {
+  return (type && TYPE_RARITY[type]?.[role]) || "Mil-Spec";
+}
+
+/** CS2 rarity hue for a bottom fade only. Never lime. */
+export function rarityFadeHex(rarity: Cs2Rarity): string {
+  return RARITY_HEX[rarity];
+}
+
 /** Lime if that outcome beats contract cost; charcoal otherwise. No third color. */
 export function outcomeSegmentClass(
   outcome: Pick<TradeUpOutcome, "estimated_price_cents">,

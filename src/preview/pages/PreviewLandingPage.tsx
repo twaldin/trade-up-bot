@@ -1,58 +1,57 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { PreviewTradeUpsDashboard } from "./PreviewTradeUpsPage.js";
-
-interface GlobalStats {
-  total_trade_ups: number;
-  profitable_trade_ups: number;
-  total_data_points: number;
-  total_cycles: number;
-}
+import { PreviewLogo } from "../chrome/PreviewLogo.js";
+import { PreviewListingsStory } from "../landing/PreviewListingsStory.js";
+import { PreviewThemeToggle } from "../theme/PreviewTheme.js";
 
 export function PreviewLandingPage() {
-  const [stats, setStats] = useState<GlobalStats | null>(null);
-
-  useEffect(() => {
-    fetch("/api/global-stats").then(r => r.json()).then(setStats).catch(() => {});
-  }, []);
-
   return (
     <div>
       <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
       <meta name="robots" content="noindex, nofollow" />
       <header className="pv-landing-nav">
         <div className="pv-brand">
-          <span className="pv-brand-mark" />
+          <PreviewLogo />
           TradeUpBot
         </div>
         <div className="pv-landing-links">
           <Link to="/preview/trade-ups">Board</Link>
           <Link to="/preview/calculator">Calculator</Link>
           <Link to="/preview/account">Account</Link>
+          <PreviewThemeToggle />
           <Link to="/preview/trade-ups" className="pv-btn">View Trade-Ups</Link>
         </div>
       </header>
 
-      <section className="pv-hero">
-        <h1>CS2 trade-ups built from<br />real, buyable listings</h1>
-        <p>
-          Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each contract from listings currently for sale.
-        </p>
-        <p className="pv-hero-sub">
-          Every input links to a specific listing on CSFloat, DMarket, Skinport, or Buff.market, with its exact float and price. The output float is computed from your inputs, not estimated.
-        </p>
-        <div className="pv-hero-actions">
-          <Link to="/preview/trade-ups" className="pv-btn">View Trade-Ups</Link>
-          <span className="pv-muted">Free — no account needed</span>
-        </div>
-        {stats && stats.total_trade_ups != null && (
-          <div className="pv-live-stats">
-            <div><strong className="pv-tabular">{stats.total_trade_ups.toLocaleString()}</strong> <span className="pv-muted">trade-ups</span></div>
-            <div><strong className="pv-tabular pv-profit">{stats.profitable_trade_ups.toLocaleString()}</strong> <span className="pv-muted">profitable</span></div>
-            <div><strong className="pv-tabular">{stats.total_data_points.toLocaleString()}</strong> <span className="pv-muted">data points</span></div>
+      <section className="pv-hero pv-hero-saas">
+        <div className="pv-hero-copy">
+          <h1>CS2 trade-ups built from<br />real, buyable listings</h1>
+          <p>
+            Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each contract from listings currently for sale.
+          </p>
+          <p className="pv-hero-sub">
+            Every input links to a specific listing on CSFloat, DMarket, Skinport, or Buff.market, with its exact float and price. The output float is computed from your inputs, not estimated.
+          </p>
+          <div className="pv-hero-actions">
+            <Link to="/preview/trade-ups" className="pv-btn">View Trade-Ups</Link>
+            <span className="pv-muted">Free — no account needed</span>
           </div>
-        )}
+        </div>
+        <div className="pv-stage" data-hero="pv-laptop">
+          <div className="pv-laptop">
+            <div className="pv-laptop-lid">
+              <div className="pv-laptop-screen">
+                <img src="/preview-board-laptop.png" alt="TradeUpBot trade-up dashboard" />
+              </div>
+            </div>
+            <div className="pv-laptop-base" />
+          </div>
+          <div className="pv-phone">
+            <img src="/preview-board-phone.png" alt="TradeUpBot dashboard on a phone" />
+          </div>
+        </div>
       </section>
+
+      <PreviewListingsStory />
 
       <section className="pv-value">
         <h2>What you see is what you pay</h2>
@@ -72,26 +71,6 @@ export function PreviewLandingPage() {
           </div>
         </div>
       </section>
-
-      <div className="pv-stage" data-hero="pv-laptop">
-        <div className="pv-laptop">
-          <div className="pv-laptop-lid">
-            <div className="pv-laptop-screen">
-              <div className="pv-console">
-                <aside className="pv-console-side">
-                  <div className="pv-kicker">Board</div>
-                  <div>Calculator</div>
-                  <div>Account</div>
-                </aside>
-                <div className="pv-console-main">
-                  <PreviewTradeUpsDashboard inspectable={false} showFilters={false} perPage={2} />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="pv-laptop-base" />
-        </div>
-      </div>
     </div>
   );
 }
