@@ -59,15 +59,15 @@ export function PreviewLandingPage() {
         <p>Costs come from live listings, not price averages. Click any input to open the listing and buy it.</p>
         <div className="pv-value-grid">
           <div>
-            <h3 className="pv-profit">Real listings</h3>
+            <h3>Real listings</h3>
             <p>Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market.</p>
           </div>
           <div>
-            <h3 className="pv-profit">Verify before buying</h3>
+            <h3>Verify before buying</h3>
             <p>Verify re-checks every input against the marketplace: still listed, and at what price. Stats update before you spend.</p>
           </div>
           <div>
-            <h3 className="pv-profit">Claim to lock</h3>
+            <h3>Claim to lock</h3>
             <p>Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy.</p>
           </div>
         </div>
