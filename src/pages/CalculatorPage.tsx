@@ -8,6 +8,10 @@ import { Button } from "../../shared/components/ui/button.js";
 import { Badge } from "../../shared/components/ui/badge.js";
 import { ProductCTA } from "../components/ProductCTA.js";
 import { trackEvent } from "../lib/analytics.js";
+import {
+  emptyCalculatorSlots,
+  type CalculatorExampleSlot,
+} from "../../shared/calculator-example.js";
 
 interface SearchResult {
   name: string;
@@ -305,6 +309,8 @@ export function CalculatorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
+  const [exampleLoading, setExampleLoading] = useState(false);
+  const [exampleLoaded, setExampleLoaded] = useState(false);
 
   // Detect rarity from first resolved input
   const detectedRarity = inputs.find(i => i.resolved)?.resolved?.rarity ?? null;
@@ -350,6 +356,38 @@ export function CalculatorPage() {
     } else {
       addInput();
     }
+  };
+
+  const loadExample = async () => {
+    setExampleLoading(true);
+    setError(null);
+    setResult(null);
+    setStats(null);
+
+    try {
+      const res = await fetch("/api/calculator/example");
+      const data = await res.json() as { error?: string; inputs?: CalculatorExampleSlot[] };
+      if (!res.ok || !data.inputs?.length) {
+        setError(data.error || "Could not load example");
+        setExampleLoaded(false);
+        return;
+      }
+      setInputs(data.inputs);
+      setExampleLoaded(true);
+    } catch {
+      setError("Could not load example");
+      setExampleLoaded(false);
+    } finally {
+      setExampleLoading(false);
+    }
+  };
+
+  const clearAll = () => {
+    setInputs(emptyCalculatorSlots());
+    setResult(null);
+    setStats(null);
+    setError(null);
+    setExampleLoaded(false);
   };
 
   const calculate = async () => {
@@ -467,6 +505,17 @@ export function CalculatorPage() {
             Fill to {requiredCount}
           </Button>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadExample}
+          disabled={exampleLoading}
+        >
+          {exampleLoading ? "Loading example..." : "Load example"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={clearAll}>
+          Clear
+        </Button>
         <div className="flex-1" />
         <Button
           onClick={calculate}
@@ -476,6 +525,12 @@ export function CalculatorPage() {
           {loading ? "Calculating..." : "Calculate"}
         </Button>
       </div>
+
+      {exampleLoaded && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Example loaded from live listings. Run Calculate to evaluate it.
+        </p>
+      )}
 
       {/* Error */}
       {error && (
