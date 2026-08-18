@@ -41,6 +41,9 @@ export function listSurvivesFaceError(status: number, contentType: string | null
  */
 const FACE_KEY_SEP = "\u0000";
 
+/** Bound on the og:image fallback when the batch faces endpoint is missing. */
+export const FACE_SCRAPE_LIMIT = 48;
+
 export function faceCacheKey(names: string[]): string {
   return [...new Set(names.filter(Boolean))].sort().join(FACE_KEY_SEP);
 }
@@ -88,7 +91,9 @@ export async function loadFaces(
 
   const stillMissing = missing.filter((name) => !cache.has(name));
   if (facesMissing && stillMissing.length > 0) {
-    await Promise.all(stillMissing.slice(0, 24).map(async (name) => {
+    // Degraded path for hosts that predate /api/preview/faces: scrape og:image
+    // one page at a time, bounded so a grid view cannot fan out unbounded.
+    await Promise.all(stillMissing.slice(0, FACE_SCRAPE_LIMIT).map(async (name) => {
       try {
         const res = await fetchFn(skinPagePath(name), { credentials: "include" });
         const type = res.headers.get("content-type") ?? "";

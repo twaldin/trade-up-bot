@@ -8,6 +8,7 @@ import { Link, useParams } from "react-router-dom";
 import { toSlug } from "../../../shared/slugs.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import {
+  conditionShort,
   formatFloat,
   previewCollectionHref,
   previewSkinHref,
@@ -48,7 +49,36 @@ interface SkinDetail {
     collection_name: string | null;
   };
   listings: SkinListing[];
+  priceSources: { source: string; condition: string; avg_price_cents: number; volume: string }[];
   stats: { totalListings: number; minPrice: number | null; maxPrice: number | null; saleCount: number };
+}
+
+const WEAR_BANDS: [string, number, number][] = [
+  ["FN", 0, 0.07],
+  ["MW", 0.07, 0.15],
+  ["FT", 0.15, 0.38],
+  ["WW", 0.38, 0.45],
+  ["BS", 0.45, 1],
+];
+
+/** Wear band for a float, the CS2 boundaries the engine already works to. */
+export function wearBand(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return WEAR_BANDS.find(([, lo, hi]) => value >= lo && value < hi)?.[0] ?? "BS";
+}
+
+/** Cheapest observed price per condition, across whichever sources reported. */
+function priceByCondition(sources: SkinDetail["priceSources"]): { condition: string; cents: number }[] {
+  const best = new Map<string, number>();
+  for (const row of sources) {
+    if (!row.condition || row.avg_price_cents <= 0) continue;
+    const current = best.get(row.condition);
+    if (current === undefined || row.avg_price_cents < current) best.set(row.condition, row.avg_price_cents);
+  }
+  const order = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"];
+  return order
+    .filter((condition) => best.has(condition))
+    .map((condition) => ({ condition, cents: best.get(condition) as number }));
 }
 
 function Face({ name, size }: { name: string; size: number }) {
@@ -91,7 +121,7 @@ export function PreviewSkinsPage() {
     return () => { live = false; window.clearTimeout(handle); };
   }, [search]);
 
-  const shown = rows.slice(0, 60);
+  const shown = rows.slice(0, 48);
   useFaceNames(useMemo(() => shown.map((row) => row.name), [shown]));
 
   return (
@@ -189,6 +219,7 @@ export function PreviewSkinPage() {
   const { weapon, finish } = splitSkinName(skin.name);
   const tint = rarityTint(skin.rarity);
   const cheapest = listings.slice(0, 24);
+  const byCondition = priceByCondition(detail.priceSources ?? []);
 
   return (
     <div className="preview-page">
@@ -215,17 +246,36 @@ export function PreviewSkinPage() {
       </header>
 
       <div className="preview-split">
-        <section
-          className="preview-hero-skin"
-          style={{ "--skin-tint": tint } as React.CSSProperties}
-        >
-          <Face name={skin.name} size={150} />
-          <dl className="preview-totals">
-            <div><dt>Float range</dt><dd>{formatFloat(skin.min_float)} – {formatFloat(skin.max_float)}</dd></div>
-            <div><dt>Cheapest</dt><dd>{stats.minPrice === null ? "—" : formatDollars(stats.minPrice)}</dd></div>
-            <div><dt>Highest</dt><dd>{stats.maxPrice === null ? "—" : formatDollars(stats.maxPrice)}</dd></div>
-          </dl>
-        </section>
+        <div className="preview-stack">
+          <section
+            className="preview-hero-skin"
+            style={{ "--skin-tint": tint } as React.CSSProperties}
+          >
+            <Face name={skin.name} size={150} />
+            <dl className="preview-totals">
+              <div><dt>Float range</dt><dd>{formatFloat(skin.min_float)} – {formatFloat(skin.max_float)}</dd></div>
+              <div><dt>Cheapest</dt><dd>{stats.minPrice === null ? "—" : formatDollars(stats.minPrice)}</dd></div>
+              <div><dt>Highest</dt><dd>{stats.maxPrice === null ? "—" : formatDollars(stats.maxPrice)}</dd></div>
+            </dl>
+          </section>
+          {byCondition.length > 0 && (
+            <section className="preview-panel">
+              <header className="preview-panel__head">
+                <p className="o-kicker">Price by condition</p>
+                <span className="preview-panel__meta">cheapest source</span>
+              </header>
+              <div className="preview-rows">
+                {byCondition.map((row) => (
+                  <div className="preview-row" key={row.condition}>
+                    <span className="preview-chip">{conditionShort(row.condition)}</span>
+                    <span className="preview-row__name">{row.condition}</span>
+                    <span className="preview-row__num">{formatDollars(row.cents)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
 
         <section className="preview-panel">
           <header className="preview-panel__head">
@@ -250,7 +300,7 @@ export function PreviewSkinPage() {
                 title={listing.float_value === null ? undefined : `Float ${listing.float_value}`}
               >
                 <span className="preview-listing__n">{String(index + 1).padStart(2, "0")}</span>
-                <span className="preview-listing__name"><b>{finish}</b></span>
+                <span className="preview-listing__name"><b>{wearBand(listing.float_value)}</b></span>
                 <span className="preview-chip">{sourceLabel(listing.source)}</span>
                 <span className="preview-listing__float">{formatFloat(listing.float_value) ?? "—"}</span>
                 <span className="preview-listing__price">{formatDollars(listing.price_cents)}</span>

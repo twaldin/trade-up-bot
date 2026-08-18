@@ -61,6 +61,23 @@
   background: var(--bg);
 }
 
+/* The kit theme colours the skip link but never parks it, so it was painting
+   itself over the wordmark on every route. */
+[data-preview] .skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 6px 10px;
+  transform: translateY(-300%);
+  transition: transform var(--t-control) var(--ease);
+}
+
+[data-preview] .skip-link:focus,
+[data-preview] .skip-link:focus-visible {
+  transform: none;
+}
+
 .preview-brand {
   display: inline-flex;
   align-items: center;
@@ -853,11 +870,15 @@
   object-fit: contain;
 }
 
+/* A missing face reads as a quiet rarity plate, not a broken image well. */
 .preview-skin__ph {
-  width: 60%;
-  height: 80%;
+  width: 62%;
+  height: 78%;
   border-radius: var(--r-control);
-  background: var(--sunken);
+  background:
+    radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--skin-tint) 22%, transparent), transparent 70%),
+    color-mix(in srgb, var(--skin-tint) 6%, var(--sunken));
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 16%, transparent);
 }
 
 .preview-skin__label {
@@ -1547,4 +1568,10 @@
   height: 100%;
   object-fit: cover;
   object-position: top left;
+}
+
+.preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }

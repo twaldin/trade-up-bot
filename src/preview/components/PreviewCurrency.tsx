@@ -1,8 +1,8 @@
 /**
- * Outlay currency control. The production `CurrencyPicker` is shadcn-flavoured
- * (`rounded-md`, `text-muted-foreground`, `border-border`) and restyling it in
- * place would bleed into production, so preview drives the same context with
- * its own markup.
+ * Outlay currency control. The production picker is built from shadcn utility
+ * classes on a different radius and text scale, and restyling it in place would
+ * bleed into production, so preview drives the same currency context with its
+ * own markup.
  */
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";

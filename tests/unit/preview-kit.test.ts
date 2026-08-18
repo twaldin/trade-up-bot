@@ -53,7 +53,7 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(css).not.toMatch(/220px/);
     expect(css).toContain("preview-skin--input");
     expect(css).toContain("preview-skin--output");
-    expect(css).toContain("preview-payoff");
+    expect(css).toContain("preview-strip");
     expect(css).toContain("var(--r-panel)");
   });
 });
@@ -82,9 +82,11 @@ describe("preview craft bar", () => {
     expect(board).toContain("conditionShort");
   });
 
-  it("gives the payoff strip and the bar tracks a real ground, not a hairline", () => {
-    expect(css).toMatch(/\.preview-payoff\s*\{[^}]*background:/);
-    expect(css).toMatch(/\.preview-paybar__track\s*\{[^}]*background:/);
+  it("draws the payoff strip as a slim tick scale, not fat orbs", () => {
+    expect(css).toMatch(/\.preview-strip\s*\{[^}]*background:/);
+    expect(css).toMatch(/\.preview-strip__tick\s*\{[^}]*width:\s*2px/);
+    expect(css).not.toContain("preview-payoff__dot");
+    expect(board).not.toContain("PayoffBars");
   });
 
   it("expands into strip + waterfall + CDF + listings + Verify/Claim, not listings only", () => {
@@ -105,26 +107,91 @@ describe("preview craft bar", () => {
     expect(css).not.toContain(".preview-kpis");
   });
 
-  it("keeps lime a CTA fill and a focus ring — never a rarity, status, or series", () => {
-    const limeSelectors = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
-      .filter((rule) => /var\(--accent\)/.test(rule[2] ?? ""))
-      .map((rule) => (rule[1] ?? "").trim());
-    expect(limeSelectors.length).toBeGreaterThan(0);
-    for (const selector of limeSelectors) {
-      expect(selector, selector).toContain("preview-btn--lime");
+  it("makes lime the profit colour and pairs it with one loss red", () => {
+    expect(css).toMatch(/--profit:\s*var\(--accent\)/);
+    expect(css).toMatch(/--profit-ink:\s*var\(--accent-text\)/);
+    expect(css).toMatch(/--loss:\s*#/);
+    // Not the Covert rarity red: a loss must never read as a rarity.
+    expect(css.toLowerCase()).not.toMatch(/--loss:\s*#eb4b4b/);
+    for (const rule of ["is-plus", "is-minus"]) {
+      expect(css).toContain(rule);
     }
-    const accentBorderProps = [...css.matchAll(/([a-z-]+)\s*:[^;{}]*var\(--accent-border\)/g)]
-      .map((match) => match[1]);
-    expect([...new Set(accentBorderProps)]).toEqual(["outline"]);
-    expect(css).not.toContain("var(--accent-text)");
-    expect(board).not.toContain("--accent");
   });
 
-  it("shows no invented time series on the landing device", () => {
+  it("keeps a foreign green off the board — no third status colour", () => {
+    expect(css).not.toContain("var(--success)");
+    expect(css).not.toContain("var(--danger)");
+    expect(board).not.toContain("var(--success)");
+    expect(board).not.toContain("var(--danger)");
+    expect(board).not.toMatch(/#[0-9a-f]{3,8}/i);
+  });
+
+  it("shows a real board capture on the landing device, not charts or live HTML", () => {
     const device = read("../../src/preview/components/DeviceScreen.tsx");
     expect(device).not.toMatch(/\bW[1-8]\b/);
-    expect(device).not.toMatch(/8 weeks/);
     expect(device).not.toContain("AreaChart");
     expect(device).not.toContain("BarChart");
+    expect(device).not.toContain("TradeUpCard");
+    expect(device).toContain("board-desktop-dark.webp");
+    expect(device).toContain("board-mobile-light.webp");
+  });
+
+  it("keeps production chrome utilities out of every preview surface", () => {
+    const leaks = [
+      "rounded-md", "rounded-lg", "rounded-xl", "rounded-full",
+      "text-muted-foreground", "border-border", "bg-background", "bg-card",
+      "text-foreground", "bg-muted", "text-primary",
+    ];
+    const surfaces = [
+      "PreviewApp.tsx",
+      "PreviewShell.tsx",
+      "components/PreviewCurrency.tsx",
+      "components/PreviewMark.tsx",
+      "components/DeviceScreen.tsx",
+      "pages/PreviewBoard.tsx",
+      "pages/PreviewCalculator.tsx",
+      "pages/PreviewAccount.tsx",
+      "pages/PreviewLanding.tsx",
+      "pages/PreviewSkins.tsx",
+    ];
+    for (const file of surfaces) {
+      const source = read(`../../src/preview/${file}`);
+      for (const leak of leaks) {
+        expect(source, `${file} leaks ${leak}`).not.toContain(leak);
+      }
+    }
+  });
+
+  it("drives currency from a preview control, never the shadcn picker", () => {
+    const shell = read("../../src/preview/PreviewShell.tsx");
+    const app = read("../../src/preview/PreviewApp.tsx");
+    expect(shell).not.toContain("CurrencyPicker");
+    expect(app).not.toContain("CurrencyPicker");
+    expect(shell).toContain("PreviewCurrency");
+    const picker = read("../../src/preview/components/PreviewCurrency.tsx");
+    expect(picker).toContain("useCurrency");
+    expect(picker).toContain("preview-menu");
+  });
+
+  it("uses a lime plateless mark, not the production favicon", () => {
+    const mark = read("../../src/preview/components/PreviewMark.tsx");
+    const shell = read("../../src/preview/PreviewShell.tsx");
+    const app = read("../../src/preview/PreviewApp.tsx");
+    expect(mark).not.toContain("<rect");
+    expect(mark).not.toContain("#22c55e");
+    expect(css).toContain(".preview-mark { color: var(--accent); }");
+    expect(shell).not.toContain("favicon.svg");
+    expect(app).not.toContain("favicon.svg");
+  });
+
+  it("mounts skins and collections inside the preview shell", () => {
+    const app = read("../../src/preview/PreviewApp.tsx");
+    const shell = read("../../src/preview/PreviewShell.tsx");
+    for (const path of ["skins", "skins/:slug", "collections", "collections/:name"]) {
+      expect(app).toContain(`path="/preview/${path}"`);
+    }
+    expect(app).toMatch(/skins\|collections/);
+    expect(shell).toContain("/preview/skins");
+    expect(shell).toContain("/preview/collections");
   });
 });
