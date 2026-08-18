@@ -10,6 +10,7 @@ import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
+import { previewFacesRouter } from "./routes/preview-faces.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { snapshotsRouter } from "./routes/snapshots.js";
@@ -107,8 +108,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "data:"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "https://community.cloudflare.steamstatic.com", "https://community.akamai.steamstatic.com", "data:"],
       connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com", "https://open.er-api.com"],
       frameSrc: ["https://checkout.stripe.com"],
     },
@@ -130,6 +132,9 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api") && !req.path.startsWith("/assets")) {
     res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  }
+  if (req.path === "/preview" || req.path.startsWith("/preview/")) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
   }
   next();
 });
@@ -170,6 +175,7 @@ registerCanonicalRedirectRoutes(app);
   app.use(discordRouter(pool));
   app.use(sitemapRouter(pool));
   app.use(listingSniperRouter(pool));
+  app.use(previewFacesRouter(pool));
 
   // Dynamic OG image for shareable trade-up pages
   const { generateOgImage } = await import("./og-image.js");

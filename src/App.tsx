@@ -28,6 +28,7 @@ const CollectionListViewer = lazy(() => import("./components/CollectionListViewe
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 const TradeUpSharePage = lazy(() => import("./pages/TradeUpSharePage.js").then(m => ({ default: m.TradeUpSharePage })));
 const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
+const PreviewApp = lazy(() => import("./preview/PreviewApp.js"));
 
 interface GlobalStats {
   total_trade_ups: number;
@@ -520,6 +521,11 @@ export default function App() {
         <Route path="/trade-ups/:id" element={
           <Suspense fallback={<div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading</div>}>
             <TradeUpSharePage />
+          </Suspense>
+        } />
+        <Route path="/preview/*" element={
+          <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+            <PreviewApp />
           </Suspense>
         } />
         <Route path="*" element={<AuthGatedApp />} />

@@ -1,0 +1,1627 @@
+@import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap");
+
+/* ===========================================================================
+   Outlay — cream stock, lime as fill, controller density
+   ---------------------------------------------------------------------------
+   DENSITY      body 12px / 1.5 (18px) · table row 32px · control 28px · step 4px
+                Marketing band padding 80px (160px between bands); max content
+                1200px. The console is full-bleed: no max width, 16px gutter, and
+                the shell itself never scrolls — sidebar and top bar are fixed
+                panes, the content region is the only scroller.
+   RADIUS       4px · 6px  (4 = controls, inputs, chips, table cells, nav items;
+                6 = panels, dialogs, the browser window page. No pills anywhere,
+                including marketing — a pill is a different company.)
+   ELEVATION    surface-step, ONE model, TWO authored ladders. The canvas is the
+                extreme in both modes and the tint is always a BOUNDED region:
+                  light  canvas #FFFFFF -> panel #F8F5F2 (-0.0833 L) -> well
+                         #EEEBE8; overlay returns to #FFFFFF.
+                  dark   canvas #111110 -> panel #1C1B19 (+0.0054 L) -> overlay
+                         #262523; the well goes DOWN to #0D0D0C.
+                Round two correction: this study used to paint the whole page
+                #F6F5F1 and put #FFFFFF cards on it — the ladder was transposed,
+                which is why the client read the beige and the white as inverted.
+                Ramp, the lineage, measures canvas #FFFFFF / card #F4F2F0: the
+                cream is the card, never the page. Every panel closed with a 1px
+                --panel-rule. No shadows — not in-app, and not on portalled
+                surfaces either: menus, dialogs and tooltips separate with a 1px
+                --line-hard rule over --overlay, because a border AND a shadow on
+                one edge is two elevation models. "Lift" is a hard 4px offset
+                block of --lift, never a blur.
+                The light step is -0.0833 in luminance and the dark step is
+                +0.0054 — 15x apart. Neither ladder is derived from the other.
+   BORDERS      --line-soft dividers and gridlines · --line-hard inputs and
+                emphasis · never both on one edge. In dark both are solved
+                against the PANEL, not the canvas, because every divider in this
+                study lives inside a panel.
+   ACCENT RULE  #D7FE52 is 1.06:1 on cream and 1.15:1 on white — it is a FILL and
+                nothing else, in BOTH modes. Never text, never an icon, never a
+                status, not even in dark where its raw ratio would pass: the
+                restraint is the lineage (six lime elements on a 9936px page) and
+                it does not get relaxed by a background change. Its one legal
+                brand use is a lime button with #000000 ink (18.19:1 on the fill,
+                unchanged by the new canvas because the ink sits ON the lime).
+                Type uses --accent-text, rings --accent-border; both re-solved per
+                mode. Exactly one chart series may be lime: spend in policy.
+   STATUS       light  success #0D6B45 · warning #845405 · danger #AB2E26 ·
+                       info #145FA7 · neutral #585F6B
+                dark   success #3FCF8E · warning #F5B944 · danger #FF6B6B ·
+                       info #5AC8FA · neutral #8E9AA0
+                NO TINTED GROUND. Each is INK ONLY, on whatever ladder rung it
+                lands on, always paired with an icon AND a word. The 14% self-tint
+                this block used to describe was retired in round two, and it went
+                for an ARCHITECTURAL reason, not a contrast one: a tint computed
+                against --bg cannot be verified per-rung and it dissolved on any
+                surface that was not the canvas. To be accurate about the cost —
+                a 14% self-tint is worth roughly 0.3:1, not the 2.4:1 a faulty
+                probe briefly suggested across the roster this round. Tinting a
+                ground toward its own ink does compress their contrast, so it is
+                the construction to MEASURE rather than assume; it is simply not
+                load-bearing at 14%. What IS load-bearing: 11px owes 4.5:1 now
+                regardless of weight or case, because docs/tokens.md withdrew the
+                >=11px/600 tracked-caps carve-out. A ratio that was legal only
+                under that clause does NOT become legal by re-casing it.
+                Measured on every rung this ink can land on, including hovered
+                and selected rows, both modes, below.
+                MEASURE WITH A CANVAS, NOT A REGEX. Chrome serialises color-mix()
+                as `color(srgb 0.846 0.912 0.897)` — channels in 0..1 — so a probe
+                that regex-scrapes numbers and divides by 255 reads a pale ground
+                as near-black. This study has exactly one such value (the lime
+                card's 22% border on the landing route); it is a border, not a
+                text ground, so nothing here was mis-measured. Every ratio in this
+                file is canvas-resolved via
+                `ctx.fillStyle = css; ctx.fillRect(0,0,1,1); getImageData(...)`.
+   ROW STATES   rest = the panel · hover = the well step · selected = a lime wash
+                with a 2px INK bar inset on the row's SQUARE left edge (a table
+                row has radius 0, so a one-sided rule is legal there) · focus
+                -visible 2px --accent-border outline offset -2px · active one step
+                further. Selected survives blur because the bar is ink.
+                Rounded state indicators — nav items, segmented controls, menu
+                items — carry NO one-sided rule and NO single-axis inset shadow.
+                They change fill and ink, which is what the corpus does.
+   TEXT TIERS   Two at body size, authored per mode and verified against every
+                rung of that mode's ladder, not against the canvas alone.
+                  light  #0B0B0A  19.69 canvas · 18.13 panel · 16.58 well
+                                  · 16.01 row-active · 18.03 lime wash
+                         #6A6866   5.55 ·  5.11 ·  4.67 ·  4.51 ·  5.08
+                         #878482   3.71 ·  3.42 ·  3.13 ·  3.02 ·  3.40
+                  dark   #EEECE7  16.00 canvas · 14.58 panel · 12.97 overlay
+                                  · 13.63 row-hover · 12.52 lime wash
+                         #918F8B   5.85 ·  5.33 ·  4.74 ·  4.98 ·  4.58
+                         #747370   3.98 ·  3.63 ·  3.23 ·  3.39 ·  3.12
+                The third tier (#878482 / #747370) is >=16px text ONLY as of round
+                three — docs/tokens.md withdrew its tracked-uppercase carve-out.
+                This study has no >=16px muted-decoration slot, so `--text-subtle`
+                is now declared and published as a role but has ZERO call sites
+                here. It stays declared so a foreign palette's third tier has
+                somewhere to land; it is never used under 16px again.
+   VIZ          gridline 1px --line-soft, horizontal only · axis text --text-muted
+                11px tabular (never the third tier: 11px at 3.1:1 has no place in
+                a study whose whole argument is dense legibility)
+                · series --accent for in-policy only, with a 1px --accent-border
+                stroke so a near-white fill still reads · plus --series-1..5, one
+                ramp per mode, checked on the pairs actually PLOTTED rather than
+                on token order
+                · tooltip = the same --overlay/--line-hard panel as the menus,
+                  fully opaque, in both modes
+   MOTION       120ms control · 180ms surface · 700ms theme step · entrance 520ms
+                cubic-bezier(0.16,1,0.3,1). One signature: the proof stack deals
+                itself in once, then the section theme steps three beats and the
+                lime card lifts. Light steps toward ink; dark steps toward paper —
+                both end by inverting the page, which is the same idea run in the
+                opposite direction, not a mechanical negation.
+   TYPE         FAMILIES UNCHANGED (docs/type-audit.md: "Leave it. No change." —
+                Schibsted 8298 chars / DM Mono 661 = 7% mono, the tightest
+                register discipline on the roster). What changed in round three is
+                the DISPLAY register and the LABEL register, both inside the same
+                two families.
+                Schibsted Grotesk 400/500/600 — all UI, all headings, tabular-nums
+                forced on every figure (its digits are proportional by default:
+                0 is 1252 units, 1 is 703). The hero now runs at 400, not 600:
+                weight 600 is reserved for the places a 12px UI needs it (table
+                headers, panel titles), and the hero earns its hierarchy from a
+                5.97x step over body instead.
+                Labels are SENTENCE CASE everywhere. Zero styled uppercase in
+                chrome — the Yahoo Finance recipe, 12px/400 in the muted tier.
+                Uppercase survives only where the glyphs are genuinely machine
+                tokens in DM Mono: card last-fours, TX ids, MCC codes, rule refs.
+                DM Mono 400/500 ONLY — card numbers and amount columns. Never 600:
+                /css2 rejects DM Mono 700 with HTTP 400, so a 600 token would be
+                a lie about a face that does not exist. It also has no slashed or
+                dotted zero, so it never carries a bare card number without the
+                ·· group separators that disambiguate 0 from O.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   LINEAGE — measured 2026-08-16 with xd://browser at 1440x900
+   Sources: https://ramp.com/expense-management  (marketing + product mocks)
+            https://docs.ramp.com/developer-api/v1/overview/introduction
+            (the closest public in-app-like surface; app.ramp.com is auth-gated)
+
+   measured: single type family (Lausanne) for 100% of 148 sampled text nodes;
+   measured: ONE weight — 400 on 150/150 sampled text nodes. No bold anywhere.
+   measured: type ramp is five sizes: 64/48/28/16/14 with 13 for legal, and 14px
+             carries the page (74 of 145 nodes). Body is 14/20, h1 64/64 at
+             letter-spacing -0.01px — leading 1.0 on display, i.e. trim-tight.
+   measured: radius census on 1215 painted elements: 0px x1162, 12px x22,
+             6px x15, 8px x8, 16px x4. Buttons are 6px, cards 12px.
+   measured: docs surface radius census: 4px x89 (nav items), 7px x88 (cards).
+             Sidebar nav items are 32px tall at 14px/20 — a real 32px row.
+             Control heights cluster at 36 and 32.
+   measured: box-shadow — zero real shadows on the whole marketing page (the one
+             hit is Tailwind's all-transparent reset). Depth is a background step
+             (#F4F2F0 panel on #FFFFFF page) plus a 1px rgba(33,33,33,0.1) rule.
+             ROUND TWO: this is the measurement the first build read backwards.
+             #FFFFFF is the PAGE and #F4F2F0 is the CARD — luminance 1.0000 down
+             to 0.8903, a -0.1097 step. The ladder below reproduces the sign.
+   measured: docs.ramp.com is dark-only, and is the dark model here: canvas
+             #1A1919 (L 0.0099), raised #2A2827 (L 0.0216) — panel LIGHTER by a
+             background step alone, no border, no shadow, hover/selected #32302F.
+             Their dark step is +0.012 against a light step of -0.110: the same
+             product proves the two ladders cannot be each other's negation.
+   measured: accent census — the acid lime paints exactly SIX elements on a
+             9936px page, and every one of them is a CTA button with black ink:
+             "See a demo", "Get report", "Get started for free" x4. That is the
+             whole lesson of this lineage and the reason the token below is a
+             fill-only token in both modes. Status on their own proof cards is
+             carried by green/red TEXT plus a word ("Approval recommended",
+             "Request repayment"), never by the brand lime.
+   measured: hover timing 240ms cubic-bezier(0.45,0.05,0.55,0.95) on colour only.
+   measured: their lime is lab(92.14 -20.50 84.77) = #EFF02A, a hair more yellow
+             than our verified #D7FE52. Their cream is lab(95.60 0.43 1.20) =
+             #F4F2F0; their ink lab(2.84 0.37 0.97) = #0C0A08.
+   measured: page canvas texture — none. Flat #FFFFFF, no grid, no noise, in
+             marketing and in docs alike.
+
+   TRANSLATED, not copied:
+   - Their ONE weight works because Lausanne is a 64px display face on a
+     marketing page. It does not transfer to a 12px controller UI, where a
+     table header and its cells need to separate without a second colour. We
+     take the *discipline* (three weights, never four) not the count: 400 body
+     and the hero, 500 figures and kickers, 600 table headers and panel titles.
+   - Their 12px card radius is a marketing radius. At a 32px row it swallows the
+     cell, so the scale lands on 4/6 — which is exactly what their own docs
+     surface uses (4px nav items, 7px cards). The product told the truth; the
+     campaign site did not.
+   - Their 14px body is a marketing body. This study is a controller's tool, so
+     body drops to 12px and the row to 32px. That is a deliberate deviation.
+   - Their dark mode carries no panel border at all. We keep a 1px --panel-rule
+     at #262523 — one step above the panel, invisible until it needs to be an
+     edge — because our panels butt against each other in a 3px gutter grid
+     where Ramp's docs cards float in whitespace.
+   - Not taken: the wordmark, the arrow glyph, the illustrations, the copy, and
+     the 240ms colour-only hover (too slow at this density; we use 120ms).
+   --------------------------------------------------------------------------- */
+
+[data-system="outlay"] {
+  /* mode-independent: the brand fill, geometry, motion, faces */
+  --accent: #d7fe52; /* FILL ONLY, both modes — 1.15:1 on white, 1.06:1 on cream */
+  --on-accent: #000000; /* 18.19:1 on the fill */
+
+  /* geometry */
+  --r-control: 4px;
+  --r-panel: 6px;
+  --r-chip: 4px; /* status indicators; named separately so a foreign detail
+                    cassette can drive it without touching controls */
+  --row: 32px;
+  --control: 28px;
+  --step: 4px;
+
+  /* motion */
+  --t-control: 120ms;
+  --t-surface: 180ms;
+  --t-theme: 700ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --font-body: "Schibsted Grotesk", system-ui, sans-serif;
+  /* The same face, on its own property. This study runs ONE family by design,
+     but a heading that reads --font-body gives a two-family cassette nowhere to
+     put its display face, and the mixer would report an axis it did not apply. */
+  --font-display: var(--font-body);
+  --font-mono: "DM Mono", ui-monospace, monospace;
+
+  /* ------------------------------------------------------- LIGHT LADDER
+     The default, and the study's native mode. Canvas is the extreme
+     (#FFFFFF, L 1.0000) and every tinted value is a bounded region: a
+     panel, a band, a well, a row. Nothing paints the page cream. */
+  --bg: #ffffff; /* canvas   L 1.0000 */
+  --panel: #f8f5f2; /* raised   L 0.9167  (-0.0833) */
+  --overlay: #ffffff; /* portals return to the canvas + 1px --line-hard */
+  --sunken: #eeebe8; /* well     L 0.8342  (-0.1658) */
+  --row-hover: #eeebe8; /* rows sit ON --panel, so hover is the well step */
+  --row-active: #ebe7e3; /* L 0.8036 — the worst surface, tiers solved here */
+  --row-selected: #f3f8d8; /* lime wash — a tint, never the fill */
+  --row-selected-hover: #edf3cb; /* muted 4.83 · subtle 3.23 · ink 17.14 */
+  --band-panel: #ffffff; /* a stage inside a cream band returns to the canvas */
+  /* One hairline value, three jobs. The panel rule and the lift block used to
+     carry their own #E6E2DC; the roster's palette contract has exactly two line
+     roles, so a third line value could not be published and every panel edge
+     in this study would have stayed cream under a foreign palette. Merged onto
+     --line-soft, which is the value the gridlines needed anyway. */
+  --line-soft: #d9d8d5;
+  --panel-rule: #d9d8d5; /* = --line-soft */
+  --lift: #d9d8d5; /* = --line-soft: the hard offset block is a rule's weight */
+  --line-hard: #acaba8;
+
+  --text: #0b0b0a; /* 19.69 / 18.13 / 16.58 / 16.01 / 18.03 */
+  --text-muted: #6a6866; /*  5.55 /  5.11 /  4.67 /  4.51 /  5.08 */
+  --text-subtle: #878482; /*  3.71 /  3.42 /  3.13 /  3.02 /  3.40 */
+
+  /* re-solved this round: the sheet's #647726 was 4.57:1 on the OLD cream page
+     and only 4.06:1 on --row-active now that cream is the row surface. #5A6B22
+     is 5.90 canvas · 5.43 panel · 4.97 well · 4.79 row-active · 5.40 wash. */
+  --accent-text: #5a6b22;
+  /* likewise #7E9530 fell to 2.74:1 on --row-active. #788D2D is
+     3.72 canvas · 3.42 panel · 3.13 well · 3.02 row-active. */
+  --accent-border: #788d2d;
+
+  /* fields: a well at rest, the canvas at focus — an input is a hole that
+     fills with paper when you write in it */
+  --input-bg: #eeebe8;
+  --input-hover: #ebe7e3;
+  --input-focus: #ffffff; /* = --overlay: the paper a floating surface is made of */
+  --field: #ffffff; /* = --bg: a small control at rest is the page */
+  /* = --line-hard, not --line-soft. This bar is DATA (the daily draw), so it has
+     to read as a bar and not as a gridline; #D9D8D5 was the gridline value. */
+  --bar-quiet: #acaba8;
+  /* the ink button walks AWAY from the page in both modes, so its hover cannot
+     be a fixed hex: in dark the ink is paper and the hover has to darken. */
+  --ink-hover: #23231f;
+  --ink-active: #35352f;
+
+  /* status — INK ONLY, never on a tint of itself. Measured 2026-08-17 against
+     every rung this ink can land on, in this mode, worst-case last:
+       canvas #FFFFFF · panel #F8F5F2 · well/row-hover #EEEBE8 ·
+       row-active #EBE7E3 · row-selected #F3F8D8 · selected+hover #EDF3CB
+       success  6.55 · 6.03 · 5.52 · 5.32 · 6.00 · 5.70
+       warning  6.46 · 5.95 · 5.44 · 5.25 · 5.91 · 5.62
+       danger   6.67 · 6.14 · 5.61 · 5.42 · 6.10 · 5.80
+       info     6.51 · 6.00 · 5.48 · 5.29 · 5.96 · 5.67
+       neutral  6.43 · 5.92 · 5.42 · 5.23 · 5.89 · 5.60
+     Floor 4.5 (11px owes it now, carve-out withdrawn); worst case 5.23 on
+     --neutral over --row-active. The old "/ tint" column in this comment
+     described a 14% self-tint ground that no longer exists anywhere in the
+     study — it was measuring 5.2-5.3 and would have been the next thing to
+     fail. Do not reintroduce it. */
+  --success: #0d6b45;
+  --warning: #845405;
+  --danger: #ab2e26;
+  --info: #145fa7;
+  --neutral: #585f6b;
+
+  /* Modal backdrop. Was inlined as a Tailwind arbitrary value at the one call
+     site, which made it unpublishable; it is a palette role, so it is a token. */
+  --scrim: rgba(11, 11, 10, 0.38);
+
+  /* ------------------------------------------------------- status indicator
+     `recede-settled` has exactly two inks: full for open, receded for settled.
+     Named tokens rather than raw tiers so the proof stack's beat themes and the
+     portal layer can re-point them (both re-author --text for their own stage).
+     NEVER an opacity: docs/tokens.md forbids opacity dimming, and --text-muted
+     is the tier that is already verified on every row surface. */
+  --status-ink: var(--text);
+  --status-recede: var(--text-muted);
+
+  /* ------------------------------------------------------------- chart ramp
+     This study's OWN ramp, not the generic one in docs/tokens.md. That ramp's
+     magenta #D9428D has no business on cream stock. Ink, blue, green, amber and
+     a cool grey are all colours this product already uses somewhere.
+
+     Luminance staircase, computed (sRGB linearised, 0.2126R+0.7152G+0.0722B),
+     and checked on the pairs actually STACKED (lime, s4, s1, s5, s2 in that
+     order) rather than on token order:
+       --series-1 ink    #0B0B0A  L=0.0033  19.69:1 on canvas
+       --series-2 blue   #1D4E89  L=0.0752   8.39:1
+       --series-3 green  #0E7347  L=0.1281   5.90:1
+       --series-4 amber  #C35A0A  L=0.1894   4.39:1
+       --series-5 grey   #838997  L=0.2495   3.51:1
+       --accent   lime   #D7FE52  L=0.8594   1.15:1
+     Stacked-neighbour gaps: lime-s4 0.670 · s4-s1 0.186 · s1-s5 0.246 ·
+     s5-s2 0.174. Lime is series zero and belongs to in-policy spend alone; it
+     carries a 1px --accent-border stroke wherever it is plotted, because a
+     1.15:1 fill needs the stroke to have an edge at all. */
+  --series-1: #0b0b0a;
+  --series-2: #1d4e89;
+  --series-3: #0e7347;
+  --series-4: #c35a0a;
+  --series-5: #838997;
+
+  position: relative;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  /* No tabular-nums at the root: Schibsted's tnum gives the comma and full stop
+     a full digit advance, which loosens every comma in running prose. Tabular
+     figures are applied per-figure instead, which is the only place they help. */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------- DARK LADDER
+   Authored, not inverted. Modelled on docs.ramp.com, which is dark-only:
+   canvas at the extreme, panel one background step UP, the well the only
+   rung that still goes DOWN, and the portal layer +21 units where it has
+   room. The whole dark ladder spans 0.0186 of luminance where the light
+   one spans 0.1964 — negating the light values would have produced six
+   indistinguishable greys. */
+[data-system="outlay"][data-mode="dark"] {
+  --bg: #111110; /* canvas   L 0.0056 */
+  --panel: #1c1b19; /* raised   L 0.0110  (+0.0054) */
+  --overlay: #262523; /* portals  L 0.0186 + 1px --line-hard */
+  --sunken: #0d0d0c; /* well     L 0.0040  — down, not up. A hole is a hole. */
+  --row-hover: #22211f; /* rows sit ON --panel, so hover steps up again */
+  --row-active: #262523;
+  --row-selected: #27291c; /* lime at 6% over --panel: an olive wash, not a fill */
+  /* A selected row hovers DOWN in dark. Stepping up from an already-lit wash
+     would push muted ink under 4.5:1 (measured 4.23 at #2D2F1F); this reads as a
+     press instead, and gains contrast: muted 5.18, subtle 3.52, ink 14.15. */
+  --row-selected-hover: #1d1f12;
+  --band-panel: #262523; /* a stage inside a raised band steps up again: 4.74
+                            muted, 3.23 subtle, 12.97 ink */
+  --line-soft: #2a2827; /* solved against --panel: dividers live inside panels */
+  --panel-rule: #2a2827; /* = --line-soft (was #262523, its own third value) */
+  --lift: #2a2827; /* = --line-soft */
+  --line-hard: #3d3b37;
+
+  --text: #eeece7; /* 16.00 canvas · 14.58 panel · 12.97 overlay · 12.52 wash */
+  --text-muted: #918f8b; /*  5.85 ·  5.33 ·  4.74 ·  4.58  (row-hover 4.98) */
+  --text-subtle: #747370; /*  3.98 ·  3.63 ·  3.23 ·  3.12  (row-hover 3.39) */
+
+  /* Lime is still not ink here. #B6CF5E is an olive drawn off the lime axis:
+     10.86 canvas · 9.90 panel · 8.81 overlay · 8.50 wash. The brand fill stays
+     the brand fill. */
+  --accent-text: #b6cf5e;
+  --accent-border: #a9c250; /* 9.46:1 on canvas — rings, selected bars, meters */
+
+  --input-bg: #0d0d0c;
+  --input-hover: #161615;
+  --input-focus: #262523; /* = --overlay (was #1C1B19). The dark field now runs
+                             one monotone ladder: well #0D0D0C -> hover #161615
+                             -> paper #262523. Ink 12.97, placeholder 4.74. */
+  --field: #111110; /* = --bg (was #0D0D0C) */
+  --bar-quiet: #3d3b37; /* = --line-hard */
+  --ink-hover: #d8d5cf; /* paper ink, so hover darkens instead of lightening */
+  --ink-active: #c4c1ba;
+
+  /* status — INK ONLY, same rule. Measured against this mode's rungs:
+       panel #1C1B19 · well #0D0D0C · row-hover #22211F · row-active/overlay
+       #262523 · row-selected #27291C · selected+hover #1D1F12
+       success  8.63 · 9.75 · 8.06 · 7.68 · 7.41 · 8.37
+       warning  9.76 · 11.02 · 9.12 · 8.68 · 8.38 · 9.47
+       danger   6.20 · 7.01 · 5.80 · 5.52 · 5.33 · 6.02
+       info     9.08 · 10.26 · 8.49 · 8.08 · 7.80 · 8.81
+       neutral  5.97 · 6.74 · 5.58 · 5.31 · 5.13 · 5.79
+     Worst case 5.13 on --neutral over --row-selected. Dark is the mode where a
+     self-tint would have LOOKED fine (it measures ~10:1 there) while light was
+     failing, which is exactly why the tint is banned by construction rather
+     than by measurement. */
+  --success: #3fcf8e;
+  --warning: #f5b944;
+  --danger: #ff6b6b;
+  --info: #5ac8fa;
+  --neutral: #8e9aa0;
+
+  /* A 38% wash of near-black over a near-black canvas dims nothing, so the dark
+     scrim is authored rather than reused. 62% takes #1C1B19 to L 0.0016. */
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  /* Dark ramp, authored against the PANEL (L 0.0110), which is where every
+     chart in this study is drawn. Not the light ramp lightened: series-1 is
+     "the ink series" and in dark the ink is paper, so it moves from L 0.0033 to
+     L 0.5648 while amber barely moves.
+       --series-1 paper  #C9C6BD  L=0.5648  10.08:1 on panel
+       --series-2 blue   #4A86D8  L=0.2346   4.67:1
+       --series-3 green  #35A86A  L=0.2980   5.70:1
+       --series-4 amber  #E0992E  L=0.3883   7.18:1
+       --series-5 slate  #647079  L=0.1568   3.39:1
+       --accent   lime   #D7FE52  L=0.8594  15.60:1
+     Stacked-neighbour gaps: lime-s4 0.471 · s4-s1 0.177 · s1-s5 0.408 ·
+     s5-s2 0.078. Composed chart pair s2/s3: 0.063. All clear 0.05. */
+  --series-1: #c9c6bd;
+  --series-2: #4a86d8;
+  --series-3: #35a86a;
+  --series-4: #e0992e;
+  --series-5: #647079;
+}
+
+/* ------------------------------------------------------------- paper tooth
+   MARKETING-CONFINED, and non-functional: this is the study's one liberty,
+   the tooth of the cream stock it is named for. It is therefore drawn on the
+   landing route only ([data-view="landing"]), never in the console, and never
+   behind tabular data — every panel over it is an opaque --panel fill.
+
+   Round two: the 32px hairline grid that used to sit on top of this is gone.
+   Zero of thirteen measured products paint a grid on an application canvas,
+   eleven of fifteen studies had grown one, and Ramp's own canvas is flat.
+
+   One pre-rasterised 140px tile: the browser resolves the feTurbulence
+   data-URI once at load and then repeats a bitmap, so this is not a live
+   full-page filter. Fixed, so it reads as tooth in the paper rather than as
+   dirt travelling with the content. Effective ink is 0.055 * 0.6 = 3.3%. */
+[data-system="outlay"][data-view="landing"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+}
+
+/* Grey noise over near-black reads as sediment rather than tooth, so the dark
+   tile is dialled back to an effective 1.9%. */
+[data-system="outlay"][data-mode="dark"][data-view="landing"]::before {
+  opacity: 0.35;
+}
+
+[data-system="outlay"] > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* the skip link is a direct child and must stay out of the flow */
+[data-system="outlay"] > .skip-link {
+  position: fixed;
+  z-index: 100;
+}
+
+/* Figures get tabular-nums and Schibsted's slashed zero. */
+[data-system="outlay"] :is(.o-figure, .o-mono, .o-mono-500, .o-label, table, dd, time),
+[data-system="outlay"] :is(.recharts-text, .tabular-nums) {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}
+
+/* ------------------------------------------------------------------ type */
+
+[data-system="outlay"] h1,
+[data-system="outlay"] h2,
+[data-system="outlay"] h3,
+[data-system="outlay"] h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+[data-system="outlay"] p {
+  margin: 0;
+}
+
+/* DISPLAY REGISTER — round three push. Ramp's own hero measures 64px at weight
+   400 with leading 1.0 and tracking ~0: ONE weight, and hierarchy carried by
+   size. This study used to set 600 at 40-60px, which is the roster default the
+   client called timid. It now runs 48-76px at weight 400: the h1-to-body step
+   goes 4.69x -> 5.97x at 1280 (71.68px over a 12px body), and 600 is left to do
+   the work it is actually needed for, which is separating a 12px table header
+   from its 12px cells. Tracking is solved per band and negative at >=40px per
+   docs/type-audit.md: -0.032em is -2.29px at 71.68px.
+
+   SCOPED, deliberately: the element rule above is `[data-system] h1`, which
+   outranks a bare class — so before this round `.o-display`'s own weight and
+   tracking were dead declarations and the hero silently rendered at 600 /
+   -0.018em. Every class that overrides a heading property is scoped from here
+   on. */
+[data-system="outlay"] .o-display {
+  font-size: clamp(3rem, 5.6vw, 4.75rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.032em;
+}
+
+/* Section heads follow the hero into the light register — 36px at 500 — so the
+   display voice is one voice. Below 22px the study stays at 600. */
+[data-system="outlay"] .o-h2 {
+  font-size: 2.25rem;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.024em;
+}
+
+[data-system="outlay"] .o-h3 {
+  font-size: 1.125rem;
+  line-height: 1.2;
+  letter-spacing: -0.014em;
+}
+
+.o-lead {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ===================================================== the label register
+   Round three: sentence case, always. Measured across 41 pages of production
+   DOM, KPI/stat labels are sentence case 49 times out of 50, and the one
+   exception is a badge. The reference here is Yahoo Finance — the only
+   genuinely financial product in the survey — which sets all sixteen of its
+   stat labels at 12px/400 in a muted tier. A spend console takes that recipe
+   literally. Differentiation is size, weight and colour tier; never case.
+
+   `--text-subtle` (3.4:1) is gone from both classes: it is >=16px-only now, and
+   the tracked-caps carve-out that used to license it has been withdrawn. Both
+   classes sit on `--text-muted` (5.11:1 on panel) against body ink at 18.13:1,
+   and that ~3.5x gap is what makes them read as subordinate. */
+
+/* Stat and KPI labels, metadata lines, tooltip and menu labels. Yahoo exactly. */
+/* `.o-portal` is in the selector list because Radix mounts menus, popovers and
+   the chart tooltip on `body`, outside the study scope — and these three classes
+   are scoped now, so a portalled label would otherwise fall back to bare
+   inherited type. `--text-muted` is re-declared on `.o-portal` itself. */
+[data-system="outlay"] .o-label,
+.o-portal .o-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+/* A group/section kicker: sidebar and menu nav groups, footer columns, and the
+   landing section eyebrows. One size and one weight step above a stat label,
+   because it names a region rather than a datum. Linear's nav groups measure
+   14px/510 muted sentence; at this study's 12px density that lands on 13/500. */
+[data-system="outlay"] .o-kicker,
+.o-portal .o-kicker {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
+}
+
+/* Chart and panel titles: full ink, so a title is not competing with the labels
+   under it for the muted tier. Notion/Yahoo panel titles are sentence case. */
+[data-system="outlay"] .o-panel-title,
+.o-portal .o-panel-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  color: var(--text);
+}
+
+.o-mono {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.o-mono-500 {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.o-figure {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* --------------------------------------------------------------- surfaces */
+
+.o-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+}
+
+/* A full-bleed marketing band. This is the study's texture: the rhythm on the
+   landing page is bands of --canvas alternating with bands of --panel, which is
+   what Notion, Stripe, Databricks and Vercel actually use and costs zero extra
+   layers. A band is a BOUNDED region, which is why it may carry the tint the
+   page canvas may not.
+
+   A panel is always one step away from the surface it sits ON, never from the
+   page — the same rule that governs row hover. So inside a tinted band the panel
+   steps to --band-panel instead of --panel, or the two would be the same value
+   with only a hairline between them. */
+.o-band {
+  background: var(--panel);
+}
+.o-band .o-panel {
+  background: var(--band-panel);
+}
+
+.o-sunken {
+  background: var(--sunken);
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+}
+
+/* the one legal "lift": a hard offset block, no blur */
+.o-lifted {
+  position: relative;
+}
+.o-lifted::after {
+  content: "";
+  position: absolute;
+  inset: 4px -4px -4px 4px;
+  z-index: -1;
+  border-radius: var(--r-panel);
+  background: var(--lift);
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.o-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--t-control) ease,
+    border-color var(--t-control) ease,
+    color var(--t-control) ease;
+}
+
+.o-btn:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+/* the single legal brand use of the lime */
+.o-btn--accent {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent-border);
+}
+.o-btn--accent:hover {
+  background: #c9f139;
+}
+.o-btn--accent:active {
+  background: #b9e026;
+}
+
+.o-btn--ink {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.o-btn--ink:hover {
+  background: var(--ink-hover);
+}
+.o-btn--ink:active {
+  background: var(--ink-active);
+}
+
+/* --field, not --panel: a quiet button frequently sits ON a cream panel, and a
+   cream control on a cream panel is a border with nothing inside it. */
+.o-btn--quiet {
+  background: var(--field);
+  color: var(--text);
+  border-color: var(--line-hard);
+}
+.o-btn--quiet:hover {
+  background: var(--row-hover);
+}
+.o-btn--quiet:active {
+  background: var(--row-active);
+}
+
+.o-btn--bare {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+}
+.o-btn--bare:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.o-btn--bare:active {
+  background: var(--row-active);
+  color: var(--text);
+}
+
+.o-btn--lg {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 0.8125rem;
+}
+
+.o-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control);
+  height: var(--control);
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  transition:
+    background-color var(--t-control) ease,
+    color var(--t-control) ease,
+    border-color var(--t-control) ease;
+}
+.o-icon-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  border-color: var(--panel-rule);
+}
+.o-icon-btn:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.o-input {
+  height: var(--control);
+  padding: 0 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color var(--t-control) ease,
+    background-color var(--t-control) ease;
+}
+.o-input::placeholder {
+  color: var(--text-muted);
+}
+.o-input:hover {
+  background: var(--input-hover);
+}
+/* an input is a well that fills with paper when you write in it */
+.o-input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+  border-color: var(--accent-border);
+  background: var(--input-focus);
+}
+
+textarea.o-input {
+  height: auto;
+  padding: 6px 8px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* radix control skins */
+.o-switch {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--field);
+  border: 1px solid var(--line-hard);
+  transition: background-color var(--t-control) ease;
+}
+.o-switch[data-state="checked"] {
+  background: var(--accent);
+  border-color: var(--accent-border);
+}
+.o-switch:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+.o-switch-thumb {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--text);
+  transform: translateX(1px);
+  transition: transform var(--t-control) var(--ease);
+}
+.o-switch[data-state="checked"] .o-switch-thumb {
+  transform: translateX(15px);
+}
+
+.o-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--line-hard);
+  background: var(--field);
+  color: var(--on-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color var(--t-control) ease,
+    border-color var(--t-control) ease;
+}
+.o-check[data-state="checked"],
+.o-check[data-state="indeterminate"] {
+  background: var(--accent);
+  border-color: var(--accent-border);
+}
+.o-check:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.o-tab {
+  height: var(--control);
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition:
+    background-color var(--t-control) ease,
+    color var(--t-control) ease;
+}
+.o-tab:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.o-tab[data-state="active"] {
+  background: var(--text);
+  color: var(--bg);
+}
+.o-tab:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.o-toggle {
+  height: var(--control);
+  padding: 0 9px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-right: 1px solid var(--panel-rule);
+  transition:
+    background-color var(--t-control) ease,
+    color var(--t-control) ease;
+}
+.o-toggle:last-child {
+  border-right: 0;
+}
+.o-toggle:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+/* Round two: this used to carry `box-shadow: inset 0 -2px 0 0 var(--text)`, an
+   underline inside a rounded segmented control — two metaphors at once, and the
+   exact effect the client asked to be removed everywhere. State is now fill and
+   ink only: the lime wash, full-strength ink, and 600 against the rest of the
+   group at 500. The internal 1px dividers stay: those are structural. */
+.o-toggle[data-state="on"] {
+  background: var(--row-selected);
+  color: var(--text);
+  font-weight: 600;
+}
+.o-toggle[data-state="on"]:hover {
+  background: var(--row-active);
+}
+.o-toggle:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------- sidebar nav
+   A 4px-radius shape, so its state is fill and ink and nothing else. The old
+   build drew `inset 2px 0 0 var(--text)` on it — a rule that follows the corner
+   curve and leaves a half-parenthesis stub, which §14 rules out. If this study
+   ever wants a gutter bar it belongs OUTSIDE the rounded shape, at radius 0. */
+.o-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--row);
+  padding: 0 6px;
+  border-radius: var(--r-control);
+  color: var(--text-muted);
+  transition:
+    background-color var(--t-control) ease,
+    color var(--t-control) ease;
+}
+.o-nav-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.o-nav-item:active {
+  background: var(--row-active);
+}
+.o-nav-item[aria-current="page"] {
+  background: var(--row-selected);
+  color: var(--text);
+  font-weight: 600;
+}
+.o-nav-item[aria-current="page"]:hover {
+  background: var(--row-selected-hover);
+}
+
+/* ------------------------------------------------------- portalled surfaces
+   Same elevation model as everything else: --overlay closed with a 1px
+   --line-hard rule. In light --overlay returns to the canvas (#FFFFFF) rather
+   than continuing the ramp down, which is what Ramp, GitHub, Linear and Stripe
+   all do — a floating surface has no parent surface to be a step away from. In
+   dark it steps up to #262523, where there is room. No shadow, in either mode:
+   a border and a shadow on one edge is two elevation models.
+
+   Radix portals mount on `body`, OUTSIDE `[data-system="outlay"]`, so a menu or
+   dialog inherits none of the scope's custom properties and every `var()` in its
+   skin resolves to nothing — a transparent panel with the wrong ink. Every
+   portalled surface therefore carries `o-portal`, which re-declares the palette
+   on itself. Deliberately NOT on `:root`: the contract forbids it, and it would
+   leak this palette into the other fourteen studies.
+
+   The mode is read from the document root, which the shell mirrors `data-mode`
+   onto — that is the only ancestor a portalled node shares with the study. */
+.o-portal {
+  --bg: #ffffff;
+  --panel: #f8f5f2;
+  --overlay: #ffffff;
+  --sunken: #eeebe8;
+  --row-hover: #eeebe8;
+  --row-active: #ebe7e3;
+  --row-selected: #f3f8d8;
+  --row-selected-hover: #edf3cb;
+  --panel-rule: #d9d8d5;
+  --lift: #d9d8d5;
+  --line-soft: #d9d8d5;
+  --line-hard: #acaba8;
+  --text: #0b0b0a;
+  --text-muted: #6a6866;
+  --text-subtle: #878482;
+  --accent: #d7fe52;
+  --on-accent: #000000;
+  --accent-text: #5a6b22;
+  --accent-border: #788d2d;
+  --input-bg: #eeebe8;
+  --input-hover: #ebe7e3;
+  --input-focus: #ffffff;
+  --field: #ffffff;
+  --scrim: rgba(11, 11, 10, 0.38);
+  --ink-hover: #23231f;
+  --ink-active: #35352f;
+  --success: #0d6b45;
+  --warning: #845405;
+  --danger: #ab2e26;
+  --info: #145fa7;
+  --neutral: #585f6b;
+  --r-control: 4px;
+  --r-panel: 6px;
+  --r-chip: 4px;
+  --row: 32px;
+  --control: 28px;
+  /* the status idiom's two inks, resolved against THIS layer's re-authored tiers */
+  --status-ink: var(--text);
+  --status-recede: var(--text-muted);
+  --t-control: 120ms;
+  --t-surface: 180ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-body: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "DM Mono", ui-monospace, monospace;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+[data-mode="dark"] .o-portal {
+  --bg: #111110;
+  --panel: #1c1b19;
+  --overlay: #262523;
+  --sunken: #0d0d0c;
+  --row-hover: #2e2c2a;
+  --row-active: #35332f;
+  --row-selected: #31341f;
+  --row-selected-hover: #262818;
+  --panel-rule: #322f2d;
+  --lift: #322f2d;
+  --line-soft: #322f2d;
+  --line-hard: #3d3b37;
+  --text: #eeece7; /* 12.97 overlay · 11.78 hover · 10.68 highlighted · 16.47 well */
+  --text-muted: #a09e99; /* 5.72 · 5.20 · 4.71 · 7.26 — the highlighted menu row
+                            #35332F is the worst surface a portal paints */
+  --text-subtle: #817f7b; /* 3.83 · 3.48 · 3.15 · 4.87 */
+  --accent-text: #b6cf5e;
+  --accent-border: #a9c250;
+  --input-bg: #0d0d0c;
+  --input-hover: #161615;
+  --input-focus: #262523;
+  --field: #111110;
+  --scrim: rgba(0, 0, 0, 0.62);
+  --ink-hover: #d8d5cf;
+  --ink-active: #c4c1ba;
+  --success: #3fcf8e;
+  --warning: #f5b944;
+  --danger: #ff6b6b;
+  --info: #5ac8fa;
+  --neutral: #8e9aa0;
+}
+
+.o-portal :is(.o-figure, .o-mono, .o-mono-500, .o-label, table, dd) {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}
+
+/* Every floating surface in the study — menu, popover, dialog, select, and the
+   Recharts tooltip — is this one skin. Fully opaque in both modes. */
+.o-float {
+  background: var(--overlay);
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+}
+
+.o-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 8px;
+  border-radius: var(--r-control);
+  color: var(--text);
+  outline: none;
+  cursor: default;
+}
+.o-menu-item[data-highlighted] {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.o-menu-item:active {
+  background: var(--row-active);
+}
+.o-menu-item[data-state="checked"] {
+  background: var(--row-selected);
+  font-weight: 600;
+}
+
+.o-tooltip {
+  background: var(--text);
+  color: var(--bg);
+  border: 0;
+  border-radius: var(--r-control);
+  padding: 4px 7px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-family: var(--font-body);
+}
+
+/* ============================================ status idiom: recede-settled
+   A spend ledger is a worklist, so the indicator's job here is to get QUIETER.
+   Nine settled rows shouting as loudly as the one that needs a decision is the
+   actual defect of most finance UIs, and it is the defect the outlined chip
+   this replaces was built out of. There is therefore no container, no border and
+   no icon: three phases, expressed in ink weight and a strike.
+
+     open      full ink, 500          — still on your desk
+     settled    receded ink, 400, line-through   — crossed off the list
+     note      receded ink, 400       — not a state at all (a version, a count)
+
+   TWO CHANNELS, deliberately. `line-through` alone is easy to miss at 11px, so
+   every struck label also drops a full ink tier; and every full-ink label gains
+   a weight step. Nothing here is carried by hue: the word is the meaning, which
+   is why this survives greyscale, deuteranopia and a printed page intact.
+
+   THE DIM IS A TIER, NOT AN OPACITY. `opacity` on 11px type is the single most
+   common real accessibility defect in dashboards and docs/tokens.md forbids it,
+   so the receded ink is --text-muted, the tier already solved against every rung
+   of both ladders. Measured (computed, sRGB):
+     light  --text-muted #6A6866   panel 5.11 · row-hover #EEEBE8 4.67
+            · row-active #EBE7E3 4.51 · row-selected #F3F8D8 5.08
+            · selected+hover #EDF3CB 4.83        (floor 4.5, worst case 4.51)
+            --text #0B0B0A        18.13 · 16.58 · 16.01 · 18.03 · 17.14
+     dark   --text-muted #918F8B   panel 5.33 · row-hover #22211F 4.98
+            · row-active #262523 4.74 · row-selected #27291C 4.58
+            · selected+hover #1D1F12 5.18        (floor 4.5, worst case 4.58)
+            --text #EEECE7        14.58 · 13.63 · 12.97 · 12.52 · 14.15
+   Inside a portal the tiers are re-authored one step up (--text-muted #A09E99:
+   5.72 overlay · 5.20 hover · 4.71 on the highlighted menu row) and --status-*
+   is re-pointed there, so the popover ledger clears the floor too.
+
+   THE LIME WASH marks the ONE item awaiting a decision — the study's only
+   status colour, and a wash rather than the fill, because #D7FE52 is fill-only
+   in this study in both modes. It is ranked in data.ts, never per-render, so
+   exactly one indicator per worklist can carry it. It keeps a 1px
+   --accent-border ring (3.41 light / 7.41 dark on the wash, 3.13 / 8.06 on a
+   hovered row) so that it stays visible when the ROW is also selected — row
+   selection and cell status are independent and must not cancel out. */
+
+.o-status {
+  display: inline-flex;
+  align-items: center;
+  /* the height the chip occupied, so replacing it reflows no row */
+  height: 18px;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--status-recede);
+  transition: color var(--t-control) var(--ease);
+}
+
+.o-status[data-phase="open"] {
+  color: var(--status-ink);
+  font-weight: 500;
+}
+
+.o-status[data-phase="settled"] > [data-slot="label"] {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentColor;
+  text-decoration-skip-ink: none;
+}
+
+/* The one item awaiting a decision. Ink, not the receded tier, on the wash. */
+.o-status[data-urgent] {
+  color: var(--text);
+  font-weight: 500;
+  background: var(--row-selected);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-chip);
+  padding: 0 5px;
+}
+
+/* -------------------------------------------------------------- data table */
+
+.o-table {
+  font-size: 0.75rem;
+}
+/* Round three: sentence case, full ink, at the body size. ~10 real production
+   tables were measured across GitHub, Stripe and AWS Cloudscape and ZERO of
+   them uppercase a column header; all three set 14px/700 sentence in full ink.
+   Translated to a 12px body: 12px/600, and the header separates from its cells
+   by weight alone — which is exactly the discipline the Ramp lineage note above
+   already argued for, and the reason this study keeps a 600 at all. */
+.o-table thead th {
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-hard);
+  background: var(--sunken);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+/* No radius on the header cells. A `th` whose bottom rule is structural must sit
+   on a square edge, or the first and last cells render a curved stub where the
+   rule meets the corner — the audit caught exactly that here. The panel's own
+   6px radius and its `overflow: hidden` do the rounding at the outer edge. */
+.o-table tbody tr {
+  height: var(--row);
+  background: var(--panel);
+  box-shadow: inset 2px 0 0 0 transparent;
+  transition:
+    background-color var(--t-control) ease,
+    box-shadow var(--t-control) ease;
+}
+.o-table tbody tr:hover {
+  background: var(--row-hover);
+}
+.o-table tbody tr:active {
+  background: var(--row-active);
+}
+/* A table row has radius 0, so the 2px INK bar on its left edge is drawn on a
+   square edge — which is the one place §14 still allows a one-sided rule. It is
+   ink rather than lime because lime carries no meaning in this study, and it
+   survives losing focus because it is not a focus treatment. */
+.o-table tbody tr[data-selected] {
+  background: var(--row-selected);
+  box-shadow: inset 2px 0 0 0 var(--text);
+}
+.o-table tbody tr[data-selected]:hover {
+  background: var(--row-selected-hover);
+}
+.o-table tbody td,
+.o-table tbody th {
+  height: var(--row);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.o-table tfoot td,
+.o-table tfoot th {
+  height: var(--row);
+  padding: 0 10px;
+  background: var(--sunken);
+  border-top: 1px solid var(--line-hard);
+  font-weight: 500;
+}
+/* `letter-spacing: inherit` only, and that is deliberate: the sort button must
+   pick up the header's -0.01em. The `text-transform: inherit` that used to sit
+   here existed for one reason — to push the header's `uppercase` through a
+   `<button>` that a UA reset had opted out of it. With the header sentence case
+   it is dead weight, and it was a good tell for where the caps were being
+   propagated by hand. */
+.o-table [data-slot="sort-button"] {
+  letter-spacing: inherit;
+  border-radius: 2px;
+  transition: color var(--t-control) ease;
+}
+.o-table [data-slot="sort-button"]:hover {
+  color: var(--text);
+}
+.o-table [data-slot="sort-button"]:active {
+  color: var(--accent-text);
+}
+.o-table [data-slot="sort-button"]:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+.o-table [data-slot="tr"]:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+/* ----------------------------------------------------------------- charts */
+
+[data-system="outlay"] .recharts-cartesian-axis-tick text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+[data-system="outlay"] .recharts-cartesian-grid line {
+  stroke: var(--line-soft);
+}
+
+/* LEGEND LABELS ARE TEXT, NOT MARKS. Recharts writes the series colour as an
+   INLINE `color` on every `.recharts-legend-item-text`, which beats both
+   `wrapperStyle` and any class. That is a real defect and not a cosmetic one:
+   a --series-* value is authored to clear 3:1 as a MARK, and the moment it is
+   used as label ink it owes 4.5:1 and does not have it. Measured here before
+   the fix: "Daily draw" inherited --bar-quiet and read 2.11:1 light / 1.54:1
+   dark at 11px — the worst ratio in the study — while "Projected close" on
+   --series-2 sat at 4.67:1 in dark, passing by 0.17. It was conforming only
+   under the >=11px/600 tracked-caps carve-out docs/tokens.md withdrew this
+   round, so re-casing it sentence case did NOT fix the ratio; it removed the
+   only justification the ratio ever had.
+
+   `!important` is deliberate and is the narrowest tool that works: the
+   declaration it overrides is a third-party inline style, so nothing in the
+   cascade can reach it otherwise. Solved once here rather than with a
+   `formatter` per call site, so any legend added later is covered by default.
+   The hue stays where it belongs — on the swatch/plainline icon, which is a
+   graphic and legitimately owes 3:1.
+   After: 5.11:1 light on --panel, 5.33:1 dark, all three labels. */
+[data-system="outlay"] .recharts-legend-item-text {
+  color: var(--text-muted) !important;
+}
+
+/* ------------------------------------------------------------- skip link */
+
+[data-system="outlay"] .skip-link {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-control);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ==================================================== device: browser window
+   Flat. Cream chrome, 6px page radius, no 3D, no shadow — depth comes from the
+   background step and the rules, same as every other surface here. The traffic
+   lights are replaced by three 5px SQUARES: a controller's product does not get
+   rounded toy dots, and a frame that looks like another study's frame is a bug.
+   The screen is authored at a fixed 1440x936 and scaled, per device-frames.md
+   — fluid would reflow the replica into its narrow layout. */
+
+.o-bwin {
+  width: 100%;
+  max-width: 720px;
+  border-radius: var(--r-panel);
+  border: 1px solid var(--line-hard);
+  background: var(--sunken);
+  padding: 0 5px 5px;
+}
+
+.o-bwin-bar {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-inline: 6px;
+}
+
+.o-bwin-lights {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.o-bwin-lights i {
+  width: 5px;
+  height: 5px;
+  background: var(--line-hard);
+}
+
+.o-bwin-url {
+  flex: 1;
+  height: 18px;
+  max-width: 260px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 3px;
+  background: var(--panel);
+  border: 1px solid var(--panel-rule);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.o-bwin-page {
+  position: relative;
+  overflow: clip;
+  border-radius: var(--r-panel);
+  background: var(--bg);
+  border: 1px solid var(--panel-rule);
+}
+
+.o-bwin-surface {
+  transform-origin: top left;
+}
+
+/* The over-wide masked surface, adapted from the measured Linear geometry: three
+   intersected gradients, deliberately ASYMMETRIC, so the panel reads as a window
+   onto something larger rather than as a vignette.
+
+   Numbers adapted to THIS composition, not copied. Linear's bleed sits mostly on
+   the left because its panel carries a static translate(-120px, 0); ours is a
+   ledger that overflows to the RIGHT inside a fixed browser window, so the right
+   edge is the soft one (74% -> 99%), the left edge stays hard against the panel
+   rule (no fade until 99%), and the vertical fade is late and gentle (72% -> 99%)
+   because these are table rows and a row half-faded mid-height reads as a
+   rendering fault rather than as depth. */
+.o-bleed {
+  --mask:
+    linear-gradient(#000 0%, #000 72%, rgba(0, 0, 0, 0.15) 99%),
+    linear-gradient(to right, #000 0%, #000 74%, transparent 99%),
+    linear-gradient(to left, #000 0%, #000 99%, #000 100%);
+  mask-image: var(--mask);
+  -webkit-mask-image: var(--mask);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+
+/* ==================================================== signature: proof stack
+   Two moves, one idea. (1) Four real product surfaces DEAL themselves onto the
+   page once, on entry. (2) The section theme steps three beats as you read it,
+   and at the last beat the lime card lifts out on translateZ.
+   Discrete themes, IO-driven, transitioned on tokens — never a continuous
+   colour interpolation, whose midpoint cannot be contrast-verified.
+
+   Both modes run the same three beats and both END BY INVERTING THE PAGE, which
+   is the one gesture this section exists for. Light walks paper -> dusk -> ink;
+   dark walks ink -> ash -> chalk. That is deliberately not a negation of the
+   light ladder: in dark, arriving at paper is the surprise, and the lime card
+   has to hold up against a light stage, which it does because its ink is #000.
+   Contrast at every beat is a solved endpoint, not a blend:
+     light  paper  #FFFFFF / #0B0B0A  19.69   muted #6A6866  5.55
+            dusk   #23231E / #E9E7DF  12.42   muted #A7A49A  6.63
+            ink    #0B0B0A / #F6F5F1  18.03   muted #8C8A83  5.43
+     dark   night  #111110 / #EEECE7  16.00   muted #918F8B  5.85
+            ash    #22211F / #EEECE7  13.63   muted #918F8B  4.98
+            chalk  #E9E7DF / #0B0B0A  15.90   muted #5F5E5A  5.24 */
+
+.o-proof {
+  background: var(--proof-bg);
+  color: var(--proof-text);
+  --proof-bg: var(--bg);
+  --proof-text: var(--text);
+  --proof-muted: var(--text-muted);
+  --proof-panel: var(--panel);
+  --proof-rule: var(--panel-rule);
+  --proof-hard: var(--line-hard);
+  /* The stage re-authors its own ink pair per beat, so the status idiom has to
+     follow it or a settled label would recede against the wrong background. */
+  --status-ink: var(--proof-text);
+  --status-recede: var(--proof-muted);
+}
+
+.o-proof[data-theme="dusk"] {
+  --proof-bg: #23231e;
+  /* the stage went dark under a light page: the accent pair flips with it.
+     #A9C250 is 7.91:1 here, #B6CF5E 9.08:1. */
+  --accent-border: #a9c250;
+  --accent-text: #b6cf5e;
+  --proof-text: #e9e7df;
+  --proof-muted: #a7a49a;
+  --proof-panel: #2c2c26;
+  --proof-rule: #3b3b33;
+  --proof-hard: #55554b;
+}
+
+.o-proof[data-theme="ink"] {
+  --proof-bg: #0b0b0a;
+  --proof-text: #f6f5f1;
+  --proof-muted: #8c8a83;
+  --proof-panel: #151512;
+  --proof-rule: #262622;
+  --proof-hard: #46463e;
+  --accent-border: #a9c250; /* 9.86:1 on ink */
+  --accent-text: #b6cf5e; /* 11.32:1 on ink */
+}
+
+/* Dark mode: the same three beats, walking the other way. Beat two is a warm
+   ash step off the canvas; beat three turns the lights on. */
+[data-mode="dark"] .o-proof[data-theme="dusk"] {
+  --proof-bg: #22211f;
+  --proof-text: #eeece7;
+  --proof-muted: #918f8b;
+  --proof-panel: #2a2827;
+  --proof-rule: #35332f;
+  --proof-hard: #46443f;
+}
+
+[data-mode="dark"] .o-proof[data-theme="ink"] {
+  --proof-bg: #e9e7df;
+  --proof-text: #0b0b0a;
+  --proof-muted: #5f5e5a; /* 5.24 on the stage · 5.98 on the panel */
+  --proof-panel: #f8f5f2;
+  --proof-rule: #dedbd3;
+  --proof-hard: #b3b0a8;
+  /* the stage went light under a dark page: the accent pair flips back, and the
+     border tier is re-solved one step darker — #A9C250 is 1.61:1 on chalk.
+     #6D8027 is 3.56:1, #5A6B22 4.76:1. */
+  --accent-border: #6d8027;
+  --accent-text: #5a6b22;
+}
+
+.o-proof-panel {
+  background: var(--proof-panel);
+  border: 1px solid var(--proof-rule);
+  border-radius: var(--r-panel);
+  color: var(--proof-text);
+}
+
+.o-proof-muted {
+  color: var(--proof-muted);
+}
+
+/* the lime card: fill only, ink type on it, so it is legible at every theme */
+.o-proof-lime {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-panel);
+  transform: translateZ(0);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .o-proof,
+  .o-proof-panel {
+    transition:
+      background-color var(--t-theme) ease,
+      border-color var(--t-theme) ease,
+      color var(--t-theme) ease;
+  }
+
+  /* the lift, tied to the theme step — transform only, and no blur to re-paint */
+  .o-proof-lime {
+    transition: transform var(--t-theme) var(--ease);
+  }
+  .o-proof[data-theme="light"] .o-proof-lime {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  .o-proof[data-theme="dusk"] .o-proof-lime {
+    transform: translate3d(0, -8px, 0) scale(1.015);
+  }
+  .o-proof[data-theme="ink"] .o-proof-lime {
+    transform: translate3d(0, -22px, 0) scale(1.045);
+  }
+
+  /* the deal-in: each surface arrives from the deck, once */
+  .o-deal {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) rotate(var(--deal-rot, -1.2deg));
+  }
+  [data-dealt="true"] .o-deal {
+    animation: o-deal-in 520ms var(--ease) both;
+    animation-delay: var(--deal-delay, 0ms);
+  }
+
+  .o-rise {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  [data-inview="true"] .o-rise {
+    animation: o-rise-in 460ms var(--ease) both;
+    animation-delay: var(--deal-delay, 0ms);
+  }
+
+  /* the authorisation comb: chevrons shift by exactly one 11px pitch */
+  .o-comb-run {
+    animation: o-comb 500ms linear infinite;
+  }
+}
+
+/* Under reduce, the lime card sits at its lifted end state: same composition,
+   motion removed. Nothing is hidden, nothing is a different layout. */
+@media (prefers-reduced-motion: reduce) {
+  .o-proof[data-theme="ink"] .o-proof-lime {
+    transform: translate3d(0, -22px, 0) scale(1.045);
+  }
+  .o-proof[data-theme="dusk"] .o-proof-lime {
+    transform: translate3d(0, -8px, 0) scale(1.015);
+  }
+}
+
+@keyframes o-deal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) rotate(var(--deal-rot, -1.2deg));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes o-rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes o-comb {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(11px);
+  }
+}
+
+/* --------------------------------------------------------- misc utilities */
+
+.o-rule-top {
+  border-top: 1px solid var(--line-soft);
+}
+
+.o-hair {
+  background:
+    repeating-linear-gradient(
+      to right,
+      var(--line-soft) 0 1px,
+      transparent 1px 4px
+    );
+  height: 1px;
+}
+
+[data-system="outlay"] a:focus-visible,
+[data-system="outlay"] button:focus-visible,
+[data-system="outlay"] [data-slot]:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The fourth state for everything that is interactive without carrying one of
+   the skins above — breadcrumbs, footer columns, accordion triggers, the account
+   menu trigger. Hover recolours to --accent-text; press settles on the ink, so a
+   press is legible in both modes without inventing a background for inline type. */
+[data-system="outlay"]
+  :is(a, button):not(
+    .o-btn,
+    .o-icon-btn,
+    .o-tab,
+    .o-toggle,
+    .o-nav-item,
+    .o-menu-item,
+    .skip-link,
+    [data-slot="sort-button"]
+  ):active {
+  color: var(--text);
+}

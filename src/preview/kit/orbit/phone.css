@@ -1,0 +1,113 @@
+/* Orbit phone frame — same device-frame rules as dashboard-saas Orbit laptop:
+   pointer tilt on the camera, inert decorative screen, no clip between
+   perspective and the deepest 3D transform. Geometry is a 390×844 handset
+   at 0.42 so it fits a phone-width hero. */
+
+.o-phone-port {
+  --ease-arrive: var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+  --ph-w: 390;
+  --ph-h: 844;
+  --ph-s: 0.42;
+  --scr-w: calc(var(--ph-w) * var(--ph-s) * 1px);
+  --scr-h: calc(var(--ph-h) * var(--ph-s) * 1px);
+  --bez: 10px;
+  --chin: 18px;
+  --body-w: calc(var(--scr-w) + var(--bez) * 2);
+  --body-h: calc(var(--scr-h) + var(--bez) + var(--chin));
+}
+
+.o-phone-scene {
+  perspective: 1200px;
+  perspective-origin: 50% 40%;
+  width: var(--body-w);
+  margin-inline: auto;
+  padding-block: 16px 48px;
+}
+
+.o-phone {
+  position: relative;
+  width: var(--body-w);
+  height: var(--body-h);
+  transform-style: preserve-3d;
+  transform: rotateX(calc(var(--tilt-y, 0) * 2deg)) rotateY(calc(var(--tilt-x, 0) * 4deg));
+}
+
+.o-phone__shell {
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: linear-gradient(168deg, #2a2a28 0%, #111110 48%, #1a1a18 100%);
+  box-shadow:
+    inset 0 0 0 1px #4a4a46,
+    0 18px 40px rgb(0 0 0 / 0.35);
+}
+
+.o-phone__island {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  width: 72px;
+  height: 18px;
+  border-radius: 12px;
+  background: #0a0a09;
+  z-index: 2;
+}
+
+.o-phone__screen {
+  position: absolute;
+  top: var(--bez);
+  left: var(--bez);
+  width: var(--scr-w);
+  height: var(--scr-h);
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--bg, #111110);
+  isolation: isolate;
+}
+
+.o-phone__surface {
+  width: calc(var(--ph-w) * 1px);
+  height: calc(var(--ph-h) * 1px);
+  transform: scale(var(--ph-s));
+  transform-origin: top left;
+}
+
+.o-phone__glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 18px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.o-phone__glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, rgb(255 255 255 / 0.12) 0%, rgb(255 255 255 / 0) 42%);
+  mix-blend-mode: screen;
+}
+
+[data-mode="light"] .o-phone__glare {
+  opacity: 0.3;
+}
+
+.o-phone__btn {
+  position: absolute;
+  right: -3px;
+  top: 92px;
+  width: 3px;
+  height: 42px;
+  border-radius: 2px;
+  background: #3a3a36;
+}
+
+.o-phone__shadow {
+  position: absolute;
+  left: 8%;
+  top: 100%;
+  width: 84%;
+  height: 36px;
+  background: radial-gradient(50% 70% at 50% 0%, rgb(0 0 0 / 0.4), transparent 72%);
+  filter: blur(10px);
+}

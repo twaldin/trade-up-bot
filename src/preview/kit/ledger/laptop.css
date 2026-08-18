@@ -1,0 +1,339 @@
+/* ============================== the laptop ============================== */
+/* Between .lg-scene (perspective) and the deepest 3D transform, nothing that
+   clips, blurs, fades, masks or blends. Clipping happens at .lg-screen, which
+   is the leaf: its descendants are plain 2D DOM. */
+
+:is([data-system="ledger"], .lg-port) .lg-scene {
+  --dev-w: 1440;
+  --dev-h: 936;
+  --dev-s: 0.5;
+  --scr-w: calc(var(--dev-w) * var(--dev-s) * 1px);
+  --scr-h: calc(var(--dev-h) * var(--dev-s) * 1px);
+  --bez-x: 13px;
+  --bez-t: 20px;
+  --bez-b: 40px;
+  --lid-w: calc(var(--scr-w) + var(--bez-x) * 2);
+  --lid-h: calc(var(--scr-h) + var(--bez-t) + var(--bez-b));
+  --open: 1;
+  /* Chassis thickness — the depth of the three walls that turn the deck from a
+     quad into a solid body. Scaled with the device, not a fixed pixel.
+
+     Kept deliberately thin. The front wall faces the camera at the nearest point
+     in the scene, so perspective magnifies it while the deck behind it is
+     foreshortened: 36 local units projects to roughly a fifth of the deck's
+     apparent depth, which is the ratio a real aluminium body reads at. At 52 it
+     was geometrically correct and still looked like a chunky clone. */
+  --chassis: calc(var(--dev-s) * 36px);
+  /* Camera. Short focal length on purpose: the lid sits in the page plane so it
+     is projected undistorted whatever the perspective, and the whole budget is
+     spent on the base, which leaves the page at a right angle. At 1300px the
+     deck's front edge sits 1.68x the hinge width — a hard wedge coming at the
+     reader rather than a polite three-quarter view. The eye rides at 40% of the
+     scene box, i.e. above the deck plane, which is what makes the deck's TOP
+     surface read at all. */
+  perspective: 1300px;
+  perspective-origin: 50% 40%;
+  width: var(--lid-w);
+  margin-inline: auto;
+  padding-block: 24px 236px;
+}
+:is([data-system="ledger"], .lg-port) .lg-laptop {
+  position: relative;
+  width: var(--lid-w);
+  height: var(--lid-h);
+  transform-style: preserve-3d;
+  /* No camera rotation. The screen faces the reader dead-on — a tilted screen
+     costs legibility on the one surface that carries the product, and the
+     drama is supposed to come from the deck. Pointer tilt is a whisper so the
+     device still feels held rather than pinned. */
+  transform: rotateX(calc(var(--tilt-y) * 1.1deg)) rotateY(calc(var(--tilt-x) * 2.4deg));
+}
+:is([data-system="ledger"], .lg-port) .lg-lid {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+  /* Open is exactly 0deg: flush with the page. Closed folds forward onto the
+     deck, so the beat still reads as a lid opening. */
+  transform: rotateX(calc((1 - var(--open)) * 86deg));
+}
+:is([data-system="ledger"], .lg-port) .lg-lid-back,
+:is([data-system="ledger"], .lg-port) .lg-lid-front {
+  position: absolute;
+  inset: 0;
+  border-radius: 22px 22px 5px 5px;
+  backface-visibility: hidden;
+}
+:is([data-system="ledger"], .lg-port) .lg-lid-back {
+  transform: translateZ(-4px) rotateY(180deg);
+  background: linear-gradient(163deg, #5b6260 0%, #34393a 42%, #464b4a 100%);
+  box-shadow: inset 0 0 0 1px #7b8280;
+}
+:is([data-system="ledger"], .lg-port) .lg-lid-front {
+  transform: translateZ(4px);
+  padding: var(--bez-t) var(--bez-x) var(--bez-b);
+  background: linear-gradient(168deg, #1c201f 0%, #0a0c0b 46%, #141817 100%);
+  box-shadow: inset 0 0 0 1px #545a58;
+}
+:is([data-system="ledger"], .lg-port) .lg-notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 123px;
+  height: var(--bez-t);
+  background: #0a0c0b;
+  border-radius: 0 0 9px 9px;
+}
+:is([data-system="ledger"], .lg-port) .lg-chin {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--bez-b);
+  display: grid;
+  place-items: center;
+}
+/* The badge etched on the chassis. Uppercase and tracked DELIBERATELY: it is a
+   logotype on a drawn machine, the same mark as the masthead wordmark, not a
+   label — so the sentence-case rule does not reach it and its tracking is part
+   of the artwork rather than a caps correction.
+
+   Its ink was #767D7B, which is 4.25:1 against the #141817 the lid gradient
+   reaches at the chin. That was conforming only under the withdrawn "tracked
+   uppercase >=11px/600" carve-out, and 9px never qualified for it anyway; with
+   the carve-out gone every text node owes 4.5:1 regardless of weight or case.
+   Solved against ALL THREE stops of the .lg-lid-front gradient rather than only
+   the one under the chin, so the figure holds wherever the badge sits:
+   #1C201F 4.67 · #0A0C0B 5.56 · #141817 5.08.
+
+   Note this one is NOT visible to an automated sweep: the lid paints a
+   linear-gradient, so a walk-up-for-backgroundColor probe resolves straight past
+   it to the page canvas and reports the badge against white (3.72:1) or against
+   graphite (5.24:1) depending on mode — neither of which is the surface it is
+   actually on. Gradient-backed text has to be solved against its own stops.
+
+   Colours are resolved through a 1x1 canvas, not by parsing the computed-style
+   string: Chrome serialises color-mix() as `color(srgb 0.047 0.463 0.384)`, and
+   a regex that divides those by 255 reads a mint as near-black. */
+:is([data-system="ledger"], .lg-port) .lg-chin span {
+  font: 600 9px/1 var(--font-body, "Archivo", system-ui, sans-serif);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #838a88;
+}
+:is([data-system="ledger"], .lg-port) .lg-screen {
+  position: relative;
+  width: var(--scr-w);
+  height: var(--scr-h);
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--canvas);
+  isolation: isolate;
+}
+:is([data-system="ledger"], .lg-port) .lg-screen-surface {
+  width: calc(var(--dev-w) * 1px);
+  height: calc(var(--dev-h) * 1px);
+  transform: scale(var(--dev-s));
+  transform-origin: top left;
+}
+:is([data-system="ledger"], .lg-port) .lg-glare,
+:is([data-system="ledger"], .lg-port) .lg-glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+:is([data-system="ledger"], .lg-port) .lg-glare {
+  background: linear-gradient(
+    104deg,
+    rgb(255 255 255 / 0.11) 0%,
+    rgb(255 255 255 / 0.04) 26%,
+    rgb(255 255 255 / 0) 47%,
+    rgb(255 255 255 / 0) 72%,
+    rgb(255 255 255 / 0.03) 100%
+  );
+  mix-blend-mode: screen;
+}
+:is([data-system="ledger"], .lg-port) .lg-glass {
+  box-shadow:
+    inset 0 0 22px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(255 255 255 / 0.09);
+}
+/* The lid gradients were authored against a dark page and still read correctly
+   on white — a graphite machine on a white desk is the ordinary case. Two
+   layers do NOT survive the transposition: a `screen`-blended white glare over
+   a near-white replica washes the data out, and a 0.55-black inset vignette on
+   a white screen reads as dirt rather than glass. Both are re-authored, not
+   scaled. */
+[data-system="ledger"][data-mode="light"] .lg-glare {
+  opacity: 0.35;
+}
+[data-system="ledger"][data-mode="light"] .lg-glass {
+  box-shadow:
+    inset 0 0 26px rgb(24 32 30 / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.55);
+}
+:is([data-system="ledger"], .lg-port) .lg-base {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: var(--lid-w);
+  height: var(--lid-h);
+  transform-style: preserve-3d;
+  transform-origin: 50% 0%;
+  /* Exactly 90deg: the base leaves the page at a right angle and runs straight
+     at the reader. With the assembly itself un-rotated this is the ONLY member
+     that perspective acts on, which is the point — the deck flares, the screen
+     stays flat and readable. */
+  transform: rotateX(90deg);
+}
+:is([data-system="ledger"], .lg-port) .lg-deck {
+  position: absolute;
+  inset: 0;
+  /* Near corners stay small. Perspective magnifies the near edge, so a radius
+     that looks right in plan view curls into a visible bulge once the deck
+     flares — 20px here read as a bent sheet of paper. */
+  border-radius: 5px 5px 4px 4px;
+  /* Foreshortening puts the near edge at the BOTTOM of this box, so the light
+     has to gather there; the old hinge-lit radial read as a flat plate once the
+     camera stopped tilting. */
+  background: linear-gradient(to bottom, #232827 0%, #2c3130 24%, #3b4140 72%, #474d4b 100%);
+  box-shadow: inset 0 0 0 1px #5f6664;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 34px 54px;
+  gap: 26px;
+}
+:is([data-system="ledger"], .lg-port) .lg-keys {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  gap: 6px;
+  align-content: start;
+}
+:is([data-system="ledger"], .lg-port) .lg-keys i {
+  display: block;
+  height: 30px;
+  border-radius: 3px;
+  background: #131615;
+  box-shadow: 0 1px 0 #4e5453;
+}
+:is([data-system="ledger"], .lg-port) .lg-trackpad {
+  width: 300px;
+  height: 190px;
+  margin-inline: auto;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #343938, #2e3332);
+  box-shadow: inset 0 0 0 1px #4e5453;
+}
+/* The chassis is a BOX, not a plane.
+
+   Previously the base was a single rotated quad plus one front lip, so the only
+   thickness cue in the whole body was that lip — and with a rounded bottom edge
+   it curled, which is why the machine read as a bent sheet with no sides.
+
+   Three walls fold down out of the deck plane into its local +Z, which the
+   base's own rotateX(90deg) has already pointed at the floor. The camera has no
+   yaw, so the side walls are not visible by rotation: they are visible because
+   perspective diverges away from perspective-origin, which projects the left and
+   right edges outward as thin wedges. That divergence is the entire reason they
+   read as machined aluminium rather than a fold. */
+:is([data-system="ledger"], .lg-port) .lg-wall {
+  position: absolute;
+  /* Top highlight only: the lit edge is where a wall meets the deck. Rounding a
+     wall's far edge is what produced the tube. */
+  box-shadow: inset 0 1px 0 #6f7674;
+}
+:is([data-system="ledger"], .lg-port) .lg-wall--front {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--chassis);
+  transform-origin: 50% 100%;
+  transform: rotateX(90deg);
+  /* Matches the deck's near corners so the silhouette is continuous. */
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(180deg, #3d4241, #191c1b);
+}
+:is([data-system="ledger"], .lg-port) .lg-wall--left,
+:is([data-system="ledger"], .lg-port) .lg-wall--right {
+  top: 0;
+  height: 100%;
+  width: var(--chassis);
+  /* Grazing light: the sides face away from the viewer, so they sit a step below
+     the front wall. Equal values would flatten the corner. */
+  background: linear-gradient(180deg, #2b302f, #131615);
+}
+/* COORDINATE BASIS — derive from this, never guess.
+
+   `.lg-base` carries rotateX(90deg). In CSS that maps the base's local axes to
+   world as:  local +Y -> toward the viewer   ·   local +Z -> UP.
+
+   So folding a wall into local +Z lifts it ABOVE the deck. Walls must fold into
+   local -Z to hang below it. rotateY(t) maps local +X -> (cos t, 0, -sin t), so
+   +X reaches -Z at t = +90deg.
+
+   left wall  : body extends +X from its left edge   -> rotateY( 90deg)
+   right wall : body extends -X from its right edge  -> rotateY(-90deg)
+
+   The front wall is unaffected: its own rotateX(90deg) is a second rotation off
+   an already-rotated parent, which is why it hung correctly while these did not. */
+:is([data-system="ledger"], .lg-port) .lg-wall--left {
+  left: 0;
+  transform-origin: 0% 50%;
+  transform: rotateY(90deg);
+}
+:is([data-system="ledger"], .lg-port) .lg-wall--right {
+  right: 0;
+  transform-origin: 100% 50%;
+  transform: rotateY(-90deg);
+}
+:is([data-system="ledger"], .lg-port) .lg-contact {
+  position: absolute;
+  left: 4%;
+  top: 100%;
+  width: 92%;
+  height: 470px;
+  transform-origin: 50% 0%;
+  transform: rotateX(90deg) translateZ(-1px);
+  background: radial-gradient(60% 70% at 50% 40%, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0) 72%);
+  filter: blur(18px);
+}
+
+.lg-port {
+  --canvas: var(--bg, #111110);
+  --ease-arrive: var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-system="ledger"], .lg-port) .lg-scene {
+    --open: 0;
+    transition: --open 900ms var(--ease-arrive);
+  }
+  :is([data-system="ledger"], .lg-port) .lg-scene[data-open="1"] {
+    --open: 1;
+  }
+}
+
+/* ---- the second beat: figures settle column by column, exactly once ---- */
+
+@media (prefers-reduced-motion: no-preference) and (scripting: enabled) {
+  @keyframes lg-settle {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  :is([data-system="ledger"], .lg-port) .lg-scene[data-settle="0"] .lg-figure {
+    opacity: 0;
+  }
+  :is([data-system="ledger"], .lg-port) .lg-scene[data-settle="1"] .lg-figure {
+    animation: lg-settle 460ms var(--ease-arrive) both;
+    animation-delay: calc(var(--col, 0) * 110ms);
+  }
+}
+

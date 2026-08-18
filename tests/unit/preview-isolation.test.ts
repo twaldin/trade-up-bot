@@ -1,0 +1,47 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { ROBOTS_TXT, buildStaticSitemap } from "../../server/routes/sitemap.js";
+import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "../../src/preview/lib/copy.js";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
+const appSource = readFileSync(resolve(testDir, "../../src/App.tsx"), "utf8");
+const siteNavSource = readFileSync(resolve(testDir, "../../src/components/SiteNav.tsx"), "utf8");
+const landingSource = readFileSync(resolve(testDir, "../../src/pages/LandingPage.tsx"), "utf8");
+const tradeUpsSource = readFileSync(resolve(testDir, "../../src/pages/TradeUpsPage.tsx"), "utf8");
+const calculatorSource = readFileSync(resolve(testDir, "../../src/pages/CalculatorPage.tsx"), "utf8");
+const previewAppSource = readFileSync(resolve(testDir, "../../src/preview/PreviewApp.tsx"), "utf8");
+const publicRobots = readFileSync(resolve(testDir, "../../public/robots.txt"), "utf8");
+
+describe("preview isolation", () => {
+  it("mounts the kit app only under /preview/*", () => {
+    expect(appSource).toContain('path="/preview/*"');
+    expect(previewAppSource).toContain('path="/preview"');
+    expect(previewAppSource).toContain('path="/preview/trade-ups"');
+    expect(previewAppSource).toMatch(/noindex/);
+    expect(siteNavSource).not.toContain("/preview");
+  });
+
+  it("does not change production landing, trade-ups, or calculator sources", () => {
+    expect(landingSource).toContain("CS2 trade-ups built from");
+    expect(landingSource).toContain("<DemoAnimation");
+    expect(tradeUpsSource).toContain("TradeUpTable");
+    expect(calculatorSource).toContain("export function CalculatorPage");
+  });
+
+  it("keeps production headlines and FAQ copy in the preview landing", () => {
+    expect(PREVIEW_HEADLINE).toBe("CS2 trade-ups built from real, buyable listings");
+    expect(PREVIEW_FAQ).toHaveLength(5);
+    expect(PREVIEW_FAQ[0]?.q).toBe("How does TradeUpBot find profitable trade-ups?");
+    expect(previewAppSource).toContain("PREVIEW_HEADLINE");
+    expect(previewAppSource).toContain("PREVIEW_FAQ");
+  });
+
+  it("noindexes preview in robots.txt and keeps it out of the sitemap", () => {
+    expect(ROBOTS_TXT).toContain("Disallow: /preview");
+    expect(publicRobots).toContain("Disallow: /preview");
+    const xml = buildStaticSitemap("https://tradeupbot.app", "2026-08-18");
+    expect(xml).not.toContain("/preview");
+  });
+});

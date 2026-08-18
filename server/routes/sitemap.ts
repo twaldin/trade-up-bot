@@ -25,6 +25,7 @@ export const ROBOTS_TXT = [
   "Allow: /",
   "Disallow: /auth/",
   "Disallow: /api/",
+  "Disallow: /preview",
   "Sitemap: https://tradeupbot.app/sitemap.xml",
 ].join("\n");
 
