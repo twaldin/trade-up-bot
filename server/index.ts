@@ -1316,6 +1316,19 @@ registerCanonicalRedirectRoutes(app);
         },
       },
     }));
+    app.get("/preview/trade-ups", (_req, res) => {
+      res.setHeader("X-Robots-Tag", "noindex, nofollow");
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      res.send(injectMetaIntoSpa(shellHtml, {
+        title: "Trade-Ups Preview — TradeUpBot",
+        description: "Internal design preview of the trade-up board. Not an indexable product page.",
+        url: "https://tradeupbot.app/preview/trade-ups",
+        robots: "noindex, nofollow",
+        bodyHtml: "<p>Internal design preview. This route is not part of the public site.</p>",
+      }));
+    });
+
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, must-revalidate");
       res.setHeader("Content-Type", "text/html");

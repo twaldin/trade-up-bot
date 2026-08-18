@@ -534,6 +534,25 @@ export function dataRouter(
     }
   });
 
+  router.get("/api/skin-images", cachedRoute((req) => "skin_images:" + String(req.query.names || ""), 3600, async (req, res) => {
+    const names = String(req.query.names || "").split("||").map(n => n.trim()).filter(Boolean).slice(0, 100);
+    if (names.length === 0) {
+      res.json({ images: {} });
+      return;
+    }
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (name) name, image_url
+       FROM skins
+       WHERE name = ANY($1)
+       ORDER BY name, image_url NULLS LAST`,
+      [names],
+    );
+    const images: Record<string, string | null> = {};
+    for (const name of names) images[name] = null;
+    for (const row of rows) images[row.name] = row.image_url ?? null;
+    res.json({ images });
+  }));
+
   router.get("/api/skin-by-slug/:slug", async (req, res) => {
     try {
       const slugMap = await getSlugMap(pool);
