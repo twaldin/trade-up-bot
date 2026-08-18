@@ -202,6 +202,13 @@
   padding: 80px 24px;
 }
 
+.preview-tile {
+  padding: 14px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--band-panel);
+}
+
 .preview-faq details {
   border-bottom: 1px solid var(--line-soft);
   padding: 14px 0;

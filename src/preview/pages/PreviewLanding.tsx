@@ -26,7 +26,7 @@ export function PreviewLanding({ stats }: { stats: GlobalStats | null }) {
     <main id="main">
       <section className="preview-hero">
         <p className="o-arrive" style={{ color: "var(--text-muted)", fontSize: 12, "--stagger": 0 } as CSSProperties}>
-          Spend management · live listings
+          Live listings · CSFloat · DMarket · Skinport · Buff.market
         </p>
         <h1 className="o-arrive" style={{ "--stagger": 1 } as CSSProperties}>{PREVIEW_HEADLINE}</h1>
         <p className="o-arrive mt-5 text-[1.05rem] leading-relaxed" style={{ "--stagger": 2 } as CSSProperties}>
@@ -39,7 +39,7 @@ export function PreviewLanding({ stats }: { stats: GlobalStats | null }) {
           <Link to="/preview/trade-ups" className="preview-btn preview-btn--lime">
             Open the console →
           </Link>
-          <a href="#faq" className="preview-btn preview-btn--ghost">Read the controls brief</a>
+          <a href="#how" className="preview-btn preview-btn--ghost">How it works</a>
         </div>
         {stats && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 5 } as CSSProperties}>
@@ -73,7 +73,7 @@ export function PreviewLanding({ stats }: { stats: GlobalStats | null }) {
             ["Verify before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
             ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
           ].map(([title, body]) => (
-            <article key={title} className="preview-card min-h-0">
+            <article key={title} className="preview-tile">
               <h3 className="font-semibold">{title}</h3>
               <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>{body}</p>
             </article>

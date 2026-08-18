@@ -33,7 +33,14 @@ import {
   type PayoffPoint,
 } from "../lib/board.js";
 import { DELAY_BANNER } from "../lib/copy.js";
-import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
+import {
+  createFaceCache,
+  faceCacheKey,
+  faceFor,
+  hydrateOutcomesIfNeeded,
+  loadFaces,
+  namesFromCacheKey,
+} from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
 
@@ -832,11 +839,11 @@ export function PreviewBoard({
 
 /** Warms the shared face cache for a fixed set of names (landing device mock). */
 export function useFaces(names: string[]): void {
-  const key = names.join("|");
+  const key = faceCacheKey(names);
   const [, setTick] = useState(0);
   useEffect(() => {
     let live = true;
-    void loadFaces(key.split("|").filter(Boolean), FACE_CACHE).then(() => {
+    void loadFaces(namesFromCacheKey(key), FACE_CACHE).then(() => {
       if (live) setTick((tick) => tick + 1);
     });
     return () => { live = false; };

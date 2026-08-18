@@ -35,6 +35,20 @@ export function listSurvivesFaceError(status: number, contentType: string | null
   return status < 400;
 }
 
+/**
+ * Every market hash name contains " | ", so a render key cannot join on it.
+ * NUL cannot appear in a skin name, which makes the round trip lossless.
+ */
+const FACE_KEY_SEP = "\u0000";
+
+export function faceCacheKey(names: string[]): string {
+  return [...new Set(names.filter(Boolean))].sort().join(FACE_KEY_SEP);
+}
+
+export function namesFromCacheKey(key: string): string[] {
+  return key.split(FACE_KEY_SEP).filter(Boolean);
+}
+
 export function facesRequestUrl(names: string[]): string {
   const unique = [...new Set(names.filter(Boolean))].sort();
   return `/api/preview/faces?names=${encodeURIComponent(unique.join("||"))}`;

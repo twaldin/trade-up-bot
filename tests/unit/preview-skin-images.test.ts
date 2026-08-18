@@ -2,15 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BYMYKEL_URL_RE,
   createFaceCache,
+  faceCacheKey,
   faceFor,
   facesRequestUrl,
   hydrateOutcomesIfNeeded,
   isBlockedCatalogUrl,
   listSurvivesFaceError,
   loadFaces,
+  namesFromCacheKey,
   rememberFaces,
 } from "../../src/preview/lib/skin-images.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
+
+describe("preview face cache keys", () => {
+  it("round-trips names that contain the market-hash pipe", () => {
+    const names = ["AK-47 | Nightwish", "Dual Berettas | Melondrama", "MP9 | Starlight Protector"];
+    expect(namesFromCacheKey(faceCacheKey(names))).toEqual([...names].sort());
+  });
+
+  it("dedupes and drops blanks so the key is stable across renders", () => {
+    const key = faceCacheKey(["B | Two", "", "A | One", "B | Two"]);
+    expect(namesFromCacheKey(key)).toEqual(["A | One", "B | Two"]);
+    expect(faceCacheKey(["A | One", "B | Two"])).toBe(key);
+  });
+});
 
 describe("preview skin image cache", () => {
   it("stores name → stored Steam image_url and never accepts ByMykel catalog URLs", () => {
