@@ -43,7 +43,7 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(board).not.toContain("oddsBarSegments");
     expect(board).not.toContain("OddsBar");
     expect(board).toContain("payoffPoints");
-    expect(board).toContain("evWaterfall");
+    expect(board).toContain("waterfallBars");
     expect(board).toContain("cdfCurve");
     expect(lib).not.toContain("profitLossSeries");
     expect(lib).not.toContain("oddsBarSegments");
@@ -55,5 +55,61 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(css).toContain("preview-skin--output");
     expect(css).toContain("preview-payoff");
     expect(css).toContain("var(--r-panel)");
+  });
+});
+
+describe("preview craft bar", () => {
+  const css = read("../../src/preview/preview.css");
+  const board = read("../../src/preview/pages/PreviewBoard.tsx");
+  const theme = read("../../src/preview/kit/outlay/theme.css");
+
+  it("draws every corner from an Outlay radius token", () => {
+    expect(theme).toContain("--r-panel: 6px");
+    expect(theme).toContain("--r-control: 4px");
+    expect(theme).toContain("--step: 4px");
+    const allowed = new Set(["var(--r-panel)", "var(--r-control)", "var(--r-chip)", "50%", "0"]);
+    const invented = [...css.matchAll(/border-radius:\s*([^;]+);/g)]
+      .flatMap((match) => (match[1] ?? "").trim().split(/\s+/))
+      .filter((corner) => !allowed.has(corner));
+    expect(invented).toEqual([]);
+  });
+
+  it("tints skin tiles with the rarity and inks the name with it", () => {
+    expect(css).toMatch(/--skin-tint/);
+    expect(css).toMatch(/--skin-ink/);
+    expect(css).toMatch(/color-mix\([^)]*var\(--skin-tint\)/);
+    expect(board).toContain("splitSkinName");
+    expect(board).toContain("conditionShort");
+  });
+
+  it("gives the payoff strip and the bar tracks a real ground, not a hairline", () => {
+    expect(css).toMatch(/\.preview-payoff\s*\{[^}]*background:/);
+    expect(css).toMatch(/\.preview-paybar__track\s*\{[^}]*background:/);
+  });
+
+  it("expands into strip + waterfall + CDF + listings + Verify/Claim, not listings only", () => {
+    expect(board).toContain("preview-expand__inputs");
+    expect(board).toContain("preview-expand__viz");
+    expect(board).toContain("preview-expand__listings");
+    expect(board).toContain("waterfallBars");
+    expect(board).toContain("cdfCurve");
+    expect(board).toContain("verifyClaimHref");
+    expect(board).toContain("evDrivers");
+    expect(css).toContain(".preview-expand");
+  });
+
+  it("keeps the Qty chip and the flat stacked odds bar off the card", () => {
+    expect(board).not.toMatch(/Qty/);
+    expect(board).not.toContain("inputQty");
+    expect(board).not.toContain("preview-kpis");
+    expect(css).not.toContain(".preview-kpis");
+  });
+
+  it("shows no invented time series on the landing device", () => {
+    const device = read("../../src/preview/components/DeviceScreen.tsx");
+    expect(device).not.toMatch(/\bW[1-8]\b/);
+    expect(device).not.toMatch(/8 weeks/);
+    expect(device).not.toContain("AreaChart");
+    expect(device).not.toContain("BarChart");
   });
 });

@@ -40,6 +40,11 @@ export type EvWaterfall = {
   concentrationNote: string | null;
 };
 
+/** One floating step of the cumulative EV waterfall, in integer cents. */
+export type WaterfallBar = PayoffPoint & { startCents: number; endCents: number };
+
+export type ListingTotals = { count: number; totalCents: number; averageCents: number };
+
 /** Tile clicks never toggle expand — only the dedicated expand control does. */
 export function tileClick(kind: TileKind, href: string | null): TileClick {
   if (!href) return { action: "none" };
@@ -209,14 +214,19 @@ export function payoffPoints(tu: TradeUp): PayoffPoint[] {
     .sort((a, b) => a.profitCents - b.profitCents);
 }
 
-export function medianProfitCents(points: PayoffPoint[]): number | null {
+/** Quantile of the discrete P/L distribution. Points arrive sorted by P/L. */
+export function percentileProfitCents(points: PayoffPoint[], quantile: number): number | null {
   if (points.length === 0) return null;
   let cumulative = 0;
   for (const point of points) {
     cumulative += point.probability;
-    if (cumulative >= 0.5) return point.profitCents;
+    if (cumulative >= quantile) return point.profitCents;
   }
   return points[points.length - 1]?.profitCents ?? null;
+}
+
+export function medianProfitCents(points: PayoffPoint[]): number | null {
+  return percentileProfitCents(points, 0.5);
 }
 
 export function chanceOfProfit(points: PayoffPoint[]): number {
@@ -238,6 +248,70 @@ export function evWaterfall(tu: TradeUp): EvWaterfall {
     ? `This is only +EV because of ${top.name}`
     : null;
   return { steps, totalEvCents, topShare, concentrationNote };
+}
+
+/**
+ * Cumulative EV walk: lifts first, biggest drag last, each bar floating from the
+ * running total so the steps connect instead of restating the P/L bars.
+ */
+export function waterfallBars(tu: TradeUp): { bars: WaterfallBar[]; totalEvCents: number } {
+  const steps = payoffPoints(tu).filter((step) => step.evContributionCents !== 0);
+  const lifts = steps
+    .filter((step) => step.evContributionCents > 0)
+    .sort((a, b) => b.evContributionCents - a.evContributionCents);
+  const drags = steps
+    .filter((step) => step.evContributionCents < 0)
+    .sort((a, b) => a.evContributionCents - b.evContributionCents);
+  let running = 0;
+  const bars = [...lifts, ...drags].map((step) => {
+    const startCents = running;
+    running += step.evContributionCents;
+    return { ...step, startCents, endCents: running };
+  });
+  return { bars, totalEvCents: running };
+}
+
+export function evDrivers(
+  points: PayoffPoint[],
+  limit: number,
+): { drivers: PayoffPoint[]; drags: PayoffPoint[] } {
+  const drivers = points
+    .filter((point) => point.evContributionCents > 0)
+    .sort((a, b) => b.evContributionCents - a.evContributionCents)
+    .slice(0, limit);
+  const drags = points
+    .filter((point) => point.evContributionCents < 0)
+    .sort((a, b) => a.evContributionCents - b.evContributionCents)
+    .slice(0, limit);
+  return { drivers, drags };
+}
+
+/** "AK-47 | Nightwish" tiles as two lines instead of one ellipsed one. */
+export function splitSkinName(name: string): { weapon: string; finish: string } {
+  const at = name.indexOf("|");
+  if (at === -1) return { weapon: "", finish: name.trim() };
+  return { weapon: name.slice(0, at).trim(), finish: name.slice(at + 1).trim() };
+}
+
+export function conditionShort(condition: string | undefined): string {
+  switch (condition) {
+    case "Factory New": return "FN";
+    case "Minimal Wear": return "MW";
+    case "Field-Tested": return "FT";
+    case "Well-Worn": return "WW";
+    case "Battle-Scarred": return "BS";
+    default: return "";
+  }
+}
+
+export function listingTotals(listings: TradeUpInput[]): ListingTotals {
+  if (listings.length === 0) return { count: 0, totalCents: 0, averageCents: 0 };
+  const totalCents = listings.reduce((sum, row) => sum + row.price_cents, 0);
+  return {
+    count: listings.length,
+    totalCents,
+    averageCents: Math.round(totalCents / listings.length),
+  };
 }
 
 export function cdfCurve(tu: TradeUp): CdfPoint[] {

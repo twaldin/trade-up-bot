@@ -4,19 +4,25 @@ import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
   cdfCurve,
   chanceOfProfit,
+  conditionShort,
+  evDrivers,
   evWaterfall,
   inputCostCents,
   inputListingHrefs,
   inputQty,
   inputRarityColor,
+  listingTotals,
   medianProfitCents,
   openGroupedListings,
   outputHref,
   outputRarityColor,
   payoffPoints,
+  percentileProfitCents,
+  splitSkinName,
   uniqueInputs,
   uniqueOutputs,
   verifyClaimHref,
+  waterfallBars,
 } from "../../src/preview/lib/board.js";
 
 function input(overrides: Partial<TradeUpInput>): TradeUpInput {
@@ -247,5 +253,97 @@ describe("preview payoff from real outcomes", () => {
     expect(cdfCurve(empty)).toEqual([]);
     expect(evWaterfall(empty).steps).toEqual([]);
     expect(evWaterfall(empty).concentrationNote).toBeNull();
+    expect(waterfallBars(empty).bars).toEqual([]);
+  });
+
+  it("reads a percentile off the discrete P/L distribution", () => {
+    const points = payoffPoints(tu);
+    expect(percentileProfitCents(points, 0.5)).toBe(medianProfitCents(points));
+    expect(percentileProfitCents(points, 0.1)).toBe(-600);
+    expect(percentileProfitCents(points, 0.99)).toBe(1800);
+    expect(percentileProfitCents([], 0.5)).toBeNull();
+  });
+});
+
+describe("preview EV waterfall bars", () => {
+  const tu = makeTradeUp({
+    total_cost_cents: 1000,
+    outcomes: [
+      outcome({ skin_id: "a", skin_name: "Big drag", probability: 0.5, estimated_price_cents: 200 }),
+      outcome({ skin_id: "b", skin_name: "Small drag", probability: 0.1, estimated_price_cents: 900 }),
+      outcome({ skin_id: "c", skin_name: "Jackpot", probability: 0.3, estimated_price_cents: 4000 }),
+      outcome({ skin_id: "d", skin_name: "Small lift", probability: 0.1, estimated_price_cents: 1500 }),
+    ],
+  });
+
+  it("orders positives by size, then drags by size, and ends on the total", () => {
+    const { bars, totalEvCents } = waterfallBars(tu);
+    expect(bars.map((bar) => bar.name)).toEqual(["Jackpot", "Small lift", "Big drag", "Small drag"]);
+    expect(totalEvCents).toBe(900 + 50 - 400 - 10);
+  });
+
+  it("floats each bar from the running total so the steps actually connect", () => {
+    const { bars, totalEvCents } = waterfallBars(tu);
+    expect(bars[0]?.startCents).toBe(0);
+    for (const bar of bars) {
+      expect(bar.endCents - bar.startCents).toBe(bar.evContributionCents);
+    }
+    for (let i = 1; i < bars.length; i++) {
+      expect(bars[i]?.startCents).toBe(bars[i - 1]?.endCents);
+    }
+    expect(bars[bars.length - 1]?.endCents).toBe(totalEvCents);
+  });
+
+  it("ranks EV drivers and drags off real probability-weighted contributions", () => {
+    const { drivers, drags } = evDrivers(payoffPoints(tu), 3);
+    expect(drivers.map((point) => point.name)).toEqual(["Jackpot", "Small lift"]);
+    expect(drags.map((point) => point.name)).toEqual(["Big drag", "Small drag"]);
+    expect(drivers[0]?.evContributionCents).toBe(900);
+    expect(drags[0]?.evContributionCents).toBe(-400);
+  });
+
+  it("caps each ranked list at the requested length", () => {
+    expect(evDrivers(payoffPoints(tu), 1).drivers).toHaveLength(1);
+    expect(evDrivers([], 3)).toEqual({ drivers: [], drags: [] });
+  });
+});
+
+describe("preview tile labels", () => {
+  it("splits a market hash name into weapon and finish so tiles stop ellipsing", () => {
+    expect(splitSkinName("AK-47 | Nightwish")).toEqual({ weapon: "AK-47", finish: "Nightwish" });
+    expect(splitSkinName("Dual Berettas | Melondrama")).toEqual({
+      weapon: "Dual Berettas",
+      finish: "Melondrama",
+    });
+    expect(splitSkinName("★ Karambit | Doppler")).toEqual({ weapon: "★ Karambit", finish: "Doppler" });
+  });
+
+  it("keeps a name without a separator on the finish line", () => {
+    expect(splitSkinName("Sticker Capsule")).toEqual({ weapon: "", finish: "Sticker Capsule" });
+    expect(splitSkinName("")).toEqual({ weapon: "", finish: "" });
+  });
+
+  it("abbreviates wear the way the marketplaces do", () => {
+    expect(conditionShort("Factory New")).toBe("FN");
+    expect(conditionShort("Minimal Wear")).toBe("MW");
+    expect(conditionShort("Field-Tested")).toBe("FT");
+    expect(conditionShort("Well-Worn")).toBe("WW");
+    expect(conditionShort("Battle-Scarred")).toBe("BS");
+    expect(conditionShort("")).toBe("");
+  });
+});
+
+describe("preview listing totals", () => {
+  it("totals and averages the real listing prices", () => {
+    const rows = [
+      input({ listing_id: "1", price_cents: 529 }),
+      input({ listing_id: "2", price_cents: 531 }),
+      input({ listing_id: "3", price_cents: 400 }),
+    ];
+    expect(listingTotals(rows)).toEqual({ count: 3, totalCents: 1460, averageCents: 487 });
+  });
+
+  it("does not divide by zero on an unhydrated trade-up", () => {
+    expect(listingTotals([])).toEqual({ count: 0, totalCents: 0, averageCents: 0 });
   });
 });
