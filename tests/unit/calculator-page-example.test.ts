@@ -26,7 +26,7 @@ describe("calculator Load example control", () => {
   });
 
   it("Clear returns the empty cents widget and keeps price fields in cents", () => {
-    expect(page).toMatch(/>Clear</);
+    expect(page).toMatch(/>\s*Clear\s*</);
     expect(page).toContain("emptyCalculatorSlots()");
     expect(page).toContain("Price (cents)");
   });
