@@ -225,11 +225,15 @@
   padding: 0;
 }
 
+.preview-card .preview-spark {
+  width: 220px;
+  max-width: 100%;
+}
+
 .preview-skin img {
   width: min(100%, 220px);
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 8px 16px rgb(0 0 0 / 0.18));
 }
 
 .preview-skin__name {

@@ -73,7 +73,7 @@ function ProfitSpark({ profitCents }: { profitCents: number }) {
       description={`Current profit ${formatDollars(profitCents)}.`}
       data={{ columns: ["Step", "P/L"], rows: data.map((d) => [d.i, d.v]) }}
     >
-      <div style={{ height: 100 }}>
+      <div className="preview-spark" style={{ height: 100 }}>
         <ResponsiveContainer width="100%" height={100}>
           <AreaChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
             <defs>
@@ -257,12 +257,12 @@ export function usePreviewTradeUps() {
       const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
       const rows = data.trade_ups ?? [];
       setIsFree((data.tier ?? "free") === "free");
+      setTradeUps(rows);
+      const inputNames = rows.flatMap((tu) => tu.input_summary?.skins.map((s) => s.name) ?? []);
+      await loadFaces(inputNames.slice(0, 16), FACE_CACHE);
       const hydrated = await Promise.all(rows.map((tu) => hydrateOutcomesIfNeeded(tu)));
-      const names = hydrated.flatMap((tu) => [
-        ...(tu.input_summary?.skins.map((s) => s.name) ?? []),
-        ...tu.outcomes.map((o) => o.skin_name),
-      ]);
-      await loadFaces(names, FACE_CACHE);
+      const outcomeNames = hydrated.flatMap((tu) => tu.outcomes.map((o) => o.skin_name));
+      await loadFaces(outcomeNames.slice(0, 16), FACE_CACHE);
       setTradeUps(hydrated);
     } catch {
       setTradeUps([]);
