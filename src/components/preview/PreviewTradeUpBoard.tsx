@@ -270,7 +270,17 @@ export function PreviewTradeUpBoard({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 h-8 px-2 text-[11px] text-neutral-400 border border-white/15 rounded-[2px] hover:text-white"
+            onClick={() => document.querySelector<HTMLInputElement>("[data-preview-trade-ups] input")?.focus()}
+          >
+            Filters
+            <kbd className="border border-white/20 px-1 py-px rounded-[2px] text-[10px]">⌘K</kbd>
+          </button>
+        </div>
         <PreviewKpiStrip
           found={total}
           profitable={totalProfitable}
@@ -278,14 +288,6 @@ export function PreviewTradeUpBoard({
           totalPages={totalPages}
           showing={tradeUps.length}
         />
-        <button
-          type="button"
-          className="hidden md:inline-flex items-center gap-1.5 h-8 px-2 text-[11px] text-neutral-400 border border-white/15 rounded-[2px] hover:text-white"
-          onClick={() => document.querySelector<HTMLInputElement>("[data-preview-trade-ups] input")?.focus()}
-        >
-          Filters
-          <kbd className="border border-white/20 px-1 py-px rounded-[2px] text-[10px]">⌘K</kbd>
-        </button>
       </div>
 
       <div className={`flex flex-col lg:flex-row border border-white/15 rounded-[2px] ${loading ? "opacity-50 pointer-events-none" : ""}`}>
