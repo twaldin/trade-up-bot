@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import { collectPreviewSkinNames } from "../../../shared/preview-board.js";
 import { useSkinImages } from "../../hooks/useSkinImages.js";
 import { PreviewContractCard } from "./PreviewContractCard.js";
 import { PreviewInspectDrawer } from "./PreviewInspectDrawer.js";
+import { listingUrlsForSkin, openExternalUrls, outputWorthPath } from "./tile-actions.js";
+import type { TradeUpOutcome } from "../../../shared/types.js";
 
 interface RateLimitInfo {
   remaining: number;
@@ -49,6 +52,7 @@ export function PreviewTradeUpBoard({
   onVerifyLimitUpdate,
   inspectable = true,
 }: Props) {
+  const navigate = useNavigate();
   const isPro = tier === "pro" || tier === "admin";
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
@@ -65,6 +69,7 @@ export function PreviewTradeUpBoard({
     return map;
   });
   const [upgradeMsg, setUpgradeMsg] = useState<number | null>(null);
+  const [blockedUrls, setBlockedUrls] = useState<string[] | null>(null);
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
   const [loadedInputs, setLoadedInputs] = useState<Map<number, TradeUp["inputs"]>>(new Map());
   const inflightDetails = useRef(new Set<string>());
@@ -158,6 +163,38 @@ export function PreviewTradeUpBoard({
   const imageNames = useMemo(() => collectPreviewSkinNames(prepared), [prepared]);
   const images = useSkinImages(imageNames);
 
+  const ensureInputs = useCallback(async (tu: TradeUp): Promise<TradeUp["inputs"]> => {
+    if (tu.inputs?.length) return tu.inputs;
+    const inputsKey = `i:${tu.id}`;
+    if (loadedInputs.has(tu.id)) return loadedInputs.get(tu.id) ?? [];
+    if (inflightDetails.current.has(inputsKey)) return [];
+    inflightDetails.current.add(inputsKey);
+    try {
+      const res = await fetch(`/api/trade-up/${tu.id}/inputs`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json() as { inputs?: TradeUp["inputs"] };
+      const inputs = data.inputs ?? [];
+      setLoadedInputs(prev => new Map(prev).set(tu.id, inputs));
+      return inputs;
+    } catch {
+      return [];
+    } finally {
+      inflightDetails.current.delete(inputsKey);
+    }
+  }, [loadedInputs]);
+
+  const handleInputSkin = useCallback(async (tu: TradeUp, name: string) => {
+    const inputs = await ensureInputs(tu);
+    const urls = listingUrlsForSkin(inputs, name);
+    if (urls.length === 0) return;
+    const blocked = openExternalUrls(urls);
+    if (blocked.length) setBlockedUrls(blocked);
+  }, [ensureInputs]);
+
+  const handleOutputSkin = useCallback((outcome: TradeUpOutcome) => {
+    navigate(outputWorthPath(outcome));
+  }, [navigate]);
+
   return (
     <div className={`pv-board${loading ? " pv-faint" : ""}`}>
       <div className="pv-cards">
@@ -168,10 +205,14 @@ export function PreviewTradeUpBoard({
             images={images}
             open={inspectable && tu.id === selectedId}
             onOpen={inspectable ? () => { void handleSelect(tu.id); } : undefined}
+            onInputSkin={name => { void handleInputSkin(tu, name); }}
+            onOutputSkin={handleOutputSkin}
             details={inspectable && tu.id === selectedId ? (
               <PreviewInspectDrawer
                 tu={tu}
                 images={images}
+                onInputSkin={name => { void handleInputSkin(tu, name); }}
+                onOutputSkin={handleOutputSkin}
                 signedIn={signedIn}
                 isPro={isPro}
                 claimed={claimedIds.has(tu.id)}
@@ -202,6 +243,21 @@ export function PreviewTradeUpBoard({
       </div>
       {upgradeMsg != null && (
         <p className="pv-muted">Upgrade to Pro to claim listings while you buy.</p>
+      )}
+      {blockedUrls && (
+        <div className="pv-modal-back" onClick={() => setBlockedUrls(null)}>
+          <div className="pv-modal" onClick={event => event.stopPropagation()}>
+            <div className="pv-kicker">Open listing</div>
+            <div className="pv-listing-grid">
+              {blockedUrls.map(url => (
+                <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="pv-listing-row">
+                  <span>{url}</span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

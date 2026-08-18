@@ -7,21 +7,33 @@ export function PreviewSkinTile({
   badge,
   rarity,
   size,
+  price,
+  onActivate,
 }: {
   name: string;
   url?: string | null;
   badge: string;
   rarity: Cs2Rarity;
   size: "in" | "out";
+  price?: string;
+  onActivate?: () => void;
 }) {
-  const fade = rarityFadeHex(rarity);
+  const hue = rarityFadeHex(rarity);
   const sizeClass = size === "out" ? "pv-tile-out" : "pv-tile-in";
   return (
-    <div className={`pv-tile ${sizeClass}`} title={name}>
+    <button
+      type="button"
+      className={`pv-tile ${sizeClass}`}
+      title={name}
+      onClick={event => {
+        event.stopPropagation();
+        onActivate?.();
+      }}
+    >
+      {price ? <span className="pv-tile-price">{price}</span> : null}
       <span className="pv-tile-badge">{badge}</span>
       <SkinRender name={name} url={url} className="pv-tile-art" />
-      <span className="pv-tile-fade" style={{ background: `linear-gradient(to top, ${fade} 0%, transparent 72%)` }} />
-      <span className="pv-tile-name">{name}</span>
-    </div>
+      <span className="pv-tile-name" style={{ color: hue }}>{name}</span>
+    </button>
   );
 }

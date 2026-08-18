@@ -19,6 +19,8 @@ import { resetBymykelCatalogCache, resolveSkinImageMap } from "../../server/prev
 import { hydrateTradeUpsFromFaces } from "../../src/preview/board/usePreviewContracts.js";
 import { isJsonContentType, readJsonIfJson } from "../../shared/http-json.js";
 import { lookupPreviewSkinImages, resetClientSkinCatalog } from "../../src/preview/images/client-skin-images.js";
+import { listingUrlsForSkin, outputWorthPath, openExternalUrls } from "../../src/preview/board/tile-actions.js";
+import { OUTCOME_HYDRATE_CONCURRENCY } from "../../shared/async-pool.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -124,10 +126,14 @@ describe("preview landing reuses prod copy and the real board", () => {
     expect(previewLanding).toContain("What you see is what you pay");
     expect(previewLanding).toContain("View Trade-Ups");
     expect(previewLanding).toContain("Free — no account needed");
-    expect(previewLanding).toContain("pv-laptop");
+    expect(previewLanding).toContain("pv-mac");
+    expect(previewLanding).toContain("pv-mac-lid");
     expect(previewLanding).toContain("/preview-board-laptop.png");
     expect(previewLanding).toContain("/preview-board-phone.png");
     expect(previewLanding).toContain("PreviewListingsStory");
+    expect(previewLanding).toContain("How it works");
+    expect(previewLanding).toContain("Outcome analysis");
+    expect(previewLanding).toContain("All rarity tiers");
     expect(previewLanding).not.toContain("PreviewTradeUpsDashboard");
     expect(previewLanding).not.toContain("PreviewHeroMock");
     expect(previewLanding).not.toContain("1.9M");
@@ -142,11 +148,14 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
     expect(previewHook).toContain("/api/trade-up/");
     expect(previewHook).toContain("hydrateTradeUpsFromFaces");
     expect(previewHook).toContain("readJsonIfJson");
+    expect(previewHook).toContain("setTradeUps(list)");
+    expect(previewHook).toContain("OUTCOME_HYDRATE_CONCURRENCY");
     expect(previewHook).toContain("mergeContractFaces");
     expect(previewHook).toContain("AbortController");
     expect(previewTradeUps).toContain("useDebouncedValue");
     expect(previewTradeUps).toContain('const OWNED_PARAMS = ["skin", "collection", "min_profit"');
     expect(previewTradeUps).toContain("delayed 3 hours");
+    expect(previewTradeUps).toContain("pv-accent-banner");
     expect(previewTradeUps).toContain("Find Profitable CS2 Trade-Up Contracts");
   });
 
@@ -169,27 +178,32 @@ describe("preview trade-ups board is a grouped-outcome dashboard", () => {
     expect(previewTile).toContain("pv-tile-out");
     expect(previewTile).toContain("pv-tile-badge");
     expect(previewTile).toContain("pv-tile-name");
+    expect(previewTile).toContain("pv-tile-price");
     expect(previewTile).toContain("rarityFadeHex");
+    expect(previewTile).toContain("stopPropagation");
+    expect(previewTile).not.toContain("pv-tile-fade");
     expect(previewTile).not.toContain("pv-thumb");
-    expect(previewCss).toMatch(/\.pv-tile-out\s*\{[^}]*140px/);
-    expect(previewCss).toMatch(/\.pv-tile-in\s*\{[^}]*96px/);
+    expect(previewCss).toMatch(/\.pv-tile-name[^{]*\{[^}]*13px/);
     expect(previewCss).not.toContain(".pv-thumb");
+    expect(previewCss).not.toContain("pv-tile-fade");
     expect(previewCard).toContain("pv-tile-row");
+    expect(previewBoard).toContain("pv-cards");
     expect(previewBoard).toContain("PreviewInspectDrawer");
+    expect(previewBoard).toContain("listingUrlsForSkin");
+    expect(previewBoard).toContain("outputWorthPath");
     expect(previewBoard).not.toContain("Pick a contract");
     expect(previewBoard).not.toContain("pv-inspect-empty");
     expect(previewBoard).not.toContain("pv-board-console");
   });
 
-  it("uses a profit/loss + per-outcome split, not a dollar histogram", () => {
+  it("uses a compact profit/loss chart, not page-width hairlines", () => {
     expect(previewOdds).toContain("profitLossSplit");
-    expect(previewOdds).toContain("outcomeSegmentClass");
-    expect(previewOdds).toContain("pv-split");
-    expect(previewOdds).toContain("pv-outcome-stack");
+    expect(previewOdds).toContain("pv-donut");
+    expect(previewOdds).not.toContain("pv-outcome-stack");
     expect(previewOdds).not.toContain("i % 3");
-    expect(previewOdds).not.toContain("pv-seg-gray");
     expect(previewOdds).not.toContain("OutcomeChart");
     expect(previewCard).toContain("PreviewOddsChart");
+    expect(previewCss).toMatch(/\.pv-donut\s*\{[^}]*(80px|96px|100px|104px|112px|120px)/);
     const inspectJsx = previewInspect.slice(previewInspect.indexOf("return ("));
     expect(inspectJsx).toContain("<details");
     expect(inspectJsx).toContain("Distribution");
@@ -210,7 +224,8 @@ describe("preview uses Outlay cream / charcoal / lime", () => {
     expect(previewCss).toContain("#1a1a1a");
     expect(previewCard).not.toContain("border-yellow-500");
     expect(previewCard).not.toContain("border-pink-500");
-    expect(previewBoard + previewCard).not.toContain("shadow-");
+    expect(previewCss).not.toContain("box-shadow: none !important");
+    expect(previewCss).toContain("pv-card:hover");
     expect(previewBoard).not.toContain("LATE");
     expect(previewBoard).not.toContain("ON TIME");
   });
@@ -226,6 +241,9 @@ describe("preview uses Outlay cream / charcoal / lime", () => {
     expect(previewStory).toContain("listingUrl");
     expect(previewStory).toContain("sourceLabel");
     expect(previewStory).toContain("/api/trade-up/");
+    expect(previewStory).toContain("pv-story-step");
+    expect(previewStory).toContain("Buy");
+    expect(previewStory).toContain("Sell");
   });
 });
 
@@ -472,7 +490,33 @@ describe("preview hydration survives Vite HTML fallbacks to prod", () => {
     await expect(hydrateTradeUpsFromFaces(list)).resolves.toEqual(list);
   });
 
-  it("resolves images from ByMykel when /api/skin-images is HTML", async () => {
+  it("does not fan-out more than two outcome requests at once", async () => {
+    const list = [1, 2, 3, 4].map(id => makeTradeUp({ id, outcomes: [] }));
+    let current = 0;
+    let max = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/preview/contract-faces")) {
+        return new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } });
+      }
+      if (url.includes("/outcomes")) {
+        current += 1;
+        max = Math.max(max, current);
+        await new Promise(resolve => setTimeout(resolve, 15));
+        current -= 1;
+        return new Response(JSON.stringify({ outcomes: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    await hydrateTradeUpsFromFaces(list);
+    expect(OUTCOME_HYDRATE_CONCURRENCY).toBe(2);
+    expect(max).toBeLessThanOrEqual(2);
+  });
+
+  it("resolves images from the cached CDN map when /api/skin-images is HTML", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/skin-images")) {
@@ -481,10 +525,10 @@ describe("preview hydration survives Vite HTML fallbacks to prod", () => {
           headers: { "content-type": "text/html" },
         });
       }
-      if (url.includes("skins.json")) {
-        return new Response(JSON.stringify([
-          { name: "AK-47 | Redline", image: "https://community.akamai.steamstatic.com/economy/image/redline" },
-        ]), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/preview-skin-cdn.json")) {
+        return new Response(JSON.stringify({
+          "AK-47 | Redline": "https://community.akamai.steamstatic.com/economy/image/redline",
+        }), { status: 200, headers: { "content-type": "application/json" } });
       }
       throw new Error(`unexpected fetch ${url}`);
     });
@@ -494,6 +538,33 @@ describe("preview hydration survives Vite HTML fallbacks to prod", () => {
     );
     expect(images.get("AK-47 | Redline")).toBe("https://community.akamai.steamstatic.com/economy/image/redline");
     expect(images.get("Unknown Skin | Invented")).toBe(null);
+    expect(fetchMock.mock.calls.some(call => String(call[0]).includes("skins.json"))).toBe(false);
+  });
+
+  it("opens exact listing URLs for an input skin and an in-app worth page for an output", () => {
+    const tu = makeTradeUp({
+      listingIds: ["cf-1", "dmarket:abc"],
+    });
+    tu.inputs[0].skin_name = "AK-47 | Redline";
+    tu.inputs[0].source = "csfloat";
+    tu.inputs[1].skin_name = "AK-47 | Redline";
+    tu.inputs[1].source = "dmarket";
+    const urls = listingUrlsForSkin(tu.inputs, "AK-47 | Redline");
+    expect(urls.some(url => url.includes("csfloat.com/item/cf-1"))).toBe(true);
+    expect(urls.some(url => url.includes("dmarket.com"))).toBe(true);
+    expect(outputWorthPath({ skin_name: "AWP | Asiimov" })).toBe("/preview/skins/awp-asiimov");
+    expect(outputWorthPath({
+      skin_name: "AWP | Asiimov",
+      predicted_float: 0.1823,
+      estimated_price_cents: 12345,
+    })).toBe("/preview/skins/awp-asiimov?float=0.1823&price=12345");
+    const opened: string[] = [];
+    const blocked = openExternalUrls(["https://csfloat.com/item/1", "https://dmarket.com/x"], (url) => {
+      opened.push(url);
+      return url.includes("csfloat") ? {} as Window : null;
+    });
+    expect(opened).toEqual(["https://csfloat.com/item/1", "https://dmarket.com/x"]);
+    expect(blocked).toEqual(["https://dmarket.com/x"]);
   });
 });
 

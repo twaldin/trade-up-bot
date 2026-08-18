@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { TradeUp } from "../../../shared/types.js";
+import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
 import {
   chanceToProfit,
   groupInputSkins,
@@ -21,12 +21,16 @@ export function PreviewContractCard({
   images,
   open,
   onOpen,
+  onInputSkin,
+  onOutputSkin,
   details,
 }: {
   tu: TradeUp;
   images: Map<string, string | null>;
   open: boolean;
   onOpen?: () => void;
+  onInputSkin?: (name: string) => void;
+  onOutputSkin?: (outcome: TradeUpOutcome) => void;
   details?: ReactNode;
 }) {
   const { formatPrice } = useCurrency();
@@ -39,11 +43,18 @@ export function PreviewContractCard({
 
   return (
     <article className={`pv-card${open ? " pv-card-open" : ""}`}>
-      <button
-        type="button"
+      <div
         className="pv-card-hit"
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
         onClick={onOpen}
-        disabled={!interactive}
+        onKeyDown={event => {
+          if (!interactive) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen?.();
+          }
+        }}
         aria-expanded={open}
       >
         <div className="pv-card-skins">
@@ -58,6 +69,7 @@ export function PreviewContractCard({
                   badge={`×${skin.count}`}
                   rarity={inputRarity}
                   size="in"
+                  onActivate={() => onInputSkin?.(skin.name)}
                 />
               ))}
             </div>
@@ -74,8 +86,10 @@ export function PreviewContractCard({
                     name={outcome.skin_name}
                     url={images.get(outcome.skin_name)}
                     badge={`${(outcome.probability * 100).toFixed(0)}%`}
+                    price={formatPrice(outcome.estimated_price_cents)}
                     rarity={outputRarity}
                     size="out"
+                    onActivate={() => onOutputSkin?.(outcome)}
                   />
                 ))}
               </div>
@@ -97,7 +111,7 @@ export function PreviewContractCard({
             </div>
           </dl>
         </div>
-      </button>
+      </div>
       <div className={`pv-card-expand${open ? " pv-card-expand-open" : ""}`}>
         <div className="pv-card-expand-inner">
           {open ? details : null}

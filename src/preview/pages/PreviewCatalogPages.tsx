@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useCurrency } from "../../contexts/CurrencyContext.js";
 import { collectionToSlug } from "../../../shared/slugs.js";
 import { CollectionListViewer } from "../../components/CollectionListViewer.js";
 import { CollectionViewer } from "../../components/CollectionViewer.js";
@@ -44,8 +45,19 @@ export function PreviewSkinsPage() {
 }
 
 export function PreviewSkinDetailPage() {
+  const [searchParams] = useSearchParams();
+  const { formatPrice } = useCurrency();
+  const float = searchParams.get("float");
+  const priceCents = searchParams.get("price");
+  const parsedPrice = priceCents != null ? Number(priceCents) : NaN;
   return (
     <div className="pv-embed">
+      {float || Number.isFinite(parsedPrice) ? (
+        <div className="pv-accent-banner">
+          {float ? `Predicted float ${Number(float).toFixed(4)}` : "This outcome"}
+          {Number.isFinite(parsedPrice) ? ` · ${formatPrice(parsedPrice)} after seller fees` : ""}
+        </div>
+      ) : null}
       <Suspense fallback={<Loading />}>
         <SkinPage />
       </Suspense>

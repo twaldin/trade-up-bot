@@ -33,6 +33,8 @@ interface VerifyResult {
 export function PreviewInspectDrawer({
   tu,
   images,
+  onInputSkin,
+  onOutputSkin,
   signedIn,
   isPro,
   claimed,
@@ -50,6 +52,8 @@ export function PreviewInspectDrawer({
 }: {
   tu: TradeUp;
   images: Map<string, string | null>;
+  onInputSkin?: (name: string) => void;
+  onOutputSkin?: (outcome: TradeUp["outcomes"][number]) => void;
   signedIn: boolean;
   isPro: boolean;
   claimed: boolean;
@@ -100,10 +104,11 @@ export function PreviewInspectDrawer({
               badge={`×${skin.count}`}
               rarity={inputRarity}
               size="in"
+              onActivate={() => onInputSkin?.(skin.name)}
             />
           ))}
         </div>
-        <div className="pv-listing-links">
+        <div className="pv-listing-grid">
           {tu.inputs.map(input => (
             <a
               key={input.listing_id}
@@ -115,6 +120,7 @@ export function PreviewInspectDrawer({
               <span className="pv-src">{sourceLabel(input.source)}</span>
               <span>{input.skin_name}</span>
               <span className="pv-tabular">{formatPrice(input.price_cents)}</span>
+              <span aria-hidden="true">↗</span>
             </a>
           ))}
         </div>
@@ -132,8 +138,10 @@ export function PreviewInspectDrawer({
                 name={outcome.skin_name}
                 url={images.get(outcome.skin_name)}
                 badge={`${(outcome.probability * 100).toFixed(0)}%`}
+                price={formatPrice(outcome.estimated_price_cents)}
                 rarity={outputRarity}
                 size="out"
+                onActivate={() => onOutputSkin?.(outcome)}
               />
             ))}
           </div>

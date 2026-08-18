@@ -12,12 +12,12 @@ import { useSkinImages } from "../../hooks/useSkinImages.js";
 import { hydrateTradeUpsFromFaces } from "../board/usePreviewContracts.js";
 import { PreviewSkinTile } from "../tiles/PreviewSkinTile.js";
 
-type Phase = "listings" | "inputs" | "output";
+type Phase = "buy" | "contract" | "output" | "sell";
 
 export function PreviewListingsStory() {
   const { formatPrice } = useCurrency();
   const [tu, setTu] = useState<TradeUp | null>(null);
-  const [phase, setPhase] = useState<Phase>("listings");
+  const [phase, setPhase] = useState<Phase>("buy");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,12 +47,12 @@ export function PreviewListingsStory() {
 
   useEffect(() => {
     if (!tu) return;
-    const order: Phase[] = ["listings", "inputs", "output"];
+    const order: Phase[] = ["buy", "contract", "output", "sell"];
     let i = 0;
     const id = window.setInterval(() => {
       i = (i + 1) % order.length;
       setPhase(order[i]);
-    }, 2200);
+    }, 2400);
     return () => window.clearInterval(id);
   }, [tu]);
 
@@ -63,60 +63,75 @@ export function PreviewListingsStory() {
   const outputs = uniqueOutcomes(tu.outcomes);
   const inputRarity = rarityForTradeUpRole(tu.type, "input");
   const outputRarity = rarityForTradeUpRole(tu.type, "output");
+  const hero = outputs[0];
 
   return (
-    <section className="pv-story" data-phase={phase} aria-label="Live listings becoming a trade-up">
+    <section className="pv-story" data-phase={phase} aria-label="Buy listings, contract, output, sell">
       <div className="pv-kicker">Live listings</div>
       <h2>What you see is what you pay</h2>
       <p className="pv-muted">
-        Each input is a buyable row on CSFloat, DMarket, Skinport, or Buff.market. Ten skins in, one skin out.
+        Buy ten live marketplace listings. The contract consumes them. One output comes back. Sell it.
       </p>
 
-      <div className={`pv-story-listings${phase === "listings" ? " pv-story-on" : ""}`}>
-        {tu.inputs.map(input => (
-          <a
-            key={input.listing_id}
-            className="pv-listing-row"
-            href={listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="pv-src">{sourceLabel(input.source)}</span>
-            <span>{input.skin_name}</span>
-            <span className="pv-tabular">{formatPrice(input.price_cents)}</span>
-          </a>
+      <div className="pv-story-rail">
+        {(["buy", "contract", "output", "sell"] as Phase[]).map((step, index) => (
+          <div key={step} className={`pv-story-step${phase === step ? " pv-story-on" : ""}`}>
+            <div className="pv-kicker">{String(index + 1).padStart(2, "0")}</div>
+            <h3>{step === "buy" ? "Buy" : step === "contract" ? "Contract" : step === "output" ? "Output" : "Sell"}</h3>
+            {step === "buy" && (
+              <div className="pv-listing-grid">
+                {tu.inputs.slice(0, 6).map(input => (
+                  <a
+                    key={input.listing_id}
+                    className="pv-listing-row"
+                    href={listingUrl(input.listing_id, input.skin_name, input.condition, input.float_value, input.price_cents, input.source, input.marketplace_id, input.stattrak)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span className="pv-src">{sourceLabel(input.source)}</span>
+                    <span>{input.skin_name}</span>
+                    <span className="pv-tabular">{formatPrice(input.price_cents)}</span>
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                ))}
+              </div>
+            )}
+            {step === "contract" && (
+              <div className="pv-tile-row">
+                {inputs.map(skin => (
+                  <PreviewSkinTile
+                    key={skin.name}
+                    name={skin.name}
+                    url={images.get(skin.name)}
+                    badge={`×${skin.count}`}
+                    rarity={inputRarity}
+                    size="in"
+                  />
+                ))}
+              </div>
+            )}
+            {step === "output" && (
+              <div className="pv-tile-row">
+                {outputs.map(outcome => (
+                  <PreviewSkinTile
+                    key={outcome.skin_id + outcome.skin_name}
+                    name={outcome.skin_name}
+                    url={images.get(outcome.skin_name)}
+                    badge={`${(outcome.probability * 100).toFixed(0)}%`}
+                    price={formatPrice(outcome.estimated_price_cents)}
+                    rarity={outputRarity}
+                    size="out"
+                  />
+                ))}
+              </div>
+            )}
+            {step === "sell" && hero && (
+              <p>
+                Sell <strong>{hero.skin_name}</strong> at {formatPrice(hero.estimated_price_cents)} after marketplace fees.
+              </p>
+            )}
+          </div>
         ))}
-      </div>
-
-      <div className={`pv-story-inputs${phase !== "listings" ? " pv-story-on" : ""}`}>
-        <div className="pv-tile-row">
-          {inputs.map(skin => (
-            <PreviewSkinTile
-              key={skin.name}
-              name={skin.name}
-              url={images.get(skin.name)}
-              badge={`×${skin.count}`}
-              rarity={inputRarity}
-              size="in"
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className={`pv-story-output${phase === "output" ? " pv-story-on" : ""}`}>
-        <div className="pv-kicker">Output</div>
-        <div className="pv-tile-row">
-          {outputs.map(outcome => (
-            <PreviewSkinTile
-              key={outcome.skin_id + outcome.skin_name}
-              name={outcome.skin_name}
-              url={images.get(outcome.skin_name)}
-              badge={`${(outcome.probability * 100).toFixed(0)}%`}
-              rarity={outputRarity}
-              size="out"
-            />
-          ))}
-        </div>
       </div>
     </section>
   );

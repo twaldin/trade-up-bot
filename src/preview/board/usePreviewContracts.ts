@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
 import { mergeContractFaces } from "../../../shared/preview-board.js";
+import { mapPool, OUTCOME_HYDRATE_CONCURRENCY } from "../../../shared/async-pool.js";
 import { readJsonIfJson } from "../../../shared/http-json.js";
 import { EMPTY_FILTERS, filtersToParams, type Filters } from "../../components/FilterBar.js";
 
@@ -22,7 +23,7 @@ async function hydrateFromOutcomeRoutes(
   signal?: AbortSignal,
 ): Promise<TradeUp[]> {
   const faces: Record<string, TradeUpOutcome[]> = {};
-  await Promise.all(ids.map(async id => {
+  await mapPool(ids, OUTCOME_HYDRATE_CONCURRENCY, async id => {
     try {
       const res = await fetch(`/api/trade-up/${id}/outcomes`, {
         credentials: "include",
@@ -34,7 +35,7 @@ async function hydrateFromOutcomeRoutes(
       if ((err as Error).name === "AbortError") throw err;
       faces[id] = [];
     }
-  }));
+  });
   return mergeContractFaces(tradeUps, faces);
 }
 
@@ -117,6 +118,15 @@ export function usePreviewContracts(args: {
       }>(res);
       if (!data) return;
       const list = data.trade_ups ?? [];
+      setTradeUps(list);
+      setTotal(data.total ?? 0);
+      const newTier = data.tier || "free";
+      setTier(newTier);
+      setSignedIn(Boolean(data.signed_in));
+      try { localStorage.setItem("user_tier", newTier); } catch {}
+      if (data.claim_limit) setClaimLimit(data.claim_limit);
+      if (data.verify_limit) setVerifyLimit(data.verify_limit);
+      setLoading(false);
       let hydrated = list;
       try {
         hydrated = await hydrateTradeUpsFromFaces(list, controller.signal);
@@ -126,13 +136,6 @@ export function usePreviewContracts(args: {
       }
       if (controller.signal.aborted) return;
       setTradeUps(hydrated);
-      setTotal(data.total ?? 0);
-      const newTier = data.tier || "free";
-      setTier(newTier);
-      setSignedIn(Boolean(data.signed_in));
-      try { localStorage.setItem("user_tier", newTier); } catch {}
-      if (data.claim_limit) setClaimLimit(data.claim_limit);
-      if (data.verify_limit) setVerifyLimit(data.verify_limit);
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
     } finally {

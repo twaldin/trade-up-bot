@@ -87,6 +87,11 @@ export function PreviewTradeUpsDashboard({
 
   return (
     <div data-preview-trade-ups>
+      {isFree && !contracts.loading && (
+        <div className="pv-accent-banner">
+          Free view: contracts are delayed 3 hours. Pro sees them the moment they're found.
+        </div>
+      )}
       <section className="pv-page-intro">
         <h2>Find Profitable CS2 Trade-Up Contracts</h2>
         <p>
@@ -118,12 +123,6 @@ export function PreviewTradeUpsDashboard({
         <div className="pv-filters">
           <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
           <FilterChips filters={filters} onUpdate={handleFiltersChange} />
-        </div>
-      )}
-
-      {isFree && !contracts.loading && (
-        <div className="pv-banner">
-          Free view: contracts are delayed 3 hours. Pro sees them the moment they're found.
         </div>
       )}
 
