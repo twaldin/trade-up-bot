@@ -4,6 +4,8 @@ export interface StaticSeoPage {
   description: string;
   bodyHtml: string;
   jsonLd?: Record<string, unknown>[];
+  /** HOLD pages (listing-sniper) stay noindex. Omit for the default index, follow. */
+  robots?: string;
 }
 
 export const STATIC_SEO_PAGES: StaticSeoPage[] = [
@@ -174,5 +176,12 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
     title: "Privacy Policy — TradeUpBot",
     description: "TradeUpBot privacy information for accounts, subscriptions, sessions, analytics, and CS2 trade-up tool usage.",
     bodyHtml: `<h1>Privacy Policy</h1><p>TradeUpBot uses account, session, subscription, and analytics information to operate CS2 trade-up tools, protect access limits, process payments, and improve marketplace data quality. The site focuses on trade-up analysis and does not sell personal information as a standalone product.</p><p>Operational data may include authentication identifiers, tier status, verification usage, claim activity, and standard web analytics. Marketplace listing and pricing data are used to calculate trade-up opportunities, skin pages, collection pages, and sitemap content for crawlers.</p><p><a href="/terms">Read the terms of service</a> or <a href="/features">learn about TradeUpBot features</a>.</p>`,
+  },
+  {
+    path: "/listing-sniper",
+    title: "Listing Sniper — Live Listing Alerts | TradeUpBot",
+    description: "Listings priced below estimated market value, sorted by discount percentage.",
+    robots: "noindex, follow",
+    bodyHtml: `<h1>Listing Sniper</h1><p>Listings priced below estimated market value, sorted by discount percentage.</p><p>Listing Sniper Alerts surface live listing alerts from CSFloat, DMarket, Buff, and Skinport. Filter by skin, collection, marketplace, and minimum difference.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>`,
   },
 ];

@@ -22,6 +22,7 @@ const ROUTES = [
   "/pricing",
   "/terms",
   "/privacy",
+  "/listing-sniper",
 ];
 
 const MIME_TYPES: Record<string, string> = {
