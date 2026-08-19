@@ -89,6 +89,11 @@ function startServer(): Promise<ReturnType<typeof createServer>> {
 
 async function prerenderRoute(browser: import("puppeteer").Browser, route: string): Promise<void> {
   const page = await browser.newPage();
+  // A route that renders nothing used to be written out silently as an empty
+  // body; surface the reason instead.
+  page.on("pageerror", (error) => {
+    console.error(`  ${route} threw: ${error.message.split("\n")[0]}`);
+  });
 
   await page.setRequestInterception(true);
   page.on("request", (req) => {
@@ -106,7 +111,15 @@ async function prerenderRoute(browser: import("puppeteer").Browser, route: strin
       timeout: 15000,
     });
 
-    await page.waitForSelector("main, h1, [data-prerender]", { timeout: 5000 }).catch(() => {});
+    // The console shell is code-split, so wait for the root to actually fill
+    // before capturing — a 5s selector race wrote an empty body for "/".
+    await page
+      .waitForFunction(
+        () => (document.getElementById("root")?.childElementCount ?? 0) > 0,
+        { timeout: 20000 },
+      )
+      .catch(() => {});
+    await page.waitForSelector("main, h1, [data-prerender]", { timeout: 10000 }).catch(() => {});
 
     const rawHtml = await page.content();
     const html = normalizePrerenderedHead(dedupeHead(rawHtml), route);

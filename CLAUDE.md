@@ -73,3 +73,6 @@ npm run dev
 - Don't modify `git config user.email` or `user.name` (this repo is pinned to twaldin / timothy@waldin.net).
 - Pushes go to `origin` over SSH (`git@github.com:twaldin/trade-up-bot.git`) — the machine's SSH key is a deploy key for this repo.
 - For `gh` CLI calls against this repo, always use the twaldin account token without switching the active account: `GH_TOKEN=$(gh auth token --user twaldin) gh ...` — the globally active gh account (`f10ydd`) belongs to other projects and must stay active.
+
+## Preview (`/preview` only)
+When changing anything under `/preview`, follow `.cursor/skills/preview-browser-qa/SKILL.md`. Cloud/background runs also follow `.cursor/CLOUD.md`. Do not merge preview work or deploy `/preview` to production from those passes.

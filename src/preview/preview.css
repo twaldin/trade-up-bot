@@ -1,0 +1,2220 @@
+@import "./kit/outlay/theme.css";
+
+/* ---------------------------------------------------------------------------
+   P/L palette. Lime IS profit here — Outlay's brand fill doubles as the gain
+   colour so the board never grows a second, foreign green. Loss is one red
+   drawn opposite the lime, deliberately not the Covert rarity red (#eb4b4b)
+   so a losing number can never be mistaken for a rarity.
+
+   Lime is 1.06:1 on cream, so it stays a FILL: text uses --profit-ink (the
+   mode-solved lime axis) and every lime fill carries a --profit-edge stroke.
+   --------------------------------------------------------------------------- */
+[data-preview] {
+  --canvas: var(--bg);
+  --ease-arrive: var(--ease);
+
+  --profit: var(--accent);
+  --profit-edge: var(--accent-border);
+  --profit-ink: var(--accent-text);
+  --profit-mark: var(--accent-border); /* 2px marks need ink, not a pale fill */
+  --loss: #c81e45; /* 5.66 canvas · 5.21 panel · 4.77 well */
+  --loss-soft: color-mix(in srgb, #c81e45 22%, transparent);
+
+  /* ------------------------------------------------------------- nesting
+     Every nested surface steps AWAY from the page: light goes darker, dark
+     goes lighter. A chart plot is three deep (canvas → card → panel → well),
+     so it must not fall back to the canvas colour or to a foreign grey.
+       light  #FFFFFF → #F8F5F2 → #EEEBE8 → #EBE7E3
+       dark   #111110 → #1C1B19 → #262523 → #2B2A27   (muted ink 4.6:1) */
+  --nest-1: var(--panel);
+  --nest-2: #eeebe8;
+  --nest-3: #ebe7e3;
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+[data-preview][data-mode="dark"] {
+  --profit-mark: var(--accent);
+  --loss: #ff5470; /* 5.56 panel · 6.28 well */
+  --loss-soft: color-mix(in srgb, #ff5470 26%, transparent);
+  --nest-2: #262523;
+  --nest-3: #2b2a27;
+}
+
+[data-preview] .o-arrive {
+  animation: preview-arrive 520ms var(--ease) both;
+  animation-delay: calc(var(--stagger, 0) * 70ms);
+}
+
+@keyframes preview-arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-preview] .o-arrive { animation: none; }
+}
+
+/* =========================================================== chrome + nav */
+
+.preview-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+
+/* Chrome does not clip a `display: table-caption` child with `overflow:
+   hidden`, so a `.sr-only` <table> leaked its "— data table" caption onto the
+   card. Clip-path holds where overflow does not. */
+[data-preview] .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* The kit theme colours the skip link but never parks it, so it was painting
+   itself over the wordmark on every route. */
+[data-preview] .skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 6px 10px;
+  transform: translateY(-300%);
+  transition: transform var(--t-control) var(--ease);
+}
+
+[data-preview] .skip-link:focus,
+[data-preview] .skip-link:focus-visible {
+  transform: none;
+}
+
+.preview-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* The mark is lime on the page canvas — no plate, no chip. */
+.preview-mark { color: var(--accent); }
+
+.preview-nav__links {
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (min-width: 800px) {
+  .preview-nav__links { display: flex; }
+}
+
+.preview-bar__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control);
+  padding: 6px 12px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text);
+  font: 500 12px/1 var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-control) var(--ease), border-color var(--t-control) var(--ease);
+}
+
+.preview-btn:hover {
+  background: var(--row-hover);
+}
+
+.preview-btn--lime {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.preview-btn--lime:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  border-color: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+.preview-btn--ghost {
+  border-color: var(--line-hard);
+}
+
+.preview-btn--quiet {
+  min-height: 24px;
+  padding: 3px 9px;
+  border-color: var(--line-soft);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-btn--quiet:hover {
+  border-color: var(--line-hard);
+  color: var(--text);
+}
+
+.preview-btn--block {
+  width: 100%;
+  min-height: 34px;
+  font-size: 12px;
+}
+
+/* ================================================================ landing */
+
+.preview-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 80px 24px 40px;
+}
+
+.preview-hero h1 {
+  max-width: 18ch;
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.4rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+.preview-hero__lede {
+  max-width: 44rem;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.preview-hero__sub {
+  max-width: 44rem;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.preview-btn--lg {
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.preview-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  align-self: stretch;
+  margin: 20px 0 0;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--panel-rule);
+  overflow: hidden;
+}
+
+@media (min-width: 800px) {
+  .preview-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.preview-stats > div {
+  padding: 12px 14px;
+  background: var(--panel);
+}
+
+.preview-stats b {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.preview-stats span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.preview-laptop { display: none; padding: 0 24px; }
+.preview-phone { display: block; padding: 0 24px; }
+
+@media (min-width: 860px) {
+  .preview-laptop { display: block; }
+  .preview-phone { display: none; }
+}
+
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 88px 24px;
+}
+
+/**
+ * A full-bleed band whose CONTENT stays on the same left rail as every other
+ * section. The band is edge to edge for its background only; the inline padding
+ * reproduces the 1152px column a centred `.preview-section` produces, so the
+ * kicker, the heading, the lede and the cards share one rail.
+ *
+ * This used to centre each child with `margin-inline: auto`, which lost to the
+ * `margin: 0` on `h2`, `.preview-section__lede` and `.o-kicker` — the cards
+ * kept the rail and the heading fell back to the viewport edge.
+ */
+.preview-section--band {
+  max-width: none;
+  padding-inline: max(24px, calc((100% - 1152px) / 2));
+  background: var(--panel);
+  border-top: 1px solid var(--panel-rule);
+  border-bottom: 1px solid var(--panel-rule);
+}
+
+.preview-section h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.preview-section__lede {
+  max-width: 44rem;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.preview-tiles,
+.preview-steps {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (min-width: 780px) {
+  .preview-tiles,
+  .preview-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.preview-tile {
+  padding: 16px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-tile h3,
+.preview-step h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.preview-tile p,
+.preview-step p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.preview-step {
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.preview-step__n {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-faq details {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 14px 0;
+}
+
+.preview-faq summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.preview-faq details p {
+  margin: 10px 0 0;
+  max-width: 60rem;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* ================================================================ console */
+
+.preview-console-root {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.preview-console {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.preview-sidebar {
+  display: none;
+  width: 184px;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 12px 8px;
+  border-right: 1px solid var(--panel-rule);
+  background: var(--panel);
+}
+
+.preview-sidebar__brand {
+  margin-bottom: 8px;
+  padding: 0 6px;
+}
+
+.preview-sidebar .o-nav-item {
+  text-decoration: none;
+  border: 1px solid transparent;
+  padding: 0 8px;
+}
+
+.preview-sidebar .o-nav-item[aria-current="page"] {
+  border-color: var(--line-hard);
+}
+
+.preview-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preview-sidebar__group .o-kicker {
+  padding: 0 6px 5px;
+}
+
+.preview-console__col {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.preview-console__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--panel-rule);
+  background: var(--panel);
+}
+
+.preview-console__mobile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.preview-console__main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+@media (min-width: 800px) {
+  .preview-sidebar { display: flex; }
+  .preview-console__mobile { display: none; }
+}
+
+/* ================================================================== board */
+
+.preview-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: none;
+  padding: 16px 16px 32px;
+}
+
+.preview-page__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.preview-page__head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.preview-page__head p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.preview-page__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-page__meta i {
+  width: 1px;
+  height: 11px;
+  background: var(--line-hard);
+}
+
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-input {
+  min-width: 240px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  background: var(--input-bg);
+  color: var(--text);
+  font: 400 12px/1 var(--font-body);
+}
+
+.preview-input::placeholder { color: var(--text-muted); }
+
+.preview-input:hover { background: var(--input-hover); }
+
+.preview-input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+  background: var(--input-focus);
+}
+
+.preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--line-hard);
+}
+
+.preview-link:hover { text-decoration-color: var(--text); }
+
+.preview-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--loss);
+}
+
+/* The free-tier notice is the upgrade CTA, so it carries the brand fill with
+   black ink on it — the one place lime is allowed to shout. */
+.preview-delay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-panel);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+}
+
+.preview-delay p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.preview-delay__label {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-chip);
+  background: var(--on-accent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.preview-delay__cta {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--on-accent);
+  border-radius: var(--r-control);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.preview-delay__cta:hover {
+  background: var(--on-accent);
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------- filter bar */
+
+.preview-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--panel);
+}
+
+.preview-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--control);
+  padding: 0 8px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  background: var(--input-bg);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-field:focus-within {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+.preview-field--search { flex: 1; min-width: 180px; }
+
+.preview-field__input,
+.preview-field__num,
+.preview-field__select {
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 400 11px/1 var(--font-body);
+  outline: none;
+}
+
+.preview-field__input { flex: 1; min-width: 0; }
+
+.preview-field__num {
+  width: 46px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preview-field__select { cursor: pointer; }
+
+.preview-field__input::placeholder,
+.preview-field__num::placeholder { color: var(--text-subtle); }
+
+.preview-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-chip);
+  background: var(--nest-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.preview-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.preview-note b {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-bento {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (min-width: 720px) {
+  .preview-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1180px) {
+  .preview-bento { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.preview-bento__row {
+  grid-column: 1 / -1;
+}
+
+/* ------------------------------------------------------------------ card */
+
+.preview-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--panel);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-control) var(--ease);
+}
+
+.preview-card:hover {
+  border-color: var(--line-hard);
+}
+
+.preview-card--expanded {
+  border-color: var(--line-hard);
+}
+
+.preview-collapse {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-control);
+  background: var(--nest-2);
+  color: var(--text-muted);
+  font: 500 11px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.preview-collapse:hover {
+  border-color: var(--line-hard);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------- card stats */
+
+/* The one stat line on a collapsed card. Tiles carry price, count, float and
+   odds; only the totals that are on no tile land here. */
+.preview-cardline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-cardline b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.preview-cardline b.is-plus { color: var(--profit-ink); }
+.preview-cardline b.is-minus { color: var(--loss); }
+
+.preview-cardline i {
+  width: 1px;
+  height: 10px;
+  background: var(--line-soft);
+}
+
+/* ------------------------------------------------------- slim payoff strip */
+
+.preview-strip {
+  position: relative;
+  height: 62px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-strip--tall { height: 74px; }
+
+.preview-strip--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 2px loss-to-profit rail. The scale, not a capsule. */
+.preview-strip__rail {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 38px;
+  height: 2px;
+  border-radius: var(--r-control);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--loss) 38%, transparent),
+    color-mix(in srgb, var(--loss) 8%, transparent) 36%,
+    var(--line-soft) 50%,
+    color-mix(in srgb, var(--profit-edge) 10%, transparent) 64%,
+    color-mix(in srgb, var(--profit-edge) 42%, transparent)
+  );
+}
+
+.preview-strip--tall .preview-strip__rail { top: 48px; }
+
+.preview-strip__mark {
+  position: absolute;
+  top: 31px;
+  height: 16px;
+  width: 1px;
+  background: var(--line-hard);
+  transform: translateX(-50%);
+}
+
+.preview-strip--tall .preview-strip__mark { top: 40px; height: 18px; }
+
+.preview-strip__mark.is-ev {
+  width: 2px;
+  background: var(--text);
+}
+
+.preview-strip__mark span {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.preview-strip__mark.is-ev span {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.preview-strip__mark.is-bare span { display: none; }
+
+/* The outcome's render rides its tick, leaning outward from the middle. */
+.preview-strip__face {
+  position: absolute;
+  top: 4px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 46px;
+  height: 30px;
+  padding: 0 2px;
+  pointer-events: auto;
+  transition: opacity var(--t-control) var(--ease), transform var(--t-control) var(--ease);
+}
+
+.preview-strip--tall .preview-strip__face { top: 6px; width: 58px; height: 38px; }
+
+.preview-strip__face.is-end { transform: translateX(-100%); }
+.preview-strip__face.is-start { transform: translateX(0); }
+.preview-strip__face.is-center { transform: translateX(-50%); }
+
+.preview-strip__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-strip__face .preview-skin__ph {
+  width: 70%;
+  height: 70%;
+}
+
+/* Crowded ticks stack and fade; hover pulls one to the front. */
+.preview-strip.is-crowded .preview-strip__face { opacity: 0.55; }
+
+.preview-strip .preview-strip__face:hover,
+.preview-strip .preview-strip__face.is-hot {
+  z-index: 9 !important;
+  opacity: 1;
+}
+
+/* Ticks, not orbs. Height carries probability; colour carries the sign. */
+.preview-strip__tick {
+  position: absolute;
+  top: 39px;
+  z-index: 3;
+  width: 2px;
+  border-radius: var(--r-control);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px var(--nest-2);
+  transition: width var(--t-control) var(--ease), height var(--t-control) var(--ease);
+}
+
+.preview-strip--tall .preview-strip__tick { top: 49px; }
+
+.preview-strip__tick.is-plus { background: var(--profit-mark); }
+.preview-strip__tick.is-minus { background: var(--loss); }
+
+.preview-strip__tick.is-hot {
+  width: 4px;
+  box-shadow: 0 0 0 1px var(--nest-2);
+}
+
+/* ------------------------------------------------------------ skin tiles */
+
+.preview-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.preview-lane__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.preview-lane__label i {
+  flex: 1;
+  height: 1px;
+  opacity: 0.4;
+}
+
+/* auto-fit, so a row of three inputs uses the width it has instead of
+   leaving a black gutter to its right. Capped so one output cannot balloon. */
+.preview-skins {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.preview-skins > * { max-width: 186px; }
+
+.preview-skins--in {
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+}
+
+.preview-skins--out {
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+}
+
+.preview-skins--compact {
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+}
+
+.preview-skin {
+  --skin-tint: var(--text-muted);
+  --skin-ink: color-mix(in srgb, var(--skin-tint) 66%, #0b0b0a);
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: 100%;
+  padding: 0 0 7px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 24%, var(--panel-rule));
+  border-radius: var(--r-panel);
+  background:
+    radial-gradient(108% 70% at 50% 6%, color-mix(in srgb, var(--skin-tint) 16%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 4%, var(--nest-2)), color-mix(in srgb, var(--skin-tint) 13%, var(--nest-2)));
+  color: inherit;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--t-control) var(--ease), transform var(--t-control) var(--ease);
+}
+
+[data-preview][data-mode="dark"] .preview-skin {
+  --skin-ink: color-mix(in srgb, var(--skin-tint) 74%, #eeece7);
+  border-color: color-mix(in srgb, var(--skin-tint) 30%, var(--panel-rule));
+  background:
+    radial-gradient(108% 70% at 50% 6%, color-mix(in srgb, var(--skin-tint) 26%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 6%, var(--nest-2)), color-mix(in srgb, var(--skin-tint) 18%, var(--nest-2)));
+}
+
+.preview-skin::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--skin-tint);
+}
+
+.preview-skin:hover,
+.preview-skin.is-hot {
+  border-color: color-mix(in srgb, var(--skin-tint) 62%, var(--panel-rule));
+  transform: translateY(-1px);
+}
+
+.preview-skin:focus-within {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+/* The render is the hero: it owns a 3:2 box edge to edge and the readouts sit
+   on top of it as pills, instead of a badge stack eating half the tile. */
+.preview-skin__buy {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.preview-skin--card .preview-skin__buy { aspect-ratio: 4 / 3; }
+
+.preview-skin__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.preview-skin img {
+  max-height: 96%;
+  max-width: 94%;
+  object-fit: contain;
+}
+
+.preview-skin__ph {
+  width: 62%;
+  height: 66%;
+  border-radius: var(--r-control);
+  background:
+    radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--skin-tint) 22%, transparent), transparent 70%),
+    color-mix(in srgb, var(--skin-tint) 6%, var(--nest-3));
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 16%, transparent);
+}
+
+.preview-skin__label {
+  display: block;
+  min-width: 0;
+  padding: 0 5px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.preview-skin__label:hover b {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.preview-skin__label em {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-skin__label b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--skin-ink);
+}
+
+/* pills ON the render, pinned to the art box corners */
+.preview-skin__index,
+.preview-skin__lead,
+.preview-skin__trail,
+.preview-skin__float,
+.preview-skin__wear {
+  position: absolute;
+  padding: 1px 4px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--bg) 66%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.preview-skin__lead,
+.preview-skin__index { top: 3px; left: 3px; color: var(--text); }
+.preview-skin__index { background: color-mix(in srgb, var(--bg) 50%, transparent); color: var(--text-muted); }
+.preview-skin__index ~ .preview-skin__lead { left: auto; right: 3px; }
+.preview-skin__trail { top: 3px; right: 3px; color: var(--text-muted); }
+.preview-skin__float { bottom: 3px; left: 3px; color: var(--text-muted); }
+.preview-skin__wear { bottom: 3px; right: 3px; color: var(--text-muted); }
+
+/* --------------------------------------------------- inputs -> outputs flow */
+
+.preview-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.preview-flow__side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.preview-flow__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  color: var(--text-muted);
+  transform: rotate(90deg);
+}
+
+/* One row once the card is full width: inputs, arrow, outputs. */
+.preview-card--expanded .preview-flow {
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.preview-card--expanded .preview-flow__arrow {
+  height: auto;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .preview-card--expanded .preview-flow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .preview-card--expanded .preview-flow__arrow { transform: rotate(90deg); }
+}
+
+/* ============================================================== expanded */
+
+.preview-expand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+/* Stretch means the three columns close on the same line, and the slack is
+   spent on taller charts rather than on a ragged gutter under the short one. */
+.preview-expand > .preview-panel { height: 100%; }
+.preview-expand__viz > .preview-viz-grid { flex: 1; min-height: 0; }
+.preview-expand__viz > .preview-readouts,
+.preview-expand__viz > .preview-subpanel { flex: 0 0 auto; }
+.preview-expand__viz .preview-viz-grid .preview-subpanel { height: 100%; }
+
+@media (max-width: 1320px) {
+  .preview-expand { grid-template-columns: 1fr; }
+}
+
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Every label on the board is the Outlay kicker, so a chart reads as part of
+   the card rather than as a dumped figure with its own type scale. */
+[data-preview] .o-kicker {
+  margin: 0;
+  font-size: 11px;
+}
+
+.preview-figure {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  margin: 0;
+}
+
+.preview-panel__meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.preview-expand__viz {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.preview-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+  overflow: hidden;
+}
+
+/* Eight readouts on one line truncate every label in the middle column, so
+   they run as two clean rows of four. */
+@media (min-width: 700px) {
+  .preview-readouts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.preview-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
+}
+
+.preview-readout:first-child { border-left: 0; }
+
+/* The wrapped rows share one ground, so only interior edges get a rule. */
+.preview-readouts > .preview-readout:nth-child(-n + 4) { border-top: 0; }
+
+.preview-readout em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-readout b {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.preview-readout b.is-plus { color: var(--profit-ink); }
+.preview-readout b.is-minus { color: var(--loss); }
+
+.preview-readout small {
+  font-size: 9px;
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-viz-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 1100px) {
+  .preview-viz-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+}
+
+.preview-subpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-subpanel--split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px 20px;
+}
+
+@media (min-width: 900px) {
+  .preview-subpanel--split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ------------------------------------------------------------- waterfall */
+
+.preview-wf {
+  --wf-cols: 4;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+}
+
+.preview-wf__plot {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-3);
+  overflow: hidden;
+}
+
+.preview-wf__grid,
+.preview-wf__zero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.preview-wf__grid { background: var(--line-soft); }
+.preview-wf__zero { background: var(--line-hard); }
+
+.preview-wf__col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--wf-i) * (100% / var(--wf-cols)));
+  width: calc(100% / var(--wf-cols));
+}
+
+.preview-wf__bar {
+  position: absolute;
+  left: 50%;
+  width: min(46%, 34px);
+  min-height: 2px;
+  transform: translateX(-50%);
+  border-radius: var(--r-control);
+}
+
+.preview-wf__bar.is-plus {
+  background: var(--profit);
+  border: 1px solid var(--profit-edge);
+}
+
+.preview-wf__bar.is-minus {
+  background: var(--loss);
+  border: 1px solid var(--loss);
+}
+
+.preview-wf__bar.is-total {
+  width: min(54%, 40px);
+  background: var(--neutral);
+}
+
+.preview-wf__value {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin-top: -3px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.preview-wf__link {
+  position: absolute;
+  left: calc(50% + min(23%, 17px));
+  right: calc(-50% + min(23%, 17px));
+  border-top: 1px dashed var(--line-hard);
+}
+
+.preview-wf__ticks {
+  display: grid;
+  grid-template-columns: repeat(var(--wf-cols), minmax(0, 1fr));
+}
+
+.preview-wf__ticks span {
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-wf__ticks span.is-total {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------------- cdf */
+
+.preview-cdf {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  padding: 4px 2px 0;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-3);
+}
+
+.preview-cdf > :first-child {
+  flex: 1;
+  min-height: 186px;
+}
+
+.preview-cdf .preview-note {
+  padding: 0 8px 7px;
+}
+
+/* ---------------------------------------------------------- ranked lists */
+
+.preview-rank {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.preview-rank__row {
+  display: grid;
+  grid-template-columns: 16px 26px minmax(0, 1fr) 34px 58px;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 3px;
+  border-radius: var(--r-control);
+  font-size: 11px;
+}
+
+.preview-rank__row:hover { background: var(--row-hover); }
+
+.preview-rank__n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle);
+}
+
+.preview-rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-rank__odds,
+.preview-rank__amt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preview-rank__odds { color: var(--text-muted); }
+.preview-rank__amt.is-plus { color: var(--profit-ink); }
+.preview-rank__amt.is-minus { color: var(--loss); }
+
+/* ---------------------------------------------------------------- listings */
+
+.preview-listings {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.preview-listing {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 48px 50px 12px;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 5px;
+  border-radius: var(--r-control);
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.preview-listing:hover { background: var(--row-hover); }
+
+.preview-listing__n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle);
+}
+
+.preview-listing__name {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.preview-listing__name em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.preview-listing__name b {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-listing__float,
+.preview-listing__price {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preview-listing__float { color: var(--text-muted); }
+
+.preview-listing svg { color: var(--text-subtle); }
+
+.preview-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: auto 0 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.preview-totals > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-totals dt {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-totals dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================= skins + collections */
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.preview-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: 400 12px/1.4 var(--font-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.preview-row:hover { background: var(--row-hover); }
+
+.preview-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.preview-row__num {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.preview-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .preview-split { grid-template-columns: 300px minmax(0, 1fr); }
+}
+
+.preview-hero-skin {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 12px 12px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 26%, var(--panel-rule));
+  border-radius: var(--r-panel);
+  background:
+    radial-gradient(105% 62% at 50% 6%, color-mix(in srgb, var(--skin-tint) 20%, transparent), transparent 72%),
+    var(--panel);
+}
+
+.preview-hero-skin .preview-totals { width: 100%; margin-top: 0; }
+
+/* ============================================================ menus */
+
+.preview-currency { position: relative; }
+
+.preview-currency__trigger {
+  gap: 5px;
+  padding: 6px 8px;
+}
+
+.preview-currency__code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-currency__sym {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* Portalled surfaces separate with a 1px rule over --overlay, never a shadow. */
+.preview-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 132px;
+  max-height: 288px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--overlay);
+}
+
+.preview-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--control);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-muted);
+  font: 400 12px/1 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-menu__item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.preview-menu__item[aria-selected="true"] {
+  background: var(--row-selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.preview-menu__code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-menu__sym {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* ============================================== landing device mock (kit) */
+
+/* The lid holds a still of the real board, sized to the device surface. */
+.tub-shot {
+  width: 1440px;
+  height: 936px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.tub-shot--phone {
+  width: 390px;
+  height: 844px;
+}
+
+.tub-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+
+.preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --------------------------------- outcome faces on the EV chart and lists */
+
+.preview-wf__ticks span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.preview-wf__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 20px;
+}
+
+.preview-wf__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-wf__face .preview-skin__ph { width: 70%; height: 70%; }
+
+.preview-rank__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 16px;
+}
+
+.preview-rank__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-rank__face .preview-skin__ph { width: 60%; height: 70%; }
+
+/* =============================================== tables, legends, plots */
+
+/* The kit's .o-table solves against --sunken; preview nests instead. */
+.preview-tablewrap {
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.preview-table { width: 100%; border-collapse: collapse; }
+
+.preview-table thead th { background: var(--nest-3); }
+
+.preview-table tbody tr { background: var(--nest-2); }
+
+.preview-table tbody tr:hover { background: var(--row-hover); }
+
+.preview-table tbody td {
+  height: var(--row);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.preview-table tbody tr:last-child td { border-bottom: 0; }
+
+/* the kit theme hardcodes a 2px radius here; preview keeps it on the token */
+.preview-table [data-slot="sort-button"] {
+  border-radius: var(--r-control);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.preview-table [data-slot="sort-button"] svg { color: var(--text-subtle); }
+.preview-table [data-slot="sort-button"]:hover svg { color: var(--text); }
+
+.preview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-legend__spacer { flex: 1; }
+
+.preview-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: 500 11px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.preview-legend__item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.preview-legend__item em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.preview-legend__item[data-off] {
+  color: var(--text-subtle);
+  text-decoration: line-through;
+}
+
+.preview-legend__item[data-off] i { opacity: 0.3; }
+
+.preview-plot {
+  height: 300px;
+  padding: 6px 4px 0;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-3);
+}
+
+/* ---------------------------------------------------- collection cards */
+
+.preview-collections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.preview-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.preview-collection:hover { border-color: var(--line-hard); }
+
+.preview-collection b {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.preview-collection__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-collection__cluster {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  min-height: 52px;
+}
+
+.preview-collection__cluster i,
+.preview-collection__hero span {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 26%, var(--panel-rule));
+  border-radius: var(--r-control);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 5%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 16%, var(--nest-3)));
+}
+
+.preview-collection__cluster i img,
+.preview-collection__hero span img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-collection__hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+}
+
+.preview-collection__hero span { height: 74px; }
+
+/* ==================================================== semantic search */
+
+.preview-search { position: relative; }
+
+.preview-search__bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--input-bg);
+  color: var(--text-muted);
+}
+
+.preview-search__bar:focus-within {
+  border-color: var(--accent-border);
+  background: var(--input-focus);
+}
+
+.preview-search__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 400 13px/1 var(--font-mono);
+  outline: none;
+}
+
+.preview-search__input::placeholder { color: var(--text-subtle); }
+
+.preview-search__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.preview-search__clear:hover { background: var(--row-hover); color: var(--text); }
+
+.preview-search__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+/* CSFloat's chip idea, on Outlay: value on top, field name under it. */
+.preview-qchip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-control);
+  background: var(--row-selected);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-qchip:hover { border-color: var(--text); }
+
+.preview-qchip b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+.preview-qchip em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.preview-search__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--overlay);
+}
+
+.preview-search__hit,
+.preview-search__example {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: 400 12px/1.3 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-search__hit:hover,
+.preview-search__example:hover { background: var(--row-hover); }
+
+.preview-search__hit i {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: var(--r-control);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 6%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 18%, var(--nest-3)));
+}
+
+.preview-search__hit i img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.preview-search__hit i .preview-skin__ph { width: 60%; height: 60%; }
+
+.preview-search__hit span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.preview-search__hit em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.preview-search__example code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+}
+
+/* ------------------------------------------- every skin in a collection */
+
+.preview-allskins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
+}
+
+.preview-allskins__tile {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 24%, var(--panel-rule));
+  border-radius: var(--r-panel);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 4%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 15%, var(--nest-3)));
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.preview-allskins__tile img {
+  height: 40px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.preview-allskins__tile .preview-skin__ph { height: 34px; }
+
+.preview-allskins__tile b {
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  color: color-mix(in srgb, var(--skin-tint) 66%, #0b0b0a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-preview][data-mode="dark"] .preview-allskins__tile b {
+  color: color-mix(in srgb, var(--skin-tint) 74%, #eeece7);
+}
+
+/* The rotating focus is what the stats card below is showing. */
+.preview-allskins__tile[data-focus] {
+  border-color: var(--skin-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--skin-tint) 45%, transparent);
+}
+
+.preview-allskins__tile:hover {
+  border-color: color-mix(in srgb, var(--skin-tint) 60%, var(--panel-rule));
+}

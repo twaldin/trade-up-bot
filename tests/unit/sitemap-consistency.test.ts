@@ -23,7 +23,7 @@ function readRobotsTxt(): string {
 }
 
 describe("robots.txt and sitemap consistency", () => {
-  it("robots.txt allows public content and only disallows auth and api routes", () => {
+  it("robots.txt allows public content and only disallows auth, api, and preview routes", () => {
     const robots = readRobotsTxt();
     const disallowRules = robots
       .split(/\r?\n/)
@@ -33,7 +33,7 @@ describe("robots.txt and sitemap consistency", () => {
 
     expect(robots).toContain("User-agent: *");
     expect(robots).toContain("Allow: /");
-    expect(disallowRules).toEqual(["/auth/", "/api/"]);
+    expect(disallowRules).toEqual(["/auth/", "/api/", "/preview"]);
     expect(robots).toContain("Sitemap: https://tradeupbot.app/sitemap.xml");
   });
 
