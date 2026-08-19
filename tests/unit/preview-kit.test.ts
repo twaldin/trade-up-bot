@@ -53,7 +53,6 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(css).not.toMatch(/220px/);
     expect(css).toContain("preview-skins--in");
     expect(css).toContain("preview-skins--out");
-    expect(css).toContain("preview-strip");
     expect(css).toContain("var(--r-panel)");
   });
 });
@@ -82,14 +81,16 @@ describe("preview craft bar", () => {
     expect(board).toContain("conditionShort");
   });
 
-  it("draws the payoff strip as a slim tick scale, not fat orbs", () => {
-    expect(css).toMatch(/\.preview-strip\s*\{[^}]*background:/);
-    expect(css).toMatch(/\.preview-strip__tick\s*\{[^}]*width:\s*2px/);
-    expect(css).not.toContain("preview-payoff__dot");
+  it("does not draw a payoff strip or outcome-payoff data table", () => {
+    expect(css).not.toContain(".preview-strip");
+    expect(board).not.toContain("PayoffStrip");
+    expect(board).not.toContain("preview-strip");
+    expect(board).not.toContain("Outcome payoff by probability");
     expect(board).not.toContain("PayoffBars");
+    expect(board).not.toContain("oddsBarSegments");
   });
 
-  it("expands into strip + waterfall + CDF + listings + Verify/Claim, not listings only", () => {
+  it("expands into KPI row + waterfall + CDF + listings + Verify/Claim, not listings only", () => {
     expect(board).toContain("preview-expand__viz");
     expect(board).toContain("preview-expand__listings");
     expect(board).toContain("waterfallBars");
@@ -146,13 +147,12 @@ describe("preview craft bar", () => {
     expect(css).toMatch(/\.preview-flow__arrow\s*\{[^}]*transform: rotate\(90deg\)/);
   });
 
-  it("puts the outcome render on its tick and lets crowded ticks fade", () => {
-    expect(board).toContain("tickFaceLayout");
-    expect(board).toContain("preview-strip__face");
-    expect(css).toMatch(/\.preview-strip__face\.is-end\s*\{\s*transform: translateX\(-100%\)/);
-    expect(css).toMatch(/\.preview-strip__face\.is-center\s*\{\s*transform: translateX\(-50%\)/);
-    expect(css).toMatch(/\.preview-strip\.is-crowded \.preview-strip__face\s*\{[^}]*opacity/);
-    expect(css).toMatch(/\.preview-strip__face\.is-hot\s*\{[^}]*opacity: 1/);
+  it("puts $ delta and odds on the output tiles, not on a second widget", () => {
+    expect(board).toContain("preview-skin__delta");
+    expect(board).toContain("signedDollars");
+    expect(board).toMatch(/Math\.round\(outcome\.probability \* 100\)/);
+    expect(board).toContain("estimated_price_cents");
+    expect(board).not.toContain("preview-strip__face");
   });
 
   it("steps nested surfaces away from the page instead of punching a black hole", () => {
@@ -163,7 +163,7 @@ describe("preview craft bar", () => {
     // no raw hex plot fills, and no reach for the theme's downward well
     expect(css).not.toContain("var(--sunken)");
     expect(css).toMatch(/\.preview-wf__plot\s*\{[^}]*background: var\(--nest-3\)/);
-    expect(css).toMatch(/\.preview-strip\s*\{[^}]*background: var\(--nest-2\)/);
+    expect(css).toMatch(/\.preview-panel\s*\{[^}]*background: var\(--nest-2\)/);
   });
 
   it("names the waterfall total expected profit, not total EV", () => {
@@ -221,17 +221,14 @@ describe("preview craft bar", () => {
     expect(collection).not.toContain("SkinStats");
     expect(collection).not.toContain("same view as its skin page");
     expect(collection).not.toContain("PreviewSkinPage");
+    expect(collection).toContain("collectionsHref");
+    expect(collection).toContain("preview-crumb");
+    expect(collection).not.toContain("search={board.search}");
+    expect(collection).not.toContain("onSearch={board.onSearch}");
+    expect(collection).not.toContain("onParsed={board.onParsed}");
+    expect(collection).toContain("embed");
     // the real skin page still owns the stats card
     expect(skins.slice(0, collectionStart)).toContain("<SkinStats name={name} />");
-  });
-
-  it("keeps the payoff strip compact — no tall empty band", () => {
-    const strip = css.match(/\.preview-strip\s*\{[^}]+\}/)?.[0] ?? "";
-    expect(strip).toMatch(/height:\s*5[0-4]px/);
-    expect(css).not.toContain("preview-strip--tall");
-    expect(board).not.toContain("tall={expanded}");
-    expect(board).not.toContain("preview-strip--tall");
-    expect(css).not.toMatch(/\.preview-strip\s*\{[^}]*min-height/);
   });
 
   it("keeps production chrome utilities out of every preview surface", () => {

@@ -40,7 +40,7 @@ try {
 
   const state = await page.evaluate(() => ({
     outputs: document.querySelectorAll(".preview-skin--output").length,
-    strips: document.querySelectorAll(".preview-strip__tick").length,
+    strips: document.querySelectorAll(".preview-strip").length,
     stillLoadingBoard: document.body.innerText.includes("Loading trade-ups"),
     stillLoadingOutcomes: document.body.innerText.includes("Outcomes loading"),
     placeholders: document.querySelectorAll(".preview-skin__ph").length,
@@ -48,7 +48,7 @@ try {
   console.log("hung face requests:", hung, "ms to outcomes:", elapsed);
   console.log(JSON.stringify(state, null, 2));
   if (state.outputs === 0) failures.push("no output tiles");
-  if (state.strips === 0) failures.push("no payoff ticks");
+  if (state.strips > 0) failures.push("payoff strip is still on the card");
   if (state.stillLoadingBoard) failures.push("board still says Loading trade-ups");
   if (state.stillLoadingOutcomes) failures.push("card still says Outcomes loading");
   await page.screenshot({ path: `${OUT}/faces-down.png` });

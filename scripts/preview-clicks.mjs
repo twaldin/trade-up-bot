@@ -56,6 +56,7 @@ try {
     const card = document.querySelector(".preview-card--expanded");
     return {
       hasStrip: !!card?.querySelector(".preview-strip"),
+      hasDelta: (card?.querySelectorAll(".preview-skin--output .preview-skin__delta").length ?? 0) > 0,
       hasWaterfall: !!card?.querySelector(".preview-wf"),
       hasCdf: !!card?.querySelector(".preview-cdf"),
       listings: card?.querySelectorAll(".preview-listing").length ?? 0,
@@ -65,7 +66,8 @@ try {
     };
   });
   console.log("expanded:", JSON.stringify(expandInfo, null, 2));
-  if (!expandInfo.hasStrip) failures.push("expanded is missing the payoff strip");
+  if (expandInfo.hasStrip) failures.push("expanded still has the deleted payoff strip");
+  if (!expandInfo.hasDelta) failures.push("expanded output tiles are missing $ delta");
   if (!expandInfo.hasWaterfall) failures.push("expanded is missing the EV waterfall");
   if (!expandInfo.hasCdf) failures.push("expanded is missing the CDF");
   if (expandInfo.listings === 0) failures.push("expanded is missing listings");

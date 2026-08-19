@@ -537,6 +537,21 @@
   background: var(--line-hard);
 }
 
+.preview-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-board-embed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .preview-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -819,131 +834,6 @@
   background: var(--line-soft);
 }
 
-/* ------------------------------------------------------- slim payoff strip */
-
-.preview-strip {
-  position: relative;
-  height: 52px;
-  border: 1px solid var(--panel-rule);
-  border-radius: var(--r-panel);
-  background: var(--nest-2);
-}
-
-.preview-strip--empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 2px loss-to-profit rail. The scale, not a capsule. */
-.preview-strip__rail {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 30px;
-  height: 2px;
-  border-radius: var(--r-control);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--loss) 38%, transparent),
-    color-mix(in srgb, var(--loss) 8%, transparent) 36%,
-    var(--line-soft) 50%,
-    color-mix(in srgb, var(--profit-edge) 10%, transparent) 64%,
-    color-mix(in srgb, var(--profit-edge) 42%, transparent)
-  );
-}
-
-.preview-strip__mark {
-  position: absolute;
-  top: 24px;
-  height: 13px;
-  width: 1px;
-  background: var(--line-hard);
-  transform: translateX(-50%);
-}
-
-.preview-strip__mark.is-ev {
-  width: 2px;
-  background: var(--text);
-}
-
-.preview-strip__mark span {
-  position: absolute;
-  top: calc(100% + 1px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1.1;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.preview-strip__mark.is-ev span {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.preview-strip__mark.is-bare span { display: none; }
-
-/* The outcome's render rides its tick, leaning outward from the middle. */
-.preview-strip__face {
-  position: absolute;
-  top: 2px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  width: 42px;
-  height: 26px;
-  padding: 0 2px;
-  pointer-events: auto;
-  transition: opacity var(--t-control) var(--ease), transform var(--t-control) var(--ease);
-}
-
-.preview-strip__face.is-end { transform: translateX(-100%); }
-.preview-strip__face.is-start { transform: translateX(0); }
-.preview-strip__face.is-center { transform: translateX(-50%); }
-
-.preview-strip__face img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.preview-strip__face .preview-skin__ph {
-  width: 70%;
-  height: 70%;
-}
-
-/* Crowded ticks stack and fade; hover pulls one to the front. */
-.preview-strip.is-crowded .preview-strip__face { opacity: 0.55; }
-
-.preview-strip .preview-strip__face:hover,
-.preview-strip .preview-strip__face.is-hot {
-  z-index: 9 !important;
-  opacity: 1;
-}
-
-/* Ticks, not orbs. Height carries probability; colour carries the sign. */
-.preview-strip__tick {
-  position: absolute;
-  top: 31px;
-  z-index: 3;
-  width: 2px;
-  border-radius: var(--r-control);
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 1px var(--nest-2);
-  transition: width var(--t-control) var(--ease), height var(--t-control) var(--ease);
-}
-
-.preview-strip__tick.is-plus { background: var(--profit-mark); }
-.preview-strip__tick.is-minus { background: var(--loss); }
-
-.preview-strip__tick.is-hot {
-  width: 4px;
-  box-shadow: 0 0 0 1px var(--nest-2);
-}
-
 /* ------------------------------------------------------------ skin tiles */
 
 .preview-lane {
@@ -1120,6 +1010,19 @@
   letter-spacing: -0.01em;
   color: var(--skin-ink);
 }
+
+.preview-skin__delta {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.preview-skin__delta.is-plus { color: var(--profit-ink); }
+.preview-skin__delta.is-minus { color: var(--loss); }
 
 /* pills ON the render, pinned to the art box corners */
 .preview-skin__index,

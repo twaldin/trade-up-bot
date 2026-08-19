@@ -233,9 +233,8 @@ export function uniqueInputs(tu: TradeUp): InputGroup[] {
 }
 
 /**
- * Ordered by price ascending, which is the same order as the payoff ticks
- * (profit = price − cost), so the output tiles read left to right in the same
- * order as the marks on the P/L line.
+ * Ordered by price ascending (profit = price − cost), so output tiles read
+ * left to right from the cheapest outcome to the most expensive.
  */
 export function uniqueOutputs(tu: TradeUp): TradeUpOutcome[] {
   const map = new Map<string, TradeUpOutcome>();
