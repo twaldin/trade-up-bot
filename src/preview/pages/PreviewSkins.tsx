@@ -264,7 +264,7 @@ export function PreviewSkinsPage() {
 
 /* ---------------------------------------------------- shared skin stats card */
 
-/** The skin page body, reused by the collection page for its focused skin. */
+/** The skin page body. Collection rails click through here; they do not embed it. */
 export function SkinStats({ name }: { name: string }) {
   const [detail, setDetail] = useState<SkinDetail | null>(null);
   const [error, setError] = useState(false);
@@ -653,7 +653,7 @@ export function PreviewCollectionPage() {
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
-  // The hero rotates its focus so the whole collection gets a turn.
+  // The rail rotates its highlight so the whole collection gets a turn.
   useEffect(() => {
     if (pinned || skins.length < 2) return;
     const timer = window.setInterval(() => setFocus((index) => (index + 1) % skins.length), 5000);
@@ -661,7 +661,6 @@ export function PreviewCollectionPage() {
   }, [pinned, skins.length]);
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
-  const focused = skins[focus] ?? null;
 
   const columns: Column<SkinRow>[] = [
     { key: "name", label: "Skin", sortValue: (row) => row.name, render: (row) => (
@@ -714,13 +713,6 @@ export function PreviewCollectionPage() {
               </Link>
             ))}
           </div>
-        </section>
-      )}
-
-      {focused && (
-        <section className="preview-stack">
-          <p className="o-kicker">{focused.name} — same view as its skin page</p>
-          <SkinStats name={focused.name} />
         </section>
       )}
 

@@ -258,14 +258,12 @@ function PayoffStrip({
   outcomes,
   costCents,
   evCents,
-  tall = false,
   hot,
   onHover,
 }: {
   outcomes: TradeUpOutcome[];
   costCents: number;
   evCents: number;
-  tall?: boolean;
   hot?: string | null;
   onHover?: (name: string | null) => void;
 }) {
@@ -289,7 +287,7 @@ function PayoffStrip({
   );
   return (
     <div
-      className={`preview-strip ${tall ? "preview-strip--tall" : ""} ${faces.crowded ? "is-crowded" : ""}`}
+      className={`preview-strip ${faces.crowded ? "is-crowded" : ""}`}
       role="img"
       aria-label={`Payoff from ${signedDollars(Math.min(...profits))} to ${signedDollars(Math.max(...profits))}, expected ${signedDollars(evCents)}`}
     >
@@ -669,7 +667,6 @@ export function TradeUpCard({
           outcomes={outputs}
           costCents={tu.total_cost_cents}
           evCents={evPnL}
-          tall={expanded}
           hot={hot}
           onHover={setHot}
         />

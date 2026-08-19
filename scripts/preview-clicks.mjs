@@ -55,7 +55,7 @@ try {
   const expandInfo = await page.evaluate(() => {
     const card = document.querySelector(".preview-card--expanded");
     return {
-      hasStrip: !!card?.querySelector(".preview-strip--tall"),
+      hasStrip: !!card?.querySelector(".preview-strip"),
       hasWaterfall: !!card?.querySelector(".preview-wf"),
       hasCdf: !!card?.querySelector(".preview-cdf"),
       listings: card?.querySelectorAll(".preview-listing").length ?? 0,
@@ -65,7 +65,7 @@ try {
     };
   });
   console.log("expanded:", JSON.stringify(expandInfo, null, 2));
-  if (!expandInfo.hasStrip) failures.push("expanded is missing the larger payoff strip");
+  if (!expandInfo.hasStrip) failures.push("expanded is missing the payoff strip");
   if (!expandInfo.hasWaterfall) failures.push("expanded is missing the EV waterfall");
   if (!expandInfo.hasCdf) failures.push("expanded is missing the CDF");
   if (expandInfo.listings === 0) failures.push("expanded is missing listings");

@@ -211,6 +211,29 @@ describe("preview craft bar", () => {
     expect(css).toContain(".preview-collection__cluster");
   });
 
+  it("does not mount the skin page on collection-rail hover", () => {
+    const skins = read("../../src/preview/pages/PreviewSkins.tsx");
+    const collectionStart = skins.indexOf("export function PreviewCollectionPage");
+    expect(collectionStart).toBeGreaterThan(-1);
+    const collection = skins.slice(collectionStart);
+    expect(collection).toContain("preview-allskins");
+    expect(collection).toContain("previewSkinHref");
+    expect(collection).not.toContain("SkinStats");
+    expect(collection).not.toContain("same view as its skin page");
+    expect(collection).not.toContain("PreviewSkinPage");
+    // the real skin page still owns the stats card
+    expect(skins.slice(0, collectionStart)).toContain("<SkinStats name={name} />");
+  });
+
+  it("keeps the payoff strip compact — no tall empty band", () => {
+    const strip = css.match(/\.preview-strip\s*\{[^}]+\}/)?.[0] ?? "";
+    expect(strip).toMatch(/height:\s*5[0-4]px/);
+    expect(css).not.toContain("preview-strip--tall");
+    expect(board).not.toContain("tall={expanded}");
+    expect(board).not.toContain("preview-strip--tall");
+    expect(css).not.toMatch(/\.preview-strip\s*\{[^}]*min-height/);
+  });
+
   it("keeps production chrome utilities out of every preview surface", () => {
     const leaks = [
       "rounded-md", "rounded-lg", "rounded-xl", "rounded-full",
