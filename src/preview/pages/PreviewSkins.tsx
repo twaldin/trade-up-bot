@@ -625,8 +625,6 @@ export function PreviewCollectionPage() {
   const { name = "" } = useParams();
   const [title, setTitle] = useState<string | null>(null);
   const [skins, setSkins] = useState<SkinRow[]>([]);
-  const [focus, setFocus] = useState(0);
-  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -653,13 +651,6 @@ export function PreviewCollectionPage() {
   // Every skin in the collection, not a six-tile strip.
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
-
-  // The rail rotates its highlight so the whole collection gets a turn.
-  useEffect(() => {
-    if (pinned || skins.length < 2) return;
-    const timer = window.setInterval(() => setFocus((index) => (index + 1) % skins.length), 5000);
-    return () => window.clearInterval(timer);
-  }, [pinned, skins.length]);
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
 
@@ -697,22 +688,16 @@ export function PreviewCollectionPage() {
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Every skin in this collection</p>
-            <span className="preview-panel__meta">{pinned ? "paused" : "rotating"} · click to open</span>
+            <span className="preview-panel__meta">{skins.length} skins</span>
           </header>
-          <div
-            className="preview-allskins"
-            onMouseEnter={() => setPinned(true)}
-            onMouseLeave={() => setPinned(false)}
-          >
-            {skins.map((row, index) => (
+          <div className="preview-allskins">
+            {skins.map((row) => (
               <Link
                 key={row.id ?? row.name}
                 to={previewSkinHref(row.name)}
                 className="preview-allskins__tile"
-                data-focus={index === focus ? "true" : undefined}
                 style={{ "--skin-tint": rarityTint(row.rarity) } as CSSProperties}
                 title={row.name}
-                onMouseEnter={() => setFocus(index)}
               >
                 <Face name={row.name} size={52} />
                 <b>{splitSkinName(row.name).finish}</b>

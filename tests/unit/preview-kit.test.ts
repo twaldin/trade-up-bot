@@ -227,6 +227,13 @@ describe("preview craft bar", () => {
     expect(collection).not.toContain("onSearch={board.onSearch}");
     expect(collection).not.toContain("onParsed={board.onParsed}");
     expect(collection).toContain("embed");
+    expect(collection).not.toContain("setInterval");
+    expect(collection).not.toContain("setFocus");
+    expect(collection).not.toContain("setPinned");
+    expect(collection).not.toContain("rotating");
+    expect(collection).not.toContain("paused");
+    expect(collection).not.toContain("data-focus");
+    expect(css).not.toContain(".preview-allskins__tile[data-focus]");
     // the real skin page still owns the stats card
     expect(skins.slice(0, collectionStart)).toContain("<SkinStats name={name} />");
   });

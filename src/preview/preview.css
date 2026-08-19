@@ -2118,12 +2118,6 @@
   color: color-mix(in srgb, var(--skin-tint) 74%, #eeece7);
 }
 
-/* Rotating highlight only — hover never mounts a skin page. */
-.preview-allskins__tile[data-focus] {
-  border-color: var(--skin-tint);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--skin-tint) 45%, transparent);
-}
-
 .preview-allskins__tile:hover {
   border-color: color-mix(in srgb, var(--skin-tint) 60%, var(--panel-rule));
 }
