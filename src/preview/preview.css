@@ -286,17 +286,22 @@
   padding: 88px 24px;
 }
 
+/**
+ * A full-bleed band whose CONTENT stays on the same left rail as every other
+ * section. The band is edge to edge for its background only; the inline padding
+ * reproduces the 1152px column a centred `.preview-section` produces, so the
+ * kicker, the heading, the lede and the cards share one rail.
+ *
+ * This used to centre each child with `margin-inline: auto`, which lost to the
+ * `margin: 0` on `h2`, `.preview-section__lede` and `.o-kicker` — the cards
+ * kept the rail and the heading fell back to the viewport edge.
+ */
 .preview-section--band {
   max-width: none;
+  padding-inline: max(24px, calc((100% - 1152px) / 2));
   background: var(--panel);
   border-top: 1px solid var(--panel-rule);
   border-bottom: 1px solid var(--panel-rule);
-}
-
-.preview-section--band > * {
-  width: 100%;
-  max-width: 1152px;
-  margin-inline: auto;
 }
 
 .preview-section h2 {

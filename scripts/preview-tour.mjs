@@ -77,6 +77,31 @@ try {
       problems.push(`${route.name}: never rendered ${route.wait}`);
     });
     await sleep(route.name === "board" ? 4000 : 2200);
+
+    // The landing is one left-aligned editorial column: every section title,
+    // lede and card group must share the hero's left rail at any width.
+    if (route.name === "landing") {
+      const rails = await page.evaluate(() => {
+        const left = (sel) => {
+          const el = document.querySelector(sel);
+          return el ? Math.round(el.getBoundingClientRect().left) : null;
+        };
+        return {
+          hero: left(".preview-hero h1"),
+          bandKicker: left(".preview-section--band .o-kicker"),
+          bandHeading: left(".preview-section--band h2"),
+          bandLede: left(".preview-section--band .preview-section__lede"),
+          cards: left(".preview-tiles"),
+          how: left("#how h2"),
+          faq: left("#faq h2"),
+        };
+      });
+      const off = Object.entries(rails).filter(([, value]) => value !== rails.hero);
+      if (off.length > 0) {
+        problems.push(`landing left rail: hero at ${rails.hero}, off by ${JSON.stringify(off)}`);
+      }
+    }
+
     for (const mode of ["dark", "light"]) {
       await setMode(page, mode);
       await page.screenshot({ path: `${OUT}/tour-${route.name}-${mode}.png` });
