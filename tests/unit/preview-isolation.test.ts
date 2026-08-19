@@ -198,6 +198,7 @@ describe("console cutover", () => {
       "components/PreviewFilters.tsx",
       "components/PreviewTable.tsx",
       "components/PriceScatter.tsx",
+      "lib/seo-pages.ts",
     ];
     for (const file of files) {
       const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");

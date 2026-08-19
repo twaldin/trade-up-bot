@@ -36,7 +36,7 @@ interface GlobalStats {
 function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: "light" | "dark"; onMode: () => void }) {
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
-      <title>TradeUpBot — CS2 trade-ups from real listings</title>
+      <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
       <meta name="description" content="CS2 trade-ups built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.market." />
       <meta name="robots" content="index, follow" />
       <link rel="canonical" href="https://tradeupbot.app/" />
