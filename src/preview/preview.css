@@ -556,6 +556,9 @@
 }
 
 .preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1833,3 +1836,167 @@
 }
 
 .preview-rank__face .preview-skin__ph { width: 60%; height: 70%; }
+
+/* =============================================== tables, legends, plots */
+
+/* The kit's .o-table solves against --sunken; preview nests instead. */
+.preview-tablewrap {
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.preview-table { width: 100%; border-collapse: collapse; }
+
+.preview-table thead th { background: var(--nest-3); }
+
+.preview-table tbody tr { background: var(--nest-2); }
+
+.preview-table tbody tr:hover { background: var(--row-hover); }
+
+.preview-table tbody td {
+  height: var(--row);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.preview-table tbody tr:last-child td { border-bottom: 0; }
+
+/* the kit theme hardcodes a 2px radius here; preview keeps it on the token */
+.preview-table [data-slot="sort-button"] {
+  border-radius: var(--r-control);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.preview-table [data-slot="sort-button"] svg { color: var(--text-subtle); }
+.preview-table [data-slot="sort-button"]:hover svg { color: var(--text); }
+
+.preview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-legend__spacer { flex: 1; }
+
+.preview-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: 500 11px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.preview-legend__item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.preview-legend__item em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.preview-legend__item[data-off] {
+  color: var(--text-subtle);
+  text-decoration: line-through;
+}
+
+.preview-legend__item[data-off] i { opacity: 0.3; }
+
+.preview-plot {
+  height: 300px;
+  padding: 6px 4px 0;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-3);
+}
+
+/* ---------------------------------------------------- collection cards */
+
+.preview-collections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.preview-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.preview-collection:hover { border-color: var(--line-hard); }
+
+.preview-collection b {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.preview-collection__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-collection__cluster {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  min-height: 52px;
+}
+
+.preview-collection__cluster i,
+.preview-collection__hero span {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 26%, var(--panel-rule));
+  border-radius: var(--r-control);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 5%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 16%, var(--nest-3)));
+}
+
+.preview-collection__cluster i img,
+.preview-collection__hero span img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-collection__hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+}
+
+.preview-collection__hero span { height: 74px; }

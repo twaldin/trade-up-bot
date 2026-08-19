@@ -76,6 +76,9 @@ describe("preview isolation", () => {
       "components/DeviceScreen.tsx",
       "components/PreviewCurrency.tsx",
       "components/PreviewMark.tsx",
+      "components/PreviewFilters.tsx",
+      "components/PreviewTable.tsx",
+      "components/PriceScatter.tsx",
     ];
     for (const file of files) {
       const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");

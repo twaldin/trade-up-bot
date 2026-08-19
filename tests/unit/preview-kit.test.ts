@@ -183,6 +183,34 @@ describe("preview craft bar", () => {
     expect(css).toMatch(/\[data-preview\] \.sr-only[\s\S]*clip-path: inset\(50%\)/);
   });
 
+  it("gives the board a filter bar wired to real API parameters", () => {
+    const filters = read("../../src/preview/components/PreviewFilters.tsx");
+    expect(board).toContain("PreviewFilters");
+    for (const param of ["min_profit", "min_chance", "max_cost", "type", "skin", "sort", "order"]) {
+      expect(filters, `missing ${param}`).toContain(param);
+    }
+    expect(css).toContain(".preview-filters");
+  });
+
+  it("makes the free-tier notice a lime CTA rather than muted chrome", () => {
+    expect(css).toMatch(/\.preview-delay\s*\{[^}]*background: var\(--accent\)/);
+    expect(css).toMatch(/\.preview-delay\s*\{[^}]*color: var\(--on-accent\)/);
+    expect(board).toContain("preview-delay__cta");
+  });
+
+  it("builds the data pages on the kit table and a real series chart", () => {
+    const skins = read("../../src/preview/pages/PreviewSkins.tsx");
+    const table = read("../../src/preview/components/PreviewTable.tsx");
+    expect(table).toContain("o-table");
+    expect(table).toContain('data-slot="sort-button"');
+    expect(skins).toContain("PreviewTable");
+    expect(skins).toContain("PriceScatter");
+    // the collection page reuses the board card rather than a second design
+    expect(skins).toContain("PreviewBoard");
+    expect(skins).toContain("usePreviewTradeUps");
+    expect(css).toContain(".preview-collection__cluster");
+  });
+
   it("keeps production chrome utilities out of every preview surface", () => {
     const leaks = [
       "rounded-md", "rounded-lg", "rounded-xl", "rounded-full",
@@ -200,6 +228,9 @@ describe("preview craft bar", () => {
       "pages/PreviewAccount.tsx",
       "pages/PreviewLanding.tsx",
       "pages/PreviewSkins.tsx",
+      "components/PreviewFilters.tsx",
+      "components/PreviewTable.tsx",
+      "components/PriceScatter.tsx",
     ];
     for (const file of surfaces) {
       const source = read(`../../src/preview/${file}`);

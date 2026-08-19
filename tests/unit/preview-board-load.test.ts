@@ -5,6 +5,8 @@ import {
   DEFAULT_QUERY,
   isDefaultQuery,
 } from "../../src/preview/components/PreviewFilters.js";
+import { sortRows } from "../../src/preview/components/PreviewTable.js";
+import { groupBySeries } from "../../src/preview/components/PriceScatter.js";
 
 describe("preview board query", () => {
   it("sends only the parameters the trade-ups API accepts", () => {
@@ -142,5 +144,64 @@ describe("preview board load order", () => {
     await loadBoardRows<Row>(harness.ports);
     expect(harness.rows[harness.rows.length - 1]?.[0]?.id).toBe(1);
     expect(harness.loading).toEqual([true, false]);
+  });
+});
+
+describe("preview table sorting", () => {
+  const columns = [
+    { key: "name", label: "Name", sortValue: (r: { name: string; price: number }) => r.name, render: () => null },
+    { key: "price", label: "Price", sortValue: (r: { name: string; price: number }) => r.price, render: () => null },
+    { key: "open", label: "Open", render: () => null },
+  ];
+  const rows = [
+    { name: "Beta", price: 300 },
+    { name: "Alpha", price: 100 },
+    { name: "Gamma", price: 200 },
+  ];
+
+  it("sorts numerically, not lexically", () => {
+    const asc = sortRows(rows, columns[1], "asc").map((r) => r.price);
+    expect(asc).toEqual([100, 200, 300]);
+    const desc = sortRows(rows, columns[1], "desc").map((r) => r.price);
+    expect(desc).toEqual([300, 200, 100]);
+  });
+
+  it("sorts strings locale-aware", () => {
+    expect(sortRows(rows, columns[0], "asc").map((r) => r.name)).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
+
+  it("leaves rows alone for an unsortable column", () => {
+    expect(sortRows(rows, columns[2], "asc")).toBe(rows);
+    expect(sortRows(rows, undefined, "asc")).toBe(rows);
+  });
+
+  it("does not mutate the input", () => {
+    const before = rows.map((r) => r.name);
+    sortRows(rows, columns[1], "desc");
+    expect(rows.map((r) => r.name)).toEqual(before);
+  });
+});
+
+describe("preview price scatter series", () => {
+  it("folds every sale source into one series and keeps listings apart", () => {
+    const groups = groupBySeries([
+      { price_cents: 100, float_value: 0.1, source: "csfloat" },
+      { price_cents: 120, float_value: 0.2, source: "dmarket" },
+      { price_cents: 130, float_value: 0.3, source: "skinport_sale" },
+      { price_cents: 140, float_value: 0.4, source: "buff_sale" },
+      { price_cents: 150, float_value: 0.5, source: "sale" },
+    ]);
+    expect(groups.csfloat).toHaveLength(1);
+    expect(groups.dmarket).toHaveLength(1);
+    expect(groups.sales).toHaveLength(3);
+    expect(groups.buff).toHaveLength(0);
+  });
+
+  it("drops rows with no float rather than plotting them at zero", () => {
+    const groups = groupBySeries([
+      { price_cents: 100, float_value: null, source: "csfloat" },
+      { price_cents: 100, float_value: 0.5, source: "csfloat" },
+    ]);
+    expect(groups.csfloat).toHaveLength(1);
   });
 });

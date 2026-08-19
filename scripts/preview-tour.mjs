@@ -20,7 +20,8 @@ const ROUTES = [
   { path: "/preview", name: "landing", wait: ".preview-hero" },
   { path: "/preview/trade-ups", name: "board", wait: ".preview-skin--output" },
   { path: "/preview/skins", name: "skins", wait: ".preview-grid" },
-  { path: "/preview/collections", name: "collections", wait: ".preview-row" },
+  { path: "/preview/collections", name: "collections", wait: ".preview-collection" },
+  { path: "/preview/collections/dreams-nightmares", name: "collection", wait: ".preview-collection__hero" },
   { path: "/preview/calculator", name: "calculator", wait: ".preview-toolbar" },
   { path: "/preview/account", name: "account", wait: ".preview-page" },
 ];
