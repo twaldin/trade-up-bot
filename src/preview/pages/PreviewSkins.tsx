@@ -12,6 +12,7 @@ import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import {
+  collectionsHref,
   conditionShort,
   formatFloat,
   previewCollectionHref,
@@ -264,7 +265,7 @@ export function PreviewSkinsPage() {
 
 /* ---------------------------------------------------- shared skin stats card */
 
-/** The skin page body, reused by the collection page for its focused skin. */
+/** The skin page body. Collection rails click through here; they do not embed it. */
 export function SkinStats({ name }: { name: string }) {
   const [detail, setDetail] = useState<SkinDetail | null>(null);
   const [error, setError] = useState(false);
@@ -624,8 +625,6 @@ export function PreviewCollectionPage() {
   const { name = "" } = useParams();
   const [title, setTitle] = useState<string | null>(null);
   const [skins, setSkins] = useState<SkinRow[]>([]);
-  const [focus, setFocus] = useState(0);
-  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -653,15 +652,7 @@ export function PreviewCollectionPage() {
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
-  // The hero rotates its focus so the whole collection gets a turn.
-  useEffect(() => {
-    if (pinned || skins.length < 2) return;
-    const timer = window.setInterval(() => setFocus((index) => (index + 1) % skins.length), 5000);
-    return () => window.clearInterval(timer);
-  }, [pinned, skins.length]);
-
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
-  const focused = skins[focus] ?? null;
 
   const columns: Column<SkinRow>[] = [
     { key: "name", label: "Skin", sortValue: (row) => row.name, render: (row) => (
@@ -682,6 +673,11 @@ export function PreviewCollectionPage() {
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
+          <nav className="preview-crumb" aria-label="Breadcrumb">
+            <Link className="preview-link" to={collectionsHref()}>Collections</Link>
+            <span aria-hidden>/</span>
+            <span>{title ?? "Collection"}</span>
+          </nav>
           <h1>{title ?? "Collection"}</h1>
           <p>{skins.length} skins · every skin in the collection, and the trade-ups the loop found inside it.</p>
         </div>
@@ -692,35 +688,22 @@ export function PreviewCollectionPage() {
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Every skin in this collection</p>
-            <span className="preview-panel__meta">{pinned ? "paused" : "rotating"} · click to open</span>
+            <span className="preview-panel__meta">{skins.length} skins</span>
           </header>
-          <div
-            className="preview-allskins"
-            onMouseEnter={() => setPinned(true)}
-            onMouseLeave={() => setPinned(false)}
-          >
-            {skins.map((row, index) => (
+          <div className="preview-allskins">
+            {skins.map((row) => (
               <Link
                 key={row.id ?? row.name}
                 to={previewSkinHref(row.name)}
                 className="preview-allskins__tile"
-                data-focus={index === focus ? "true" : undefined}
                 style={{ "--skin-tint": rarityTint(row.rarity) } as CSSProperties}
                 title={row.name}
-                onMouseEnter={() => setFocus(index)}
               >
                 <Face name={row.name} size={52} />
                 <b>{splitSkinName(row.name).finish}</b>
               </Link>
             ))}
           </div>
-        </section>
-      )}
-
-      {focused && (
-        <section className="preview-stack">
-          <p className="o-kicker">{focused.name} — same view as its skin page</p>
-          <SkinStats name={focused.name} />
         </section>
       )}
 
@@ -733,14 +716,12 @@ export function PreviewCollectionPage() {
           onExpand={board.onExpand}
           query={board.query}
           onQuery={board.onQuery}
-          search={board.search}
-          onSearch={board.onSearch}
-          onParsed={board.onParsed}
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."
+          embed
         />
       )}
 

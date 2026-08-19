@@ -27,7 +27,6 @@ import {
   rarityLabel,
   reorderForExpanded,
   splitSkinName,
-  tickFaceLayout,
   uniqueInputs,
   uniqueOutputs,
   verifyClaimHref,
@@ -106,6 +105,8 @@ function SkinTile({
   trail,
   wear,
   float,
+  delta,
+  deltaTone,
   buyHref,
   onBuy,
   hot,
@@ -119,6 +120,8 @@ function SkinTile({
   trail?: string;
   wear?: string;
   float?: string | null;
+  delta?: string;
+  deltaTone?: string;
   buyHref?: string;
   onBuy?: () => void;
   hot?: boolean;
@@ -176,6 +179,7 @@ function SkinTile({
       >
         <em>{weapon}</em>
         <b>{finish}</b>
+        {delta && <span className={`preview-skin__delta ${deltaTone ?? ""}`}>{delta}</span>}
       </Link>
     </div>
   );
@@ -223,16 +227,19 @@ function InputTile({
 function OutputTile({
   outcome,
   rarity,
+  costCents,
   hot,
   onHover,
 }: {
   outcome: TradeUpOutcome;
   rarity: string;
+  costCents: number;
   hot?: boolean;
   onHover?: (name: string | null) => void;
 }) {
   const float = formatFloat(outcome.predicted_float);
   const wear = conditionShort(outcome.predicted_condition);
+  const delta = outcome.estimated_price_cents - costCents;
   return (
     <SkinTile
       name={outcome.skin_name}
@@ -241,94 +248,13 @@ function OutputTile({
       buyHref={outputHref(outcome)}
       lead={formatDollars(outcome.estimated_price_cents)}
       trail={`${Math.round(outcome.probability * 100)}%`}
+      delta={signedDollars(delta)}
+      deltaTone={signClass(delta)}
       wear={wear}
       float={float}
       hot={hot}
       onHover={onHover}
     />
-  );
-}
-
-/**
- * Slim P/L axis. One tick per outcome, height scaled by probability, over the
- * loss-to-profit rail, with that outcome's render sitting at its tick. Ticks
- * left of centre hang their face to the left so it stays inside the well.
- */
-function PayoffStrip({
-  outcomes,
-  costCents,
-  evCents,
-  tall = false,
-  hot,
-  onHover,
-}: {
-  outcomes: TradeUpOutcome[];
-  costCents: number;
-  evCents: number;
-  tall?: boolean;
-  hot?: string | null;
-  onHover?: (name: string | null) => void;
-}) {
-  if (outcomes.length === 0) return null;
-  const profits = outcomes.map((outcome) => outcome.estimated_price_cents - costCents);
-  const min = Math.min(0, evCents, ...profits);
-  const max = Math.max(0, evCents, ...profits);
-  const pad = Math.max((max - min) * 0.12, 50);
-  const lo = min - pad;
-  const hi = max + pad;
-  const maxP = Math.max(...outcomes.map((outcome) => outcome.probability), 0.01);
-  const zeroX = axisPercent(0, lo, hi);
-  const evX = axisPercent(evCents, lo, hi);
-  const showZero = Math.abs(evX - zeroX) > 16;
-  const faces = tickFaceLayout(
-    outcomes.map((outcome) => ({
-      name: outcome.skin_name,
-      x: axisPercent(outcome.estimated_price_cents - costCents, lo, hi),
-      probability: outcome.probability,
-    })),
-  );
-  return (
-    <div
-      className={`preview-strip ${tall ? "preview-strip--tall" : ""} ${faces.crowded ? "is-crowded" : ""}`}
-      role="img"
-      aria-label={`Payoff from ${signedDollars(Math.min(...profits))} to ${signedDollars(Math.max(...profits))}, expected ${signedDollars(evCents)}`}
-    >
-      {faces.faces.map((face) => (
-        <span
-          key={`face-${face.name}`}
-          className={`preview-strip__face is-${face.align} ${hot === face.name ? "is-hot" : ""}`}
-          style={{ left: `${face.x}%`, zIndex: face.z }}
-          title={face.name}
-          onMouseEnter={() => onHover?.(face.name)}
-          onMouseLeave={() => onHover?.(null)}
-        >
-          <SkinFace name={face.name} />
-        </span>
-      ))}
-      <div className="preview-strip__rail" />
-      <div className={`preview-strip__mark is-zero ${showZero ? "" : "is-bare"}`} style={{ left: `${zeroX}%` }}>
-        <span>$0</span>
-      </div>
-      <div className="preview-strip__mark is-ev" style={{ left: `${evX}%` }}>
-        <span>EV {signedDollars(evCents)}</span>
-      </div>
-      {outcomes.map((outcome) => {
-        const profit = outcome.estimated_price_cents - costCents;
-        return (
-          <i
-            key={outcome.skin_id + outcome.skin_name}
-            className={`preview-strip__tick ${signClass(profit)} ${hot === outcome.skin_name ? "is-hot" : ""}`}
-            style={{
-              left: `${axisPercent(profit, lo, hi)}%`,
-              height: 10 + (outcome.probability / maxP) * 8,
-            }}
-            title={`${outcome.skin_name} · ${Math.round(outcome.probability * 100)}% · ${signedDollars(profit)}`}
-            onMouseEnter={() => onHover?.(outcome.skin_name)}
-            onMouseLeave={() => onHover?.(null)}
-          />
-        );
-      })}
-    </div>
   );
 }
 
@@ -657,26 +583,12 @@ export function TradeUpCard({
               key={outcome.skin_id + outcome.skin_name}
               outcome={outcome}
               rarity={outColor}
+              costCents={tu.total_cost_cents}
               hot={hot === outcome.skin_name}
               onHover={setHot}
             />
           ))}
         />
-      )}
-
-      {outputs.length > 0 ? (
-        <PayoffStrip
-          outcomes={outputs}
-          costCents={tu.total_cost_cents}
-          evCents={evPnL}
-          tall={expanded}
-          hot={hot}
-          onHover={setHot}
-        />
-      ) : (
-        <div className="preview-strip preview-strip--empty">
-          <span className="preview-note">Outcomes loading…</span>
-        </div>
       )}
 
       {!expanded && (
@@ -786,6 +698,7 @@ export function PreviewBoard({
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
+  embed = false,
 }: {
   tradeUps: TradeUp[];
   loading: boolean;
@@ -802,6 +715,7 @@ export function PreviewBoard({
   heading?: string;
   lede?: string;
   collection?: string;
+  embed?: boolean;
 }) {
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
@@ -833,19 +747,26 @@ export function PreviewBoard({
   }, [loadMore]);
 
   return (
-    <div className="preview-page">
-      <header className="preview-page__head">
-        <div>
-          <h1>{heading}</h1>
-          <p>{lede}</p>
-        </div>
-        <div className="preview-page__meta">
-          <span>{tradeUps.length} ranked</span>
-          <i />
-          <span>{cols}-column</span>
-        </div>
-      </header>
-      {onSearch && (
+    <div className={embed ? "preview-board-embed" : "preview-page"}>
+      {embed ? (
+        <header className="preview-panel__head">
+          <p className="o-kicker">{heading}</p>
+          <span className="preview-panel__meta">{tradeUps.length} ranked</span>
+        </header>
+      ) : (
+        <header className="preview-page__head">
+          <div>
+            <h1>{heading}</h1>
+            <p>{lede}</p>
+          </div>
+          <div className="preview-page__meta">
+            <span>{tradeUps.length} ranked</span>
+            <i />
+            <span>{cols}-column</span>
+          </div>
+        </header>
+      )}
+      {onSearch && !embed && (
         <PreviewSearch
           value={search ?? ""}
           onChange={onSearch}

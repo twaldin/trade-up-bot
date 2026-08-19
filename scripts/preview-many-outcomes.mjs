@@ -55,30 +55,23 @@ try {
   });
 
   await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForSelector(".preview-strip__face", { timeout: 60000 });
+  await page.waitForSelector(".preview-skin--output", { timeout: 60000 });
   await sleep(4500);
 
   const info = await page.evaluate(() => {
-    const strip = document.querySelector(".preview-strip");
-    const faces = [...(strip?.querySelectorAll(".preview-strip__face") ?? [])];
-    const box = strip?.getBoundingClientRect();
+    const card = document.querySelector(".preview-card");
+    const tiles = [...(card?.querySelectorAll(".preview-skin--output") ?? [])];
     return {
-      faces: faces.length,
-      crowded: strip?.classList.contains("is-crowded") ?? false,
-      stripHeight: box ? Math.round(box.height) : null,
-      insideWell: faces.every((f) => {
-        const r = f.getBoundingClientRect();
-        return box && r.left >= box.left - 1 && r.right <= box.right + 1;
-      }),
-      opacities: [...new Set(faces.map((f) => getComputedStyle(f).opacity))],
+      outputs: tiles.length,
+      deltas: card?.querySelectorAll(".preview-skin__delta").length ?? 0,
+      strip: !!document.querySelector(".preview-strip"),
     };
   });
   console.log(JSON.stringify(info, null, 2));
 
   await page.screenshot({ path: `${OUT}/many-dark.png` });
 
-  // hover the middle face: it must come forward
-  await page.$$eval(".preview-strip__face", (els) => {
+  await page.$$eval(".preview-skin--output", (els) => {
     els[Math.floor(els.length / 2)]?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
   });
   await sleep(600);

@@ -26,23 +26,24 @@ try {
   await page.waitForSelector(".preview-skin--output", { timeout: 60000 });
   await sleep(4500);
 
-  // 1. output tile order == tick order
+  // 1. collapsed cards are inputs → outputs, no leftover payoff rail
   const order = await page.evaluate(() => {
     const card = document.querySelector(".preview-card");
     const tiles = [...(card?.querySelectorAll(".preview-skins--out .preview-skin__label b") ?? [])]
       .map((el) => el.textContent.trim());
-    const ticks = [...(card?.querySelectorAll(".preview-strip__tick") ?? [])]
-      .map((el) => ({ x: parseFloat(el.style.left), name: el.getAttribute("title")?.split(" · ")[0] }))
-      .sort((a, b) => a.x - b.x)
-      .map((row) => row.name);
-    return { tiles, ticks };
+    const deltas = [...(card?.querySelectorAll(".preview-skins--out .preview-skin__delta") ?? [])]
+      .map((el) => el.textContent.trim());
+    return {
+      tiles,
+      deltas,
+      strip: !!card?.querySelector(".preview-strip"),
+    };
   });
   console.log("tiles:", order.tiles.join(" | "));
-  console.log("ticks:", order.ticks.join(" | "));
-  const tickFinish = order.ticks.map((name) => (name ?? "").split("|").pop().trim());
-  if (JSON.stringify(order.tiles) !== JSON.stringify(tickFinish)) {
-    failures.push(`tile order ${order.tiles} != tick order ${tickFinish}`);
-  }
+  console.log("deltas:", order.deltas.join(" | "));
+  if (order.tiles.length === 0) failures.push("collapsed card has no output tiles");
+  if (order.deltas.length === 0) failures.push("collapsed output tiles are missing $ delta");
+  if (order.strip) failures.push("collapsed card still has the deleted payoff strip");
 
   // 2. expand a mid-row card: its row must not leave a hole
   const geometry = await page.evaluate(async () => {
