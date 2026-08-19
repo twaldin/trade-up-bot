@@ -230,6 +230,8 @@ describe("preview craft bar", () => {
     expect(collection).not.toContain("onSearch={board.onSearch}");
     expect(collection).not.toContain("onParsed={board.onParsed}");
     expect(collection).toContain("embed");
+    expect(collection).not.toContain("Skins in this collection");
+    expect(collection).not.toContain("PreviewTable");
     expect(collection).not.toContain("setInterval");
     expect(collection).not.toContain("setFocus");
     expect(collection).not.toContain("setPinned");
@@ -239,6 +241,38 @@ describe("preview craft bar", () => {
     expect(css).not.toContain(".preview-allskins__tile[data-focus]");
     // the real skin page still owns the stats card
     expect(skins.slice(0, collectionStart)).toContain("<SkinStats name={name} />");
+  });
+
+  it("infinite-scrolls the skins index past 200 and fills skin detail with a board", () => {
+    const skins = read("../../src/preview/pages/PreviewSkins.tsx");
+    const indexStart = skins.indexOf("export function PreviewSkinsPage");
+    const statsStart = skins.indexOf("export function SkinStats");
+    const pageStart = skins.indexOf("export function PreviewSkinPage");
+    const collectionStart = skins.indexOf("export function PreviewCollectionPage");
+    const index = skins.slice(indexStart, statsStart);
+    const stats = skins.slice(statsStart, pageStart);
+    const skinPage = skins.slice(pageStart, collectionStart);
+
+    expect(index).toContain("page: String(page)");
+    expect(index).toContain("SKIN_INDEX_PAGE_SIZE");
+    expect(index).not.toContain("COLLECTION_SKIN_LIMIT");
+    expect(index).not.toContain("slice(0, 24)");
+    expect(index).not.toContain("limit:");
+    expect(index).toContain("canLoadMore");
+    expect(index).toContain("inFlightRef");
+    expect(index).toContain("SLOW_DOWN_COPY");
+
+    expect(stats).toContain("listingMatchesQuery");
+    expect(stats).toContain("dense");
+    expect(stats).toContain("LISTING_PAGE");
+    expect(stats).not.toContain("listings.slice(0, 60)");
+
+    expect(skinPage).toContain('heading="Trade-ups using this skin"');
+    expect(skinPage).toContain("skin: name");
+    expect(skinPage).toContain("lockedSkin={name}");
+    expect(skinPage).toContain("embed");
+    expect(skinPage).not.toContain("search={board.search}");
+    expect(skinPage).not.toContain("onParsed={board.onParsed}");
   });
 
   it("keeps production chrome utilities out of every preview surface", () => {
@@ -262,6 +296,7 @@ describe("preview craft bar", () => {
       "components/PreviewFilters.tsx",
       "components/PreviewTable.tsx",
       "components/PriceScatter.tsx",
+      "lib/page-fetch.ts",
     ];
     for (const file of surfaces) {
       const source = read(`../../src/preview/${file}`);

@@ -105,30 +105,30 @@ export function PriceScatter({ points }: { points: ScatterPoint[] }) {
       <div className="preview-plot" role="img" aria-label="Float against price for every live listing and recorded sale">
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 10, right: 12, left: 4, bottom: 4 }}>
-            <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+            <CartesianGrid stroke="var(--line-hard)" strokeOpacity={0.55} />
             <XAxis
               type="number"
               dataKey="x"
               domain={[0, 1]}
               ticks={[0, 0.07, 0.15, 0.38, 0.45, 1]}
               tickFormatter={(value: number) => value.toFixed(2)}
-              tick={{ fontSize: 10, fill: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-              axisLine={false}
-              tickLine={false}
-              height={18}
+              tick={{ fontSize: 10, fill: "var(--text)", fontFamily: "var(--font-mono)" }}
+              axisLine={{ stroke: "var(--line-hard)" }}
+              tickLine={{ stroke: "var(--line-hard)" }}
+              height={22}
             />
             <YAxis
               type="number"
               dataKey="y"
               tickFormatter={(value: number) => `$${value.toFixed(0)}`}
-              tick={{ fontSize: 10, fill: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-              axisLine={false}
-              tickLine={false}
-              width={44}
+              tick={{ fontSize: 10, fill: "var(--text)", fontFamily: "var(--font-mono)" }}
+              axisLine={{ stroke: "var(--line-hard)" }}
+              tickLine={{ stroke: "var(--line-hard)" }}
+              width={48}
             />
-            <ZAxis range={[16, 16]} />
+            <ZAxis range={[48, 48]} />
             <Tooltip
-              cursor={{ stroke: "var(--line-hard)" }}
+              cursor={{ stroke: "var(--text)" }}
               contentStyle={{
                 background: "var(--overlay)",
                 border: "1px solid var(--line-hard)",
@@ -152,7 +152,9 @@ export function PriceScatter({ points }: { points: ScatterPoint[] }) {
                   y: point.price_cents / 100,
                 }))}
                 fill={series.colorVar}
-                fillOpacity={0.75}
+                fillOpacity={1}
+                stroke="var(--canvas)"
+                strokeWidth={1}
                 isAnimationActive={false}
               />
             ))}

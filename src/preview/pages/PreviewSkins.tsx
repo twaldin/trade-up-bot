@@ -3,8 +3,8 @@
  * `/api/skin-by-slug`, `/api/collections` and `/api/trade-ups` routes production
  * uses, rendered on the Outlay kit instead of the old chrome.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ExternalLink, Search } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
@@ -23,7 +23,7 @@ import {
 } from "../lib/board.js";
 import { createFaceCache, faceCacheKey, faceFor, loadFaces, namesFromCacheKey } from "../lib/skin-images.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
-import { chipsToSkinParams, type ParsedQuery } from "../lib/query-parse.js";
+import { chipsToSkinParams, listingMatchesQuery, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import {
   collectionSkinTotal,
   countsFromCollectionRow,
@@ -32,6 +32,14 @@ import {
   type CollectionSkinTally,
 } from "../lib/collection-skins.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
+import {
+  SLOW_DOWN_COPY,
+  applyRateLimit,
+  canLoadMore,
+  pageIsShort,
+  readPagedJson,
+  isRateLimitError,
+} from "../lib/page-fetch.js";
 
 const FACE_CACHE = createFaceCache();
 
@@ -122,7 +130,7 @@ function SkinCard({ row }: { row: SkinRow }) {
       to={previewSkinHref(row.name)}
     >
       <span className="preview-skin__buy">
-        <span className="preview-skin__art"><Face name={row.name} size={72} /></span>
+        <span className="preview-skin__art"><Face name={row.name} size={96} /></span>
         {row.min_price !== null && <span className="preview-skin__lead">{formatDollars(row.min_price)}</span>}
         <span className="preview-skin__trail">{row.listing_count.toLocaleString()}</span>
       </span>
@@ -136,6 +144,9 @@ function SkinCard({ row }: { row: SkinRow }) {
 
 /* ------------------------------------------------------------------ /skins */
 
+/** Matches `/api/skin-data` default limit. Do not send `limit=` — the cache key omits it. */
+const SKIN_INDEX_PAGE_SIZE = 100;
+
 export function PreviewSkinsPage() {
   const [pages, setPages] = useState<SkinRow[][]>([]);
   const [page, setPage] = useState(1);
@@ -143,22 +154,34 @@ export function PreviewSkinsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [parsed, setParsed] = useState<ParsedQuery>({ chips: [], rest: [] });
+  const [backoffUntil, setBackoffUntil] = useState(0);
+  const [throttle, setThrottle] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef(false);
+  const attemptRef = useRef(0);
 
   const filters = useMemo(() => chipsToSkinParams(parsed.chips, parsed.rest), [parsed]);
   const key = `${filters.rarity ?? "all"}|${filters.search ?? ""}`;
 
-  useEffect(() => { setPage(1); setExhausted(false); setPages([]); }, [key]);
+  useEffect(() => {
+    setPage(1);
+    setExhausted(false);
+    setPages([]);
+    attemptRef.current = 0;
+    setBackoffUntil(0);
+    setThrottle(null);
+  }, [key]);
 
   useEffect(() => {
     let live = true;
+    inFlightRef.current = true;
     setLoading(true);
     const handle = window.setTimeout(() => {
       const params = new URLSearchParams({ rarity: filters.rarity ?? "all", page: String(page) });
       if ((filters.search ?? "").length > 1) params.set("search", filters.search as string);
       fetch(`/api/skin-data?${params.toString()}`, { credentials: "include" })
-        .then((res) => res.json())
-        .then((data: SkinRow[] | { skins?: SkinRow[] }) => {
+        .then((res) => readPagedJson<SkinRow[] | { skins?: SkinRow[] }>(res))
+        .then((data) => {
           if (!live) return;
           const rows = Array.isArray(data) ? data : data.skins ?? [];
           setPages((previous) => {
@@ -166,18 +189,32 @@ export function PreviewSkinsPage() {
             next[page - 1] = rows;
             return next;
           });
-          if (rows.length === 0) setExhausted(true);
+          if (pageIsShort(rows.length, SKIN_INDEX_PAGE_SIZE)) setExhausted(true);
+          attemptRef.current = 0;
+          setThrottle(null);
           cacheNames(rows.map((row) => ({ name: row.name, rarity: row.rarity })));
         })
-        .catch(() => { if (live) setExhausted(true); })
-        .finally(() => { if (live) setLoading(false); });
+        .catch((err: unknown) => {
+          if (!live) return;
+          if (isRateLimitError(err)) {
+            const next = applyRateLimit(attemptRef.current, Date.now());
+            attemptRef.current = next.attempt;
+            setBackoffUntil(next.backoffUntil);
+            setThrottle(SLOW_DOWN_COPY);
+            return;
+          }
+          setExhausted(true);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          if (live) setLoading(false);
+        });
     }, 200);
     return () => { live = false; window.clearTimeout(handle); };
   }, [key, page, filters.rarity, filters.search]);
 
   const rows = useMemo(() => {
     const flat = pages.flat().filter(Boolean);
-    // Float and wear are not server-side filters, so they narrow here.
     return flat.filter((row) => {
       if (filters.maxPriceCents !== undefined && (row.min_price ?? Infinity) > filters.maxPriceCents) return false;
       return true;
@@ -185,8 +222,29 @@ export function PreviewSkinsPage() {
   }, [pages, filters.maxPriceCents]);
 
   useEffect(() => {
+    if (!backoffUntil) return;
+    const wait = Math.max(0, backoffUntil - Date.now());
+    const handle = window.setTimeout(() => {
+      setThrottle(null);
+      setBackoffUntil(0);
+    }, wait);
+    return () => window.clearTimeout(handle);
+  }, [backoffUntil]);
+
+  const loadMore = useCallback(() => {
+    if (!canLoadMore({
+      inFlight: inFlightRef.current || loading,
+      exhausted,
+      backoffUntil,
+      now: Date.now(),
+    })) return;
+    inFlightRef.current = true;
+    setPage((value) => value + 1);
+  }, [loading, exhausted, backoffUntil]);
+
+  useEffect(() => {
     const node = sentinel.current;
-    if (!node || exhausted) return;
+    if (!node || exhausted || throttle) return;
     let root: HTMLElement | null = node.parentElement;
     while (root) {
       const overflow = getComputedStyle(root).overflowY;
@@ -194,35 +252,13 @@ export function PreviewSkinsPage() {
       root = root.parentElement;
     }
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting) && !loading) setPage((value) => value + 1);
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
     }, { root, rootMargin: "500px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [exhausted, loading]);
+  }, [exhausted, loadMore, throttle]);
 
-  useFaceNames(useMemo(() => rows.slice(0, 60).map((row) => row.name), [rows]));
-
-  const columns: Column<SkinRow>[] = [
-    {
-      key: "name",
-      label: "Skin",
-      sortValue: (row) => row.name,
-      render: (row) => <Link className="preview-link" to={previewSkinHref(row.name)}>{row.name}</Link>,
-    },
-    { key: "rarity", label: "Rarity", sortValue: (row) => row.rarity, render: (row) => (
-      <span className="preview-chip" style={{ color: rarityTint(row.rarity) }}>{row.rarity}</span>
-    ) },
-    { key: "collection", label: "Collection", sortValue: (row) => row.collection_name ?? "", render: (row) =>
-      row.collection_name
-        ? <Link className="preview-link" to={previewCollectionHref(row.collection_name)}>{row.collection_name}</Link>
-        : "—" },
-    { key: "listings", label: "Listings", align: "end", sortValue: (row) => row.listing_count, render: (row) => (
-      <span className="o-mono">{row.listing_count.toLocaleString()}</span>
-    ) },
-    { key: "price", label: "Floor", align: "end", sortValue: (row) => row.min_price ?? Number.MAX_SAFE_INTEGER, render: (row) => (
-      <span className="o-mono">{row.min_price === null ? "—" : formatDollars(row.min_price)}</span>
-    ) },
-  ];
+  useFaceNames(useMemo(() => rows.slice(-SKIN_INDEX_PAGE_SIZE).map((row) => row.name), [rows]));
 
   return (
     <div className="preview-page">
@@ -243,44 +279,39 @@ export function PreviewSkinsPage() {
       />
 
       <div className="preview-grid">
-        {rows.slice(0, 24).map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
+        {rows.map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
       </div>
+      {loading && rows.length === 0 && <p className="preview-note">Loading skins…</p>}
+      {!loading && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
 
-      <section className="preview-panel">
-        <header className="preview-panel__head">
-          <p className="o-kicker">All loaded skins</p>
-          <span className="preview-panel__meta">{rows.length} rows</span>
-        </header>
-        <PreviewTable
-          columns={columns}
-          rows={rows}
-          rowKey={(row, index) => row.id ?? `${row.name}-${index}`}
-          initialSort="listings"
-          initialDirection="desc"
-          empty={loading ? "Loading skins…" : "No skin matches that search."}
-        />
-      </section>
-
-      {!exhausted && (
+      {!exhausted && !throttle && (
         <div className="preview-sentinel" ref={sentinel}>
           <span className="preview-note">Loading more skins…</span>
         </div>
       )}
+      {throttle && <p className="preview-note">{throttle}</p>}
     </div>
   );
 }
 
 /* ---------------------------------------------------- shared skin stats card */
 
+const LISTING_PAGE = 40;
+
 /** The skin page body. Collection rails click through here; they do not embed it. */
 export function SkinStats({ name }: { name: string }) {
   const [detail, setDetail] = useState<SkinDetail | null>(null);
   const [error, setError] = useState(false);
+  const [listingQuery, setListingQuery] = useState("");
+  const [listingVisible, setListingVisible] = useState(LISTING_PAGE);
+  const listingSentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
     setDetail(null);
     setError(false);
+    setListingQuery("");
+    setListingVisible(LISTING_PAGE);
     fetch(`/api/skin-data/${encodeURIComponent(name)}`, { credentials: "include" })
       .then((res) => res.json())
       .then((data: SkinDetail) => { if (live) setDetail(data); })
@@ -289,6 +320,32 @@ export function SkinStats({ name }: { name: string }) {
   }, [name]);
 
   useFaceNames(useMemo(() => [name], [name]));
+
+  const listingParsed = useMemo(() => parseQuery(listingQuery), [listingQuery]);
+  const filteredListings = useMemo(() => {
+    const list = detail?.listings ?? [];
+    return list.filter((row) => listingMatchesQuery(row, listingParsed, wearBand(row.float_value)));
+  }, [detail, listingParsed]);
+
+  useEffect(() => { setListingVisible(LISTING_PAGE); }, [listingQuery]);
+
+  useEffect(() => {
+    const node = listingSentinel.current;
+    if (!node || listingVisible >= filteredListings.length) return;
+    let root: HTMLElement | null = node.parentElement;
+    while (root) {
+      const overflow = getComputedStyle(root).overflowY;
+      if (overflow === "auto" || overflow === "scroll") break;
+      root = root.parentElement;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setListingVisible((value) => value + LISTING_PAGE);
+      }
+    }, { root, rootMargin: "240px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [listingVisible, filteredListings.length]);
 
   if (error) return <p className="preview-note">Could not load {name}.</p>;
   if (!detail?.skin) return <p className="preview-note">Loading {name}…</p>;
@@ -300,6 +357,7 @@ export function SkinStats({ name }: { name: string }) {
     ...listings.map((row) => ({ price_cents: row.price_cents, float_value: row.float_value, source: row.source })),
     ...(detail.saleHistory ?? []).map((row) => ({ price_cents: row.price_cents, float_value: row.float_value, source: row.source })),
   ];
+  const shownListings = filteredListings.slice(0, listingVisible);
 
   const columns: Column<SkinListing>[] = [
     { key: "price", label: "Price", align: "end", sortValue: (row) => row.price_cents, render: (row) => (
@@ -371,16 +429,36 @@ export function SkinStats({ name }: { name: string }) {
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Live listings</p>
-            <span className="preview-panel__meta">{listings.length.toLocaleString()} on the market</span>
+            <span className="preview-panel__meta">
+              {shownListings.length.toLocaleString()}
+              {filteredListings.length !== listings.length ? ` / ${filteredListings.length.toLocaleString()}` : ""}
+              {" of "}
+              {listings.length.toLocaleString()}
+            </span>
           </header>
+          <label className="preview-field preview-field--search preview-listings-search">
+            <Search size={12} aria-hidden />
+            <input
+              className="preview-field__input"
+              value={listingQuery}
+              placeholder="fn · <$20 · <0.15 · csfloat"
+              onChange={(event) => setListingQuery(event.target.value)}
+            />
+          </label>
           <PreviewTable
             columns={columns}
-            rows={listings.slice(0, 60)}
+            rows={shownListings}
             rowKey={(row) => row.id}
             initialSort="price"
             initialDirection="asc"
-            empty="No live listings right now."
+            empty="No live listings match that search."
+            dense
           />
+          {listingVisible < filteredListings.length && (
+            <div className="preview-sentinel" ref={listingSentinel}>
+              <span className="preview-note">Loading more listings…</span>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -394,6 +472,7 @@ export function PreviewSkinPage() {
   const [name, setName] = useState<string | null>(null);
   const [meta, setMeta] = useState<{ rarity: string; collection: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const board = usePreviewTradeUps({ skin: name ?? undefined, perPage: 6, enabled: Boolean(name) });
 
   useEffect(() => {
     let live = true;
@@ -444,6 +523,22 @@ export function PreviewSkinPage() {
         </div>
       </header>
       <SkinStats name={name} />
+      <PreviewBoard
+        tradeUps={board.tradeUps}
+        loading={board.loading}
+        isFree={board.isFree}
+        expandedId={board.expandedId}
+        onExpand={board.onExpand}
+        query={board.query}
+        onQuery={board.onQuery}
+        loadMore={board.loadMore}
+        exhausted={board.exhausted}
+        throttle={board.throttle}
+        heading="Trade-ups using this skin"
+        lede="Ranked the same way as the board, filtered to this skin as an input or an output."
+        lockedSkin={name}
+        embed
+      />
     </div>
   );
 }
@@ -703,21 +798,6 @@ export function PreviewCollectionPage() {
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
 
-  const columns: Column<SkinRow>[] = [
-    { key: "name", label: "Skin", sortValue: (row) => row.name, render: (row) => (
-      <Link className="preview-link" to={previewSkinHref(row.name)}>{row.name}</Link>
-    ) },
-    { key: "rarity", label: "Rarity", sortValue: (row) => RARITY_ORDER.indexOf(row.rarity), render: (row) => (
-      <span className="preview-chip" style={{ color: rarityTint(row.rarity) }}>{row.rarity}</span>
-    ) },
-    { key: "listings", label: "Listings", align: "end", sortValue: (row) => row.listing_count, render: (row) => (
-      <span className="o-mono">{row.listing_count.toLocaleString()}</span>
-    ) },
-    { key: "price", label: "Floor", align: "end", sortValue: (row) => row.min_price ?? Number.MAX_SAFE_INTEGER, render: (row) => (
-      <span className="o-mono">{row.min_price === null ? "—" : formatDollars(row.min_price)}</span>
-    ) },
-  ];
-
   return (
     <div className="preview-page">
       <header className="preview-page__head">
@@ -767,27 +847,13 @@ export function PreviewCollectionPage() {
           onQuery={board.onQuery}
           loadMore={board.loadMore}
           exhausted={board.exhausted}
+          throttle={board.throttle}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."
           embed
         />
       )}
-
-      <section className="preview-panel">
-        <header className="preview-panel__head">
-          <p className="o-kicker">Skins in this collection</p>
-          <span className="preview-panel__meta">{skins.length} rows</span>
-        </header>
-        <PreviewTable
-          columns={columns}
-          rows={skins}
-          rowKey={(row, index) => row.id ?? `${row.name}-${index}`}
-          initialSort="rarity"
-          initialDirection="asc"
-          empty="No skins loaded for this collection."
-        />
-      </section>
     </div>
   );
 }
