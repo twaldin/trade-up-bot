@@ -105,7 +105,7 @@ export function scatterYMaxDollars(priceCents: number[]): number {
   const median = quantile(dollars, 0.5);
   const p95 = quantile(dollars, 0.95);
   const p99 = quantile(dollars, 0.99);
-  const bulk = Math.max(p95 * 1.15, Math.min(p99, median * 4));
+  const bulk = Math.max(p95 * 1.2, Math.min(p99, median * 3));
   return niceCeil(max > bulk * 1.75 ? bulk : max);
 }
 

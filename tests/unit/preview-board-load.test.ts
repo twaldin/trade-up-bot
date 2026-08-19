@@ -222,7 +222,16 @@ describe("preview price scatter y-scale", () => {
   it("clips a Nightwish-like smear so the ~$60 cloud is readable", () => {
     const yMax = scatterYMaxDollars(nightwishCloud());
     expect(yMax).toBeGreaterThan(70);
-    expect(yMax).toBeLessThan(400);
+    expect(yMax).toBeLessThan(250);
+  });
+
+  it("clips live Nightwish quantiles under a few hundred, not a few thousand", () => {
+    const bulk = Array.from({ length: 190 }, (_, i) => 5500 + (i % 80) * 25);
+    const mid = Array.from({ length: 10 }, (_, i) => 10_000 + i * 500);
+    const tail = [14_900, 20_000, 33_600, 80_000, 302_900];
+    const yMax = scatterYMaxDollars([...bulk, ...mid, ...tail]);
+    expect(yMax).toBeGreaterThan(100);
+    expect(yMax).toBeLessThanOrEqual(250);
   });
 
   it("does not clip a tight cloud with no outliers", () => {
