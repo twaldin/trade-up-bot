@@ -91,6 +91,12 @@ describe("preview landing depth", () => {
     expect(landing).not.toContain("setInterval");
   });
 
+  it("renders every card input on the story rail, not a tease of 8", () => {
+    expect(landing).toContain("storyRailInputs");
+    expect(landing).not.toContain("slice(0, 8)");
+    expect(landing).toContain("preview-listings--story");
+  });
+
   it("does not leak production chrome or grow huge tiles", () => {
     for (const leak of ["rounded-md", "text-muted-foreground", "border-border", "SiteNav"]) {
       expect(landing).not.toContain(leak);

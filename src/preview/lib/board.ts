@@ -455,6 +455,11 @@ export function listingTotals(listings: TradeUpInput[]): ListingTotals {
   };
 }
 
+/** Every listing the card priced. The landing story rail never teases a subset. */
+export function storyRailInputs(tu: Pick<TradeUp, "inputs">): TradeUpInput[] {
+  return tu.inputs;
+}
+
 export function cdfCurve(tu: TradeUp): CdfPoint[] {
   const points = payoffPoints(tu);
   if (points.length === 0) return [];

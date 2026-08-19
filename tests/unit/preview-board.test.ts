@@ -26,6 +26,7 @@ import {
   payoffPoints,
   percentileProfitCents,
   splitSkinName,
+  storyRailInputs,
   tickFaceLayout,
   uniqueInputs,
   uniqueOutputs,
@@ -93,6 +94,32 @@ describe("preview board numbers", () => {
       input_summary: undefined,
       inputs: Array.from({ length: 10 }, (_, i) => input({ listing_id: `i${i}`, skin_name: i < 6 ? "Skin A" : "Skin B" })),
     });
+    expect(inputQty(tu)).toBe(10);
+  });
+
+  it("lists every live input on the story rail so the rows sum to the card cost", () => {
+    const rows = [
+      { skin_name: "MP7 | Abyssal Apparition", float_value: 0.1368, price_cents: 556 },
+      { skin_name: "Dual Berettas | Melondrama", float_value: 0.3911, price_cents: 529 },
+      { skin_name: "MP7 | Abyssal Apparition", float_value: 0.2392, price_cents: 400 },
+      { skin_name: "Dual Berettas | Melondrama", float_value: 0.2453, price_cents: 551 },
+      { skin_name: "FAMAS | Rapid Eye Movement", float_value: 0.4409, price_cents: 532 },
+      { skin_name: "Dual Berettas | Melondrama", float_value: 0.4067, price_cents: 531 },
+      { skin_name: "FAMAS | Rapid Eye Movement", float_value: 0.3829, price_cents: 522 },
+      { skin_name: "FAMAS | Rapid Eye Movement", float_value: 0.4152, price_cents: 521 },
+      { skin_name: "Dual Berettas | Melondrama", float_value: 0.8672, price_cents: 458 },
+      { skin_name: "FAMAS | Rapid Eye Movement", float_value: 0.3142, price_cents: 500 },
+    ];
+    const tu = makeTradeUp({
+      total_cost_cents: 5100,
+      input_summary: { input_count: 10, collections: ["Dreams & Nightmares"], skins: [] },
+      inputs: rows.map((row, i) => input({ listing_id: `story-${i}`, ...row })),
+    });
+    const rail = storyRailInputs(tu);
+    expect(rail).toHaveLength(10);
+    expect(rail.reduce((sum, row) => sum + row.price_cents, 0)).toBe(tu.total_cost_cents);
+    expect(rail.some((row) => row.float_value === 0.8672 && row.price_cents === 458)).toBe(true);
+    expect(rail.some((row) => row.float_value === 0.3142 && row.price_cents === 500)).toBe(true);
     expect(inputQty(tu)).toBe(10);
   });
 

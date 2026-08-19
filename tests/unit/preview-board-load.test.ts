@@ -6,7 +6,11 @@ import {
   isDefaultQuery,
 } from "../../src/preview/components/PreviewFilters.js";
 import { sortRows } from "../../src/preview/components/PreviewTable.js";
-import { groupBySeries } from "../../src/preview/components/PriceScatter.js";
+import {
+  groupBySeries,
+  scatterPlotPoint,
+  scatterYMaxDollars,
+} from "../../src/preview/components/PriceScatter.js";
 
 describe("preview board query", () => {
   it("sends only the parameters the trade-ups API accepts", () => {
@@ -206,6 +210,58 @@ describe("preview price scatter series", () => {
       { price_cents: 100, float_value: 0.5, source: "csfloat" },
     ]);
     expect(groups.csfloat).toHaveLength(1);
+  });
+});
+
+describe("preview price scatter y-scale", () => {
+  function nightwishCloud(): number[] {
+    const bulk = Array.from({ length: 200 }, (_, i) => 5000 + (i % 40) * 50);
+    return [...bulk, 302_900, 240_000, 160_000, 120_000, 80_000];
+  }
+
+  it("clips a Nightwish-like smear so the ~$60 cloud is readable", () => {
+    const yMax = scatterYMaxDollars(nightwishCloud());
+    expect(yMax).toBeGreaterThan(70);
+    expect(yMax).toBeLessThan(250);
+  });
+
+  it("clips live Nightwish quantiles under a few hundred, not a few thousand", () => {
+    const bulk = Array.from({ length: 190 }, (_, i) => 5500 + (i % 80) * 25);
+    const mid = Array.from({ length: 10 }, (_, i) => 10_000 + i * 500);
+    const tail = [14_900, 20_000, 33_600, 80_000, 302_900];
+    const yMax = scatterYMaxDollars([...bulk, ...mid, ...tail]);
+    expect(yMax).toBeGreaterThan(100);
+    expect(yMax).toBeLessThanOrEqual(250);
+  });
+
+  it("does not clip a tight cloud with no outliers", () => {
+    const prices = Array.from({ length: 80 }, (_, i) => 5900 + i * 10);
+    const yMax = scatterYMaxDollars(prices);
+    expect(yMax).toBeGreaterThanOrEqual(66.9);
+    expect(yMax).toBeLessThan(150);
+  });
+
+  it("does not flatten a real wide spread", () => {
+    const prices = Array.from({ length: 100 }, (_, i) => (100 + i * 19) * 100);
+    const yMax = scatterYMaxDollars(prices);
+    expect(yMax).toBeGreaterThan(1800);
+  });
+
+  it("plots outliers at the clip and keeps the real listing price", () => {
+    const clipped = scatterPlotPoint(302_900, 120);
+    expect(clipped.y).toBe(120);
+    expect(clipped.clipped).toBe(true);
+    expect(clipped.priceCents).toBe(302_900);
+
+    const bulk = scatterPlotPoint(5960, 120);
+    expect(bulk.y).toBeCloseTo(59.6);
+    expect(bulk.clipped).toBe(false);
+    expect(bulk.priceCents).toBe(5960);
+  });
+
+  it("leaves a handful of prices on their own max", () => {
+    expect(scatterYMaxDollars([1200, 1800, 2400])).toBeGreaterThanOrEqual(24);
+    expect(scatterYMaxDollars([])).toBe(1);
   });
 });
 
