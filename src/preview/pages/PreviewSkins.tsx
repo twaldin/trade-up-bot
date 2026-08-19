@@ -24,6 +24,13 @@ import {
 import { createFaceCache, faceCacheKey, faceFor, loadFaces, namesFromCacheKey } from "../lib/skin-images.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToSkinParams, type ParsedQuery } from "../lib/query-parse.js";
+import {
+  collectionSkinTotal,
+  countsFromCollectionRow,
+  formatCollectionSkinCopy,
+  tallyCollectionSkins,
+  type CollectionSkinTally,
+} from "../lib/collection-skins.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
 
 const FACE_CACHE = createFaceCache();
@@ -453,33 +460,68 @@ interface CollectionRow {
 }
 
 const RARITY_ORDER = ["Covert", "Classified", "Restricted", "Mil-Spec Grade", "Industrial Grade", "Consumer Grade"];
+const COLLECTION_SKIN_LIMIT = 200;
+const COLLECTION_FETCH_CONCURRENCY = 6;
+
+function parseSkinRows(data: SkinRow[] | { skins?: SkinRow[] }): SkinRow[] {
+  return Array.isArray(data) ? data : data.skins ?? [];
+}
+
+async function fetchCollectionSkins(name: string): Promise<SkinRow[]> {
+  const params = new URLSearchParams({
+    rarity: "all",
+    collection: name,
+    limit: String(COLLECTION_SKIN_LIMIT),
+  });
+  const res = await fetch(`/api/skin-data?${params.toString()}`, { credentials: "include" });
+  return parseSkinRows(await res.json() as SkinRow[] | { skins?: SkinRow[] });
+}
+
+async function mapPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (current === undefined) return;
+      await fn(current);
+    }
+  });
+  await Promise.all(workers);
+}
+
+type CollectionSkinBundle = { faces: SkinRow[]; tally: CollectionSkinTally };
 
 function useCollectionSkins(names: string[]) {
-  const [byCollection, setByCollection] = useState<Record<string, SkinRow[]>>({});
+  const [byCollection, setByCollection] = useState<Record<string, CollectionSkinBundle>>({});
+  const fetched = useRef(new Set<string>());
+  const mounted = useRef(true);
   const key = names.join("\u0000");
   useEffect(() => {
-    let live = true;
-    const list = key.split("\u0000").filter(Boolean);
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    const list = key.split("\u0000").filter((name) => name && !fetched.current.has(name));
     if (list.length === 0) return;
-    void (async () => {
-      for (const name of list) {
-        try {
-          const res = await fetch(`/api/skin-data?rarity=all&collection=${encodeURIComponent(name)}`, { credentials: "include" });
-          const data = await res.json() as SkinRow[] | { skins?: SkinRow[] };
-          const rows = Array.isArray(data) ? data : data.skins ?? [];
-          const top = [...rows]
-            .sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity))
-            .slice(0, 4);
-          if (!live) return;
-          setByCollection((prev) => ({ ...prev, [name]: top }));
-          await loadFaces(top.map((row) => row.name), FACE_CACHE);
-          if (live) setByCollection((prev) => ({ ...prev }));
-        } catch {
-          // a collection without skins just renders its stats
+    for (const name of list) fetched.current.add(name);
+    void mapPool(list, COLLECTION_FETCH_CONCURRENCY, async (name) => {
+      try {
+        const rows = await fetchCollectionSkins(name);
+        const tally = tallyCollectionSkins(rows);
+        const faces = [...rows]
+          .sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity))
+          .slice(0, 4);
+        if (!mounted.current) {
+          fetched.current.delete(name);
+          return;
         }
+        setByCollection((prev) => ({ ...prev, [name]: { faces, tally } }));
+        await loadFaces(faces.map((row) => row.name), FACE_CACHE);
+        if (mounted.current) setByCollection((prev) => ({ ...prev }));
+      } catch {
+        fetched.current.delete(name);
       }
-    })();
-    return () => { live = false; };
+    });
   }, [key]);
   return byCollection;
 }
@@ -529,14 +571,25 @@ export function PreviewCollectionsPage() {
   }, [visible, filtered.length]);
 
   const shown = filtered.slice(0, visible);
-  const skins = useCollectionSkins(useMemo(() => shown.map((row) => row.name), [shown]));
+  const skinNames = useMemo(() => {
+    const names = new Set(shown.map((row) => row.name));
+    for (const row of rows) {
+      if (row.has_knives || row.has_gloves) names.add(row.name);
+    }
+    return [...names];
+  }, [shown, rows]);
+  const skins = useCollectionSkins(skinNames);
+
+  const skinCopy = (row: CollectionRow) =>
+    formatCollectionSkinCopy(countsFromCollectionRow(row, skins[row.name]?.tally ?? null));
 
   const columns: Column<CollectionRow>[] = [
     { key: "name", label: "Collection", sortValue: (row) => row.name, render: (row) => (
       <Link className="preview-link" to={previewCollectionHref(row.name)}>{row.name}</Link>
     ) },
-    { key: "skins", label: "Skins", align: "end", sortValue: (row) => row.skin_count, render: (row) => (
-      <span className="o-mono">{row.skin_count}</span>
+    { key: "skins", label: "Skins", align: "end", sortValue: (row) =>
+      collectionSkinTotal(countsFromCollectionRow(row, skins[row.name]?.tally ?? null)), render: (row) => (
+      <span className="o-mono">{skinCopy(row)}</span>
     ) },
     { key: "covert", label: "Coverts", align: "end", sortValue: (row) => row.covert_count, render: (row) => (
       <span className="o-mono">{row.covert_count}</span>
@@ -579,18 +632,16 @@ export function PreviewCollectionsPage() {
         {shown.map((row) => (
           <Link key={row.name} className="preview-collection" to={previewCollectionHref(row.name)}>
             <span className="preview-collection__cluster">
-              {(skins[row.name] ?? []).map((skin) => (
+              {(skins[row.name]?.faces ?? []).map((skin) => (
                 <i key={skin.name} style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
                   <Face name={skin.name} size={46} />
                 </i>
               ))}
-              {(skins[row.name] ?? []).length === 0 && <em className="preview-note">loading skins…</em>}
+              {(skins[row.name]?.faces ?? []).length === 0 && <em className="preview-note">loading skins…</em>}
             </span>
             <b>{row.name}</b>
             <span className="preview-collection__meta">
-              {row.skin_count} skins · {row.listing_count.toLocaleString()} listings
-              {row.has_knives && " · knives"}
-              {row.has_gloves && " · gloves"}
+              {skinCopy(row)} · {row.listing_count.toLocaleString()} listings
             </span>
           </Link>
         ))}
@@ -636,12 +687,10 @@ export function PreviewCollectionPage() {
         );
         if (!live || !match) return null;
         setTitle(match.name);
-        return fetch(`/api/skin-data?rarity=all&collection=${encodeURIComponent(match.name)}`, { credentials: "include" });
+        return fetchCollectionSkins(match.name);
       })
-      .then((res) => (res ? res.json() : []))
-      .then((data: SkinRow[] | { skins?: SkinRow[] }) => {
-        if (!live) return;
-        const rows = Array.isArray(data) ? data : data.skins ?? [];
+      .then((rows) => {
+        if (!live || !rows) return;
         setSkins([...rows].sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity)));
       })
       .catch(() => { if (live) setSkins([]); });
@@ -679,7 +728,7 @@ export function PreviewCollectionPage() {
             <span>{title ?? "Collection"}</span>
           </nav>
           <h1>{title ?? "Collection"}</h1>
-          <p>{skins.length} skins · every skin in the collection, and the trade-ups the loop found inside it.</p>
+          <p>{formatCollectionSkinCopy(tallyCollectionSkins(skins))} · every skin in the collection, and the trade-ups the loop found inside it.</p>
         </div>
         <div className="preview-page__meta"><span>{board.tradeUps.length} trade-ups</span></div>
       </header>
