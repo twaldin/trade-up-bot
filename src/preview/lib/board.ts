@@ -326,6 +326,43 @@ export function evDrivers(
   return { drivers, drags };
 }
 
+export type TickFace = {
+  name: string;
+  x: number;
+  /** "end" right-aligns the face to its tick; "start" left-aligns it. */
+  align: "start" | "end";
+  z: number;
+};
+
+/**
+ * Places an outcome's render at its tick. A tick left of centre gets its face
+ * right-aligned and a tick right of centre gets it left-aligned, so the two
+ * halves lean outward instead of colliding over the middle of the rail. Faces
+ * at the very ends flip back so they cannot escape the well. When ticks crowd,
+ * the likeliest outcome stacks on top and the rest fade behind it.
+ */
+export function tickFaceLayout(
+  points: { name: string; x: number; probability: number }[],
+  crowdGap = 14,
+): { faces: TickFace[]; crowded: boolean } {
+  if (points.length === 0) return { faces: [], crowded: false };
+  const byX = [...points].sort((a, b) => a.x - b.x);
+  const crowded = byX.some((point, index) => index > 0 && point.x - (byX[index - 1]?.x ?? point.x) < crowdGap);
+  const rank = [...points].sort((a, b) => a.probability - b.probability);
+  const faces = points.map((point) => {
+    let align: "start" | "end" = point.x < 50 ? "end" : "start";
+    if (point.x < 14) align = "start";
+    if (point.x > 86) align = "end";
+    return {
+      name: point.name,
+      x: point.x,
+      align,
+      z: rank.findIndex((row) => row.name === point.name) + 1,
+    };
+  });
+  return { faces, crowded };
+}
+
 /** "AK-47 | Nightwish" tiles as two lines instead of one ellipsed one. */
 export function splitSkinName(name: string): { weapon: string; finish: string } {
   const at = name.indexOf("|");

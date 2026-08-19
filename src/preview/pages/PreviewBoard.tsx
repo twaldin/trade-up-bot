@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ExternalLink } from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
@@ -26,6 +26,7 @@ import {
   previewSkinHref,
   rarityLabel,
   splitSkinName,
+  tickFaceLayout,
   uniqueInputs,
   uniqueOutputs,
   verifyClaimHref,
@@ -230,8 +231,9 @@ function OutputTile({
 }
 
 /**
- * Slim P/L axis. One tick per outcome in output-tile order, height scaled by
- * probability, over the loss-to-profit rail. Hovering a tile lights its tick.
+ * Slim P/L axis. One tick per outcome, height scaled by probability, over the
+ * loss-to-profit rail, with that outcome's render sitting at its tick. Ticks
+ * left of centre hang their face to the left so it stays inside the well.
  */
 function PayoffStrip({
   outcomes,
@@ -259,8 +261,31 @@ function PayoffStrip({
   const zeroX = axisPercent(0, lo, hi);
   const evX = axisPercent(evCents, lo, hi);
   const showZero = Math.abs(evX - zeroX) > 16;
+  const faces = tickFaceLayout(
+    outcomes.map((outcome) => ({
+      name: outcome.skin_name,
+      x: axisPercent(outcome.estimated_price_cents - costCents, lo, hi),
+      probability: outcome.probability,
+    })),
+  );
   return (
-    <div className={`preview-strip ${tall ? "preview-strip--tall" : ""}`} role="img" aria-label={`Payoff from ${signedDollars(Math.min(...profits))} to ${signedDollars(Math.max(...profits))}, expected ${signedDollars(evCents)}`}>
+    <div
+      className={`preview-strip ${tall ? "preview-strip--tall" : ""} ${faces.crowded ? "is-crowded" : ""}`}
+      role="img"
+      aria-label={`Payoff from ${signedDollars(Math.min(...profits))} to ${signedDollars(Math.max(...profits))}, expected ${signedDollars(evCents)}`}
+    >
+      {faces.faces.map((face) => (
+        <span
+          key={`face-${face.name}`}
+          className={`preview-strip__face is-${face.align} ${hot === face.name ? "is-hot" : ""}`}
+          style={{ left: `${face.x}%`, zIndex: face.z }}
+          title={face.name}
+          onMouseEnter={() => onHover?.(face.name)}
+          onMouseLeave={() => onHover?.(null)}
+        >
+          <SkinFace name={face.name} />
+        </span>
+      ))}
       <div className="preview-strip__rail" />
       <div className={`preview-strip__mark is-zero ${showZero ? "" : "is-bare"}`} style={{ left: `${zeroX}%` }}>
         <span>$0</span>
@@ -288,6 +313,38 @@ function PayoffStrip({
   );
 }
 
+function FlowRow({
+  inputLabel,
+  outputLabel,
+  inputColor,
+  outputColor,
+  inputs,
+  outputs,
+}: {
+  inputLabel: string;
+  outputLabel: string;
+  inputColor: string;
+  outputColor: string;
+  inputs: ReactNode;
+  outputs: ReactNode;
+}) {
+  return (
+    <div className="preview-flow">
+      <section className="preview-flow__side">
+        <p className="preview-lane__label">{inputLabel}<i style={{ background: inputColor }} /></p>
+        <div className="preview-skins preview-skins--in">{inputs}</div>
+      </section>
+      <span className="preview-flow__arrow" aria-hidden>
+        <ArrowRight size={14} />
+      </span>
+      <section className="preview-flow__side">
+        <p className="preview-lane__label">{outputLabel}<i style={{ background: outputColor }} /></p>
+        <div className="preview-skins preview-skins--out">{outputs}</div>
+      </section>
+    </div>
+  );
+}
+
 function Figure({ label, note, children }: { label: string; note?: ReactNode; children: ReactNode }) {
   return (
     <figure className="preview-figure">
@@ -311,12 +368,15 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
   const y = (value: number) => `${100 - axisPercent(value, lo, hi)}%`;
   const height = (a: number, b: number) => `${Math.max(Math.abs(axisPercent(a, lo, hi) - axisPercent(b, lo, hi)), 0.8)}%`;
   return (
-    <Figure label="EV contribution by outcome">
+    <Figure
+      label="EV contribution (p × P/L)"
+      note={<>Each bar is its outcome's probability times its profit or loss, walked to the expected profit.</>}
+    >
       <div
         className="preview-wf"
         style={{ "--wf-cols": bars.length + 1 } as CSSProperties}
         role="img"
-        aria-label={`Cumulative expected value walk closing on ${signedDollars(totalEvCents)}`}
+        aria-label={`Probability-weighted contribution of each outcome, closing on an expected profit of ${signedDollars(totalEvCents)}`}
       >
         <div className="preview-wf__plot">
           <i className="preview-wf__grid" style={{ top: y(max) }} />
@@ -351,9 +411,12 @@ function EvWaterfall({ tu }: { tu: TradeUp }) {
         </div>
         <div className="preview-wf__ticks">
           {bars.map((bar) => (
-            <span key={`tick-${bar.name}`} title={bar.name}>{splitSkinName(bar.name).finish || bar.name}</span>
+            <span key={`tick-${bar.name}`} title={bar.name}>
+              <i className="preview-wf__face"><SkinFace name={bar.name} /></i>
+              {splitSkinName(bar.name).finish || bar.name}
+            </span>
           ))}
-          <span className="is-total">Total EV</span>
+          <span className="is-total">Expected profit</span>
         </div>
       </div>
     </Figure>
@@ -439,6 +502,7 @@ function RankedList({ title, points, empty }: { title: string; points: PayoffPoi
       {points.map((point, index) => (
         <div className="preview-rank__row" key={`${title}-${point.name}`}>
           <span className="preview-rank__n">{index + 1}</span>
+          <i className="preview-rank__face"><SkinFace name={point.name} /></i>
           <Link className="preview-rank__name" to={previewSkinHref(point.name)} title={point.name} onClick={stop}>
             {point.name}
           </Link>
@@ -540,43 +604,32 @@ export function TradeUpCard({
         {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
       </button>
 
-      {inputs.length > 0 && (
-        <div className="preview-lane">
-          <p className="preview-lane__label">
-            {inputRarityLabel(tu.type)} inputs<i style={{ background: inColor }} />
-          </p>
-          <div className="preview-skins preview-skins--in">
-            {inputs.map((group) => (
-              <InputTile
-                key={group.name}
-                group={group}
-                rarity={inColor}
-                hot={hot === group.name}
-                onHover={setHot}
-                onNeedExpand={() => onExpand(tu.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {outputs.length > 0 && (
-        <div className="preview-lane">
-          <p className="preview-lane__label">
-            {rarityLabel(tu.type)} outputs<i style={{ background: outColor }} />
-          </p>
-          <div className="preview-skins preview-skins--out">
-            {outputs.map((outcome) => (
-              <OutputTile
-                key={outcome.skin_id + outcome.skin_name}
-                outcome={outcome}
-                rarity={outColor}
-                hot={hot === outcome.skin_name}
-                onHover={setHot}
-              />
-            ))}
-          </div>
-        </div>
+      {(inputs.length > 0 || outputs.length > 0) && (
+        <FlowRow
+          inputLabel={`${inputRarityLabel(tu.type)} inputs`}
+          outputLabel={`${rarityLabel(tu.type)} outputs`}
+          inputColor={inColor}
+          outputColor={outColor}
+          inputs={inputs.map((group) => (
+            <InputTile
+              key={group.name}
+              group={group}
+              rarity={inColor}
+              hot={hot === group.name}
+              onHover={setHot}
+              onNeedExpand={() => onExpand(tu.id)}
+            />
+          ))}
+          outputs={outputs.map((outcome) => (
+            <OutputTile
+              key={outcome.skin_id + outcome.skin_name}
+              outcome={outcome}
+              rarity={outColor}
+              hot={hot === outcome.skin_name}
+              onHover={setHot}
+            />
+          ))}
+        />
       )}
 
       {outputs.length > 0 ? (
@@ -621,46 +674,6 @@ export function TradeUpCard({
             style={{ overflow: "hidden" }}
           >
             <div className="preview-expand">
-              <Panel
-                className="preview-expand__inputs"
-                title="Inputs"
-                meta={`${totals.count || inputs.reduce((sum, group) => sum + group.count, 0)} skins`}
-              >
-                <div className="preview-skins preview-skins--in preview-skins--compact">
-                  {orderedInputs.length > 0
-                    ? orderedInputs.map((row, index) => (
-                        <SkinTile
-                          key={`${row.listing_id}-${row.skin_name}-${index}`}
-                          name={row.skin_name}
-                          rarity={inColor}
-                          variant="input"
-                          index={index + 1}
-                          lead={formatDollars(row.price_cents)}
-                          wear={conditionShort(row.condition)}
-                          float={formatFloat(row.float_value)}
-                          buyHref={listingUrl(
-                            row.listing_id,
-                            row.skin_name,
-                            row.condition,
-                            row.float_value,
-                            row.price_cents,
-                            row.source,
-                            row.marketplace_id,
-                            row.stattrak,
-                          )}
-                        />
-                      ))
-                    : inputs.map((group) => (
-                        <InputTile
-                          key={group.name}
-                          group={group}
-                          rarity={inColor}
-                          onNeedExpand={() => onExpand(tu.id)}
-                        />
-                      ))}
-                </div>
-              </Panel>
-
               <div className="preview-expand__viz">
                 <div className="preview-readouts">
                   <Readout label="Cost" value={formatDollars(inputCostCents(tu))} note={`${totals.count || 10} listings`} />

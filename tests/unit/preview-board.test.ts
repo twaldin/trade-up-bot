@@ -25,6 +25,7 @@ import {
   payoffPoints,
   percentileProfitCents,
   splitSkinName,
+  tickFaceLayout,
   uniqueInputs,
   uniqueOutputs,
   verifyClaimHref,
@@ -403,6 +404,48 @@ describe("preview in-shell data pages", () => {
     const href = previewCollectionHref("The Dreams & Nightmares Collection");
     expect(href.startsWith("/preview/collections/")).toBe(true);
     expect(href).not.toContain(" ");
+  });
+});
+
+describe("preview tick faces", () => {
+  it("leans the two halves outward so faces do not collide over the rail", () => {
+    const { faces } = tickFaceLayout([
+      { name: "Loser", x: 24, probability: 0.5 },
+      { name: "Winner", x: 74, probability: 0.5 },
+    ]);
+    expect(faces.find((f) => f.name === "Loser")?.align).toBe("end");
+    expect(faces.find((f) => f.name === "Winner")?.align).toBe("start");
+  });
+
+  it("flips a face at either end back inside the well", () => {
+    const { faces } = tickFaceLayout([
+      { name: "Far left", x: 3, probability: 0.5 },
+      { name: "Far right", x: 97, probability: 0.5 },
+    ]);
+    expect(faces[0]?.align).toBe("start");
+    expect(faces[1]?.align).toBe("end");
+  });
+
+  it("stacks the likeliest outcome on top when ticks crowd", () => {
+    const points = [
+      { name: "Rare", x: 70, probability: 0.05 },
+      { name: "Common", x: 74, probability: 0.7 },
+      { name: "Mid", x: 78, probability: 0.25 },
+    ];
+    const { faces, crowded } = tickFaceLayout(points);
+    expect(crowded).toBe(true);
+    const z = Object.fromEntries(faces.map((face) => [face.name, face.z]));
+    expect(z.Common).toBeGreaterThan(z.Mid ?? 0);
+    expect(z.Mid).toBeGreaterThan(z.Rare ?? 0);
+  });
+
+  it("does not call two well-separated ticks crowded", () => {
+    const { crowded } = tickFaceLayout([
+      { name: "A", x: 10, probability: 0.5 },
+      { name: "B", x: 80, probability: 0.5 },
+    ]);
+    expect(crowded).toBe(false);
+    expect(tickFaceLayout([])).toEqual({ faces: [], crowded: false });
   });
 });
 

@@ -51,8 +51,8 @@ describe("preview uses dashboard-saas kit primitives", () => {
     expect(css).not.toContain("min-height: 280px");
     expect(css).not.toContain("min-height: 140px");
     expect(css).not.toMatch(/220px/);
-    expect(css).toContain("preview-skin--input");
-    expect(css).toContain("preview-skin--output");
+    expect(css).toContain("preview-skins--in");
+    expect(css).toContain("preview-skins--out");
     expect(css).toContain("preview-strip");
     expect(css).toContain("var(--r-panel)");
   });
@@ -90,7 +90,6 @@ describe("preview craft bar", () => {
   });
 
   it("expands into strip + waterfall + CDF + listings + Verify/Claim, not listings only", () => {
-    expect(board).toContain("preview-expand__inputs");
     expect(board).toContain("preview-expand__viz");
     expect(board).toContain("preview-expand__listings");
     expect(board).toContain("waterfallBars");
@@ -134,6 +133,45 @@ describe("preview craft bar", () => {
     expect(device).not.toContain("TradeUpCard");
     expect(device).toContain("board-desktop-dark.webp");
     expect(device).toContain("board-mobile-light.webp");
+  });
+
+  it("runs inputs into outputs through one arrow, with no duplicate input grid", () => {
+    expect(board).toContain("FlowRow");
+    expect(board).toContain("preview-flow__arrow");
+    expect(board).not.toContain("preview-expand__inputs");
+    expect(board).not.toContain("preview-skins--compact");
+    // stacked by default, one row once the card is full width
+    expect(css).toMatch(/\.preview-flow\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.preview-card--expanded \.preview-flow\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 20px minmax\(0, 1fr\)/);
+    expect(css).toMatch(/\.preview-flow__arrow\s*\{[^}]*transform: rotate\(90deg\)/);
+  });
+
+  it("puts the outcome render on its tick and lets crowded ticks fade", () => {
+    expect(board).toContain("tickFaceLayout");
+    expect(board).toContain("preview-strip__face");
+    expect(css).toMatch(/\.preview-strip__face\.is-end\s*\{\s*transform: translateX\(-100%\)/);
+    expect(css).toMatch(/\.preview-strip\.is-crowded \.preview-strip__face\s*\{[^}]*opacity/);
+    expect(css).toMatch(/\.preview-strip__face\.is-hot\s*\{[^}]*opacity: 1/);
+  });
+
+  it("steps nested surfaces away from the page instead of punching a black hole", () => {
+    expect(css).toMatch(/--nest-2:\s*#eeebe8/);
+    expect(css).toMatch(/--nest-3:\s*#ebe7e3/);
+    expect(css).toMatch(/--nest-2:\s*#262523/);
+    expect(css).toMatch(/--nest-3:\s*#2b2a27/);
+    // no raw hex plot fills, and no reach for the theme's downward well
+    expect(css).not.toContain("var(--sunken)");
+    expect(css).toMatch(/\.preview-wf__plot\s*\{[^}]*background: var\(--nest-3\)/);
+    expect(css).toMatch(/\.preview-strip\s*\{[^}]*background: var\(--nest-2\)/);
+  });
+
+  it("names the waterfall total expected profit, not total EV", () => {
+    expect(board).toContain("Expected profit");
+    expect(board).not.toContain("Total EV");
+    expect(board).toContain("EV contribution (p × P/L)");
+    // outputs get a face on the chart and in the ranked lists
+    expect(board).toContain("preview-wf__face");
+    expect(board).toContain("preview-rank__face");
   });
 
   it("labels charts with the Outlay kicker, not a ChartFigure data table", () => {

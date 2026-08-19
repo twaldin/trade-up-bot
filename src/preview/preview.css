@@ -20,6 +20,16 @@
   --loss: #c81e45; /* 5.66 canvas · 5.21 panel · 4.77 well */
   --loss-soft: color-mix(in srgb, #c81e45 22%, transparent);
 
+  /* ------------------------------------------------------------- nesting
+     Every nested surface steps AWAY from the page: light goes darker, dark
+     goes lighter. A chart plot is three deep (canvas → card → panel → well),
+     so it must not fall back to the canvas colour or to a foreign grey.
+       light  #FFFFFF → #F8F5F2 → #EEEBE8 → #EBE7E3
+       dark   #111110 → #1C1B19 → #262523 → #2B2A27   (muted ink 4.6:1) */
+  --nest-1: var(--panel);
+  --nest-2: #eeebe8;
+  --nest-3: #ebe7e3;
+
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
@@ -30,6 +40,8 @@
   --profit-mark: var(--accent);
   --loss: #ff5470; /* 5.56 panel · 6.28 well */
   --loss-soft: color-mix(in srgb, #ff5470 26%, transparent);
+  --nest-2: #262523;
+  --nest-3: #2b2a27;
 }
 
 [data-preview] .o-arrive {
@@ -320,7 +332,7 @@
   padding: 16px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--band-panel);
+  background: var(--nest-2);
 }
 
 .preview-tile h3,
@@ -578,7 +590,7 @@
   padding: 0 6px;
   border: 1px solid var(--line-soft);
   border-radius: var(--r-chip);
-  background: var(--sunken);
+  background: var(--nest-2);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
@@ -678,12 +690,13 @@
 
 .preview-strip {
   position: relative;
-  height: 40px;
-  border-radius: var(--r-control);
-  background: var(--sunken);
+  height: 62px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
 }
 
-.preview-strip--tall { height: 52px; }
+.preview-strip--tall { height: 74px; }
 
 .preview-strip--empty {
   display: flex;
@@ -696,7 +709,7 @@
   position: absolute;
   left: 8px;
   right: 8px;
-  top: 15px;
+  top: 38px;
   height: 2px;
   border-radius: var(--r-control);
   background: linear-gradient(
@@ -709,18 +722,18 @@
   );
 }
 
-.preview-strip--tall .preview-strip__rail { top: 21px; }
+.preview-strip--tall .preview-strip__rail { top: 48px; }
 
 .preview-strip__mark {
   position: absolute;
-  top: 6px;
-  height: 20px;
+  top: 31px;
+  height: 16px;
   width: 1px;
   background: var(--line-hard);
   transform: translateX(-50%);
 }
 
-.preview-strip--tall .preview-strip__mark { top: 10px; height: 24px; }
+.preview-strip--tall .preview-strip__mark { top: 40px; height: 18px; }
 
 .preview-strip__mark.is-ev {
   width: 2px;
@@ -745,25 +758,65 @@
 
 .preview-strip__mark.is-bare span { display: none; }
 
+/* The outcome's render rides its tick, leaning outward from the middle. */
+.preview-strip__face {
+  position: absolute;
+  top: 4px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 46px;
+  height: 30px;
+  padding: 0 2px;
+  pointer-events: auto;
+  transition: opacity var(--t-control) var(--ease), transform var(--t-control) var(--ease);
+}
+
+.preview-strip--tall .preview-strip__face { top: 6px; width: 58px; height: 38px; }
+
+.preview-strip__face.is-end { transform: translateX(-100%); }
+.preview-strip__face.is-start { transform: translateX(0); }
+
+.preview-strip__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-strip__face .preview-skin__ph {
+  width: 70%;
+  height: 70%;
+}
+
+/* Crowded ticks stack and fade; hover pulls one to the front. */
+.preview-strip.is-crowded .preview-strip__face { opacity: 0.55; }
+
+.preview-strip .preview-strip__face:hover,
+.preview-strip .preview-strip__face.is-hot {
+  z-index: 9 !important;
+  opacity: 1;
+}
+
 /* Ticks, not orbs. Height carries probability; colour carries the sign. */
 .preview-strip__tick {
   position: absolute;
-  top: 16px;
+  top: 39px;
+  z-index: 3;
   width: 2px;
   border-radius: var(--r-control);
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 1px var(--sunken);
+  box-shadow: 0 0 0 1px var(--nest-2);
   transition: width var(--t-control) var(--ease), height var(--t-control) var(--ease);
 }
 
-.preview-strip--tall .preview-strip__tick { top: 22px; }
+.preview-strip--tall .preview-strip__tick { top: 49px; }
 
 .preview-strip__tick.is-plus { background: var(--profit-mark); }
 .preview-strip__tick.is-minus { background: var(--loss); }
 
 .preview-strip__tick.is-hot {
   width: 4px;
-  box-shadow: 0 0 0 1px var(--sunken);
+  box-shadow: 0 0 0 1px var(--nest-2);
 }
 
 /* ------------------------------------------------------------ skin tiles */
@@ -790,21 +843,26 @@
   opacity: 0.4;
 }
 
+/* auto-fit, so a row of three inputs uses the width it has instead of
+   leaving a black gutter to its right. Capped so one output cannot balloon. */
 .preview-skins {
   display: grid;
   gap: 6px;
+  justify-items: center;
 }
 
+.preview-skins > * { max-width: 186px; }
+
 .preview-skins--in {
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
 }
 
 .preview-skins--out {
-  grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
 }
 
 .preview-skins--compact {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
 }
 
 .preview-skin {
@@ -813,14 +871,13 @@
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 2px;
   width: 100%;
-  padding: 6px 5px 8px;
+  padding: 0 0 7px;
   border: 1px solid color-mix(in srgb, var(--skin-tint) 24%, var(--panel-rule));
   border-radius: var(--r-panel);
   background:
-    radial-gradient(112% 74% at 50% 4%, color-mix(in srgb, var(--skin-tint) 15%, transparent), transparent 70%),
-    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 3%, var(--panel)), color-mix(in srgb, var(--skin-tint) 11%, var(--panel)));
+    radial-gradient(108% 70% at 50% 6%, color-mix(in srgb, var(--skin-tint) 16%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 4%, var(--nest-2)), color-mix(in srgb, var(--skin-tint) 13%, var(--nest-2)));
   color: inherit;
   text-align: center;
   text-decoration: none;
@@ -829,30 +886,12 @@
   transition: border-color var(--t-control) var(--ease), transform var(--t-control) var(--ease);
 }
 
-/* The art is the buy target; the name below it is the data-page target. Both
-   need a real box, so the art row is the anchor and the badges stay absolute
-   against the tile. */
-.preview-skin__buy {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-}
-
-.preview-skin--card { height: 118px; }
-
 [data-preview][data-mode="dark"] .preview-skin {
   --skin-ink: color-mix(in srgb, var(--skin-tint) 74%, #eeece7);
   border-color: color-mix(in srgb, var(--skin-tint) 30%, var(--panel-rule));
   background:
-    radial-gradient(112% 74% at 50% 4%, color-mix(in srgb, var(--skin-tint) 24%, transparent), transparent 70%),
-    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 5%, var(--panel)), color-mix(in srgb, var(--skin-tint) 16%, var(--panel)));
+    radial-gradient(108% 70% at 50% 6%, color-mix(in srgb, var(--skin-tint) 26%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 6%, var(--nest-2)), color-mix(in srgb, var(--skin-tint) 18%, var(--nest-2)));
 }
 
 .preview-skin::after {
@@ -876,8 +915,24 @@
   outline-offset: -2px;
 }
 
-.preview-skin--input { height: 88px; }
-.preview-skin--output { height: 100px; }
+/* The render is the hero: it owns a 3:2 box edge to edge and the readouts sit
+   on top of it as pills, instead of a badge stack eating half the tile. */
+.preview-skin__buy {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.preview-skin--card .preview-skin__buy { aspect-ratio: 4 / 3; }
 
 .preview-skin__art {
   display: flex;
@@ -886,29 +941,28 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding-top: 8px;
 }
 
 .preview-skin img {
-  max-height: 100%;
-  max-width: 86%;
+  max-height: 96%;
+  max-width: 94%;
   object-fit: contain;
 }
 
-/* A missing face reads as a quiet rarity plate, not a broken image well. */
 .preview-skin__ph {
   width: 62%;
-  height: 78%;
+  height: 66%;
   border-radius: var(--r-control);
   background:
     radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--skin-tint) 22%, transparent), transparent 70%),
-    color-mix(in srgb, var(--skin-tint) 6%, var(--sunken));
+    color-mix(in srgb, var(--skin-tint) 6%, var(--nest-3));
   border: 1px solid color-mix(in srgb, var(--skin-tint) 16%, transparent);
 }
 
 .preview-skin__label {
   display: block;
   min-width: 0;
+  padding: 0 5px;
   color: inherit;
   text-decoration: none;
 }
@@ -942,6 +996,7 @@
   color: var(--skin-ink);
 }
 
+/* pills ON the render, pinned to the art box corners */
 .preview-skin__index,
 .preview-skin__lead,
 .preview-skin__trail,
@@ -950,59 +1005,73 @@
   position: absolute;
   padding: 1px 4px;
   border-radius: var(--r-chip);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  background: color-mix(in srgb, var(--bg) 66%, transparent);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1.3;
+  pointer-events: none;
 }
-
-/* Float and wear ride the dead space under the art instead of a third
-   text line that would push the tile taller. */
-.preview-skin__float {
-  left: 4px;
-  bottom: 30px;
-  color: var(--text-muted);
-}
-
-.preview-skin__wear {
-  right: 4px;
-  bottom: 30px;
-  color: var(--text-muted);
-}
-
-.preview-skin--output .preview-skin__float,
-.preview-skin--output .preview-skin__wear { bottom: 30px; }
 
 .preview-skin__lead,
-.preview-skin__index {
-  top: 4px;
-  left: 4px;
-  color: var(--text);
+.preview-skin__index { top: 3px; left: 3px; color: var(--text); }
+.preview-skin__index { background: color-mix(in srgb, var(--bg) 50%, transparent); color: var(--text-muted); }
+.preview-skin__index ~ .preview-skin__lead { left: auto; right: 3px; }
+.preview-skin__trail { top: 3px; right: 3px; color: var(--text-muted); }
+.preview-skin__float { bottom: 3px; left: 3px; color: var(--text-muted); }
+.preview-skin__wear { bottom: 3px; right: 3px; color: var(--text-muted); }
+
+/* --------------------------------------------------- inputs -> outputs flow */
+
+.preview-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
 }
 
-.preview-skin__index {
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
+.preview-flow__side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.preview-flow__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
   color: var(--text-muted);
+  transform: rotate(90deg);
 }
 
-.preview-skin__trail {
-  top: 4px;
-  right: 4px;
-  color: var(--text-muted);
+/* One row once the card is full width: inputs, arrow, outputs. */
+.preview-card--expanded .preview-flow {
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
 }
 
-.preview-skin__index ~ .preview-skin__lead {
-  left: auto;
-  right: 4px;
+.preview-card--expanded .preview-flow__arrow {
+  height: auto;
+  transform: none;
+}
+
+@media (max-width: 860px) {
+  .preview-card--expanded .preview-flow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .preview-card--expanded .preview-flow__arrow { transform: rotate(90deg); }
 }
 
 /* ============================================================== expanded */
 
 .preview-expand {
   display: grid;
-  grid-template-columns: 268px minmax(0, 1fr) 316px;
+  grid-template-columns: minmax(0, 1fr) 316px;
   gap: 10px;
   align-items: stretch;
   margin-top: 10px;
@@ -1027,7 +1096,7 @@
   padding: 9px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--band-panel);
+  background: var(--nest-2);
 }
 
 .preview-panel__head {
@@ -1072,7 +1141,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--band-panel);
+  background: var(--nest-2);
   overflow: hidden;
 }
 
@@ -1143,7 +1212,7 @@
   padding: 9px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--band-panel);
+  background: var(--nest-2);
 }
 
 .preview-subpanel--split {
@@ -1173,7 +1242,7 @@
   min-height: 200px;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--sunken);
+  background: var(--nest-3);
   overflow: hidden;
 }
 
@@ -1274,7 +1343,7 @@
   padding: 4px 2px 0;
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
-  background: var(--sunken);
+  background: var(--nest-3);
 }
 
 .preview-cdf > :first-child {
@@ -1296,7 +1365,7 @@
 
 .preview-rank__row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 34px 58px;
+  grid-template-columns: 16px 26px minmax(0, 1fr) 34px 58px;
   align-items: center;
   gap: 6px;
   height: 24px;
@@ -1602,3 +1671,44 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* --------------------------------- outcome faces on the EV chart and lists */
+
+.preview-wf__ticks span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.preview-wf__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 20px;
+}
+
+.preview-wf__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-wf__face .preview-skin__ph { width: 70%; height: 70%; }
+
+.preview-rank__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 16px;
+}
+
+.preview-rank__face img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-rank__face .preview-skin__ph { width: 60%; height: 70%; }
