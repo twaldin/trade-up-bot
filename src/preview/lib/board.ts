@@ -117,7 +117,7 @@ export function boardHref(): string { return `${CONSOLE_BASE}/trade-ups`; }
 export function skinsHref(): string { return `${CONSOLE_BASE}/skins`; }
 export function collectionsHref(): string { return `${CONSOLE_BASE}/collections`; }
 export function calculatorHref(): string { return `${CONSOLE_BASE}/calculator`; }
-export function accountHref(): string { return `${CONSOLE_BASE}/account`; }
+export function accountHref(): string { return `${CONSOLE_BASE}/my-trade-ups`; }
 
 export function previewSkinHref(skinName: string): string {
   return `${CONSOLE_BASE}/skins/${toSlug(skinName)}`;

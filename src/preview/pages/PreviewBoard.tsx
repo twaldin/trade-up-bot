@@ -49,6 +49,15 @@ import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "..
 
 const FACE_CACHE = createFaceCache();
 
+/** Shared with the my-trade-ups page so claim cards and table faces share one cache. */
+export function warmBoardFaces(names: string[]): Promise<void> {
+  return loadFaces(names, FACE_CACHE).then(() => undefined);
+}
+
+export function boardFaceFor(name: string): string | null {
+  return faceFor(FACE_CACHE, name);
+}
+
 function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
 }

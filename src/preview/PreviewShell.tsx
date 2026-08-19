@@ -9,7 +9,7 @@ const NAV = [
   { to: "/skins", label: "Skins", icon: Boxes, end: false },
   { to: "/collections", label: "Collections", icon: Layers, end: false },
   { to: "/calculator", label: "Calculator", icon: Calculator, end: true },
-  { to: "/account", label: "Account", icon: UserRound, end: true },
+  { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
 ] as const;
 
 export function PreviewShell({
