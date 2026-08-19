@@ -197,6 +197,28 @@ npm run dev
 
 Requires `.env` with `CSFLOAT_API_KEY`, `DMARKET_PUBLIC_KEY`, `DMARKET_SECRET_KEY`, `STRIPE_SECRET_KEY`, and related Stripe config.
 
+## Testing
+
+```bash
+# Run unit + integration tests
+npm test
+
+# Run specific test suites
+npm run test:unit           # Unit tests only
+npm run test:integration    # Integration tests only
+npm run test:stress         # Stress tests only
+npm run test:all            # All tests (unit + integration + stress)
+
+# Watch mode for development
+npm run test:watch          # Auto-rerun unit tests on change
+
+# Type checking
+npm run typecheck           # TypeScript validation (no emit)
+
+# SEO verification
+npm run verify:seo:public   # Validate prerendered HTML
+```
+
 ## SEO Infrastructure
 
 Server-rendered HTML for search engine crawlers alongside the React SPA. Two rendering paths in `server/seo.ts`:
