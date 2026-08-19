@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PreviewSeo } from "../components/PreviewSeo.js";
+import { seoPage } from "../lib/seo-pages.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { condAbbr, formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 
@@ -31,6 +32,8 @@ const EMPTY_FILTERS: SniperFilters = {
   markets: [],
   minDiff: "",
 };
+
+const seo = seoPage("/listing-sniper");
 
 const MARKETS = [
   { value: "csfloat", label: "CSFloat" },
@@ -234,9 +237,10 @@ export function PreviewSniper() {
   return (
     <div className="preview-page">
       <PreviewSeo
-        title="Listing Sniper | TradeUpBot"
-        description="Listings priced below estimated market value, sorted by discount percentage."
+        title={seo.title}
+        description={seo.description}
         canonical="https://tradeupbot.app/listing-sniper"
+        robots={seo.robots}
       />
       <header className="preview-page__head">
         <div>

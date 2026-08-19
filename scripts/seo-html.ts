@@ -9,6 +9,7 @@ export interface ExpectedSeoRoute {
   description: string;
   canonical: string;
   requireCrawlerSignals?: boolean;
+  robots?: string;
 }
 
 const BASE_URL = "https://tradeupbot.app";
@@ -27,6 +28,7 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
       title: page.title,
       description: page.description,
       canonical: `${BASE_URL}${page.path}`,
+      robots: page.robots,
     })),
     {
       path: "/blog",
@@ -67,6 +69,9 @@ export function normalizePrerenderedHead(html: string, routePath: string): strin
       .replace(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi, "");
     tags.push(`<meta name="robots" content="index, follow" />`);
     tags.push(`<script type="application/ld+json">${JSON.stringify(buildHomepageJsonLd())}</script>`);
+  } else if (expected.robots) {
+    result = result.replace(/<meta\s+name=["']robots["'][^>]*\/?\s*>/gi, "");
+    tags.push(`<meta name="robots" content="${escapeHtml(expected.robots)}" />`);
   }
 
   if (/<\/head>/i.test(result)) {
@@ -104,6 +109,15 @@ export function verifySeoHtml(route: ExpectedSeoRoute, file: string, html: strin
     issues.push({ route: route.path, file, message: `expected exactly 1 canonical, found ${canonicalMatches.length}` });
   } else if (canonicalMatches[0][1] !== route.canonical) {
     issues.push({ route: route.path, file, message: `canonical mismatch: ${canonicalMatches[0][1]}` });
+  }
+
+  if (route.robots && !route.requireCrawlerSignals) {
+    const robotsMatches = Array.from(html.matchAll(/<meta\s+name=["']robots["'][^>]*\bcontent=["']([^"']*)["'][^>]*\/?\s*>/gi));
+    if (robotsMatches.length !== 1) {
+      issues.push({ route: route.path, file, message: `expected exactly 1 robots meta, found ${robotsMatches.length}` });
+    } else if (robotsMatches[0][1] !== route.robots) {
+      issues.push({ route: route.path, file, message: `robots mismatch: ${robotsMatches[0][1]}` });
+    }
   }
 
   if (route.requireCrawlerSignals) {

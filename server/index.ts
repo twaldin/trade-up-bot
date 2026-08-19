@@ -1249,6 +1249,7 @@ registerCanonicalRedirectRoutes(app);
             url: `https://tradeupbot.app${staticPage.path}`,
             bodyHtml: staticPage.bodyHtml,
             jsonLd: staticPage.jsonLd,
+            robots: staticPage.robots,
             includeFooter: true,
           }));
           return;
@@ -1258,6 +1259,7 @@ registerCanonicalRedirectRoutes(app);
           description: staticPage.description,
           url: `https://tradeupbot.app${staticPage.path}`,
           bodyHtml: staticPage.bodyHtml,
+          robots: staticPage.robots,
         }));
       });
     }

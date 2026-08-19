@@ -43,6 +43,7 @@ describe("leftover marketing pages join the kit shell", () => {
       { path: "/features", source: features, h1: "TradeUpBot Features" },
       { path: "/terms", source: legal, h1: "Terms of Service" },
       { path: "/privacy", source: legal, h1: "Privacy Policy" },
+      { path: "/listing-sniper", source: sniper, h1: "Listing Sniper" },
     ];
     const seoHelper = read("../../src/preview/lib/seo-pages.ts");
     const seoHead = read("../../src/preview/components/PreviewSeo.tsx");
@@ -124,10 +125,11 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(app).not.toContain("element={<PricingPage");
   });
 
-  it("holds robots and the soft-200 park — noindex stays off these routes", () => {
+  it("holds robots and the soft-200 park — leftover money pages stay indexable, listing-sniper HOLDs noindex", () => {
     expect(robots).toContain("Disallow: /preview");
     expect(server).toContain("STATIC_SEO_PAGES");
     expect(server).toContain("jsonLd: staticPage.jsonLd");
+    expect(server).toContain("robots: staticPage.robots");
     expect(server).toContain('app.get("/blog"');
     expect(server).toContain("registerBlogRoutes");
     expect(pricing).not.toMatch(/noindex/);
@@ -136,8 +138,9 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(blog).not.toMatch(/noindex/);
     expect(legal).not.toMatch(/noindex/);
     expect(share).not.toMatch(/noindex/);
-    expect(sniper).not.toMatch(/noindex/);
     expect(collectionTu).not.toMatch(/noindex/);
+    expect(sniper).toContain("seo.robots");
+    expect(staticPage("/listing-sniper").robots).toBe("noindex, follow");
   });
 
   it("kits share, sniper, and collection trade-up URLs without old chrome", () => {
