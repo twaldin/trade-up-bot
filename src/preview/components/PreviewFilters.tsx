@@ -67,25 +67,29 @@ export function PreviewFilters({
   query,
   onChange,
   collection,
+  lockedSkin,
 }: {
   query: BoardQuery;
   onChange: (next: BoardQuery) => void;
   collection?: string;
+  lockedSkin?: string;
 }) {
   const set = <K extends keyof BoardQuery>(key: K, value: BoardQuery[K]) =>
     onChange({ ...query, [key]: value });
 
   return (
     <div className="preview-filters">
-      <label className="preview-field preview-field--search">
-        <Search size={12} aria-hidden />
-        <input
-          className="preview-field__input"
-          value={query.skin}
-          placeholder={collection ? `Search in ${collection}` : "Search a skin"}
-          onChange={(event) => set("skin", event.target.value)}
-        />
-      </label>
+      {!lockedSkin && (
+        <label className="preview-field preview-field--search">
+          <Search size={12} aria-hidden />
+          <input
+            className="preview-field__input"
+            value={query.skin}
+            placeholder={collection ? `Search in ${collection}` : "Search a skin"}
+            onChange={(event) => set("skin", event.target.value)}
+          />
+        </label>
+      )}
 
       <label className="preview-field">
         <span>Tier</span>

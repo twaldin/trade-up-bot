@@ -247,6 +247,68 @@ const TIER_TO_RARITY: Record<string, string> = {
   covert_knife: "Covert",
 };
 
+export interface ListingFilterRow {
+  price_cents: number;
+  float_value: number | null;
+  source: string;
+}
+
+const MARKET_HAY: Record<string, string> = {
+  csfloat: "csfloat cf",
+  dmarket: "dmarket dm",
+  skinport: "skinport sp",
+  buff: "buff",
+};
+
+const WEAR_KEY: Record<string, string> = {
+  fn: "fn",
+  factorynew: "fn",
+  mw: "mw",
+  minimalwear: "mw",
+  ft: "ft",
+  fieldtested: "ft",
+  ww: "ww",
+  wellworn: "ww",
+  bs: "bs",
+  battlescarred: "bs",
+};
+
+function wearKey(value: string): string {
+  const compact = value.toLowerCase().replace(/[\s-]/g, "");
+  return WEAR_KEY[compact] ?? compact;
+}
+
+function sameWear(chip: string, wear: string): boolean {
+  return wearKey(chip) === wearKey(wear);
+}
+
+function listingHaystack(listing: ListingFilterRow, wear: string): string {
+  const market = MARKET_HAY[listing.source] ?? listing.source;
+  return `${listing.source} ${market} ${wear}`.toLowerCase();
+}
+
+/**
+ * Client-side listing search on the skin page. Price / float / wear chips
+ * filter the already-loaded `/api/skin-data/:name` rows; leftover tokens
+ * match a market name.
+ */
+export function listingMatchesQuery(
+  listing: ListingFilterRow,
+  parsed: ParsedQuery,
+  wear: string,
+): boolean {
+  for (const chip of parsed.chips) {
+    if (chip.kind === "max_price" && listing.price_cents > Number(chip.value)) return false;
+    if (chip.kind === "min_price" && listing.price_cents < Number(chip.value)) return false;
+    if (chip.kind === "max_float" && (listing.float_value === null || listing.float_value > Number(chip.value))) return false;
+    if (chip.kind === "min_float" && (listing.float_value === null || listing.float_value < Number(chip.value))) return false;
+    if (chip.kind === "wear" && !sameWear(String(chip.value), wear) && !sameWear(String(chip.label), wear)) return false;
+  }
+  if (parsed.rest.length === 0) return true;
+  const hay = listingHaystack(listing, wear);
+  return parsed.rest.every((token) => hay.includes(token.toLowerCase()));
+}
+
 /** Chips → the skins index filters. Floats and wear filter client-side. */
 export function chipsToSkinParams(chips: Chip[], rest: string[] = []): SkinParams {
   const params: SkinParams = {};

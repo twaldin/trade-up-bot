@@ -73,6 +73,7 @@ function BoardRoute() {
       onParsed={state.onParsed}
       loadMore={state.loadMore}
       exhausted={state.exhausted}
+      throttle={state.throttle}
     />
   );
 }

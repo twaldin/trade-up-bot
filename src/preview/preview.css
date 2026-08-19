@@ -1523,8 +1523,8 @@
 
 .preview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
 }
 
 .preview-rows {
@@ -1768,6 +1768,16 @@
   max-width: 260px;
 }
 
+.preview-table--dense tbody td {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.preview-listings-search {
+  margin: 0 8px 8px;
+}
+
 .preview-table tbody tr:last-child td { border-bottom: 0; }
 
 /* the kit theme hardcodes a 2px radius here; preview keeps it on the token */
@@ -1841,11 +1851,11 @@
 .preview-legend__item[data-off] i { opacity: 0.3; }
 
 .preview-plot {
-  height: 300px;
-  padding: 6px 4px 0;
-  border: 1px solid var(--panel-rule);
+  height: 320px;
+  padding: 8px 6px 4px;
+  border: 1px solid var(--line-hard);
   border-radius: var(--r-panel);
-  background: var(--nest-3);
+  background: var(--canvas);
 }
 
 /* ---------------------------------------------------- collection cards */

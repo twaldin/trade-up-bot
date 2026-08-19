@@ -100,7 +100,18 @@ app.use(cors({
 }));
 // Rate limiting: use x-real-ip from nginx (never req.ip — triggers ERR_ERL_KEY_GEN_IPV6)
 const rlKey = (req: express.Request) => (req.headers["x-real-ip"] as string) || "unknown";
-app.use(rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false, keyGenerator: rlKey }));
+// Per-IP limiter for our own API — not CSFloat. Default body is the string
+// Tim hit live: "Too many requests, please try again later." Static assets
+// must not share that budget; the buggy collection sentinel was burning it.
+app.use(rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: rlKey,
+  skip: (req) => !req.path.startsWith("/api") && !req.path.startsWith("/auth"),
+  message: "Too many requests, please try again later.",
+}));
 app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));
 app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKey }));
 app.use(helmet({

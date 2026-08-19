@@ -41,6 +41,7 @@ export function PreviewTable<Row>({
   initialSort,
   initialDirection = "asc",
   empty = "Nothing to show.",
+  dense = false,
 }: {
   columns: Column<Row>[];
   rows: Row[];
@@ -48,6 +49,7 @@ export function PreviewTable<Row>({
   initialSort?: string;
   initialDirection?: SortDirection;
   empty?: string;
+  dense?: boolean;
 }) {
   const [sortKey, setSortKey] = useState(initialSort ?? "");
   const [direction, setDirection] = useState<SortDirection>(initialDirection);
@@ -65,7 +67,7 @@ export function PreviewTable<Row>({
 
   return (
     <div className="preview-tablewrap">
-      <table className="o-table preview-table">
+      <table className={`o-table preview-table${dense ? " preview-table--dense" : ""}`}>
         <thead>
           <tr>
             {columns.map((column) => (

@@ -8,6 +8,8 @@
  * and faces are warmed afterwards without anything waiting on them.
  */
 
+import { isRateLimitError } from "./page-fetch.js";
+
 export interface BoardLoadPorts<T> {
   fetchRows: () => Promise<{ rows: T[]; isFree: boolean }>;
   hydrate: (row: T) => Promise<T>;
@@ -22,6 +24,8 @@ export interface BoardLoadPorts<T> {
     facesReady: () => void;
     /** Number of rows this page returned, so the caller can stop paging. */
     pageSize?: (count: number) => void;
+    /** 429 / "Too many requests" — do not treat as an empty page. */
+    rateLimited?: () => void;
   };
 }
 
@@ -57,8 +61,9 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
     );
     replaceTail(hydrated, rows.length);
     painted = hydrated;
-  } catch {
-    if (!append) emit.rows([]);
+  } catch (err) {
+    if (isRateLimitError(err)) emit.rateLimited?.();
+    else if (!append) emit.rows([]);
     painted = null;
   } finally {
     emit.loading(false);

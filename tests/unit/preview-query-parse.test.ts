@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chipsToBoardParams,
   chipsToSkinParams,
+  listingMatchesQuery,
   matchNames,
   parseQuery,
   tokenize,
@@ -137,6 +138,19 @@ describe("chips to API parameters", () => {
   it("passes a wear chip through for client-side filtering", () => {
     const { chips } = parseQuery("fn");
     expect(chipsToSkinParams(chips).wear).toBe("Factory New");
+  });
+});
+
+describe("listing search chips", () => {
+  const row = { price_cents: 1250, float_value: 0.04, source: "csfloat" };
+
+  it("filters live listings by price, float, wear and market as the user types", () => {
+    expect(listingMatchesQuery(row, parseQuery("fn <$20 <0.07 csfloat"), "FN")).toBe(true);
+    expect(listingMatchesQuery(row, parseQuery(">$20"), "FN")).toBe(false);
+    expect(listingMatchesQuery(row, parseQuery("<0.03"), "FN")).toBe(false);
+    expect(listingMatchesQuery(row, parseQuery("ft"), "FN")).toBe(false);
+    expect(listingMatchesQuery(row, parseQuery("dmarket"), "FN")).toBe(false);
+    expect(listingMatchesQuery(row, parseQuery("cf"), "FN")).toBe(true);
   });
 });
 

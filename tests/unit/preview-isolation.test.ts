@@ -106,6 +106,16 @@ describe("console cutover", () => {
     }
   });
 
+  it("backs off the Express per-IP limiter, not CSFloat", () => {
+    const index = readFileSync(resolve(testDir, "../../server/index.ts"), "utf8");
+    expect(index).toContain("Too many requests, please try again later.");
+    expect(index).toContain('skip: (req) => !req.path.startsWith("/api")');
+    expect(index).toMatch(/max:\s*120/);
+    const helper = readFileSync(resolve(testDir, "../../src/preview/lib/page-fetch.ts"), "utf8");
+    expect(helper).toContain("Too many requests, please try again later.");
+    expect(helper).toContain("canLoadMore");
+  });
+
   it("does not iframe production chrome", () => {
     const previewDir = resolve(testDir, "../../src/preview");
     const shell = readFileSync(resolve(previewDir, "PreviewShell.tsx"), "utf8");
@@ -140,6 +150,7 @@ describe("console cutover", () => {
       "lib/copy.ts",
       "lib/board.ts",
       "lib/collection-skins.ts",
+      "lib/page-fetch.ts",
       "pages/PreviewBoard.tsx",
       "pages/PreviewCalculator.tsx",
       "pages/PreviewAccount.tsx",
