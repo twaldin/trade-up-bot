@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSeoHtml, renderCollectionsHub } from "../../server/seo.js";
+import { buildCollectionsHubJsonLd } from "../../shared/crawler-jsonld.js";
 
 const collections = [
   "Dreams & Nightmares",
@@ -25,7 +26,9 @@ describe("collections hub crawler HTML", () => {
       title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
       description: "Browse CS2 collections with skins, float ranges, and trade-up opportunities.",
       url: "https://tradeupbot.app/collections",
+      robots: "index, follow",
       bodyHtml: renderCollectionsHub(collections),
+      jsonLd: buildCollectionsHubJsonLd(collections),
     });
 
     const bodyText = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -35,5 +38,8 @@ describe("collections hub crawler HTML", () => {
     expect(html).toContain("<h1>CS2 Skin Collections</h1>");
     expect(collectionLinks).toHaveLength(12);
     expect(html).toContain('href="/trade-ups"');
+    expect(html).toContain('name="robots" content="index, follow"');
+    expect(html).toContain("application/ld+json");
+    expect(html).toContain('"@type":"CollectionPage"');
   });
 });

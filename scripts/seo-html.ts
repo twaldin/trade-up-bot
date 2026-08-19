@@ -1,5 +1,6 @@
 import { blogPosts } from "../src/data/blog-posts.js";
 import { escapeHtml } from "../server/seo.js";
+import { buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
 import { STATIC_SEO_PAGES } from "../server/static-seo-pages.js";
 
 export interface ExpectedSeoRoute {
@@ -7,6 +8,7 @@ export interface ExpectedSeoRoute {
   title: string;
   description: string;
   canonical: string;
+  requireCrawlerSignals?: boolean;
 }
 
 const BASE_URL = "https://tradeupbot.app";
@@ -18,6 +20,7 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
       title: "TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings",
       description: "Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, and Skinport.",
       canonical: `${BASE_URL}/`,
+      requireCrawlerSignals: true,
     },
     ...STATIC_SEO_PAGES.map((page) => ({
       path: page.path,
@@ -54,12 +57,20 @@ export function normalizePrerenderedHead(html: string, routePath: string): strin
     .replace(/<meta\s+name=["']description["'][^>]*\/?\s*>/gi, "")
     .replace(/<link\s+rel=["']canonical["'][^>]*\/?\s*>/gi, "");
 
-  const tags = `<title>${escapeHtml(expected.title)}</title>
-<meta name="description" content="${escapeHtml(expected.description)}" />
-<link rel="canonical" href="${escapeHtml(expected.canonical)}" />`;
+  const tags = [`<title>${escapeHtml(expected.title)}</title>`,
+    `<meta name="description" content="${escapeHtml(expected.description)}" />`,
+    `<link rel="canonical" href="${escapeHtml(expected.canonical)}" />`];
+
+  if (expected.requireCrawlerSignals) {
+    result = result
+      .replace(/<meta\s+name=["']robots["'][^>]*\/?\s*>/gi, "")
+      .replace(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi, "");
+    tags.push(`<meta name="robots" content="index, follow" />`);
+    tags.push(`<script type="application/ld+json">${JSON.stringify(buildHomepageJsonLd())}</script>`);
+  }
 
   if (/<\/head>/i.test(result)) {
-    result = result.replace(/<\/head>/i, `${tags}\n</head>`);
+    result = result.replace(/<\/head>/i, `${tags.join("\n")}\n</head>`);
   }
 
   return result;
@@ -93,6 +104,19 @@ export function verifySeoHtml(route: ExpectedSeoRoute, file: string, html: strin
     issues.push({ route: route.path, file, message: `expected exactly 1 canonical, found ${canonicalMatches.length}` });
   } else if (canonicalMatches[0][1] !== route.canonical) {
     issues.push({ route: route.path, file, message: `canonical mismatch: ${canonicalMatches[0][1]}` });
+  }
+
+  if (route.requireCrawlerSignals) {
+    const robotsMatches = Array.from(html.matchAll(/<meta\s+name=["']robots["'][^>]*\bcontent=["']([^"']*)["'][^>]*\/?\s*>/gi));
+    if (robotsMatches.length !== 1) {
+      issues.push({ route: route.path, file, message: `expected exactly 1 robots meta, found ${robotsMatches.length}` });
+    } else if (robotsMatches[0][1] !== "index, follow") {
+      issues.push({ route: route.path, file, message: `robots mismatch: ${robotsMatches[0][1]}` });
+    }
+
+    if (!/application\/ld\+json/i.test(html)) {
+      issues.push({ route: route.path, file, message: "missing JSON-LD script" });
+    }
   }
 
   return issues;

@@ -4,6 +4,7 @@ import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
 import { pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
+import { buildHomepageJsonLd } from "../../shared/crawler-jsonld.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
 import { PreviewCalculator } from "./pages/PreviewCalculator.js";
@@ -29,6 +30,9 @@ function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: 
     <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
       <title>TradeUpBot — CS2 trade-ups from real listings</title>
       <meta name="description" content="CS2 trade-ups built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.market." />
+      <meta name="robots" content="index, follow" />
+      <link rel="canonical" href="https://tradeupbot.app/" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildHomepageJsonLd()) }} />
       <header className="preview-nav">
         <Link to="/" className="preview-brand">
           <PreviewMark size={20} />

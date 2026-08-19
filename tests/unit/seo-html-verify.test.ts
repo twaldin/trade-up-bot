@@ -39,4 +39,34 @@ describe("static SEO HTML normalization", () => {
     expect(issues).toContain("description mismatch: Wrong");
     expect(issues).toContain("canonical mismatch: https://tradeupbot.app/wrong");
   });
+
+  it("homepage prerender gains robots index,follow and the old WebSite JSON-LD", () => {
+    const html = `<!doctype html><html><head>
+<title>TradeUpBot — CS2 trade-ups from real listings</title>
+<meta name="description" content="kit landing description" />
+</head><body><h1>CS2 trade-ups built from real, buyable listings</h1></body></html>`;
+
+    const out = normalizePrerenderedHead(html, "/");
+    const route = expectedSeoRouteForPath("/");
+
+    expect(route).toBeTruthy();
+    expect(verifySeoHtml(route!, "index.html", out)).toEqual([]);
+    expect(out).toContain('name="robots" content="index, follow"');
+    expect(out).toContain("application/ld+json");
+    expect(out).toContain('"@type":"WebSite"');
+    expect(out).toContain('"@type":"Organization"');
+    expect(out).toContain("https://tradeupbot.app/");
+  });
+
+  it("does not require JSON-LD on calculator title/canonical checks", () => {
+    const html = `<!doctype html><html><head>
+<title>stale</title>
+</head><body><h1>CS2 Trade-Up Calculator</h1></body></html>`;
+
+    const out = normalizePrerenderedHead(html, "/calculator");
+    const route = expectedSeoRouteForPath("/calculator");
+
+    expect(route).toBeTruthy();
+    expect(verifySeoHtml(route!, "calculator/index.html", out)).toEqual([]);
+  });
 });
