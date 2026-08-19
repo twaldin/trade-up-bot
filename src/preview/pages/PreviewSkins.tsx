@@ -496,7 +496,10 @@ function useCollectionSkins(names: string[]) {
   const fetched = useRef(new Set<string>());
   const mounted = useRef(true);
   const key = names.join("\u0000");
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useEffect(() => {
     const list = key.split("\u0000").filter((name) => name && !fetched.current.has(name));
     if (list.length === 0) return;
@@ -508,7 +511,10 @@ function useCollectionSkins(names: string[]) {
         const faces = [...rows]
           .sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity))
           .slice(0, 4);
-        if (!mounted.current) return;
+        if (!mounted.current) {
+          fetched.current.delete(name);
+          return;
+        }
         setByCollection((prev) => ({ ...prev, [name]: { faces, tally } }));
         await loadFaces(faces.map((row) => row.name), FACE_CACHE);
         if (mounted.current) setByCollection((prev) => ({ ...prev }));
