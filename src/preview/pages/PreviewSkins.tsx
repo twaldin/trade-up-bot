@@ -12,6 +12,7 @@ import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import {
+  collectionsHref,
   conditionShort,
   formatFloat,
   previewCollectionHref,
@@ -681,6 +682,11 @@ export function PreviewCollectionPage() {
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
+          <nav className="preview-crumb" aria-label="Breadcrumb">
+            <Link className="preview-link" to={collectionsHref()}>Collections</Link>
+            <span aria-hidden>/</span>
+            <span>{title ?? "Collection"}</span>
+          </nav>
           <h1>{title ?? "Collection"}</h1>
           <p>{skins.length} skins · every skin in the collection, and the trade-ups the loop found inside it.</p>
         </div>
@@ -725,14 +731,12 @@ export function PreviewCollectionPage() {
           onExpand={board.onExpand}
           query={board.query}
           onQuery={board.onQuery}
-          search={board.search}
-          onSearch={board.onSearch}
-          onParsed={board.onParsed}
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."
+          embed
         />
       )}
 
