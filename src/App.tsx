@@ -7,15 +7,7 @@ import { useStatus } from "./hooks/useStatus.js";
 const DaemonModal = lazy(() => import("./components/DaemonModal.js").then(m => ({ default: m.DaemonModal })));
 const TradeUpsPage = lazy(() => import("./pages/TradeUpsPage.js").then(m => ({ default: m.TradeUpsPage })));
 const LandingPage = lazy(() => import("./pages/LandingPage.js").then(m => ({ default: m.LandingPage })));
-const FaqPage = lazy(() => import("./pages/FaqPage.js").then(m => ({ default: m.FaqPage })));
-const TermsPage = lazy(() => import("./pages/TermsPage.js").then(m => ({ default: m.TermsPage })));
-const PrivacyPage = lazy(() => import("./pages/PrivacyPage.js").then(m => ({ default: m.PrivacyPage })));
-const FeaturesPage = lazy(() => import("./pages/FeaturesPage.js").then(m => ({ default: m.FeaturesPage })));
-const PricingPage = lazy(() => import("./pages/PricingPage.js").then(m => ({ default: m.PricingPage })));
 const MyTradeUpsPage = lazy(() => import("./pages/MyTradeUpsPage.js"));
-const ListingSniperPage = lazy(() => import("./pages/ListingSniperPage.js").then(m => ({ default: m.ListingSniperPage })));
-const BlogPage = lazy(() => import("./pages/BlogPage.js").then(m => ({ default: m.BlogPage })));
-const BlogPostPage = lazy(() => import("./pages/BlogPostPage.js").then(m => ({ default: m.BlogPostPage })));
 import { SiteFooter } from "./components/SiteFooter.js";
 import { Button } from "../shared/components/ui/button.js";
 import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
@@ -26,7 +18,6 @@ const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ 
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
-const TradeUpSharePage = lazy(() => import("./pages/TradeUpSharePage.js").then(m => ({ default: m.TradeUpSharePage })));
 const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
 // The kit shell is the primary app now, so it is imported directly: as a lazy
 // chunk its CSS preload failed during prerender and "/" captured an empty body.
@@ -404,7 +395,6 @@ function AppShell({ user }: { user?: AuthUser | null }) {
           </Suspense>
         } />
         <Route path="/my-trade-ups" element={<MyTradeUpsPage />} />
-        <Route path="/listing-sniper" element={<ListingSniperPage />} />
         {/* Legacy redirects */}
         <Route path="/dashboard" element={<Navigate to="/trade-ups" replace />} />
         <Route path="/data" element={<Navigate to="/skins" replace />} />
@@ -524,20 +514,19 @@ export default function App() {
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
       <Routes>
-        <Route path="/faq" element={<FaqPage />} />
-        <Route path="/features" element={<FeaturesPage />} />
-        <Route path="/pricing" element={<PricingPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/blog" element={<BlogPage />} />
-        <Route path="/blog/:slug" element={<BlogPostPage />} />
-        <Route path="/trade-ups/:id" element={
-          <Suspense fallback={<div className="flex items-center justify-center h-screen bg-background text-muted-foreground animate-pulse">Loading</div>}>
-            <TradeUpSharePage />
-          </Suspense>
-        } />
-        {/* The kit shell is the console now: it serves /, /trade-ups, /skins,
-            /collections, /calculator and /account, and /preview/* redirects. */}
+        <Route path="/faq" element={<ConsoleApp page="faq" />} />
+        <Route path="/features" element={<ConsoleApp page="features" />} />
+        <Route path="/pricing" element={<ConsoleApp page="pricing" />} />
+        <Route path="/terms" element={<ConsoleApp page="terms" />} />
+        <Route path="/privacy" element={<ConsoleApp page="privacy" />} />
+        <Route path="/blog" element={<ConsoleApp page="blog" />} />
+        <Route path="/blog/:slug/" element={<ConsoleApp page="post" />} />
+        <Route path="/blog/:slug" element={<ConsoleApp page="post" />} />
+        <Route path="/trade-ups/collection/:slug" element={<ConsoleApp page="collectionTradeUps" />} />
+        <Route path="/trade-ups/:id" element={<ConsoleApp page="share" />} />
+        {/* The kit shell is the console now: leftover marketing, share, sniper,
+            and collection trade-up URLs join /, /trade-ups, /skins,
+            /collections, /calculator and /account. /preview/* still redirects. */}
         <Route path="/preview/*" element={<RetiredPreviewPrefixRedirect />} />
         <Route path="/trade-ups" element={<ConsoleApp page="board" />} />
         <Route path="/skins" element={<ConsoleApp page="skins" />} />
@@ -547,8 +536,8 @@ export default function App() {
         <Route path="/calculator" element={<ConsoleApp page="calculator" />} />
         <Route path="/account" element={<ConsoleApp page="account" />} />
         <Route path="/my-trade-ups" element={<ConsoleApp page="account" />} />
+        <Route path="/listing-sniper" element={<ConsoleApp page="sniper" />} />
         <Route path="/" element={<ConsoleApp page="landing" />} />
-        <Route path="/listing-sniper" element={<AuthGatedApp />} />
         <Route path="*" element={<AuthGatedApp />} />
       </Routes>
     </Suspense>

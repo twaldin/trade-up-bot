@@ -1,4 +1,4 @@
-import { Boxes, Calculator, LayoutDashboard, Layers, Tag, UserRound } from "lucide-react";
+import { Boxes, Calculator, CircleHelp, Crosshair, LayoutDashboard, Layers, Newspaper, Sparkles, Tag, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
@@ -9,7 +9,15 @@ const NAV = [
   { to: "/skins", label: "Skins", icon: Boxes, end: false },
   { to: "/collections", label: "Collections", icon: Layers, end: false },
   { to: "/calculator", label: "Calculator", icon: Calculator, end: true },
+  { to: "/listing-sniper", label: "Sniper", icon: Crosshair, end: true },
   { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
+] as const;
+
+const PRODUCT = [
+  { to: "/pricing", label: "Pricing", icon: Tag, end: true },
+  { to: "/features", label: "Features", icon: Sparkles, end: true },
+  { to: "/faq", label: "FAQ", icon: CircleHelp, end: true },
+  { to: "/blog", label: "Blog", icon: Newspaper, end: false },
 ] as const;
 
 export function PreviewShell({
@@ -43,10 +51,17 @@ export function PreviewShell({
             </div>
             <div className="preview-sidebar__group">
               <p className="o-kicker">Product</p>
-              <a className="o-nav-item" href="/pricing">
-                <Tag className="size-[13px] shrink-0" aria-hidden />
-                Pricing
-              </a>
+              {PRODUCT.map(({ to, label, icon: Icon, end }) => (
+                <NavLink key={to} to={to} end={end} className="o-nav-item">
+                  <Icon className="size-[13px] shrink-0" aria-hidden />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+            <div className="preview-sidebar__group">
+              <p className="o-kicker">Legal</p>
+              <NavLink to="/terms" end className="o-nav-item">Terms</NavLink>
+              <NavLink to="/privacy" end className="o-nav-item">Privacy</NavLink>
             </div>
           </nav>
         </aside>

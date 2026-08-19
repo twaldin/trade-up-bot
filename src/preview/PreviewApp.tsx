@@ -6,15 +6,23 @@ import { pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
 import { buildHomepageJsonLd } from "../../shared/crawler-jsonld.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
+import { PreviewBlogIndex, PreviewBlogPost } from "./pages/PreviewBlog.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
 import { PreviewCalculator } from "./pages/PreviewCalculator.js";
+import { PreviewCollectionTradeUps } from "./pages/PreviewCollectionTradeUps.js";
+import { PreviewFaq } from "./pages/PreviewFaq.js";
+import { PreviewFeatures } from "./pages/PreviewFeatures.js";
 import { PreviewLanding } from "./pages/PreviewLanding.js";
+import { PreviewPrivacy, PreviewTerms } from "./pages/PreviewLegal.js";
+import { PreviewPricing } from "./pages/PreviewPricing.js";
+import { PreviewShare } from "./pages/PreviewShare.js";
 import {
   PreviewCollectionPage,
   PreviewCollectionsPage,
   PreviewSkinPage,
   PreviewSkinsPage,
 } from "./pages/PreviewSkins.js";
+import { PreviewSniper } from "./pages/PreviewSniper.js";
 import { PreviewShell } from "./PreviewShell.js";
 import "./preview.css";
 
@@ -99,6 +107,16 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       case "collection": return <PreviewCollectionPage />;
       case "calculator": return <PreviewCalculator />;
       case "account": return <PreviewAccount />;
+      case "pricing": return <PreviewPricing />;
+      case "faq": return <PreviewFaq />;
+      case "features": return <PreviewFeatures />;
+      case "blog": return <PreviewBlogIndex />;
+      case "post": return <PreviewBlogPost />;
+      case "terms": return <PreviewTerms />;
+      case "privacy": return <PreviewPrivacy />;
+      case "share": return <PreviewShare />;
+      case "sniper": return <PreviewSniper />;
+      case "collectionTradeUps": return <PreviewCollectionTradeUps />;
       case "landing":
       default: return <PreviewLanding stats={stats} mode={mode} />;
     }

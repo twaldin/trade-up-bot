@@ -191,7 +191,7 @@ describe("kit my-trade-ups page", () => {
 });
 
 describe("share page claim and verify hooks", () => {
-  const share = read("../../src/pages/TradeUpSharePage.tsx");
+  const share = read("../../src/preview/pages/PreviewShare.tsx");
 
   it("calls the existing verify, claim, confirm, and release endpoints", () => {
     expect(share).toContain("MY_TRADE_UPS_API.verify");

@@ -16,6 +16,18 @@ const LEAKS = [
   "text-foreground", "bg-muted", "text-primary", "bg-primary",
 ];
 
+async function liveSharePath() {
+  try {
+    const res = await fetch(`${BASE}/api/trade-ups?per_page=1`);
+    const data = await res.json();
+    const id = data.trade_ups?.[0]?.id;
+    if (id) return `/trade-ups/${id}`;
+  } catch {
+    // fall through to the last known live share URL
+  }
+  return "/trade-ups/776913115";
+}
+
 const ROUTES = [
   { path: "/", name: "landing", wait: ".preview-hero" },
   { path: "/trade-ups", name: "board", wait: ".preview-skin--output" },
@@ -24,7 +36,17 @@ const ROUTES = [
   { path: "/collections/dreams-nightmares", name: "collection", wait: ".preview-allskins" },
   { path: "/calculator", name: "calculator", wait: ".preview-toolbar" },
   { path: "/account", name: "account", wait: ".preview-page" },
+  { path: "/pricing", name: "pricing", wait: ".preview-plans" },
+  { path: "/faq", name: "faq", wait: ".preview-faq" },
+  { path: "/features", name: "features", wait: ".preview-doc" },
+  { path: "/blog", name: "blog", wait: ".preview-posts" },
+  { path: "/terms", name: "terms", wait: ".preview-doc" },
+  { path: "/privacy", name: "privacy", wait: ".preview-doc" },
+  { path: "/listing-sniper", name: "sniper", wait: ".preview-page" },
+  { path: "/trade-ups/collection/dreams-nightmares", name: "collection-tus", wait: ".preview-bento, .preview-page" },
 ];
+
+ROUTES.push({ path: await liveSharePath(), name: "share", wait: ".preview-bento, .preview-page" });
 
 const browser = await puppeteer.launch({
   headless: "new",
