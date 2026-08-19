@@ -2156,3 +2156,60 @@
   justify-content: center;
   min-height: 60px;
 }
+
+/* ------------------------------------------- every skin in a collection */
+
+.preview-allskins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
+}
+
+.preview-allskins__tile {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--skin-tint) 24%, var(--panel-rule));
+  border-radius: var(--r-panel);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 4%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 15%, var(--nest-3)));
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.preview-allskins__tile img {
+  height: 40px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.preview-allskins__tile .preview-skin__ph { height: 34px; }
+
+.preview-allskins__tile b {
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  color: color-mix(in srgb, var(--skin-tint) 66%, #0b0b0a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-preview][data-mode="dark"] .preview-allskins__tile b {
+  color: color-mix(in srgb, var(--skin-tint) 74%, #eeece7);
+}
+
+/* The rotating focus is what the stats card below is showing. */
+.preview-allskins__tile[data-focus] {
+  border-color: var(--skin-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--skin-tint) 45%, transparent);
+}
+
+.preview-allskins__tile:hover {
+  border-color: color-mix(in srgb, var(--skin-tint) 60%, var(--panel-rule));
+}
