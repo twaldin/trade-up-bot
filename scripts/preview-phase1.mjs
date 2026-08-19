@@ -8,7 +8,7 @@ import puppeteer from "puppeteer";
 
 const OUT = process.env.QA_OUT ?? "/opt/cursor/artifacts/screenshots";
 const BASE = process.env.QA_BASE ?? "http://127.0.0.1:5173";
-const ROOT = process.env.QA_ROOT ?? "/preview";
+const ROOT = process.env.QA_ROOT ?? "";
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

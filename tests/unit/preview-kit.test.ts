@@ -260,16 +260,17 @@ describe("preview craft bar", () => {
     expect(css).toContain(".preview-mark { color: var(--accent); }");
     expect(shell).not.toContain("favicon.svg");
     expect(app).not.toContain("favicon.svg");
+    // the mark shipped as the real favicon with the cutover
+    expect(read("../../public/favicon.svg")).toContain("#d7fe52");
   });
 
-  it("mounts skins and collections inside the preview shell", () => {
+  it("mounts skins and collections in the console shell", () => {
     const app = read("../../src/preview/PreviewApp.tsx");
     const shell = read("../../src/preview/PreviewShell.tsx");
-    for (const path of ["skins", "skins/:slug", "collections", "collections/:name"]) {
-      expect(app).toContain(`path="/preview/${path}"`);
+    for (const page of ["skins", "skin", "collections", "collection"]) {
+      expect(app).toContain(`case "${page}"`);
     }
-    expect(app).toMatch(/skins\|collections/);
-    expect(shell).toContain("/preview/skins");
-    expect(shell).toContain("/preview/collections");
+    expect(shell).toContain('to: "/skins"');
+    expect(shell).toContain('to: "/collections"');
   });
 });

@@ -5,11 +5,11 @@ import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
 
 const NAV = [
-  { to: "/preview/trade-ups", label: "Board", icon: LayoutDashboard, end: true },
-  { to: "/preview/skins", label: "Skins", icon: Boxes, end: false },
-  { to: "/preview/collections", label: "Collections", icon: Layers, end: false },
-  { to: "/preview/calculator", label: "Calculator", icon: Calculator, end: true },
-  { to: "/preview/account", label: "Account", icon: UserRound, end: true },
+  { to: "/trade-ups", label: "Board", icon: LayoutDashboard, end: true },
+  { to: "/skins", label: "Skins", icon: Boxes, end: false },
+  { to: "/collections", label: "Collections", icon: Layers, end: false },
+  { to: "/calculator", label: "Calculator", icon: Calculator, end: true },
+  { to: "/account", label: "Account", icon: UserRound, end: true },
 ] as const;
 
 export function PreviewShell({
@@ -23,12 +23,11 @@ export function PreviewShell({
 }) {
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="dashboard" className="preview-console-root">
-      <title>TradeUpBot preview — console</title>
-      <meta name="robots" content="noindex, nofollow" />
+      <title>TradeUpBot — console</title>
       <a className="skip-link" href="#main">Skip to content</a>
       <div className="preview-console">
         <aside className="preview-sidebar" aria-label="Console">
-          <Link to="/preview" className="preview-brand preview-sidebar__brand">
+          <Link to="/" className="preview-brand preview-sidebar__brand">
             <PreviewMark size={18} />
             TradeUpBot
           </Link>

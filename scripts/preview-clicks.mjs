@@ -20,7 +20,7 @@ try {
   browser.on("targetcreated", async (target) => {
     if (target.type() === "page") opened.push(target.url());
   });
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-skin--output", { timeout: 60000 });
   await sleep(2500);
 
@@ -47,7 +47,7 @@ try {
   if (/skin not found/i.test(outBody)) failures.push("output href says skin not found");
 
   // 3. expand -> verify/claim + listing rows
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   await sleep(2500);
   await page.evaluate(() => { document.querySelector(".preview-card")?.click(); });
@@ -77,28 +77,39 @@ try {
   }
 
   // 4. a tile name opens the skin page inside the shell
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-skin__label", { timeout: 60000 });
   await sleep(3000);
   await page.$eval(".preview-skin__label", (el) => el.click());
   await sleep(3000);
   const skinUrl = page.url();
   console.log("tile name went to:", skinUrl);
-  if (!skinUrl.includes("/preview/skins/")) failures.push(`tile name went to ${skinUrl}`);
+  if (!skinUrl.includes("/skins/")) failures.push(`tile name went to ${skinUrl}`);
   const hasShell = await page.$(".preview-sidebar");
   if (!hasShell) failures.push("skin page lost the sidebar shell");
   const skinBody = await page.evaluate(() => document.body.innerText);
   if (/skin not found|not in the live dataset/i.test(skinBody)) failures.push("preview skin page did not resolve");
 
-  // 5. no local /skins anywhere on the board
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  // 5. local /skins links are the console now, and they must resolve
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   await sleep(2500);
   const localSkins = await page.evaluate(() =>
     [...document.querySelectorAll("a[href]")]
       .map((a) => a.getAttribute("href"))
       .filter((h) => h && h.startsWith("/skins/")));
-  if (localSkins.length > 0) failures.push(`local /skins hrefs: ${localSkins.slice(0, 3).join(", ")}`);
+  if (localSkins.length === 0) failures.push("no in-shell skin links on the board");
+  const probe = localSkins[0];
+  if (probe) {
+    await page.goto(`${BASE}${probe}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await sleep(3500);
+    const resolved = await page.evaluate(() => ({
+      shell: !!document.querySelector(".preview-sidebar"),
+      body: document.body.innerText.slice(0, 200),
+    }));
+    if (!resolved.shell) failures.push(`${probe} did not render inside the console shell`);
+    if (/skin not found|not in the live dataset/i.test(resolved.body)) failures.push(`${probe} did not resolve`);
+  }
 
   // 6. copy check
   const copy = await page.evaluate(() => document.body.innerText);

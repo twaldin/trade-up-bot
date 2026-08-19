@@ -22,7 +22,7 @@ async function setMode(page, mode) {
 }
 
 async function boardReady(page) {
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   // outcomes hydrate after the first paint
   await page.waitForFunction(
@@ -83,7 +83,7 @@ try {
   }
 
   // landing
-  await page.goto(`${BASE}/preview`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await sleep(2500);
   await setMode(page, "dark");
   await page.screenshot({ path: shot("landing-laptop") });

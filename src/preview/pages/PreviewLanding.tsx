@@ -54,7 +54,7 @@ export function PreviewLanding({
           {PREVIEW_SUBLEDE}
         </p>
         <div className="preview-toolbar o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
-          <Link to="/preview/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
+          <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
             Open the console
           </Link>
           <a href="#how" className="preview-btn preview-btn--lg">How it works</a>

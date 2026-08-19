@@ -62,7 +62,7 @@ export function PreviewAccount() {
           <p className="preview-note">Sign in to see claims and Pro delivery.</p>
           <a
             className="preview-btn preview-btn--lime preview-btn--block"
-            href={authHref("/preview/account")}
+            href={authHref("/account")}
             rel="nofollow"
           >
             Sign in with Steam

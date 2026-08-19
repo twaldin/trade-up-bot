@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
+import { pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
@@ -26,18 +27,17 @@ interface GlobalStats {
 function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: "light" | "dark"; onMode: () => void }) {
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
-      <title>TradeUpBot preview — kit landing</title>
-      <meta name="robots" content="noindex, nofollow" />
-      <meta name="description" content="Internal TradeUpBot preview. Not for production navigation." />
+      <title>TradeUpBot — CS2 trade-ups from real listings</title>
+      <meta name="description" content="CS2 trade-ups built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.market." />
       <header className="preview-nav">
-        <Link to="/preview" className="preview-brand">
+        <Link to="/" className="preview-brand">
           <PreviewMark size={20} />
           TradeUpBot
         </Link>
         <nav className="preview-nav__links" aria-label="Preview">
-          <Link className="preview-btn preview-btn--quiet" to="/preview/trade-ups">Board</Link>
-          <Link className="preview-btn preview-btn--quiet" to="/preview/skins">Skins</Link>
-          <Link className="preview-btn preview-btn--quiet" to="/preview/collections">Collections</Link>
+          <Link className="preview-btn preview-btn--quiet" to="/trade-ups">Board</Link>
+          <Link className="preview-btn preview-btn--quiet" to="/skins">Skins</Link>
+          <Link className="preview-btn preview-btn--quiet" to="/collections">Collections</Link>
           <a className="preview-btn preview-btn--quiet" href="#faq">FAQ</a>
         </nav>
         <div className="preview-bar__actions">
@@ -45,7 +45,7 @@ function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: 
             {mode === "dark" ? "Light" : "Dark"}
           </button>
           <PreviewCurrency />
-          <Link className="preview-btn preview-btn--lime" to="/preview/trade-ups">Open the console</Link>
+          <Link className="preview-btn preview-btn--lime" to="/trade-ups">Open the console</Link>
         </div>
       </header>
       {children}
@@ -73,11 +73,10 @@ function BoardRoute() {
   );
 }
 
-export default function PreviewApp() {
+export default function PreviewApp(props: { page?: ConsolePage } = {}) {
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const location = useLocation();
-  const inConsole = /\/preview\/(trade-ups|calculator|account|skins|collections)/.test(location.pathname);
 
   useEffect(() => {
     document.getElementById("root")?.classList.remove("app-shell");
@@ -85,34 +84,27 @@ export default function PreviewApp() {
   }, []);
 
   const onMode = () => setMode((m) => (m === "dark" ? "light" : "dark"));
-  const routes = (
-    <Routes>
-      <Route index element={<PreviewLanding stats={stats} mode={mode} />} />
-      <Route path="trade-ups" element={<BoardRoute />} />
-      <Route path="skins" element={<PreviewSkinsPage />} />
-      <Route path="skins/:slug" element={<PreviewSkinPage />} />
-      <Route path="collections" element={<PreviewCollectionsPage />} />
-      <Route path="collections/:name" element={<PreviewCollectionPage />} />
-      <Route path="calculator" element={<PreviewCalculator />} />
-      <Route path="account" element={<PreviewAccount />} />
-      <Route path="/preview" element={<PreviewLanding stats={stats} mode={mode} />} />
-      <Route path="/preview/trade-ups" element={<BoardRoute />} />
-      <Route path="/preview/skins" element={<PreviewSkinsPage />} />
-      <Route path="/preview/skins/:slug" element={<PreviewSkinPage />} />
-      <Route path="/preview/collections" element={<PreviewCollectionsPage />} />
-      <Route path="/preview/collections/:name" element={<PreviewCollectionPage />} />
-      <Route path="/preview/calculator" element={<PreviewCalculator />} />
-      <Route path="/preview/account" element={<PreviewAccount />} />
-      <Route path="*" element={<Navigate to="/preview" replace />} />
-    </Routes>
-  );
+  const page = pageFor(props.page, location.pathname);
+  const view = (() => {
+    switch (page) {
+      case "board": return <BoardRoute />;
+      case "skins": return <PreviewSkinsPage />;
+      case "skin": return <PreviewSkinPage />;
+      case "collections": return <PreviewCollectionsPage />;
+      case "collection": return <PreviewCollectionPage />;
+      case "calculator": return <PreviewCalculator />;
+      case "account": return <PreviewAccount />;
+      case "landing":
+      default: return <PreviewLanding stats={stats} mode={mode} />;
+    }
+  })();
 
-  if (inConsole) {
+  if (page !== "landing") {
     return (
       <PreviewShell mode={mode} onMode={onMode}>
         <span className="sr-only">{PREVIEW_HEADLINE}</span>
         <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
-        {routes}
+        {view}
       </PreviewShell>
     );
   }
@@ -121,7 +113,7 @@ export default function PreviewApp() {
     <PreviewChrome mode={mode} onMode={onMode}>
       <span className="sr-only">{PREVIEW_HEADLINE}</span>
       <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
-      {routes}
+      {view}
     </PreviewChrome>
   );
 }

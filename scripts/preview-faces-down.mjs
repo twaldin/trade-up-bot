@@ -22,7 +22,7 @@ try {
   let hung = 0;
   page.on("request", (req) => {
     const url = req.url();
-    if (url.includes("/api/preview/faces") || /\/skins\/[a-z0-9-]+$/.test(new URL(url).pathname)) {
+    if (url.includes("/api/preview/faces") || url.includes("/__face/")) {
       hung += 1;
       return; // never respond, never abort: the worst case
     }
@@ -30,7 +30,7 @@ try {
   });
 
   const started = Date.now();
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   await page.waitForFunction(
     () => document.querySelectorAll(".preview-skin--output").length > 0,

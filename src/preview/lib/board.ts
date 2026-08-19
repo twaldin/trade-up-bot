@@ -107,13 +107,24 @@ export function prodSkinHref(skinName: string): string {
   return `${PREVIEW_PROD_ORIGIN}/skins/${toSlug(skinName)}`;
 }
 
-/** Skin data page inside the preview shell — never an unprefixed /skins/ 404. */
+/**
+ * Console route base. The kit shell now serves the real routes, so links are
+ * un-prefixed; `/preview/*` redirects here.
+ */
+export const CONSOLE_BASE = "";
+
+export function boardHref(): string { return `${CONSOLE_BASE}/trade-ups`; }
+export function skinsHref(): string { return `${CONSOLE_BASE}/skins`; }
+export function collectionsHref(): string { return `${CONSOLE_BASE}/collections`; }
+export function calculatorHref(): string { return `${CONSOLE_BASE}/calculator`; }
+export function accountHref(): string { return `${CONSOLE_BASE}/account`; }
+
 export function previewSkinHref(skinName: string): string {
-  return `/preview/skins/${toSlug(skinName)}`;
+  return `${CONSOLE_BASE}/skins/${toSlug(skinName)}`;
 }
 
 export function previewCollectionHref(collectionName: string): string {
-  return `/preview/collections/${collectionToSlug(collectionName)}`;
+  return `${CONSOLE_BASE}/collections/${collectionToSlug(collectionName)}`;
 }
 
 /** Marketplace float/price URL when we have one; otherwise the prod skin page. Never a local /skins path. */

@@ -396,14 +396,14 @@ describe("preview float and price on inputs", () => {
 });
 
 describe("preview in-shell data pages", () => {
-  it("links skin names into the preview shell, never an unprefixed /skins path", () => {
-    expect(previewSkinHref("AK-47 | Nightwish")).toBe("/preview/skins/ak-47-nightwish");
-    expect(previewSkinHref("AK-47 | Nightwish").startsWith("/preview/")).toBe(true);
+  it("links skin names at the real console route", () => {
+    expect(previewSkinHref("AK-47 | Nightwish")).toBe("/skins/ak-47-nightwish");
+    expect(previewSkinHref("AK-47 | Nightwish").startsWith("/preview")).toBe(false);
   });
 
-  it("links collections into the preview shell", () => {
+  it("links collections at the real console route", () => {
     const href = previewCollectionHref("The Dreams & Nightmares Collection");
-    expect(href.startsWith("/preview/collections/")).toBe(true);
+    expect(href.startsWith("/collections/")).toBe(true);
     expect(href).not.toContain(" ");
   });
 });

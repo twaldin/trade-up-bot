@@ -28,7 +28,10 @@ const CollectionListViewer = lazy(() => import("./components/CollectionListViewe
 const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => ({ default: m.CalculatorPage })));
 const TradeUpSharePage = lazy(() => import("./pages/TradeUpSharePage.js").then(m => ({ default: m.TradeUpSharePage })));
 const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
-const PreviewApp = lazy(() => import("./preview/PreviewApp.js"));
+// The kit shell is the primary app now, so it is imported directly: as a lazy
+// chunk its CSS preload failed during prerender and "/" captured an empty body.
+import PreviewApp from "./preview/PreviewApp.js";
+import { consoleTargetFor, type ConsolePage } from "./preview/lib/console-routes.js";
 
 interface GlobalStats {
   total_trade_ups: number;
@@ -487,6 +490,16 @@ function AuthGatedApp() {
   return <AppShell user={user ?? null} />;
 }
 
+function ConsoleApp({ page }: { page: ConsolePage }) {
+  return <PreviewApp page={page} />;
+}
+
+/** The kit shell used to live behind /preview; that prefix now redirects. */
+function RetiredPreviewPrefixRedirect() {
+  const location = useLocation();
+  return <Navigate to={`${consoleTargetFor(location.pathname)}${location.search}`} replace />;
+}
+
 export default function App() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -523,11 +536,19 @@ export default function App() {
             <TradeUpSharePage />
           </Suspense>
         } />
-        <Route path="/preview/*" element={
-          <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-            <PreviewApp />
-          </Suspense>
-        } />
+        {/* The kit shell is the console now: it serves /, /trade-ups, /skins,
+            /collections, /calculator and /account, and /preview/* redirects. */}
+        <Route path="/preview/*" element={<RetiredPreviewPrefixRedirect />} />
+        <Route path="/trade-ups" element={<ConsoleApp page="board" />} />
+        <Route path="/skins" element={<ConsoleApp page="skins" />} />
+        <Route path="/skins/:slug" element={<ConsoleApp page="skin" />} />
+        <Route path="/collections" element={<ConsoleApp page="collections" />} />
+        <Route path="/collections/:name" element={<ConsoleApp page="collection" />} />
+        <Route path="/calculator" element={<ConsoleApp page="calculator" />} />
+        <Route path="/account" element={<ConsoleApp page="account" />} />
+        <Route path="/my-trade-ups" element={<ConsoleApp page="account" />} />
+        <Route path="/" element={<ConsoleApp page="landing" />} />
+        <Route path="/listing-sniper" element={<AuthGatedApp />} />
         <Route path="*" element={<AuthGatedApp />} />
       </Routes>
     </Suspense>

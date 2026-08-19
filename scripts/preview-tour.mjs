@@ -17,13 +17,13 @@ const LEAKS = [
 ];
 
 const ROUTES = [
-  { path: "/preview", name: "landing", wait: ".preview-hero" },
-  { path: "/preview/trade-ups", name: "board", wait: ".preview-skin--output" },
-  { path: "/preview/skins", name: "skins", wait: ".preview-grid" },
-  { path: "/preview/collections", name: "collections", wait: ".preview-collection" },
-  { path: "/preview/collections/dreams-nightmares", name: "collection", wait: ".preview-collection__hero" },
-  { path: "/preview/calculator", name: "calculator", wait: ".preview-toolbar" },
-  { path: "/preview/account", name: "account", wait: ".preview-page" },
+  { path: "/", name: "landing", wait: ".preview-hero" },
+  { path: "/trade-ups", name: "board", wait: ".preview-skin--output" },
+  { path: "/skins", name: "skins", wait: ".preview-grid" },
+  { path: "/collections", name: "collections", wait: ".preview-collection" },
+  { path: "/collections/dreams-nightmares", name: "collection", wait: ".preview-allskins" },
+  { path: "/calculator", name: "calculator", wait: ".preview-toolbar" },
+  { path: "/account", name: "account", wait: ".preview-page" },
 ];
 
 const browser = await puppeteer.launch({
@@ -86,7 +86,7 @@ try {
   }
 
   // currency menu open, both modes
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-currency__trigger", { timeout: 30000 });
   await sleep(2500);
   for (const mode of ["dark", "light"]) {
@@ -103,13 +103,13 @@ try {
   console.log("currency ok");
 
   // a skin page reached from a board tile name
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-skin__label", { timeout: 60000 });
   await sleep(3000);
   await page.$eval(".preview-skin__label", (el) => el.click());
   await sleep(3500);
   const url = page.url();
-  if (!url.includes("/preview/skins/")) problems.push(`skin name click went to ${url}`);
+  if (!url.includes("/skins/")) problems.push(`skin name click went to ${url}`);
   const body = await page.evaluate(() => document.body.innerText);
   if (/skin not found/i.test(body)) problems.push("preview skin page says skin not found");
   if (/not in the live dataset/i.test(body)) problems.push("preview skin page could not resolve the slug");

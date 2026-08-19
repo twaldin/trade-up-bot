@@ -52,11 +52,14 @@ export default defineConfig({
         target: process.env.API_PROXY || "http://localhost:3001",
         changeOrigin: true,
       },
+      // Dev-only mirror of the live /skins pages, used by the og:image face
+      // fallback. It cannot be "/skins" any more: that is a console route now.
       ...(process.env.API_PROXY
         ? {
-            "/skins": {
+            "/__face": {
               target: process.env.API_PROXY,
               changeOrigin: true,
+              rewrite: (path: string) => path.replace(/^\/__face/, "/skins"),
             },
           }
         : {}),

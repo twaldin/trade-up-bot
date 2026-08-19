@@ -16,9 +16,11 @@ import {
   previewCollectionHref,
   previewSkinHref,
   rarityTint,
+  skinsHref,
   splitSkinName,
 } from "../lib/board.js";
 import { createFaceCache, faceCacheKey, faceFor, loadFaces, namesFromCacheKey } from "../lib/skin-images.js";
+import { cacheNames } from "../components/PreviewSearch.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
 
 const FACE_CACHE = createFaceCache();
@@ -225,38 +227,28 @@ export function PreviewSkinsPage() {
   );
 }
 
-/* ------------------------------------------------------------ /skins/:slug */
+/* ---------------------------------------------------- shared skin stats card */
 
-export function PreviewSkinPage() {
-  const { slug = "" } = useParams();
+/** The skin page body, reused by the collection page for its focused skin. */
+export function SkinStats({ name }: { name: string }) {
   const [detail, setDetail] = useState<SkinDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let live = true;
     setDetail(null);
-    setError(null);
-    fetch(`/api/skin-by-slug/${encodeURIComponent(slug)}`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("not found"))))
-      .then((data: { name: string }) =>
-        fetch(`/api/skin-data/${encodeURIComponent(data.name)}`, { credentials: "include" }))
+    setError(false);
+    fetch(`/api/skin-data/${encodeURIComponent(name)}`, { credentials: "include" })
       .then((res) => res.json())
       .then((data: SkinDetail) => { if (live) setDetail(data); })
-      .catch(() => { if (live) setError("That skin is not in the live dataset."); });
+      .catch(() => { if (live) setError(true); });
     return () => { live = false; };
-  }, [slug]);
+  }, [name]);
 
-  useFaceNames(useMemo(() => (detail ? [detail.skin.name] : []), [detail]));
+  useFaceNames(useMemo(() => [name], [name]));
 
-  if (error) {
-    return (
-      <div className="preview-page">
-        <header className="preview-page__head"><div><h1>Skin</h1><p>{error}</p></div></header>
-        <Link className="preview-btn" to="/preview/skins">Back to skins</Link>
-      </div>
-    );
-  }
-  if (!detail) return <div className="preview-page"><p className="preview-note">Loading skin…</p></div>;
+  if (error) return <p className="preview-note">Could not load {name}.</p>;
+  if (!detail?.skin) return <p className="preview-note">Loading {name}…</p>;
 
   const { skin, listings, stats } = detail;
   const { weapon, finish } = splitSkinName(skin.name);
@@ -272,7 +264,7 @@ export function PreviewSkinPage() {
     ) },
     { key: "float", label: "Float", align: "end", sortValue: (row) => row.float_value ?? 2, render: (row) => (
       <span className="o-mono" title={row.float_value === null ? undefined : String(row.float_value)}>
-        {formatFloat(row.float_value) ?? "—"}
+        {formatFloat(row.float_value) ?? "\u2014"}
       </span>
     ) },
     { key: "wear", label: "Wear", sortValue: (row) => row.float_value ?? 2, render: (row) => (
@@ -294,83 +286,121 @@ export function PreviewSkinPage() {
   ];
 
   return (
+    <div className="preview-split">
+      <div className="preview-stack">
+        <section className="preview-hero-skin" style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
+          <Face name={skin.name} size={150} />
+          <p className="o-kicker">{weapon} · {finish}</p>
+          <dl className="preview-totals">
+            <div><dt>Float range</dt><dd>{formatFloat(skin.min_float)} – {formatFloat(skin.max_float)}</dd></div>
+            <div><dt>Cheapest</dt><dd>{stats.minPrice === null ? "—" : formatDollars(stats.minPrice)}</dd></div>
+            <div><dt>Highest</dt><dd>{stats.maxPrice === null ? "—" : formatDollars(stats.maxPrice)}</dd></div>
+            <div><dt>Listings</dt><dd>{stats.totalListings.toLocaleString()}</dd></div>
+          </dl>
+        </section>
+        {byCondition.length > 0 && (
+          <section className="preview-panel">
+            <header className="preview-panel__head">
+              <p className="o-kicker">Price by condition</p>
+              <span className="preview-panel__meta">cheapest source</span>
+            </header>
+            <div className="preview-rows">
+              {byCondition.map((row) => (
+                <div className="preview-row" key={row.condition}>
+                  <span className="preview-chip">{conditionShort(row.condition)}</span>
+                  <span className="preview-row__name">{row.condition}</span>
+                  <span className="preview-row__num">{formatDollars(row.cents)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="preview-stack">
+        <section className="preview-subpanel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Float against price</p>
+            <span className="preview-panel__meta">click a series to hide it</span>
+          </header>
+          <PriceScatter points={scatter} />
+        </section>
+        <section className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Live listings</p>
+            <span className="preview-panel__meta">{listings.length.toLocaleString()} on the market</span>
+          </header>
+          <PreviewTable
+            columns={columns}
+            rows={listings.slice(0, 60)}
+            rowKey={(row) => row.id}
+            initialSort="price"
+            initialDirection="asc"
+            empty="No live listings right now."
+          />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ /skins/:slug */
+
+export function PreviewSkinPage() {
+  const { slug = "" } = useParams();
+  const [name, setName] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{ rarity: string; collection: string | null } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setName(null);
+    setMeta(null);
+    setError(null);
+    fetch(`/api/skin-by-slug/${encodeURIComponent(slug)}`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("not found"))))
+      .then(async (data: { name: string }) => {
+        if (!live) return;
+        setName(data.name);
+        const res = await fetch(`/api/skin-data/${encodeURIComponent(data.name)}`, { credentials: "include" });
+        const detail = await res.json() as SkinDetail;
+        if (live && detail?.skin) {
+          setMeta({ rarity: detail.skin.rarity, collection: detail.skin.collection_name });
+        }
+      })
+      .catch(() => { if (live) setError("That skin is not in the live dataset."); });
+    return () => { live = false; };
+  }, [slug]);
+
+  if (error) {
+    return (
+      <div className="preview-page">
+        <header className="preview-page__head"><div><h1>Skin</h1><p>{error}</p></div></header>
+        <Link className="preview-btn" to={skinsHref()}>Back to skins</Link>
+      </div>
+    );
+  }
+  if (!name) return <div className="preview-page"><p className="preview-note">Loading skin…</p></div>;
+
+  const { weapon, finish } = splitSkinName(name);
+  return (
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
           <h1>{finish}</h1>
           <p>
-            {weapon} · {skin.rarity}
-            {skin.collection_name && (
+            {weapon}
+            {meta?.rarity ? ` · ${meta.rarity}` : ""}
+            {meta?.collection && (
               <>
                 {" · "}
-                <Link className="preview-link" to={previewCollectionHref(skin.collection_name)}>
-                  {skin.collection_name}
-                </Link>
+                <Link className="preview-link" to={previewCollectionHref(meta.collection)}>{meta.collection}</Link>
               </>
             )}
           </p>
         </div>
-        <div className="preview-page__meta">
-          <span>{stats.totalListings.toLocaleString()} listings</span>
-          <i />
-          <span>{stats.saleCount.toLocaleString()} sales</span>
-        </div>
       </header>
-
-      <div className="preview-split">
-        <div className="preview-stack">
-          <section className="preview-hero-skin" style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
-            <Face name={skin.name} size={150} />
-            <dl className="preview-totals">
-              <div><dt>Float range</dt><dd>{formatFloat(skin.min_float)} – {formatFloat(skin.max_float)}</dd></div>
-              <div><dt>Cheapest</dt><dd>{stats.minPrice === null ? "—" : formatDollars(stats.minPrice)}</dd></div>
-              <div><dt>Highest</dt><dd>{stats.maxPrice === null ? "—" : formatDollars(stats.maxPrice)}</dd></div>
-            </dl>
-          </section>
-          {byCondition.length > 0 && (
-            <section className="preview-panel">
-              <header className="preview-panel__head">
-                <p className="o-kicker">Price by condition</p>
-                <span className="preview-panel__meta">cheapest source</span>
-              </header>
-              <div className="preview-rows">
-                {byCondition.map((row) => (
-                  <div className="preview-row" key={row.condition}>
-                    <span className="preview-chip">{conditionShort(row.condition)}</span>
-                    <span className="preview-row__name">{row.condition}</span>
-                    <span className="preview-row__num">{formatDollars(row.cents)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <div className="preview-stack">
-          <section className="preview-subpanel">
-            <header className="preview-panel__head">
-              <p className="o-kicker">Float against price</p>
-              <span className="preview-panel__meta">click a series to hide it</span>
-            </header>
-            <PriceScatter points={scatter} />
-          </section>
-
-          <section className="preview-panel">
-            <header className="preview-panel__head">
-              <p className="o-kicker">Live listings</p>
-              <span className="preview-panel__meta">{listings.length.toLocaleString()} on the market</span>
-            </header>
-            <PreviewTable
-              columns={columns}
-              rows={listings.slice(0, 60)}
-              rowKey={(row) => row.id}
-              initialSort="price"
-              initialDirection="asc"
-              empty="No live listings right now."
-            />
-          </section>
-        </div>
-      </div>
+      <SkinStats name={name} />
     </div>
   );
 }
@@ -508,6 +538,8 @@ export function PreviewCollectionPage() {
   const { name = "" } = useParams();
   const [title, setTitle] = useState<string | null>(null);
   const [skins, setSkins] = useState<SkinRow[]>([]);
+  const [focus, setFocus] = useState(0);
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -523,14 +555,27 @@ export function PreviewCollectionPage() {
       })
       .then((res) => (res ? res.json() : []))
       .then((data: SkinRow[] | { skins?: SkinRow[] }) => {
-        if (live) setSkins(Array.isArray(data) ? data : data.skins ?? []);
+        if (!live) return;
+        const rows = Array.isArray(data) ? data : data.skins ?? [];
+        setSkins([...rows].sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity)));
       })
       .catch(() => { if (live) setSkins([]); });
     return () => { live = false; };
   }, [name]);
 
-  useFaceNames(useMemo(() => skins.slice(0, 24).map((row) => row.name), [skins]));
+  // Every skin in the collection, not a six-tile strip.
+  useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
+  useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
+
+  // The hero rotates its focus so the whole collection gets a turn.
+  useEffect(() => {
+    if (pinned || skins.length < 2) return;
+    const timer = window.setInterval(() => setFocus((index) => (index + 1) % skins.length), 5000);
+    return () => window.clearInterval(timer);
+  }, [pinned, skins.length]);
+
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
+  const focused = skins[focus] ?? null;
 
   const columns: Column<SkinRow>[] = [
     { key: "name", label: "Skin", sortValue: (row) => row.name, render: (row) => (
@@ -547,26 +592,50 @@ export function PreviewCollectionPage() {
     ) },
   ];
 
-  const hero = [...skins].sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity)).slice(0, 6);
-
   return (
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
           <h1>{title ?? "Collection"}</h1>
-          <p>{skins.length} skins · the best trade-ups the loop found inside this collection.</p>
+          <p>{skins.length} skins · every skin in the collection, and the trade-ups the loop found inside it.</p>
         </div>
         <div className="preview-page__meta"><span>{board.tradeUps.length} trade-ups</span></div>
       </header>
 
-      {hero.length > 0 && (
-        <div className="preview-collection__hero">
-          {hero.map((skin) => (
-            <span key={skin.name} style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
-              <Face name={skin.name} size={64} />
-            </span>
-          ))}
-        </div>
+      {skins.length > 0 && (
+        <section className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Every skin in this collection</p>
+            <span className="preview-panel__meta">{pinned ? "paused" : "rotating"} · click to open</span>
+          </header>
+          <div
+            className="preview-allskins"
+            onMouseEnter={() => setPinned(true)}
+            onMouseLeave={() => setPinned(false)}
+          >
+            {skins.map((row, index) => (
+              <Link
+                key={row.id ?? row.name}
+                to={previewSkinHref(row.name)}
+                className="preview-allskins__tile"
+                data-focus={index === focus ? "true" : undefined}
+                style={{ "--skin-tint": rarityTint(row.rarity) } as CSSProperties}
+                title={row.name}
+                onMouseEnter={() => setFocus(index)}
+              >
+                <Face name={row.name} size={52} />
+                <b>{splitSkinName(row.name).finish}</b>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {focused && (
+        <section className="preview-stack">
+          <p className="o-kicker">{focused.name} — same view as its skin page</p>
+          <SkinStats name={focused.name} />
+        </section>
       )}
 
       {title && (
@@ -578,6 +647,11 @@ export function PreviewCollectionPage() {
           onExpand={board.onExpand}
           query={board.query}
           onQuery={board.onQuery}
+          search={board.search}
+          onSearch={board.onSearch}
+          onParsed={board.onParsed}
+          loadMore={board.loadMore}
+          exhausted={board.exhausted}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."

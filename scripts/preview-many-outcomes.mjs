@@ -54,7 +54,7 @@ try {
     req.continue();
   });
 
-  await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-strip__face", { timeout: 60000 });
   await sleep(4500);
 

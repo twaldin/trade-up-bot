@@ -66,8 +66,13 @@ function extractStoredImage(html: string): string | null {
   return url;
 }
 
-function skinPagePath(name: string): string {
-  return `/skins/${toSlug(name)}`;
+/**
+ * Dev-only mirror of the live skin page, read for its og:image when the host
+ * predates `/api/preview/faces`. It cannot point at `/skins/:slug` any more —
+ * that path is the console itself now, and would return the app shell.
+ */
+export function skinPagePath(name: string): string {
+  return `/__face/${toSlug(name)}`;
 }
 
 /**

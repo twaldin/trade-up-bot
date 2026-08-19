@@ -29,7 +29,7 @@ try {
   for (const shot of SHOTS) {
     const page = await browser.newPage();
     await page.setViewport({ width: shot.width, height: shot.height, deviceScaleFactor: 2 });
-    await page.goto(`${BASE}/preview/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await page.waitForSelector(".preview-skin--output", { timeout: 60000 });
     await sleep(4000);
 
