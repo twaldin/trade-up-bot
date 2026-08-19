@@ -254,4 +254,29 @@ describe("preview board paging", () => {
     });
     expect(emitted).toEqual([]);
   });
+
+  it("does not treat a 429 as an empty page and does not tight-loop", async () => {
+    const { RateLimitError } = await import("../../src/preview/lib/page-fetch.js");
+    const rateLimited = vi.fn();
+    const emitted: unknown[] = [];
+    const pageSize = vi.fn();
+    await loadBoardRows<{ id: number; outcomes: string[] }>({
+      fetchRows: async () => { throw new RateLimitError(); },
+      hydrate: async (row) => row,
+      namesOf: () => [],
+      warmFaces: async () => undefined,
+      append: true,
+      emit: {
+        rows: (next) => emitted.push(next),
+        isFree: () => {},
+        loading: () => {},
+        facesReady: () => {},
+        pageSize,
+        rateLimited,
+      },
+    });
+    expect(emitted).toEqual([]);
+    expect(pageSize).not.toHaveBeenCalled();
+    expect(rateLimited).toHaveBeenCalledTimes(1);
+  });
 });
