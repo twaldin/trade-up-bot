@@ -150,6 +150,7 @@ describe("preview craft bar", () => {
     expect(board).toContain("tickFaceLayout");
     expect(board).toContain("preview-strip__face");
     expect(css).toMatch(/\.preview-strip__face\.is-end\s*\{\s*transform: translateX\(-100%\)/);
+    expect(css).toMatch(/\.preview-strip__face\.is-center\s*\{\s*transform: translateX\(-50%\)/);
     expect(css).toMatch(/\.preview-strip\.is-crowded \.preview-strip__face\s*\{[^}]*opacity/);
     expect(css).toMatch(/\.preview-strip__face\.is-hot\s*\{[^}]*opacity: 1/);
   });

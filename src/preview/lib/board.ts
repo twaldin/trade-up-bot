@@ -326,33 +326,62 @@ export function evDrivers(
   return { drivers, drags };
 }
 
+export type TickFaceAlign = "start" | "center" | "end";
+
 export type TickFace = {
   name: string;
   x: number;
-  /** "end" right-aligns the face to its tick; "start" left-aligns it. */
-  align: "start" | "end";
+  /** "center" sits on the tick; "end" grows left of it; "start" grows right. */
+  align: TickFaceAlign;
   z: number;
 };
 
 /**
- * Places an outcome's render at its tick. A tick left of centre gets its face
- * right-aligned and a tick right of centre gets it left-aligned, so the two
- * halves lean outward instead of colliding over the middle of the rail. Faces
- * at the very ends flip back so they cannot escape the well. When ticks crowd,
- * the likeliest outcome stacks on top and the rest fade behind it.
+ * Places an outcome's render at its tick.
+ *
+ * Alignment is decided by DISTANCE, not by which side of break-even the tick
+ * is on. A tick with room around it centres on itself. Ticks that crowd form a
+ * cluster and spread away from that cluster's centre, so neighbours grow apart
+ * instead of stacking into each other. Faces near either end of the rail are
+ * pinned inward so they cannot escape the well. Within a cluster the likeliest
+ * outcome stacks on top and the rest fade behind it.
  */
 export function tickFaceLayout(
   points: { name: string; x: number; probability: number }[],
   crowdGap = 14,
 ): { faces: TickFace[]; crowded: boolean } {
   if (points.length === 0) return { faces: [], crowded: false };
+
   const byX = [...points].sort((a, b) => a.x - b.x);
-  const crowded = byX.some((point, index) => index > 0 && point.x - (byX[index - 1]?.x ?? point.x) < crowdGap);
+  const clusters: (typeof byX)[] = [];
+  for (const point of byX) {
+    const current = clusters[clusters.length - 1];
+    const previous = current?.[current.length - 1];
+    if (current && previous && point.x - previous.x < crowdGap) current.push(point);
+    else clusters.push([point]);
+  }
+
+  const alignFor = new Map<string, TickFaceAlign>();
+  for (const cluster of clusters) {
+    if (cluster.length === 1) {
+      alignFor.set(cluster[0]?.name ?? "", "center");
+      continue;
+    }
+    const lo = cluster[0]?.x ?? 0;
+    const hi = cluster[cluster.length - 1]?.x ?? 0;
+    const middle = (lo + hi) / 2;
+    for (const point of cluster) {
+      if (point.x < middle) alignFor.set(point.name, "end");
+      else if (point.x > middle) alignFor.set(point.name, "start");
+      else alignFor.set(point.name, "center");
+    }
+  }
+
   const rank = [...points].sort((a, b) => a.probability - b.probability);
   const faces = points.map((point) => {
-    let align: "start" | "end" = point.x < 50 ? "end" : "start";
-    if (point.x < 14) align = "start";
-    if (point.x > 86) align = "end";
+    let align = alignFor.get(point.name) ?? "center";
+    if (point.x < 8) align = "start";
+    if (point.x > 92) align = "end";
     return {
       name: point.name,
       x: point.x,
@@ -360,7 +389,7 @@ export function tickFaceLayout(
       z: rank.findIndex((row) => row.name === point.name) + 1,
     };
   });
-  return { faces, crowded };
+  return { faces, crowded: clusters.length < points.length };
 }
 
 /** "AK-47 | Nightwish" tiles as two lines instead of one ellipsed one. */

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, ExternalLink } from "lucide-react";
+import { ArrowRight, ChevronUp, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
@@ -34,6 +34,12 @@ import {
   worstBest,
   type PayoffPoint,
 } from "../lib/board.js";
+import {
+  boardQueryString,
+  DEFAULT_QUERY,
+  PreviewFilters,
+  type BoardQuery,
+} from "../components/PreviewFilters.js";
 import { loadBoardRows } from "../lib/board-load.js";
 import { DELAY_BANNER } from "../lib/copy.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
@@ -605,6 +611,19 @@ export function TradeUpCard({
         {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
       </button>
 
+      {/* Clicking the card toggles it, but the tiles own most of that surface,
+          so an expanded card carries one quiet way out. */}
+      {expanded && (
+        <button
+          type="button"
+          className="preview-collapse"
+          onClick={(event) => { stop(event); toggle(); }}
+        >
+          <ChevronUp size={12} aria-hidden />
+          Collapse
+        </button>
+      )}
+
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow
           inputLabel={`${inputRarityLabel(tu.type)} inputs`}
@@ -745,12 +764,22 @@ export function PreviewBoard({
   isFree,
   onExpand,
   expandedId,
+  query,
+  onQuery,
+  heading = "Live trade-ups",
+  lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
+  collection,
 }: {
   tradeUps: TradeUp[];
   loading: boolean;
   isFree: boolean;
   expandedId: number | null;
   onExpand: (id: number | null) => void;
+  query?: BoardQuery;
+  onQuery?: (next: BoardQuery) => void;
+  heading?: string;
+  lede?: string;
+  collection?: string;
 }) {
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
@@ -764,8 +793,8 @@ export function PreviewBoard({
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
-          <h1>Live trade-ups</h1>
-          <p>Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.</p>
+          <h1>{heading}</h1>
+          <p>{lede}</p>
         </div>
         <div className="preview-page__meta">
           <span>{tradeUps.length} ranked</span>
@@ -773,13 +802,18 @@ export function PreviewBoard({
           <span>{cols}-column</span>
         </div>
       </header>
+      {query && onQuery && <PreviewFilters query={query} onChange={onQuery} collection={collection} />}
       {isFree && (
-        <p className="preview-delay">
-          <span className="preview-chip">Free tier</span>
-          {DELAY_BANNER}
-        </p>
+        <div className="preview-delay">
+          <span className="preview-delay__label">Free tier</span>
+          <p>{DELAY_BANNER}</p>
+          <a className="preview-delay__cta" href="/pricing">See Pro</a>
+        </div>
       )}
       {loading && <p className="preview-note">Loading trade-ups…</p>}
+      {!loading && tradeUps.length === 0 && (
+        <p className="preview-note">No trade-ups match these filters.</p>
+      )}
       <div className="preview-bento">
         {tradeUps.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
@@ -808,17 +842,21 @@ function skinNames(rows: TradeUp[]): string[] {
   ]);
 }
 
-export function usePreviewTradeUps() {
+export function usePreviewTradeUps(options: { collection?: string; perPage?: number } = {}) {
+  const { collection, perPage = 12 } = options;
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [query, setQuery] = useState<BoardQuery>(DEFAULT_QUERY);
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
+  const search = boardQueryString(query, perPage);
 
   const load = useCallback(() => loadBoardRows<TradeUp>({
     fetchRows: async () => {
-      const res = await fetch("/api/trade-ups?per_page=12&sort=trade_up_score&order=desc", { credentials: "include" });
+      const url = `/api/trade-ups?${search}${collection ? `&collection=${encodeURIComponent(collection)}` : ""}`;
+      const res = await fetch(url, { credentials: "include" });
       const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
       return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free" };
     },
@@ -831,7 +869,7 @@ export function usePreviewTradeUps() {
       loading: setLoading,
       facesReady: () => setFaceTick((tick) => tick + 1),
     },
-  }), []);
+  }), [search, collection]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -847,7 +885,7 @@ export function usePreviewTradeUps() {
   }, [tradeUps]);
 
   return useMemo(
-    () => ({ tradeUps, loading, isFree, expandedId, onExpand }),
-    [tradeUps, loading, isFree, expandedId, onExpand, faceTick],
+    () => ({ tradeUps, loading, isFree, expandedId, onExpand, query, onQuery: setQuery }),
+    [tradeUps, loading, isFree, expandedId, onExpand, query, faceTick],
   );
 }

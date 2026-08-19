@@ -62,6 +62,8 @@ function BoardRoute() {
       isFree={state.isFree}
       expandedId={state.expandedId}
       onExpand={state.onExpand}
+      query={state.query}
+      onQuery={state.onQuery}
     />
   );
 }

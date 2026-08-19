@@ -1,5 +1,52 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadBoardRows } from "../../src/preview/lib/board-load.js";
+import {
+  boardQueryString,
+  DEFAULT_QUERY,
+  isDefaultQuery,
+} from "../../src/preview/components/PreviewFilters.js";
+
+describe("preview board query", () => {
+  it("sends only the parameters the trade-ups API accepts", () => {
+    const params = new URLSearchParams(boardQueryString(DEFAULT_QUERY));
+    expect([...params.keys()].sort()).toEqual(["order", "per_page", "sort"]);
+    expect(params.get("sort")).toBe("trade_up_score");
+    expect(params.get("order")).toBe("desc");
+  });
+
+  it("converts dollars to integer cents and percent to a fraction", () => {
+    const params = new URLSearchParams(boardQueryString({
+      ...DEFAULT_QUERY,
+      minProfit: "1.27",
+      maxCost: "50",
+      minChance: "40",
+    }));
+    expect(params.get("min_profit")).toBe("127");
+    expect(params.get("max_cost")).toBe("5000");
+    expect(params.get("min_chance")).toBe("0.4");
+  });
+
+  it("omits blank filters rather than sending empty values", () => {
+    const params = new URLSearchParams(boardQueryString({ ...DEFAULT_QUERY, skin: "   ", type: "" }));
+    expect(params.has("skin")).toBe(false);
+    expect(params.has("type")).toBe(false);
+  });
+
+  it("passes the tier and skin filters straight through", () => {
+    const params = new URLSearchParams(boardQueryString({
+      ...DEFAULT_QUERY,
+      type: "classified_covert",
+      skin: "Nightwish",
+    }));
+    expect(params.get("type")).toBe("classified_covert");
+    expect(params.get("skin")).toBe("Nightwish");
+  });
+
+  it("knows when nothing is filtered", () => {
+    expect(isDefaultQuery(DEFAULT_QUERY)).toBe(true);
+    expect(isDefaultQuery({ ...DEFAULT_QUERY, minChance: "40" })).toBe(false);
+  });
+});
 
 type Row = { id: number; outcomes: string[] };
 

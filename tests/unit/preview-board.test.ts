@@ -408,43 +408,78 @@ describe("preview in-shell data pages", () => {
 });
 
 describe("preview tick faces", () => {
-  it("leans the two halves outward so faces do not collide over the rail", () => {
-    const { faces } = tickFaceLayout([
+  it("centres a face on its tick when nothing is near it", () => {
+    const { faces, crowded } = tickFaceLayout([
       { name: "Loser", x: 24, probability: 0.5 },
       { name: "Winner", x: 74, probability: 0.5 },
     ]);
-    expect(faces.find((f) => f.name === "Loser")?.align).toBe("end");
-    expect(faces.find((f) => f.name === "Winner")?.align).toBe("start");
+    expect(crowded).toBe(false);
+    expect(faces.map((face) => face.align)).toEqual(["center", "center"]);
   });
 
-  it("flips a face at either end back inside the well", () => {
-    const { faces } = tickFaceLayout([
-      { name: "Far left", x: 3, probability: 0.5 },
-      { name: "Far right", x: 97, probability: 0.5 },
+  it("pushes a close pair away from each other, not toward the middle", () => {
+    const { faces, crowded } = tickFaceLayout([
+      { name: "Left", x: 70, probability: 0.5 },
+      { name: "Right", x: 76, probability: 0.5 },
     ]);
-    expect(faces[0]?.align).toBe("start");
-    expect(faces[1]?.align).toBe("end");
+    expect(crowded).toBe(true);
+    // the left one grows leftward, the right one rightward
+    expect(faces.find((face) => face.name === "Left")?.align).toBe("end");
+    expect(faces.find((face) => face.name === "Right")?.align).toBe("start");
+  });
+
+  it("spreads a close pair on the loss side the same way", () => {
+    const { faces } = tickFaceLayout([
+      { name: "Left", x: 18, probability: 0.5 },
+      { name: "Right", x: 26, probability: 0.5 },
+    ]);
+    expect(faces.find((face) => face.name === "Left")?.align).toBe("end");
+    expect(faces.find((face) => face.name === "Right")?.align).toBe("start");
+  });
+
+  it("keeps the middle of an odd cluster centred and spreads the rest", () => {
+    const { faces } = tickFaceLayout([
+      { name: "A", x: 60, probability: 0.3 },
+      { name: "B", x: 66, probability: 0.3 },
+      { name: "C", x: 72, probability: 0.4 },
+    ]);
+    const align = Object.fromEntries(faces.map((face) => [face.name, face.align]));
+    expect(align).toEqual({ A: "end", B: "center", C: "start" });
+  });
+
+  it("treats separated clusters independently", () => {
+    const { faces } = tickFaceLayout([
+      { name: "Lone", x: 10, probability: 0.2 },
+      { name: "PairL", x: 70, probability: 0.4 },
+      { name: "PairR", x: 76, probability: 0.4 },
+    ]);
+    const align = Object.fromEntries(faces.map((face) => [face.name, face.align]));
+    expect(align).toEqual({ Lone: "center", PairL: "end", PairR: "start" });
+  });
+
+  it("never lets a face at either end escape the well", () => {
+    const { faces } = tickFaceLayout([
+      { name: "Far left", x: 2, probability: 0.5 },
+      { name: "Nudge", x: 8, probability: 0.5 },
+      { name: "Far right", x: 98, probability: 0.5 },
+    ]);
+    expect(faces.find((face) => face.name === "Far left")?.align).toBe("start");
+    expect(faces.find((face) => face.name === "Far right")?.align).toBe("end");
   });
 
   it("stacks the likeliest outcome on top when ticks crowd", () => {
-    const points = [
+    const { faces, crowded } = tickFaceLayout([
       { name: "Rare", x: 70, probability: 0.05 },
       { name: "Common", x: 74, probability: 0.7 },
       { name: "Mid", x: 78, probability: 0.25 },
-    ];
-    const { faces, crowded } = tickFaceLayout(points);
+    ]);
     expect(crowded).toBe(true);
     const z = Object.fromEntries(faces.map((face) => [face.name, face.z]));
     expect(z.Common).toBeGreaterThan(z.Mid ?? 0);
     expect(z.Mid).toBeGreaterThan(z.Rare ?? 0);
   });
 
-  it("does not call two well-separated ticks crowded", () => {
-    const { crowded } = tickFaceLayout([
-      { name: "A", x: 10, probability: 0.5 },
-      { name: "B", x: 80, probability: 0.5 },
-    ]);
-    expect(crowded).toBe(false);
+  it("handles an empty outcome set", () => {
     expect(tickFaceLayout([])).toEqual({ faces: [], crowded: false });
   });
 });
