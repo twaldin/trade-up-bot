@@ -10,7 +10,7 @@ const readSource = (relativePath: string): string =>
 
 describe("blog internal links use canonical trailing slash URLs", () => {
   it("links blog index cards to trailing-slash post URLs", () => {
-    const source = readSource("src/pages/BlogPage.tsx");
+    const source = readSource("src/preview/pages/PreviewBlog.tsx");
 
     expect(source).toContain("to={`/blog/${post.slug}/`}");
     expect(source).not.toContain("to={`/blog/${post.slug}`}");
@@ -24,8 +24,8 @@ describe("blog internal links use canonical trailing slash URLs", () => {
   });
 
   it("links FAQ and related-post cards to trailing-slash post URLs", () => {
-    const faqSource = readSource("src/pages/FaqPage.tsx");
-    const postSource = readSource("src/pages/BlogPostPage.tsx");
+    const faqSource = readSource("src/preview/pages/PreviewFaq.tsx");
+    const postSource = readSource("src/preview/pages/PreviewBlog.tsx");
 
     expect(faqSource).toContain("to={`/blog/${slug}/`}");
     expect(faqSource).not.toContain("to={`/blog/${slug}`}");

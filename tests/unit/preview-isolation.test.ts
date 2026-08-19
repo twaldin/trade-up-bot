@@ -30,11 +30,26 @@ describe("console cutover", () => {
       ["/calculator", "calculator"],
       ["/account", "account"],
       ["/my-trade-ups", "account"],
+      ["/pricing", "pricing"],
+      ["/faq", "faq"],
+      ["/features", "features"],
+      ["/blog", "blog"],
+      ["/blog/:slug", "post"],
+      ["/terms", "terms"],
+      ["/privacy", "privacy"],
+      ["/trade-ups/:id", "share"],
+      ["/trade-ups/collection/:slug", "collectionTradeUps"],
+      ["/listing-sniper", "sniper"],
     ];
     for (const [path, page] of pages) {
       expect(appSource, `App missing ${path}`).toContain(`path="${path}" element={<ConsoleApp page="${page}" />}`);
       expect(previewAppSource, `shell cannot render ${page}`).toContain(`case "${page}"`);
     }
+    // leftover marketing pages must not keep the old SiteNav chrome
+    for (const old of ["FaqPage", "FeaturesPage", "PricingPage", "BlogPage", "BlogPostPage", "TermsPage", "PrivacyPage", "TradeUpSharePage", "ListingSniperPage"]) {
+      expect(appSource, `${old} still routed`).not.toContain(`element={<${old}`);
+    }
+    expect(appSource).not.toContain('path="/listing-sniper" element={<AuthGatedApp />}');
     // the page comes from the outer match, so useParams reads the real route
     expect(previewAppSource).toContain("pageFor(props.page");
   });
@@ -55,6 +70,16 @@ describe("console cutover", () => {
     expect(pageFor(undefined, "/collections/dreams-nightmares")).toBe("collection");
     expect(pageFor(undefined, "/collections")).toBe("collections");
     expect(pageFor(undefined, "/my-trade-ups")).toBe("account");
+    expect(pageFor(undefined, "/pricing")).toBe("pricing");
+    expect(pageFor(undefined, "/faq")).toBe("faq");
+    expect(pageFor(undefined, "/features")).toBe("features");
+    expect(pageFor(undefined, "/blog")).toBe("blog");
+    expect(pageFor(undefined, "/blog/how-cs2-trade-ups-work/")).toBe("post");
+    expect(pageFor(undefined, "/terms")).toBe("terms");
+    expect(pageFor(undefined, "/privacy")).toBe("privacy");
+    expect(pageFor(undefined, "/trade-ups/12345")).toBe("share");
+    expect(pageFor(undefined, "/trade-ups/collection/dreams-nightmares")).toBe("collectionTradeUps");
+    expect(pageFor(undefined, "/listing-sniper")).toBe("sniper");
     expect(pageFor(undefined, "/")).toBe("landing");
     expect(pageFor("board", "/")).toBe("board");
   });
@@ -73,6 +98,14 @@ describe("console cutover", () => {
       "pages/PreviewLanding.tsx",
       "pages/PreviewAccount.tsx",
       "pages/PreviewCalculator.tsx",
+      "pages/PreviewPricing.tsx",
+      "pages/PreviewFaq.tsx",
+      "pages/PreviewFeatures.tsx",
+      "pages/PreviewBlog.tsx",
+      "pages/PreviewLegal.tsx",
+      "pages/PreviewShare.tsx",
+      "pages/PreviewSniper.tsx",
+      "pages/PreviewCollectionTradeUps.tsx",
       "lib/my-trade-ups.ts",
     ];
     for (const file of files) {
@@ -156,6 +189,8 @@ describe("console cutover", () => {
       "pages/PreviewAccount.tsx",
       "pages/PreviewLanding.tsx",
       "pages/PreviewSkins.tsx",
+      "pages/PreviewShare.tsx",
+      "pages/PreviewSniper.tsx",
       "lib/my-trade-ups.ts",
       "components/DeviceScreen.tsx",
       "components/PreviewCurrency.tsx",

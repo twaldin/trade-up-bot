@@ -24,6 +24,13 @@ const ROUTES = [
   { path: "/collections/dreams-nightmares", name: "collection", wait: ".preview-allskins" },
   { path: "/calculator", name: "calculator", wait: ".preview-toolbar" },
   { path: "/account", name: "account", wait: ".preview-page" },
+  { path: "/pricing", name: "pricing", wait: ".preview-plans" },
+  { path: "/faq", name: "faq", wait: ".preview-faq" },
+  { path: "/features", name: "features", wait: ".preview-doc" },
+  { path: "/blog", name: "blog", wait: ".preview-posts" },
+  { path: "/terms", name: "terms", wait: ".preview-doc" },
+  { path: "/privacy", name: "privacy", wait: ".preview-doc" },
+  { path: "/listing-sniper", name: "sniper", wait: ".preview-page" },
 ];
 
 const browser = await puppeteer.launch({
