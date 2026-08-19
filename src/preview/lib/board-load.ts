@@ -13,23 +13,37 @@ export interface BoardLoadPorts<T> {
   hydrate: (row: T) => Promise<T>;
   namesOf: (rows: T[]) => string[];
   warmFaces: (names: string[]) => Promise<unknown>;
+  /** True while paging in: rows are appended instead of replacing the board. */
+  append?: boolean;
   emit: {
-    rows: (rows: T[]) => void;
+    rows: (rows: T[] | ((previous: T[]) => T[])) => void;
     isFree: (isFree: boolean) => void;
     loading: (loading: boolean) => void;
     facesReady: () => void;
+    /** Number of rows this page returned, so the caller can stop paging. */
+    pageSize?: (count: number) => void;
   };
 }
 
 export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> {
-  const { emit } = ports;
+  const { emit, append = false } = ports;
   emit.loading(true);
+
+  const put = (next: T[]) => {
+    if (append) emit.rows((previous) => [...previous, ...next]);
+    else emit.rows(next);
+  };
+  const replaceTail = (next: T[], count: number) => {
+    if (append) emit.rows((previous) => [...previous.slice(0, previous.length - count), ...next]);
+    else emit.rows(next);
+  };
 
   let painted: T[] | null = null;
   try {
     const { rows, isFree } = await ports.fetchRows();
     emit.isFree(isFree);
-    emit.rows(rows);
+    emit.pageSize?.(rows.length);
+    put(rows);
     painted = rows;
 
     const hydrated = await Promise.all(
@@ -41,10 +55,10 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
         }
       }),
     );
-    emit.rows(hydrated);
+    replaceTail(hydrated, rows.length);
     painted = hydrated;
   } catch {
-    emit.rows([]);
+    if (!append) emit.rows([]);
     painted = null;
   } finally {
     emit.loading(false);

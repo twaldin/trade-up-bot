@@ -2000,3 +2000,159 @@
 }
 
 .preview-collection__hero span { height: 74px; }
+
+/* ==================================================== semantic search */
+
+.preview-search { position: relative; }
+
+.preview-search__bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--input-bg);
+  color: var(--text-muted);
+}
+
+.preview-search__bar:focus-within {
+  border-color: var(--accent-border);
+  background: var(--input-focus);
+}
+
+.preview-search__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 400 13px/1 var(--font-mono);
+  outline: none;
+}
+
+.preview-search__input::placeholder { color: var(--text-subtle); }
+
+.preview-search__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.preview-search__clear:hover { background: var(--row-hover); color: var(--text); }
+
+.preview-search__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+/* CSFloat's chip idea, on Outlay: value on top, field name under it. */
+.preview-qchip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-control);
+  background: var(--row-selected);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-qchip:hover { border-color: var(--text); }
+
+.preview-qchip b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+.preview-qchip em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.preview-search__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--overlay);
+}
+
+.preview-search__hit,
+.preview-search__example {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: 400 12px/1.3 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-search__hit:hover,
+.preview-search__example:hover { background: var(--row-hover); }
+
+.preview-search__hit i {
+  --skin-tint: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: var(--r-control);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 6%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 18%, var(--nest-3)));
+}
+
+.preview-search__hit i img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.preview-search__hit i .preview-skin__ph { width: 60%; height: 60%; }
+
+.preview-search__hit span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.preview-search__hit em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.preview-search__example code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+}

@@ -64,6 +64,11 @@ function BoardRoute() {
       onExpand={state.onExpand}
       query={state.query}
       onQuery={state.onQuery}
+      search={state.search}
+      onSearch={state.onSearch}
+      onParsed={state.onParsed}
+      loadMore={state.loadMore}
+      exhausted={state.exhausted}
     />
   );
 }

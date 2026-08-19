@@ -9,6 +9,7 @@ import {
   formatFloat,
   previewCollectionHref,
   previewSkinHref,
+  reorderForExpanded,
   evDrivers,
   evWaterfall,
   inputCostCents,
@@ -496,5 +497,64 @@ describe("preview listing totals", () => {
 
   it("does not divide by zero on an unhydrated trade-up", () => {
     expect(listingTotals([])).toEqual({ count: 0, totalCents: 0, averageCents: 0 });
+  });
+});
+
+describe("preview output order follows the strip", () => {
+  it("orders output tiles by P/L so they match the ticks left to right", () => {
+    const tu = makeTradeUp({
+      total_cost_cents: 127,
+      outcomes: [
+        outcome({ skin_id: "a", skin_name: "AK-47 | Breakthrough", probability: 0.5, estimated_price_cents: 221 }),
+        outcome({ skin_id: "b", skin_name: "Glock-18 | Trace Lock", probability: 0.5, estimated_price_cents: 106 }),
+      ],
+    });
+    expect(uniqueOutputs(tu).map((row) => row.skin_name)).toEqual([
+      "Glock-18 | Trace Lock",
+      "AK-47 | Breakthrough",
+    ]);
+    expect(payoffPoints(tu).map((point) => point.name)).toEqual([
+      "Glock-18 | Trace Lock",
+      "AK-47 | Breakthrough",
+    ]);
+  });
+
+  it("keeps tiles and ticks in step for more than two outcomes", () => {
+    const tu = makeTradeUp({
+      total_cost_cents: 1000,
+      outcomes: [
+        outcome({ skin_id: "1", skin_name: "Mid", probability: 0.3, estimated_price_cents: 1200 }),
+        outcome({ skin_id: "2", skin_name: "Jackpot", probability: 0.1, estimated_price_cents: 5000 }),
+        outcome({ skin_id: "3", skin_name: "Dud", probability: 0.6, estimated_price_cents: 400 }),
+      ],
+    });
+    expect(uniqueOutputs(tu).map((row) => row.skin_name))
+      .toEqual(payoffPoints(tu).map((point) => point.name));
+  });
+});
+
+describe("preview expand keeps its row", () => {
+  const rows = [0, 1, 2, 3, 4, 5, 6, 7].map((id) => ({ id }));
+
+  it("moves an expanded card to the head of the row it was already in", () => {
+    expect(reorderForExpanded(rows, 4, 3).map((row) => row.id)).toEqual([0, 1, 2, 4, 3, 5, 6, 7]);
+    expect(reorderForExpanded(rows, 2, 3).map((row) => row.id)).toEqual([2, 0, 1, 3, 4, 5, 6, 7]);
+  });
+
+  it("leaves a card that already starts its row alone", () => {
+    expect(reorderForExpanded(rows, 3, 3)).toBe(rows);
+    expect(reorderForExpanded(rows, 0, 3)).toBe(rows);
+  });
+
+  it("keeps every card exactly once so nothing is dropped or duplicated", () => {
+    const next = reorderForExpanded(rows, 5, 3);
+    expect(next).toHaveLength(rows.length);
+    expect([...next].map((row) => row.id).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("does nothing for a single-column board or a bad index", () => {
+    expect(reorderForExpanded(rows, 4, 1)).toBe(rows);
+    expect(reorderForExpanded(rows, -1, 3)).toBe(rows);
+    expect(reorderForExpanded(rows, 99, 3)).toBe(rows);
   });
 });

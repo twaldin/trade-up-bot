@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, ChevronUp, ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
@@ -25,6 +25,7 @@ import {
   percentileProfitCents,
   previewSkinHref,
   rarityLabel,
+  reorderForExpanded,
   splitSkinName,
   tickFaceLayout,
   uniqueInputs,
@@ -40,6 +41,8 @@ import {
   PreviewFilters,
   type BoardQuery,
 } from "../components/PreviewFilters.js";
+import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
+import { chipsToBoardParams, type ParsedQuery } from "../lib/query-parse.js";
 import { loadBoardRows } from "../lib/board-load.js";
 import { DELAY_BANNER } from "../lib/copy.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
@@ -766,6 +769,11 @@ export function PreviewBoard({
   expandedId,
   query,
   onQuery,
+  search,
+  onSearch,
+  onParsed,
+  loadMore,
+  exhausted,
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
@@ -777,6 +785,11 @@ export function PreviewBoard({
   onExpand: (id: number | null) => void;
   query?: BoardQuery;
   onQuery?: (next: BoardQuery) => void;
+  search?: string;
+  onSearch?: (next: string) => void;
+  onParsed?: (parsed: ParsedQuery) => void;
+  loadMore?: () => void;
+  exhausted?: boolean;
   heading?: string;
   lede?: string;
   collection?: string;
@@ -788,6 +801,27 @@ export function PreviewBoard({
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const cols = bentoColumns(width);
+  const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
+  const ordered = expandedIndex >= 0 ? reorderForExpanded(tradeUps, expandedIndex, cols) : tradeUps;
+
+  // Page in as the sentinel comes into view. The console shell is the scroller,
+  // not the window, so the observer has to be rooted on it.
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !loadMore) return;
+    let root: HTMLElement | null = node.parentElement;
+    while (root) {
+      const overflow = getComputedStyle(root).overflowY;
+      if (overflow === "auto" || overflow === "scroll") break;
+      root = root.parentElement;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+    }, { root, rootMargin: "600px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   return (
     <div className="preview-page">
@@ -802,6 +836,14 @@ export function PreviewBoard({
           <span>{cols}-column</span>
         </div>
       </header>
+      {onSearch && (
+        <PreviewSearch
+          value={search ?? ""}
+          onChange={onSearch}
+          onParsed={onParsed}
+          examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
+        />
+      )}
       {query && onQuery && <PreviewFilters query={query} onChange={onQuery} collection={collection} />}
       {isFree && (
         <div className="preview-delay">
@@ -815,10 +857,18 @@ export function PreviewBoard({
         <p className="preview-note">No trade-ups match these filters.</p>
       )}
       <div className="preview-bento">
-        {tradeUps.map((tu) => (
+        {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
+      {loadMore && !exhausted && (
+        <div className="preview-sentinel" ref={sentinel}>
+          <span className="preview-note">Loading more trade-ups…</span>
+        </div>
+      )}
+      {exhausted && tradeUps.length > 0 && (
+        <p className="preview-note">That is every trade-up matching these filters.</p>
+      )}
     </div>
   );
 }
@@ -849,29 +899,59 @@ export function usePreviewTradeUps(options: { collection?: string; perPage?: num
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [query, setQuery] = useState<BoardQuery>(DEFAULT_QUERY);
+  const [search, setSearch] = useState("");
+  const [parsed, setParsed] = useState<ParsedQuery>({ chips: [], rest: [] });
+  const [page, setPage] = useState(1);
+  const [exhausted, setExhausted] = useState(false);
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
-  const search = boardQueryString(query, perPage);
 
-  const load = useCallback(() => loadBoardRows<TradeUp>({
-    fetchRows: async () => {
-      const url = `/api/trade-ups?${search}${collection ? `&collection=${encodeURIComponent(collection)}` : ""}`;
-      const res = await fetch(url, { credentials: "include" });
-      const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
-      return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free" };
-    },
-    hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
-    namesOf: skinNames,
-    warmFaces: (names) => loadFaces(names, FACE_CACHE),
-    emit: {
-      rows: setTradeUps,
-      isFree: setIsFree,
-      loading: setLoading,
-      facesReady: () => setFaceTick((tick) => tick + 1),
-    },
-  }), [search, collection]);
+  const semantic = useMemo(() => chipsToBoardParams(parsed.chips, parsed.rest), [parsed]);
+  const base = boardQueryString(query, perPage);
+  const extra = new URLSearchParams(semantic as Record<string, string>);
+  if (collection) extra.set("collection", collection);
+  const key = `${base}&${extra.toString()}`;
 
-  useEffect(() => { void load(); }, [load]);
+  // A filter change starts a new list; a scroll appends to it.
+  useEffect(() => {
+    setPage(1);
+    setExhausted(false);
+  }, [key]);
+
+  useEffect(() => {
+    let live = true;
+    void loadBoardRows<TradeUp>({
+      append: page > 1,
+      fetchRows: async () => {
+        const res = await fetch(`/api/trade-ups?${key}&page=${page}`, { credentials: "include" });
+        const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
+        return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free" };
+      },
+      hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
+      namesOf: skinNames,
+      warmFaces: (names) => loadFaces(names, FACE_CACHE),
+      emit: {
+        rows: (next) => { if (live) setTradeUps(next as TradeUp[]); },
+        isFree: setIsFree,
+        loading: setLoading,
+        facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
+        pageSize: (count) => {
+          if (!live) return;
+          if (count < perPage) setExhausted(true);
+        },
+      },
+    });
+    return () => { live = false; };
+  }, [key, page, perPage]);
+
+  useEffect(() => {
+    cacheNames(tradeUps.flatMap((tu) => skinNames([tu]).map((name) => ({ name }))));
+  }, [tradeUps]);
+
+  const loadMore = useCallback(() => {
+    if (loading || exhausted) return;
+    setPage((value) => value + 1);
+  }, [loading, exhausted]);
 
   const onExpand = useCallback(async (id: number | null) => {
     setExpandedId(id);
@@ -885,7 +965,12 @@ export function usePreviewTradeUps(options: { collection?: string; perPage?: num
   }, [tradeUps]);
 
   return useMemo(
-    () => ({ tradeUps, loading, isFree, expandedId, onExpand, query, onQuery: setQuery }),
-    [tradeUps, loading, isFree, expandedId, onExpand, query, faceTick],
+    () => ({
+      tradeUps, loading, isFree, expandedId, onExpand,
+      query, onQuery: setQuery,
+      search, onSearch: setSearch, onParsed: setParsed,
+      loadMore, exhausted,
+    }),
+    [tradeUps, loading, isFree, expandedId, onExpand, query, search, loadMore, exhausted, faceTick],
   );
 }

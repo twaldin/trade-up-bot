@@ -221,6 +221,11 @@ export function uniqueInputs(tu: TradeUp): InputGroup[] {
   }));
 }
 
+/**
+ * Ordered by price ascending, which is the same order as the payoff ticks
+ * (profit = price − cost), so the output tiles read left to right in the same
+ * order as the marks on the P/L line.
+ */
 export function uniqueOutputs(tu: TradeUp): TradeUpOutcome[] {
   const map = new Map<string, TradeUpOutcome>();
   for (const outcome of tu.outcomes) {
@@ -234,7 +239,27 @@ export function uniqueOutputs(tu: TradeUp): TradeUpOutcome[] {
       map.set(outcome.skin_name, outcome);
     }
   }
-  return [...map.values()];
+  return [...map.values()].sort((a, b) => a.estimated_price_cents - b.estimated_price_cents);
+}
+
+/**
+ * Puts an expanded card at the start of the row it was already in, so growing
+ * it to full width consumes that row instead of orphaning its row-mates and
+ * leaving a hole above. The displaced row-mates flow into the rows below.
+ */
+export function reorderForExpanded<T>(
+  rows: T[],
+  expandedIndex: number,
+  columns: number,
+): T[] {
+  if (expandedIndex < 0 || expandedIndex >= rows.length || columns < 2) return rows;
+  const rowStart = Math.floor(expandedIndex / columns) * columns;
+  if (rowStart === expandedIndex) return rows;
+  const next = [...rows];
+  const [card] = next.splice(expandedIndex, 1);
+  if (!card) return rows;
+  next.splice(rowStart, 0, card);
+  return next;
 }
 
 export function payoffPoints(tu: TradeUp): PayoffPoint[] {

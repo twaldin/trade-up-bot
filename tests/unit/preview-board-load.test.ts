@@ -62,7 +62,10 @@ function ports(overrides: Partial<Parameters<typeof loadBoardRows<Row>>[0]> = {}
     namesOf: (list: Row[]) => list.flatMap((row) => row.outcomes),
     warmFaces: async () => undefined,
     emit: {
-      rows: (next: Row[]) => { rows.push(next); },
+      rows: (next: Row[] | ((prev: Row[]) => Row[])) => {
+        const previous = rows[rows.length - 1] ?? [];
+        rows.push(typeof next === "function" ? next(previous) : next);
+      },
       isFree: vi.fn(),
       loading: (value: boolean) => { loading.push(value); },
       facesReady,
@@ -203,5 +206,52 @@ describe("preview price scatter series", () => {
       { price_cents: 100, float_value: 0.5, source: "csfloat" },
     ]);
     expect(groups.csfloat).toHaveLength(1);
+  });
+});
+
+describe("preview board paging", () => {
+  it("appends a page instead of replacing the board", async () => {
+    const pages: { id: number; outcomes: string[] }[][] = [];
+    const emitted: { id: number; outcomes: string[] }[][] = [];
+    await loadBoardRows<{ id: number; outcomes: string[] }>({
+      fetchRows: async () => ({ rows: [{ id: 9, outcomes: [] }], isFree: false }),
+      hydrate: async (row) => ({ ...row, outcomes: ["X"] }),
+      namesOf: () => [],
+      warmFaces: async () => undefined,
+      append: true,
+      emit: {
+        rows: (next) => {
+          const previous = emitted[emitted.length - 1] ?? [{ id: 1, outcomes: [] }];
+          emitted.push(typeof next === "function" ? next(previous) : next);
+        },
+        isFree: () => {},
+        loading: () => {},
+        facesReady: () => {},
+        pageSize: (count) => pages.push(new Array(count).fill({ id: 0, outcomes: [] })),
+      },
+    });
+    expect(pages[0]).toHaveLength(1);
+    // first emit appends the raw page, second swaps that page for the hydrated one
+    expect(emitted[0]?.map((row) => row.id)).toEqual([1, 9]);
+    expect(emitted[1]?.map((row) => row.id)).toEqual([1, 9]);
+    expect(emitted[1]?.[1]?.outcomes).toEqual(["X"]);
+  });
+
+  it("keeps the existing rows when a page request fails", async () => {
+    const emitted: unknown[] = [];
+    await loadBoardRows<{ id: number; outcomes: string[] }>({
+      fetchRows: async () => { throw new Error("offline"); },
+      hydrate: async (row) => row,
+      namesOf: () => [],
+      warmFaces: async () => undefined,
+      append: true,
+      emit: {
+        rows: (next) => emitted.push(next),
+        isFree: () => {},
+        loading: () => {},
+        facesReady: () => {},
+      },
+    });
+    expect(emitted).toEqual([]);
   });
 });
