@@ -58,6 +58,98 @@ export function groupBySeries(points: ScatterPoint[]): Record<SeriesKey, Scatter
   return groups;
 }
 
+export type ScatterPlotPoint = {
+  x: number;
+  y: number;
+  priceCents: number;
+  clipped: boolean;
+};
+
+function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  const index = (sorted.length - 1) * q;
+  const lo = Math.floor(index);
+  const hi = Math.ceil(index);
+  const low = sorted[lo];
+  const high = sorted[hi];
+  if (low === undefined) return 0;
+  if (high === undefined || lo === hi) return low;
+  return low * (hi - index) + high * (index - lo);
+}
+
+function niceCeil(value: number): number {
+  if (!(value > 0)) return 1;
+  const exp = 10 ** Math.floor(Math.log10(value));
+  const n = value / exp;
+  const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return Number((nice * exp).toFixed(10));
+}
+
+/**
+ * Y-axis ceiling in dollars that keeps the bulk price cloud readable when a
+ * handful of stale / trophy asks would otherwise smear the floor. Scale-only:
+ * listing prices and EV math stay untouched.
+ */
+export function scatterYMaxDollars(priceCents: number[]): number {
+  const dollars = priceCents
+    .filter((cents) => Number.isFinite(cents) && cents > 0)
+    .map((cents) => cents / 100)
+    .sort((a, b) => a - b);
+  if (dollars.length === 0) return 1;
+  const max = dollars[dollars.length - 1];
+  if (max === undefined) return 1;
+  if (dollars.length < 12) {
+    const median = quantile(dollars, 0.5);
+    return niceCeil(max > median * 8 ? median * 5 : max);
+  }
+  const median = quantile(dollars, 0.5);
+  const p95 = quantile(dollars, 0.95);
+  const p99 = quantile(dollars, 0.99);
+  const bulk = Math.max(p95 * 1.15, Math.min(p99, median * 4));
+  return niceCeil(max > bulk * 1.75 ? bulk : max);
+}
+
+export function scatterPlotPoint(priceCents: number, yMaxDollars: number): ScatterPlotPoint {
+  const dollars = priceCents / 100;
+  const clipped = dollars > yMaxDollars;
+  return {
+    x: 0,
+    y: clipped ? yMaxDollars : dollars,
+    priceCents,
+    clipped,
+  };
+}
+
+function ScatterDot(props: {
+  cx?: number;
+  cy?: number;
+  fill?: string;
+  payload?: ScatterPlotPoint;
+}) {
+  const { cx, cy, fill, payload } = props;
+  if (typeof cx !== "number" || typeof cy !== "number") return null;
+  if (payload?.clipped) {
+    return (
+      <polygon
+        points={`${cx},${cy - 5} ${cx + 4.5},${cy + 3.5} ${cx - 4.5},${cy + 3.5}`}
+        fill={fill}
+        stroke="var(--canvas)"
+        strokeWidth={1}
+      />
+    );
+  }
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={3.5}
+      fill={fill}
+      stroke="var(--canvas)"
+      strokeWidth={1}
+    />
+  );
+}
+
 export function PriceScatter({ points }: { points: ScatterPoint[] }) {
   const groups = useMemo(() => groupBySeries(points), [points]);
   const available = SERIES.filter((series) => groups[series.key].length > 0);
@@ -68,6 +160,9 @@ export function PriceScatter({ points }: { points: ScatterPoint[] }) {
   }
 
   const shown = available.filter((series) => !off.has(series.key));
+  const shownPoints = shown.flatMap((series) => groups[series.key]);
+  const yMax = scatterYMaxDollars(shownPoints.map((point) => point.price_cents));
+  const clippedCount = shownPoints.filter((point) => point.price_cents / 100 > yMax).length;
   const toggle = (key: SeriesKey) =>
     setOff((prev) => {
       const next = new Set(prev);
@@ -120,6 +215,8 @@ export function PriceScatter({ points }: { points: ScatterPoint[] }) {
             <YAxis
               type="number"
               dataKey="y"
+              domain={[0, yMax]}
+              allowDataOverflow
               tickFormatter={(value: number) => `$${value.toFixed(0)}`}
               tick={{ fontSize: 10, fill: "var(--text)", fontFamily: "var(--font-mono)" }}
               axisLine={{ stroke: "var(--line-hard)" }}
@@ -136,31 +233,45 @@ export function PriceScatter({ points }: { points: ScatterPoint[] }) {
                 fontSize: 11,
                 color: "var(--text)",
               }}
-              formatter={(value, name) => {
+              formatter={(value, name, item) => {
+                const payload = item.payload;
+                if (name === "y") {
+                  return [
+                    formatDollars(payload.priceCents),
+                    payload.clipped ? "price (off-scale)" : "price",
+                  ];
+                }
                 const amount = typeof value === "number" ? value : Number(value);
-                return name === "y"
-                  ? [formatDollars(Math.round(amount * 100)), "price"]
-                  : [formatFloat(amount) ?? "—", "float"];
+                return [formatFloat(amount) ?? "—", "float"];
               }}
             />
             {shown.map((series) => (
               <Scatter
                 key={series.key}
                 name={series.label}
-                data={groups[series.key].map((point) => ({
-                  x: point.float_value as number,
-                  y: point.price_cents / 100,
-                }))}
+                data={groups[series.key].map((point) => {
+                  const plotted = scatterPlotPoint(point.price_cents, yMax);
+                  return {
+                    ...plotted,
+                    x: point.float_value as number,
+                  };
+                })}
                 fill={series.colorVar}
                 fillOpacity={1}
                 stroke="var(--canvas)"
                 strokeWidth={1}
+                shape={ScatterDot}
                 isAnimationActive={false}
               />
             ))}
           </ScatterChart>
         </ResponsiveContainer>
       </div>
+      {clippedCount > 0 && (
+        <figcaption className="preview-note">
+          {clippedCount} off-scale {clippedCount === 1 ? "ask sits" : "asks sit"} at the top of the axis.
+        </figcaption>
+      )}
     </figure>
   );
 }

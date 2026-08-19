@@ -13,6 +13,7 @@ import {
   outputRarityColor,
   previewSkinHref,
   splitSkinName,
+  storyRailInputs,
   uniqueInputs,
   uniqueOutputs,
 } from "../lib/board.js";
@@ -117,7 +118,7 @@ export function PreviewLanding({
   }, [featured]);
 
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
-  const listingRows = featured?.inputs.slice(0, 8) ?? [];
+  const listingRows = featured ? storyRailInputs(featured) : [];
 
   return (
     <main id="main">
