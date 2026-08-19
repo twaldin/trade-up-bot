@@ -10,6 +10,10 @@ import {
   MARKETPLACE_LABELS,
   MARKETPLACE_OPTIONS,
   MY_TRADE_UPS_API,
+  claimMinutesLeft,
+  claimTimerLabel,
+  confirmPurchaseCopy,
+  expiryByTradeUpId,
   parseSalePriceCents,
   realListingIds,
   salePreview,
@@ -111,7 +115,24 @@ describe("my-trade-ups helpers", () => {
     expect(MY_TRADE_UPS_API.sell(9)).toBe("/api/my-trade-ups/9/sell");
     expect(MY_TRADE_UPS_API.remove(9)).toBe("/api/my-trade-ups/9");
     expect(MY_TRADE_UPS_API.unclaim(9)).toBe("/api/trade-ups/9/claim");
+    expect(MY_TRADE_UPS_API.claim(9)).toBe("/api/trade-ups/9/claim");
     expect(MY_TRADE_UPS_API.confirm(9)).toBe("/api/trade-ups/9/confirm");
+    expect(MY_TRADE_UPS_API.verify(9)).toBe("/api/verify-trade-up/9");
+    expect(MY_TRADE_UPS_API.activeClaims).toBe("/api/claims");
+  });
+
+  it("prints the old 30-minute claim timer and confirm copy", () => {
+    const now = Date.parse("2026-08-19T12:00:00.000Z");
+    expect(claimMinutesLeft("2026-08-19T12:18:00.000Z", now)).toBe(18);
+    expect(claimTimerLabel("2026-08-19T12:18:00.000Z", now)).toEqual({
+      expired: false, minutes: 18, label: "18m left",
+    });
+    expect(claimTimerLabel("2026-08-19T11:59:00.000Z", now)).toEqual({
+      expired: true, minutes: 0, label: "Expired",
+    });
+    expect(confirmPurchaseCopy(10, 10)).toBe("Confirm all inputs purchased? This removes them from the system.");
+    expect(confirmPurchaseCopy(3, 10)).toBe("Confirm 3 of 10 purchased? Unselected inputs will be released.");
+    expect(expiryByTradeUpId([{ trade_up_id: 7, expires_at: "soon" }]).get(7)).toBe("soon");
   });
 });
 
@@ -136,6 +157,11 @@ describe("kit my-trade-ups page", () => {
     expect(page).toContain("Mark Sold");
     expect(page).toContain("Confirm Sale");
     expect(page).toContain("Release");
+    expect(page).toContain("Confirm Purchase");
+    expect(page).toContain("MY_TRADE_UPS_API.verify");
+    expect(page).toContain("MY_TRADE_UPS_API.claim");
+    expect(page).toContain("MY_TRADE_UPS_API.activeClaims");
+    expect(page).toContain("claimTimerLabel");
     expect(page).toContain("salePrice");
     expect(page).toContain("saleMarketplace");
     expect(page).not.toContain("TradeUpTable");
@@ -161,5 +187,20 @@ describe("kit my-trade-ups page", () => {
     }
     expect(page).not.toMatch(/\b[Cc]ontracts?\b/);
     expect(lib).not.toMatch(/\b[Cc]ontracts?\b/);
+  });
+});
+
+describe("share page claim and verify hooks", () => {
+  const share = read("../../src/pages/TradeUpSharePage.tsx");
+
+  it("calls the existing verify, claim, confirm, and release endpoints", () => {
+    expect(share).toContain("MY_TRADE_UPS_API.verify");
+    expect(share).toContain("MY_TRADE_UPS_API.claim");
+    expect(share).toContain("MY_TRADE_UPS_API.confirm");
+    expect(share).toContain("MY_TRADE_UPS_API.unclaim");
+    expect(share).toContain("MY_TRADE_UPS_API.activeClaims");
+    expect(share).toContain("Confirm Purchase");
+    expect(share).toContain("Release");
+    expect(share).not.toContain("onVerify={() => {}}");
   });
 });

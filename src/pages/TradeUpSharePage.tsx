@@ -11,6 +11,14 @@ import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 import { authHref } from "../lib/ref.js";
 import { trackEvent } from "../lib/analytics.js";
+import {
+  MY_TRADE_UPS_API,
+  claimTimerLabel,
+  confirmPurchaseCopy,
+  realListingIds,
+  type ActiveClaimRow,
+  type VerifyPayload,
+} from "../preview/lib/my-trade-ups.js";
 
 const TYPE_COLORS: Record<string, string> = {
   covert_knife: "text-yellow-500 border-yellow-500/30 bg-yellow-500/10",
@@ -25,6 +33,17 @@ const TYPE_COLORS: Record<string, string> = {
 interface AuthUser {
   steam_id: string;
   tier: string;
+  is_admin?: boolean;
+}
+
+function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+  const tick = claimTimerLabel(expiresAt, now);
+  return <span className={`text-[0.7rem] ${tick.expired || tick.minutes <= 5 ? "text-red-400" : "text-muted-foreground"}`}>{tick.label}</span>;
 }
 
 export function TradeUpSharePage() {
@@ -37,6 +56,13 @@ export function TradeUpSharePage() {
   const [priceDetailKey, setPriceDetailKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [linkToast, setLinkToast] = useState(false);
+  const [claimed, setClaimed] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [confirmMode, setConfirmMode] = useState(false);
+  const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<VerifyPayload | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -89,6 +115,21 @@ export function TradeUpSharePage() {
     return () => { cancelled = true; };
   }, [id]);
 
+  useEffect(() => {
+    if (!user || !id) return;
+    const tradeUpId = Number(id);
+    fetch(MY_TRADE_UPS_API.activeClaims, { credentials: "include" })
+      .then((res) => res.ok ? res.json() : { claims: [] })
+      .then((data: { claims?: ActiveClaimRow[] }) => {
+        const mine = (data.claims ?? []).find((row) => row.trade_up_id === tradeUpId);
+        if (mine) {
+          setClaimed(true);
+          setExpiresAt(mine.expires_at);
+        }
+      })
+      .catch(() => {});
+  }, [user, id]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -99,6 +140,91 @@ export function TradeUpSharePage() {
     setLinkToast(true);
     setTimeout(() => setLinkToast(false), 3000);
   };
+
+  const readError = async (res: Response, fallback: string) => {
+    try {
+      const data = await res.json() as { error?: string };
+      return data.error || fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  async function handleVerify(tuId: number) {
+    setVerifying(true);
+    setActionError(null);
+    try {
+      const res = await fetch(MY_TRADE_UPS_API.verify(tuId), { method: "POST", credentials: "include" });
+      const data = await res.json() as VerifyPayload;
+      if (!res.ok) {
+        setActionError(data.error || "Failed to verify");
+        return;
+      }
+      setVerifyResult(data);
+      if (data.updated_trade_up) {
+        setTu((prev) => prev ? {
+          ...prev,
+          total_cost_cents: data.updated_trade_up!.total_cost_cents,
+          profit_cents: data.updated_trade_up!.profit_cents,
+          roi_percentage: data.updated_trade_up!.roi_percentage,
+          expected_value_cents: data.updated_trade_up!.expected_value_cents ?? prev.expected_value_cents,
+        } : prev);
+      }
+    } catch {
+      setActionError("Failed to verify");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function handleClaim(tuId: number) {
+    setActionError(null);
+    const res = await fetch(MY_TRADE_UPS_API.claim(tuId), { method: "POST", credentials: "include" });
+    const data = await res.json() as { error?: string; claim?: { expires_at?: string } };
+    if (!res.ok) {
+      setActionError(data.error || "Failed to claim");
+      return;
+    }
+    setClaimed(true);
+    if (data.claim?.expires_at) setExpiresAt(data.claim.expires_at);
+  }
+
+  async function handleRelease(tuId: number) {
+    if (!window.confirm("Release this claim? The listings will become available to other users again.")) return;
+    setActionError(null);
+    const res = await fetch(MY_TRADE_UPS_API.unclaim(tuId), { method: "DELETE", credentials: "include" });
+    if (!res.ok) {
+      setActionError(await readError(res, "Failed to release"));
+      return;
+    }
+    setClaimed(false);
+    setExpiresAt(null);
+    setConfirmMode(false);
+  }
+
+  async function handleConfirm(current: TradeUp) {
+    const listingIds = [...confirmSelected];
+    const total = realListingIds(current).length;
+    if (listingIds.length === 0) {
+      setActionError("Select at least one listing");
+      return;
+    }
+    if (!window.confirm(confirmPurchaseCopy(listingIds.length, total))) return;
+    setActionError(null);
+    const res = await fetch(MY_TRADE_UPS_API.confirm(current.id), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ listing_ids: listingIds }),
+    });
+    if (!res.ok) {
+      setActionError(await readError(res, "Failed to confirm"));
+      return;
+    }
+    setClaimed(false);
+    setConfirmMode(false);
+    setExpiresAt(null);
+  }
 
   if (loading) {
     return (
@@ -128,7 +254,7 @@ export function TradeUpSharePage() {
   const typeLabel = TRADE_UP_TYPE_LABELS[tuType] || tuType;
   const typeColor = TYPE_COLORS[tuType] || "text-foreground border-border bg-muted";
   const isAuthenticated = !!user;
-  const isBasicPlus = user?.tier === "pro" || user?.tier === "admin";
+  const isBasicPlus = user?.tier === "pro" || user?.tier === "admin" || !!user?.is_admin;
   const missingCount = Math.max(0, Number(tu.missing_count ?? tu.missing_inputs ?? 0));
   const realInputCount = tu.inputs.filter(i => !i.listing_id.startsWith("theor")).length || tu.inputs.length;
   const displayStatus = (() => {
@@ -198,6 +324,65 @@ export function TradeUpSharePage() {
           </div>
 
           {/* Sign in CTA for unauthenticated users */}
+          {isAuthenticated && isBasicPlus && (
+            <div className="flex items-center justify-between gap-2 px-4 py-3 mb-4 bg-muted/30 border border-border rounded-lg">
+              <div className="text-[0.75rem] text-muted-foreground">
+                {claimed
+                  ? <span>You claimed this trade-up — confirm purchase or release</span>
+                  : <span>Claim to lock listings for 30 min while you buy</span>}
+                {actionError && <span className="ml-2 text-red-400">{actionError}</span>}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {claimed && expiresAt && <ShareClaimTimer expiresAt={expiresAt} />}
+                {!claimed && (
+                  <button
+                    className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-purple-950 text-purple-400 border border-purple-800 hover:bg-purple-900 cursor-pointer"
+                    onClick={() => void handleClaim(tu.id)}
+                  >
+                    Claim
+                  </button>
+                )}
+                {claimed && !confirmMode && (
+                  <>
+                    <button
+                      className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 cursor-pointer"
+                      onClick={() => {
+                        setConfirmSelected(new Set(realListingIds(tu)));
+                        setConfirmMode(true);
+                      }}
+                    >
+                      Confirm Purchase
+                    </button>
+                    <button
+                      className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground hover:text-red-400 cursor-pointer"
+                      onClick={() => void handleRelease(tu.id)}
+                    >
+                      Release
+                    </button>
+                  </>
+                )}
+                {claimed && confirmMode && (
+                  <>
+                    <span className="text-[0.7rem] text-muted-foreground">{confirmSelected.size} of {realListingIds(tu).length} selected</span>
+                    <button
+                      className="px-2.5 py-1 text-[0.7rem] font-semibold rounded bg-green-950 text-green-400 border border-green-800 hover:bg-green-900 cursor-pointer disabled:opacity-40"
+                      disabled={confirmSelected.size === 0}
+                      onClick={() => void handleConfirm(tu)}
+                    >
+                      {confirmSelected.size === realListingIds(tu).length ? "Confirm All" : `Confirm ${confirmSelected.size}`}
+                    </button>
+                    <button
+                      className="px-2 py-1 text-[0.7rem] rounded border border-border text-muted-foreground cursor-pointer"
+                      onClick={() => setConfirmMode(false)}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {!isAuthenticated && (
             <div className="flex items-center justify-between px-4 py-3 mb-4 bg-muted/50 border border-border rounded-lg">
               <span className="text-sm text-muted-foreground">Sign in to verify, claim, and purchase listings</span>
@@ -230,10 +415,27 @@ export function TradeUpSharePage() {
             <div className="px-4 sm:px-5 py-4 flex flex-col gap-4">
               <InputList
                 tu={displayTu}
-                verifying={false}
-                onVerify={() => {}}
+                verifyResult={verifyResult?.inputs ? {
+                  trade_up_id: verifyResult.trade_up_id ?? tu.id,
+                  inputs: verifyResult.inputs,
+                  all_active: verifyResult.all_active ?? false,
+                  any_unavailable: verifyResult.any_unavailable ?? false,
+                  any_price_changed: verifyResult.any_price_changed ?? false,
+                } : undefined}
+                verifying={verifying}
+                onVerify={handleVerify}
                 showListingLinks={isAuthenticated}
                 showVerify={isBasicPlus}
+                confirmMode={confirmMode}
+                confirmSelected={confirmSelected}
+                onConfirmToggle={(listingId) => {
+                  setConfirmSelected((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(listingId)) next.delete(listingId);
+                    else next.add(listingId);
+                    return next;
+                  });
+                }}
                 onUnauthLinkClick={!isAuthenticated ? handleUnauthLinkClick : undefined}
               />
               <OutcomeList

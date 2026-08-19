@@ -31,6 +31,7 @@ const CLAIM = {
   worst_case_cents: -18400,
   created_at: "2026-08-18T12:00:00.000Z",
   claimed_by_me: true,
+  claim_expires_at: new Date(Date.now() + 18 * 60 * 1000).toISOString(),
   inputs: [
     { listing_id: "csf-1", skin_id: "s1", skin_name: "AK-47 | Redline", collection_name: "The Phoenix Collection", price_cents: 11045, float_value: 0.1523, condition: "Field-Tested", source: "csfloat" },
     { listing_id: "csf-2", skin_id: "s1", skin_name: "AK-47 | Redline", collection_name: "The Phoenix Collection", price_cents: 11045, float_value: 0.1611, condition: "Field-Tested", source: "csfloat" },
@@ -156,6 +157,31 @@ try {
     if (url.includes("/api/trade-ups?") && url.includes("my_claims=true")) {
       return req.respond(json({ trade_ups: [CLAIM], total: 1 }));
     }
+    if (url.includes("/api/claims")) {
+      return req.respond(json({
+        claims: [{
+          id: 1,
+          trade_up_id: CLAIM.id,
+          user_id: USER.steam_id,
+          claimed_at: new Date().toISOString(),
+          expires_at: CLAIM.claim_expires_at,
+        }],
+      }));
+    }
+    if (url.includes("/api/verify-trade-up/")) {
+      return req.respond(json({
+        trade_up_id: CLAIM.id,
+        all_active: true,
+        any_unavailable: false,
+        any_price_changed: false,
+        inputs: CLAIM.inputs.map((row) => ({
+          listing_id: row.listing_id,
+          skin_name: row.skin_name,
+          status: "active",
+          original_price: row.price_cents,
+        })),
+      }));
+    }
     if (url.includes("/api/my-trade-ups?status=purchased")) {
       return req.respond(json({ trade_ups: [PURCHASED] }));
     }
@@ -181,7 +207,10 @@ try {
     cards: document.querySelectorAll(".preview-card").length,
     tabs: [...document.querySelectorAll(".o-tab")].map((el) => el.textContent.trim()),
     sold: document.body.innerText.includes("Sold"),
-    realized: document.body.innerText.includes("Realized profit"),
+    realized: document.body.innerText.includes("All-time profit"),
+    timer: document.body.innerText.includes("m left"),
+    confirm: document.body.innerText.includes("Confirm Purchase"),
+    verify: document.body.innerText.includes("Verify"),
     sidebar: [...document.querySelectorAll(".o-nav-item")].map((el) => el.textContent.trim()),
   }));
   if (claimsInfo.stubChip) problems.push("claims tab still paints the stub claim chip");
@@ -189,6 +218,20 @@ try {
   if (claimsInfo.cards < 1) problems.push("claims tab has no kit board card");
   if (!claimsInfo.tabs.some((t) => t.startsWith("Active Claims"))) problems.push("missing Active Claims tab");
   if (!claimsInfo.sidebar.includes("My trade-ups")) problems.push("sidebar is not labeled My trade-ups");
+  if (!claimsInfo.timer) problems.push("claims tab is missing the 30m timer");
+  if (!claimsInfo.confirm) problems.push("claims tab is missing Confirm Purchase");
+  if (!claimsInfo.verify) problems.push("claims tab is missing Verify");
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((el) => el.textContent.trim() === "Confirm Purchase")?.click();
+  });
+  await page.waitForSelector(".preview-picks", { timeout: 10000 });
+  await sleep(800);
+  await page.screenshot({ path: `${OUT}/account-confirm-purchase-dark.png`, fullPage: true });
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((el) => el.textContent.trim() === "Cancel")?.click();
+  });
+  await sleep(400);
 
   await setMode(page, "dark");
   await page.screenshot({ path: `${OUT}/account-claims-dark.png`, fullPage: true });

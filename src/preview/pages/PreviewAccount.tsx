@@ -12,12 +12,17 @@ import {
   MARKETPLACE_LABELS,
   MARKETPLACE_OPTIONS,
   MY_TRADE_UPS_API,
+  claimTimerLabel,
+  confirmPurchaseCopy,
+  expiryByTradeUpId,
   formatShortDate,
   parseSalePriceCents,
   realListingIds,
   salePreview,
   signClass,
   tradeHoldStatus,
+  type ActiveClaimRow,
+  type VerifyPayload,
 } from "../lib/my-trade-ups.js";
 import { TradeUpCard, boardFaceFor, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -68,6 +73,16 @@ function Face({ name }: { name: string }) {
   return <div className="preview-skin__ph" />;
 }
 
+function ClaimTimer({ expiresAt }: { expiresAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+  const tick = claimTimerLabel(expiresAt, now);
+  return <span className={`preview-timer ${tick.expired || tick.minutes <= 5 ? "is-minus" : ""}`}>{tick.label}</span>;
+}
+
 function FaceStack({ names }: { names: string[] }) {
   const shown = names.filter(Boolean).slice(0, 4);
   if (shown.length === 0) return <span className="preview-note">—</span>;
@@ -100,6 +115,12 @@ export function PreviewAccount() {
   const [salePrice, setSalePrice] = useState("");
   const [saleMarketplace, setSaleMarketplace] = useState("csfloat");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [claimExpiries, setClaimExpiries] = useState<Map<number, string>>(new Map());
+  const [claimedIds, setClaimedIds] = useState<Set<number>>(new Set());
+  const [confirmModeId, setConfirmModeId] = useState<number | null>(null);
+  const [confirmSelected, setConfirmSelected] = useState<Set<string>>(new Set());
+  const [verifyingId, setVerifyingId] = useState<number | null>(null);
+  const [verifyById, setVerifyById] = useState<Map<number, VerifyPayload>>(new Map());
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     if (!user) return;
@@ -140,6 +161,29 @@ export function PreviewAccount() {
         )));
         if (signal?.aborted) return;
         setClaimTradeUps(hydrated);
+        const mine = new Set<number>();
+        const fromRows = new Map<number, string>();
+        for (const tu of hydrated) {
+          if (tu.claimed_by_me || tu.claim_expires_at) mine.add(tu.id);
+          if (tu.claim_expires_at) fromRows.set(tu.id, tu.claim_expires_at);
+        }
+        try {
+          const claimsRes = await fetch(MY_TRADE_UPS_API.activeClaims, { credentials: "include", signal });
+          if (claimsRes.ok) {
+            const claimsData = await claimsRes.json() as { claims?: ActiveClaimRow[] };
+            const fromApi = expiryByTradeUpId(claimsData.claims ?? []);
+            for (const [id, exp] of fromApi) {
+              fromRows.set(id, exp);
+              mine.add(id);
+            }
+          }
+        } catch {
+          // timer is best-effort; the my_claims list still paints
+        }
+        if (!signal?.aborted) {
+          setClaimedIds(mine);
+          setClaimExpiries(fromRows);
+        }
         void warmBoardFaces(skinNames(hydrated)).then(() => {
           if (!signal?.aborted) setFaceTick((tick) => tick + 1);
         });
@@ -188,9 +232,77 @@ export function PreviewAccount() {
     }
   };
 
-  async function handleConfirmPurchased(tu: TradeUp) {
+  async function handleClaim(id: number) {
     setActionError(null);
-    const listingIds = realListingIds(tu);
+    const res = await fetch(MY_TRADE_UPS_API.claim(id), { method: "POST", credentials: "include" });
+    const data = await res.json() as { error?: string; claim?: { expires_at?: string } };
+    if (!res.ok) {
+      setActionError(data.error || "Failed to claim");
+      return;
+    }
+    setClaimedIds((prev) => new Set(prev).add(id));
+    if (data.claim?.expires_at) {
+      setClaimExpiries((prev) => new Map(prev).set(id, data.claim!.expires_at!));
+    }
+    void fetchData();
+  }
+
+  async function handleVerify(id: number) {
+    setActionError(null);
+    setVerifyingId(id);
+    try {
+      const res = await fetch(MY_TRADE_UPS_API.verify(id), { method: "POST", credentials: "include" });
+      const data = await res.json() as VerifyPayload;
+      if (!res.ok) {
+        setActionError(data.error || "Failed to verify");
+        return;
+      }
+      setVerifyById((prev) => new Map(prev).set(id, data));
+      if (data.updated_trade_up) {
+        setClaimTradeUps((prev) => prev.map((tu) => (
+          tu.id === id
+            ? {
+              ...tu,
+              total_cost_cents: data.updated_trade_up!.total_cost_cents,
+              profit_cents: data.updated_trade_up!.profit_cents,
+              roi_percentage: data.updated_trade_up!.roi_percentage,
+              expected_value_cents: data.updated_trade_up!.expected_value_cents ?? tu.expected_value_cents,
+            }
+            : tu
+        )));
+      }
+    } catch {
+      setActionError("Failed to verify");
+    } finally {
+      setVerifyingId(null);
+    }
+  }
+
+  function beginConfirm(tu: TradeUp) {
+    setConfirmModeId(tu.id);
+    setConfirmSelected(new Set(realListingIds(tu)));
+    setExpandedId(tu.id);
+    setActionError(null);
+  }
+
+  function toggleConfirmListing(listingId: string) {
+    setConfirmSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(listingId)) next.delete(listingId);
+      else next.add(listingId);
+      return next;
+    });
+  }
+
+  async function handleConfirmPurchased(tu: TradeUp) {
+    const listingIds = confirmModeId === tu.id ? [...confirmSelected] : realListingIds(tu);
+    const total = realListingIds(tu).length;
+    if (listingIds.length === 0) {
+      setActionError("Select at least one listing");
+      return;
+    }
+    if (!window.confirm(confirmPurchaseCopy(listingIds.length, total))) return;
+    setActionError(null);
     const res = await fetch(MY_TRADE_UPS_API.confirm(tu.id), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -201,6 +313,13 @@ export function PreviewAccount() {
       setActionError(await readError(res, "Failed to confirm"));
       return;
     }
+    setConfirmModeId(null);
+    setConfirmSelected(new Set());
+    setClaimedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(tu.id);
+      return next;
+    });
     void fetchData();
   }
 
@@ -213,6 +332,15 @@ export function PreviewAccount() {
       return;
     }
     if (expandedId === id) setExpandedId(null);
+    if (confirmModeId === id) {
+      setConfirmModeId(null);
+      setConfirmSelected(new Set());
+    }
+    setClaimedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     void fetchData();
   }
 
@@ -425,7 +553,7 @@ export function PreviewAccount() {
           </div>
           <div>
             <b className={signClass(stats.all_time_profit_cents)}>{signedDollars(stats.all_time_profit_cents)}</b>
-            <span>Realized profit</span>
+            <span>All-time profit</span>
           </div>
           <div>
             <b>{stats.total_executed}</b>
@@ -452,6 +580,7 @@ export function PreviewAccount() {
                 setActiveTab(tab.key);
                 setExecutingId(null);
                 setSellingId(null);
+                setConfirmModeId(null);
                 setActionError(null);
               }}
             >
@@ -475,19 +604,93 @@ export function PreviewAccount() {
 
       {user && activeTab === "claims" && claimTradeUps.length > 0 && (
         <div className="preview-claims" data-face-tick={faceTick}>
-          {claimTradeUps.map((tu) => (
-            <div key={tu.id} className="preview-claim">
-              <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
-              <div className="preview-claim__actions">
-                <button type="button" className="preview-btn preview-btn--lime" onClick={() => void handleConfirmPurchased(tu)}>
-                  Confirm purchased
-                </button>
-                <button type="button" className="preview-btn" onClick={() => void handleUnclaim(tu.id)}>
-                  Release
-                </button>
+          {claimTradeUps.map((tu) => {
+            const mine = claimedIds.has(tu.id) || !!tu.claimed_by_me;
+            const expires = claimExpiries.get(tu.id) ?? tu.claim_expires_at;
+            const confirming = confirmModeId === tu.id;
+            const verify = verifyById.get(tu.id);
+            const realIds = realListingIds(tu);
+            return (
+              <div key={tu.id} className="preview-claim">
+                <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
+                <div className="preview-claim__actions">
+                  {expires && mine && <ClaimTimer expiresAt={expires} />}
+                  <button
+                    type="button"
+                    className="preview-btn"
+                    disabled={verifyingId === tu.id}
+                    onClick={() => void handleVerify(tu.id)}
+                  >
+                    {verifyingId === tu.id ? "Verifying…" : "Verify"}
+                  </button>
+                  {!mine && (
+                    <button type="button" className="preview-btn preview-btn--lime" onClick={() => void handleClaim(tu.id)}>
+                      Claim
+                    </button>
+                  )}
+                  {mine && !confirming && (
+                    <>
+                      <button type="button" className="preview-btn preview-btn--lime" onClick={() => beginConfirm(tu)}>
+                        Confirm Purchase
+                      </button>
+                      <button type="button" className="preview-btn" onClick={() => void handleUnclaim(tu.id)}>
+                        Release
+                      </button>
+                    </>
+                  )}
+                  {mine && confirming && (
+                    <>
+                      <span className="preview-note">{confirmSelected.size} of {realIds.length} selected</span>
+                      <button
+                        type="button"
+                        className="preview-btn preview-btn--lime"
+                        disabled={confirmSelected.size === 0}
+                        onClick={() => void handleConfirmPurchased(tu)}
+                      >
+                        {confirmSelected.size === realIds.length ? "Confirm All" : `Confirm ${confirmSelected.size}`}
+                      </button>
+                      <button type="button" className="preview-btn" onClick={() => { setConfirmModeId(null); setConfirmSelected(new Set()); }}>
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+                {confirming && (
+                  <div className="preview-picks">
+                    {tu.inputs.filter((row) => realListingIds({ inputs: [row] }).length > 0).map((row) => (
+                      <label key={row.listing_id} className={`preview-pick ${confirmSelected.has(row.listing_id) ? "is-on" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={confirmSelected.has(row.listing_id)}
+                          onChange={() => toggleConfirmListing(row.listing_id)}
+                        />
+                        <span className="preview-faces__art"><Face name={row.skin_name} /></span>
+                        <span className="preview-outcome__name">{row.skin_name}</span>
+                        <span className="preview-chip">{row.condition}</span>
+                        <span className="o-mono">{row.float_value.toFixed(4)}</span>
+                        <span className="o-mono">{formatDollars(row.price_cents)}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {verify?.inputs && (
+                  <div className="preview-verify">
+                    <p className="o-kicker">Verify</p>
+                    {verify.inputs.map((row) => (
+                      <div key={row.listing_id} className="preview-pick">
+                        <span className="preview-chip">{row.status}</span>
+                        <span className="preview-outcome__name">{row.skin_name}</span>
+                        <span className="o-mono">{formatDollars(row.original_price)}</span>
+                        {row.price_changed && row.current_price != null && (
+                          <span className="o-mono">{formatDollars(row.current_price)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
