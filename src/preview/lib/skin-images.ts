@@ -44,6 +44,9 @@ const FACE_KEY_SEP = "\u0000";
 /** Bound on the og:image fallback when the batch faces endpoint is missing. */
 export const FACE_SCRAPE_LIMIT = 48;
 
+/** Faces never hold the board: the whole lookup is abandoned after this. */
+export const FACE_TIMEOUT_MS = 2000;
+
 export function faceCacheKey(names: string[]): string {
   return [...new Set(names.filter(Boolean))].sort().join(FACE_KEY_SEP);
 }
@@ -67,14 +70,31 @@ function skinPagePath(name: string): string {
   return `/skins/${toSlug(name)}`;
 }
 
+/**
+ * Faces are decoration, so the whole lookup runs under one deadline: a host
+ * without /api/preview/faces falls back to scraping skin pages, and a hung
+ * scrape must never outlive the board's patience. Whatever reached the cache
+ * before the deadline is kept; the rest render as placeholders.
+ */
 export async function loadFaces(
   names: string[],
   cache: FaceMap,
   fetchFn: typeof fetch = fetch,
+  timeoutMs: number = FACE_TIMEOUT_MS,
 ): Promise<FaceMap> {
   const missing = namesFromCacheKey(faceCacheKey(names)).filter((name) => !cache.has(name));
   if (missing.length === 0) return cache;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    void fillFaces(missing, cache, fetchFn).then(
+      () => { clearTimeout(timer); resolve(); },
+      () => { clearTimeout(timer); resolve(); },
+    );
+  });
+  return cache;
+}
 
+async function fillFaces(missing: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<void> {
   let facesMissing = false;
   try {
     const res = await fetchFn(facesRequestUrl(missing), { credentials: "include" });
@@ -107,7 +127,6 @@ export async function loadFaces(
       }
     }));
   }
-  return cache;
 }
 
 export async function hydrateOutcomesIfNeeded<T extends { id: number; outcomes: unknown[] }>(

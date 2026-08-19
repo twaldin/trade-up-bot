@@ -34,6 +34,7 @@ import {
   worstBest,
   type PayoffPoint,
 } from "../lib/board.js";
+import { loadBoardRows } from "../lib/board-load.js";
 import { DELAY_BANNER } from "../lib/copy.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
 
@@ -800,38 +801,37 @@ async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {
   }
 }
 
+function skinNames(rows: TradeUp[]): string[] {
+  return rows.flatMap((tu) => [
+    ...tu.inputs.map((row) => row.skin_name),
+    ...tu.outcomes.map((outcome) => outcome.skin_name),
+  ]);
+}
+
 export function usePreviewTradeUps() {
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Faces land in a module-level cache, so a bump is what repaints the art.
+  const [faceTick, setFaceTick] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const load = useCallback(() => loadBoardRows<TradeUp>({
+    fetchRows: async () => {
       const res = await fetch("/api/trade-ups?per_page=12&sort=trade_up_score&order=desc", { credentials: "include" });
       const data = await res.json() as { trade_ups?: TradeUp[]; tier?: string };
-      const rows = data.trade_ups ?? [];
-      setIsFree((data.tier ?? "free") === "free");
-      setTradeUps(rows);
-      const summaryNames = rows.flatMap((tu) => tu.input_summary?.skins.map((s) => s.name) ?? []);
-      await loadFaces(summaryNames, FACE_CACHE);
-      const hydrated = await Promise.all(rows.map(async (tu) => {
-        const withOutcomes = await hydrateOutcomesIfNeeded(tu);
-        return hydrateInputsIfNeeded(withOutcomes);
-      }));
-      const names = hydrated.flatMap((tu) => [
-        ...tu.inputs.map((row) => row.skin_name),
-        ...tu.outcomes.map((outcome) => outcome.skin_name),
-      ]);
-      await loadFaces(names, FACE_CACHE);
-      setTradeUps(hydrated);
-    } catch {
-      setTradeUps([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free" };
+    },
+    hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
+    namesOf: skinNames,
+    warmFaces: (names) => loadFaces(names, FACE_CACHE),
+    emit: {
+      rows: setTradeUps,
+      isFree: setIsFree,
+      loading: setLoading,
+      facesReady: () => setFaceTick((tick) => tick + 1),
+    },
+  }), []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -840,15 +840,14 @@ export function usePreviewTradeUps() {
     if (id == null) return;
     const current = tradeUps.find((t) => t.id === id);
     if (!current) return;
-    const withOutcomes = await hydrateOutcomesIfNeeded(current);
-    const withInputs = await hydrateInputsIfNeeded(withOutcomes);
-    const names = [
-      ...withInputs.inputs.map((i) => i.skin_name),
-      ...withInputs.outcomes.map((o) => o.skin_name),
-    ];
-    await loadFaces(names, FACE_CACHE);
+    const withInputs = await hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(current));
     setTradeUps((prev) => prev.map((tu) => (tu.id === id ? withInputs : tu)));
+    void loadFaces(skinNames([withInputs]), FACE_CACHE)
+      .then(() => setFaceTick((tick) => tick + 1));
   }, [tradeUps]);
 
-  return useMemo(() => ({ tradeUps, loading, isFree, expandedId, onExpand }), [tradeUps, loading, isFree, expandedId, onExpand]);
+  return useMemo(
+    () => ({ tradeUps, loading, isFree, expandedId, onExpand }),
+    [tradeUps, loading, isFree, expandedId, onExpand, faceTick],
+  );
 }

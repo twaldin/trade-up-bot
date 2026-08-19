@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BYMYKEL_URL_RE,
   createFaceCache,
+  FACE_TIMEOUT_MS,
   faceCacheKey,
   faceFor,
   facesRequestUrl,
@@ -13,6 +14,36 @@ import {
   rememberFaces,
 } from "../../src/preview/lib/skin-images.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
+
+describe("preview face loading is bounded", () => {
+  it("gives up on a faces route that never answers", async () => {
+    const cache = createFaceCache();
+    const fetchFn = vi.fn(() => new Promise<Response>(() => {}));
+    const started = Date.now();
+    await loadFaces(["AK-47 | Redline"], cache, fetchFn as unknown as typeof fetch, 30);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(faceFor(cache, "AK-47 | Redline")).toBeNull();
+  });
+
+  it("keeps whatever landed before the deadline", async () => {
+    const cache = createFaceCache();
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/preview/faces")) {
+        return new Response(
+          JSON.stringify({ faces: { "AK-47 | Redline": "https://steamcommunity.com/economy/image/x" } }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Promise<Response>(() => {});
+    });
+    await loadFaces(["AK-47 | Redline"], cache, fetchFn as unknown as typeof fetch, 50);
+    expect(faceFor(cache, "AK-47 | Redline")).toContain("steamcommunity.com");
+  });
+
+  it("defaults to a short deadline so a dead route cannot stall the board", () => {
+    expect(FACE_TIMEOUT_MS).toBeLessThanOrEqual(2000);
+  });
+});
 
 describe("preview face cache keys", () => {
   it("round-trips names that contain the market-hash pipe", () => {
