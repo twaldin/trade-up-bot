@@ -431,19 +431,19 @@
   --progress: 0;
   position: relative;
   isolation: isolate;
-  min-height: 168px;
+  min-height: 188px;
   margin-top: 28px;
-  perspective: 900px;
+  perspective: 1100px;
   transform-style: preserve-3d;
 }
 
 .preview-floatcard {
   --skin-tint: var(--text-muted);
   position: absolute;
-  left: calc(6% + (var(--i, 0) * 12%));
-  top: calc(12px + (var(--i, 0) * 10px) + ((var(--progress) - 0.5) * (var(--i, 0) * -12px)));
+  left: calc(18% + (var(--i, 0) * 48px));
+  top: calc(22px + (var(--i, 0) * 8px) + ((var(--progress) - 0.5) * (var(--i, 0) * -16px)));
   z-index: calc(8 - var(--i, 0));
-  width: 104px;
+  width: 108px;
   padding: 8px;
   border: 1px solid color-mix(in srgb, var(--skin-tint) 28%, var(--panel-rule));
   border-radius: var(--r-panel);
@@ -453,9 +453,10 @@
   color: inherit;
   text-decoration: none;
   transform:
-    rotateY(calc((var(--tilt-x, 0) * -8deg) + ((var(--i, 0) - 2) * 5deg)))
-    rotateX(calc(var(--tilt-y, 0) * 6deg))
-    translateZ(calc(var(--i, 0) * 8px));
+    rotateY(calc((var(--tilt-x, 0) * -10deg) + ((var(--i, 0) - 2) * 7deg)))
+    rotateX(calc(var(--tilt-y, 0) * 7deg))
+    translateZ(calc((2 - var(--i, 0)) * 18px))
+    scale(calc(1 - (var(--i, 0) * 0.035)));
 }
 
 .preview-floatcard__art {
