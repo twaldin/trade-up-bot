@@ -160,4 +160,12 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(collectionTu).toContain("previewCollectionHref");
     expect(collectionTu).not.toContain("NotFoundPage");
   });
+
+  it("keeps the selected billing tab inked so Monthly is visible", () => {
+    const css = read("../../src/preview/preview.css");
+    expect(css).not.toMatch(/\.preview-tabs \.o-tab \{[^}]*background:\s*transparent/);
+    expect(pricing).toContain("Monthly");
+    expect(pricing).toContain("Yearly · save 28%");
+    expect(pricing).toContain("Lifetime · best value");
+  });
 });
