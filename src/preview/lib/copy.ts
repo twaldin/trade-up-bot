@@ -10,6 +10,46 @@ export const PREVIEW_SUBLEDE =
 
 export const PREVIEW_VALUE_HEADLINE = "What you see is what you pay";
 
+export const PREVIEW_VALUE = [
+  ["Real listings", "Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market."],
+  ["Verify before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
+  ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
+] as const;
+
+/** Pipeline copy from the live landing + features page. More than three steps. */
+export const PREVIEW_HOW: { n: string; title: string; body: string }[] = [
+  {
+    n: "01",
+    title: "Scan",
+    body: "Listings pulled from CSFloat, DMarket, Skinport, and Buff.market every cycle. Continuous DMarket coverage at 2 req/s.",
+  },
+  {
+    n: "02",
+    title: "Discover",
+    body: "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle.",
+  },
+  {
+    n: "03",
+    title: "Target floats",
+    body: "Each input combination is evaluated at 45+ float targets, clustered around condition boundaries (Factory New/Minimal Wear at 0.07, Minimal Wear/Field-Tested at 0.15, and so on).",
+  },
+  {
+    n: "04",
+    title: "Price the exact float",
+    body: "Output pricing uses CSFloat sale history first. DMarket and Skinport listing data fill gaps when CSFloat has no coverage for a skin or condition.",
+  },
+  {
+    n: "05",
+    title: "Verify",
+    body: "Before spending money, hit Verify. It calls each marketplace's API to confirm every input listing still exists and at what price. The trade-up's cost, profit, and ROI update from the response.",
+  },
+  {
+    n: "06",
+    title: "Claim",
+    body: "Pro users see results instantly. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy.",
+  },
+];
+
 export const PREVIEW_FAQ: { q: string; a: string }[] = [
   {
     q: "How does TradeUpBot find profitable trade-ups?",

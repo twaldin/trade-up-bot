@@ -1,3 +1,16 @@
+import { blogMeta } from "../src/data/blog-meta.js";
+import {
+  PREVIEW_FAQ,
+  PREVIEW_HEADLINE,
+  PREVIEW_HOW,
+  PREVIEW_LEDE,
+  PREVIEW_SUBLEDE,
+  PREVIEW_VALUE,
+  PREVIEW_VALUE_HEADLINE,
+} from "../src/preview/lib/copy.js";
+import { buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { escapeHtml } from "./seo.js";
+
 export interface StaticSeoPage {
   path: string;
   title: string;
@@ -185,3 +198,77 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
     bodyHtml: `<h1>Listing Sniper</h1><p>Listings priced below estimated market value, sorted by discount percentage.</p><p>Listing Sniper Alerts surface live listing alerts from CSFloat, DMarket, Buff, and Skinport. Filter by skin, collection, marketplace, and minimum difference.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>`,
   },
 ];
+
+function faqFrom(page: StaticSeoPage): { q: string; a: string }[] {
+  const faq = (page.jsonLd ?? []).find((block) => block["@type"] === "FAQPage");
+  const entities = faq?.mainEntity;
+  if (!Array.isArray(entities)) return [];
+  return entities.map((item) => {
+    const row = item as { name?: string; acceptedAnswer?: { text?: string } };
+    return { q: row.name ?? "", a: row.acceptedAnswer?.text ?? "" };
+  }).filter((item) => item.q && item.a);
+}
+
+function renderHomepageSeoBody(): string {
+  const faqPage = STATIC_SEO_PAGES.find((page) => page.path === "/faq");
+  const leftoverFaq = faqPage ? faqFrom(faqPage) : [];
+  const value = PREVIEW_VALUE.map(([title, body]) =>
+    `<article><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p></article>`
+  ).join("");
+  const how = PREVIEW_HOW.map((step) =>
+    `<div><h3>${escapeHtml(step.title)}</h3><p>${escapeHtml(step.body)}</p></div>`
+  ).join("");
+  const productFaq = PREVIEW_FAQ.map((item) =>
+    `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`
+  ).join("");
+  const seoFaq = leftoverFaq.map((item) =>
+    `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`
+  ).join("");
+  const posts = blogMeta.slice(0, 4).map((post) =>
+    `<article><h3><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a></h3><p>${escapeHtml(post.excerpt)}</p></article>`
+  ).join("");
+
+  return `<h1>${escapeHtml(PREVIEW_HEADLINE)}</h1>
+<p>${escapeHtml(PREVIEW_LEDE)}</p>
+<p>${escapeHtml(PREVIEW_SUBLEDE)}</p>
+<section>
+<h2>${escapeHtml(PREVIEW_VALUE_HEADLINE)}</h2>
+<p>Costs come from live listings, not price averages. Click any input to open the listing and buy it.</p>
+${value}
+</section>
+<section>
+<h2>How it works</h2>
+${how}
+</section>
+<section>
+<h2>Pricing</h2>
+<p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
+<ul>
+<li><strong>Free — $0:</strong> Full access to all trade-ups with filters, sorting, and listing links. 3-hour data delay.</li>
+<li><strong>Pro — $6.99/month:</strong> Real-time data, claim system, and full analytics.</li>
+</ul>
+<p><a href="/pricing">Compare plans</a></p>
+</section>
+<section>
+<h2>Blog</h2>
+<p>Guides and analysis on CS2 trade-up contracts, float mechanics, and marketplace strategy.</p>
+${posts}
+<p><a href="/blog">View all posts</a></p>
+</section>
+<section>
+<h2>Frequently asked questions</h2>
+${productFaq}
+${seoFaq}
+<p><a href="/faq">Read the full FAQ</a></p>
+</section>
+<p><a href="/trade-ups">Open the console</a></p>`;
+}
+
+/** First-HTML home document for Googlebot. Not registered in the leftover-page loop. */
+export const HOMEPAGE_SEO: StaticSeoPage = {
+  path: "/",
+  title: "TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings",
+  description: "Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, and Skinport.",
+  bodyHtml: renderHomepageSeoBody(),
+  jsonLd: [buildHomepageJsonLd()],
+};

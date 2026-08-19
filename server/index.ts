@@ -83,7 +83,7 @@ import type { NextFunction } from "express";
 import { redirectWwwHost } from "./redirect-www.js";
 import { registerBlogRoutes } from "./blog-routes.js";
 import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
-import { STATIC_SEO_PAGES } from "./static-seo-pages.js";
+import { HOMEPAGE_SEO, STATIC_SEO_PAGES } from "./static-seo-pages.js";
 
 const app = express();
 const PORT = 3001;
@@ -1287,7 +1287,21 @@ registerCanonicalRedirectRoutes(app);
 
     registerBlogRoutes(app, shellHtml);
 
-    app.get("/", async (_req, res, next) => {
+    app.get("/", async (req, res, next) => {
+      const ua = req.headers["user-agent"] || "";
+      if (isCrawler(ua)) {
+        res.setHeader("Content-Type", "text/html");
+        res.send(buildSeoHtml({
+          title: HOMEPAGE_SEO.title,
+          description: HOMEPAGE_SEO.description,
+          url: "https://tradeupbot.app/",
+          bodyHtml: HOMEPAGE_SEO.bodyHtml,
+          jsonLd: HOMEPAGE_SEO.jsonLd,
+          robots: HOMEPAGE_SEO.robots ?? "index, follow",
+        }));
+        return;
+      }
+
       const indexPath = path.join(__dirname, "..", "dist", "index.html");
       if (!fs.existsSync(indexPath)) return next();
 
