@@ -209,6 +209,9 @@ describe("preview craft bar", () => {
     expect(skins).toContain("PreviewBoard");
     expect(skins).toContain("usePreviewTradeUps");
     expect(css).toContain(".preview-collection__cluster");
+    expect(skins).toContain("formatCollectionSkinCopy");
+    expect(skins).toContain("tallyCollectionSkins");
+    expect(skins).not.toMatch(/\{row\.skin_count\} skins/);
   });
 
   it("does not mount the skin page on collection-rail hover", () => {

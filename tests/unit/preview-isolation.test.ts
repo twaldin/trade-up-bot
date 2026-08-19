@@ -139,6 +139,7 @@ describe("console cutover", () => {
       "PreviewShell.tsx",
       "lib/copy.ts",
       "lib/board.ts",
+      "lib/collection-skins.ts",
       "pages/PreviewBoard.tsx",
       "pages/PreviewCalculator.tsx",
       "pages/PreviewAccount.tsx",
