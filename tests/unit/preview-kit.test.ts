@@ -228,6 +228,7 @@ describe("preview craft bar", () => {
       "pages/PreviewAccount.tsx",
       "pages/PreviewLanding.tsx",
       "pages/PreviewSkins.tsx",
+      "lib/my-trade-ups.ts",
       "components/PreviewFilters.tsx",
       "components/PreviewTable.tsx",
       "components/PriceScatter.tsx",
@@ -272,5 +273,7 @@ describe("preview craft bar", () => {
     }
     expect(shell).toContain('to: "/skins"');
     expect(shell).toContain('to: "/collections"');
+    expect(shell).toContain('to: "/my-trade-ups"');
+    expect(shell).toContain("My trade-ups");
   });
 });

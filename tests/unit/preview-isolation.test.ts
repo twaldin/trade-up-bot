@@ -73,6 +73,7 @@ describe("console cutover", () => {
       "pages/PreviewLanding.tsx",
       "pages/PreviewAccount.tsx",
       "pages/PreviewCalculator.tsx",
+      "lib/my-trade-ups.ts",
     ];
     for (const file of files) {
       const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");
@@ -143,6 +144,7 @@ describe("console cutover", () => {
       "pages/PreviewAccount.tsx",
       "pages/PreviewLanding.tsx",
       "pages/PreviewSkins.tsx",
+      "lib/my-trade-ups.ts",
       "components/DeviceScreen.tsx",
       "components/PreviewCurrency.tsx",
       "components/PreviewMark.tsx",
