@@ -106,6 +106,11 @@ describe("plan 023: JSON-LD schema on bare money pages", () => {
     expect(serverSource).toContain('"@type": "ItemList"');
   });
 
+  it("/collections crawler HTML threads CollectionPage JSON-LD", () => {
+    expect(serverSource).toContain("buildCollectionsHubJsonLd");
+    expect(serverSource).toMatch(/app\.get\("\/collections"[\s\S]*jsonLd:\s*buildCollectionsHubJsonLd/);
+  });
+
   it("/calculator body carries the float-exact differentiator narrative", () => {
     expect(staticSeoPagesSource).toContain("Why most CS2 trade-up calculators are wrong");
     expect(staticSeoPagesSource).toContain("exact predicted output float");

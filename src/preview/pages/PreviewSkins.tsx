@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ExternalLink } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
+import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
@@ -553,10 +554,15 @@ export function PreviewCollectionsPage() {
 
   return (
     <div className="preview-page">
+      <title>CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot</title>
+      <meta name="description" content="Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection." />
+      <meta name="robots" content="index, follow" />
+      <link rel="canonical" href="https://tradeupbot.app/collections" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildCollectionsHubJsonLd([])) }} />
       <header className="preview-page__head">
         <div>
           <h1>Collections</h1>
-          <p>Every collection the discovery loop can build a trade-up from.</p>
+          <p>CS2 collections group weapon skins by the case, operation, map, or themed release where those skins entered the game. Each collection contains skins across rarity tiers, and those rarity tiers determine which inputs and outputs can appear in a trade-up.</p>
         </div>
         <div className="preview-page__meta"><span>{rows.length} collections</span></div>
       </header>

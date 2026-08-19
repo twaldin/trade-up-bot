@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSeoHtml } from "../../server/seo.js";
+import { buildSeoHtml, ensureHomepageCrawlerHead } from "../../server/seo.js";
 
 describe("buildSeoHtml", () => {
   it("generates valid HTML with title and meta tags", () => {
@@ -94,6 +94,16 @@ describe("buildSeoHtml", () => {
     // Two separate script tags
     const matches = html.match(/application\/ld\+json/g);
     expect(matches).toHaveLength(2);
+  });
+
+  it("ensureHomepageCrawlerHead adds robots and JSON-LD without touching the body", () => {
+    const html = `<!DOCTYPE html><html><head><title>Kit</title></head><body><h1>Landing</h1></body></html>`;
+    const out = ensureHomepageCrawlerHead(html);
+    expect(out).toContain('name="robots" content="index, follow"');
+    expect(out).toContain("application/ld+json");
+    expect(out).toContain('"@type":"WebSite"');
+    expect(out).toContain("<h1>Landing</h1>");
+    expect(ensureHomepageCrawlerHead(out)).toBe(out);
   });
 
   it("escapes HTML entities in title and description", () => {

@@ -1,3 +1,7 @@
+import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+
+export { buildCollectionsHubJsonLd, buildHomepageJsonLd };
+
 interface SeoMeta {
   title: string;
   description: string;
@@ -513,7 +517,8 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   // Inject correct tags before </head>
   let jsonLdTag = "";
   if (meta.jsonLd) {
-    jsonLdTag = `\n<script type="application/ld+json">${JSON.stringify(meta.jsonLd)}</script>`;
+    const items = Array.isArray(meta.jsonLd) ? meta.jsonLd : [meta.jsonLd];
+    jsonLdTag = items.map((ld) => `\n<script type="application/ld+json">${JSON.stringify(ld)}</script>`).join("");
   }
 
   const tags = `<title>${title}</title>
@@ -547,5 +552,20 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
     );
   }
 
+  return result;
+}
+
+/** Add robots + homepage JSON-LD to prerendered kit HTML when a build omitted them. */
+export function ensureHomepageCrawlerHead(html: string): string {
+  let result = html;
+  if (!/<meta\b[^>]*\bname=["']robots["']/i.test(result)) {
+    result = result.replace(/<\/head>/i, `<meta name="robots" content="index, follow" />\n</head>`);
+  }
+  if (!/application\/ld\+json/i.test(result)) {
+    result = result.replace(
+      /<\/head>/i,
+      `<script type="application/ld+json">${JSON.stringify(buildHomepageJsonLd())}</script>\n</head>`,
+    );
+  }
   return result;
 }

@@ -22,7 +22,7 @@ import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus, buildSkinResearchParagraphs } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
 import { blogPosts } from "../src/data/blog-posts.js";
@@ -1117,12 +1117,17 @@ registerCanonicalRedirectRoutes(app);
 
     app.get("/collections", async (req, res, next) => {
       const ua = req.headers["user-agent"] || "";
+      const collectionsTitle = "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot";
+      const collectionsDescription = "Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.";
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtml, {
-          title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
-          description: "Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection.",
+          title: collectionsTitle,
+          description: collectionsDescription,
           url: "https://tradeupbot.app/collections",
+          robots: "index, follow",
+          bodyHtml: renderCollectionsHub([]),
+          jsonLd: buildCollectionsHubJsonLd([]),
         }));
         return;
       }
@@ -1134,10 +1139,12 @@ registerCanonicalRedirectRoutes(app);
         }));
         res.setHeader("Content-Type", "text/html");
         res.send(buildSeoHtml({
-          title: "CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot",
+          title: collectionsTitle,
           description: `Browse ${rows.length} CS2 collections with skins, float ranges, and trade-up opportunities.`,
           url: "https://tradeupbot.app/collections",
+          robots: "index, follow",
           bodyHtml: renderCollectionsHub(collectionLinks),
+          jsonLd: buildCollectionsHubJsonLd(collectionLinks),
         }));
       } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
     });
@@ -1271,7 +1278,7 @@ registerCanonicalRedirectRoutes(app);
       const indexPath = path.join(__dirname, "..", "dist", "index.html");
       if (!fs.existsSync(indexPath)) return next();
 
-      let html = dedupeHead(fs.readFileSync(indexPath, "utf-8"));
+      let html = ensureHomepageCrawlerHead(dedupeHead(fs.readFileSync(indexPath, "utf-8")));
 
       try {
         const stats = await Promise.race([
