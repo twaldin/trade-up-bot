@@ -482,7 +482,7 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
               <input
                 className="preview-field__input"
                 value={listingQuery}
-                placeholder="fn · <$20 · <0.15 · csfloat"
+                placeholder="Search listings…"
                 onChange={(event) => setListingQuery(event.target.value)}
               />
             </label>
