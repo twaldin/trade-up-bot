@@ -61,6 +61,7 @@ describe("skin detail listings cannot bury the trade-up board", () => {
     // goes to console `main`. Keep the wrap as tall as the table.
     expect(css).toMatch(/\.preview-tablewrap--fit\s*\{[^}]*flex:\s*0\s+0\s+auto/);
     expect(css).toMatch(/\.preview-skin-pane--listings\s*\{[^}]*overscroll-behavior:\s*contain/);
+    expect(css).toMatch(/\.preview-skin-pane--listings\s*\{[^}]*scrollbar-gutter:\s*stable/);
     expect(css).not.toMatch(/\.preview-tablewrap--fit\s*\{[^}]*overflow-y:\s*hidden/);
   });
 

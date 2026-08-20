@@ -1774,6 +1774,16 @@
   max-height: min(64vh, 720px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-hard) transparent;
+}
+
+.preview-skin-pane--listings::-webkit-scrollbar { width: 8px; }
+
+.preview-skin-pane--listings::-webkit-scrollbar-thumb {
+  background: var(--line-hard);
+  border-radius: var(--r-chip);
 }
 
 .preview-skin-pane--board {
