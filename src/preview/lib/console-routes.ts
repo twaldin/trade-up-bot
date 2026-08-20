@@ -50,3 +50,19 @@ export function pageFor(page: ConsolePage | undefined, pathname: string): Consol
   if (/^\/listing-sniper(\/|$)/.test(pathname)) return "sniper";
   return "landing";
 }
+
+const MARKETING_PAGES = new Set<ConsolePage>([
+  "landing",
+  "pricing",
+  "faq",
+  "features",
+  "blog",
+  "post",
+  "terms",
+  "privacy",
+]);
+
+/** Product and legal pages render in landing chrome, not the console sidebar. */
+export function isMarketingPage(page: ConsolePage): boolean {
+  return MARKETING_PAGES.has(page);
+}

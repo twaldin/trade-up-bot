@@ -261,7 +261,8 @@ ${productFaq}
 ${seoFaq}
 <p><a href="/faq">Read the full FAQ</a></p>
 </section>
-<p><a href="/trade-ups">Open the console</a></p>`;
+<p><a href="/trade-ups">Find Real Tradeups -&gt;</a></p>
+<p><a href="https://discord.gg/w4jFs8g5kU">Join the Discord</a></p>`;
 }
 
 /** First-HTML home document for Googlebot. Not registered in the leftover-page loop. */

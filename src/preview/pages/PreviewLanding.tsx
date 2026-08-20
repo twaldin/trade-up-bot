@@ -18,6 +18,9 @@ import {
   uniqueOutputs,
 } from "../lib/board.js";
 import {
+  PREVIEW_CTA_DISCORD,
+  PREVIEW_CTA_PRIMARY,
+  PREVIEW_DISCORD_HREF,
   PREVIEW_FAQ,
   PREVIEW_HEADLINE,
   PREVIEW_HOW,
@@ -135,9 +138,16 @@ export function PreviewLanding({
         </p>
         <div className="preview-toolbar o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
           <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
-            Open the console
+            {PREVIEW_CTA_PRIMARY}
           </Link>
-          <a href="#how" className="preview-btn preview-btn--lg">How it works</a>
+          <a
+            href={PREVIEW_DISCORD_HREF}
+            className="preview-btn preview-btn--lg"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {PREVIEW_CTA_DISCORD}
+          </a>
         </div>
         {stats && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 5 } as CSSProperties}>

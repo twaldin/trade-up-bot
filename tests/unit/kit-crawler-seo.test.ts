@@ -13,6 +13,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
 const seoSource = readFileSync(join(__dir, "../../server/seo.ts"), "utf-8");
 const previewAppSource = readFileSync(join(__dir, "../../src/preview/PreviewApp.tsx"), "utf-8");
+const previewChromeSource = readFileSync(join(__dir, "../../src/preview/PreviewChrome.tsx"), "utf-8");
 const previewShellSource = readFileSync(join(__dir, "../../src/preview/PreviewShell.tsx"), "utf-8");
 const collectionsPageSource = readFileSync(join(__dir, "../../src/preview/pages/PreviewSkins.tsx"), "utf-8");
 
@@ -43,12 +44,14 @@ describe("kit landing crawler HTML after cutover", () => {
   });
 
   it("kit landing emits robots index,follow and the homepage JSON-LD", () => {
-    expect(previewAppSource).toContain('name="robots"');
-    expect(previewAppSource).toContain("index, follow");
-    expect(previewAppSource).toContain("application/ld+json");
-    expect(previewAppSource).toContain("buildHomepageJsonLd");
-    expect(previewAppSource).toContain('href="https://tradeupbot.app/"');
+    expect(previewChromeSource).toContain('name="robots"');
+    expect(previewChromeSource).toContain("index, follow");
+    expect(previewChromeSource).toContain("application/ld+json");
+    expect(previewChromeSource).toContain("buildHomepageJsonLd");
+    expect(previewChromeSource).toContain('href="https://tradeupbot.app/"');
+    expect(previewAppSource).toContain("PreviewChrome");
     expect(previewAppSource).not.toMatch(/noindex/);
+    expect(previewChromeSource).not.toMatch(/noindex/);
     expect(previewShellSource).not.toMatch(/noindex/);
   });
 

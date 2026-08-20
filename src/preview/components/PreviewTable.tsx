@@ -42,6 +42,7 @@ export function PreviewTable<Row>({
   initialDirection = "asc",
   empty = "Nothing to show.",
   dense = false,
+  fit = false,
 }: {
   columns: Column<Row>[];
   rows: Row[];
@@ -50,6 +51,8 @@ export function PreviewTable<Row>({
   initialDirection?: SortDirection;
   empty?: string;
   dense?: boolean;
+  /** Content-sized columns instead of stretching to fill the pane. */
+  fit?: boolean;
 }) {
   const [sortKey, setSortKey] = useState(initialSort ?? "");
   const [direction, setDirection] = useState<SortDirection>(initialDirection);
@@ -66,8 +69,8 @@ export function PreviewTable<Row>({
   };
 
   return (
-    <div className="preview-tablewrap">
-      <table className={`o-table preview-table${dense ? " preview-table--dense" : ""}`}>
+    <div className={`preview-tablewrap${fit ? " preview-tablewrap--fit" : ""}`}>
+      <table className={`o-table preview-table${dense ? " preview-table--dense" : ""}${fit ? " preview-table--fit" : ""}`}>
         <thead>
           <tr>
             {columns.map((column) => (

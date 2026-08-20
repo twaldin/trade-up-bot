@@ -26,7 +26,7 @@ const TIERS = [
 
 export function PreviewFeatures() {
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={seo.title} description={seo.description} canonical="https://tradeupbot.app/features" />
       <header className="preview-page__head">
         <div>

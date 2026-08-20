@@ -7,7 +7,7 @@ const PRIVACY = seoPage("/privacy");
 
 export function PreviewTerms() {
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={TERMS.title} description={TERMS.description} canonical="https://tradeupbot.app/terms" />
       <header className="preview-page__head">
         <div>
@@ -91,7 +91,7 @@ export function PreviewTerms() {
 
 export function PreviewPrivacy() {
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={PRIVACY.title} description={PRIVACY.description} canonical="https://tradeupbot.app/privacy" />
       <header className="preview-page__head">
         <div>

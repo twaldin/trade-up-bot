@@ -121,7 +121,7 @@ describe("leftover marketing pages join the kit shell", () => {
         expect(source, `${name} leaks ${leak}`).not.toContain(leak);
       }
     }
-    expect(shell).toContain('to: "/pricing"');
+    expect(shell).not.toContain('to: "/pricing"');
     expect(app).not.toContain("element={<PricingPage");
   });
 

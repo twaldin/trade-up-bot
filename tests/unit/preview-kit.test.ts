@@ -240,7 +240,8 @@ describe("preview craft bar", () => {
     expect(collection).not.toContain("data-focus");
     expect(css).not.toContain(".preview-allskins__tile[data-focus]");
     // the real skin page still owns the stats card
-    expect(skins.slice(0, collectionStart)).toContain("<SkinStats name={name} />");
+    expect(skins.slice(0, collectionStart)).toContain("<SkinStats");
+    expect(skins.slice(0, collectionStart)).toContain("name={name}");
   });
 
   it("infinite-scrolls the skins index past 200 and fills skin detail with a board", () => {
@@ -264,7 +265,9 @@ describe("preview craft bar", () => {
 
     expect(stats).toContain("listingMatchesQuery");
     expect(stats).toContain("dense");
+    expect(stats).toContain("fit");
     expect(stats).toContain("LISTING_PAGE");
+    expect(stats).toContain("preview-skin-panes");
     expect(stats).not.toContain("listings.slice(0, 60)");
 
     expect(skinPage).toContain('heading="Trade-ups using this skin"');
@@ -283,6 +286,7 @@ describe("preview craft bar", () => {
     ];
     const surfaces = [
       "PreviewApp.tsx",
+      "PreviewChrome.tsx",
       "PreviewShell.tsx",
       "components/PreviewCurrency.tsx",
       "components/PreviewMark.tsx",
@@ -316,10 +320,13 @@ describe("preview craft bar", () => {
 
   it("drives currency from a preview control, never the shadcn picker", () => {
     const shell = read("../../src/preview/PreviewShell.tsx");
+    const chrome = read("../../src/preview/PreviewChrome.tsx");
     const app = read("../../src/preview/PreviewApp.tsx");
     expect(shell).not.toContain("CurrencyPicker");
+    expect(chrome).not.toContain("CurrencyPicker");
     expect(app).not.toContain("CurrencyPicker");
     expect(shell).toContain("PreviewCurrency");
+    expect(chrome).toContain("PreviewCurrency");
     const picker = read("../../src/preview/components/PreviewCurrency.tsx");
     expect(picker).toContain("useCurrency");
     expect(picker).toContain("preview-menu");
@@ -328,11 +335,13 @@ describe("preview craft bar", () => {
   it("uses a lime plateless mark, not the production favicon", () => {
     const mark = read("../../src/preview/components/PreviewMark.tsx");
     const shell = read("../../src/preview/PreviewShell.tsx");
+    const chrome = read("../../src/preview/PreviewChrome.tsx");
     const app = read("../../src/preview/PreviewApp.tsx");
     expect(mark).not.toContain("<rect");
     expect(mark).not.toContain("#22c55e");
     expect(css).toContain(".preview-mark { color: var(--accent); }");
     expect(shell).not.toContain("favicon.svg");
+    expect(chrome).not.toContain("favicon.svg");
     expect(app).not.toContain("favicon.svg");
     // the mark shipped as the real favicon with the cutover
     expect(read("../../public/favicon.svg")).toContain("#d7fe52");

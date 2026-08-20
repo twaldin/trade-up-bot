@@ -19,6 +19,7 @@ const landing = read("../../src/preview/pages/PreviewLanding.tsx");
 const css = read("../../src/preview/preview.css");
 const copy = read("../../src/preview/lib/copy.ts");
 const app = read("../../src/preview/PreviewApp.tsx");
+const chrome = read("../../src/preview/PreviewChrome.tsx");
 const faqQuestions = faqEntities(seoPage("/faq"));
 
 describe("preview landing depth", () => {
@@ -110,9 +111,11 @@ describe("preview landing depth", () => {
 
 describe("kit landing unique home head", () => {
   it("emits the unique indexed title, not a second h1", () => {
-    expect(app).toContain("TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings");
-    expect(app).toContain("index, follow");
-    expect(app).toContain("buildHomepageJsonLd");
+    expect(chrome).toContain("TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings");
+    expect(chrome).toContain("index, follow");
+    expect(chrome).toContain("buildHomepageJsonLd");
+    expect(app).toContain("PreviewChrome");
+    expect(chrome).not.toMatch(/noindex/);
     expect(app).not.toMatch(/noindex/);
   });
 });

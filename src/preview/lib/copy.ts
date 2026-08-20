@@ -2,6 +2,11 @@
 
 export const PREVIEW_HEADLINE = "CS2 trade-ups built from real, buyable listings";
 
+export const PREVIEW_CTA_PRIMARY = "Find Real Tradeups ->";
+export const PREVIEW_CTA_DISCORD = "Join the Discord";
+export const PREVIEW_DISCORD_HREF = "https://discord.gg/w4jFs8g5kU";
+export const PREVIEW_GITHUB_HREF = "https://github.com/twaldin/trade-up-bot";
+
 export const PREVIEW_LEDE =
   "Most calculators price trade-ups with idealized floats and average prices. TradeUpBot builds each trade-up from listings currently for sale.";
 

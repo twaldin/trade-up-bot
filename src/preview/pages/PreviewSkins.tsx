@@ -3,10 +3,9 @@
  * `/api/skin-by-slug`, `/api/collections` and `/api/trade-ups` routes production
  * uses, rendered on the Outlay kit instead of the old chrome.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import type { TradeUp } from "../../../shared/types.js";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
@@ -89,6 +88,21 @@ const WEAR_BANDS: [string, number, number][] = [
 export function wearBand(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "—";
   return WEAR_BANDS.find(([, lo, hi]) => value >= lo && value < hi)?.[0] ?? "BS";
+}
+
+function WearCell({ value }: { value: number | null }) {
+  const band = wearBand(value);
+  const pct = value === null || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value * 100));
+  return (
+    <span className="preview-wear">
+      {pct !== null && (
+        <span className="preview-wear__bar" aria-hidden>
+          <i style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      <span className="preview-chip">{band}</span>
+    </span>
+  );
 }
 
 /** Cheapest observed price per condition, across whichever sources reported. */
@@ -299,11 +313,12 @@ export function PreviewSkinsPage() {
 const LISTING_PAGE = 40;
 
 /** The skin page body. Collection rails click through here; they do not embed it. */
-export function SkinStats({ name }: { name: string }) {
+export function SkinStats({ name, board }: { name: string; board?: ReactNode }) {
   const [detail, setDetail] = useState<SkinDetail | null>(null);
   const [error, setError] = useState(false);
   const [listingQuery, setListingQuery] = useState("");
   const [listingVisible, setListingVisible] = useState(LISTING_PAGE);
+  const [pane, setPane] = useState<"listings" | "tradeups">("listings");
   const listingSentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -369,7 +384,7 @@ export function SkinStats({ name }: { name: string }) {
       </span>
     ) },
     { key: "wear", label: "Wear", sortValue: (row) => row.float_value ?? 2, render: (row) => (
-      <span className="preview-chip">{wearBand(row.float_value)}</span>
+      <WearCell value={row.float_value} />
     ) },
     { key: "market", label: "Market", sortValue: (row) => row.source, render: (row) => (
       <span className="preview-chip">{sourceLabel(row.source)}</span>
@@ -387,8 +402,8 @@ export function SkinStats({ name }: { name: string }) {
   ];
 
   return (
-    <div className="preview-split">
-      <div className="preview-stack">
+    <div className="preview-skin-detail">
+      <div className="preview-skin-detail__meta">
         <section className="preview-hero-skin" style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
           <Face name={skin.name} size={150} />
           <p className="o-kicker">{weapon} · {finish}</p>
@@ -418,48 +433,79 @@ export function SkinStats({ name }: { name: string }) {
         )}
       </div>
 
-      <div className="preview-stack">
-        <section className="preview-subpanel">
-          <header className="preview-panel__head">
-            <p className="o-kicker">Float against price</p>
-            <span className="preview-panel__meta">click a series to hide it</span>
-          </header>
-          <PriceScatter points={scatter} />
-        </section>
-        <section className="preview-panel">
-          <header className="preview-panel__head">
-            <p className="o-kicker">Live listings</p>
-            <span className="preview-panel__meta">
-              {shownListings.length.toLocaleString()}
-              {filteredListings.length !== listings.length ? ` / ${filteredListings.length.toLocaleString()}` : ""}
-              {" of "}
-              {listings.length.toLocaleString()}
-            </span>
-          </header>
-          <label className="preview-field preview-field--search preview-listings-search">
-            <Search size={12} aria-hidden />
-            <input
-              className="preview-field__input"
-              value={listingQuery}
-              placeholder="fn · <$20 · <0.15 · csfloat"
-              onChange={(event) => setListingQuery(event.target.value)}
+      <section className="preview-subpanel preview-skin-detail__chart">
+        <header className="preview-panel__head">
+          <p className="o-kicker">Float against price</p>
+          <span className="preview-panel__meta">click a series to hide it</span>
+        </header>
+        <PriceScatter points={scatter} />
+      </section>
+
+      <div className="preview-skin-stage">
+        <div className="preview-tabs preview-skin-tabs" role="tablist" aria-label="Skin detail">
+          <button
+            type="button"
+            role="tab"
+            className="o-tab"
+            aria-selected={pane === "listings"}
+            data-state={pane === "listings" ? "active" : "inactive"}
+            data-pane="listings"
+            onClick={() => setPane("listings")}
+          >
+            Listings
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="o-tab"
+            aria-selected={pane === "tradeups"}
+            data-state={pane === "tradeups" ? "active" : "inactive"}
+            data-pane="tradeups"
+            onClick={() => setPane("tradeups")}
+          >
+            Trade-ups
+          </button>
+        </div>
+        <div className="preview-skin-panes" data-pane={pane}>
+          <section className="preview-panel preview-skin-pane preview-skin-pane--listings">
+            <header className="preview-panel__head">
+              <p className="o-kicker">Live listings</p>
+              <span className="preview-panel__meta">
+                {shownListings.length.toLocaleString()}
+                {filteredListings.length !== listings.length ? ` / ${filteredListings.length.toLocaleString()}` : ""}
+                {" of "}
+                {listings.length.toLocaleString()}
+              </span>
+            </header>
+            <label className="preview-field preview-field--search preview-listings-search">
+              <Search size={12} aria-hidden />
+              <input
+                className="preview-field__input"
+                value={listingQuery}
+                placeholder="fn · <$20 · <0.15 · csfloat"
+                onChange={(event) => setListingQuery(event.target.value)}
+              />
+            </label>
+            <PreviewTable
+              columns={columns}
+              rows={shownListings}
+              rowKey={(row) => row.id}
+              initialSort="price"
+              initialDirection="asc"
+              empty="No live listings match that search."
+              dense
+              fit
             />
-          </label>
-          <PreviewTable
-            columns={columns}
-            rows={shownListings}
-            rowKey={(row) => row.id}
-            initialSort="price"
-            initialDirection="asc"
-            empty="No live listings match that search."
-            dense
-          />
-          {listingVisible < filteredListings.length && (
-            <div className="preview-sentinel" ref={listingSentinel}>
-              <span className="preview-note">Loading more listings…</span>
-            </div>
-          )}
-        </section>
+            {listingVisible < filteredListings.length && (
+              <div className="preview-sentinel" ref={listingSentinel}>
+                <span className="preview-note">Loading more listings…</span>
+              </div>
+            )}
+          </section>
+          <section className="preview-skin-pane preview-skin-pane--board">
+            {board}
+          </section>
+        </div>
       </div>
     </div>
   );
@@ -522,22 +568,26 @@ export function PreviewSkinPage() {
           </p>
         </div>
       </header>
-      <SkinStats name={name} />
-      <PreviewBoard
-        tradeUps={board.tradeUps}
-        loading={board.loading}
-        isFree={board.isFree}
-        expandedId={board.expandedId}
-        onExpand={board.onExpand}
-        query={board.query}
-        onQuery={board.onQuery}
-        loadMore={board.loadMore}
-        exhausted={board.exhausted}
-        throttle={board.throttle}
-        heading="Trade-ups using this skin"
-        lede="Ranked the same way as the board, filtered to this skin as an input or an output."
-        lockedSkin={name}
-        embed
+      <SkinStats
+        name={name}
+        board={
+          <PreviewBoard
+            tradeUps={board.tradeUps}
+            loading={board.loading}
+            isFree={board.isFree}
+            expandedId={board.expandedId}
+            onExpand={board.onExpand}
+            query={board.query}
+            onQuery={board.onQuery}
+            loadMore={board.loadMore}
+            exhausted={board.exhausted}
+            throttle={board.throttle}
+            heading="Trade-ups using this skin"
+            lede="Ranked the same way as the board, filtered to this skin as an input or an output."
+            lockedSkin={name}
+            embed
+          />
+        }
       />
     </div>
   );
