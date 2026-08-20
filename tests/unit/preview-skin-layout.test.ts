@@ -41,7 +41,7 @@ describe("skin detail listings cannot bury the trade-up board", () => {
     expect(css).toContain(".preview-skin-pane--board");
     expect(css).toMatch(/\.preview-skin-panes\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
     expect(css).toMatch(/@media \(min-width: 1100px\)[\s\S]*\.preview-skin-panes\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
-    expect(css).toMatch(/@media \(min-width: 1100px\)[\s\S]*\.preview-skin-tabs\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/@media \(min-width: 1100px\)[\s\S]*\.preview-skin-tabs\.preview-tabs\s*\{[^}]*display:\s*none/);
   });
 
   it("caps listings overflow inside its pane and never page-scrolls the board away", () => {

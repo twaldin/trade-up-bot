@@ -2009,6 +2009,8 @@
 }
 
 .preview-tablewrap--fit {
+  width: max-content;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -2021,8 +2023,8 @@
 .preview-table--fit td {
   width: auto;
   max-width: none;
-  padding-left: 8px;
-  padding-right: 8px;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .preview-listings-search {
@@ -2394,6 +2396,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.preview-skin-tabs.preview-tabs { display: flex; }
+
+@media (min-width: 1100px) {
+  .preview-skin-tabs.preview-tabs { display: none; }
 }
 
 .preview-tabs .o-tab {
