@@ -24,7 +24,7 @@ function BlogLink({ slug, title }: { slug: string; title: string }) {
 
 export function PreviewFaq() {
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={seo.title} description={seo.description} canonical="https://tradeupbot.app/faq" jsonLd={seo.jsonLd} />
       <header className="preview-page__head">
         <div>

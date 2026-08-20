@@ -1,4 +1,4 @@
-import { Boxes, Calculator, CircleHelp, Crosshair, LayoutDashboard, Layers, Newspaper, Sparkles, Tag, UserRound } from "lucide-react";
+import { Boxes, Calculator, Crosshair, LayoutDashboard, Layers, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
@@ -11,13 +11,6 @@ const NAV = [
   { to: "/calculator", label: "Calculator", icon: Calculator, end: true },
   { to: "/listing-sniper", label: "Sniper", icon: Crosshair, end: true },
   { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
-] as const;
-
-const PRODUCT = [
-  { to: "/pricing", label: "Pricing", icon: Tag, end: true },
-  { to: "/features", label: "Features", icon: Sparkles, end: true },
-  { to: "/faq", label: "FAQ", icon: CircleHelp, end: true },
-  { to: "/blog", label: "Blog", icon: Newspaper, end: false },
 ] as const;
 
 export function PreviewShell({
@@ -48,20 +41,6 @@ export function PreviewShell({
                   {label}
                 </NavLink>
               ))}
-            </div>
-            <div className="preview-sidebar__group">
-              <p className="o-kicker">Product</p>
-              {PRODUCT.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={to} end={end} className="o-nav-item">
-                  <Icon className="size-[13px] shrink-0" aria-hidden />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-            <div className="preview-sidebar__group">
-              <p className="o-kicker">Legal</p>
-              <NavLink to="/terms" end className="o-nav-item">Terms</NavLink>
-              <NavLink to="/privacy" end className="o-nav-item">Privacy</NavLink>
             </div>
           </nav>
         </aside>

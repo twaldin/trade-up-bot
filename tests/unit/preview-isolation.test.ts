@@ -92,6 +92,7 @@ describe("console cutover", () => {
   it("links inside the console carry no preview prefix", () => {
     const files = [
       "PreviewApp.tsx",
+      "PreviewChrome.tsx",
       "PreviewShell.tsx",
       "pages/PreviewBoard.tsx",
       "pages/PreviewSkins.tsx",
@@ -152,10 +153,12 @@ describe("console cutover", () => {
   it("does not iframe production chrome", () => {
     const previewDir = resolve(testDir, "../../src/preview");
     const shell = readFileSync(resolve(previewDir, "PreviewShell.tsx"), "utf8");
+    const chrome = readFileSync(resolve(previewDir, "PreviewChrome.tsx"), "utf8");
     const app = readFileSync(resolve(previewDir, "PreviewApp.tsx"), "utf8");
     const board = readFileSync(resolve(previewDir, "pages/PreviewBoard.tsx"), "utf8");
     expect(app).not.toContain("pv-embed");
     expect(shell).not.toContain("pv-embed");
+    expect(chrome).not.toContain("pv-embed");
     expect(shell).toContain("o-nav-item");
     expect(board).not.toContain("/skins/${");
     expect(board).not.toContain("`/trade-ups/");
@@ -179,6 +182,7 @@ describe("console cutover", () => {
   it("says trade-up, not contract, on the preview surface", () => {
     const files = [
       "PreviewApp.tsx",
+      "PreviewChrome.tsx",
       "PreviewShell.tsx",
       "lib/copy.ts",
       "lib/board.ts",

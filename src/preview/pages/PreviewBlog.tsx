@@ -18,7 +18,7 @@ function formatDate(iso: string, long = false): string {
 
 export function PreviewBlogIndex() {
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={INDEX_TITLE} description={INDEX_DESCRIPTION} canonical="https://tradeupbot.app/blog" />
       <header className="preview-page__head">
         <div>
@@ -88,7 +88,7 @@ export function PreviewBlogPost() {
   const jsonLd = faqJsonLd ? [blogPostingJsonLd, faqJsonLd] : blogPostingJsonLd;
 
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo
         title={`${post.title} | TradeUpBot`}
         description={post.excerpt}

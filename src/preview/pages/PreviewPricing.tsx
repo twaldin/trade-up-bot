@@ -105,7 +105,7 @@ export function PreviewPricing() {
   }, []);
 
   return (
-    <div className="preview-page preview-page--doc">
+    <div className="preview-market">
       <PreviewSeo title={seo.title} description={seo.description} canonical="https://tradeupbot.app/pricing" jsonLd={seo.jsonLd} />
       <header className="preview-page__head">
         <div>
@@ -242,7 +242,7 @@ export function PreviewPricing() {
       </section>
 
       <div className="preview-toolbar">
-        <Link className="preview-btn preview-btn--lime" to="/trade-ups">Open the console</Link>
+        <Link className="preview-btn preview-btn--lime" to="/trade-ups">Find Real Tradeups -&gt;</Link>
         <Link className="preview-btn" to="/features">Compare features</Link>
       </div>
     </div>

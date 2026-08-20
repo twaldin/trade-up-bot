@@ -1,10 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { PreviewCurrency } from "./components/PreviewCurrency.js";
-import { PreviewMark } from "./components/PreviewMark.js";
-import { pageFor, type ConsolePage } from "./lib/console-routes.js";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { isMarketingPage, pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
-import { buildHomepageJsonLd } from "../../shared/crawler-jsonld.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBlogIndex, PreviewBlogPost } from "./pages/PreviewBlog.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
@@ -23,6 +20,7 @@ import {
   PreviewSkinsPage,
 } from "./pages/PreviewSkins.js";
 import { PreviewSniper } from "./pages/PreviewSniper.js";
+import { PreviewChrome } from "./PreviewChrome.js";
 import { PreviewShell } from "./PreviewShell.js";
 import "./preview.css";
 
@@ -31,38 +29,6 @@ interface GlobalStats {
   profitable_trade_ups: number;
   total_data_points: number;
   total_cycles: number;
-}
-
-function PreviewChrome({ children, mode, onMode }: { children: ReactNode; mode: "light" | "dark"; onMode: () => void }) {
-  return (
-    <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
-      <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
-      <meta name="description" content="CS2 trade-ups built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.market." />
-      <meta name="robots" content="index, follow" />
-      <link rel="canonical" href="https://tradeupbot.app/" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildHomepageJsonLd()) }} />
-      <header className="preview-nav">
-        <Link to="/" className="preview-brand">
-          <PreviewMark size={20} />
-          TradeUpBot
-        </Link>
-        <nav className="preview-nav__links" aria-label="Preview">
-          <Link className="preview-btn preview-btn--quiet" to="/trade-ups">Board</Link>
-          <Link className="preview-btn preview-btn--quiet" to="/skins">Skins</Link>
-          <Link className="preview-btn preview-btn--quiet" to="/collections">Collections</Link>
-          <a className="preview-btn preview-btn--quiet" href="#faq">FAQ</a>
-        </nav>
-        <div className="preview-bar__actions">
-          <button type="button" className="preview-btn" onClick={onMode}>
-            {mode === "dark" ? "Light" : "Dark"}
-          </button>
-          <PreviewCurrency />
-          <Link className="preview-btn preview-btn--lime" to="/trade-ups">Open the console</Link>
-        </div>
-      </header>
-      {children}
-    </div>
-  );
 }
 
 function BoardRoute() {
@@ -122,21 +88,25 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
     }
   })();
 
-  if (page !== "landing") {
+  const chrome = (
+    <>
+      <span className="sr-only">{PREVIEW_HEADLINE}</span>
+      <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
+      {view}
+    </>
+  );
+
+  if (isMarketingPage(page)) {
     return (
-      <PreviewShell mode={mode} onMode={onMode}>
-        <span className="sr-only">{PREVIEW_HEADLINE}</span>
-        <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
-        {view}
-      </PreviewShell>
+      <PreviewChrome mode={mode} onMode={onMode} home={page === "landing"}>
+        {chrome}
+      </PreviewChrome>
     );
   }
 
   return (
-    <PreviewChrome mode={mode} onMode={onMode}>
-      <span className="sr-only">{PREVIEW_HEADLINE}</span>
-      <span className="sr-only">{PREVIEW_FAQ[0]?.q}</span>
-      {view}
-    </PreviewChrome>
+    <PreviewShell mode={mode} onMode={onMode}>
+      {chrome}
+    </PreviewShell>
   );
 }
