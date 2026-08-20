@@ -17,6 +17,7 @@ const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 const app = read("../../src/preview/PreviewApp.tsx");
 const chrome = read("../../src/preview/PreviewChrome.tsx");
 const shell = read("../../src/preview/PreviewShell.tsx");
+const css = read("../../src/preview/preview.css");
 const landing = read("../../src/preview/pages/PreviewLanding.tsx");
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
 const features = read("../../src/preview/pages/PreviewFeatures.tsx");
@@ -24,6 +25,19 @@ const faq = read("../../src/preview/pages/PreviewFaq.tsx");
 const blog = read("../../src/preview/pages/PreviewBlog.tsx");
 const legal = read("../../src/preview/pages/PreviewLegal.tsx");
 const homepageSeo = read("../../server/static-seo-pages.ts");
+
+describe("390 console strip keeps every product dest tappable", () => {
+  it("wraps console dests onto their own rows so Light / USD cannot cover them", () => {
+    expect(shell).toContain('aria-label="Console pages"');
+    expect(shell).toContain("preview-console__mobile");
+    expect(shell).toContain("preview-bar__actions");
+    expect(css).toMatch(/\.preview-console__bar\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(css).toMatch(/\.preview-console__bar\s*\{[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/\.preview-console__mobile\s*\{[^}]*display:\s*contents/);
+    expect(css).not.toMatch(/\.preview-console__bar\s*\{[^}]*(?<!min-)height:\s*44px/);
+    expect(css).not.toMatch(/\.preview-bar__actions\s*\{[^}]*position:\s*absolute/);
+  });
+});
 
 describe("product and legal leave the console sidebar", () => {
   it("keeps only console destinations in the sidebar", () => {

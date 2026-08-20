@@ -54,6 +54,25 @@ describe("skin detail listings cannot bury the trade-up board", () => {
     expect(css).toMatch(/\.preview-skin-pane--listings\s*\{[^}]*max-height:/);
   });
 
+  it("makes the listings table a real scrollport instead of a clipped wrap", () => {
+    // `.preview-tablewrap { overflow: hidden }` plus `overflow-x: auto` computes
+    // to overflow-y: hidden. If that wrap also shrinks in the pane flex column,
+    // the 8k–45k table is clipped, the pane never overflows, and the wheel
+    // goes to console `main`. Keep the wrap as tall as the table.
+    expect(css).toMatch(/\.preview-tablewrap--fit\s*\{[^}]*flex:\s*0\s+0\s+auto/);
+    expect(css).toMatch(/\.preview-skin-pane--listings\s*\{[^}]*overscroll-behavior:\s*contain/);
+    expect(css).not.toMatch(/\.preview-tablewrap--fit\s*\{[^}]*overflow-y:\s*hidden/);
+  });
+
+  it("uses an empty-state listings search hint, not example query syntax", () => {
+    expect(stats).toMatch(/placeholder="Search listings…"/);
+    expect(stats).not.toContain("fn ·");
+    expect(stats).not.toContain("<$20");
+    expect(stats).not.toContain("<0.15");
+    expect(stats).toContain("listingMatchesQuery");
+    expect(stats).toContain("listingQuery");
+  });
+
   it("keeps search, page-40 loadMore, and the skin trade-up embed", () => {
     expect(stats).toContain("preview-listings-search");
     expect(stats).toContain("LISTING_PAGE");
