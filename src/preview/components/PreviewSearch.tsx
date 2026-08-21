@@ -45,7 +45,7 @@ export function PreviewSearch({
   value,
   onChange,
   onParsed,
-  placeholder = "covert <0.03 <$700",
+  placeholder = "Search trade-ups…",
   examples,
 }: {
   value: string;

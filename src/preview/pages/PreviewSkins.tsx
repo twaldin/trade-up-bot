@@ -288,7 +288,7 @@ export function PreviewSkinsPage() {
         value={search}
         onChange={setSearch}
         onParsed={setParsed}
-        placeholder="covert <$700  ·  ak nightwish  ·  classified"
+        placeholder="Search skins…"
         examples={["covert", "ak nightwish", "classified <$50", "awp"]}
       />
 
