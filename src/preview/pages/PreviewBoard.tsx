@@ -782,6 +782,7 @@ export function PreviewBoard({
           value={search ?? ""}
           onChange={onSearch}
           onParsed={onParsed}
+          placeholder="Search trade-ups…"
           examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
         />
       )}
