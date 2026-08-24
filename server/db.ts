@@ -29,7 +29,9 @@ export function initDb(): pg.Pool {
     connectionString,
     max: 20,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    // 5s checkout was too tight: Phase 4c vanilla-knife lookups + Skinport WS
+    // flush share this pool; waiters expired and `main().catch` exited the daemon.
+    connectionTimeoutMillis: 15_000,
   });
 
   _pool.on("error", (err) => {

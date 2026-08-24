@@ -5,6 +5,7 @@ import {
   computeChanceToProfit,
   computeBestWorstCase,
   withRetry,
+  isTransientDbError,
   pickWeightedStrategy,
   shuffle,
   pick,
@@ -134,7 +135,34 @@ describe("computeBestWorstCase", () => {
   });
 });
 
-// ─── withRetry ───────────────────────────────────────────────────────────────
+// ─── isTransientDbError / withRetry ──────────────────────────────────────────
+
+function pgConnectTimeout(): Error {
+  // Exact message from node-pg Pool when connectionTimeoutMillis elapses.
+  return new Error("timeout exceeded when trying to connect");
+}
+
+describe("isTransientDbError", () => {
+  it("treats pg-pool connect timeout as transient (the live daemon crash)", () => {
+    expect(isTransientDbError(pgConnectTimeout())).toBe(true);
+  });
+
+  it("treats Connection terminated / ECONNRESET / 57P01 as transient", () => {
+    expect(isTransientDbError(new Error("Connection terminated"))).toBe(true);
+    const reset = new Error("read ECONNRESET") as Error & { code: string };
+    reset.code = "ECONNRESET";
+    expect(isTransientDbError(reset)).toBe(true);
+    const shutdown = new Error("terminating connection due to administrator command") as Error & { code: string };
+    shutdown.code = "57P01";
+    expect(isTransientDbError(shutdown)).toBe(true);
+  });
+
+  it("does not treat application / SQL errors as transient", () => {
+    expect(isTransientDbError(new Error("syntax error"))).toBe(false);
+    expect(isTransientDbError(new Error("duplicate key value"))).toBe(false);
+    expect(isTransientDbError(new Error("timeout exceeded when trying to query"))).toBe(false);
+  });
+});
 
 describe("withRetry", () => {
   it("returns result on first success", async () => {
@@ -158,6 +186,18 @@ describe("withRetry", () => {
     expect(attempts).toBe(3);
   });
 
+  it("retries pg-pool connect timeout and succeeds", async () => {
+    let attempts = 0;
+    const fn = () => {
+      attempts++;
+      if (attempts < 3) throw pgConnectTimeout();
+      return Promise.resolve("recovered");
+    };
+    const result = await withRetry(fn, 3, "connect", 0);
+    expect(result).toBe("recovered");
+    expect(attempts).toBe(3);
+  });
+
   it("throws non-transient errors immediately", async () => {
     const fn = () => Promise.reject(new Error("syntax error"));
     await expect(withRetry(fn, 3)).rejects.toThrow("syntax error");
@@ -169,7 +209,7 @@ describe("withRetry", () => {
       err.code = "ECONNREFUSED";
       throw err;
     };
-    await expect(withRetry(fn, 1)).rejects.toThrow("Connection terminated");
+    await expect(withRetry(fn, 1, "DB operation", 0)).rejects.toThrow("Connection terminated");
   });
 });
 

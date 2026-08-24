@@ -70,22 +70,59 @@ export function computeBestWorstCase(
   return { bestCase, worstCase };
 }
 
+const TRANSIENT_PG_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "57P01", // admin_shutdown
+  "57P02", // crash shutdown
+  "57P03", // cannot_connect_now
+  "53300", // too_many_connections
+]);
+
+/**
+ * Transient Postgres / pool errors that should be retried, not treated as fatal.
+ * Includes the live daemon-crash message from node-pg Pool:
+ *   "timeout exceeded when trying to connect"
+ */
+function errorCode(err: unknown): string {
+  if (typeof err !== "object" || err === null || !("code" in err)) return "";
+  return typeof err.code === "string" ? err.code : "";
+}
+
+export function isTransientDbError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  const code = errorCode(err);
+  if (TRANSIENT_PG_CODES.has(code)) return true;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("connection terminated") ||
+    lower.includes("timeout exceeded when trying to connect") ||
+    lower.includes("remaining connection slots are reserved") ||
+    lower.includes("too many clients already")
+  );
+}
+
 /**
  * Retry a function that may fail with connection errors.
  * PG handles concurrency natively; this only retries transient connection issues.
  */
-export async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, label = "DB operation"): Promise<T> {
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  label = "DB operation",
+  backoffMs = 1000,
+): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
-      const msg = (err as Error).message ?? "";
-      const code = (err as { code?: string }).code ?? "";
-      const isTransient = code === "ECONNREFUSED" || code === "ECONNRESET" || code === "57P01" || msg.includes("Connection terminated");
-      if (isTransient && attempt < maxRetries) {
-        const waitMs = 1000 * Math.pow(2, attempt);
-        console.log(`  ${label}: connection error (${code}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
+      if (isTransientDbError(err) && attempt < maxRetries) {
+        const waitMs = backoffMs * Math.pow(2, attempt);
+        const code = errorCode(err);
+        const detail = code || (err instanceof Error ? err.message : "unknown");
+        console.log(`  ${label}: connection error (${detail}), retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
         continue;
       }
       throw err;

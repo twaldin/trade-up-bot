@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computeRepriceDecision,
+  repriceRowOrTouch,
+  mapRepriceDecisions,
   buildBulkRepriceUpdate,
   type RepriceRow,
   type OutputLookup,
@@ -79,6 +81,83 @@ describe("computeRepriceDecision", () => {
     const a = await computeRepriceDecision(row(outcomes), lk);
     const b = await computeRepriceDecision(row(outcomes), lk);
     expect(a).toEqual(b);
+  });
+});
+
+// ─── crash vs survive (pg-pool connect timeout) ──────────────────────────────
+
+function connectTimeout(): Error {
+  return new Error("timeout exceeded when trying to connect");
+}
+
+describe("repriceRowOrTouch — connect timeout must not throw", () => {
+  it("retries a connect timeout then returns the successful decision", async () => {
+    const outcomes = [mkOutcome("A", 1)];
+    let attempts = 0;
+    const lookup: OutputLookup = async () => {
+      attempts++;
+      if (attempts < 3) throw connectTimeout();
+      return { priceCents: 2000, marketplace: "csfloat", grossPrice: 2000, feePct: 0.02 };
+    };
+    const d = await repriceRowOrTouch(row(outcomes, 1000, 1000), lookup, { maxRetries: 3, backoffMs: 0 });
+    expect(attempts).toBe(3);
+    expect(d.kind).toBe("update");
+    if (d.kind === "update") expect(d.expected_value_cents).toBe(2000);
+  });
+
+  it("fails the item as a touch after retries — does not throw (daemon stays alive)", async () => {
+    const outcomes = [mkOutcome("A", 1)];
+    const lookup: OutputLookup = async () => {
+      throw connectTimeout();
+    };
+    const d = await repriceRowOrTouch(row(outcomes), lookup, { maxRetries: 1, backoffMs: 0 });
+    expect(d).toEqual({ kind: "touch", id: 42 });
+  });
+
+  it("still throws non-transient lookup errors (not a blanket swallow)", async () => {
+    const outcomes = [mkOutcome("A", 1)];
+    const lookup: OutputLookup = async () => {
+      throw new Error("unexpected pricing bug");
+    };
+    await expect(repriceRowOrTouch(row(outcomes), lookup, { maxRetries: 1, backoffMs: 0 }))
+      .rejects.toThrow("unexpected pricing bug");
+  });
+});
+
+describe("mapRepriceDecisions — one timeout does not abort the batch", () => {
+  it("continues other items when one lookup hits a connect timeout", async () => {
+    const mkRow = (id: number, skin: string): RepriceRow => ({
+      id,
+      total_cost_cents: 1000,
+      expected_value_cents: 1000,
+      outcomes_json: JSON.stringify([mkOutcome(skin, 1)]),
+    });
+    const rows = [mkRow(1, "ok-a"), mkRow(2, "vanilla-timeout"), mkRow(3, "ok-b")];
+    const seen: string[] = [];
+    const lookup: OutputLookup = async (skinName) => {
+      seen.push(skinName);
+      if (skinName === "vanilla-timeout") throw connectTimeout();
+      return { priceCents: 2000, marketplace: "csfloat", grossPrice: 2000, feePct: 0.02 };
+    };
+
+    const decisions = await mapRepriceDecisions(rows, lookup, { concurrency: 3, maxRetries: 1, backoffMs: 0 });
+
+    expect(decisions).toHaveLength(3);
+    expect(decisions[0]).toMatchObject({ kind: "update", id: 1, expected_value_cents: 2000 });
+    expect(decisions[1]).toEqual({ kind: "touch", id: 2 });
+    expect(decisions[2]).toMatchObject({ kind: "update", id: 3, expected_value_cents: 2000 });
+    // The timed-out item must not prevent later items from being looked up.
+    expect(seen).toContain("ok-a");
+    expect(seen).toContain("ok-b");
+    expect(seen).toContain("vanilla-timeout");
+  });
+
+  it("bare computeRepriceDecision still rejects on connect timeout (isolation lives in the wrapper)", async () => {
+    const lookup: OutputLookup = async () => {
+      throw connectTimeout();
+    };
+    await expect(computeRepriceDecision(row([mkOutcome("A", 1)]), lookup))
+      .rejects.toThrow("timeout exceeded when trying to connect");
   });
 });
 

@@ -3,7 +3,7 @@
  */
 
 import pg from "pg";
-import { withRetry, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
+import { withRetry, isTransientDbError, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { lookupOutputPrice, buildPriceCache, warmOutputPriceCaches, type OutputPriceResult } from "./pricing.js";
 import type { TradeUpOutcome } from "../../shared/types.js";
 
@@ -171,6 +171,10 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   return { updated };
 }
 
+/** Concurrent reprice workers. 8-wide plus Skinport WS flush starved the
+ *  20-connection pool (5s checkout) and crashed the daemon. Leave headroom. */
+const REPRICE_COMPUTE_CONCURRENCY = 4;
+
 /** A trade-up row eligible for repricing. */
 export interface RepriceRow {
   id: number;
@@ -196,6 +200,16 @@ export type RepriceDecision =
 
 /** Injectable output-price lookup (production: lookupOutputPrice bound to a pool). */
 export type OutputLookup = (skinName: string, predictedFloat: number) => Promise<OutputPriceResult>;
+
+/** Retry / isolation knobs for a single reprice row. Tests pass backoffMs: 0. */
+export interface RepriceRetryOpts {
+  maxRetries?: number;
+  backoffMs?: number;
+}
+
+export interface MapRepriceOpts extends RepriceRetryOpts {
+  concurrency?: number;
+}
 
 /**
  * Pure repricing decision for a single trade-up. No DB writes, no shared state
@@ -239,6 +253,49 @@ export async function computeRepriceDecision(row: RepriceRow, lookup: OutputLook
     worst_case_cents: worstCase,
     outcomes_json: JSON.stringify(newOutcomes),
   };
+}
+
+/**
+ * Reprice one row. Transient pool/connect failures are retried with backoff;
+ * if they persist the item is failed as a freshness touch so the batch
+ * advances and the daemon stays alive. Non-transient errors still throw.
+ */
+export async function repriceRowOrTouch(
+  row: RepriceRow,
+  lookup: OutputLookup,
+  opts: RepriceRetryOpts = {},
+): Promise<RepriceDecision> {
+  const maxRetries = opts.maxRetries ?? 3;
+  const backoffMs = opts.backoffMs ?? 1000;
+  try {
+    return await withRetry(
+      () => computeRepriceDecision(row, lookup),
+      maxRetries,
+      `reprice ${row.id}`,
+      backoffMs,
+    );
+  } catch (err) {
+    if (isTransientDbError(err)) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`  reprice ${row.id}: ${msg} — failing item, continuing`);
+      return { kind: "touch", id: row.id };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Concurrent reprice with per-item isolation. One connect timeout cannot
+ * reject the whole Promise.all the way `mapWithConcurrency` + raw
+ * `computeRepriceDecision` used to (the live crash path).
+ */
+export async function mapRepriceDecisions(
+  rows: RepriceRow[],
+  lookup: OutputLookup,
+  opts: MapRepriceOpts = {},
+): Promise<RepriceDecision[]> {
+  const concurrency = opts.concurrency ?? REPRICE_COMPUTE_CONCURRENCY;
+  return mapWithConcurrency(rows, concurrency, (r) => repriceRowOrTouch(r, lookup, opts));
 }
 
 /**
@@ -352,19 +409,18 @@ export async function repriceTradeUpOutputs(
     // Compute decisions with bounded concurrency. The price compute reads only
     // module-global caches (built above), so concurrent calls are lock-free and
     // deterministic; the only DB I/O on this path is vanilla-knife pricing.
+    // Per-item isolation: a pool connect timeout fails that row, not the process.
     const tCompute = Date.now();
-    const COMPUTE_CONCURRENCY = 8;
     const lookup: OutputLookup = (skinName, predictedFloat) => lookupOutputPrice(pool, skinName, predictedFloat);
-    const decisions = await mapWithConcurrency(rows, COMPUTE_CONCURRENCY, (r: RepriceRow) =>
-      computeRepriceDecision(
-        {
-          id: r.id,
-          total_cost_cents: r.total_cost_cents,
-          expected_value_cents: r.expected_value_cents,
-          outcomes_json: r.outcomes_json,
-        },
-        lookup
-      )
+    const decisions = await mapRepriceDecisions(
+      rows.map((r: RepriceRow) => ({
+        id: r.id,
+        total_cost_cents: r.total_cost_cents,
+        expected_value_cents: r.expected_value_cents,
+        outcomes_json: r.outcomes_json,
+      })),
+      lookup,
+      { concurrency: REPRICE_COMPUTE_CONCURRENCY },
     );
     computeMs += Date.now() - tCompute;
 
@@ -380,24 +436,30 @@ export async function repriceTradeUpOutputs(
     for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
       const sql = buildBulkRepriceUpdate(updates.slice(i, i + WRITE_CHUNK));
       if (!sql) continue;
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query(sql.text, sql.values);
-        await client.query("COMMIT");
-        updated += Math.min(WRITE_CHUNK, updates.length - i);
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
-      }
+      await withRetry(async () => {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(sql.text, sql.values);
+          await client.query("COMMIT");
+          updated += Math.min(WRITE_CHUNK, updates.length - i);
+        } catch (err) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw err;
+        } finally {
+          client.release();
+        }
+      }, 3, "reprice write");
     }
 
     const TOUCH_CHUNK = 2000;
     for (let i = 0; i < touchIds.length; i += TOUCH_CHUNK) {
       const ids = touchIds.slice(i, i + TOUCH_CHUNK);
-      await pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]);
+      await withRetry(
+        () => pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]),
+        3,
+        "reprice touch",
+      );
     }
     writeMs += Date.now() - tWrite;
 
