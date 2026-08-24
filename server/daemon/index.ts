@@ -382,11 +382,22 @@ export async function main() {
     // fixed cache-build cost vs the per-row cost.
     {
       const t4c = Date.now();
-      const { repriceTradeUpOutputs } = await import("../engine.js");
-      const repriceResult = await repriceTradeUpOutputs(pool, 60000);
-      const repriceMs = Date.now() - t4c;
-      if (repriceResult.checked > 0) {
-        console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s: cache ${(repriceResult.cacheMs / 1000).toFixed(1)}s, compute ${(repriceResult.computeMs / 1000).toFixed(1)}s, write ${(repriceResult.writeMs / 1000).toFixed(1)}s)`);
+      try {
+        const { repriceTradeUpOutputs } = await import("../engine.js");
+        const repriceResult = await withRetry(
+          () => repriceTradeUpOutputs(pool, 60000),
+          3,
+          "Phase 4c Reprice",
+        );
+        const repriceMs = Date.now() - t4c;
+        if (repriceResult.checked > 0) {
+          console.log(`  Phase 4c: Repriced ${repriceResult.updated}/${repriceResult.checked} trade-up outputs (${(repriceMs / 1000).toFixed(1)}s: cache ${(repriceResult.cacheMs / 1000).toFixed(1)}s, compute ${(repriceResult.computeMs / 1000).toFixed(1)}s, write ${(repriceResult.writeMs / 1000).toFixed(1)}s)`);
+        }
+      } catch (err) {
+        // Cache-build / SELECT / write timeouts must not kill the process.
+        // Per-item connect timeouts are already isolated inside reprice.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`  Phase 4c: abandoned (${msg}) — continuing cycle`);
       }
     }
 
