@@ -1,5 +1,7 @@
 import { blogMeta } from "../src/data/blog-meta.js";
 import {
+  PREVIEW_CTA_DISCORD,
+  PREVIEW_DISCORD_HREF,
   PREVIEW_FAQ,
   PREVIEW_HEADLINE,
   PREVIEW_HOW,
@@ -262,7 +264,7 @@ ${seoFaq}
 <p><a href="/faq">Read the full FAQ</a></p>
 </section>
 <p><a href="/trade-ups">Find Real Tradeups -&gt;</a></p>
-<p><a href="https://discord.gg/w4jFs8g5kU">Join the Discord</a></p>`;
+<p><a href="${PREVIEW_DISCORD_HREF}">${escapeHtml(PREVIEW_CTA_DISCORD)}</a></p>`;
 }
 
 /** First-HTML home document for Googlebot. Not registered in the leftover-page loop. */

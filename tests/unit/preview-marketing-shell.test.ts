@@ -10,6 +10,7 @@ import {
   PREVIEW_GITHUB_HREF,
   PREVIEW_HEADLINE,
 } from "../../src/preview/lib/copy.js";
+import { HOMEPAGE_SEO } from "../../server/static-seo-pages.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -102,11 +103,14 @@ describe("home CTAs and locked headline", () => {
     expect(PREVIEW_HEADLINE).toBe("CS2 trade-ups built from real, buyable listings");
     expect(PREVIEW_CTA_PRIMARY).toBe("Find Real Tradeups ->");
     expect(PREVIEW_CTA_DISCORD).toBe("Join the Discord");
-    expect(PREVIEW_DISCORD_HREF).toBe("https://discord.gg/w4jFs8g5kU");
+    expect(PREVIEW_DISCORD_HREF).toBe("https://discord.gg/gQ8cPqBq2a");
+    expect(PREVIEW_DISCORD_HREF).not.toContain("?");
+    expect(PREVIEW_DISCORD_HREF).not.toContain("w4jFs8g5kU");
     expect(PREVIEW_GITHUB_HREF).toBe("https://github.com/twaldin/trade-up-bot");
     expect(landing).toContain("PREVIEW_CTA_PRIMARY");
     expect(landing).toContain("PREVIEW_CTA_DISCORD");
     expect(landing).toContain("PREVIEW_DISCORD_HREF");
+    expect(landing).toContain('trackDiscordCta("home")');
     expect(landing).toContain("to=\"/trade-ups\"");
     expect(landing).not.toContain("Open the console");
     expect(landing).not.toContain("How it works</a>");
@@ -116,11 +120,21 @@ describe("home CTAs and locked headline", () => {
   it("keeps first-HTML How / FAQ / blog depth and updates the crawler CTAs", () => {
     expect(homepageSeo).toContain("How it works");
     expect(homepageSeo).toContain("Find Real Tradeups");
-    expect(homepageSeo).toContain("Join the Discord");
-    expect(homepageSeo).toContain("https://discord.gg/w4jFs8g5kU");
+    expect(homepageSeo).toContain("PREVIEW_CTA_DISCORD");
+    expect(homepageSeo).toContain("PREVIEW_DISCORD_HREF");
+    expect(homepageSeo).not.toContain("w4jFs8g5kU");
     expect(homepageSeo).toContain('href="/faq"');
     expect(homepageSeo).toContain('href="/blog"');
     expect(homepageSeo).not.toContain("Open the console");
+    expect(HOMEPAGE_SEO.bodyHtml).toContain(`href="${PREVIEW_DISCORD_HREF}"`);
+    expect(HOMEPAGE_SEO.bodyHtml).toContain(PREVIEW_CTA_DISCORD);
+    expect(HOMEPAGE_SEO.bodyHtml).toContain('href="https://discord.gg/gQ8cPqBq2a"');
+    expect(HOMEPAGE_SEO.bodyHtml).not.toContain("utm_");
+  });
+
+  it("fires footer Discord analytics with a distinct utm_content", () => {
+    expect(chrome).toContain("PREVIEW_DISCORD_HREF");
+    expect(chrome).toContain('trackDiscordCta("footer")');
   });
 });
 

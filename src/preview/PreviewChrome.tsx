@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { trackDiscordCta } from "../lib/analytics.js";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
 import { buildHomepageJsonLd } from "../../shared/crawler-jsonld.js";
@@ -66,7 +67,7 @@ export function PreviewChrome({
             <p>
               <a href={PREVIEW_GITHUB_HREF} target="_blank" rel="noopener noreferrer">GitHub</a>
               {" · "}
-              <a href={PREVIEW_DISCORD_HREF} target="_blank" rel="noopener noreferrer">Discord</a>
+              <a href={PREVIEW_DISCORD_HREF} target="_blank" rel="noopener noreferrer" onClick={() => trackDiscordCta("footer")}>Discord</a>
               {" · "}
               <a href="mailto:tradeupbot@gmail.com">tradeupbot@gmail.com</a>
             </p>

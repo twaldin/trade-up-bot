@@ -4,7 +4,7 @@ import { DemoAnimationMobile } from '../components/DemoAnimationMobile.js';
 import { SiteNav } from '../components/SiteNav.js';
 import { blogMeta } from '../data/blog-meta.js';
 import { authHref } from '../lib/ref.js';
-import { trackEvent } from '../lib/analytics.js';
+import { trackDiscordCta, trackEvent } from '../lib/analytics.js';
 
 const IconSteam = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -438,7 +438,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground/50 mb-3">Contact</div>
               <div className="space-y-2 text-sm">
-                <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+                <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" onClick={() => trackDiscordCta("footer")} className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
               </div>
             </div>
           </div>
