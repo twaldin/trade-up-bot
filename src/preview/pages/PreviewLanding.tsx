@@ -29,6 +29,7 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../lib/copy.js";
+import { trackDiscordCta } from "../../lib/analytics.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { boardFaceFor, TradeUpCard, usePreviewTradeUps } from "./PreviewBoard.js";
@@ -145,6 +146,7 @@ export function PreviewLanding({
             className="preview-btn preview-btn--lg"
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => trackDiscordCta("home")}
           >
             {PREVIEW_CTA_DISCORD}
           </a>

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { trackDiscordCta } from "../lib/analytics.js";
 
 export function SiteFooter() {
   return (
@@ -9,7 +10,7 @@ export function SiteFooter() {
             <div className="font-bold text-sm mb-3">TradeUpBot</div>
             <p className="text-xs text-muted-foreground leading-relaxed mb-3">CS2 trade-up contract analyzer built from real marketplace listings.</p>
             <div className="space-y-2 text-sm">
-              <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
+              <a href="https://discord.gg/gQ8cPqBq2a" target="_blank" rel="noopener noreferrer" onClick={() => trackDiscordCta("footer")} className="block text-muted-foreground hover:text-foreground transition-colors">Discord</a>
               <a href="mailto:tradeupbot@gmail.com" className="block text-muted-foreground hover:text-foreground transition-colors">tradeupbot@gmail.com</a>
             </div>
           </div>

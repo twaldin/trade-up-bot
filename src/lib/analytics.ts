@@ -14,6 +14,16 @@ export function trackEvent(name: string, params?: GtagParams): void {
   if (typeof gtag === "function") gtag("event", name, params);
 }
 
+/** Site Discord CTA click. Keep the invite href clean — Discord.gg drops query strings. */
+export function trackDiscordCta(content: "home" | "footer"): void {
+  trackEvent("click", {
+    utm_source: "site",
+    utm_medium: "cta",
+    utm_campaign: "discord",
+    utm_content: content,
+  });
+}
+
 /** Fire a GA4 `purchase` event with verified Stripe values (server-confirmed amount). */
 export function trackPurchase(args: {
   transactionId: string;

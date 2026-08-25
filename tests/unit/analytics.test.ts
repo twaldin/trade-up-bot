@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { trackEvent, trackPurchase } from "../../src/lib/analytics.js";
+import { trackDiscordCta, trackEvent, trackPurchase } from "../../src/lib/analytics.js";
 
 afterEach(() => {
   globalThis.gtag = undefined;
@@ -16,6 +16,27 @@ describe("trackEvent", () => {
   it("does not throw when gtag is absent", () => {
     globalThis.gtag = undefined;
     expect(() => trackEvent("calculator_run")).not.toThrow();
+  });
+});
+
+describe("trackDiscordCta", () => {
+  it("fires a click event with site Discord UTM fields", () => {
+    const spy = vi.fn();
+    globalThis.gtag = spy;
+    trackDiscordCta("home");
+    expect(spy).toHaveBeenCalledWith("event", "click", {
+      utm_source: "site",
+      utm_medium: "cta",
+      utm_campaign: "discord",
+      utm_content: "home",
+    });
+    trackDiscordCta("footer");
+    expect(spy).toHaveBeenCalledWith("event", "click", {
+      utm_source: "site",
+      utm_medium: "cta",
+      utm_campaign: "discord",
+      utm_content: "footer",
+    });
   });
 });
 

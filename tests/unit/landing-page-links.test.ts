@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const landingPageSource = readFileSync(resolve(testDir, "../../src/pages/LandingPage.tsx"), "utf8");
+const siteFooterSource = readFileSync(resolve(testDir, "../../src/components/SiteFooter.tsx"), "utf8");
 const siteNavSource = readFileSync(resolve(testDir, "../../src/components/SiteNav.tsx"), "utf8");
 
 describe("landing page link targets", () => {
@@ -22,8 +23,16 @@ describe("landing page link targets", () => {
   it("uses consistent discord invite and anchor CTA for trade-ups", () => {
     expect(landingPageSource).toContain('href="https://discord.gg/gQ8cPqBq2a"');
     expect(landingPageSource).not.toContain("discord.gg/tradeupbot");
+    expect(landingPageSource).not.toContain("w4jFs8g5kU");
+    expect(landingPageSource).toContain('trackDiscordCta("footer")');
     expect(landingPageSource).toContain('<a href="/trade-ups"');
     expect(landingPageSource).toContain("View Trade-Ups");
+  });
+
+  it("points the shared footer Discord CTA at the live invite", () => {
+    expect(siteFooterSource).toContain('href="https://discord.gg/gQ8cPqBq2a"');
+    expect(siteFooterSource).not.toContain("w4jFs8g5kU");
+    expect(siteFooterSource).toContain('trackDiscordCta("footer")');
   });
 
   it("adds lazy loading and explicit dimensions to marketing screenshots", () => {
