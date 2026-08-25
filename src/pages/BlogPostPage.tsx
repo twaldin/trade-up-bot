@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { getPostBySlug, blogPosts } from "../data/blog-posts.js";
+import { blogPostHeading, getPostBySlug, blogPosts } from "../data/blog-posts.js";
 import { SiteNav } from "../components/SiteNav.js";
 import { SiteFooter } from "../components/SiteFooter.js";
 import { ProductCTA } from "../components/ProductCTA.js";
@@ -22,10 +22,11 @@ export function BlogPostPage() {
   }
 
   const relatedPosts = blogPosts.filter((p) => p.slug !== post.slug).slice(0, 2);
+  const heading = blogPostHeading(post);
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.title,
+    headline: heading,
     description: post.excerpt,
     datePublished: post.publishedAt,
     author: { "@type": "Organization", name: post.author },
@@ -71,7 +72,7 @@ export function BlogPostPage() {
 
           {/* Post header */}
           <header className="mb-10">
-            <h1 className="text-3xl sm:text-4xl font-bold mb-4 leading-tight">{post.title}</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold mb-4 leading-tight">{heading}</h1>
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>{post.author}</span>
               <span className="text-border">|</span>

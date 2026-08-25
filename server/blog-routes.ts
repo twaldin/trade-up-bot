@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { blogPosts, type BlogPost } from "../src/data/blog-posts.js";
+import { blogPostHeading, blogPosts, type BlogPost } from "../src/data/blog-posts.js";
 import { buildSeoHtml, escapeHtml, injectMetaIntoSpa, isCrawler } from "./seo.js";
 
 // Blog post metadata/content is sourced from the client blog data so crawler HTML,
@@ -13,6 +13,54 @@ const BLOG_POST_META: Record<string, BlogPost> = Object.fromEntries(
 const RETIRED_BLOG_REDIRECTS: Record<string, string> = {
   "how-do-cs2-trade-ups-work": "how-cs2-trade-ups-work",
 };
+
+export function buildBlogPostSeo(post: BlogPost): {
+  title: string;
+  description: string;
+  url: string;
+  bodyHtml: string;
+  jsonLd: Record<string, unknown>[];
+} {
+  const heading = blogPostHeading(post);
+  const title = `${post.title} | TradeUpBot`;
+  const url = `https://tradeupbot.app/blog/${post.slug}/`;
+  const ctaHtml = `<div style="margin-top:2rem;padding:1.5rem;border:1px solid #333;border-radius:0.75rem">` +
+    `<h2 style="margin:0 0 0.5rem">See live profitable trade-ups right now</h2>` +
+    `<p style="margin:0 0 1rem;color:#aaa">TradeUpBot scans CSFloat, DMarket, and Skinport continuously. ` +
+    `Every trade-up is built from real, buyable listings — fee-adjusted profit shown upfront. Free tier available.</p>` +
+    `<a href="/trade-ups">Browse trade-ups</a> &nbsp;&middot;&nbsp; ` +
+    `<a href="/calculator">Try the calculator</a> &nbsp;&middot;&nbsp; ` +
+    `<a href="/auth/steam" rel="nofollow">Sign in with Steam — free</a>` +
+    `</div>`;
+  const bodyHtml = `<article><h1>${escapeHtml(heading)}</h1>${post.content}<p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p></article>${ctaHtml}`;
+  return {
+    title,
+    description: post.excerpt,
+    url,
+    bodyHtml,
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        headline: heading,
+        description: post.excerpt,
+        datePublished: post.publishedAt,
+        author: { "@type": "Organization", name: post.author },
+        publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
+        mainEntityOfPage: url,
+      },
+      ...(post.faq ? [{
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: post.faq.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: { "@type": "Answer", text: item.answer },
+        })),
+      }] : []),
+    ],
+  };
+}
 
 export function registerBlogRoutes(app: Express, indexHtml: string): void {
   // Retired-slug 301s (both slash forms) -> the canonical post's trailing-slash URL.
@@ -42,53 +90,20 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
       return;
     }
     const ua = req.headers["user-agent"] || "";
-    const title = `${post.title} | TradeUpBot`;
-    // Trailing slash matches the URL the server actually serves content
-    // at; without it the canonical points at the redirected (non-trailing)
-    // form and Google sees a redirect loop on the canonical chain (#95).
-    const url = `https://tradeupbot.app/blog/${slug}/`;
-    const ctaHtml = `<div style="margin-top:2rem;padding:1.5rem;border:1px solid #333;border-radius:0.75rem">` +
-      `<h2 style="margin:0 0 0.5rem">See live profitable trade-ups right now</h2>` +
-      `<p style="margin:0 0 1rem;color:#aaa">TradeUpBot scans CSFloat, DMarket, and Skinport continuously. ` +
-      `Every trade-up is built from real, buyable listings — fee-adjusted profit shown upfront. Free tier available.</p>` +
-      `<a href="/trade-ups">Browse trade-ups</a> &nbsp;&middot;&nbsp; ` +
-      `<a href="/calculator">Try the calculator</a> &nbsp;&middot;&nbsp; ` +
-      `<a href="/auth/steam" rel="nofollow">Sign in with Steam — free</a>` +
-      `</div>`;
-    const blogBodyHtml = `<article><h1>${escapeHtml(post.title)}</h1>${post.content}<p><em>Published ${escapeHtml(post.publishedAt)} by ${escapeHtml(post.author)}.</em></p></article>${ctaHtml}`;
+    const { title, description, url, bodyHtml, jsonLd } = buildBlogPostSeo(post);
     res.setHeader("Content-Type", "text/html");
     if (isCrawler(String(ua))) {
       res.send(buildSeoHtml({
         title,
-        description: post.excerpt,
+        description,
         url,
-        bodyHtml: blogBodyHtml,
+        bodyHtml,
         ogType: "article",
         includeFooter: true,
-        jsonLd: [
-          {
-            "@context": "https://schema.org",
-            "@type": "BlogPosting",
-            headline: post.title,
-            description: post.excerpt,
-            datePublished: post.publishedAt,
-            author: { "@type": "Organization", name: post.author },
-            publisher: { "@type": "Organization", name: "TradeUpBot", url: "https://tradeupbot.app" },
-            mainEntityOfPage: url,
-          },
-          ...(post.faq ? [{
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            mainEntity: post.faq.map((item) => ({
-              "@type": "Question",
-              name: item.question,
-              acceptedAnswer: { "@type": "Answer", text: item.answer },
-            })),
-          }] : []),
-        ],
+        jsonLd,
       }));
     } else {
-      res.send(injectMetaIntoSpa(indexHtml, { title, description: post.excerpt, url, bodyHtml: blogBodyHtml }));
+      res.send(injectMetaIntoSpa(indexHtml, { title, description, url, bodyHtml }));
     }
   });
 }

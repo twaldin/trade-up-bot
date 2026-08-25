@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { blogMeta } from "../../data/blog-meta.js";
-import { blogPosts, getPostBySlug } from "../../data/blog-posts.js";
+import { blogPostHeading, blogPosts, getPostBySlug } from "../../data/blog-posts.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
@@ -64,10 +64,11 @@ export function PreviewBlogPost() {
   }
 
   const relatedPosts = blogPosts.filter((row) => row.slug !== post.slug).slice(0, 2);
+  const heading = blogPostHeading(post);
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.title,
+    headline: heading,
     description: post.excerpt,
     datePublished: post.publishedAt,
     author: { "@type": "Organization", name: post.author },
@@ -100,9 +101,9 @@ export function PreviewBlogPost() {
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to="/blog">Blog</Link>
             <span aria-hidden>/</span>
-            <span>{post.title}</span>
+            <span>{heading}</span>
           </nav>
-          <h1>{post.title}</h1>
+          <h1>{heading}</h1>
           <p>
             {post.author}
             {" · "}
