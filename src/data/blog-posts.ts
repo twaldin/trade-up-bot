@@ -1,12 +1,18 @@
 export interface BlogPost {
   slug: string;
   title: string;
+  /** Visible H1 when it must differ from the document title. */
+  h1?: string;
   excerpt: string;
   content: string;
   publishedAt: string;
   readTime: string;
   author: string;
   faq?: { question: string; answer: string }[];
+}
+
+export function blogPostHeading(post: Pick<BlogPost, "title" | "h1">): string {
+  return post.h1 ?? post.title;
 }
 
 export const blogPosts: BlogPost[] = [
@@ -724,8 +730,9 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   },
   {
     slug: "best-cs2-trade-up-simulator",
-    title: "Best CS2 Trade Up Simulator for Live Profit Checks",
-    excerpt: "Use the best CS2 trade up simulator to test live floats, odds, fees, and profit before buying inputs. Try smarter trade ups today.",
+    title: "CS2 Trade-Up Simulator vs Calculator (Live Listings)",
+    h1: "CS2 Trade-Up Simulator vs Calculator",
+    excerpt: "A guide to CS2 trade-up simulators vs calculators. Live listings, exact floats, and fees — then use the TradeUpBot calculator to test a contract.",
     publishedAt: "2026-05-13",
     readTime: "9 min read",
     author: "TradeUpBot Team",
@@ -799,7 +806,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <h2>FAQ</h2>
 
 <h3>What is the best CS2 trade up simulator?</h3>
-<p>The best CS2 trade up simulator uses exact floats, real input prices, collection-weighted odds, marketplace fees, and output pricing to estimate profit before you buy skins.</p>
+<p>The TradeUpBot calculator (/calculator) and the live trade-up board (/trade-ups) are the tools. This URL (/blog/best-cs2-trade-up-simulator/) is the guide comparing CS2 trade-up simulators vs calculators.</p>
 
 <h3>Can a trade up simulator guarantee profit?</h3>
 <p>No. A simulator can calculate expected value and chance-to-profit, but the output skin is still random and market prices can change before you buy inputs or sell the result.</p>
@@ -811,7 +818,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>Use the simulator to browse marketplace-backed opportunities and the calculator to test custom inputs, substitutions, and float targets for your own trade-up ideas.</p>
 `,
     faq: [
-      { question: "What is the best CS2 trade up simulator?", answer: "The best CS2 trade up simulator uses exact floats, real input prices, collection-weighted odds, marketplace fees, and output pricing to estimate profit before you buy skins." },
+      { question: "What is the best CS2 trade up simulator?", answer: "The TradeUpBot calculator (/calculator) and the live trade-up board (/trade-ups) are the tools. This URL (/blog/best-cs2-trade-up-simulator/) is the guide comparing CS2 trade-up simulators vs calculators." },
       { question: "Can a trade up simulator guarantee profit?", answer: "No. A simulator can calculate expected value and chance-to-profit, but the output skin is still random and market prices can change before you buy inputs or sell the result." },
       { question: "Why should a simulator use live listings?", answer: "Live listings show whether the required inputs actually exist at the assumed prices and floats. Static recipes can look profitable even when their inputs are unavailable or too expensive." },
       { question: "Should I use a simulator or a calculator?", answer: "Use the simulator to browse marketplace-backed opportunities and the calculator to test custom inputs, substitutions, and float targets for your own trade-up ideas." },

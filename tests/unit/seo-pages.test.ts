@@ -53,10 +53,10 @@ describe("SEO crawler page robustness", () => {
   });
 
   it("blog sitemap pages render actual blog post content for crawlers", () => {
-    expect(blogRoutesSource).toContain('import { blogPosts, type BlogPost } from "../src/data/blog-posts.js";');
+    expect(blogRoutesSource).toContain('import { blogPostHeading, blogPosts, type BlogPost } from "../src/data/blog-posts.js";');
     expect(blogRoutesSource).toContain("const BLOG_POST_META: Record<string, BlogPost>");
-    expect(blogRoutesSource).toContain("const blogBodyHtml");
-    expect(blogRoutesSource).toContain("<article><h1>${escapeHtml(post.title)}</h1>");
+    expect(blogRoutesSource).toContain("export function buildBlogPostSeo");
+    expect(blogRoutesSource).toContain("<article><h1>${escapeHtml(heading)}</h1>");
     expect(blogRoutesSource).toContain("${post.content}<p><em>Published");
   });
 });

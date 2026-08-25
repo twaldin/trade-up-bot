@@ -74,8 +74,8 @@ export const blogMeta: BlogMeta[] = [
   },
   {
     slug: "best-cs2-trade-up-simulator",
-    title: "Best CS2 Trade Up Simulator for Live Profit Checks",
-    excerpt: "Use the best CS2 trade up simulator to test live floats, odds, fees, and profit before buying inputs. Try smarter trade ups today.",
+    title: "CS2 Trade-Up Simulator vs Calculator (Live Listings)",
+    excerpt: "A guide to CS2 trade-up simulators vs calculators. Live listings, exact floats, and fees — then use the TradeUpBot calculator to test a contract.",
     publishedAt: "2026-05-13",
     readTime: "9 min read",
     author: "TradeUpBot Team",
