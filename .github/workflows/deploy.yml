@@ -91,10 +91,20 @@ jobs:
       - name: Smoke check
         run: |
           sleep 8
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" https://tradeupbot.app/)
+          HTTP=$(curl -s -o /tmp/home.html -w "%{http_code}" https://tradeupbot.app/)
           echo "home: $HTTP"
           if [ "$HTTP" != "200" ]; then
             echo "::warning::Homepage returned $HTTP — may be transient pm2 restart window; check manually"
+          fi
+          TOTAL=$(curl -s https://tradeupbot.app/api/global-stats | python3 -c "import json,sys; print(int(json.load(sys.stdin).get('total_trade_ups') or 0))")
+          echo "global-stats total_trade_ups=$TOTAL"
+          if [ "$TOTAL" -gt 0 ] && ! grep -q 'preview-stats' /tmp/home.html; then
+            echo "::error::Homepage first HTML missing .preview-stats while /api/global-stats has live counts (nginx static prerender was not materialized)"
+            exit 1
+          fi
+          if grep -q '<b>0</b>' /tmp/home.html; then
+            echo "::error::Homepage first HTML still has baked zeros"
+            exit 1
           fi
 
       - name: Googlebot SEO smoke check

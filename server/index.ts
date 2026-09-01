@@ -85,6 +85,7 @@ import { registerBlogRoutes } from "./blog-routes.js";
 import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
 import { injectLandingStats, landingStatsFromSources } from "../src/preview/lib/landing-stats.js";
 import { HOMEPAGE_SEO, STATIC_SEO_PAGES, renderHomepageSeoBody } from "./static-seo-pages.js";
+import { writeHomepageFirstHtmlFile } from "./homepage-first-html.js";
 
 const app = express();
 const PORT = 3001;
@@ -1366,10 +1367,23 @@ registerCanonicalRedirectRoutes(app);
     res.status(500).json({ error: "Internal server error" });
   });
 
+  async function materializeStaticHomepage() {
+    const indexPath = path.join(distPath, "index.html");
+    try {
+      const stats = landingStatsFromSources({ global: await getGlobalStats(pool) });
+      if (writeHomepageFirstHtmlFile(indexPath, stats)) {
+        console.log("Homepage first HTML materialized with live stats");
+      }
+    } catch (err) {
+      console.error("Homepage first HTML materialize failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
   // Start listening
   const server = app.listen(PORT, () => {
     process.send?.("ready"); // signal PM2 wait_ready when configured
     console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+    void materializeStaticHomepage();
 
     // Background cache warming: pre-populate Redis with heavy COUNT queries
     // so the first user request doesn't wait 8-10s for cold PG queries.
@@ -1433,6 +1447,7 @@ registerCanonicalRedirectRoutes(app);
             console.log(`Cache warmed: skin-data ${rarity} (${((Date.now() - t3) / 1000).toFixed(1)}s)`);
           }
         }
+        await materializeStaticHomepage();
       } catch (e) {
         console.error("Cache warming failed:", (e as Error).message);
       }
