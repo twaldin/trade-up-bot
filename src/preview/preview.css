@@ -242,7 +242,7 @@
 
 .preview-stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   gap: 1px;
   align-self: stretch;
   margin: 20px 0 0;
@@ -250,10 +250,6 @@
   border-radius: var(--r-panel);
   background: var(--panel-rule);
   overflow: hidden;
-}
-
-@media (min-width: 800px) {
-  .preview-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .preview-stats > div {

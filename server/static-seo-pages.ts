@@ -10,6 +10,7 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../src/preview/lib/copy.js";
+import { renderLandingStatsHtml, type LandingStatCounts } from "../src/preview/lib/landing-stats.js";
 import { buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
 import { escapeHtml } from "./seo.js";
 
@@ -211,7 +212,7 @@ function faqFrom(page: StaticSeoPage): { q: string; a: string }[] {
   }).filter((item) => item.q && item.a);
 }
 
-function renderHomepageSeoBody(): string {
+export function renderHomepageSeoBody(stats?: LandingStatCounts | null): string {
   const faqPage = STATIC_SEO_PAGES.find((page) => page.path === "/faq");
   const leftoverFaq = faqPage ? faqFrom(faqPage) : [];
   const value = PREVIEW_VALUE.map(([title, body]) =>
@@ -230,9 +231,12 @@ function renderHomepageSeoBody(): string {
     `<article><h3><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a></h3><p>${escapeHtml(post.excerpt)}</p></article>`
   ).join("");
 
+  const statsHtml = renderLandingStatsHtml(stats);
+
   return `<h1>${escapeHtml(PREVIEW_HEADLINE)}</h1>
 <p>${escapeHtml(PREVIEW_LEDE)}</p>
 <p>${escapeHtml(PREVIEW_SUBLEDE)}</p>
+${statsHtml}
 <section>
 <h2>${escapeHtml(PREVIEW_VALUE_HEADLINE)}</h2>
 <p>Costs come from live listings, not price averages. Click any input to open the listing and buy it.</p>
