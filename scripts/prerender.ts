@@ -6,6 +6,7 @@ import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
 import { blogPosts } from "../src/data/blog-posts.js";
 import { dedupeHead } from "../server/seo.js";
+import { fetchLiveHomepageStats, writeHomepageFirstHtmlFile } from "../server/homepage-first-html.js";
 import { normalizePrerenderedHead } from "./seo-html.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -175,6 +176,10 @@ async function main(): Promise<void> {
   try {
     for (const route of ROUTES) {
       await prerenderRoute(browser, route);
+    }
+    const stats = await fetchLiveHomepageStats();
+    if (writeHomepageFirstHtmlFile(join(DIST_DIR, "index.html"), stats)) {
+      console.log("Homepage first HTML materialized with live stats");
     }
     console.log(`\nPrerendered ${ROUTES.length} routes.`);
   } finally {
