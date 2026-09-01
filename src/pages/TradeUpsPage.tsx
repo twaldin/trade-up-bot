@@ -7,6 +7,18 @@ import type { Filters } from "../components/FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
 import { ProductCTA } from "../components/ProductCTA.js";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
+import {
+  EMPTY_FILTER_COPY,
+  LOAD_ERROR_COPY,
+  RATE_LIMIT_COPY,
+  applyBoardFetch,
+  boardEmptyKind,
+  emptyStateCopy,
+  runBoardFetchLoop,
+  sleep,
+  type BoardLoadKind,
+  type BoardSnapshot,
+} from "../lib/trade-ups-board.js";
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec" | "consumer_industrial";
 
 interface TypeOption {
@@ -46,7 +58,14 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [total, setTotal] = useState(0);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [loadKind, setLoadKind] = useState<BoardLoadKind>("ok");
   const [loading, setLoading] = useState(true); // Start loading to prevent empty state flash
+  const snapshotRef = useRef<BoardSnapshot>({
+    tradeUps: [],
+    total: 0,
+    totalProfitable: 0,
+    loadKind: "ok",
+  });
   const [signedIn, setSignedIn] = useState<boolean>(true); // optimistic: avoid nudge flash for signed-in users
   const [tier, setTier] = useState<string>(() => {
     // Persist tier to avoid "free tier" upgrade banner flash on mount
@@ -117,6 +136,14 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   // Cancel in-flight requests when sort/filter/type changes
   const abortRef = useRef<AbortController | null>(null);
 
+  const applySnapshot = useCallback((next: BoardSnapshot) => {
+    snapshotRef.current = next;
+    setTradeUps(next.tradeUps);
+    setTotal(next.total);
+    setTotalProfitable(next.totalProfitable);
+    setLoadKind(next.loadKind);
+  }, []);
+
   const fetchTradeUps = useCallback(async (silent = false) => {
     // Cancel any previous in-flight request
     if (abortRef.current) abortRef.current.abort();
@@ -135,27 +162,46 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       }
       if (includeStale) params.set("include_stale", "true");
 
-      const res = await fetch(`/api/trade-ups?${params}`, {
-        credentials: "include",
+      await runBoardFetchLoop({
         signal: controller.signal,
+        sleep: (ms) => sleep(ms, controller.signal),
+        request: async () => {
+          const res = await fetch(`/api/trade-ups?${params}`, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          let body: unknown = null;
+          try {
+            body = await res.json();
+          } catch {
+            body = null;
+          }
+          return { status: res.status, ok: res.ok, body };
+        },
+        onResult: (result) => {
+          const next = applyBoardFetch(snapshotRef.current, result);
+          applySnapshot(next);
+          if (result.kind === "ok") {
+            const newTier = result.payload.tier || "free";
+            setTier(newTier);
+            setSignedIn(Boolean(result.payload.signed_in));
+            try { localStorage.setItem("user_tier", newTier); } catch {}
+            if (result.payload.claim_limit) setClaimLimit(result.payload.claim_limit);
+            if (result.payload.verify_limit) setVerifyLimit(result.payload.verify_limit);
+          } else {
+            // Drop the loading dim so last-good rows stay usable while we back off.
+            setLoading(false);
+          }
+        },
       });
-      const data = await res.json();
-      setTradeUps(data.trade_ups);
-      setTotal(data.total);
-      setTotalProfitable(data.total_profitable ?? 0);
-      const newTier = data.tier || "free";
-      setTier(newTier);
-      setSignedIn(Boolean(data.signed_in));
-      try { localStorage.setItem("user_tier", newTier); } catch {}
-      if (data.claim_limit) setClaimLimit(data.claim_limit);
-      if (data.verify_limit) setVerifyLimit(data.verify_limit);
     } catch (err) {
       if ((err as Error).name === "AbortError") return; // cancelled — ignore
       console.error("Failed to fetch trade-ups:", err);
+      applySnapshot(applyBoardFetch(snapshotRef.current, { kind: "error" }));
     } finally {
       if (!controller.signal.aborted && !silent) setLoading(false);
     }
-  }, [sort, order, page, perPage, debouncedFilters, type, includeStale, refreshKey]);
+  }, [sort, order, page, perPage, debouncedFilters, type, includeStale, refreshKey, applySnapshot]);
 
   useEffect(() => {
     if (!filtersSettled) return; // reruns when the debounce settles
@@ -183,6 +229,15 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   };
 
   const totalPages = Math.ceil(total / perPage);
+  const emptyKind = boardEmptyKind({
+    loading,
+    tradeUps,
+    loadKind,
+    daemonPhase: status?.daemon_status?.phase,
+  });
+  const noticeCopy = !loading && loadKind !== "ok" && tradeUps.length > 0
+    ? (loadKind === "rate_limited" ? RATE_LIMIT_COPY : LOAD_ERROR_COPY)
+    : null;
 
   return (
     <>
@@ -283,31 +338,57 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
         <FilterChips filters={filters} onUpdate={handleFiltersChange} />
       </div>
 
-      {/* Empty state — only when not loading AND no data */}
-      {!loading && tradeUps.length === 0 ? (
+      {/* Empty state — only when not loading AND no data. 429 is rate-limit, not empty-filter. */}
+      {emptyKind !== "none" ? (
         <div className="text-center py-16 px-5 text-muted-foreground">
-          {status?.daemon_status?.phase === "calculating" ? (
+          {emptyKind === "calculating" ? (
             <>
               <div className="text-4xl mb-3 opacity-50">&#9881;</div>
               <p className="mb-2">Calculating trade-ups from current listings...</p>
-              <p className="text-sm text-muted-foreground/70">{status.daemon_status.detail}</p>
+              <p className="text-sm text-muted-foreground/70">{status?.daemon_status?.detail}</p>
             </>
-          ) : status?.daemon_status?.phase === "fetching" ? (
+          ) : emptyKind === "fetching" ? (
             <>
               <div className="text-4xl mb-3 opacity-50">&#8635;</div>
               <p className="mb-2">Fetching listings from CSFloat...</p>
               <p className="text-sm text-muted-foreground/70">Trade-ups appear after the first calculation cycle, usually within a few minutes.</p>
             </>
+          ) : emptyKind === "rate_limited" || emptyKind === "error" ? (
+            <>
+              <div className="text-4xl mb-3 opacity-50">&#8635;</div>
+              <p className="mb-2">{emptyStateCopy(emptyKind)}</p>
+              <p className="text-sm text-muted-foreground/70 mb-4">
+                {emptyKind === "rate_limited"
+                  ? "Last request was rate limited. Existing contracts stay on screen when we have them."
+                  : "The last request failed. Try again in a moment."}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => { void fetchTradeUps(); }}>
+                Retry
+              </Button>
+            </>
           ) : (
             <>
               <div className="text-4xl mb-3 opacity-50">&#128200;</div>
-              <p className="mb-2">No trade-ups match these filters.</p>
+              <p className="mb-2">{EMPTY_FILTER_COPY}</p>
               <p className="text-sm text-muted-foreground/70">Widen a range, clear a filter, or check Show stale to include sold-out contracts.</p>
             </>
           )}
         </div>
       ) : (
         <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
+          {noticeCopy && (
+            <div className="flex items-center justify-between px-4 py-3 my-2 bg-yellow-950/30 border border-yellow-500/30 rounded-md text-sm text-yellow-200">
+              <span>{noticeCopy}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-4 whitespace-nowrap"
+                onClick={() => { void fetchTradeUps(); }}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
           {isFree && !loading && (
             <UpgradeBanner message="Free view: contracts are delayed 3 hours. Pro sees them the moment they're found." />
           )}
