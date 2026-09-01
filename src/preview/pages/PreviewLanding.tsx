@@ -32,14 +32,12 @@ import {
 import { trackDiscordCta } from "../../lib/analytics.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
+import {
+  formatLandingStat,
+  visibleLandingStatTiles,
+  type LandingStatCounts,
+} from "../lib/landing-stats.js";
 import { boardFaceFor, TradeUpCard, usePreviewTradeUps } from "./PreviewBoard.js";
-
-interface GlobalStats {
-  total_trade_ups: number;
-  profitable_trade_ups: number;
-  total_data_points: number;
-  total_cycles: number;
-}
 
 const LEFTOVER_FAQ = faqEntities(seoPage("/faq"));
 const BLOG_TEASERS = blogMeta.slice(0, 4);
@@ -88,7 +86,7 @@ export function PreviewLanding({
   stats,
   mode = "dark",
 }: {
-  stats: GlobalStats | null;
+  stats: LandingStatCounts | null;
   mode?: "light" | "dark";
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
@@ -123,6 +121,7 @@ export function PreviewLanding({
 
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
   const listingRows = featured ? storyRailInputs(featured) : [];
+  const statTiles = visibleLandingStatTiles(stats);
 
   return (
     <main id="main">
@@ -151,12 +150,14 @@ export function PreviewLanding({
             {PREVIEW_CTA_DISCORD}
           </a>
         </div>
-        {stats && (
+        {statTiles.length > 0 && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 5 } as CSSProperties}>
-            <div><b>{stats.total_trade_ups.toLocaleString()}</b><span>trade-ups</span></div>
-            <div><b>{stats.profitable_trade_ups.toLocaleString()}</b><span>profitable</span></div>
-            <div><b>{stats.total_data_points.toLocaleString()}</b><span>data points</span></div>
-            <div><b>{stats.total_cycles}</b><span>cycles analyzed</span></div>
+            {statTiles.map((tile) => (
+              <div key={tile.key}>
+                <b>{formatLandingStat(tile.value)}</b>
+                <span>{tile.label}</span>
+              </div>
+            ))}
           </div>
         )}
       </section>

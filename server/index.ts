@@ -83,7 +83,8 @@ import type { NextFunction } from "express";
 import { redirectWwwHost } from "./redirect-www.js";
 import { registerBlogRoutes } from "./blog-routes.js";
 import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
-import { HOMEPAGE_SEO, STATIC_SEO_PAGES } from "./static-seo-pages.js";
+import { injectLandingStats, landingStatsFromSources } from "../src/preview/lib/landing-stats.js";
+import { HOMEPAGE_SEO, STATIC_SEO_PAGES, renderHomepageSeoBody } from "./static-seo-pages.js";
 
 const app = express();
 const PORT = 3001;
@@ -1287,15 +1288,32 @@ registerCanonicalRedirectRoutes(app);
 
     registerBlogRoutes(app, shellHtml);
 
+    async function homepageLandingStats() {
+      try {
+        const stats = await Promise.race([
+          getGlobalStats(pool),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 350)),
+        ]);
+        if (!stats) {
+          console.warn("Homepage stats injection skipped: timed out waiting for global stats");
+        }
+        return landingStatsFromSources({ global: stats });
+      } catch (err) {
+        console.error("Homepage stats injection failed:", err);
+        return landingStatsFromSources({});
+      }
+    }
+
     app.get("/", async (req, res, next) => {
       const ua = req.headers["user-agent"] || "";
+      const liveStats = await homepageLandingStats();
       if (isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(buildSeoHtml({
           title: HOMEPAGE_SEO.title,
           description: HOMEPAGE_SEO.description,
           url: "https://tradeupbot.app/",
-          bodyHtml: HOMEPAGE_SEO.bodyHtml,
+          bodyHtml: renderHomepageSeoBody(liveStats),
           jsonLd: HOMEPAGE_SEO.jsonLd,
           robots: HOMEPAGE_SEO.robots ?? "index, follow",
         }));
@@ -1306,28 +1324,7 @@ registerCanonicalRedirectRoutes(app);
       if (!fs.existsSync(indexPath)) return next();
 
       let html = ensureHomepageCrawlerHead(dedupeHead(fs.readFileSync(indexPath, "utf-8")));
-
-      try {
-        const stats = await Promise.race([
-          getGlobalStats(pool),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 350)),
-        ]);
-
-        if (stats) {
-          const replaceCounter = (source: string, label: string, value: number): string => {
-            const pattern = new RegExp(`>0<\\/span>\\s*<span class="text-muted-foreground">${label}`, "i");
-            return source.replace(pattern, `>${value.toLocaleString("en-US")}</span> <span class="text-muted-foreground">${label}`);
-          };
-
-          html = replaceCounter(html, "trade-ups", stats.total_trade_ups);
-          html = replaceCounter(html, "profitable", stats.profitable_trade_ups);
-          html = replaceCounter(html, "data points", stats.total_data_points);
-        } else {
-          console.warn("Homepage stats injection skipped: timed out waiting for global stats");
-        }
-      } catch (err) {
-        console.error("Homepage stats injection failed:", err);
-      }
+      html = injectLandingStats(html, liveStats);
 
       res.setHeader("Content-Type", "text/html");
       res.setHeader("Cache-Control", "no-cache, must-revalidate");

@@ -49,13 +49,11 @@ function startServer(): Promise<ReturnType<typeof createServer>> {
       let url = (req.url ?? "/").split("?")[0];
 
       if (url.startsWith("/api/")) {
-        if (url === "/api/global-stats") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ total_trade_ups: 0, profitable_trade_ups: 0, total_data_points: 0, total_cycles: 0, uptime_ms: 0 }));
-        } else if (url === "/api/auth/me") {
+        if (url === "/api/auth/me") {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end("{}");
         } else {
+          // Empty payloads — never bake hero zeros into first HTML.
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end("{}");
         }
