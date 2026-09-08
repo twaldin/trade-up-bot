@@ -199,6 +199,14 @@ Requires `.env` with `CSFLOAT_API_KEY`, `DMARKET_PUBLIC_KEY`, `DMARKET_SECRET_KE
 
 ## Testing
 
+Use Node.js 20 (the CI version). Run `npm ci` and `npm run build` before
+the unit suite: some tests read generated `dist/index.html`.
+
+Integration tests and the concurrency stress tests require a disposable PostgreSQL
+test database. Set `TEST_DATABASE_URL` explicitly; the test helpers fall back to
+`DATABASE_URL`, then the local `tradeupbot_test` database. Never point these tests
+at an application database: they create and remove test schemas and tables.
+
 ```bash
 # Run unit + integration tests
 npm test
@@ -215,9 +223,13 @@ npm run test:watch          # Auto-rerun unit tests on change
 # Type checking
 npm run typecheck           # TypeScript validation (no emit)
 
-# SEO verification
-npm run verify:seo:public   # Validate prerendered HTML
+# Public SEO verification (HTTP requests, not a local dist/ check)
+npm run verify:seo:public   # Fetch tradeupbot.app as Googlebot; check titles, canonicals and h1s
 ```
+
+For another running server, pass `-- --base=http://localhost:3001`; optionally
+select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checked
+by `scripts/verify-seo-html.ts` during `npm run build`.
 
 ## SEO Infrastructure
 
