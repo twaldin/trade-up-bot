@@ -232,8 +232,9 @@ select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checke
 by `scripts/verify-seo-html.ts` during `npm run build`.
 
 The `deploy` workflow runs its normal checks on every push to `main`. A push
-changing only `README.md` skips the deployment job; other paths and manual
-workflow runs retain deployment after checks pass.
+changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deployment
+job; any other changed path and manual workflow runs retain deployment after checks
+pass.
 
 ## SEO Infrastructure
 

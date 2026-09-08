@@ -49,7 +49,7 @@ jobs:
             git diff --name-only --no-renames -z "$BEFORE" "$GITHUB_SHA" > "$RUNNER_TEMP/deploy-paths"
             deploy=false
             while IFS= read -r -d '' changed_path; do
-              if [[ "$changed_path" != "README.md" ]]; then
+              if [[ "$changed_path" != "README.md" && "$changed_path" != ".github/workflows/deploy.yml" ]]; then
                 deploy=true
                 break
               fi
