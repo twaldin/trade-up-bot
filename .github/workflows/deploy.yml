@@ -13,6 +13,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      deploy: ${{ steps.changes.outputs.deploy }}
     # Stress (concurrency) and integration tests build on tests/integration/setup.ts,
     # which requires the tradeupbot_test PostgreSQL database.
     services:
@@ -33,6 +35,27 @@ jobs:
       TEST_DATABASE_URL: postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot_test
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Determine whether deployment is needed
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          deploy=true
+          if [[ "$EVENT_NAME" == "push" && -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            # Compare the full push, including every commit and both sides of renames.
+            git diff --name-only --no-renames -z "$BEFORE" "$GITHUB_SHA" > "$RUNNER_TEMP/deploy-paths"
+            deploy=false
+            while IFS= read -r -d '' changed_path; do
+              if [[ "$changed_path" != "README.md" ]]; then
+                deploy=true
+                break
+              fi
+            done < "$RUNNER_TEMP/deploy-paths"
+          fi
+          printf 'deploy=%s\n' "$deploy" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
@@ -52,6 +75,7 @@ jobs:
 
   deploy:
     needs: test
+    if: needs.test.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

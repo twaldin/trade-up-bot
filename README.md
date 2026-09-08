@@ -231,6 +231,10 @@ For another running server, pass `-- --base=http://localhost:3001`; optionally
 select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checked
 by `scripts/verify-seo-html.ts` during `npm run build`.
 
+The `deploy` workflow runs its normal checks on every push to `main`. A push
+changing only `README.md` skips the deployment job; other paths and manual
+workflow runs retain deployment after checks pass.
+
 ## SEO Infrastructure
 
 Server-rendered HTML for search engine crawlers alongside the React SPA. Two rendering paths in `server/seo.ts`:
