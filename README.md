@@ -197,6 +197,45 @@ npm run dev
 
 Requires `.env` with `CSFLOAT_API_KEY`, `DMARKET_PUBLIC_KEY`, `DMARKET_SECRET_KEY`, `STRIPE_SECRET_KEY`, and related Stripe config.
 
+## Testing
+
+Use Node.js 20 (the CI version). Run `npm ci` and `npm run build` before
+the unit suite: some tests read generated `dist/index.html`.
+
+Integration tests and the concurrency stress tests require a disposable PostgreSQL
+test database. Set `TEST_DATABASE_URL` explicitly; the test helpers fall back to
+`DATABASE_URL`, then the local `tradeupbot_test` database. Never point these tests
+at an application database: they create and remove test schemas and tables.
+
+```bash
+# Run unit + integration tests
+npm test
+
+# Run specific test suites
+npm run test:unit           # Unit tests only
+npm run test:integration    # Integration tests only
+npm run test:stress         # Stress tests only
+npm run test:all            # All tests (unit + integration + stress)
+
+# Watch mode for development
+npm run test:watch          # Auto-rerun unit tests on change
+
+# Type checking
+npm run typecheck           # TypeScript validation (no emit)
+
+# Public SEO verification (HTTP requests, not a local dist/ check)
+npm run verify:seo:public   # Fetch tradeupbot.app as Googlebot; check titles, canonicals and h1s
+```
+
+For another running server, pass `-- --base=http://localhost:3001`; optionally
+select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checked
+by `scripts/verify-seo-html.ts` during `npm run build`.
+
+The `deploy` workflow runs its normal checks on every push to `main`. A push
+changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deployment
+job; any other changed path and manual workflow runs retain deployment after checks
+pass.
+
 ## SEO Infrastructure
 
 Server-rendered HTML for search engine crawlers alongside the React SPA. Two rendering paths in `server/seo.ts`:
