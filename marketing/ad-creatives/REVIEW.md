@@ -66,10 +66,25 @@ Free view delayed 3 h. Not affiliated with or endorsed by Valve. Board and contr
 - Video C’s opening board shot hides the cursor, which was sitting on Claim. Footage is not re-captured; that waits until #171 is live.
 - Video B’s hero card is 8 seconds. The end card holds to 5 seconds so the cut stays 15 seconds.
 
+## Board recapture
+
+Re-run only the board take after the fee backfill lands. It records contract 780598151 (not whichever card is first):
+
+```bash
+cd marketing/ad-creatives && node capture/capture.mjs --only=d-board
+```
+
+Then re-render video C: `node scripts/render-all.mjs --only=meta-c-verify-vertical`.
+
 ## r6
 
 - Recaptured the post-#171 sign-in banner, board shot, and calculator take. Re-rendered `meta-c-verify-vertical` only. r5 files for every other cut stay as they were.
 - Frame check rejects guaranteed profit, case key, and gambling phrasing. “not guaranteed profit” is the only allowed disclaimer of that kind. It does not appear in this cut. The on-screen disclaimer stays “Estimates after fees. You can lose money.”
+
+## r7
+
+- Video C’s sign-in scene focuses the banner sentence (`cx: 177`, `cy: 23`, `w: 360` on `d-tradeup--signin.png`) so the 11px source line renders at about 28px. The other 13 assets stay the signed r5/r6 files.
+- The board crop is still the current capture: total cost $53.14, which is the raw listing sum. Re-capture that shot with the command above once PR 177’s fee backfill is on the board.
 
 ## Google RSA
 
