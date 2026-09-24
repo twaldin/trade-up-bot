@@ -183,7 +183,7 @@ export const buildCatalog = (facts: Facts) => {
     scenes: [
       {
         id: "skip",
-        seconds: 1.5,
+        seconds: 2,
         caption: { text: "Skip this one.", emphasis: ["Skip"] },
         graphic: {
           type: "figure",
@@ -192,46 +192,22 @@ export const buildCatalog = (facts: Facts) => {
           note: `Cost ${result.cost} → expected value (after fees) ${result.expectedValue}.`,
           tone: "loss",
           size: 96,
+          motion: true,
         },
         footnote: "Worked example from the calculator. Not the hero.",
       },
       {
-        id: "cost",
-        seconds: 4.2,
-        caption: { text: "One contract. Cost of the 10 listings.", emphasis: ["One contract"] },
+        id: "hero",
+        seconds: 13,
+        caption: { text: "One contract. Cost beside expected value.", emphasis: ["One contract"] },
         graphic: {
-          type: "figure",
-          kicker: `Contract ${LIVE.hero.id}`,
-          value: LIVE.hero.cost,
-          note: "Positive expected value, and one outcome priced under that cost.",
-          size: 88,
+          type: "compare",
+          title: `Contract ${LIVE.hero.id} · estimate`,
+          left: { k: "Cost", v: LIVE.hero.cost },
+          right: { k: "Expected value", v: LIVE.hero.expectedValue },
+          rows: LIVE.hero.belowCost.map((row) => ({ k: row.name, v: row.price })),
         },
-      },
-      {
-        id: "below",
-        seconds: 5,
-        caption: { text: "These two outcomes are priced under the cost.", emphasis: ["under the cost"] },
-        graphic: {
-          type: "stack",
-          title: `Under the ${LIVE.hero.cost} cost`,
-          size: 44,
-          rows: LIVE.hero.belowCost.map((row) => ({ k: row.name, v: row.price, tone: "loss" as const })),
-        },
-      },
-      {
-        id: "ev",
-        seconds: 4.3,
-        caption: { text: "Expected value (after fees). Estimate.", emphasis: ["Estimate"] },
-        graphic: {
-          type: "stack",
-          title: "After fees · estimate",
-          size: 56,
-          rows: [
-            { k: "Cost", v: LIVE.hero.cost },
-            { k: "Expected value (after fees)", v: LIVE.hero.expectedValue, tone: "plus" },
-            { k: "Expected P/L", v: LIVE.hero.expectedPl, tone: "plus" },
-          ],
-        },
+        footnote: EXAMPLE,
       },
     ],
   };

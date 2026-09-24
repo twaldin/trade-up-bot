@@ -1,7 +1,7 @@
 import React from "react";
 import { AbsoluteFill, Img, staticFile } from "remotion";
 import type { Take } from "../facts";
-import { C, FONT } from "../theme";
+import { C, DIMENSIONS, FONT, safeBand } from "../theme";
 import { Brand } from "../components/Brand";
 import { Emphasis } from "../components/Emphasis";
 import { BigRows, RangeBar } from "../components/Graphics";
@@ -177,9 +177,20 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
 export const StaticAd: React.FC<StaticAdProps> = (p) => {
   const sq = p.format === "square";
   const tall = p.format === "vertical";
-  const pad = 64;
+  const band = safeBand(DIMENSIONS[p.format].height);
   return (
-    <AbsoluteFill style={{ background: C.bg, padding: pad, display: "flex", flexDirection: "column", fontFamily: FONT.body }}>
+    <AbsoluteFill
+      style={{
+        background: C.bg,
+        paddingTop: band.top,
+        paddingBottom: DIMENSIONS[p.format].height - band.bottom,
+        paddingLeft: 48,
+        paddingRight: 48,
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: FONT.body,
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <Brand size={sq ? 28 : 32} />
         <span style={{ fontFamily: FONT.mono, fontSize: sq ? 22 : 24, color: C.muted }}>{p.url}</span>
@@ -193,13 +204,13 @@ export const StaticAd: React.FC<StaticAdProps> = (p) => {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
         <div style={{ background: C.accent, color: C.onAccent, fontWeight: 600, fontSize: sq ? 28 : 32, borderRadius: 8, padding: sq ? "14px 26px" : "16px 30px" }}>{p.cta}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: sq ? 19 : 21, color: C.subtle, lineHeight: 1.35, flex: 1 }}>{p.source}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 28, color: C.text, lineHeight: 1.25, flex: 1 }}>{p.source}</div>
       </div>
       <div
         style={{
           marginTop: sq ? 20 : 28,
           fontFamily: FONT.mono,
-          fontSize: sq ? 22 : 24,
+          fontSize: 28,
           color: C.text,
           border: `1px solid ${C.lineHard}`,
           borderRadius: 8,

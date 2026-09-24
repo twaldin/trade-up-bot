@@ -1,7 +1,7 @@
 import React from "react";
 import { AbsoluteFill, Sequence, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import type { Take } from "../facts";
-import { C, FONT, FPS, type Format } from "../theme";
+import { C, FONT, FPS, safeBand, type Format } from "../theme";
 import { Brand } from "../components/Brand";
 import { Emphasis } from "../components/Emphasis";
 import { Footage, fadeIn, type Focus, type FocusKey, type FootageSpec } from "../components/Footage";
@@ -13,8 +13,9 @@ export type Callout = { label: string; value: string; note?: string; tone?: "pla
 
 export type Graphic =
   | { type: "range"; stopAt: number; kicker: string; rows: { k: string; v: string }[]; size?: number }
-  | { type: "figure"; kicker: string; value: string; note: string; tone?: "plain" | "plus" | "loss"; size?: number }
-  | { type: "stack"; title: string; rows: { k: string; v: string; tone?: "plain" | "plus" | "loss" }[]; size?: number };
+  | { type: "figure"; kicker: string; value: string; note: string; tone?: "plain" | "plus" | "loss"; size?: number; motion?: boolean }
+  | { type: "stack"; title: string; rows: { k: string; v: string; tone?: "plain" | "plus" | "loss" }[]; size?: number }
+  | { type: "compare"; title: string; left: { k: string; v: string }; right: { k: string; v: string }; rows: { k: string; v: string }[] };
 
 export type Scene = {
   id: string;
@@ -53,49 +54,51 @@ type Geometry = {
 };
 
 const geometry = (format: Format): Geometry => {
-  switch (format) {
-    case "square":
-      return {
-        brand: { x: 48, y: 28, size: 22 },
-        honesty: { x: 48, y: 72, w: 984, h: 36, size: 20 },
-        caption: { x: 48, y: 112, w: 984, h: 120, size: 36 },
-        panel: { x: 48, y: 244, w: 984, h: 700 },
-        radius: 12,
-        footnote: { x: 48, y: 960, w: 984, h: 80, size: 18 },
-        pointerScale: 0.85,
-      };
-    case "portrait":
-      return {
-        brand: { x: 56, y: 36, size: 24 },
-        honesty: { x: 56, y: 84, w: 968, h: 40, size: 22 },
-        caption: { x: 56, y: 132, w: 968, h: 140, size: 40 },
-        panel: { x: 56, y: 284, w: 968, h: 860 },
-        radius: 12,
-        footnote: { x: 56, y: 1160, w: 968, h: 120, size: 20 },
-        pointerScale: 0.95,
-      };
-    case "landscape":
-      return {
-        brand: { x: 72, y: 36, size: 24 },
-        honesty: { x: 72, y: 88, w: 1776, h: 40, size: 22 },
-        caption: { x: 72, y: 140, w: 700, h: 700, size: 42 },
-        panel: { x: 820, y: 140, w: 1020, h: 760 },
-        radius: 12,
-        footnote: { x: 72, y: 980, w: 1776, h: 60, size: 20 },
-        pointerScale: 1,
-      };
-    default:
-      // 9:16 safe band is y 270–1250 (top 14%, bottom 35% clear).
-      return {
-        brand: { x: 72, y: 278, size: 26 },
-        honesty: { x: 280, y: 278, w: 728, h: 40, size: 22 },
-        caption: { x: 72, y: 340, w: 936, h: 140, size: 40 },
-        panel: { x: 72, y: 490, w: 936, h: 400 },
-        radius: 14,
-        footnote: { x: 72, y: 910, w: 936, h: 150, size: 22 },
-        pointerScale: 1,
-      };
+  const height = format === "square" ? 1080 : format === "portrait" ? 1350 : format === "landscape" ? 1080 : 1920;
+  const band = safeBand(height);
+  const foot = 28;
+  if (format === "square") {
+    return {
+      brand: { x: 48, y: band.top, size: 22 },
+      honesty: { x: 280, y: band.top, w: 752, h: 36, size: foot },
+      caption: { x: 48, y: band.top + 44, w: 984, h: 72, size: 30 },
+      panel: { x: 48, y: band.top + 122, w: 984, h: 340 },
+      radius: 12,
+      footnote: { x: 48, y: band.bottom - 80, w: 984, h: 72, size: foot },
+      pointerScale: 0.85,
+    };
   }
+  if (format === "portrait") {
+    return {
+      brand: { x: 56, y: band.top, size: 24 },
+      honesty: { x: 56, y: band.top + 40, w: 968, h: 40, size: foot },
+      caption: { x: 56, y: band.top + 88, w: 968, h: 100, size: 34 },
+      panel: { x: 56, y: band.top + 200, w: 968, h: 360 },
+      radius: 12,
+      footnote: { x: 56, y: band.bottom - 110, w: 968, h: 100, size: foot },
+      pointerScale: 0.95,
+    };
+  }
+  if (format === "landscape") {
+    return {
+      brand: { x: 72, y: band.top, size: 24 },
+      honesty: { x: 72, y: band.top + 40, w: 1776, h: 40, size: foot },
+      caption: { x: 72, y: band.top + 90, w: 700, h: 400, size: 36 },
+      panel: { x: 820, y: band.top + 90, w: 1020, h: 360 },
+      radius: 12,
+      footnote: { x: 72, y: band.bottom - 80, w: 1776, h: 70, size: foot },
+      pointerScale: 1,
+    };
+  }
+  return {
+    brand: { x: 72, y: band.top + 8, size: 26 },
+    honesty: { x: 300, y: band.top + 12, w: 708, h: 44, size: foot },
+    caption: { x: 72, y: band.top + 64, w: 936, h: 130, size: 40 },
+    panel: { x: 72, y: band.top + 210, w: 936, h: 520 },
+    radius: 14,
+    footnote: { x: 72, y: band.bottom - 150, w: 936, h: 140, size: foot },
+    pointerScale: 1,
+  };
 };
 
 const toneColor = (tone: Callout["tone"]) => (tone === "plus" ? C.accent : tone === "loss" ? C.loss : C.text);
@@ -126,7 +129,7 @@ const GraphicView: React.FC<{ g: Graphic }> = ({ g }) => {
   const pop = interpolate(frame, [0, Math.round(0.4 * fps)], [0.92, 1], { extrapolateRight: "clamp" });
   if (g.type === "range") {
     return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 36px", gap: 28 }}>
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 28px", gap: 16 }}>
         <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, letterSpacing: 0.4 }}>{g.kicker}</div>
         <RangeBar stopAt={g.stopAt} />
         <BigRows rows={g.rows} size={g.size ?? 80} />
@@ -134,11 +137,50 @@ const GraphicView: React.FC<{ g: Graphic }> = ({ g }) => {
     );
   }
   if (g.type === "figure") {
+    const fill = g.motion ? interpolate(frame, [0, Math.round(0.5 * fps)], [0, 1], { extrapolateRight: "clamp" }) : 1;
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 36px", transform: `scale(${pop})` }}>
         <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted }}>{g.kicker}</div>
         <div style={{ fontFamily: FONT.mono, fontSize: g.size ?? 96, color: toneColor(g.tone), letterSpacing: -1, lineHeight: 1.05 }}>{g.value}</div>
-        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.muted, marginTop: 12, lineHeight: 1.3 }}>{g.note}</div>
+        {g.motion && (
+          <div style={{ marginTop: 14, height: 10, width: "100%", background: C.lineHard, borderRadius: 5 }}>
+            <div style={{ height: 10, width: `${fill * 100}%`, background: C.loss, borderRadius: 5 }} />
+          </div>
+        )}
+        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.text, marginTop: 12, lineHeight: 1.3 }}>{g.note}</div>
+      </div>
+    );
+  }
+  if (g.type === "compare") {
+    const hi = Math.min(g.rows.length - 1, Math.floor(frame / Math.max(1, Math.round(0.45 * fps))));
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "20px 28px", gap: 16 }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.text }}>{g.title}</div>
+        <div style={{ display: "flex", gap: 16 }}>
+          {[g.left, g.right].map((side) => (
+            <div key={side.k} style={{ flex: 1, background: C.overlay, border: `1px solid ${C.lineHard}`, borderRadius: 10, padding: "12px 16px" }}>
+              <div style={{ fontFamily: FONT.body, fontSize: 22, color: C.text }}>{side.k}</div>
+              <div style={{ fontFamily: FONT.mono, fontSize: 48, color: C.text, letterSpacing: -1 }}>{side.v}</div>
+            </div>
+          ))}
+        </div>
+        {g.rows.map((r, i) => (
+          <div
+            key={r.k}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: i === hi ? C.overlay : "transparent",
+              border: `1px solid ${i === hi ? C.loss : C.lineSoft}`,
+            }}
+          >
+            <span style={{ fontFamily: FONT.body, fontSize: 26, color: C.text, fontWeight: 600 }}>{r.k}</span>
+            <span style={{ fontFamily: FONT.mono, fontSize: 32, color: C.loss }}>{r.v}</span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -217,7 +259,7 @@ const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g
           fontFamily: FONT.mono,
           fontSize: g.footnote.size,
           lineHeight: 1.35,
-          color: C.muted,
+          color: C.text,
         }}
       >
         {scene.footnote ?? props.footnote}
@@ -258,6 +300,7 @@ export const ScreenAd: React.FC<ScreenAdProps> = (props) => {
               fontFamily: FONT.mono,
               fontSize: g.honesty.size,
               color: C.text,
+              fontWeight: 500,
               lineHeight: 1.2,
             }}
           >

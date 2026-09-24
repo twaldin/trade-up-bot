@@ -37,3 +37,9 @@ export const DIMENSIONS: Record<Format, { width: number; height: number }> = {
 };
 
 export const FPS = 30;
+
+/** Same band as y 270–1250 on a 1920-tall canvas, scaled to other heights. */
+export const safeBand = (height: number) => ({
+  top: Math.round((height * 270) / 1920),
+  bottom: Math.round((height * 1250) / 1920),
+});

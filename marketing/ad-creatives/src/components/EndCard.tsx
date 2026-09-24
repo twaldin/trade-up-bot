@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { C, FONT, type Format } from "../theme";
+import { C, DIMENSIONS, FONT, safeBand, type Format } from "../theme";
 import { Mark } from "./Brand";
 import { Emphasis } from "./Emphasis";
 import { fadeIn } from "./Footage";
@@ -32,19 +32,22 @@ export const EndCard: React.FC<EndCardProps & { format: Format }> = ({
   const frame = useCurrentFrame();
   const s = SCALE[format];
   const o = fadeIn(frame, 0, 8);
-  const vertical = format === "vertical";
+  const band = safeBand(DIMENSIONS[format].height);
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: o }}>
       <div
         style={{
           position: "absolute",
-          left: vertical ? 72 : 80,
-          right: vertical ? 72 : 80,
-          top: vertical ? 290 : format === "portrait" ? 80 : 48,
+          left: 72,
+          right: 72,
+          top: band.top + 8,
+          bottom: DIMENSIONS[format].height - band.bottom,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 16 * s,
+          gap: format === "vertical" ? 12 : 8,
+          overflow: "hidden",
+          justifyContent: "flex-start",
           textAlign: "center",
         }}
       >
@@ -70,12 +73,12 @@ export const EndCard: React.FC<EndCardProps & { format: Format }> = ({
         </div>
         <div style={{ fontFamily: FONT.mono, fontSize: 36 * s, color: C.text }}>{url}</div>
         <div style={{ fontFamily: FONT.body, fontSize: 26 * s, color: C.muted }}>{offer}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 24 * s, color: C.text, border: `1px solid ${C.lineHard}`, borderRadius: 8, padding: `${10 * s}px ${16 * s}px` }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 28, color: C.text, border: `1px solid ${C.lineHard}`, borderRadius: 8, padding: "10px 16px" }}>
           {honesty}
         </div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 24 * s, color: C.text }}>{DELAY}</div>
-        <div style={{ fontFamily: FONT.body, fontSize: 22 * s, color: C.muted }}>{VALVE}</div>
-        <div style={{ fontFamily: FONT.body, fontSize: 20 * s, color: C.subtle, lineHeight: 1.35 }}>{example}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 28, color: C.text }}>{DELAY}</div>
+        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.text }}>{VALVE}</div>
+        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.text, lineHeight: 1.3 }}>{example}</div>
       </div>
     </AbsoluteFill>
   );

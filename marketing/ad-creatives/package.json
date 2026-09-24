@@ -11,6 +11,7 @@
     "render:videos": "node scripts/render-all.mjs --only=videos",
     "render:stills": "node scripts/render-all.mjs --only=stills",
     "check:copy": "node scripts/check-copy.mjs",
+    "test": "tsx --test scripts/emphasis-spaces.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
