@@ -75,6 +75,27 @@ describe("useLoosenProbe", () => {
     expect(urls[0]).toContain("per_page=1");
     expect(urls[0]).toContain("max_cost=200");
     expect(label).toBe("Raise max cost to $2.00");
+
+    await act(async () => {
+      root.render(createElement(Harness, {
+        typing: true,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        onReady: (next) => { label = next; },
+      }));
+    });
+    expect(label).toBe("Raise max cost to $2.00");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(createElement(Harness, {
+        typing: false,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        onReady: (next) => { label = next; },
+      }));
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(label).toBe("Raise max cost to $2.00");
   });
 
   it("waits 60s after a 429 before probing again", async () => {

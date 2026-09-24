@@ -16,6 +16,8 @@ export interface LoosenSuggestion {
 
 export const LOOSEN_PROBE_CAP = 3;
 export const LOOSEN_PROBE_DEBOUNCE_MS = 400;
+/** A field is "typing" only for this long after the last keypress. Focus and blur do not count. */
+export const TYPING_IDLE_MS = 1200;
 
 const COST_FACTORS = [2, 5, 10];
 const PROFIT_DIVISORS = [2, 5, 10];

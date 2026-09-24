@@ -51,6 +51,7 @@ import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice } from "../lib/board-notice.js";
 import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
+import { TYPING_IDLE_MS } from "../lib/empty-suggestions.js";
 import { useLoosenProbe } from "../lib/use-loosen-probe.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
@@ -810,6 +811,13 @@ export function PreviewBoard({
   }, []);
   const cols = bentoColumns(width);
   const [typing, setTyping] = useState(false);
+  const typingTimer = useRef(0);
+  const onKeystroke = useCallback(() => {
+    setTyping(true);
+    window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(typingTimer.current), []);
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const notice = boardNotice({
@@ -887,7 +895,7 @@ export function PreviewBoard({
           value={search ?? ""}
           onChange={onSearch}
           onParsed={onParsed}
-          onTyping={setTyping}
+          onKeyDown={onKeystroke}
           placeholder="Search trade-ups…"
           examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
         />
@@ -900,7 +908,7 @@ export function PreviewBoard({
           canClear={filtered}
           collection={collection}
           lockedSkin={lockedSkin}
-          onTyping={setTyping}
+          onKeyDown={onKeystroke}
         />
       )}
       {isFree && (

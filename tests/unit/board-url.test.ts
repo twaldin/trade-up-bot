@@ -8,7 +8,6 @@ import {
   type BoardUrlState,
 } from "../../src/preview/lib/board-url.js";
 import { formatSuggestionDollars, loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
-import { boardNavTarget } from "../../src/preview/PreviewShell.js";
 import { EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -98,13 +97,6 @@ describe("board URL", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("keeps the filtered board URL on the Board link", () => {
-    expect(boardNavTarget("/trade-ups", "?min_chance=80", "/trade-ups")).toEqual({
-      pathname: "/trade-ups",
-      search: "?min_chance=80",
-    });
-    expect(boardNavTarget("/skins", "", "/trade-ups")).toBe("/trade-ups");
-  });
 });
 
 describe("empty-state suggestion candidates", () => {
@@ -155,7 +147,7 @@ describe("empty-state suggestion candidates", () => {
 });
 
 describe("expected P/L helper", () => {
-  const banned = /chance of profit|chance to profit|% chance|\bodds\b|\brolls?\b|bankroll|finish(es)? (in the )?green|min chance|guaranteed?/i;
+  const banned = /case key|Profitable CS2 Contracts|profitable CS2 trade-ups|>Chance<|"Chance"\]|\bodds\b|chance of profit|chance to profit|chance-to-profit|% chance|\brolls?\b|bankroll|finish(?:es)? (?:in the )?green|Min chance %|Find Profitable|Live Profitable|guaranteed|jackpot|gamble|\bbet\b|win big|case opening/i;
 
   it("renders the explanation without a duplicate title", () => {
     const html = renderToStaticMarkup(createElement(Fragment, null, ExpectedPlHelp() as ReactNode));
@@ -183,5 +175,9 @@ describe("expected P/L helper", () => {
     }
     expect("rolls").toMatch(banned);
     expect("finish in the green").toMatch(banned);
+    expect("chance-to-profit").toMatch(banned);
+    expect('"Chance"]').toMatch(banned);
+    expect("Find Profitable").toMatch(banned);
+    expect("Live Profitable").toMatch(banned);
   });
 });

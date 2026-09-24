@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BoardQuery } from "../components/PreviewFilters.js";
 import {
   LOOSEN_PROBE_DEBOUNCE_MS,
@@ -23,11 +23,13 @@ export function useLoosenProbe(opts: {
 }): LoosenSuggestion | null {
   const { enabled, typing = false, query, text = "", collection, skin, fetchFn = fetch } = opts;
   const [suggestion, setSuggestion] = useState<LoosenSuggestion | null>(null);
-  const key = `${enabled}|${typing}|${text}|${collection ?? ""}|${skin ?? ""}|${query ? JSON.stringify(query) : ""}`;
+  const queryKey = `${enabled}|${text}|${collection ?? ""}|${skin ?? ""}|${query ? JSON.stringify(query) : ""}`;
+  const probedKey = useRef("");
 
   useEffect(() => {
-    setSuggestion(null);
     if (!enabled || !query || !probesAllowed(typing) || probeCoolingDown()) return;
+    if (probedKey.current === queryKey) return;
+    setSuggestion(null);
     const candidates = loosenCandidates(query, text);
     if (candidates.length === 0) return;
     const controller = new AbortController();
@@ -51,7 +53,9 @@ export function useLoosenProbe(opts: {
           return controller.signal.aborted ? "stop" : "miss";
         }
       }).then((found) => {
-        if (live) setSuggestion(found);
+        if (!live) return;
+        probedKey.current = queryKey;
+        setSuggestion(found);
       });
     }, LOOSEN_PROBE_DEBOUNCE_MS);
     return () => {
@@ -59,7 +63,7 @@ export function useLoosenProbe(opts: {
       window.clearTimeout(handle);
       controller.abort();
     };
-  }, [key, fetchFn]);
+  }, [queryKey, typing, fetchFn]);
 
   return suggestion;
 }

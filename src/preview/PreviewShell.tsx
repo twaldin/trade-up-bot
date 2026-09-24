@@ -1,6 +1,6 @@
 import { Boxes, Calculator, Crosshair, LayoutDashboard, Layers, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "./lib/copy.js";
@@ -14,10 +14,8 @@ const NAV = [
   { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
 ] as const;
 
-/** Stay on the filtered board URL. A bare /trade-ups target would drop the query while the filters stay. */
-export function boardNavTarget(pathname: string, search: string, to: string): string | { pathname: string; search: string } {
-  if (to === "/trade-ups" && pathname === "/trade-ups") return { pathname: "/trade-ups", search };
-  return to;
+function keepBoardFilters(to: string, event: { preventDefault: () => void }): void {
+  if (to === "/trade-ups" && window.location.pathname === "/trade-ups") event.preventDefault();
 }
 
 export function PreviewShell({
@@ -29,7 +27,6 @@ export function PreviewShell({
   mode: "light" | "dark";
   onMode: () => void;
 }) {
-  const location = useLocation();
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="dashboard" className="preview-console-root">
       <a className="skip-link" href="#main">Skip to content</a>
@@ -43,7 +40,7 @@ export function PreviewShell({
             <div className="preview-sidebar__group">
               <p className="o-kicker">Console</p>
               {NAV.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={boardNavTarget(location.pathname, location.search, to)} end={end} className="o-nav-item">
+                <NavLink key={to} to={to} end={end} className="o-nav-item" onClick={(event) => keepBoardFilters(to, event)}>
                   <Icon className="size-[13px] shrink-0" aria-hidden />
                   {label}
                 </NavLink>
@@ -55,7 +52,7 @@ export function PreviewShell({
           <header className="preview-console__bar">
             <nav className="preview-console__mobile" aria-label="Console pages">
               {NAV.map(({ to, label }) => (
-                <NavLink key={to} to={boardNavTarget(location.pathname, location.search, to)} end className="preview-btn preview-btn--quiet">{label}</NavLink>
+                <NavLink key={to} to={to} end className="preview-btn preview-btn--quiet" onClick={(event) => keepBoardFilters(to, event)}>{label}</NavLink>
               ))}
             </nav>
             <div className="preview-bar__actions">
