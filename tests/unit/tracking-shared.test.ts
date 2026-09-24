@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
+import { PRO_PRICE } from "../../src/preview/lib/pro-pricing.js";
 import {
   ATTRIBUTION_URL_PARAMS,
   META_EVENTS,
@@ -13,6 +14,14 @@ import {
   sanitizeAttribution,
   trackedPlan,
 } from "../../shared/tracking.js";
+
+describe("PLAN_PRICE_CENTS", () => {
+  it("matches the Pro card prices", () => {
+    expect(PRO_PRICE.monthly.amount).toBe(`$${centsToUsd(PLAN_PRICE_CENTS.pro_monthly).toFixed(2)}`);
+    expect(PRO_PRICE.yearly.note).toContain(centsToUsd(PLAN_PRICE_CENTS.yearly).toFixed(2));
+    expect(PRO_PRICE.lifetime.amount).toBe(`$${centsToUsd(PLAN_PRICE_CENTS.lifetime).toFixed(2)}`);
+  });
+});
 
 describe("trackedPlan", () => {
   it("maps checkout plan ids to the spec plan names", () => {

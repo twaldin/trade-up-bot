@@ -7,6 +7,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const board = read("../../src/preview/pages/PreviewBoard.tsx");
+const share = read("../../src/preview/pages/PreviewShare.tsx");
 const calc = read("../../src/preview/pages/PreviewCalculator.tsx");
 const copy = read("../../src/preview/lib/copy.ts");
 const css = read("../../src/preview/preview.css");
@@ -62,6 +63,17 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(css).toContain(".preview-cardline__open");
     expect(css).toContain(".preview-cardline__verify");
     expect(css).toMatch(/\.preview-card:hover \.preview-cardline__open/);
+  });
+});
+
+describe("share-bar Verify", () => {
+  it("sends logged-out users to the sign-in panel and free users to pricing, and hides the button for Pro", () => {
+    expect(share).toContain('panel === "sign-in" || panel === "upgrade"');
+    expect(share).toContain('href={panel === "sign-in" ? "#share-verify" : "/pricing"}');
+    expect(share).toContain("SIGN_IN_TO_CLAIM");
+    expect(share).toContain('trackVerifyClick("share_bar")');
+    expect(share).toContain('id="share-verify"');
+    expect(share).not.toContain("verifyClaimHref");
   });
 });
 

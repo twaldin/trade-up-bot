@@ -56,6 +56,13 @@ describe("reportPurchase", () => {
     expect(gtag).toHaveBeenCalledTimes(1);
   });
 
+  it("treats a pending flag older than 60 seconds as stale", async () => {
+    window.localStorage.setItem("tub_purchase_cs_test_1", `pending:${Date.now() - 61_000}`);
+    stubCheckoutSession({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" });
+    await reportPurchase("pro", "cs_test_1");
+    expect(gtag).toHaveBeenCalledTimes(1);
+  });
+
   it("reports nothing for an unverified session", async () => {
     globalThis.tubTracking = { ga4MeasurementId: "G-NEWPROP123", metaPixelId: "123456789012345" };
     stubCheckoutSession({ error: "Not paid" }, 409);

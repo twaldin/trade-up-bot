@@ -1,4 +1,6 @@
-// The five ad key events (event-tracking spec), fanned out to GA4 and the Meta Pixel.
+// Browser conversion events, fanned out to GA4 and the Meta Pixel.
+// GA4 key events to mark in admin: begin_checkout, purchase, sign_up, and calculator_complete.
+// view_item, login, and verify_click are measured but are not key events. Never checkout_start.
 // While GA4_MEASUREMENT_ID is unset the existing GA4 events fire exactly as before
 // (begin_checkout, tradeup_view, legacy purchase); once set, the spec event replaces the
 // legacy one at the same hook, so nothing is double-counted.
@@ -20,7 +22,7 @@ function pagePath(): string {
   return typeof window !== "undefined" ? window.location.pathname : "/";
 }
 
-function ga4KeyEvent(name: string, params: Record<string, string | number | GtagItem[]>): boolean {
+function sendGa4(name: string, params: Record<string, string | number | GtagItem[]>): boolean {
   const id = clientTracking().ga4MeasurementId;
   if (!id) return false;
   trackEvent(name, { ...params, send_to: id });
@@ -31,23 +33,27 @@ function planItem(plan: TrackedPlan, value: number): GtagItem {
   return { item_id: plan, item_name: plan, price: value, quantity: 1 };
 }
 
+/** Attribution for the /api/subscribe body. Null when tracking is off, so the body stays `{ plan }`. */
+export function checkoutAttributionBody(): { attribution: Attribution } | null {
+  return clientTracking().enabled ? { attribution: checkoutAttribution() } : null;
+}
+
 /**
- * Checkout start. `value` is USD. Returns attribution for /api/subscribe, or null when
- * tracking is off so the request body stays `{ plan }`.
- * PR 164's shared checkout function should call this. Until that lands, /pricing does.
+ * Checkout start, only after /api/subscribe returns 2xx. `value` is USD.
+ * PR 164's checkout.ts should call checkoutAttributionBody() before the fetch and this after res.ok.
  */
-export function trackBeginCheckout(plan: string, value: number): { attribution: Attribution } | null {
-  const tracking = clientTracking();
+export function trackBeginCheckout(plan: string, value: number): void {
   const tracked = trackedPlan(plan);
-  const attribution = checkoutAttribution();
-  const campaign = campaignParams(attribution);
-  if (!tracking.ga4MeasurementId) {
+  const campaign = campaignParams(checkoutAttribution());
+  if (!clientTracking().ga4MeasurementId) {
     trackEvent("begin_checkout", { item_name: plan });
   } else if (tracked) {
-    ga4KeyEvent("begin_checkout", {
+    sendGa4("begin_checkout", {
       currency: "USD",
       value,
       items: [planItem(tracked, value)],
+      plan: tracked,
+      price_usd: value,
       ...campaign,
     });
   }
@@ -59,13 +65,12 @@ export function trackBeginCheckout(plan: string, value: number): { attribution: 
       ...campaign,
     }, newEventId("checkout"));
   }
-  return tracking.enabled ? { attribution } : null;
 }
 
 /** Calculator returned a result. `source` is the example loader or a hand-entered contract. */
 export function trackCalculatorComplete(source: "example" | "custom"): void {
   const params = { page_path: pagePath(), source, ...campaignParams(storedAttribution()) };
-  ga4KeyEvent("calculator_complete", params);
+  sendGa4("calculator_complete", params);
   pixelEvent("calculator_complete", params, newEventId("calc"));
 }
 
@@ -73,10 +78,10 @@ export function trackCalculatorComplete(source: "example" | "custom"): void {
 export function trackTradeUpDetailOpen(opts: { collectionSlug: string | null; legacyTradeUpId?: number }): void {
   const params: Record<string, string> = { page_path: pagePath() };
   if (opts.collectionSlug) params.collection_slug = opts.collectionSlug;
-  if (!ga4KeyEvent("trade_up_detail_open", params) && opts.legacyTradeUpId != null) {
+  if (!sendGa4("trade_up_detail_open", params) && opts.legacyTradeUpId != null) {
     trackEvent("tradeup_view", { tradeup_id: String(opts.legacyTradeUpId) });
   }
-  pixelEvent("trade_up_detail_open", params, newEventId("detail"));
+  pixelEvent("trade_up_detail_open", { ...params, content_type: "trade_up" }, newEventId("detail"));
 }
 
 export type VerifySurface = "board_card" | "expanded" | "share_bar" | "pro";
@@ -84,20 +89,20 @@ export type VerifySurface = "board_card" | "expanded" | "share_bar" | "pro";
 /** User clicked Verify. Prospects hit the card, the expanded button, and the share bar. */
 export function trackVerifyClick(surface: VerifySurface): void {
   const params = { page_path: pagePath(), surface };
-  ga4KeyEvent("verify_click", params);
+  sendGa4("verify_click", params);
   pixelEvent("verify_click", params, newEventId("verify"));
 }
 
 /** /pricing rendered. */
 export function trackPricingView(): void {
   const items = (Object.keys(PLAN_PRICE_CENTS) as TrackedPlan[]).map((plan) => planItem(plan, centsToUsd(PLAN_PRICE_CENTS[plan])));
-  ga4KeyEvent("view_item", { currency: "USD", value: centsToUsd(PLAN_PRICE_CENTS.pro_monthly), items });
+  sendGa4("view_item", { currency: "USD", value: centsToUsd(PLAN_PRICE_CENTS.pro_monthly), items });
   pixelEvent("view_item", { content_name: "pricing", content_type: "product" }, newEventId("pricing"));
 }
 
 /** Steam callback return. New accounts also fire Meta CompleteRegistration with the server's event id. */
 export function trackAuthReturn(kind: "sign_up" | "login", eventId: string | null): void {
-  ga4KeyEvent(kind, { method: "steam" });
+  sendGa4(kind, { method: "steam", page_path: pagePath() });
   if (kind === "sign_up" && eventId) pixelEvent("sign_up", { status: "complete" }, eventId);
 }
 
@@ -127,7 +132,7 @@ export function trackPurchaseComplete(args: {
   const campaign = campaignParams(storedAttribution());
   if (!args.ga4ServerSide) {
     const items = plan ? [planItem(plan, args.value)] : [];
-    const sent = ga4KeyEvent("purchase", {
+    const sent = sendGa4("purchase", {
       transaction_id: args.transactionId,
       value: args.value,
       currency: args.currency,

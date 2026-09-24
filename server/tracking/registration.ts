@@ -2,14 +2,14 @@
 // was just inserted. Same event_id as the browser Pixel. Never throws.
 import { isValidGa4MeasurementId, isValidMetaPixelId, registrationEventId } from "../../shared/tracking.js";
 import { serverTrackingConfig, type TrackingEnv } from "./config.js";
-import { hashExternalId, isSha256Hex } from "./hash.js";
+import { hashExternalId } from "./hash.js";
 
 export function browserTrackingOn(env: TrackingEnv): boolean {
   return isValidGa4MeasurementId(env.GA4_MEASUREMENT_ID?.trim()) || isValidMetaPixelId(env.META_PIXEL_ID?.trim());
 }
 
 /** Redirect target after Steam auth. Unchanged unless a browser tracker is configured. */
-export function authReturnLocation(returnTo: string, created: boolean, externalIdHash: string | null, env: TrackingEnv): string {
+export function authReturnLocation(returnTo: string, created: boolean, env: TrackingEnv): string {
   if (!browserTrackingOn(env)) return returnTo;
   let url: URL;
   try {
@@ -19,9 +19,6 @@ export function authReturnLocation(returnTo: string, created: boolean, externalI
   }
   if (url.origin !== "https://tradeupbot.app") return returnTo;
   url.searchParams.set("auth", created ? "new" : "return");
-  if (created && externalIdHash && isSha256Hex(externalIdHash)) {
-    url.searchParams.set("eid", registrationEventId(externalIdHash));
-  }
   return `${url.pathname}${url.search}${url.hash}`;
 }
 

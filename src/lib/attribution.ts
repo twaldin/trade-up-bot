@@ -79,7 +79,7 @@ export function gaSessionIdFromCookie(value: string | null): string | null {
   return match ? match[1] : null;
 }
 
-/** Stored landing touch plus the Pixel/GA cookies, for checkout_start and the purchase. */
+/** Stored landing touch plus the Pixel/GA cookies, for begin_checkout and the purchase. */
 export function checkoutAttribution(nowMs: number = Date.now()): Attribution {
   const tracking = clientTracking();
   if (typeof window === "undefined" || !tracking.enabled) return {};

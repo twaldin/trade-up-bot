@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 import {
   collectionSlugFromPath,
   trackCalculatorComplete,
+  checkoutAttributionBody,
   trackBeginCheckout,
   trackPricingView,
   trackAuthReturn,
@@ -40,7 +41,8 @@ describe("with every tracking env var unset (production today)", () => {
   beforeEach(() => { installBrowser({ pathname: "/pricing", search: "?utm_source=meta" }); });
 
   it("checkout keeps the legacy begin_checkout event and sends no extra checkout body", () => {
-    expect(trackBeginCheckout("pro", 6.99)).toBeNull();
+    expect(checkoutAttributionBody()).toBeNull();
+    trackBeginCheckout("pro", 6.99);
     expect(gtag.mock.calls).toEqual([["event", "begin_checkout", { item_name: "pro" }]]);
   });
 
@@ -86,19 +88,22 @@ describe("with every tracking env var unset (production today)", () => {
   });
 });
 
-describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
+describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
   beforeEach(() => {
     globalThis.tubTracking = { ga4MeasurementId: GA4 };
   });
 
-  it("checkout_start replaces begin_checkout and carries plan, price, and the landing attribution", () => {
+  it("begin_checkout carries plan, price_usd, and the landing attribution", () => {
     installBrowser({ pathname: "/calculator", search: "?utm_source=google&utm_medium=cpc&utm_campaign=tu_w1_search_calc&utm_term=trade+up&gclid=Cj0K" });
     captureAttributionFromUrl();
-    const body = trackBeginCheckout("pro-yearly", 59.99);
+    const body = checkoutAttributionBody();
+    trackBeginCheckout("pro-yearly", 59.99);
     expect(gtag.mock.calls).toEqual([["event", "begin_checkout", {
       currency: "USD",
       value: 59.99,
       items: [{ item_id: "yearly", item_name: "yearly", price: 59.99, quantity: 1 }],
+      plan: "yearly",
+      price_usd: 59.99,
       utm_source: "google",
       utm_medium: "cpc",
       utm_campaign: "tu_w1_search_calc",
@@ -195,6 +200,16 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
     expect(gtag).not.toHaveBeenCalled();
   });
 
+  it("sign_up and login include page_path and are not the only events named as key events", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackAuthReturn("sign_up", "reg_abc");
+    trackAuthReturn("login", null);
+    expect(gtag.mock.calls).toEqual([
+      ["event", "sign_up", { method: "steam", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "login", { method: "steam", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+  });
+
   it("does not throw when gtag is blocked", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/calculator" });
@@ -207,7 +222,7 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
     globalThis.tubTracking = { metaPixelId: PIXEL };
   });
 
-  it("checkout_start maps to InitiateCheckout with value in USD", () => {
+  it("begin_checkout maps to InitiateCheckout with value in USD", () => {
     installBrowser({ pathname: "/pricing", search: "?utm_source=meta&utm_medium=paid_social&fbclid=IwAR1" });
     captureAttributionFromUrl();
     trackBeginCheckout("pro-lifetime", 74.99);
@@ -231,7 +246,7 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
     ]]);
   });
 
-  it("the other key events are custom events", () => {
+  it("calculator, detail, and verify events reach the Pixel", () => {
     installBrowser({ pathname: "/calculator" });
     trackCalculatorComplete("custom");
     installBrowser({ pathname: "/collections/dreams-nightmares" });
@@ -240,7 +255,7 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
     trackVerifyClick("pro");
     expect(fbq.mock.calls.map(([cmd, name, params]) => [cmd, name, params])).toEqual([
       ["trackCustom", "CalculatorComplete", { page_path: "/calculator", source: "custom" }],
-      ["track", "ViewContent", { page_path: "/collections/dreams-nightmares", collection_slug: "dreams-nightmares" }],
+      ["track", "ViewContent", { page_path: "/collections/dreams-nightmares", collection_slug: "dreams-nightmares", content_type: "trade_up" }],
       ["trackCustom", "VerifyClick", { page_path: "/trade-ups/42", surface: "pro" }],
     ]);
   });

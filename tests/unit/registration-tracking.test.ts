@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { registrationEventId } from "../../shared/tracking.js";
 import { hashExternalId } from "../../server/tracking.js";
+import { registrationEventIdFromSteamId } from "../../src/lib/registration-id.js";
 import { authReturnLocation, metaRegistrationRequest, trackCompleteRegistration } from "../../server/tracking/registration.js";
 
 const HASH = hashExternalId("76561198000000000");
@@ -9,16 +10,19 @@ const ENV_ON = { GA4_MEASUREMENT_ID: "G-NEWPROP123", META_PIXEL_ID: "12345678901
 
 describe("authReturnLocation", () => {
   it("leaves the return path unchanged when tracking is unset", () => {
-    expect(authReturnLocation("/trade-ups", true, HASH, ENV_OFF)).toBe("/trade-ups");
+    expect(authReturnLocation("/trade-ups", true, ENV_OFF)).toBe("/trade-ups");
   });
 
-  it("marks a new account and a return visit when a browser tracker is configured", () => {
-    expect(authReturnLocation("/trade-ups?ref=a", true, HASH, ENV_ON)).toBe(`/trade-ups?ref=a&auth=new&eid=${registrationEventId(HASH!)}`);
-    expect(authReturnLocation("/", false, HASH, ENV_ON)).toBe("/?auth=return");
+  it("marks a new account and a return visit without putting the hash in the URL", () => {
+    const created = authReturnLocation("/trade-ups?ref=a", true, ENV_ON);
+    expect(created).toBe("/trade-ups?ref=a&auth=new");
+    expect(created).not.toContain("eid");
+    expect(created).not.toContain(HASH);
+    expect(authReturnLocation("/", false, ENV_ON)).toBe("/?auth=return");
   });
 
   it("rejects an off-site return path", () => {
-    expect(authReturnLocation("https://evil.example/", true, HASH, ENV_ON)).toBe("https://evil.example/");
+    expect(authReturnLocation("https://evil.example/", true, ENV_ON)).toBe("https://evil.example/");
   });
 });
 
@@ -47,5 +51,11 @@ describe("CompleteRegistration CAPI", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     await expect(trackCompleteRegistration({ steamId: "76561198000000000", ip: "203.0.113.7", userAgent: "Mozilla", cookieHeader: "_fbp=fb.1.1.2", env: ENV_ON, fetchImpl, log: () => {} })).resolves.toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("browser registration event id", () => {
+  it("matches the server hash of the Steam ID", async () => {
+    await expect(registrationEventIdFromSteamId("  76561198000000000 ")).resolves.toBe(registrationEventId(HASH!));
   });
 });

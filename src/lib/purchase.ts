@@ -4,15 +4,22 @@
 import { trackPurchaseComplete } from "./conversions.js";
 
 const FIRED_PREFIX = "tub_purchase_";
+const PENDING_TTL_MS = 60_000;
 const inflight = new Set<string>();
+
+function pendingIsFresh(value: string, now: number): boolean {
+  if (!value.startsWith("pending:")) return false;
+  const started = Number(value.slice("pending:".length));
+  return Number.isFinite(started) && now - started < PENDING_TTL_MS;
+}
 
 function claim(sessionId: string): boolean {
   const firedKey = FIRED_PREFIX + sessionId;
   if (inflight.has(sessionId)) return false;
   try {
     const existing = window.localStorage.getItem(firedKey);
-    if (existing === "1" || existing === "pending") return false;
-    window.localStorage.setItem(firedKey, "pending");
+    if (existing === "1" || (existing != null && pendingIsFresh(existing, Date.now()))) return false;
+    window.localStorage.setItem(firedKey, `pending:${Date.now()}`);
   } catch {
     // storage blocked — the in-memory set still covers this document
   }

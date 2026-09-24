@@ -1,4 +1,5 @@
-import { trackEvent } from "../../lib/analytics.js";
+import { checkoutAttributionBody, trackBeginCheckout } from "../../lib/conversions.js";
+import { PLAN_PRICE_CENTS, centsToUsd, trackedPlan } from "../../../shared/tracking.js";
 
 export interface CheckoutResult {
   ok: boolean;
@@ -15,18 +16,17 @@ export async function runCheckout(
   plan: string,
   deps: {
     fetchImpl?: typeof fetch;
-    track?: (name: string, params: Record<string, string>) => void;
     go?: (url: string) => void;
   } = {},
 ): Promise<CheckoutResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const track = deps.track ?? trackEvent;
   const go = deps.go ?? ((url: string) => { window.location.href = url; });
+  const extra = checkoutAttributionBody();
   const res = await fetchImpl("/api/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ plan }),
+    body: extra ? JSON.stringify({ plan, ...extra }) : JSON.stringify({ plan }),
   });
   let data: { url?: string; error?: string } = {};
   try {
@@ -37,7 +37,8 @@ export async function runCheckout(
   if (!res.ok) {
     return { ok: false, status: res.status, error: data.error || "Checkout failed" };
   }
-  track("begin_checkout", { item_name: plan });
+  const named = trackedPlan(plan);
+  trackBeginCheckout(plan, named ? centsToUsd(PLAN_PRICE_CENTS[named]) : 0);
   if (data.url) go(data.url);
   return { ok: true, status: res.status, url: data.url };
 }
