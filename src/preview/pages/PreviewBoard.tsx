@@ -900,8 +900,12 @@ export function usePreviewTradeUps(options: {
   const page = cursor.key === key ? cursor.page : 1;
   const exhausted = endKey === key;
 
-  // A filter change starts a new list; a scroll appends to it.
+  // A filter change starts a new list at page 1. The cursor must be rewritten,
+  // not only read as page 1 while its key mismatches: otherwise clearing back
+  // to the previous key revives the page number from before the filter.
   useEffect(() => {
+    setCursor({ key, page: 1 });
+    setEndKey(null);
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
