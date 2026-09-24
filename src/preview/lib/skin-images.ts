@@ -47,12 +47,30 @@ export const FACE_SCRAPE_LIMIT = 48;
 /** Faces never hold the board: the whole lookup is abandoned after this. */
 export const FACE_TIMEOUT_MS = 2000;
 
+/**
+ * `/api/preview/faces` keeps only the first 80 names it is sent and drops the
+ * rest silently, so a grid is asked for in batches no larger than that.
+ */
+export const FACE_BATCH_SIZE = 80;
+
 export function faceCacheKey(names: string[]): string {
   return [...new Set(names.filter(Boolean))].sort().join(FACE_KEY_SEP);
 }
 
+/** Like `faceCacheKey`, but keeps render order so the first screen is asked for first. */
+export function faceOrderKey(names: string[]): string {
+  return [...new Set(names.filter(Boolean))].join(FACE_KEY_SEP);
+}
+
 export function namesFromCacheKey(key: string): string[] {
   return key.split(FACE_KEY_SEP).filter(Boolean);
+}
+
+export function faceBatches(names: string[], size: number = FACE_BATCH_SIZE): string[][] {
+  const ordered = namesFromCacheKey(faceOrderKey(names));
+  const batches: string[][] = [];
+  for (let i = 0; i < ordered.length; i += size) batches.push(ordered.slice(i, i + size));
+  return batches;
 }
 
 export function facesRequestUrl(names: string[]): string {
@@ -87,32 +105,66 @@ export async function loadFaces(
   fetchFn: typeof fetch = fetch,
   timeoutMs: number = FACE_TIMEOUT_MS,
 ): Promise<FaceMap> {
-  const missing = namesFromCacheKey(faceCacheKey(names)).filter((name) => !cache.has(name));
+  const missing = namesFromCacheKey(faceOrderKey(names)).filter((name) => !cache.has(name));
   if (missing.length === 0) return cache;
+  const inflight = inflightFor(cache);
+  const waits = new Set<Promise<void>>();
+  const fresh: string[] = [];
+  for (const name of missing) {
+    const pending = inflight.get(name);
+    if (pending) waits.add(pending);
+    else fresh.push(name);
+  }
+  if (fresh.length > 0) {
+    const job: Promise<void> = fillFaces(fresh, cache, fetchFn)
+      .catch(() => {})
+      .finally(() => {
+        for (const name of fresh) if (inflight.get(name) === job) inflight.delete(name);
+      });
+    for (const name of fresh) inflight.set(name, job);
+    waits.add(job);
+  }
   await new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, timeoutMs);
-    void fillFaces(missing, cache, fetchFn).then(
-      () => { clearTimeout(timer); resolve(); },
-      () => { clearTimeout(timer); resolve(); },
-    );
+    void Promise.all(waits).then(() => { clearTimeout(timer); resolve(); });
   });
   return cache;
 }
 
-async function fillFaces(missing: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<void> {
-  let facesMissing = false;
+/**
+ * A grid re-renders as each page lands; the new render must wait on the batch
+ * the previous one already sent rather than ask for the same names again.
+ */
+const INFLIGHT = new WeakMap<FaceMap, Map<string, Promise<void>>>();
+
+function inflightFor(cache: FaceMap): Map<string, Promise<void>> {
+  let inflight = INFLIGHT.get(cache);
+  if (!inflight) {
+    inflight = new Map();
+    INFLIGHT.set(cache, inflight);
+  }
+  return inflight;
+}
+
+/** Returns true when the host has no faces route and the caller should scrape. */
+async function fillFaceBatch(batch: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<boolean> {
   try {
-    const res = await fetchFn(facesRequestUrl(missing), { credentials: "include" });
+    const res = await fetchFn(facesRequestUrl(batch), { credentials: "include" });
     const type = res.headers.get("content-type") ?? "";
-    if (res.status === 404 || type.includes("text/html")) {
-      facesMissing = true;
-    } else if (res.ok && !type.includes("text/html")) {
+    if (res.status === 404 || type.includes("text/html")) return true;
+    if (res.ok) {
       const data = (await res.json()) as { faces?: Record<string, string | null> };
       if (data.faces) rememberFaces(cache, data.faces);
     }
+    return false;
   } catch {
-    facesMissing = true;
+    return true;
   }
+}
+
+async function fillFaces(missing: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<void> {
+  const outcomes = await Promise.all(faceBatches(missing).map((batch) => fillFaceBatch(batch, cache, fetchFn)));
+  const facesMissing = outcomes.some(Boolean);
 
   const stillMissing = missing.filter((name) => !cache.has(name));
   if (facesMissing && stillMissing.length > 0) {

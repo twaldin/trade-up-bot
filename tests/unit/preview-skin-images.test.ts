@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BYMYKEL_URL_RE,
   createFaceCache,
+  FACE_BATCH_SIZE,
   FACE_TIMEOUT_MS,
+  faceBatches,
   faceCacheKey,
   faceFor,
+  faceOrderKey,
   facesRequestUrl,
   hydrateOutcomesIfNeeded,
   isBlockedCatalogUrl,
@@ -13,7 +16,84 @@ import {
   namesFromCacheKey,
   rememberFaces,
 } from "../../src/preview/lib/skin-images.js";
+import { parseFaceNames } from "../../server/routes/preview-faces.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
+
+/** Grid order the way /skins renders it: listing count, not alphabetical. */
+const GRID = [
+  "AK-47 | Redline",
+  "AK-47 | Slate",
+  "MP5-SD | Neon Squeezer",
+  "Negev | Wall Bang",
+  ...Array.from({ length: 196 }, (_, i) => `AK-47 | Aquamarine ${String(i).padStart(3, "0")}`),
+];
+
+function namesInRequest(input: RequestInfo | URL): string[] {
+  const url = new URL(String(input), "http://preview.test");
+  return parseFaceNames(url.searchParams.get("names"));
+}
+
+function facesResponder(requested: string[][]) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const names = namesInRequest(input);
+    requested.push(names);
+    const faces = Object.fromEntries(names.map((name) => [name, `https://community.fastly.steamstatic.com/economy/image/${encodeURIComponent(name)}`]));
+    return new Response(JSON.stringify({ faces }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+}
+
+describe("preview faces follow the rendered grid", () => {
+  it("never sends a batch the server would truncate", () => {
+    expect(FACE_BATCH_SIZE).toBeLessThanOrEqual(80);
+    const batches = faceBatches(GRID);
+    for (const batch of batches) {
+      expect(parseFaceNames(new URL(facesRequestUrl(batch), "http://preview.test").searchParams.get("names"))).toHaveLength(batch.length);
+    }
+    expect(batches.flat()).toEqual(GRID);
+  });
+
+  it("batches in render order so the first screen goes first", () => {
+    const [first] = faceBatches(GRID);
+    expect(first.slice(0, 4)).toEqual(["AK-47 | Redline", "AK-47 | Slate", "MP5-SD | Neon Squeezer", "Negev | Wall Bang"]);
+    expect(first).toHaveLength(FACE_BATCH_SIZE);
+  });
+
+  it("dedupes and drops blanks without re-sorting", () => {
+    expect(faceBatches(["B | Two", "", "A | One", "B | Two"])).toEqual([["B | Two", "A | One"]]);
+    expect(namesFromCacheKey(faceOrderKey(["B | Two", "", "A | One", "B | Two"]))).toEqual(["B | Two", "A | One"]);
+  });
+
+  it("fills every tile of a 200-row page, top listing-count skins included", async () => {
+    const cache = createFaceCache();
+    const requested: string[][] = [];
+    await loadFaces(GRID, cache, facesResponder(requested) as unknown as typeof fetch);
+    expect(requested.every((batch) => batch.length <= FACE_BATCH_SIZE)).toBe(true);
+    expect(new Set(requested.flat())).toEqual(new Set(GRID));
+    for (const name of ["AK-47 | Redline", "AK-47 | Slate", "MP5-SD | Neon Squeezer"]) {
+      expect(faceFor(cache, name)).toContain("steamstatic");
+    }
+  });
+
+  it("does not refetch names whose batch is still in flight", async () => {
+    const cache = createFaceCache();
+    const requested: string[][] = [];
+    const respond = facesResponder(requested);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      await gate;
+      return respond(input);
+    });
+    const firstPage = loadFaces(GRID.slice(0, 100), cache, fetchFn as unknown as typeof fetch);
+    const bothPages = loadFaces(GRID, cache, fetchFn as unknown as typeof fetch);
+    release();
+    await Promise.all([firstPage, bothPages]);
+    const flat = requested.flat();
+    expect(flat).toHaveLength(new Set(flat).size);
+    expect(new Set(flat)).toEqual(new Set(GRID));
+    expect(faceFor(cache, "AK-47 | Redline")).toContain("steamstatic");
+  });
+});
 
 describe("preview face loading is bounded", () => {
   it("gives up on a faces route that never answers", async () => {

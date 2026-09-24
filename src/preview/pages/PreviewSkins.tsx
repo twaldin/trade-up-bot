@@ -20,7 +20,7 @@ import {
   skinsHref,
   splitSkinName,
 } from "../lib/board.js";
-import { createFaceCache, faceCacheKey, faceFor, loadFaces, namesFromCacheKey } from "../lib/skin-images.js";
+import { createFaceCache, faceFor, faceOrderKey, loadFaces, namesFromCacheKey } from "../lib/skin-images.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToSkinParams, listingMatchesQuery, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import {
@@ -124,7 +124,7 @@ function Face({ name, size }: { name: string; size: number }) {
 }
 
 function useFaceNames(names: string[]) {
-  const key = faceCacheKey(names);
+  const key = faceOrderKey(names);
   const [, setTick] = useState(0);
   useEffect(() => {
     let live = true;
@@ -272,7 +272,9 @@ export function PreviewSkinsPage() {
     return () => observer.disconnect();
   }, [exhausted, loadMore, throttle]);
 
-  useFaceNames(useMemo(() => rows.slice(-SKIN_INDEX_PAGE_SIZE).map((row) => row.name), [rows]));
+  // The API's page size is not fixed (a warmed cache can hand page 1 back with
+  // 200 rows), so ask for exactly what the grid renders, in the order it renders.
+  useFaceNames(useMemo(() => rows.map((row) => row.name), [rows]));
 
   return (
     <div className="preview-page">
