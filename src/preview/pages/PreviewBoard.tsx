@@ -527,10 +527,13 @@ export function TradeUpCard({
   tu,
   expanded,
   onExpand,
+  expandable = true,
 }: {
   tu: TradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
+  /** False for teaser cards that share expand state with another card they must not disturb. */
+  expandable?: boolean;
 }) {
   const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
@@ -548,16 +551,24 @@ export function TradeUpCard({
   const { drivers, drags } = evDrivers(points, 4);
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
-  const toggle = () => onExpand(expanded ? null : tu.id);
+  const toggle = () => {
+    if (!expandable) return;
+    onExpand(expanded ? null : tu.id);
+  };
+  const open = () => {
+    if (expandable) onExpand(tu.id);
+  };
 
   return (
     <article
-      className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""}`}
+      className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""} ${expandable ? "" : "preview-card--static"}`}
       onClick={toggle}
     >
-      <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
-        {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
-      </button>
+      {expandable && (
+        <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
+          {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
+        </button>
+      )}
 
       {/* Clicking the card toggles it, but the tiles own most of that surface,
           so an expanded card carries one quiet way out. */}
@@ -585,7 +596,7 @@ export function TradeUpCard({
               rarity={inColor}
               hot={hot === group.name}
               onHover={setHot}
-              onNeedExpand={() => onExpand(tu.id)}
+              onNeedExpand={open}
             />
           ))}
           outputs={outputs.map((outcome) => (
@@ -615,10 +626,12 @@ export function TradeUpCard({
             </>
           )}
           <span className="preview-cardline__actions">
-            <span className="preview-cardline__open" aria-hidden>
-              Details
-              <ChevronDown size={12} />
-            </span>
+            {expandable && (
+              <span className="preview-cardline__open" aria-hidden>
+                Details
+                <ChevronDown size={12} />
+              </span>
+            )}
             <a
               className="preview-cardline__verify"
               href={verifyClaimHref(tu.id)}

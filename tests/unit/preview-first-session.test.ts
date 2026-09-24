@@ -40,6 +40,20 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(css).toMatch(/\.preview-cardline__verify\s*\{[^}]*min-height: 24px/);
   });
 
+  it("only offers Details on cards that can expand, and never expands a static one", () => {
+    expect(board).toContain("expandable = true");
+    expect(board).toMatch(/\{expandable && \(\s*<span className="preview-cardline__open"/);
+    expect(board).toMatch(/const toggle = \(\) => \{\s*if \(!expandable\) return;/);
+    expect(board).toMatch(/const open = \(\) => \{\s*if \(expandable\) onExpand\(tu\.id\);/);
+    expect(board).toContain("onNeedExpand={open}");
+  });
+
+  it("keeps landing peek cards static so they cannot collapse the hero card", () => {
+    const landing = read("../../src/preview/pages/PreviewLanding.tsx");
+    const peek = landing.slice(landing.indexOf("{peek.map("), landing.indexOf("preview-peek__graph"));
+    expect(peek).toContain("expandable={false}");
+  });
+
   it("styles the hint and the link from kit tokens", () => {
     expect(css).toContain(".preview-cardline__open");
     expect(css).toContain(".preview-cardline__verify");

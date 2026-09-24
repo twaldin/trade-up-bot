@@ -1017,6 +1017,10 @@
   color: var(--text);
 }
 
+.preview-card--static {
+  cursor: default;
+}
+
 .preview-cardline__verify {
   display: inline-flex;
   align-items: center;

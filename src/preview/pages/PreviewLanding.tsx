@@ -304,6 +304,7 @@ export function PreviewLanding({
                 key={tu.id}
                 tu={tu}
                 expanded={false}
+                expandable={false}
                 onExpand={live.onExpand}
               />
             ))}
