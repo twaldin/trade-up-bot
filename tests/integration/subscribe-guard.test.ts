@@ -6,7 +6,7 @@ import { createTestApp, type TestContext } from "./setup.js";
 
 const stripeMock = vi.hoisted(() => ({
   customersCreate: vi.fn(async () => ({ id: "cus_new" })),
-  sessionsCreate: vi.fn(async () => ({ url: "https://checkout.stripe.test/cs_test" })),
+  sessionsCreate: vi.fn(async (_params?: unknown, _opts?: { idempotencyKey?: string }) => ({ url: "https://checkout.stripe.test/cs_test" })),
   portalCreate: vi.fn(async () => ({ url: "https://billing.stripe.test/session" })),
   subscriptionsList: vi.fn(async () => ({ data: [] as { status: string }[] })),
 }));
