@@ -1786,6 +1786,28 @@
   min-width: 0;
 }
 
+/*
+ * Narrow: the buyable listings lead. Tabs pin under the console bar (it sits
+ * outside the `main` scrollport), and the listings scroller is kept short
+ * enough that the page around it still scrolls down to the chart. Swapping a
+ * 450px listings pane for a multi-screen board must not let scroll anchoring
+ * hold the hero in place and throw the reader past the pane they picked.
+ */
+@media (max-width: 1099px) {
+  .preview-skin-detail { overflow-anchor: none; }
+  .preview-skin-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    order: -2;
+    padding-block: 6px;
+    background: var(--bg);
+  }
+  .preview-skin-stage { order: -1; }
+  .preview-skin-panes { scroll-margin-top: calc(var(--control) + 12px); }
+  .preview-skin-pane--listings { max-height: min(52vh, 480px); }
+}
+
 @media (min-width: 1100px) {
   .preview-skin-tabs { display: none; }
   .preview-skin-panes {
