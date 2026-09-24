@@ -139,7 +139,7 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
               </div>
             ))}
           </div>
-          <div style={{ fontFamily: FONT.body, fontSize: 26, color: C.text, marginTop: 18, lineHeight: 1.35 }}>{v.note}</div>
+          <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.text, marginTop: 18, lineHeight: 1.35 }}>{v.note}</div>
         </div>
       );
     case "listings":
@@ -200,7 +200,7 @@ export const StaticAd: React.FC<StaticAdProps> = (p) => {
       <div style={{ fontWeight: 600, fontSize: headline, lineHeight: 1.12, letterSpacing: -0.8, color: C.text }}>
         <Emphasis text={p.headline} emphasis={p.emphasis} />
       </div>
-      <div style={{ fontSize: tall ? 28 : 24, lineHeight: 1.35, color: C.text }}>{p.sub}</div>
+      <div style={{ fontSize: 28, lineHeight: 1.35, color: C.text }}>{p.sub}</div>
       <Visual v={p.visual} takes={p.takes} />
       <div style={{ alignSelf: "flex-start", background: C.accent, color: C.onAccent, fontWeight: 600, fontSize: 28, borderRadius: 8, padding: "14px 26px" }}>{p.cta}</div>
       <div style={{ fontFamily: FONT.mono, fontSize: 28, color: C.text, lineHeight: 1.3 }}>{p.source}</div>

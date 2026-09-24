@@ -61,7 +61,7 @@ const geometry = (format: Format): Geometry => {
     return {
       brand: { x: 48, y: band.top, size: 22 },
       honesty: { x: 48, y: band.top + 32, w: 984, h: 36, size: foot },
-      caption: { x: 48, y: band.top + 68, w: 984, h: 52, size: 26 },
+      caption: { x: 48, y: band.top + 68, w: 984, h: 52, size: 28 },
       panel: { x: 48, y: band.top + 124, w: 984, h: 320 },
       radius: 12,
       footnote: { x: 48, y: band.top + 460, w: 984, h: 72, size: foot },
@@ -120,7 +120,7 @@ const CalloutCard: React.FC<{ c: Callout; frame: number }> = ({ c, frame }) => (
       gap: 16,
     }}
   >
-        <div style={{ fontFamily: FONT.mono, fontSize: 20, color: C.muted, lineHeight: 1.15 }}>{c.label}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 24, color: C.muted, lineHeight: 1.15 }}>{c.label}</div>
       <div style={{ fontFamily: FONT.mono, fontSize: c.valueSize ?? 72, color: toneColor(c.tone), lineHeight: 1, fontWeight: 500 }}>{c.value}</div>
     {c.note && <div style={{ fontFamily: FONT.body, fontSize: 22, color: C.muted, marginTop: 4 }}>{c.note}</div>}
   </div>

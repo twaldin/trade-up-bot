@@ -81,7 +81,7 @@ export const buildCatalog = (facts: Facts) => {
   if (result.cost !== "$27.42" || result.expectedValue !== "$27.41" || result.profit !== "-$0.01") {
     throw new Error("calculator example drifted from the 24 Sept capture");
   }
-  if (!tradeup.facts.signinBanner?.includes("Sign in to verify")) {
+  if (!tradeup.facts.signinBanner?.includes("Signing in is free. Verify is part of Pro.")) {
     throw new Error("sign-in banner text was not captured");
   }
   const feeRows = [
@@ -249,7 +249,7 @@ export const buildCatalog = (facts: Facts) => {
         seconds: 4.2,
         caption: { text: "The page asks you to sign in.", emphasis: ["sign in"] },
         footage: { kind: "image", take: "d-tradeup", shot: "signin" },
-        footnote: "Sign in to verify, claim, and purchase listings.",
+        footnote: "Signing in is free. Verify is part of Pro.",
       },
       {
         id: "pro",

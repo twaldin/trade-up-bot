@@ -72,7 +72,7 @@ export const EndCard: React.FC<EndCardProps & { format: Format }> = ({
           {cta}
         </div>
         <div style={{ fontFamily: FONT.mono, fontSize: 36 * s, color: C.text }}>{url}</div>
-        <div style={{ fontFamily: FONT.body, fontSize: 26 * s, color: C.muted }}>{offer}</div>
+        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.text }}>{offer}</div>
         <div style={{ fontFamily: FONT.mono, fontSize: 28, color: C.text, border: `1px solid ${C.lineHard}`, borderRadius: 8, padding: "10px 16px" }}>
           {honesty}
         </div>
