@@ -11,7 +11,7 @@ export function authUserFrom<T extends { steam_id?: unknown }>(data: T | null | 
   return data as T & AuthUser;
 }
 
-export type ShareActionPanel = "pending" | "sign-in" | "pro" | "none";
+export type ShareActionPanel = "pending" | "sign-in" | "pro" | "upgrade";
 
 export function shareActionPanel(user: AuthUser | null | undefined): ShareActionPanel {
   if (user === undefined) return "pending";
