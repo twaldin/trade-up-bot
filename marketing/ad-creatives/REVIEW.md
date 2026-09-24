@@ -81,6 +81,10 @@ Then re-render video C: `node scripts/render-all.mjs --only=meta-c-verify-vertic
 - Recaptured the post-#171 sign-in banner, board shot, and calculator take. Re-rendered `meta-c-verify-vertical` only. r5 files for every other cut stay as they were.
 - Frame check rejects guaranteed profit, case key, and gambling phrasing. “not guaranteed profit” is the only allowed disclaimer of that kind. It does not appear in this cut. The on-screen disclaimer stays “Estimates after fees. You can lose money.”
 
+## r8
+
+- The sign-in button is as wide as the page bar, so showing its label drops the banner under 17px. The sign-in shot is cropped to the sentence only. No partial lime button remains. Capital height stays above 17px. Board footage is unchanged.
+
 ## r7
 
 - Video C’s sign-in scene focuses the banner sentence (`cx: 177`, `cy: 23`, `w: 360` on `d-tradeup--signin.png`) so the 11px source line renders at about 28px. The other 13 assets stay the signed r5/r6 files.

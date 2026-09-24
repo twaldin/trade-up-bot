@@ -248,7 +248,7 @@ export const buildCatalog = (facts: Facts) => {
         id: "signin",
         seconds: 4.2,
         caption: { text: "The page asks you to sign in.", emphasis: ["sign in"] },
-        footage: { kind: "image", take: "d-tradeup", shot: "signin", focus: { cx: 177, cy: 23, w: 360 } },
+        footage: { kind: "image", take: "d-tradeup", shot: "signin", focus: { cx: 165, cy: 13, w: 360 } },
         footnote: "Signing in is free. Verify is part of Pro.",
       },
       {

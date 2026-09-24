@@ -59,6 +59,30 @@ async function shot(page, take, locator, name, pad = 0) {
   take.screenshots[name] = { file, cssWidth: Math.round(clip.width), cssHeight: Math.round(clip.height) };
 }
 
+/** Clip the text range, not the block box, so a full-width bar does not shrink the sentence. */
+async function shotText(page, take, locator, name, pad = 8) {
+  await locator.evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  await sleep(400);
+  const box = await locator.evaluate((el) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n = walker.nextNode();
+    while (n && !n.textContent.trim()) n = walker.nextNode();
+    if (!n) return null;
+    const r = document.createRange();
+    r.selectNodeContents(n);
+    const rect = r.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  });
+  if (!box) throw new Error(`${take.id} ${name}: no text range`);
+  const vp = page.viewportSize();
+  const x = Math.max(0, box.x - pad);
+  const y = Math.max(0, box.y - pad);
+  const clip = { x, y, width: Math.min(vp.width - x, box.width + pad * 2), height: Math.min(vp.height - y, box.height + pad * 2) };
+  const file = `${take.id}--${name}.png`;
+  await page.screenshot({ path: path.join(OUT, file), clip });
+  take.screenshots[name] = { file, cssWidth: Math.round(clip.width), cssHeight: Math.round(clip.height) };
+}
+
 async function viewportShot(page, take, name) {
   await sleep(500);
   const file = `${take.id}--${name}.png`;
@@ -227,7 +251,7 @@ for (const device of ["desktop", "mobile"]) {
   }, async ({ page, t }) => {
     await scrollTopInstant(page);
     await viewportShot(page, t, "top");
-    await shot(page, t, page.getByText(/Verify[^.]*Pro/).first().locator("xpath=.."), "signin", 6);
+    await shotText(page, t, page.locator("p.preview-note").filter({ hasText: /Verify[^.]*Pro/ }).first(), "signin", 8);
   });
 
   take(`${p}-calculator`, device, "/calculator", async ({ page, rec, ptr, t }) => {
