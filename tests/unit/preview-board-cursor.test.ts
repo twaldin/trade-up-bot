@@ -120,4 +120,19 @@ describe("usePreviewTradeUps page reset", () => {
     expect(back.at(-1)).toContain("page=1");
     expect(back.at(-1)).not.toContain("page=3");
   });
+
+  it("does not mark the board refreshing while a later page loads", async () => {
+    await mount();
+    await settle();
+    expect(api.refreshing).toBe(false);
+    let release: (value: { ok: boolean; status: number; json: () => Promise<unknown> }) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { release = resolve; })));
+    await act(async () => { api.loadMore(); });
+    rerender();
+    expect(api.loading).toBe(true);
+    expect(api.refreshing).toBe(false);
+    await act(async () => { release(listResponse(12)); });
+    await settle();
+    expect(api.refreshing).toBe(false);
+  });
 });

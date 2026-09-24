@@ -71,6 +71,7 @@ export function PreviewFilters({
   canClear,
   collection,
   lockedSkin,
+  onTyping,
 }: {
   query: BoardQuery;
   onChange: (next: BoardQuery) => void;
@@ -79,7 +80,12 @@ export function PreviewFilters({
   canClear?: boolean;
   collection?: string;
   lockedSkin?: string;
+  onTyping?: (typing: boolean) => void;
 }) {
+  const typing = {
+    onFocus: () => onTyping?.(true),
+    onBlur: () => onTyping?.(false),
+  };
   const set = <K extends keyof BoardQuery>(key: K, value: BoardQuery[K]) =>
     onChange({ ...query, [key]: value });
 
@@ -93,6 +99,7 @@ export function PreviewFilters({
             value={query.skin}
             placeholder={collection ? `Search in ${collection}` : "Search a skin"}
             onChange={(event) => set("skin", event.target.value)}
+            {...typing}
           />
         </label>
       )}
@@ -133,6 +140,7 @@ export function PreviewFilters({
           value={query.minProfit}
           placeholder="0"
           onChange={(event) => set("minProfit", event.target.value.replace(/[^\d.]/g, ""))}
+          {...typing}
         />
       </label>
 
@@ -144,6 +152,7 @@ export function PreviewFilters({
           value={query.minChance}
           placeholder="0"
           onChange={(event) => set("minChance", event.target.value.replace(/[^\d]/g, ""))}
+          {...typing}
         />
       </label>
 
@@ -155,6 +164,7 @@ export function PreviewFilters({
           value={query.maxCost}
           placeholder="∞"
           onChange={(event) => set("maxCost", event.target.value.replace(/[^\d.]/g, ""))}
+          {...typing}
         />
       </label>
 

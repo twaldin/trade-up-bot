@@ -769,6 +769,7 @@ export function PreviewBoard({
   exhausted,
   throttle,
   failed,
+  refreshing = false,
   onRetry,
   onClearFilters,
   heading = "Live trade-ups",
@@ -791,6 +792,8 @@ export function PreviewBoard({
   exhausted?: boolean;
   throttle?: string | null;
   failed?: boolean;
+  /** Page-1 filter change still showing the previous rows. */
+  refreshing?: boolean;
   onRetry?: () => void;
   onClearFilters?: () => void;
   heading?: string;
@@ -806,6 +809,7 @@ export function PreviewBoard({
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const cols = bentoColumns(width);
+  const [typing, setTyping] = useState(false);
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const notice = boardNotice({
@@ -817,6 +821,7 @@ export function PreviewBoard({
   });
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
+    typing,
     query,
     text: search ?? "",
     collection,
@@ -882,6 +887,7 @@ export function PreviewBoard({
           value={search ?? ""}
           onChange={onSearch}
           onParsed={onParsed}
+          onTyping={setTyping}
           placeholder="Search trade-ups…"
           examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
         />
@@ -894,6 +900,7 @@ export function PreviewBoard({
           canClear={filtered}
           collection={collection}
           lockedSkin={lockedSkin}
+          onTyping={setTyping}
         />
       )}
       {isFree && (
@@ -905,9 +912,9 @@ export function PreviewBoard({
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
-      {loading && tradeUps.length > 0 && <p className="preview-note">Updating trade-ups…</p>}
+      {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
-      <div className={`preview-bento${loading && tradeUps.length > 0 ? " preview-bento--stale" : ""}`}>
+      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={refreshing || undefined}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
@@ -976,6 +983,7 @@ export function usePreviewTradeUps(options: {
   const [backoffUntil, setBackoffUntil] = useState(0);
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [rowsKey, setRowsKey] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
@@ -1036,7 +1044,11 @@ export function usePreviewTradeUps(options: {
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
       emit: {
-        rows: (next) => { if (live) setTradeUps(next as TradeUp[]); },
+        rows: (next) => {
+          if (!live) return;
+          setTradeUps(next as TradeUp[]);
+          if (page === 1) setRowsKey(key);
+        },
         isFree: setIsFree,
         loading: setLoading,
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
@@ -1075,6 +1087,8 @@ export function usePreviewTradeUps(options: {
     return () => window.clearTimeout(handle);
   }, [backoffUntil]);
 
+  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== key;
+
   const loadMore = useCallback(() => {
     if (!canLoadMore({
       inFlight: inFlightRef.current || loading,
@@ -1110,14 +1124,14 @@ export function usePreviewTradeUps(options: {
 
   return useMemo(
     () => ({
-      tradeUps, loading, isFree, expandedId, onExpand,
+      tradeUps, loading, refreshing, isFree, expandedId, onExpand,
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
       loadMore, exhausted, throttle,
       failed, retry, clearFilters,
     }),
-    [tradeUps, loading, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
+    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
       clearFilters, faceTick, total, totalProfitable],
   );
 }

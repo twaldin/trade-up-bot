@@ -43,6 +43,7 @@ function BoardRoute() {
       exhausted={state.exhausted}
       throttle={state.throttle}
       failed={state.failed}
+      refreshing={state.refreshing}
       onRetry={state.retry}
       onClearFilters={state.clearFilters}
     />

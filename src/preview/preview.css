@@ -1145,7 +1145,6 @@
 
 .preview-bento--stale {
   opacity: 0.45;
-  pointer-events: none;
 }
 
 @media (min-width: 720px) {

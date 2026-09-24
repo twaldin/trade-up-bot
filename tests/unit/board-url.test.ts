@@ -8,6 +8,7 @@ import {
   type BoardUrlState,
 } from "../../src/preview/lib/board-url.js";
 import { formatSuggestionDollars, loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
+import { boardNavTarget } from "../../src/preview/PreviewShell.js";
 import { EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -96,6 +97,14 @@ describe("board URL", () => {
     }, { pathname: "/collections", search: "" }, history);
     expect(calls).toHaveLength(1);
   });
+
+  it("keeps the filtered board URL on the Board link", () => {
+    expect(boardNavTarget("/trade-ups", "?min_chance=80", "/trade-ups")).toEqual({
+      pathname: "/trade-ups",
+      search: "?min_chance=80",
+    });
+    expect(boardNavTarget("/skins", "", "/trade-ups")).toBe("/trade-ups");
+  });
 });
 
 describe("empty-state suggestion candidates", () => {
@@ -146,7 +155,7 @@ describe("empty-state suggestion candidates", () => {
 });
 
 describe("expected P/L helper", () => {
-  const banned = /\b(bankroll|guaranteed|plays|finish green|chance|odds|roll)\b/i;
+  const banned = /chance of profit|chance to profit|% chance|\bodds\b|\brolls?\b|bankroll|finish(es)? (in the )?green|min chance|guaranteed?/i;
 
   it("renders the explanation without a duplicate title", () => {
     const html = renderToStaticMarkup(createElement(Fragment, null, ExpectedPlHelp() as ReactNode));
@@ -169,8 +178,10 @@ describe("expected P/L helper", () => {
       ...loosenCandidates(DEFAULT_QUERY, "ak"),
       ...loosenCandidates({ ...DEFAULT_QUERY, type: "classified_covert" }, ""),
     ].map((step) => step.label);
-    for (const copy of [EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ...labels]) {
+    for (const copy of [EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, "Updating trade-ups…", ...labels]) {
       expect(copy).not.toMatch(banned);
     }
+    expect("rolls").toMatch(banned);
+    expect("finish in the green").toMatch(banned);
   });
 });
