@@ -1,6 +1,6 @@
 import { Router } from "express";
 import pg from "pg";
-import { requireTier, type User } from "../auth.js";
+import { requireProAccess, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
 import { cascadeTradeUpStatuses, deleteListings, ensureInputReferences } from "../engine.js";
 import { buildSnapshot } from "../build-snapshot.js";
@@ -223,7 +223,7 @@ export function claimsRouter(pool: pg.Pool): Router {
   }
 
   // POST /api/trade-ups/:id/claim - claim a trade-up (Pro only)
-  router.post("/api/trade-ups/:id/claim", requireTier("pro"), async (req, res) => {
+  router.post("/api/trade-ups/:id/claim", requireProAccess, async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
@@ -458,7 +458,7 @@ export function claimsRouter(pool: pg.Pool): Router {
   // Body: { listing_ids: string[] } — which listings user actually bought
   // Confirmed listings are deleted (triggers auto-correct cascade on next read)
   // Unchecked listings are released (claimed_by cleared)
-  router.post("/api/trade-ups/:id/confirm", requireTier("pro"), async (req, res) => {
+  router.post("/api/trade-ups/:id/confirm", requireProAccess, async (req, res) => {
     const tradeUpId = parseInt(String(req.params.id));
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });

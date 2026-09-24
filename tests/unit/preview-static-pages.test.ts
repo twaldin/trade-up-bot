@@ -16,6 +16,8 @@ function staticPage(path: string) {
 }
 
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
+// The Pro card reads its price strings from the shared plan module.
+const pricingPlans = pricing + read("../../src/preview/lib/pro-pricing.ts") + read("../../src/preview/lib/checkout.ts");
 const faq = read("../../src/preview/pages/PreviewFaq.tsx");
 const features = read("../../src/preview/pages/PreviewFeatures.tsx");
 const blog = read("../../src/preview/pages/PreviewBlog.tsx");
@@ -65,16 +67,16 @@ describe("leftover marketing pages join the kit shell", () => {
 
   it("does not invent prices, testimonials, or volume on pricing", () => {
     expect(pricing).toContain("$0");
-    expect(pricing).toContain("$6.99");
-    expect(pricing).toContain("$59.99");
-    expect(pricing).toContain("$74.99");
-    expect(pricing).toContain("/api/subscribe");
-    expect(pricing).toContain('JSON.stringify({ plan })');
-    expect(pricing).toContain("pro-yearly");
-    expect(pricing).toContain("pro-lifetime");
+    expect(pricingPlans).toContain("$6.99");
+    expect(pricingPlans).toContain("$59.99");
+    expect(pricingPlans).toContain("$74.99");
+    expect(pricingPlans).toContain("/api/subscribe");
+    expect(pricingPlans).toContain('JSON.stringify({ plan })');
+    expect(pricingPlans).toContain("pro-yearly");
+    expect(pricingPlans).toContain("pro-lifetime");
     expect(pricing).toContain("Go Pro");
     expect(pricing).not.toMatch(/testimonial/i);
-    expect(pricing).not.toContain("$15");
+    expect(pricingPlans).not.toContain("$15");
   });
 
   it("keeps FAQ, features, terms, and privacy claims from the existing pages", () => {
@@ -86,8 +88,12 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(features).toContain("Float-targeted discovery across 45+ targets");
     expect(features).toContain("Verify system");
     expect(features).toContain("Claim system");
-    expect(legal).toContain("Last updated: March 2026");
+    expect(legal).toContain("Last updated: September 2026");
     expect(legal).toContain("TradeUpBot is an informational tool only");
+    expect(legal).toContain("monthly, yearly, and a one-time lifetime purchase");
+    expect(legal).toContain("Manage subscription");
+    expect(legal).not.toContain("billed monthly");
+    expect(legal).not.toContain("account menu");
     expect(legal).toContain("What We Collect");
     expect(legal).toContain("Steam OpenID");
   });

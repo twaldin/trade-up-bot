@@ -9,6 +9,7 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
+import { getEffectiveTier } from "../shared/pro-access.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -354,6 +355,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Login required" });
 }
 
+/** Pro tier or a verified lifetime purchase. Lifetime counts while the tier column still says free. */
+export function requireProAccess(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) return res.status(401).json({ error: "Login required" });
+  if (getEffectiveTier(req.user as User) === "pro") return next();
+  res.status(403).json({ error: "Requires pro tier" });
+}
+
 // Middleware: require specific tier (admin flag does NOT auto-pass — admin uses their real tier)
 export function requireTier(...tiers: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -366,8 +374,7 @@ export function requireTier(...tiers: string[]) {
 
 // Get tier config for the current user's actual tier (no view_as override)
 export function getTierConfig(req: Request): { delay: number; limit: number; showListingIds: boolean } {
-  const user = req.user as User | undefined;
-  const tier = user?.tier || "free";
+  const tier = getEffectiveTier(req.user as User | undefined);
 
   switch (tier) {
     case "pro":

@@ -4,9 +4,11 @@ import type { TradeUp } from "../../../shared/types.js";
 import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
-import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
+import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
+import { proPriceLine } from "../lib/pro-pricing.js";
 import {
   MY_TRADE_UPS_API,
   claimTimerLabel,
@@ -17,12 +19,6 @@ import {
 } from "../lib/my-trade-ups.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
-
-interface AuthUser {
-  steam_id: string;
-  tier: string;
-  is_admin?: boolean;
-}
 
 function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -39,7 +35,7 @@ export function PreviewShare() {
   const [tu, setTu] = useState<TradeUp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -49,12 +45,13 @@ export function PreviewShare() {
   const [verifyResult, setVerifyResult] = useState<VerifyPayload | undefined>(undefined);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (data?.steam_id) setUser(data); })
-      .catch(() => {});
+      .then((data) => setUser(authUserFrom(data)))
+      .catch(() => setUser(null));
   }, []);
 
   useEffect(() => {
@@ -213,8 +210,7 @@ export function PreviewShare() {
   const h1 = tu
     ? `${typeLabel} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`
     : "Trade-up";
-  const isAuthenticated = !!user;
-  const isBasicPlus = user?.tier === "pro" || user?.tier === "admin" || !!user?.is_admin;
+  const panel = shareActionPanel(user);
   const realIds = tu ? realListingIds(tu) : [];
 
   return (
@@ -257,21 +253,27 @@ export function PreviewShare() {
         </section>
       )}
 
-      {tu && !isAuthenticated && (
+      {tu && panel === "sign-in" && (
         <section className="preview-panel">
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
-          <a
+          <button
+            type="button"
             className="preview-btn preview-btn--lime"
-            href={authHref(window.location.pathname)}
-            onClick={() => trackEvent("sign_up_start", { location: "share_verify" })}
-            rel="nofollow"
+            onClick={(event) => interstitial.open({ surface: "share_verify" }, event.currentTarget)}
           >
-            Sign in with Steam
-          </a>
+            Verify or claim this trade-up
+          </button>
         </section>
       )}
 
-      {tu && isAuthenticated && isBasicPlus && (
+      {tu && panel === "upgrade" && (
+        <section className="preview-panel">
+          <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
+          <Link className="preview-btn" to="/pricing">See Pro plans</Link>
+        </section>
+      )}
+
+      {tu && panel === "pro" && (
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">{claimed ? "Your claim" : "Claim"}</p>
@@ -369,6 +371,8 @@ export function PreviewShare() {
       {tu && (
         <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
       )}
+
+      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }

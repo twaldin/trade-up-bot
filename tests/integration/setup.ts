@@ -489,6 +489,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestCont
       avatar_url: "",
       tier,
       is_admin: false,
+      lifetime: req.headers["x-test-user-lifetime"] === "true",
     } as Express.User;
     next();
   });

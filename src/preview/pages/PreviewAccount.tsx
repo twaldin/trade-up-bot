@@ -5,7 +5,9 @@ import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../sh
 import { authHref } from "../../lib/ref.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
+import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
+import { hasProAccess } from "../lib/billing.js";
 import { hydrateOutcomesIfNeeded } from "../lib/skin-images.js";
 import {
   ACCOUNT_EMPTY,
@@ -33,6 +35,7 @@ interface AuthUser {
   avatar_url: string;
   tier: string;
   is_admin: boolean;
+  lifetime?: boolean;
 }
 
 function signedDollars(cents: number): string {
@@ -528,6 +531,12 @@ export function PreviewAccount() {
             <span>{user.display_name}</span>
             <i />
             <span>{user.tier}</span>
+            {hasProAccess(user) && (
+              <>
+                <i />
+                <ManageSubscription />
+              </>
+            )}
           </div>
         )}
       </header>

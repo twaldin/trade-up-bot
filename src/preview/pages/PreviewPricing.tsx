@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { hasProAccess } from "../lib/billing.js";
+import { runCheckout } from "../lib/checkout.js";
+import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
 import { seoPage } from "../lib/seo-pages.js";
 
 const seo = seoPage("/pricing");
@@ -25,26 +30,6 @@ const login = () => {
   window.location.href = authHref(window.location.pathname);
 };
 
-const subscribe = async (plan: string) => {
-  trackEvent("begin_checkout", { item_name: plan });
-  const res = await fetch("/api/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ plan }),
-  });
-  const data = await res.json() as { url?: string };
-  if (data.url) window.location.href = data.url;
-};
-
-type BillingInterval = "monthly" | "yearly" | "lifetime";
-
-const PLAN_FOR: Record<BillingInterval, string> = {
-  monthly: "pro",
-  yearly: "pro-yearly",
-  lifetime: "pro-lifetime",
-};
-
 const COMPARE = [
   { feature: "Trade-ups visible", free: "Unlimited", pro: "Unlimited" },
   { feature: "Data freshness", free: "3-hour delay", pro: "Real-time" },
@@ -63,7 +48,7 @@ const COMPARE = [
 const FAQ = [
   {
     q: "Can I cancel anytime?",
-    a: "Yes. You can cancel your subscription at any time from your account menu. Your access continues until the end of the current billing period. No cancellation fees.",
+    a: "Yes. You can cancel your subscription at any time with Manage subscription, here on Pricing or on My trade-ups, once you're signed in. Your access continues until the end of the current billing period. No cancellation fees.",
   },
   {
     q: "What payment methods are accepted?",
@@ -94,14 +79,16 @@ function Cell({ value }: { value: string | boolean }) {
 }
 
 export function PreviewPricing() {
-  const [user, setUser] = useState<{ tier: string; lifetime?: boolean } | null>(null);
+  const [user, setUser] = useState<{ tier: string; lifetime?: boolean; steam_id?: string } | null | undefined>(undefined);
   const [billing, setBilling] = useState<BillingInterval>("monthly");
+  const [checkoutError, setCheckoutError] = useState<{ message: string; manage: boolean } | null>(null);
+  const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.ok ? res.json() : null)
-      .then(setUser)
-      .catch(() => {});
+      .then((data: { steam_id?: string; tier?: string; lifetime?: boolean } | null) => setUser(data?.steam_id ? { tier: data.tier ?? "free", lifetime: data.lifetime, steam_id: data.steam_id } : null))
+      .catch(() => setUser(null));
   }, []);
 
   return (
@@ -123,7 +110,7 @@ export function PreviewPricing() {
             className="o-tab"
             aria-selected={billing === interval}
             data-state={billing === interval ? "active" : "inactive"}
-            onClick={() => setBilling(interval)}
+            onClick={() => { setBilling(interval); setCheckoutError(null); }}
           >
             {interval === "yearly" ? "Yearly · save 28%" : interval === "lifetime" ? "Lifetime · best value" : "Monthly"}
           </button>
@@ -151,27 +138,42 @@ export function PreviewPricing() {
 
         <section className="preview-panel preview-plan preview-plan--pro">
           <p className="o-kicker">Pro</p>
-          {billing === "monthly" && <p className="preview-plan__price">$6.99<span>/mo</span></p>}
+          {billing === "monthly" && <p className="preview-plan__price">{PRO_PRICE.monthly.amount}<span>{PRO_PRICE.monthly.unit}</span></p>}
           {billing === "yearly" && (
-            <p className="preview-plan__price">$5<span>/mo</span><em>billed $59.99/year</em></p>
+            <p className="preview-plan__price">{PRO_PRICE.yearly.amount}<span>{PRO_PRICE.yearly.unit}</span><em>{PRO_PRICE.yearly.note}</em></p>
           )}
-          {billing === "lifetime" && <p className="preview-plan__price">$74.99<span> one-time</span></p>}
+          {billing === "lifetime" && <p className="preview-plan__price">{PRO_PRICE.lifetime.amount}<span>{PRO_PRICE.lifetime.unit}</span></p>}
           <p className="preview-note">Real-time data, claim system, and full analytics.</p>
           <ul className="preview-plan__list">
             <li><IconCheck /> Everything in Free</li>
-            <li><IconCheck /> Real-time data (no delay)</li>
-            <li><IconCheck /> Claim system (30 min lock)</li>
-            <li><IconCheck /> Up to 5 active claims</li>
-            <li><IconCheck /> Verify availability (20/hr)</li>
-            <li><IconCheck /> Claims (10/hr)</li>
+            {PRO_FEATURES.map((feature) => (
+              <li key={feature}><IconCheck /> {feature}</li>
+            ))}
           </ul>
           <button
             type="button"
             className="preview-btn preview-btn--lime preview-btn--block"
-            onClick={() => user ? void subscribe(PLAN_FOR[billing]) : login()}
+            disabled={user === undefined || hasProAccess(user)}
+            onClick={(event) => {
+              if (user === undefined || hasProAccess(user)) return;
+              if (user) {
+                void runCheckout(PLAN_FOR[billing]).then((result) => {
+                  if (!result.ok) setCheckoutError({ message: result.error || "Checkout failed", manage: result.status === 409 });
+                });
+              } else interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget);
+            }}
           >
-            {user?.tier === "pro" ? "Current plan" : "Go Pro"}
+            {user === undefined ? "Checking…" : hasProAccess(user) ? "Current plan" : "Go Pro"}
           </button>
+          {checkoutError && (
+            <p className="preview-note preview-note--loss" role="alert">
+              {checkoutError.message}
+              {checkoutError.manage && <> <ManageSubscription className="preview-link" /></>}
+            </p>
+          )}
+          {hasProAccess(user) && (
+            <ManageSubscription className="preview-btn preview-btn--block" />
+          )}
         </section>
       </div>
 
@@ -245,6 +247,8 @@ export function PreviewPricing() {
         <Link className="preview-btn preview-btn--lime" to="/trade-ups">Find Real Tradeups -&gt;</Link>
         <Link className="preview-btn" to="/features">Compare features</Link>
       </div>
+
+      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }
