@@ -8,6 +8,27 @@ import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import { LOOSEN_PROBE_DEBOUNCE_MS, probeCoolingDown, resetProbeCooldown } from "../../src/preview/lib/empty-suggestions.js";
 import { useLoosenProbe } from "../../src/preview/lib/use-loosen-probe.js";
 
+function QueryHarness({
+  typing,
+  maxCost,
+  onReady,
+  fetchFn,
+}: {
+  typing: boolean;
+  maxCost: string;
+  onReady: (label: string | null) => void;
+  fetchFn: typeof fetch;
+}) {
+  const suggestion = useLoosenProbe({
+    enabled: true,
+    typing,
+    query: { ...DEFAULT_QUERY, maxCost },
+    fetchFn,
+  });
+  onReady(suggestion?.label ?? null);
+  return null;
+}
+
 function Harness({
   typing,
   onReady,
@@ -96,6 +117,32 @@ describe("useLoosenProbe", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(label).toBe("Raise max cost to $2.00");
+  });
+
+  it("hides a suggestion for the previous query while the next one is still being typed", async () => {
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ total: 4, trade_ups: [{ id: 1 }] }), { status: 200 }));
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    let label: string | null = null;
+    const paint = (typing: boolean, maxCost: string) => {
+      root.render(createElement(QueryHarness, {
+        typing,
+        maxCost,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        onReady: (next) => { label = next; },
+      }));
+    };
+    await act(async () => { paint(false, "1"); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(label).toBe("Raise max cost to $2.00");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    await act(async () => { paint(true, "9"); });
+    expect(label).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(label).toBeNull();
   });
 
   it("waits 60s after a 429 before probing again", async () => {

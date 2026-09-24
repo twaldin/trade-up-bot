@@ -22,14 +22,13 @@ export function useLoosenProbe(opts: {
   fetchFn?: typeof fetch;
 }): LoosenSuggestion | null {
   const { enabled, typing = false, query, text = "", collection, skin, fetchFn = fetch } = opts;
-  const [suggestion, setSuggestion] = useState<LoosenSuggestion | null>(null);
+  const [result, setResult] = useState<{ key: string; suggestion: LoosenSuggestion | null } | null>(null);
   const queryKey = `${enabled}|${text}|${collection ?? ""}|${skin ?? ""}|${query ? JSON.stringify(query) : ""}`;
   const probedKey = useRef("");
 
   useEffect(() => {
     if (!enabled || !query || !probesAllowed(typing) || probeCoolingDown()) return;
     if (probedKey.current === queryKey) return;
-    setSuggestion(null);
     const candidates = loosenCandidates(query, text);
     if (candidates.length === 0) return;
     const controller = new AbortController();
@@ -55,7 +54,7 @@ export function useLoosenProbe(opts: {
       }).then((found) => {
         if (!live) return;
         probedKey.current = queryKey;
-        setSuggestion(found);
+        setResult({ key: queryKey, suggestion: found });
       });
     }, LOOSEN_PROBE_DEBOUNCE_MS);
     return () => {
@@ -65,5 +64,5 @@ export function useLoosenProbe(opts: {
     };
   }, [queryKey, typing, fetchFn]);
 
-  return suggestion;
+  return result !== null && result.key === queryKey ? result.suggestion : null;
 }

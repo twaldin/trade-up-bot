@@ -14,7 +14,8 @@ const NAV = [
   { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
 ] as const;
 
-function keepBoardFilters(to: string, event: { preventDefault: () => void }): void {
+function keepBoardFilters(to: string, event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; button: number }): void {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
   if (to === "/trade-ups" && window.location.pathname === "/trade-ups") event.preventDefault();
 }
 
