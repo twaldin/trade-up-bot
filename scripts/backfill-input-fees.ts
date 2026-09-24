@@ -12,6 +12,15 @@
  * A row is corrected only when its listing still exists, the stored input
  * price equals the raw listing price, and storedInputCost(raw, source) differs.
  * Inputs whose listing is gone are counted as unclassifiable and left alone.
+ *
+ * Revert CSV (`status,trade_up_id,listing_id,old_price,new_price,old_source,new_source`):
+ * each batch is appended as `pending` before COMMIT, then rewritten to `committed`
+ * after COMMIT (rows whose UPDATE did not change one row are dropped). A crash in
+ * that window leaves `pending` rows. Revert a `committed` row, and a `pending` row
+ * whose current price and source already equal new_price/new_source (the commit
+ * landed). Leave a pending row that is still at old_price (the commit did not).
+ * Restoring a row sets price_cents = old_price and source = old_source, then
+ * refreshes trade_ups.input_sources the same way this script does on apply.
  */
 
 import fs from "fs";
@@ -98,7 +107,32 @@ export interface BackfillOptions {
   tier?: "free" | "pro";
   /** How long a batch waits for a lock before 55P03 and a retry. */
   lockTimeoutMs?: number;
+  /** Called after the revert CSV pending lines are on disk and before COMMIT. */
+  beforeCommit?: () => void;
   log?: (line: string) => void;
+}
+
+export interface RevertCsvRow {
+  status: "pending" | "committed";
+  trade_up_id: number;
+  listing_id: string;
+  old_price: number;
+  new_price: number;
+  old_source: string;
+  new_source: string;
+}
+
+/** Rows a revert should restore. Pending rows count only when the commit already landed. */
+export function rowsNeedingRevert(
+  rows: RevertCsvRow[],
+  current: (row: RevertCsvRow) => { price: number; source: string } | null,
+): RevertCsvRow[] {
+  return rows.filter(row => {
+    const now = current(row);
+    if (!now) return false;
+    const applied = now.price === row.new_price && now.source === row.new_source;
+    return applied && (row.status === "committed" || row.status === "pending");
+  });
 }
 
 interface CandidateInput {
@@ -123,6 +157,45 @@ interface RankRow {
   id: number;
   trade_up_score: number | null;
   collection_names: string[] | null;
+}
+
+interface CsvRow {
+  trade_up_id: number;
+  listing_id: string;
+  old: number;
+  next: number;
+  oldSource: string;
+  newSource: string;
+}
+
+const CSV_HEADER = "status,trade_up_id,listing_id,old_price,new_price,old_source,new_source";
+
+function csvLine(status: "pending" | "committed", row: CsvRow): string {
+  return [status, row.trade_up_id, row.listing_id, row.old, row.next, row.oldSource, row.newSource].join(",");
+}
+
+function writeCsvText(csvPath: string, text: string): void {
+  const tmp = `${csvPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, text.endsWith("\n") || text.length === 0 ? text : `${text}\n`);
+  fs.renameSync(tmp, csvPath);
+}
+
+function appendPending(csvPath: string, rows: CsvRow[]): string[] {
+  const headerNeeded = !fs.existsSync(csvPath) || fs.statSync(csvPath).size === 0;
+  const lines = rows.map(row => csvLine("pending", row));
+  fs.appendFileSync(csvPath, (headerNeeded ? `${CSV_HEADER}\n` : "") + lines.join("\n") + "\n");
+  return lines;
+}
+
+/** Mark this batch's pending lines committed, and drop the ones the UPDATE skipped. */
+function settlePending(csvPath: string, pendingLines: string[], committedLines: Set<string>): void {
+  const pending = new Set(pendingLines);
+  const kept = fs.readFileSync(csvPath, "utf8").split("\n").flatMap(line => {
+    if (!pending.has(line)) return line.length === 0 ? [] : [line];
+    if (!committedLines.has(line)) return [];
+    return ["committed" + line.slice("pending".length)];
+  });
+  writeCsvText(csvPath, kept.join("\n"));
 }
 
 interface FixPlan {
@@ -403,16 +476,37 @@ function diversifiedTop(
   return applyListDiversity(ranked).slice(0, take);
 }
 
+async function refreshInputSources(client: pg.PoolClient, tradeUpId: number): Promise<void> {
+  await client.query(
+    `UPDATE trade_ups SET input_sources = COALESCE((
+       SELECT ARRAY_AGG(DISTINCT source ORDER BY source) FROM trade_up_inputs WHERE trade_up_id = $1
+     ), '{}') WHERE id = $1`,
+    [tradeUpId]
+  );
+}
+
 async function applyPlans(
   pool: pg.Pool,
   plans: FixPlan[],
   pauseMs: number,
   lockTimeoutMs: number,
-): Promise<{ listing_id: string; trade_up_id: number; old: number; next: number }[]> {
-  let committed: { listing_id: string; trade_up_id: number; old: number; next: number }[] = [];
+  csvPath: string | undefined,
+  beforeCommit: (() => void) | undefined,
+): Promise<void> {
+  const planned: CsvRow[] = plans.flatMap(plan => plan.fixes.map(fix => ({
+    trade_up_id: plan.id,
+    listing_id: fix.listing_id,
+    old: fix.old,
+    next: fix.next,
+    oldSource: fix.inputSource ?? "csfloat",
+    newSource: fix.source,
+  })));
   await withLockRetry(async () => {
+    const pendingLines = csvPath ? appendPending(csvPath, planned) : [];
     const client = await pool.connect();
-    const wrote: typeof committed = [];
+    const wrote = new Set<string>();
+    const touched = new Set<number>();
+    let landed = false;
     try {
       await client.query(`SET SESSION statement_timeout = '${STATEMENT_TIMEOUT}'`);
       await client.query("BEGIN");
@@ -424,22 +518,36 @@ async function applyPlans(
             [fix.next, fix.source, plan.id, fix.listing_id, fix.old]
           );
           if (updated.rowCount === 1) {
-            wrote.push({ trade_up_id: plan.id, listing_id: fix.listing_id, old: fix.old, next: fix.next });
+            touched.add(plan.id);
+            const line = csvLine("pending", {
+              trade_up_id: plan.id,
+              listing_id: fix.listing_id,
+              old: fix.old,
+              next: fix.next,
+              oldSource: fix.inputSource ?? "csfloat",
+              newSource: fix.source,
+            });
+            wrote.add(line);
           }
         }
+        if (touched.has(plan.id)) await refreshInputSources(client, plan.id);
         await recomputeTradeUpCost(client, plan.id);
       }
+      beforeCommit?.();
       await client.query("COMMIT");
-      committed = wrote;
+      landed = true;
+      if (csvPath) settlePending(csvPath, pendingLines, wrote);
     } catch (err) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      if (!landed) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        if (csvPath && pendingLines.length > 0) settlePending(csvPath, pendingLines, new Set());
+      }
       throw err;
     } finally {
       await client.query("SET SESSION statement_timeout = DEFAULT").catch(() => undefined);
       client.release();
     }
   }, pauseMs);
-  return committed;
 }
 
 export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions = {}): Promise<BackfillReport> {
@@ -490,7 +598,6 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
     const scoreDrops: number[] = [];
     const perMarketplace: Record<string, number> = {};
     const sample: BackfillSample[] = [];
-    let csvHeaderWritten = !!(opts.csvPath && fs.existsSync(opts.csvPath) && fs.statSync(opts.csvPath).size > 0);
 
     log(`${dryRun ? "DRY RUN" : "APPLY"} input-fee backfill from id > ${cursor}, batch ${batchSize}, sources ${FEE_SOURCES.join(",")}`);
 
@@ -582,13 +689,7 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
       }
 
       if (!dryRun && plans.length > 0) {
-        const committed = await applyPlans(pool, plans, pauseMs, opts.lockTimeoutMs ?? 5000);
-        if (opts.csvPath && committed.length > 0) {
-          const lines = committed.map(row => `${row.trade_up_id},${row.listing_id},${row.old},${row.next}`);
-          const header = csvHeaderWritten ? "" : "trade_up_id,listing_id,old_price,new_price\n";
-          fs.appendFileSync(opts.csvPath, header + lines.join("\n") + "\n");
-          csvHeaderWritten = true;
-        }
+        await applyPlans(pool, plans, pauseMs, opts.lockTimeoutMs ?? 5000, opts.csvPath, opts.beforeCommit);
       }
 
       for (const plan of plans) {

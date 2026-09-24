@@ -3,6 +3,8 @@ import {
   describeDatabaseTarget,
   parseBackfillArgs,
   requireDatabaseUrl,
+  rowsNeedingRevert,
+  type RevertCsvRow,
 } from "../../scripts/backfill-input-fees.js";
 
 describe("backfill flag parsing", () => {
@@ -33,6 +35,23 @@ describe("backfill flag parsing", () => {
   it("rejects a batch size outside 50-100", () => {
     expect(() => parseBackfillArgs(["--batch-size", "500"])).toThrow(/50 to 100/);
     expect(parseBackfillArgs(["--batch-size", "80"]).batchSize).toBe(80);
+  });
+});
+
+describe("revert CSV pending rows", () => {
+  const pending: RevertCsvRow = {
+    status: "pending", trade_up_id: 1, listing_id: "dmarket:a",
+    old_price: 500, new_price: 513, old_source: "csfloat", new_source: "dmarket",
+  };
+  const committed: RevertCsvRow = { ...pending, status: "committed" };
+
+  it("reverts a pending row only when the commit already landed", () => {
+    const applied = { price: 513, source: "dmarket" };
+    const stillOld = { price: 500, source: "csfloat" };
+    expect(rowsNeedingRevert([pending], () => applied)).toEqual([pending]);
+    expect(rowsNeedingRevert([pending], () => stillOld)).toEqual([]);
+    expect(rowsNeedingRevert([committed], () => applied)).toEqual([committed]);
+    expect(rowsNeedingRevert([committed], () => stillOld)).toEqual([]);
   });
 });
 

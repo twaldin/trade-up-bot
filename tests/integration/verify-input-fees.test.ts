@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { storedInputCost } from "../../server/engine/fees.js";
+import { recalcTradeUpCosts } from "../../server/engine/db-stats.js";
+import { runInputFeeBackfill } from "../../scripts/backfill-input-fees.js";
 import {
   seedFeeTradeUp, readTradeUp, readInputPrices, readListing, expectConsistentCost, discoveryInputCost,
   type FeeInputSeed,
@@ -191,6 +193,32 @@ describe("Verify keeps input costs fee-inclusive", () => {
       expect(l?.price_cents).toBe(1000);
       expect(l?.price_updated_at).toBeNull();
     }
+  });
+
+  it("backfill, Verify, and Phase 4b leave a DMarket-priced csfloat input unchanged", async () => {
+    const listingId = "dmarket:fee-stable";
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId, source: "csfloat", raw: 500, stored: 500, float: 0.15 },
+    ]);
+    await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = $1", [listingId]);
+    market.dmarket.set(listingId, 500);
+    const cost = storedInputCost(500, "dmarket");
+
+    await runInputFeeBackfill(ctx.pool, { dryRun: false, log: () => undefined });
+    expect((await readInputPrices(ctx.pool, id))[listingId]).toBe(cost);
+    const afterBackfill = await readTradeUp(ctx.pool, id);
+    const { rows } = await ctx.pool.query("SELECT input_sources FROM trade_ups WHERE id = $1", [id]);
+    expect(rows[0].input_sources).toEqual(["dmarket"]);
+
+    const body = await verify(ctx, id);
+    expect(body.any_price_changed).toBe(false);
+    expect((await readInputPrices(ctx.pool, id))[listingId]).toBe(cost);
+    expect(await readTradeUp(ctx.pool, id)).toEqual(afterBackfill);
+
+    await ctx.pool.query("UPDATE listings SET price_updated_at = NOW() WHERE id = $1", [listingId]);
+    expect((await recalcTradeUpCosts(ctx.pool, new Date(Date.now() - 60_000).toISOString())).updated).toBe(0);
+    expect((await readInputPrices(ctx.pool, id))[listingId]).toBe(cost);
+    expect(await readTradeUp(ctx.pool, id)).toEqual(afterBackfill);
   });
 
   it("stores exactly what discovery stores for the same listing on every marketplace", async () => {

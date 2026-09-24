@@ -73,7 +73,12 @@ describe("input-fee backfill", () => {
       "bf-apply-csf": storedInputCost(1000, "csfloat"),
       "bf-apply-buff": storedInputCost(500, "buff"),
     });
-    expect(fs.readFileSync(csvPath, "utf8")).toContain("bf-apply-csf,1000,1058");
+    const csv = fs.readFileSync(csvPath, "utf8");
+    expect(csv.split("\n")[0]).toBe("status,trade_up_id,listing_id,old_price,new_price,old_source,new_source");
+    expect(csv).toContain(`committed,${id},bf-apply-csf,1000,1058,csfloat,csfloat`);
+    expect(csv).not.toMatch(/^pending,/m);
+    const { rows: sources } = await ctx.pool.query("SELECT input_sources FROM trade_ups WHERE id = $1", [id]);
+    expect(sources[0].input_sources).toEqual(["buff", "csfloat"]);
 
     const again = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
     expect(again.tradeUpsAffected).toBe(0);
@@ -181,10 +186,20 @@ describe("input-fee backfill", () => {
       FOR EACH ROW EXECUTE FUNCTION bf_skip_second()`);
     const csvPath = path.join(os.tmpdir(), `backfill-csv-rowcount-${process.pid}.csv`);
     fs.rmSync(csvPath, { force: true });
-    await runInputFeeBackfill(ctx.pool, { dryRun: false, csvPath, log: () => undefined });
+    let pending = "";
+    await runInputFeeBackfill(ctx.pool, {
+      dryRun: false,
+      csvPath,
+      log: () => undefined,
+      beforeCommit: () => { pending = fs.readFileSync(csvPath, "utf8"); },
+    });
+    expect(pending).toContain("pending,");
+    expect(pending).toContain(",bf-csv-keep,1000,1058,csfloat,csfloat");
     const csv = fs.readFileSync(csvPath, "utf8");
-    expect(csv).toContain("bf-csv-keep,1000,1058");
+    expect(csv).toContain(",bf-csv-keep,1000,1058,csfloat,csfloat");
+    expect(csv).toMatch(/^committed,/m);
     expect(csv).not.toContain("bf-csv-skip");
+    expect(csv).not.toMatch(/^pending,/m);
     fs.rmSync(csvPath, { force: true });
   });
 
@@ -193,7 +208,15 @@ describe("input-fee backfill", () => {
       { listingId: "bf-then-4b", source: "csfloat", raw: 500, stored: 500, float: 0.15 },
     ]);
     await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = 'bf-then-4b'");
-    await runInputFeeBackfill(ctx.pool, { dryRun: false, log: () => undefined });
+    const csvPath = path.join(os.tmpdir(), `backfill-src-${process.pid}.csv`);
+    fs.rmSync(csvPath, { force: true });
+    await runInputFeeBackfill(ctx.pool, { dryRun: false, csvPath, log: () => undefined });
+    expect(fs.readFileSync(csvPath, "utf8")).toContain(`committed,${id},bf-then-4b,500,${storedInputCost(500, "dmarket")},csfloat,dmarket`);
+    const { rows: sources } = await ctx.pool.query("SELECT source FROM trade_up_inputs WHERE listing_id = 'bf-then-4b'");
+    expect(sources[0].source).toBe("dmarket");
+    const { rows: tuSources } = await ctx.pool.query("SELECT input_sources FROM trade_ups WHERE id = $1", [id]);
+    expect(tuSources[0].input_sources).toEqual(["dmarket"]);
+    fs.rmSync(csvPath, { force: true });
     const after = await readTradeUp(ctx.pool, id);
     expect((await readInputPrices(ctx.pool, id))["bf-then-4b"]).toBe(storedInputCost(500, "dmarket"));
 
@@ -225,18 +248,25 @@ describe("input-fee backfill", () => {
     await ctx.pool.query("INSERT INTO sync_meta (key, value) VALUES ('backfill-rw', '1')");
   });
 
-  it("retries a batch when the first attempt hits a lock timeout", async () => {
+  it("retries a batch when the first UPDATE raises 55P03", async () => {
     const id = await seedFeeTradeUp(ctx.pool, [
       { listingId: "bf-lock", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
     ]);
-    const holder = await ctx.pool.connect();
-    await holder.query("BEGIN");
-    await holder.query("LOCK TABLE trade_ups IN ACCESS EXCLUSIVE MODE");
-    const apply = runInputFeeBackfill(ctx.pool, { dryRun: false, pauseMs: 0, lockTimeoutMs: 200, log: () => undefined });
-    await new Promise(r => setTimeout(r, 400));
-    await holder.query("ROLLBACK");
-    holder.release();
-    const report = await apply;
+    await ctx.pool.query("CREATE SEQUENCE bf_retry_seq");
+    await ctx.pool.query(`
+      CREATE FUNCTION bf_lock_once() RETURNS trigger AS $$
+      BEGIN
+        IF nextval('bf_retry_seq') = 1 THEN
+          RAISE EXCEPTION 'lock timeout' USING ERRCODE = '55P03';
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await ctx.pool.query(`
+      CREATE TRIGGER bf_lock_once BEFORE UPDATE ON trade_up_inputs
+      FOR EACH ROW EXECUTE FUNCTION bf_lock_once()`);
+    const report = await runInputFeeBackfill(ctx.pool, { dryRun: false, pauseMs: 0, log: () => undefined });
+    const { rows } = await ctx.pool.query("SELECT last_value FROM bf_retry_seq");
+    expect(Number(rows[0].last_value)).toBeGreaterThanOrEqual(2);
     expect(report.inputsAffected).toBe(1);
     expect((await readInputPrices(ctx.pool, id))["bf-lock"]).toBe(storedInputCost(1000, "csfloat"));
   });
