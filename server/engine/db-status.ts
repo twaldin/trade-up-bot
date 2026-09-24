@@ -10,8 +10,8 @@ export interface CascadeTradeUpStatusOptions {
   invalidateCache?: boolean;
   /**
    * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
-   * show them). Default deletes those rows, which existing callers rely on.
-   * Implemented by the readonly heal (PR 169). Present here so both PRs share one options object.
+   * show them). The affected_tus query only selects listing_status='active'.
+   * Default deletes those rows, which existing callers rely on.
    */
   preserveFullyMissing?: boolean;
   /**
@@ -19,16 +19,6 @@ export interface CascadeTradeUpStatusOptions {
    * so existing callers keep the guard without a new argument.
    */
   inputRefLookup?: InputRefLookup;
-}
-
-export interface CascadeTradeUpStatusOptions {
-  /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
-  invalidateCache?: boolean;
-  /**
-   * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
-   * show them). Default deletes those rows, which existing callers rely on.
-   */
-  preserveFullyMissing?: boolean;
 }
 
 /**
