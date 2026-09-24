@@ -143,7 +143,7 @@ function meanOf(values: number[]): number {
 function summarize(values: number[]): SummaryStats {
   return {
     mean: meanOf(values),
-    median: medianOf(values),
+    median: Math.round(medianOf(values) * 100) / 100,
     max: values.length === 0 ? 0 : Math.max(...values),
   };
 }
