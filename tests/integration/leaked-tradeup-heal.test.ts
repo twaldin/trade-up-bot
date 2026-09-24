@@ -140,9 +140,24 @@ describe("leaked trade-up heal", () => {
     const nextWindow = await triggerLeakedTradeUpHeal(ctx.pool, now + LEAKED_TRADEUP_HEAL_INTERVAL_MS);
     expect(nextWindow).not.toBeNull();
     expect(nextWindow!.updated).toBe(0);
+    expect(nextWindow!.partial).toBe(0);
+    expect(nextWindow!.stale).toBe(0);
     expect(nextWindow!.cacheFlushed).toBe(false);
     expect(leakedTradeUpHealRunCount()).toBe(2);
     expect(redisCalls.invalidate).toEqual(["tu:"]);
+  });
+
+  it("writes 0 updates when the heal runs again on already-healed rows", async () => {
+    const [partialId, staleId] = await activeIds();
+    await deleteInputs(partialId, false);
+    await deleteInputs(staleId, true);
+
+    const first = await triggerLeakedTradeUpHeal(ctx.pool);
+    expect(first!.updated).toBeGreaterThan(0);
+
+    resetLeakedTradeUpHealSchedule();
+    const second = await triggerLeakedTradeUpHeal(ctx.pool);
+    expect(second).toEqual({ updated: 0, partial: 0, stale: 0, cacheFlushed: false });
   });
 
   it("leaves an already-stale row stale when it shares a missing listing", async () => {

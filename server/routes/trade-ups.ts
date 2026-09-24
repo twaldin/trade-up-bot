@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import pg from "pg";
-import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, repricedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { getEffectiveTier } from "../../shared/pro-access.js";
@@ -814,7 +814,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     const repriceInput = (input: (typeof inputs)[number], raw: number | null | undefined) => {
       if (!raw || raw <= 0) return { expected: input.price_cents, drift: false, outlier: false };
       const feeSource = input.listing_source ?? input.source ?? "csfloat";
-      const expected = storedInputCost(raw, feeSource);
+      const expected = repricedInputCost(raw, feeSource);
       const condition = floatToCondition(Number(input.float_value));
       if (isInputPriceOutlier({
         skinName: input.skin_name,

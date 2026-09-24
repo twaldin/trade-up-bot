@@ -19,6 +19,8 @@ export interface CascadeTradeUpStatusOptions {
    * so existing callers keep the guard without a new argument.
    */
   inputRefLookup?: InputRefLookup;
+  /** Optional counters for the daemon heal log. Other callers leave this unset. */
+  tally?: { partial: number; stale: number };
 }
 
 /**
@@ -101,7 +103,9 @@ export async function cascadeTradeUpStatuses(
             WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
           )
       `, [toStale]);
-      totalUpdated += r.rowCount ?? 0;
+      const staleWrote = r.rowCount ?? 0;
+      totalUpdated += staleWrote;
+      if (options?.tally) options.tally.stale += staleWrote;
     }
 
     // Delete fully stale trade-ups immediately
@@ -137,7 +141,9 @@ export async function cascadeTradeUpStatuses(
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
         `, [partialIds]);
-        totalUpdated += r.rowCount ?? 0;
+        const partialWrote = r.rowCount ?? 0;
+        totalUpdated += partialWrote;
+        if (options?.tally) options.tally.partial += partialWrote;
       }
 
       if (activeIds.length > 0) {
