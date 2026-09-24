@@ -10,6 +10,7 @@ import { RARITY_ORDER, floatToCondition } from "../../shared/types.js";
 import type { ListingWithCollection, DbSkinOutcome, AdjustedListing } from "./types.js";
 import { addAdjustedFloat } from "./selection.js";
 import { refPriceCache, skinportMedianCache } from "./pricing.js";
+import { exceedsReferenceCap, inputReferenceCents } from "./input-outlier.js";
 
 export async function getListingsForRarity(
   pool: pg.Pool,
@@ -208,12 +209,10 @@ export async function loadDiscoveryData(
     const before = allListings.length;
     allListings = allListings.filter(l => {
       const cond = floatToCondition(l.float_value);
-      const ref = refPriceCache.get(`${l.skin_name}:${cond}`);
-      const spRef = skinportMedianCache.get(`${l.skin_name}:${cond}`);
-      // Conservative anchor: use lower of CSFloat ref and Skinport median.
-      // If only one source is available, use that.
-      const effectiveRef = ref && spRef ? Math.min(ref, spRef) : (spRef ?? ref);
-      return !effectiveRef || l.price_cents <= effectiveRef * 5;
+      return !exceedsReferenceCap(l.price_cents, inputReferenceCents(l.skin_name, cond, {
+        ref: refPriceCache,
+        skinport: skinportMedianCache,
+      }));
     });
     const filtered = before - allListings.length;
     if (filtered > 0) {

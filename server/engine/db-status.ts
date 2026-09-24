@@ -3,6 +3,7 @@
  */
 
 import pg from "pg";
+import { ensureInputReferences, findOutlierTradeUpIds } from "./input-outlier.js";
 
 export interface CascadeTradeUpStatusOptions {
   /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
@@ -25,6 +26,7 @@ export async function cascadeTradeUpStatuses(
   options?: CascadeTradeUpStatusOptions,
 ): Promise<number> {
   if (listingIds.length === 0) return 0;
+  const refLookup = await ensureInputReferences(pool);
   const { cacheInvalidatePrefix } = await import("../redis.js");
   // Batch in chunks of 500 to avoid param limit issues
   let totalUpdated = 0;
@@ -134,6 +136,9 @@ export async function cascadeTradeUpStatuses(
       }
 
       if (activeIds.length > 0) {
+        const outlierIds = await findOutlierTradeUpIds(pool, activeIds, refLookup);
+        const safeActiveIds = activeIds.filter(id => !outlierIds.has(id));
+        if (safeActiveIds.length === 0) continue;
         const r = await pool.query(`
           UPDATE trade_ups SET
             listing_status = 'active',
@@ -144,7 +149,7 @@ export async function cascadeTradeUpStatuses(
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
-        `, [activeIds]);
+        `, [safeActiveIds]);
         totalUpdated += r.rowCount ?? 0;
       }
     }

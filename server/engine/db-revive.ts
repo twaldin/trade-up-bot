@@ -3,7 +3,7 @@
  */
 
 import pg from "pg";
-import { type TradeUp } from "../../shared/types.js";
+import { floatToCondition, type TradeUp } from "../../shared/types.js";
 import type { ListingWithCollection } from "./types.js";
 import type { FinishData } from "./knife-data.js";
 import { evaluateKnifeTradeUp } from "./knife-evaluation.js";
@@ -11,6 +11,7 @@ import { evaluateTradeUp } from "./evaluation.js";
 import { getOutcomesForCollections } from "./data-load.js";
 import { listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { recordProfitableCombo } from "./db-save.js";
+import { ensureInputReferences, isInputPriceOutlier, type InputRefLookup } from "./input-outlier.js";
 
 /** Configuration for the generic revive function. */
 interface ReviveConfig {
@@ -44,6 +45,7 @@ async function reviveStaleGeneric(
   limit: number
 ): Promise<{ checked: number; revived: number; improved: number }> {
   const { type, inputCount, inputRarity, evaluateFn, recordCombos } = config;
+  const refLookup = await ensureInputReferences(pool);
 
   // Get partial/stale trade-ups, prioritize by profit potential
   const { rows: stale } = await pool.query(`
@@ -98,7 +100,7 @@ async function reviveStaleGeneric(
           // Listing still exists -- fetch full data
           const { rows: fullRows } = await client.query(`${FULL_LISTING_SELECT} WHERE l.id = $1`, [inp.listing_id]);
           const full = fullRows[0] as ListingWithCollection | undefined;
-          if (full) {
+          if (full && !isReviveOutlier(full, inp.price_cents, refLookup)) {
             newInputs.push(full);
             usedIds.add(full.id);
             continue;
@@ -114,9 +116,9 @@ async function reviveStaleGeneric(
           ${FULL_LISTING_SELECT}
           WHERE l.skin_id = $1 AND l.id NOT IN (${excludePlaceholders})
           ORDER BY ABS(l.float_value - $${excludeIds.length + 2}) ASC, l.price_cents ASC
-          LIMIT 1
+          LIMIT 25
         `, [inp.skin_id, ...excludeIds, inp.float_value]);
-        const sameSkin = sameSkinRows[0] as ListingWithCollection | undefined;
+        const sameSkin = firstCleanCandidate(sameSkinRows as ListingWithCollection[], inp.price_cents, refLookup);
 
         if (sameSkin) {
           newInputs.push(sameSkin);
@@ -131,9 +133,9 @@ async function reviveStaleGeneric(
           WHERE c.name = $1 AND s.rarity = $${excludeIds.length + 3} AND l.stattrak = false
             AND l.id NOT IN (${excludePlaceholders})
           ORDER BY ABS(l.float_value - $${excludeIds.length + 2}) ASC, l.price_cents ASC
-          LIMIT 1
+          LIMIT 25
         `, [inp.collection_name, ...excludeIds, inp.float_value, inputRarity]);
-        const sameCol = sameColRows[0] as ListingWithCollection | undefined;
+        const sameCol = firstCleanCandidate(sameColRows as ListingWithCollection[], inp.price_cents, refLookup);
 
         if (sameCol) {
           newInputs.push(sameCol);
@@ -225,6 +227,26 @@ async function reviveStaleGeneric(
   }
 
   return { checked, revived, improved };
+}
+
+function isReviveOutlier(row: ListingWithCollection, oldPriceCents: number, refLookup: InputRefLookup): boolean {
+  const condition = floatToCondition(row.float_value);
+  return isInputPriceOutlier({
+    skinName: row.skin_name,
+    condition,
+    newPriceCents: row.price_cents,
+    oldPriceCents,
+    feeSource: row.source,
+    refCents: refLookup(row.skin_name, condition),
+  });
+}
+
+function firstCleanCandidate(
+  rows: ListingWithCollection[],
+  oldPriceCents: number,
+  refLookup: InputRefLookup,
+): ListingWithCollection | undefined {
+  return rows.find(row => !isReviveOutlier(row, oldPriceCents, refLookup));
 }
 
 // Replace missing inputs with alternative listings from same skin/collection.

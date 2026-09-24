@@ -78,7 +78,7 @@ describe("input buyer fee on reprice paths", () => {
 
       const res = await applyListedResult(ctx.pool, { id: "shared-csf", price_cents: 1000 }, { price: 1000 });
 
-      expect(res).toEqual({ listingChanged: false, inputsUpdated: 0, tradeUpsUpdated: 0 });
+      expect(res).toEqual({ listingChanged: false, inputsUpdated: 0, tradeUpsUpdated: 0, tradeUpsFlagged: 0 });
       expect((await readInputPrices(ctx.pool, a))["shared-csf"]).toBe(FEE_CSF_1000);
       expect(await readTradeUp(ctx.pool, a)).toEqual(before);
       expect((await readListing(ctx.pool, "shared-csf"))?.price_updated_at).toBeNull();

@@ -26,6 +26,10 @@ export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/co
 
 // === Pricing ===
 export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
+export {
+  buildInputReferenceMaps, inputReferenceCents, exceedsReferenceCap, isInputPriceOutlier,
+  ensureInputReferences, markTradeUpsOutlierStale, findOutlierTradeUpIds, resetInputReferenceCache,
+} from "./engine/input-outlier.js";
 export { clearKnnCache, knnOutputPriceAtFloat, batchInputValueRatios, clearLearnedCache } from "./engine/knn-pricing.js";
 
 // === Curve Classification ===

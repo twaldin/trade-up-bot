@@ -80,6 +80,18 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Cleaned ${cleanedCount} corrupt trade-ups`);
   }
 
+  // Cost far above EV is not a real contract. Mark stale only — never delete.
+  const { rowCount: outlierCostCount } = await pool.query(`
+    UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW())
+    WHERE is_theoretical = false AND listing_status = 'active'
+      AND total_cost_cents > 20 * GREATEST(expected_value_cents, 1)
+  `);
+  if ((outlierCostCount ?? 0) > 0) {
+    console.log(`  Marked ${outlierCostCount} trade-ups stale (cost > 20x EV)`);
+    const { cacheInvalidatePrefix } = await import("../../redis.js");
+    await cacheInvalidatePrefix("tu:");
+  }
+
   // Listing statuses now maintained by cascadeTradeUpStatuses() on every listing
   // deletion/staleness check. Full-scan refreshListingStatuses removed — caused
   // deadlocks with concurrent DMarket fetcher on 2.8M trade-ups.
