@@ -68,6 +68,7 @@ export interface BackfillReport {
   ge50Before: number;
   ge50After: number;
   unclassifiableInputs: number;
+  sourceMismatches: number;
   projectionMismatches: number;
   perMarketplace: Record<string, number>;
   lastId: number;
@@ -91,6 +92,7 @@ interface CandidateInput {
   trade_up_id: number;
   listing_id: string;
   source: string | null;
+  listing_source: string | null;
   stored: number;
   raw: number | null;
 }
@@ -235,18 +237,29 @@ async function withLockRetry(fn: () => Promise<void>, pauseMs: number): Promise<
   }
 }
 
-/** Hold one pool client that cannot write, so a dry-run cannot mutate the database. */
-export async function withReadOnlySession<T>(pool: pg.Pool, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
+const STATEMENT_TIMEOUT = "30s";
+
+/** One pool client with a session statement_timeout. Dry-run clients are also read-only. */
+async function withTimedSession<T>(
+  pool: pg.Pool,
+  readOnly: boolean,
+  fn: (db: pg.PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query("SET SESSION default_transaction_read_only = on");
-    await client.query("SET SESSION statement_timeout = '30s'");
+    await client.query(`SET SESSION statement_timeout = '${STATEMENT_TIMEOUT}'`);
+    if (readOnly) await client.query("SET SESSION default_transaction_read_only = on");
     return await fn(client);
   } finally {
-    await client.query("SET SESSION default_transaction_read_only = DEFAULT").catch(() => undefined);
+    if (readOnly) await client.query("SET SESSION default_transaction_read_only = DEFAULT").catch(() => undefined);
     await client.query("SET SESSION statement_timeout = DEFAULT").catch(() => undefined);
     client.release();
   }
+}
+
+/** Hold one pool client that cannot write, so a dry-run cannot mutate the database. */
+export async function withReadOnlySession<T>(pool: pg.Pool, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
+  return withTimedSession(pool, true, fn);
 }
 
 type Queryable = pg.Pool | pg.PoolClient;
@@ -301,32 +314,33 @@ async function applyPlans(
   pauseMs: number,
   lockTimeoutMs: number,
 ): Promise<{ listing_id: string; trade_up_id: number; old: number; next: number }[]> {
-  const committed: { listing_id: string; trade_up_id: number; old: number; next: number }[] = [];
+  let committed: { listing_id: string; trade_up_id: number; old: number; next: number }[] = [];
   await withLockRetry(async () => {
     const client = await pool.connect();
+    const wrote: typeof committed = [];
     try {
+      await client.query(`SET SESSION statement_timeout = '${STATEMENT_TIMEOUT}'`);
       await client.query("BEGIN");
       await client.query(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`);
-      await client.query("SET LOCAL statement_timeout = '30s'");
       for (const plan of plans) {
         for (const fix of plan.fixes) {
-          await client.query(
+          const updated = await client.query(
             "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3 AND price_cents = $4",
             [fix.next, plan.id, fix.listing_id, fix.old]
           );
+          if (updated.rowCount === 1) {
+            wrote.push({ trade_up_id: plan.id, listing_id: fix.listing_id, old: fix.old, next: fix.next });
+          }
         }
         await recomputeTradeUpCost(client, plan.id);
       }
       await client.query("COMMIT");
-      for (const plan of plans) {
-        for (const fix of plan.fixes) {
-          committed.push({ trade_up_id: plan.id, listing_id: fix.listing_id, old: fix.old, next: fix.next });
-        }
-      }
+      committed = wrote;
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw err;
     } finally {
+      await client.query("SET SESSION statement_timeout = DEFAULT").catch(() => undefined);
       client.release();
     }
   }, pauseMs);
@@ -362,6 +376,15 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
          AND tui.listing_id NOT LIKE 'theory%'`
     );
     const unclassifiableInputs = parseInt(goneRows[0]?.n ?? "0", 10);
+    const { rows: mismatchRows } = await db.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n
+       FROM trade_up_inputs tui
+       JOIN trade_ups tu ON tu.id = tui.trade_up_id
+       JOIN listings l ON l.id = tui.listing_id
+       WHERE tu.is_theoretical = false AND tu.listing_status = 'active'
+         AND tui.source IS DISTINCT FROM l.source`
+    );
+    const sourceMismatches = parseInt(mismatchRows[0]?.n ?? "0", 10);
 
     let tradeUpsAffected = 0;
     let inputsAffected = 0;
@@ -403,7 +426,8 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
       );
       const headById = new Map(heads.map(h => [h.id, h]));
       const { rows: inputs } = await db.query<CandidateInput>(
-        `SELECT tui.trade_up_id, tui.listing_id, tui.source, tui.price_cents AS stored, l.price_cents AS raw
+        `SELECT tui.trade_up_id, tui.listing_id, tui.source, l.source AS listing_source,
+                tui.price_cents AS stored, l.price_cents AS raw
          FROM trade_up_inputs tui
          LEFT JOIN listings l ON l.id = tui.listing_id
          WHERE tui.trade_up_id = ANY($1::int[])`,
@@ -428,9 +452,10 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
             inputSum += input.stored;
             continue;
           }
-          const next = input.stored === input.raw ? storedInputCost(input.raw, input.source) : input.stored;
+          const feeSource = input.listing_source ?? input.source;
+          const next = input.stored === input.raw ? storedInputCost(input.raw, feeSource) : input.stored;
           if (next !== input.stored) {
-            fixes.push({ listing_id: input.listing_id, source: input.source ?? "unknown", old: input.stored, next });
+            fixes.push({ listing_id: input.listing_id, source: feeSource ?? "unknown", old: input.stored, next });
           }
           inputSum += next;
         }
@@ -515,6 +540,7 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
       ge50Before,
       ge50After: ge50Before - ge50Delta,
       unclassifiableInputs,
+      sourceMismatches,
       projectionMismatches,
       perMarketplace,
       lastId: cursor,
@@ -523,8 +549,7 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
     return report;
   };
 
-  if (dryRun) return withReadOnlySession(pool, run);
-  return run(pool);
+  return withTimedSession(pool, dryRun, run);
 }
 
 export function formatBackfillReport(report: BackfillReport): string {
@@ -533,6 +558,7 @@ export function formatBackfillReport(report: BackfillReport): string {
     `${report.dryRun ? "DRY RUN" : "APPLIED"}: ${report.inputsAffected} inputs on ${report.tradeUpsAffected} trade-ups`,
     `per marketplace: ${markets}`,
     `unclassifiable (listing gone): ${report.unclassifiableInputs}`,
+    `source mismatches (input source != listing source): ${report.sourceMismatches}`,
     `projection mismatches (stored total + delta vs input sum): ${report.projectionMismatches}`,
     `ROI delta (old - new), pts: mean ${report.avgRoiDelta}, median ${report.medianRoiDelta}, max ${report.maxRoiDelta}`,
     `cost delta (new - old), cents: mean ${report.costDelta.mean}, median ${report.costDelta.median}, max ${report.costDelta.max}`,

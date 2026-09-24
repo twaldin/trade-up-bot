@@ -144,10 +144,52 @@ describe("input-fee backfill", () => {
     expect(site.firstPageLeave).not.toContain(ids[0]);
   });
 
+  it("uses the listing source when the stored input source is the csfloat default", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-src", source: "csfloat", raw: 500, stored: 500, float: 0.15 },
+    ]);
+    await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = 'bf-src'");
+    const report = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
+    expect(report.sourceMismatches).toBe(1);
+    expect(report.perMarketplace).toEqual({ dmarket: 1 });
+    expect(report.sample[0].new_cost_cents).toBe(storedInputCost(500, "dmarket"));
+    expect(report.sample[0].new_cost_cents).not.toBe(storedInputCost(500, "csfloat"));
+    expect((await readInputPrices(ctx.pool, id))["bf-src"]).toBe(500);
+  });
+
+  it("the revert CSV lists only rows whose UPDATE changed one row", async () => {
+    await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-csv-keep", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-csv-skip", source: "buff", raw: 500, stored: 500, float: 0.16 },
+    ]);
+    await ctx.pool.query(`
+      CREATE OR REPLACE FUNCTION bf_skip_second() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.listing_id = 'bf-csv-keep' THEN
+          UPDATE trade_up_inputs SET price_cents = 1 WHERE listing_id = 'bf-csv-skip' AND price_cents = 500;
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await ctx.pool.query(`
+      CREATE TRIGGER bf_skip_second BEFORE UPDATE ON trade_up_inputs
+      FOR EACH ROW EXECUTE FUNCTION bf_skip_second()`);
+    const csvPath = path.join(os.tmpdir(), `backfill-csv-rowcount-${process.pid}.csv`);
+    fs.rmSync(csvPath, { force: true });
+    await runInputFeeBackfill(ctx.pool, { dryRun: false, csvPath, log: () => undefined });
+    const csv = fs.readFileSync(csvPath, "utf8");
+    expect(csv).toContain("bf-csv-keep,1000,1058");
+    expect(csv).not.toContain("bf-csv-skip");
+    fs.rmSync(csvPath, { force: true });
+  });
+
   it("a dry-run session cannot write", async () => {
     await withReadOnlySession(ctx.pool, async (db) => {
       const { rows } = await db.query("SHOW default_transaction_read_only");
       expect(rows[0].default_transaction_read_only).toBe("on");
+      const timeout = await db.query("SHOW statement_timeout");
+      expect(timeout.rows[0].statement_timeout).toBe("30s");
       await expect(db.query("INSERT INTO sync_meta (key, value) VALUES ('x', 'y')")).rejects.toThrow(/read-only/);
     });
     await ctx.pool.query("INSERT INTO sync_meta (key, value) VALUES ('backfill-rw', '1')");
