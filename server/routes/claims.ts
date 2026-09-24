@@ -2,7 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { requireTier, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
-import { cascadeTradeUpStatuses, deleteListings } from "../engine.js";
+import { cascadeTradeUpStatuses, deleteListings, ensureInputReferences } from "../engine.js";
 import { buildSnapshot } from "../build-snapshot.js";
 
 const CLAIM_DURATION_MINUTES = 30;
@@ -171,7 +171,7 @@ export function claimsRouter(pool: pg.Pool): Router {
       }
     }
     if (allListingIds.length > 0) {
-      await cascadeTradeUpStatuses(pool, allListingIds);
+      await cascadeTradeUpStatuses(pool, allListingIds, { inputRefLookup: await ensureInputReferences(pool) });
     }
   }
 
@@ -389,7 +389,7 @@ export function claimsRouter(pool: pg.Pool): Router {
     );
 
     // Cascade status to other trade-ups sharing these now-claimed listings
-    await cascadeTradeUpStatuses(pool, listingIds);
+    await cascadeTradeUpStatuses(pool, listingIds, { inputRefLookup: await ensureInputReferences(pool) });
 
     // Refresh Redis claims cache + invalidate trade-ups cache (AWAIT before responding
     // so the next request sees fresh data — fire-and-forget caused claims to not show up)
@@ -444,7 +444,7 @@ export function claimsRouter(pool: pg.Pool): Router {
 
     // Cascade status — listings are unclaimed so other trade-ups may become active again
     const releasedIds = listingRows2.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
-    await cascadeTradeUpStatuses(pool, releasedIds);
+    await cascadeTradeUpStatuses(pool, releasedIds, { inputRefLookup: await ensureInputReferences(pool) });
 
     // Await Redis updates before responding
     await refreshClaimsCache(pool);
@@ -588,7 +588,7 @@ export function claimsRouter(pool: pg.Pool): Router {
     // Cascade status to all trade-ups sharing deleted/released listings
     const allAffectedIds = [...confirmed, ...released];
     if (allAffectedIds.length > 0) {
-      await cascadeTradeUpStatuses(pool, allAffectedIds);
+      await cascadeTradeUpStatuses(pool, allAffectedIds, { inputRefLookup: await ensureInputReferences(pool) });
     }
 
     console.log(`Confirm: ${confirmed.length} bought, ${released.length} released (trade-up ${tradeUpId}, user ${userId})`);

@@ -3,7 +3,23 @@
  */
 
 import pg from "pg";
-import { ensureInputReferences, findOutlierTradeUpIds } from "./input-outlier.js";
+import { ensureInputReferences, findOutlierTradeUpIds, type InputRefLookup } from "./input-outlier.js";
+
+export interface CascadeTradeUpStatusOptions {
+  /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
+  invalidateCache?: boolean;
+  /**
+   * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
+   * show them). Default deletes those rows, which existing callers rely on.
+   * Implemented by the readonly heal (PR 169). Present here so both PRs share one options object.
+   */
+  preserveFullyMissing?: boolean;
+  /**
+   * Active-branch jump guard. When omitted, cascade builds the lookup itself
+   * so existing callers keep the guard without a new argument.
+   */
+  inputRefLookup?: InputRefLookup;
+}
 
 export interface CascadeTradeUpStatusOptions {
   /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
@@ -26,7 +42,7 @@ export async function cascadeTradeUpStatuses(
   options?: CascadeTradeUpStatusOptions,
 ): Promise<number> {
   if (listingIds.length === 0) return 0;
-  const refLookup = await ensureInputReferences(pool);
+  const refLookup = options?.inputRefLookup ?? await ensureInputReferences(pool);
   const { cacheInvalidatePrefix } = await import("../redis.js");
   // Batch in chunks of 500 to avoid param limit issues
   let totalUpdated = 0;

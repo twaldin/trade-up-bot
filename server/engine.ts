@@ -64,4 +64,4 @@ export {
   cascadeTradeUpStatuses, deleteListings,
   recomputeTradeUpCost, applyListingPriceToInputs, computeTradeUpCostStats,
 } from "./engine/db-ops.js";
-export type { RecomputedTradeUpCost } from "./engine/db-ops.js";
+export type { RecomputedTradeUpCost, CascadeTradeUpStatusOptions } from "./engine/db-ops.js";
