@@ -292,6 +292,11 @@
   font-size: 13px;
 }
 
+.preview-hero__note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .preview-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
@@ -461,6 +466,20 @@
   grid-template-columns: 18px minmax(0, 1fr) auto 48px 50px;
 }
 
+.preview-listings--story .preview-panel__head {
+  padding: 4px 5px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.preview-live__next {
+  margin-top: 16px;
+}
+
+.preview-live__delay a {
+  color: var(--text);
+}
+
 .preview-live {
   display: flex;
   flex-direction: column;
@@ -586,6 +605,29 @@
   border-color: var(--line-hard);
   background: var(--nest-3);
 }
+
+.preview-tile--plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-tile--plan .preview-plan__price {
+  margin: 0;
+  font-size: 28px;
+  color: var(--text);
+}
+
+.preview-tile--plan .preview-plan__list {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.preview-tile--plan.preview-tile--pro .preview-plan__list { color: var(--text); }
+
+.preview-tile--plan svg { flex-shrink: 0; }
+
+.preview-tile--plan .preview-btn--block { margin-top: auto; }
 
 .preview-posts--tease {
   margin-top: 20px;

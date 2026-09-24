@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
+import { Check } from "lucide-react";
 import { DeviceScreen } from "../components/DeviceScreen.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import { Laptop } from "../kit/ledger/laptop.js";
@@ -18,13 +19,18 @@ import {
   uniqueOutputs,
 } from "../lib/board.js";
 import {
+  DELAY_BANNER,
   PREVIEW_CTA_DISCORD,
+  PREVIEW_CTA_NOTE,
   PREVIEW_CTA_PRIMARY,
   PREVIEW_DISCORD_HREF,
   PREVIEW_FAQ,
   PREVIEW_HEADLINE,
   PREVIEW_HOW,
   PREVIEW_LEDE,
+  PREVIEW_PLAN_FREE,
+  PREVIEW_PLAN_PRO,
+  PREVIEW_PRO_PRICES,
   PREVIEW_SUBLEDE,
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
@@ -158,6 +164,7 @@ export function PreviewLanding({
           >
             {PREVIEW_CTA_DISCORD}
           </a>
+          <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
         </div>
         {statTiles.length > 0 && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 5 } as CSSProperties}>
@@ -196,8 +203,14 @@ export function PreviewLanding({
             </article>
           ))}
         </div>
-        {listingRows.length > 0 && (
+        {featured && listingRows.length > 0 && (
           <div className="preview-listings preview-listings--story">
+            <header className="preview-panel__head">
+              <p className="o-kicker">Inputs of the top live trade-up</p>
+              <span className="preview-panel__meta">
+                {listingRows.length} listings · {formatDollars(featured.total_cost_cents)} total
+              </span>
+            </header>
             {listingRows.map((row, index) => {
               const { weapon, finish } = splitSkinName(row.skin_name);
               const href = inputListingHref(row);
@@ -236,7 +249,7 @@ export function PreviewLanding({
 
       <section className="preview-section">
         <p className="o-kicker">Live trade-up</p>
-        <h2>The card, expanded</h2>
+        <h2>One trade-up, fully opened</h2>
         <p className="preview-section__lede">
           The next trade-up on the board, opened the way the board opens it: every outcome with its probability and price after fees, the expected-value walk, the share of outcomes above each P/L, and the listings to buy.
         </p>
@@ -255,6 +268,22 @@ export function PreviewLanding({
           </div>
         )}
         {live.loading && !featured && <p className="preview-note">Loading trade-ups…</p>}
+        {featured && (
+          <div className="preview-toolbar preview-live__next">
+            <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
+              {PREVIEW_CTA_PRIMARY}
+            </Link>
+            <Link to={`/trade-ups/${featured.id}`} className="preview-btn preview-btn--lg">
+              Open this trade-up
+            </Link>
+          </div>
+        )}
+        {featured && live.isFree && (
+          <p className="preview-note preview-live__delay">
+            {DELAY_BANNER}{" "}
+            <Link to="/pricing">See Pro</Link>
+          </p>
+        )}
       </section>
 
       <section className="preview-section preview-section--band">
@@ -298,7 +327,7 @@ export function PreviewLanding({
         <p className="o-kicker">Pipeline</p>
         <h2>How it works</h2>
         <p className="preview-section__lede">
-          Scan, discover, target the float, price it, then verify and claim. The expanded card is the same detail the console opens.
+          Scan, discover, target the float, price it, then verify and claim before you buy.
         </p>
         <div className="preview-steps preview-steps--pipeline">
           {PREVIEW_HOW.map((step) => (
@@ -315,7 +344,7 @@ export function PreviewLanding({
         <p className="o-kicker">Board + graph</p>
         <h2>A peek at the live board</h2>
         <p className="preview-section__lede">
-          Collapsed cards from the first page, and the same float-versus-price scatter the skin page draws.
+          The next trade-ups on the board, beside real listings and sales for the top output skin plotted by float and price.
         </p>
         <div className="preview-peek">
           <div className="preview-peek__board">
@@ -337,6 +366,9 @@ export function PreviewLanding({
             {graphName ? <LandingGraph name={graphName} /> : <p className="preview-note">No output skin to plot yet.</p>}
           </div>
         </div>
+        <div className="preview-toolbar">
+          <Link to="/trade-ups" className="preview-btn preview-btn--lime">{PREVIEW_CTA_PRIMARY}</Link>
+        </div>
       </section>
 
       <section id="pricing" className="preview-section">
@@ -346,19 +378,27 @@ export function PreviewLanding({
           Start free. Upgrade when the 3-hour delay costs you trade-ups.
         </p>
         <div className="preview-tiles preview-tiles--plans">
-          <article className="preview-tile">
+          <article className="preview-tile preview-tile--plan">
             <h3>Free</h3>
             <p className="preview-plan__price">$0</p>
-            <p>Full access to all trade-ups with filters, sorting, and listing links. 3-hour data delay.</p>
+            <ul className="preview-plan__list">
+              {PREVIEW_PLAN_FREE.map((item) => (
+                <li key={item}><Check size={12} aria-hidden />{item}</li>
+              ))}
+            </ul>
+            <Link className="preview-btn preview-btn--block" to="/trade-ups">Browse free</Link>
           </article>
-          <article className="preview-tile preview-tile--pro">
+          <article className="preview-tile preview-tile--pro preview-tile--plan">
             <h3>Pro</h3>
             <p className="preview-plan__price">$6.99<span>/mo</span></p>
-            <p>Real-time data, claim system, and full analytics.</p>
+            <ul className="preview-plan__list">
+              {PREVIEW_PLAN_PRO.map((item) => (
+                <li key={item}><Check size={12} aria-hidden />{item}</li>
+              ))}
+            </ul>
+            <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
+            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing">Compare plans</Link>
           </article>
-        </div>
-        <div className="preview-toolbar">
-          <Link className="preview-btn preview-btn--lime" to="/pricing">Compare plans</Link>
         </div>
       </section>
 
@@ -366,7 +406,7 @@ export function PreviewLanding({
         <p className="o-kicker">Blog</p>
         <h2>Guides from the live set</h2>
         <p className="preview-section__lede">
-          Titles and links from existing posts. Nothing invented.
+          How trade-ups, float values, and marketplace fees work, with the numbers behind them.
         </p>
         <div className="preview-posts preview-posts--tease">
           {BLOG_TEASERS.map((post) => (

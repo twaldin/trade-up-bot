@@ -1,11 +1,15 @@
 import { blogMeta } from "../src/data/blog-meta.js";
 import {
   PREVIEW_CTA_DISCORD,
+  PREVIEW_CTA_NOTE,
   PREVIEW_DISCORD_HREF,
   PREVIEW_FAQ,
   PREVIEW_HEADLINE,
   PREVIEW_HOW,
   PREVIEW_LEDE,
+  PREVIEW_PLAN_FREE,
+  PREVIEW_PLAN_PRO,
+  PREVIEW_PRO_PRICES,
   PREVIEW_SUBLEDE,
   HOME_DESCRIPTION,
   HOME_TITLE,
@@ -233,6 +237,9 @@ export function renderHomepageSeoBody(stats?: LandingStatCounts | null): string 
     `<article><h3><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a></h3><p>${escapeHtml(post.excerpt)}</p></article>`
   ).join("");
 
+  const freePlan = PREVIEW_PLAN_FREE.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const proPlan = PREVIEW_PLAN_PRO.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+
   const statsHtml = renderLandingStatsHtml(stats);
 
   return `<h1>${escapeHtml(PREVIEW_HEADLINE)}</h1>
@@ -251,10 +258,12 @@ ${how}
 <section>
 <h2>Pricing</h2>
 <p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
-<ul>
-<li><strong>Free — $0:</strong> Full access to all trade-ups with filters, sorting, and listing links. 3-hour data delay.</li>
-<li><strong>Pro — $6.99/month:</strong> Real-time data, claim system, and full analytics.</li>
-</ul>
+<h3>Free — $0</h3>
+<ul>${freePlan}</ul>
+<p><a href="/trade-ups">Browse free</a></p>
+<h3>Pro — $6.99/month</h3>
+<ul>${proPlan}</ul>
+<p>${escapeHtml(PREVIEW_PRO_PRICES)}</p>
 <p><a href="/pricing">Compare plans</a></p>
 </section>
 <section>
@@ -270,7 +279,8 @@ ${seoFaq}
 <p><a href="/faq">Read the full FAQ</a></p>
 </section>
 <p><a href="/trade-ups">Find Real Tradeups -&gt;</a></p>
-<p><a href="${PREVIEW_DISCORD_HREF}">${escapeHtml(PREVIEW_CTA_DISCORD)}</a></p>`;
+<p><a href="${PREVIEW_DISCORD_HREF}">${escapeHtml(PREVIEW_CTA_DISCORD)}</a></p>
+<p>${escapeHtml(PREVIEW_CTA_NOTE)}</p>`;
 }
 
 /** First-HTML home document for Googlebot. Not registered in the leftover-page loop. */

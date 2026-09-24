@@ -4,6 +4,7 @@ export const PREVIEW_HEADLINE = "CS2 trade-ups built from real, buyable listings
 
 export const PREVIEW_CTA_PRIMARY = "Find Real Tradeups ->";
 export const PREVIEW_CTA_DISCORD = "Join the Discord";
+export const PREVIEW_CTA_NOTE = "Free to browse — no account needed.";
 export const PREVIEW_DISCORD_HREF = "https://discord.gg/gQ8cPqBq2a";
 export const PREVIEW_GITHUB_HREF = "https://github.com/twaldin/trade-up-bot";
 
@@ -77,6 +78,21 @@ export const PREVIEW_FAQ: { q: string; a: string }[] = [
     a: "Pro users can claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while they buy. Buyers on the marketplaces themselves can still purchase the inputs — a claim removes TradeUpBot competition, it doesn't reserve listings.",
   },
 ];
+
+/** Landing plan teaser. Every limit here is one `/pricing` already sells. */
+export const PREVIEW_PLAN_FREE = [
+  "Every trade-up, with filters, search, and sorting",
+  "Direct links to every input listing",
+  "Board data delayed 3 hours",
+] as const;
+
+export const PREVIEW_PLAN_PRO = [
+  "Real-time trade-ups, no delay",
+  "Verify every input is still listed (20/hr)",
+  "Claim a trade-up for a 30 min lock, up to 5 at once",
+] as const;
+
+export const PREVIEW_PRO_PRICES = "Or $59.99/year ($5/mo) · $74.99 lifetime";
 
 export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees them the moment they're found.";
 
