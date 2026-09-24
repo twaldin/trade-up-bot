@@ -110,6 +110,11 @@ export async function cascadeTradeUpStatuses(
       const activeIds = toUpdate.filter(r => r.missing === 0).map(r => r.trade_up_id);
 
       if (partialIds.length > 0) {
+        // preserveFullyMissing re-checks active here. The SELECT already
+        // filtered to active, but the row can go stale before this UPDATE.
+        const activeRecheck = options?.preserveFullyMissing
+          ? "AND listing_status = 'active'"
+          : "";
         const r = await pool.query(`
           UPDATE trade_ups SET
             listing_status = 'partial',
@@ -119,6 +124,7 @@ export async function cascadeTradeUpStatuses(
             END
           WHERE id = ANY($1)
             AND listing_status IS DISTINCT FROM 'partial'
+            ${activeRecheck}
             AND NOT EXISTS (
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()

@@ -72,6 +72,7 @@ export async function healLeakedTradeUps(pool: pg.Pool): Promise<LeakedTradeUpHe
  */
 async function discoverMissingListingIds(pool: pg.Pool): Promise<string[] | null> {
   const client = await pool.connect();
+  let releaseErr: Error | undefined;
   try {
     await client.query("BEGIN");
     await client.query(`SET LOCAL statement_timeout = '${DISCOVERY_STATEMENT_TIMEOUT}'`);
@@ -90,14 +91,19 @@ async function discoverMissingListingIds(pool: pg.Pool): Promise<string[] | null
     await client.query("COMMIT");
     return rows.map((row) => row.listing_id);
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      releaseErr = rollbackErr instanceof Error ? rollbackErr : new Error("ROLLBACK failed");
+    }
     if (isStatementTimeout(err)) {
       console.error("[leaked-tradeup-heal] discovery statement_timeout; skipping cycle");
       return null;
     }
     throw err;
   } finally {
-    client.release();
+    if (releaseErr) client.release(releaseErr);
+    else client.release();
   }
 }
 

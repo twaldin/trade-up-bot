@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import Redis from "ioredis";
 import request from "supertest";
 import { createTestApp, seedTestData, type TestContext } from "./setup.js";
-import { initRedis, isRedisAvailable } from "../../server/redis.js";
+import { initRedis, isRedisAvailable, getRedis } from "../../server/redis.js";
 import {
   resetLeakedTradeUpHealSchedule,
   triggerLeakedTradeUpHeal,
@@ -10,9 +11,13 @@ import {
 /**
  * Real Redis: a cached GET /api/trade-ups page is a miss after the heal
  * flushes tu:*. This file does not mock cacheInvalidatePrefix.
+ *
+ * The app client is db 15. A tu:* key on db 0 must survive the flush.
  */
+const ISOLATED_REDIS_URL = "redis://127.0.0.1:6379/15";
 
 async function waitForRedis(): Promise<void> {
+  process.env.REDIS_URL = ISOLATED_REDIS_URL;
   initRedis();
   for (let i = 0; i < 40; i++) {
     if (isRedisAvailable()) return;
@@ -66,10 +71,29 @@ describe("leaked trade-up heal cache", () => {
       [brokenId],
     );
 
+    const shared = new Redis({
+      host: "127.0.0.1",
+      port: 6379,
+      db: 0,
+      maxRetriesPerRequest: 1,
+      lazyConnect: true,
+    });
+    await shared.connect();
+    const sentinel = `tu:shared-sentinel-${process.pid}-${Date.now()}`;
+    await shared.set(sentinel, "keep", "EX", 120);
+
+    const isolated = getRedis();
+    expect(isolated).not.toBeNull();
+    const db = await isolated!.call("CLIENT", "INFO");
+    expect(String(db)).toContain("db=15");
+
     const healed = await triggerLeakedTradeUpHeal(ctx.pool);
     expect(healed).not.toBeNull();
     expect(healed!.updated).toBeGreaterThan(0);
     expect(healed!.cacheFlushed).toBe(true);
+    expect(await shared.get(sentinel)).toBe("keep");
+    await shared.del(sentinel);
+    await shared.quit();
 
     const after = await request(ctx.app).get(path).set(headers);
     expect(after.status).toBe(200);
