@@ -59,12 +59,13 @@ export function tileClick(kind: TileKind, href: string | null): TileClick {
   return { action: "none" };
 }
 
-export function inputListingHref(input: TradeUpInput): string {
+export function inputListingHref(input: TradeUpInput): string | null {
+  if (!input.listing_id || input.listing_id === "hidden") return null;
   return listingUrl(
     input.listing_id,
     input.skin_name,
     input.condition,
-    input.float_value,
+    input.float_value ?? undefined,
     input.price_cents,
     input.source,
     input.marketplace_id,
@@ -77,7 +78,6 @@ export function inputListingHrefs(listings: TradeUpInput[]): string[] {
   const seen = new Set<string>();
   const hrefs: string[] = [];
   for (const listing of listings) {
-    if (!listing.listing_id) continue;
     const href = inputListingHref(listing);
     if (!href || seen.has(href)) continue;
     seen.add(href);
@@ -180,8 +180,9 @@ export function inputQty(tu: TradeUp): number {
 }
 
 function unitPrice(listings: TradeUpInput[]): number {
-  if (listings.length === 0) return 0;
-  return Math.round(listings.reduce((sum, row) => sum + row.price_cents, 0) / listings.length);
+  const priced = listings.filter((row) => typeof row.price_cents === "number");
+  if (priced.length === 0) return 0;
+  return Math.round(priced.reduce((sum, row) => sum + row.price_cents, 0) / priced.length);
 }
 
 /** Mean float of a group. Null rather than 0 when the listings are not loaded. */
@@ -475,7 +476,9 @@ export function conditionShort(condition: string | undefined): string {
 
 export function listingTotals(listings: TradeUpInput[]): ListingTotals {
   if (listings.length === 0) return { count: 0, totalCents: 0, averageCents: 0 };
-  const totalCents = listings.reduce((sum, row) => sum + row.price_cents, 0);
+  const priced = listings.filter((row) => typeof row.price_cents === "number");
+  if (priced.length === 0) return { count: listings.length, totalCents: 0, averageCents: 0 };
+  const totalCents = priced.reduce((sum, row) => sum + row.price_cents, 0);
   return {
     count: listings.length,
     totalCents,

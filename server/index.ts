@@ -10,6 +10,7 @@ import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
+import { registerTradeUpShareSeo } from "./trade-up-share-seo.js";
 import { previewFacesRouter } from "./routes/preview-faces.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
@@ -22,11 +23,9 @@ import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
-import { formatOdds } from "../src/preview/lib/board.js";
-import { formatDollars } from "../src/utils/format.js";
 import { blogPosts } from "../src/data/blog-posts.js";
 
 /** Bump when crawler HTML or JSON-LD changes so Redis cannot serve the previous copy. */
@@ -392,77 +391,7 @@ registerCanonicalRedirectRoutes(app);
   });
 
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
-  app.get("/trade-ups/:id", async (req, res, next) => {
-    const ua = req.headers["user-agent"] || "";
-    try {
-      const { rows: [row] } = await pool.query(
-        "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json FROM trade_ups WHERE id = $1",
-        [req.params.id]
-      );
-      if (!row) {
-        // Deleted/purged numeric IDs -> 410 Gone (drains from the index faster than 404);
-        // malformed/non-numeric -> 404. SEO detail route only; never the API or landing pages.
-        const status = deletedTradeUpStatus(String(req.params.id));
-        res.status(status).set("X-Robots-Tag", "noindex").send(
-          status === 410 ? "Trade-up no longer available" : "Trade-up not found"
-        );
-        return;
-      }
-      const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;
-      const profit = formatDollars(row.profit_cents);
-      const cost = formatDollars(row.total_cost_cents);
-      const chance = formatOdds(row.chance_to_profit ?? 0);
-      const roi = row.roi_percentage?.toFixed(1) ?? "0";
-
-      const isStale = row.listing_status === "stale"
-        || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
-
-      const { rows: inputs } = await pool.query(
-        "SELECT skin_name, condition, collection_name, price_cents FROM trade_up_inputs WHERE trade_up_id = $1",
-        [row.id]
-      );
-
-      const outcomes = JSON.parse(row.outcomes_json || "[]") as Array<{
-        skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
-      }>;
-
-      const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
-      const related = [
-        ...collections.map((c: string) => ({
-          label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
-          url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
-        })).slice(0, 2),
-        { label: "All CS2 Trade-Ups", url: "/trade-ups" },
-        { label: "Browse CS2 Collections", url: "/collections" },
-      ];
-
-      const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
-
-      const meta = {
-        title: `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`,
-        description: `${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
-        url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
-        ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
-        robots: isStale ? "noindex, follow" : "index, follow",
-        includeLegal: true,
-        bodyHtml: renderTradeUpDetail(
-          { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
-          inputs,
-          outcomes,
-          related,
-        ),
-      };
-
-      if (isCrawler(ua)) {
-        res.send(buildSeoHtml(meta));
-      } else {
-        const shellHtmlLocal: string | undefined = req.app.locals.shellHtml;
-        if (!shellHtmlLocal) return next();
-        res.setHeader("Content-Type", "text/html");
-        res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
-      }
-    } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
-  });
+  registerTradeUpShareSeo(app, pool);
 
   // SEO: crawler handler for /collections/:slug pages — enriched
   app.get("/collections/:slug", async (req, res, next) => {

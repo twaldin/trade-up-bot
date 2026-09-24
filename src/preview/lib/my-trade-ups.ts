@@ -150,7 +150,7 @@ export function userTradeUpToTradeUp(ut: UserTradeUp): TradeUp {
 export function realListingIds(tu: Pick<TradeUp, "inputs">): string[] {
   return tu.inputs
     .map((row) => row.listing_id)
-    .filter((id) => id.length > 0 && !id.startsWith("theor") && !id.startsWith("snapshot-"));
+    .filter((id) => id.length > 0 && id !== "hidden" && !id.startsWith("theor") && !id.startsWith("snapshot-"));
 }
 
 export function claimMinutesLeft(expiresAt: string, now = Date.now()): number {

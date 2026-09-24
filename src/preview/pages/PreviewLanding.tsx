@@ -191,22 +191,33 @@ export function PreviewLanding({
           <div className="preview-listings preview-listings--story">
             {listingRows.map((row, index) => {
               const { weapon, finish } = splitSkinName(row.skin_name);
-              return (
-                <a
-                  key={`${row.listing_id}-${index}`}
-                  className="preview-listing"
-                  href={inputListingHref(row)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+              const href = inputListingHref(row);
+              const body = (
+                <>
                   <span className="preview-listing__n">{String(index + 1).padStart(2, "0")}</span>
                   <span className="preview-listing__name">
                     {weapon && <em>{weapon}</em>}
                     <b>{finish}</b>
                   </span>
-                  <span className="preview-chip">{sourceLabel(row.source)}</span>
+                  {row.source ? <span className="preview-chip">{sourceLabel(row.source)}</span> : null}
                   <span className="preview-listing__float">{formatFloat(row.float_value) ?? "—"}</span>
-                  <span className="preview-listing__price">{formatDollars(row.price_cents)}</span>
+                  {typeof row.price_cents === "number" ? (
+                    <span className="preview-listing__price">{formatDollars(row.price_cents)}</span>
+                  ) : null}
+                </>
+              );
+              if (!href) {
+                return <div key={`${row.listing_id}-${index}`} className="preview-listing">{body}</div>;
+              }
+              return (
+                <a
+                  key={`${row.listing_id}-${index}`}
+                  className="preview-listing"
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {body}
                 </a>
               );
             })}

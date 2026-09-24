@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import { createTestApp, type TestContext } from "./setup.js";
+import { registerTradeUpShareSeo } from "../../server/trade-up-share-seo.js";
 
 /**
  * Free/anon viewers must not read listing ids, marketplace links, or exact
@@ -44,7 +45,9 @@ function expectRedacted(body: { inputs: Array<Record<string, unknown>>; inputs_r
     expect(input.marketplace_id).toBeNull();
     expect(input.float_value).toBeNull();
     expect(input.skin_name).toBe("AK-47 | Test Skin");
-    expect(input.price_cents).toBe(2000);
+    expect(input.condition).toBe("Field-Tested");
+    expect(input).not.toHaveProperty("price_cents");
+    expect(input).not.toHaveProperty("source");
   }
   expect(JSON.stringify(body)).not.toContain("listing-");
   expect(JSON.stringify(body)).not.toContain("mkt-secret");
@@ -56,13 +59,24 @@ function expectFull(body: { inputs: Array<Record<string, unknown>>; inputs_redac
   expect(body.inputs[0].listing_id).toMatch(/^listing-/);
   expect(body.inputs[0].marketplace_id).toBe("mkt-secret");
   expect(body.inputs[0].float_value).toBeCloseTo(0.151234);
+  expect(body.inputs[0].price_cents).toBe(2000);
+  expect(body.inputs[0].source).toBe("csfloat");
 }
+
+function inputSection(html: string): string {
+  const start = html.indexOf("<h2>Inputs</h2>");
+  const end = html.indexOf("<h2>Outputs</h2>");
+  return html.slice(start, end);
+}
+
+const GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
 describe("trade-up detail tier delay", () => {
   let ctx: TestContext;
 
   beforeEach(async () => {
     ctx = await createTestApp({ defaultTier: "pro", defaultUserId: "user_pro" });
+    registerTradeUpShareSeo(ctx.app, ctx.pool);
   });
 
   afterEach(async () => {
@@ -78,12 +92,28 @@ describe("trade-up detail tier delay", () => {
     ]) {
       const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(headers);
       expect(detail.status).toBe(200);
+      expect(detail.headers["cache-control"]).toBe("private, no-store");
+      expect(detail.headers.vary).toContain("Cookie");
+      expect(detail.headers.vary).toContain("Authorization");
       expectRedacted(detail.body);
+      expect(detail.body.total_cost_cents).toBe(10000);
+      expect(detail.body.profit_cents).toBe(2000);
       expect(detail.body.previous_inputs).toBeNull();
 
       const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(headers);
       expect(inputs.status).toBe(200);
+      expect(inputs.headers["cache-control"]).toBe("private, no-store");
       expectRedacted(inputs.body);
+
+      const html = await request(ctx.app).get(`/trade-ups/${id}`).set(headers).set("User-Agent", GOOGLEBOT);
+      expect(html.status).toBe(200);
+      expect(html.headers["cache-control"]).toBe("private, no-store");
+      const section = inputSection(html.text);
+      expect(section).toContain("AK-47 | Test Skin");
+      expect(section).toContain("Field-Tested");
+      expect(section).not.toMatch(/\$\d/);
+      expect(section.toLowerCase()).not.toMatch(/csfloat|skinport|dmarket|buff/);
+      expect(html.text).toContain("$100.00");
     }
   });
 
@@ -101,6 +131,11 @@ describe("trade-up detail tier delay", () => {
       const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(headers);
       expect(inputs.status).toBe(200);
       expectFull(inputs.body);
+
+      const html = await request(ctx.app).get(`/trade-ups/${id}`).set(headers).set("User-Agent", GOOGLEBOT);
+      expect(html.status).toBe(200);
+      expect(inputSection(html.text)).toContain("$20.00");
+      expect(inputSection(html.text)).toContain("csfloat");
     }
   });
 
@@ -115,6 +150,10 @@ describe("trade-up detail tier delay", () => {
     const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(headers);
     expect(inputs.status).toBe(200);
     expectFull(inputs.body);
+
+    const html = await request(ctx.app).get(`/trade-ups/${id}`).set(headers).set("User-Agent", GOOGLEBOT);
+    expect(inputSection(html.text)).toContain("$20.00");
+    expect(inputSection(html.text)).toContain("csfloat");
   });
 
   it("redacts include=inputs for anon and free and leaves Pro full", async () => {
@@ -174,6 +213,8 @@ describe("trade-up detail tier delay", () => {
         expect(young.inputs[0].listing_id).toBe("hidden");
         expect(young.inputs[0].marketplace_id).toBeNull();
         expect(young.inputs[0].float_value).toBeNull();
+        expect(young.inputs[0]).not.toHaveProperty("price_cents");
+        expect(young.inputs[0]).not.toHaveProperty("source");
       }
     }
   });

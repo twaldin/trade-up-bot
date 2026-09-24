@@ -69,6 +69,18 @@ describe("renderTradeUpDetail (#3 + #9-detail)", () => {
     expect(html).not.toMatch(/href='\/api\//);
   });
 
+  it("omits per-input price and source when the row is inside the free delay", () => {
+    const priced = inputs.map((row) => ({ ...row, source: "csfloat", price_cents: 1234 }));
+    const html = renderTradeUpDetail(tradeUp, priced, outcomes, related, { hideInputCommercials: true });
+    const start = html.indexOf("<h2>Inputs</h2>");
+    const end = html.indexOf("<h2>Outputs</h2>");
+    const section = html.slice(start, end);
+    expect(section).toContain("AWP | Queen's Gambit 1");
+    expect(section).not.toMatch(/\$\d/);
+    expect(section.toLowerCase()).not.toContain("csfloat");
+    expect(html).toContain("$284.69");
+  });
+
   it("targets ~600 words of content", () => {
     const html = renderTradeUpDetail(tradeUp, inputs, outcomes, related);
     const textContent = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

@@ -136,7 +136,7 @@ async function viewerOwnsClaim(pool: pg.Pool, req: Request, tradeUpId: number): 
  * Free and anonymous viewers of a row younger than the list delay get a
  * summary only. Pro, internal, older rows, and the claimer get the full row.
  */
-async function inputsAreRedacted(
+export async function inputsAreRedacted(
   pool: pg.Pool,
   req: Request,
   tradeUpId: number,
@@ -146,16 +146,30 @@ async function inputsAreRedacted(
   return !(await viewerOwnsClaim(pool, req, tradeUpId));
 }
 
-type InputRow = Record<string, unknown> & { listing_id?: string; float_value?: number | null; marketplace_id?: string | null };
+type InputRow = Record<string, unknown> & {
+  listing_id?: string;
+  float_value?: number | null;
+  marketplace_id?: string | null;
+  price_cents?: number;
+  source?: string | null;
+};
 
-/** Drop listing ids, marketplace links, and exact floats. Skin, price, and wear stay. */
+/** Drop listing ids, marketplace links, exact floats, per-input prices, and sources. */
 function redactInputRow<T extends InputRow>(row: T): T {
-  return {
+  const copy: T = {
     ...row,
     listing_id: "hidden",
     marketplace_id: null,
     float_value: null,
   };
+  delete copy.price_cents;
+  delete copy.source;
+  return copy;
+}
+
+function setTierCacheHeaders(res: { setHeader(name: string, value: string): void }): void {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Vary", "Cookie, Authorization");
 }
 
 export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotStore } = {}): Router {
@@ -249,7 +263,10 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     };
   };
 
-  router.get("/api/trade-ups", cachedRoute((req) => {
+  router.get("/api/trade-ups", (req, res, next) => {
+    setTierCacheHeaders(res);
+    next();
+  }, cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
     const tier = listCacheTier({
@@ -683,8 +700,9 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   }, presentList));
 
   router.get("/api/trade-ups/:id", async (req, res) => {
-    // #172 owns redaction of fresh rows. This is the only tier decision on detail.
+    // #172 owns redaction of fresh rows. The header is the tier stamp; redaction is separate.
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
+    setTierCacheHeaders(res);
     const { rows: [row] } = await pool.query(
       `SELECT t.* FROM trade_ups t WHERE t.id = $1`,
       [req.params.id]
@@ -1203,6 +1221,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   // a redacted response must not be stored under it.
   router.get("/api/trade-up/:id/inputs", async (req, res, next) => {
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
+    setTierCacheHeaders(res);
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
     const { rows: [meta] } = await pool.query<{ created_at: Date }>(

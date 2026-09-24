@@ -6,6 +6,7 @@ import { deletedTradeUpStatus } from "../../server/seo.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const indexSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
+const shareSource = readFileSync(join(__dir, "../../server/trade-up-share-seo.ts"), "utf-8");
 
 describe("deletedTradeUpStatus (410 tombstones for deleted trade-ups)", () => {
   it("returns 410 for a numeric ID (a trade-up that existed and was purged)", () => {
@@ -22,7 +23,8 @@ describe("deletedTradeUpStatus (410 tombstones for deleted trade-ups)", () => {
   });
 
   it("is wired into the SEO /trade-ups/:id handler with a noindex tombstone", () => {
-    expect(indexSource).toContain("deletedTradeUpStatus(String(req.params.id))");
-    expect(indexSource).toContain('"X-Robots-Tag", "noindex"');
+    expect(indexSource).toContain("registerTradeUpShareSeo(app, pool)");
+    expect(shareSource).toContain("deletedTradeUpStatus(String(req.params.id))");
+    expect(shareSource).toContain('"X-Robots-Tag", "noindex"');
   });
 });
