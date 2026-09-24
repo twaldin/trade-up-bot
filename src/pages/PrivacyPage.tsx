@@ -46,9 +46,9 @@ export function PrivacyPage() {
             <section>
               <h2 className="text-lg font-semibold text-foreground mb-3">Cookies</h2>
               <p>
-                TradeUpBot uses a single session cookie for authentication. This cookie identifies
-                your login session and is required for the service to function. We do not use
-                tracking cookies, advertising cookies, or third-party analytics cookies.
+                TradeUpBot sets a session cookie to keep you signed in. Google Analytics 4
+                also runs on the site and sets its own cookies. See the privacy policy at{" "}
+                <a href="/privacy">/privacy</a> for what it collects and how to opt out.
               </p>
             </section>
 

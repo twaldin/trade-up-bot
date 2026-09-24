@@ -96,6 +96,13 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(legal).not.toContain("account menu");
     expect(legal).toContain("What We Collect");
     expect(legal).toContain("Steam OpenID");
+    expect(legal).toContain("Google Analytics 4");
+    expect(legal).toContain("Conversions API");
+    expect(legal).toContain("SHA-256");
+    expect(legal).toContain("https://tools.google.com/dlpage/gaoptout");
+    expect(legal).toContain("https://adssettings.google.com");
+    expect(legal).toContain("https://www.facebook.com/ads/preferences");
+    expect(legal).not.toContain("third-party analytics cookies");
   });
 
   it("kits the blog index and posts without inventing articles", () => {
