@@ -3,6 +3,13 @@ import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
+import {
+  LABEL_AFTER_FEES,
+  LABEL_EXPECTED_PL,
+  LABEL_EXPECTED_VALUE,
+  LABEL_ABOVE_COST,
+  NOTE_OF_OUTCOMES,
+} from "../lib/copy.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { SLOW_DOWN_COPY, isRateLimitError, readEvaluationBody, readPagedJson } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
@@ -146,8 +153,8 @@ export function PreviewCalculator() {
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
-          <h1>Calculator</h1>
-          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove roll, then evaluate the trade-up.</p>
+          <h1>CS2 Trade-Up Calculator</h1>
+          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove trade-up, then evaluate it.</p>
         </div>
       </header>
       <div className="preview-toolbar">
@@ -234,9 +241,9 @@ export function PreviewCalculator() {
       {result && (
         <div className="preview-readouts">
           <Readout label="Cost" value={formatDollars(result.total_cost_cents)} />
-          <Readout label="Expected value" value={formatDollars(result.expected_value_cents)} />
-          <Readout label="Profit" value={signedDollars(profit)} tone={signClass(profit)} />
-          <Readout label="Chance of profit" value={stats ? formatOdds(stats.chance_to_profit) : "—"} />
+          <Readout label={LABEL_EXPECTED_VALUE} value={formatDollars(result.expected_value_cents)} note={LABEL_AFTER_FEES} />
+          <Readout label={LABEL_EXPECTED_PL} value={signedDollars(profit)} tone={signClass(profit)} />
+          <Readout label={LABEL_ABOVE_COST} value={stats ? formatOdds(stats.chance_to_profit) : "—"} note={NOTE_OF_OUTCOMES} />
         </div>
       )}
       <FeeLine line={isExample ? CALCULATOR_EXAMPLE_FEE_LINE : CALCULATOR_FEE_LINE} />
@@ -262,11 +269,12 @@ export function PreviewCalculator() {
   );
 }
 
-function Readout({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Readout({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: string }) {
   return (
     <div className="preview-readout">
       <em>{label}</em>
       <b className={tone}>{value}</b>
+      {note && <small>{note}</small>}
     </div>
   );
 }

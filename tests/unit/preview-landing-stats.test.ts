@@ -77,7 +77,7 @@ describe("landing stats from the board + global-stats", () => {
     expect(html).toContain("1,842");
     expect(html).toContain("311");
     expect(html).toContain("trade-ups");
-    expect(html).toContain("profitable");
+    expect(html).toContain("positive EV");
     expect(html).not.toMatch(/<b>0<\/b>/);
     expect(html).not.toContain("data points");
     expect(html).not.toContain("cycles analyzed");

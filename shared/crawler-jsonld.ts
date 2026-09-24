@@ -17,7 +17,7 @@ export function buildHomepageJsonLd(): Record<string, unknown> {
         "@type": "WebSite",
         name: "TradeUpBot",
         url: HOMEPAGE_URL,
-        description: "Real-time CS2 trade-up contract analyzer. Find profitable trade-ups from real marketplace listings.",
+        description: "Fee-adjusted expected value for CS2 trade-ups, built from real listings on CSFloat, DMarket, Skinport, and Buff.market.",
         potentialAction: {
           "@type": "SearchAction",
           target: `${HOMEPAGE_URL}/skins?search={search_term_string}`,

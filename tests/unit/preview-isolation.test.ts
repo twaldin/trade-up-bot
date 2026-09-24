@@ -174,7 +174,7 @@ describe("console cutover", () => {
   it("keeps production headlines and FAQ copy in the preview landing", () => {
     expect(PREVIEW_HEADLINE).toBe("CS2 trade-ups built from real, buyable listings");
     expect(PREVIEW_FAQ).toHaveLength(5);
-    expect(PREVIEW_FAQ[0]?.q).toBe("How does TradeUpBot find profitable trade-ups?");
+    expect(PREVIEW_FAQ[0]?.q).toBe("How does TradeUpBot find trade-ups?");
     expect(previewAppSource).toContain("PREVIEW_HEADLINE");
     expect(previewAppSource).toContain("PREVIEW_FAQ");
   });

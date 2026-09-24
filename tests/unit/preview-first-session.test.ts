@@ -8,6 +8,7 @@ const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const board = read("../../src/preview/pages/PreviewBoard.tsx");
 const calc = read("../../src/preview/pages/PreviewCalculator.tsx");
+const copy = read("../../src/preview/lib/copy.ts");
 const css = read("../../src/preview/preview.css");
 
 function collapsedCardline(source: string): string {
@@ -112,9 +113,14 @@ describe("calculator first session", () => {
     expect(board).toMatch(/export function OutputTile/);
   });
 
-  it("keeps the Cost / EV / Profit / Chance strip", () => {
-    for (const label of ["Cost", "Expected value", "Profit", "Chance of profit"]) {
-      expect(calc).toContain(`label="${label}"`);
+  it("keeps the Cost / EV / expected P/L / outcomes-above-cost strip", () => {
+    expect(calc).toContain('label="Cost"');
+    expect(calc).toContain("LABEL_EXPECTED_VALUE");
+    expect(calc).toContain("LABEL_EXPECTED_PL");
+    expect(calc).toContain("LABEL_ABOVE_COST");
+    expect(calc).toContain("NOTE_OF_OUTCOMES");
+    for (const label of ["Expected value", "Expected P/L", "Above cost"]) {
+      expect(copy).toContain(`"${label}"`);
     }
   });
 });

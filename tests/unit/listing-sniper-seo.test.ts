@@ -12,7 +12,7 @@ const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8")
 const prerenderSource = readFileSync(join(__dir, "../../scripts/prerender.ts"), "utf-8");
 const previewSeoSource = readFileSync(join(__dir, "../../src/preview/components/PreviewSeo.tsx"), "utf-8");
 const sniperSource = readFileSync(join(__dir, "../../src/preview/pages/PreviewSniper.tsx"), "utf-8");
-const HOME_TITLE = "TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings";
+const HOME_TITLE = "TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings";
 const HOME_H1 = "CS2 trade-ups built from real, buyable listings";
 
 function staticPage(path: string) {

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
+import { formatOdds } from "../lib/board.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
@@ -14,6 +15,7 @@ import {
   type ActiveClaimRow,
   type VerifyPayload,
 } from "../lib/my-trade-ups.js";
+import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
 
 interface AuthUser {
@@ -202,14 +204,14 @@ export function PreviewShare() {
   }
 
   const typeLabel = tu?.type ? (TRADE_UP_TYPE_LABELS[tu.type] || tu.type) : "Trade-up";
-  const profit = tu ? (tu.profit_cents / 100).toFixed(2) : "0.00";
-  const chance = tu ? Math.round((tu.chance_to_profit ?? 0) * 100) : 0;
+  const profit = tu ? formatDollars(tu.profit_cents) : "$0.00";
+  const chance = tu ? formatOdds(tu.chance_to_profit ?? 0) : "0%";
   const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
   const title = tu
-    ? `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`
+    ? `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`
     : "Trade-up | TradeUpBot";
   const h1 = tu
-    ? `${typeLabel} Trade-Up — $${profit} Profit (${roi}% ROI)`
+    ? `${typeLabel} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`
     : "Trade-up";
   const isAuthenticated = !!user;
   const isBasicPlus = user?.tier === "pro" || user?.tier === "admin" || !!user?.is_admin;
@@ -257,7 +259,7 @@ export function PreviewShare() {
 
       {tu && !isAuthenticated && (
         <section className="preview-panel">
-          <p className="preview-note">Sign in to verify, claim, and purchase listings</p>
+          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <a
             className="preview-btn preview-btn--lime"
             href={authHref(window.location.pathname)}

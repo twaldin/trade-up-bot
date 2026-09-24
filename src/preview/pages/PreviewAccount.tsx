@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
 import { authHref } from "../../lib/ref.js";
+import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { hydrateOutcomesIfNeeded } from "../lib/skin-images.js";
@@ -538,7 +539,7 @@ export function PreviewAccount() {
           <header className="preview-panel__head">
             <p className="o-kicker">Session</p>
           </header>
-          <p className="preview-note">Sign in to see claims and Pro delivery.</p>
+          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <a className="preview-btn preview-btn--lime preview-btn--block" href={authHref("/my-trade-ups")} rel="nofollow">
             Sign in with Steam
           </a>

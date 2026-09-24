@@ -152,7 +152,7 @@ describe("kit my-trade-ups page", () => {
     expect(page).toContain("MY_TRADE_UPS_API.stats");
     expect(page).toContain("all_time_profit_cents");
     expect(page).toContain("total_sold");
-    expect(page).toContain("Sign in to see claims and Pro delivery.");
+    expect(page).toContain("SIGN_IN_TO_CLAIM");
     expect(page).toContain("Mark Complete");
     expect(page).toContain("Mark Sold");
     expect(page).toContain("Confirm Sale");

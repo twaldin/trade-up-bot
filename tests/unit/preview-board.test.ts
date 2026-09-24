@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
-import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
+import { PreviewBoard, signedDollars } from "../../src/preview/pages/PreviewBoard.js";
+import { formatDollars } from "../../src/utils/format.js";
 import { SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
@@ -90,6 +91,14 @@ describe("preview P/L tone and odds", () => {
     expect(formatOdds(0.999)).toBe(">99%");
     expect(formatOdds(0.9999)).toBe(">99%");
     expect(formatOdds(1)).toBe("100%");
+  });
+
+  it("prints a loss as -$3.20, never $-3.20", () => {
+    expect(formatDollars(-320)).toBe("-$3.20");
+    expect(formatDollars(320)).toBe("$3.20");
+    expect(signedDollars(-320)).toBe("-$3.20");
+    expect(signedDollars(320)).toBe("+$3.20");
+    expect(signedDollars(-320)).not.toContain("$-");
   });
 
   it("labels a 48-outcome knife roll without collapsing rare finishes to 0%", () => {

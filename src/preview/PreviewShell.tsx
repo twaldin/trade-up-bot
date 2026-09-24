@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
+import { FOOTER_AGE, FOOTER_NOT_VALVE } from "./lib/copy.js";
 
 const NAV = [
   { to: "/trade-ups", label: "Board", icon: LayoutDashboard, end: true },
@@ -60,6 +61,10 @@ export function PreviewShell({
           </header>
           <main id="main" className="preview-console__main">
             {children}
+            <footer className="preview-console__legal">
+              <p>{FOOTER_NOT_VALVE} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>
+              <p>{FOOTER_AGE}</p>
+            </footer>
           </main>
         </div>
       </div>

@@ -18,8 +18,8 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
   return [
     {
       path: "/",
-      title: "TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings",
-      description: "Real-time CS2 trade-up contract analyzer. Find profitable trade-ups across all rarity tiers using actual marketplace listings from CSFloat, DMarket, and Skinport.",
+      title: "TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings",
+      description: "Fee-adjusted expected value for CS2 trade-ups, built from real listings on CSFloat, DMarket, Skinport, and Buff.market. Verify inputs before you buy.",
       canonical: `${BASE_URL}/`,
       requireCrawlerSignals: true,
     },
@@ -33,7 +33,7 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
     {
       path: "/blog",
       title: "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot",
-      description: "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.",
+      description: "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and expected profit after fees.",
       canonical: `${BASE_URL}/blog`,
     },
     ...blogPosts.map((post) => ({

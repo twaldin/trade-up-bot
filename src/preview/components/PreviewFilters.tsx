@@ -4,6 +4,7 @@
  */
 import { Search, X } from "lucide-react";
 import { rarityLabel } from "../lib/board.js";
+import { LABEL_ABOVE_COST_PCT, LABEL_MIN_ABOVE_COST } from "../lib/copy.js";
 
 export interface BoardQuery {
   sort: string;
@@ -30,7 +31,7 @@ export const BOARD_SORTS: [string, string][] = [
   ["profit", "Profit"],
   ["roi", "ROI"],
   ["cost", "Cost"],
-  ["chance", "Chance"],
+  ["chance", LABEL_ABOVE_COST_PCT],
   ["created", "Newest"],
 ];
 
@@ -136,7 +137,7 @@ export function PreviewFilters({
       </label>
 
       <label className="preview-field">
-        <span>Min chance %</span>
+        <span>{LABEL_MIN_ABOVE_COST}</span>
         <input
           className="preview-field__num"
           inputMode="numeric"

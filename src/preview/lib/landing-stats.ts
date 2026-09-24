@@ -20,7 +20,7 @@ export interface BoardCountSource {
 
 export const LANDING_STAT_LABELS = {
   total_trade_ups: "trade-ups",
-  profitable_trade_ups: "profitable",
+  profitable_trade_ups: "positive EV",
   total_data_points: "data points",
   total_cycles: "cycles analyzed",
 } as const;

@@ -19,7 +19,7 @@ export const blogPosts: BlogPost[] = [
   {
     slug: "how-cs2-trade-ups-work",
     title: "How CS2 Trade-Ups Work: 10 Skins, Float & Profit",
-    excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, odds, and fees. Use this guide to calculate smarter contracts before buying.",
+    excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, outcome probabilities, and fees. Use this guide to calculate smarter contracts before buying.",
     publishedAt: "2026-03-15",
     readTime: "6 min read",
     author: "TradeUpBot Team",
@@ -285,7 +285,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   {
     slug: "how-to-use-tradeupbot",
     title: "How to Use TradeUpBot to Find Profitable Trade-Ups",
-    excerpt: "Learn how to use TradeUpBot to find profitable CS2 trade-ups, verify live listings, claim inputs, and compare risk before you buy.",
+    excerpt: "Learn how to use TradeUpBot to find CS2 trade-ups with positive expected profit, verify live listings, claim inputs, and compare risk before you buy.",
     publishedAt: "2026-03-18",
     readTime: "5 min read",
     author: "TradeUpBot Team",
@@ -549,7 +549,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   {
     slug: "cs2-trade-up-probability-expected-value",
     title: "How to Use CS2 Trade-Up Probability and EV Wisely",
-    excerpt: "Learn how to use CS2 trade-up probability, expected value, and chance-to-profit with a $80 example before choosing risky contracts.",
+    excerpt: "Learn how to use CS2 trade-up probability and expected value with a $80 example before choosing risky contracts.",
     publishedAt: "2026-03-21",
     readTime: "6 min read",
     author: "TradeUpBot Team",

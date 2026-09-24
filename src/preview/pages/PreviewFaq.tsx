@@ -54,7 +54,7 @@ export function PreviewFaq() {
       </section>
 
       <div className="preview-toolbar">
-        <Link className="preview-btn preview-btn--lime" to="/trade-ups">See profitable CS2 trade-ups</Link>
+        <Link className="preview-btn preview-btn--lime" to="/trade-ups">See live CS2 trade-ups</Link>
         <Link className="preview-btn" to="/calculator">Open the calculator</Link>
       </div>
     </div>

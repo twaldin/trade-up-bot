@@ -8,6 +8,10 @@ import {
   PREVIEW_CTA_PRIMARY,
   PREVIEW_DISCORD_HREF,
   PREVIEW_GITHUB_HREF,
+  FOOTER_AGE,
+  FOOTER_NOT_VALVE,
+  HOME_DESCRIPTION,
+  HOME_TITLE,
   PREVIEW_HEADLINE,
 } from "./lib/copy.js";
 
@@ -33,8 +37,8 @@ export function PreviewChrome({
     <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
       {home && (
         <>
-          <title>TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings</title>
-          <meta name="description" content="CS2 trade-ups built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.market." />
+          <title>{HOME_TITLE}</title>
+          <meta name="description" content={HOME_DESCRIPTION} />
           <meta name="robots" content="index, follow" />
           <link rel="canonical" href="https://tradeupbot.app/" />
           <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildHomepageJsonLd()) }} />
@@ -93,8 +97,9 @@ export function PreviewChrome({
           </div>
         </div>
         <p className="preview-footer__legal">
-          TradeUpBot is not affiliated with Valve Corporation. CS2 and Counter-Strike are trademarks of Valve Corporation.
+          {FOOTER_NOT_VALVE} CS2 and Counter-Strike are trademarks of Valve Corporation.
         </p>
+        <p className="preview-footer__legal">{FOOTER_AGE}</p>
       </footer>
     </div>
   );

@@ -17,16 +17,36 @@ const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8")
 const sitemapSource = readFileSync(join(__dir, "../../server/routes/sitemap.ts"), "utf-8");
 const ogImageSource = readFileSync(join(__dir, "../../server/og-image.ts"), "utf-8");
 
+describe("SEO crawler cache revision", () => {
+  it("versions every crawler key whose HTML or JSON-LD this copy pass changes", () => {
+    expect(serverSource).toContain('const SEO_CRAWLER_CACHE_REV = "v3"');
+    for (const key of [
+      "seo_tradeups_list_${SEO_CRAWLER_CACHE_REV}",
+      "seo_coll_tu_${SEO_CRAWLER_CACHE_REV}:",
+      "seo_collection_${SEO_CRAWLER_CACHE_REV}:",
+      "seo_collection_meta_${SEO_CRAWLER_CACHE_REV}:",
+      "seo_skin_${SEO_CRAWLER_CACHE_REV}:",
+      "seo_skin_meta_${SEO_CRAWLER_CACHE_REV}:",
+    ]) {
+      expect(serverSource).toContain(key);
+    }
+    expect(serverSource).not.toContain("seo_tradeups_list\";");
+    expect(serverSource).not.toContain("`seo_coll_tu:${");
+    expect(serverSource).not.toContain("`seo_collection_v2:");
+    expect(serverSource).not.toContain("`seo_skin:${");
+  });
+});
+
 describe("SEO route caching (Plan 005)", () => {
   describe("/skins/:slug cache", () => {
     it("checks seo_skin_meta: cache before the isCrawler branch", () => {
       // The meta cache read must appear before the crawler check diverges
-      const metaCacheIdx = serverSource.indexOf("seo_skin_meta:");
+      const metaCacheIdx = serverSource.indexOf("seo_skin_meta_${SEO_CRAWLER_CACHE_REV}:");
       const crawlerBranchIdx = serverSource.indexOf("if (isCrawler(ua)) {", metaCacheIdx);
       expect(metaCacheIdx).toBeGreaterThan(0);
       expect(crawlerBranchIdx).toBeGreaterThan(metaCacheIdx);
       // meta key is introduced in the initial cache block, before the isCrawler check for DB queries
-      expect(serverSource).toContain("const metaCacheKey = `seo_skin_meta:");
+      expect(serverSource).toContain("const metaCacheKey = `seo_skin_meta_${SEO_CRAWLER_CACHE_REV}:");
     });
 
     it("writes seo_skin: and seo_skin_meta: caches unconditionally (not inside isCrawler gate)", () => {
@@ -58,8 +78,8 @@ describe("SEO route caching (Plan 005)", () => {
 
   describe("/collections/:slug cache", () => {
     it("checks seo_collection: and seo_collection_meta: before DB queries", () => {
-      expect(serverSource).toContain("seo_collection:");
-      expect(serverSource).toContain("seo_collection_meta:");
+      expect(serverSource).toContain("seo_collection_${SEO_CRAWLER_CACHE_REV}:");
+      expect(serverSource).toContain("seo_collection_meta_${SEO_CRAWLER_CACHE_REV}:");
     });
 
     it("writes both caches unconditionally", () => {
@@ -70,7 +90,7 @@ describe("SEO route caching (Plan 005)", () => {
 
   describe("/trade-ups/collection/:slug cache", () => {
     it("checks seo_coll_tu: cache for crawlers", () => {
-      expect(serverSource).toContain("seo_coll_tu:");
+      expect(serverSource).toContain("seo_coll_tu_${SEO_CRAWLER_CACHE_REV}:");
       expect(serverSource).toContain("ctCacheGet<string>(collTuCacheKey)");
     });
 
