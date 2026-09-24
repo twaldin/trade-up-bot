@@ -92,8 +92,28 @@ describe("/api/trade-ups board filter contract", () => {
     expect(oldest.map((r) => r.profit_cents)).toEqual([...newestFirst].reverse());
   });
 
-  it("a non-numeric min_chance is ignored instead of erroring", async () => {
-    const rows = await list("type=restricted_classified&min_chance=abc");
+  it.each(["abc", "250", "-5"])("min_chance=%s returns zero rows with a 200, never a wider list", async (value) => {
+    const res = await request(ctx.app)
+      .get(`/api/trade-ups?type=restricted_classified&min_chance=${value}`)
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
+
+  it.each(["abc", "250", "-5"])("max_chance=%s returns zero rows too", async (value) => {
+    const rows = await list(`type=restricted_classified&max_chance=${value}`);
+    expect(rows).toEqual([]);
+  });
+
+  it("a blank min_chance still means no chance filter", async () => {
+    const rows = await list("type=restricted_classified&min_chance=&max_chance=");
     expect(rows).toHaveLength(ROWS.length);
+  });
+
+  it("the 0 and 100 endpoints stay valid", async () => {
+    expect(await list("type=restricted_classified&min_chance=0")).toHaveLength(ROWS.length);
+    expect(await list("type=restricted_classified&max_chance=100")).toHaveLength(ROWS.length);
   });
 });

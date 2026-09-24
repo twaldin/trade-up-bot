@@ -6,6 +6,7 @@ import {
   canonicalSortKey,
   chanceThreshold,
   isKnownSortKey,
+  NO_CHANCE_MATCH,
   tradeUpSortColumn,
   tradeUpsCacheKey,
 } from "../../server/routes/trade-ups-query.js";
@@ -50,6 +51,12 @@ describe("tradeUpSortColumn", () => {
   });
 });
 
+function numericThreshold(percent: string, bound: "min" | "max"): number {
+  const threshold = chanceThreshold(percent, bound);
+  if (typeof threshold !== "number") throw new Error(`expected a numeric threshold for ${percent}`);
+  return threshold;
+}
+
 describe("chanceThreshold", () => {
   it("reads the query as a percent, dividing by 100 exactly once", () => {
     expect(chanceThreshold("40", "min")).toBeCloseTo(0.4, 6);
@@ -57,15 +64,14 @@ describe("chanceThreshold", () => {
   });
 
   it("treats min_chance=100 as 100%, not 1%", () => {
-    const threshold = chanceThreshold("100", "min");
-    expect(threshold).not.toBeNull();
-    expect(threshold!).toBeGreaterThan(0.999999);
-    expect(0.0333).toBeLessThan(threshold!);
-    expect(0.01).toBeLessThan(threshold!);
+    const threshold = numericThreshold("100", "min");
+    expect(threshold).toBeGreaterThan(0.999999);
+    expect(0.0333).toBeLessThan(threshold);
+    expect(0.01).toBeLessThan(threshold);
   });
 
   it("at 50 keeps a 0.50 row and drops a 0.4999 row", () => {
-    const threshold = chanceThreshold("50", "min")!;
+    const threshold = numericThreshold("50", "min");
     expect(0.5).toBeGreaterThanOrEqual(threshold);
     expect(0.4999).toBeLessThan(threshold);
   });
@@ -74,24 +80,36 @@ describe("chanceThreshold", () => {
     const tenths = Array.from({ length: 10 }, () => ({ estimated_price_cents: 5000, probability: 0.1 }));
     const chance = computeChanceToProfit(tenths, 1000);
     expect(chance).toBeLessThan(1);
-    expect(chance).toBeGreaterThanOrEqual(chanceThreshold("100", "min")!);
+    expect(chance).toBeGreaterThanOrEqual(numericThreshold("100", "min"));
   });
 
   it("lets a float-summed 30% chance pass a 30% maximum", () => {
-    expect(0.1 + 0.2).toBeLessThanOrEqual(chanceThreshold("30", "max")!);
+    expect(0.1 + 0.2).toBeLessThanOrEqual(numericThreshold("30", "max"));
   });
 
-  it("clamps out-of-range percents into 0–100", () => {
-    expect(chanceThreshold("250", "min")!).toBeLessThanOrEqual(1);
-    expect(chanceThreshold("250", "min")!).toBeGreaterThan(0.999999);
-    expect(chanceThreshold("-5", "max")!).toBeGreaterThanOrEqual(0);
-    expect(chanceThreshold("-5", "max")!).toBeLessThan(0.000001);
+  it("accepts the 0 and 100 endpoints", () => {
+    expect(chanceThreshold("0", "min")).toBeCloseTo(0, 6);
+    expect(chanceThreshold("100", "max")).toBeCloseTo(1, 6);
   });
 
-  it("ignores blank or non-numeric values instead of sending NaN to SQL", () => {
+  it("matches nothing for non-numeric input rather than dropping the filter", () => {
+    expect(chanceThreshold("abc", "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("abc", "max")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("Infinity", "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("40abc", "min")).toBe(NO_CHANCE_MATCH);
+  });
+
+  it("matches nothing for out-of-range percents rather than clamping them", () => {
+    expect(chanceThreshold("250", "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("100.5", "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("-5", "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold("-5", "max")).toBe(NO_CHANCE_MATCH);
+  });
+
+  it("treats blank as no filter", () => {
     expect(chanceThreshold(undefined, "min")).toBeNull();
     expect(chanceThreshold("", "min")).toBeNull();
-    expect(chanceThreshold("abc", "max")).toBeNull();
+    expect(chanceThreshold("  ", "max")).toBeNull();
   });
 });
 
@@ -107,10 +125,16 @@ describe("tradeUpsCacheKey", () => {
 
   it("caches min_chance by the parsed threshold", () => {
     expect(key({ min_chance: "100" })).toBe(key({ min_chance: "100.0" }));
-    expect(key({ min_chance: "250" })).toBe(key({ min_chance: "100" }));
-    expect(key({ min_chance: "abc" })).toBe(key({}));
     expect(key({ min_chance: "1" })).not.toBe(key({ min_chance: "100" }));
     expect(key({ max_chance: "5" })).not.toBe(key({ min_chance: "5" }));
+    expect(key({ min_chance: "" })).toBe(key({}));
+  });
+
+  it("never caches an invalid chance with the unfiltered or clamped list", () => {
+    expect(key({ min_chance: "abc" })).not.toBe(key({}));
+    expect(key({ min_chance: "250" })).not.toBe(key({ min_chance: "100" }));
+    expect(key({ max_chance: "-5" })).not.toBe(key({ max_chance: "0" }));
+    expect(key({ min_chance: "abc" })).toBe(key({ min_chance: "250" }));
   });
 
   it("ignores parameter order, blank values and the default order", () => {

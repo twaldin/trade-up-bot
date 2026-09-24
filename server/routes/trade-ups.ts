@@ -6,7 +6,7 @@ import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
-import { chanceThreshold, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
+import { chanceThreshold, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 function canonicalListingStatus(
@@ -252,12 +252,16 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       params.push(parseInt(min_cost));
     }
     const minChance = chanceThreshold(min_chance, "min");
-    if (minChance !== null) {
+    if (minChance === NO_CHANCE_MATCH) {
+      where += ` AND false`;
+    } else if (minChance !== null) {
       where += ` AND t.chance_to_profit >= $${paramIndex++}`;
       params.push(minChance);
     }
     const maxChance = chanceThreshold(max_chance, "max");
-    if (maxChance !== null) {
+    if (maxChance === NO_CHANCE_MATCH) {
+      where += ` AND false`;
+    } else if (maxChance !== null) {
       where += ` AND t.chance_to_profit <= $${paramIndex++}`;
       params.push(maxChance);
     }

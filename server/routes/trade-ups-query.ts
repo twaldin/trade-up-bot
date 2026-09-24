@@ -51,12 +51,24 @@ export function tradeUpSortColumn(sort: string | undefined): string {
 // be stored as 0.9999999999999999. Far below any displayable percent.
 const CHANCE_TOLERANCE = 1e-9;
 
-/** Percent query value → SQL threshold on the 0–1 column, or null to skip the filter. */
-export function chanceThreshold(percent: string | undefined, bound: "min" | "max"): number | null {
-  if (!percent) return null;
+/**
+ * An invalid chance matches nothing. Dropping or clamping it would widen the
+ * list, and a 400 would break older callers (Discord bot, legacy FilterBar).
+ */
+export const NO_CHANCE_MATCH = "no_match";
+
+/**
+ * Percent query value → SQL threshold on the 0–1 column; null (blank) skips
+ * the filter; NO_CHANCE_MATCH for non-numeric or outside 0–100.
+ */
+export function chanceThreshold(
+  percent: string | undefined,
+  bound: "min" | "max",
+): number | null | typeof NO_CHANCE_MATCH {
+  if (percent === undefined || percent.trim() === "") return null;
   const value = Number(percent);
-  if (!Number.isFinite(value)) return null;
-  const fraction = Math.min(100, Math.max(0, value)) / 100;
+  if (!Number.isFinite(value) || value < 0 || value > 100) return NO_CHANCE_MATCH;
+  const fraction = value / 100;
   return bound === "min" ? fraction - CHANCE_TOLERANCE : fraction + CHANCE_TOLERANCE;
 }
 
