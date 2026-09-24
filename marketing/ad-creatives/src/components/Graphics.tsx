@@ -3,9 +3,11 @@ import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remo
 import { C, FONT } from "../theme";
 
 const STOPS = [0, 0.07, 0.15, 0.38, 0.45, 1];
+/** Close ticks (0.00/0.07/0.15 and 0.38/0.45) sit on alternating rows so 28px labels do not collide. */
+const LABEL_ROW = [0, 1, 0, 1, 0, 1];
 
 /** Wear boundaries as labelled on the live skin chart. Not a price series. */
-export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boolean }> = ({ stopAt, height = 88, instant }) => {
+export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boolean }> = ({ stopAt, height = 130, instant }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const p = instant ? stopAt : interpolate(frame, [0, Math.round(0.9 * fps)], [0.55, stopAt], { extrapolateRight: "clamp" });
@@ -27,13 +29,23 @@ export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boo
           transform: "translateX(-8px)",
         }}
       />
-      <div style={{ position: "absolute", left: 0, right: 0, top: 58, display: "flex" }}>
-        {STOPS.map((s) => (
-          <span key={s} style={{ position: "absolute", left: `${s * 100}%`, transform: "translateX(-50%)", fontFamily: FONT.mono, fontSize: 28, color: C.muted }}>
-            {s.toFixed(2)}
-          </span>
-        ))}
-      </div>
+      {STOPS.map((s, i) => (
+        <span
+          key={s}
+          style={{
+            position: "absolute",
+            left: `${s * 100}%`,
+            top: 58 + LABEL_ROW[i] * 34,
+            transform: "translateX(-50%)",
+            fontFamily: FONT.mono,
+            fontSize: 28,
+            color: C.muted,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {s.toFixed(2)}
+        </span>
+      ))}
     </div>
   );
 };

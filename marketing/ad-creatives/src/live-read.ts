@@ -7,6 +7,7 @@ export const LIVE = {
   date: "24 Sept 2026",
   nightwish: {
     label: "AK-47 | Nightwish, cheapest listing, 24 Sept 2026",
+    source: "Cheapest listings, 24 Sept 2026 re-read 14:01 PT. Listings and prices change.",
     fn: "$99.59",
     mw: "$64.10",
     marker: 0.07,

@@ -199,7 +199,7 @@ export const buildCatalog = (facts: Facts) => {
       {
         id: "hero",
         seconds: 13,
-        caption: { text: "One contract. Cost beside expected value.", emphasis: ["One contract"] },
+        caption: { text: "Two outcomes are priced under the cost.", emphasis: ["Two outcomes"] },
         graphic: {
           type: "compare",
           title: `Contract ${LIVE.hero.id} · estimate`,
@@ -306,7 +306,7 @@ export const buildCatalog = (facts: Facts) => {
         cta: "Open the calculator",
         url: "tradeupbot.app/calculator",
         disclaimer: HONESTY,
-        source,
+        source: LIVE.nightwish.source,
       },
     },
     {

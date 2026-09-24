@@ -182,8 +182,8 @@ export const StaticAd: React.FC<StaticAdProps> = (p) => {
     <AbsoluteFill
       style={{
         background: C.bg,
-        paddingTop: band.top,
-        paddingBottom: DIMENSIONS[p.format].height - band.bottom,
+        paddingTop: tall ? 270 : band.top,
+        paddingBottom: tall ? 672 : DIMENSIONS[p.format].height - band.bottom,
         paddingLeft: 48,
         paddingRight: 48,
         display: "flex",

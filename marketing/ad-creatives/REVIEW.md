@@ -45,6 +45,21 @@ Re-capture after that PR ships:
 
 Free view delayed 3 h. Not affiliated with or endorsed by Valve. Board and contract figures are labelled “Example from tradeupbot.app, 24 Sept 2026. Listings and prices change.”
 
+## GTM revision checklist
+
+- Float-boundary tick labels alternate rows so 0.00, 0.07 and 0.15 do not collide, and neither do 0.38 and 0.45. All six stops stay on the bar.
+- Float-boundary source line: “Cheapest listings, 24 Sept 2026 re-read 14:01 PT. Listings and prices change.” The 14:01 PT time is the file time of the live skin-data response.
+- Float-boundary 1920 uses 270px top padding and 672px bottom padding.
+- Re-rendered this pass: float-boundary 1080, 1350 and 1920; float-number 1080 and 1350; verify 1080 and 1350; the three A cuts (same range bar); screen demo B (caption now says two outcomes).
+- Stale files removed from the render folder and the artifact folder: float-split 1080 and 1350, the old float-number and verify renders, `meta-b-ugc-vertical.mp4`, `meta-a-float-landscape.mp4`.
+- Pricing sitelink line 1 is “Free, then Pro $6.99/mo” (23).
+- Banned list now includes finish green, bankroll, bankrolls, plays, guarantee, guaranteed.
+- Calculator callout is “Exact output float” (18). D1 ends “Check listings before you buy.” (85) and stays pinned to description position 1.
+- H14 stays “Estimates. You Can Lose Money”, pinned to position 2.
+- Screen demo caption: “Two outcomes are priced under the cost.” The panel lists Nightwish $55.86 and Starlight Protector $57.23.
+- Meta primary text: “Cross 0.07 and the cheapest AK-47 | Nightwish listing drops from $99.59 (FN) to $64.10 (MW).”
+- No board ROI percent is used in ad copy.
+
 ## Google RSA
 
 `google-search-rsa.md` is ad group A for `/calculator`. Position 1 is the three calculator-name headlines. Position 2 is the two honesty lines. Description position 1 is D1. The trade-up sitelink is “Trade-up board” with line 2 “Free view delayed 3 hours”. UTMs are a campaign-level Final URL suffix. Do not spend until the landing copy PR is live.

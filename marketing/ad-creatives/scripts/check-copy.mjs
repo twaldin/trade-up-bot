@@ -60,7 +60,7 @@ for (const n of [14, 15]) {
     console.log(`headline ${n} is not pinned to position 2`);
   }
 }
-if (!/^\| 1 \| 1 \| 86 \|/m.test(md)) {
+if (!/^\| 1 \| 1 \| 85 \|/m.test(md)) {
   failed = true;
   console.log("description 1 is not pinned to description position 1");
 }

@@ -36,7 +36,7 @@ Pro at $6.99 a month was read from the live pricing page on 24 Sep 2026 (`$6.99/
 
 | # | Pin | Chars | Text |
 |---|-----|------:|------|
-| 1 | 1 | 86 | Estimates only, after fees. A trade-up can lose money. Verify listings before you buy. |
+| 1 | 1 | 85 | Estimates only, after fees. A trade-up can lose money. Check listings before you buy. |
 | 2 | | 85 | Enter 10 inputs with exact floats. See output float, expected value and expected P/L. |
 | 3 | | 84 | Prices the exact output float from nearby real sales, not a condition-average price. |
 | 4 | | 82 | Free calculator. Pro $6.99/mo adds real-time trade-ups and verify. Cancel anytime. |
@@ -58,7 +58,7 @@ Description line 1 (35 max) and line 2 for each sitelink:
 |----------|--------|--------|
 | Calculator | Cost, float, and fees | Estimates, not a promise |
 | Trade-up board | Contracts from listings | Free view delayed 3 hours |
-| Pricing | Free, then Pro at $6.99 | Cancel anytime |
+| Pricing | Free, then Pro $6.99/mo | Cancel anytime |
 | FAQ on fees | What each market charges | You can lose money |
 
 ## Callouts
@@ -66,7 +66,7 @@ Description line 1 (35 max) and line 2 for each sitelink:
 | Chars | Text |
 |------:|------|
 | 19 | After-fee estimates |
-| 15 | Verify listings |
+| 18 | Exact output float |
 | 14 | Can lose money |
 | 19 | Free tier available |
 
