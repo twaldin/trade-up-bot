@@ -8,8 +8,8 @@ import {
   trackVerifyClick,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
+import { installBrowser, navigate } from "../helpers/browser-stub.js";
 import { purchaseEventId } from "../../shared/tracking.js";
-import { installBrowser } from "../helpers/browser-stub.js";
 
 const GA4 = "G-NEWPROP123";
 const PIXEL = "123456789012345";
@@ -90,6 +90,27 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
       send_to: GA4,
     }]]);
     expect(body?.attribution).toMatchObject({ utm_source: "google", gclid: "Cj0K" });
+  });
+
+  it("calculator_complete keeps the Google final-URL suffix after the SPA drops the query", () => {
+    const browser = installBrowser({
+      pathname: "/calculator",
+      search: "?utm_source=google&utm_medium=cpc&utm_campaign=tu_w1_search_calc&utm_content=adgroup1&utm_term=cs2+trade+up&utm_matchtype=e&gclid=Cj0K",
+    });
+    captureAttributionFromUrl();
+    navigate(browser, "/calculator", "");
+    trackCalculatorComplete();
+    expect(gtag).toHaveBeenCalledWith("event", "calculator_complete", {
+      page_path: "/calculator",
+      utm_source: "google",
+      utm_medium: "cpc",
+      utm_campaign: "tu_w1_search_calc",
+      utm_content: "adgroup1",
+      utm_term: "cs2 trade up",
+      utm_matchtype: "e",
+      gclid: "Cj0K",
+      send_to: GA4,
+    });
   });
 
   it("calculator_complete and verify_click carry page_path", () => {

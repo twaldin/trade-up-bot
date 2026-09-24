@@ -45,13 +45,14 @@ export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom
   verify_click: { kind: "custom", name: "VerifyClick" },
 };
 
-/** Landing-URL params kept on first landing and attached to checkout_start and purchase. */
+/** Landing-URL params kept on first landing and attached to key events. `utm_matchtype` is part of the Google Ads final-URL suffix. */
 export const ATTRIBUTION_URL_PARAMS = [
   "utm_source",
   "utm_medium",
   "utm_campaign",
   "utm_content",
   "utm_term",
+  "utm_matchtype",
   "gclid",
   "fbclid",
 ] as const;

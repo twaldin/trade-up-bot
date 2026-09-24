@@ -33,6 +33,14 @@ describe("attributionFromSearch", () => {
     });
   });
 
+  it("keeps utm_matchtype from a Google Ads final URL", () => {
+    expect(attributionFromSearch("?utm_source=google&utm_medium=cpc&utm_matchtype=e&gclid=Cj0K", NOW)).toMatchObject({
+      utm_source: "google",
+      utm_matchtype: "e",
+      gclid: "Cj0K",
+    });
+  });
+
   it("returns null for an untagged URL", () => {
     expect(attributionFromSearch("", NOW)).toBeNull();
     expect(attributionFromSearch("?ref=creator&page=2", NOW)).toBeNull();

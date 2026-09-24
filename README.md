@@ -209,7 +209,7 @@ Every tracker is off, and adds nothing to the page, until its env var is set. Se
 | `META_CAPI_TOKEN` | API runtime | Meta Conversions API `Purchase` from the Stripe webhook (with `META_PIXEL_ID`) |
 | `META_DOMAIN_VERIFICATION` | build | `<meta name="facebook-domain-verification">` fallback for the DNS TXT record |
 
-Browser ids are injected into `<head>` by the `tracking-head` Vite plugin, so changing them needs a rebuild; secrets are only read by the API process, so changing them needs a restart. GA4 `purchase` is sent exactly once: server-side through the Measurement Protocol when `GA4_API_SECRET` is set (the success page then skips it), otherwise client-side on the success page as before. Code: `shared/tracking.ts`, `shared/tracking-head.ts`, `src/lib/conversions.ts`, `src/lib/attribution.ts`, `server/tracking/`.
+Browser ids are injected into `<head>` by the `tracking-head` Vite plugin, so changing them needs a rebuild; secrets are only read by the API process, so changing them needs a restart. GA4 `purchase` is sent exactly once: server-side through the Measurement Protocol when `GA4_API_SECRET` is set (the success page then skips it), otherwise client-side on the success page as before. Landing `utm_*` params (including `utm_matchtype`), `gclid`, and `fbclid` persist in the browser and are attached to `calculator_complete`, `checkout_start`, and `purchase`. Code: `shared/tracking.ts`, `shared/tracking-head.ts`, `src/lib/conversions.ts`, `src/lib/attribution.ts`, `server/tracking/`.
 
 ## Testing
 

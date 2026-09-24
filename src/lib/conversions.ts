@@ -46,9 +46,9 @@ export function trackCheckoutStart(checkoutPlan: string): { attribution: Attribu
   return tracking.enabled ? { attribution } : null;
 }
 
-/** Calculator returned a result (floats + fees). */
+/** Calculator returned a result (floats + fees). Landing UTMs and click ids ride along. */
 export function trackCalculatorComplete(): void {
-  const params = { page_path: pagePath() };
+  const params = { page_path: pagePath(), ...campaignParams(storedAttribution()) };
   ga4KeyEvent("calculator_complete", params);
   pixelEvent("calculator_complete", params, newEventId("calc"));
 }
