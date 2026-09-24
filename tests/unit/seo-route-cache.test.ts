@@ -13,7 +13,10 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
+const serverSource = [
+  readFileSync(join(__dir, "../../server/index.ts"), "utf-8"),
+  readFileSync(join(__dir, "../../server/trade-up-share-seo.ts"), "utf-8"),
+].join("\n");
 const sitemapSource = readFileSync(join(__dir, "../../server/routes/sitemap.ts"), "utf-8");
 const ogImageSource = readFileSync(join(__dir, "../../server/og-image.ts"), "utf-8");
 
