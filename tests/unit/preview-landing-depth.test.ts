@@ -76,8 +76,8 @@ describe("preview landing depth", () => {
   });
 
   it("uses real blogMeta posts and the STATIC FAQ answers, inventing neither", () => {
-    expect(blogMeta.slice(0, 4)).toHaveLength(4);
-    expect(landing).toContain("blogMeta.slice(0, 4)");
+    expect(blogMeta.filter((post) => post.slug !== "how-to-use-tradeupbot").slice(0, 4)).toHaveLength(4);
+    expect(landing).toContain('blogMeta.filter((post) => post.slug !== "how-to-use-tradeupbot").slice(0, 4)');
     expect(landing).not.toContain("to={`/blog/${post.slug}`}");
     expect(landing).toContain("to={`/blog/${post.slug}/`}");
     expect(faqQuestions[0]?.q).toBe("Is CS2 trade-up profit real or just theoretical?");

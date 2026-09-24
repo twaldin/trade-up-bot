@@ -229,7 +229,7 @@ export function renderHomepageSeoBody(stats?: LandingStatCounts | null): string 
   const seoFaq = leftoverFaq.map((item) =>
     `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`
   ).join("");
-  const posts = blogMeta.slice(0, 4).map((post) =>
+  const posts = blogMeta.filter((post) => post.slug !== "how-to-use-tradeupbot").slice(0, 4).map((post) =>
     `<article><h3><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a></h3><p>${escapeHtml(post.excerpt)}</p></article>`
   ).join("");
 

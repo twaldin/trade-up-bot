@@ -270,7 +270,7 @@ try {
 
   const signedOut = await browser.newPage();
   await signedOut.goto(`${BASE}/account`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await signedOut.waitForFunction(() => document.body.innerText.includes("Sign in to see claims and Pro delivery."), { timeout: 20000 });
+  await signedOut.waitForFunction(() => document.body.innerText.includes("Verify and Claim are Pro features. Signing in with Steam is free."), { timeout: 20000 });
   await sleep(800);
   const redirected = signedOut.url().includes("/my-trade-ups");
   if (!redirected) problems.push(`/account did not redirect (${signedOut.url()})`);

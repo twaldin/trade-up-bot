@@ -57,7 +57,7 @@ export const PREVIEW_HOW: { n: string; title: string; body: string }[] = [
 
 export const PREVIEW_FAQ: { q: string; a: string }[] = [
   {
-    q: "How does TradeUpBot find profitable trade-ups?",
+    q: "How does TradeUpBot find trade-ups?",
     a: "We continuously scan CSFloat, DMarket, Skinport, and Buff.market for real listings, then test thousands of input combinations across 45+ float targets. Every result is built only from listings currently for sale.",
   },
   {

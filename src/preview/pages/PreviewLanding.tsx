@@ -40,7 +40,7 @@ import {
 import { boardFaceFor, TradeUpCard, usePreviewTradeUps } from "./PreviewBoard.js";
 
 const LEFTOVER_FAQ = faqEntities(seoPage("/faq"));
-const BLOG_TEASERS = blogMeta.slice(0, 4);
+const BLOG_TEASERS = blogMeta.filter((post) => post.slug !== "how-to-use-tradeupbot").slice(0, 4);
 
 function Face({ name }: { name: string }) {
   const src = boardFaceFor(name);
@@ -218,7 +218,7 @@ export function PreviewLanding({
         <p className="o-kicker">Live trade-up</p>
         <h2>The card, expanded</h2>
         <p className="preview-section__lede">
-          KPI row, output tiles with price and share of outcomes above cost, and the float-versus-price graph language — not a screenshot.
+          The next trade-up on the board, opened the way the board opens it: every outcome with its probability and price after fees, the expected-value walk, the share of outcomes above each P/L, and the listings to buy.
         </p>
         {featured && (
           <div className="preview-live">

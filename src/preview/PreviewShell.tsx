@@ -61,11 +61,11 @@ export function PreviewShell({
           </header>
           <main id="main" className="preview-console__main">
             {children}
+            <footer className="preview-console__legal">
+              <p>{FOOTER_NOT_VALVE} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>
+              <p>{FOOTER_AGE}</p>
+            </footer>
           </main>
-          <footer className="preview-console__legal">
-            <p>{FOOTER_NOT_VALVE} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>
-            <p>{FOOTER_AGE}</p>
-          </footer>
         </div>
       </div>
     </div>

@@ -60,7 +60,7 @@ describe("homepage first HTML for Googlebot", () => {
       expect(html).toContain(asHtml(item.q));
       expect(html).toContain(asHtml(item.a));
     }
-    for (const post of blogMeta.slice(0, 4)) {
+    for (const post of blogMeta.filter((entry) => entry.slug !== "how-to-use-tradeupbot").slice(0, 4)) {
       expect(html).toContain(asHtml(post.title));
       expect(html).toContain(`/blog/${post.slug}/`);
     }

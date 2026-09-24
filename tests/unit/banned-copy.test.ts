@@ -46,10 +46,7 @@ const PRERENDERED = [
 const ALLOWLIST = [
   "never guaranteed", // FAQ disclaimer: returns are never guaranteed
   "not guaranteed", // product FAQ: not guaranteed profit
-  "How does TradeUpBot find profitable trade-ups?", // kept FAQ question; query phrasing, not an ad claim
-  "How to Use TradeUpBot to Find Profitable Trade-Ups", // existing guide title on the home teaser
-  "Learn how to use TradeUpBot to find profitable CS2 trade-ups", // existing guide excerpt on the home teaser
-  "test floats, odds, and fees", // existing calculator-guide excerpt
+  "test floats, odds, and fees", // existing calculator-guide excerpt, not a home teaser
   "const win", // window handle in openListings, not user-facing copy
   "if (win)", // same window handle
   "Win rate", // completed-sale statistic on the account page

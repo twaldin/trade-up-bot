@@ -1100,7 +1100,7 @@ registerCanonicalRedirectRoutes(app);
         const profitable = stats?.profitable || 0;
         const faqSchema = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: [
           { "@type": "Question", name: "What is a CS2 trade-up contract?", acceptedAnswer: { "@type": "Answer", text: "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted proportionally by input count per collection." } },
-          { "@type": "Question", name: "How does TradeUpBot find profitable trade-ups?", acceptedAnswer: { "@type": "Answer", text: "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both buy and sell sides." } },
+          { "@type": "Question", name: "How does TradeUpBot find trade-ups?", acceptedAnswer: { "@type": "Answer", text: "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both buy and sell sides." } },
           { "@type": "Question", name: "Are these listings live?", acceptedAnswer: { "@type": "Answer", text: "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." } },
         ] };
         const html = buildSeoHtml({
