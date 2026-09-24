@@ -60,9 +60,9 @@ const geometry = (format: Format): Geometry => {
   if (format === "square") {
     return {
       brand: { x: 48, y: band.top, size: 22 },
-      honesty: { x: 280, y: band.top, w: 752, h: 36, size: foot },
-      caption: { x: 48, y: band.top + 44, w: 984, h: 72, size: 30 },
-      panel: { x: 48, y: band.top + 122, w: 984, h: 340 },
+      honesty: { x: 48, y: band.top + 32, w: 984, h: 36, size: foot },
+      caption: { x: 48, y: band.top + 72, w: 984, h: 64, size: 28 },
+      panel: { x: 48, y: band.top + 142, w: 984, h: 320 },
       radius: 12,
       footnote: { x: 48, y: band.bottom - 80, w: 984, h: 72, size: foot },
       pointerScale: 0.85,
@@ -71,9 +71,9 @@ const geometry = (format: Format): Geometry => {
   if (format === "portrait") {
     return {
       brand: { x: 56, y: band.top, size: 24 },
-      honesty: { x: 56, y: band.top + 40, w: 968, h: 40, size: foot },
-      caption: { x: 56, y: band.top + 88, w: 968, h: 100, size: 34 },
-      panel: { x: 56, y: band.top + 200, w: 968, h: 360 },
+      honesty: { x: 56, y: band.top + 36, w: 968, h: 36, size: foot },
+      caption: { x: 56, y: band.top + 80, w: 968, h: 90, size: 32 },
+      panel: { x: 56, y: band.top + 178, w: 968, h: 380 },
       radius: 12,
       footnote: { x: 56, y: band.bottom - 110, w: 968, h: 100, size: foot },
       pointerScale: 0.95,
@@ -91,10 +91,10 @@ const geometry = (format: Format): Geometry => {
     };
   }
   return {
-    brand: { x: 72, y: band.top + 8, size: 26 },
-    honesty: { x: 300, y: band.top + 12, w: 708, h: 44, size: foot },
-    caption: { x: 72, y: band.top + 64, w: 936, h: 130, size: 40 },
-    panel: { x: 72, y: band.top + 210, w: 936, h: 520 },
+    brand: { x: 72, y: band.top + 4, size: 26 },
+    honesty: { x: 72, y: band.top + 44, w: 936, h: 40, size: foot },
+    caption: { x: 72, y: band.top + 92, w: 936, h: 120, size: 38 },
+    panel: { x: 72, y: band.top + 220, w: 936, h: 500 },
     radius: 14,
     footnote: { x: 72, y: band.bottom - 150, w: 936, h: 140, size: foot },
     pointerScale: 1,
