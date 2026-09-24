@@ -26,7 +26,7 @@ describe("runCheckout", () => {
   it("shows the 409 error and does not fire begin_checkout", async () => {
     globalThis.tubTracking = { ga4MeasurementId: "G-NEWPROP123", metaPixelId: "123456789012345" };
     const go = vi.fn();
-    const fetchImpl = vi.fn(async () => json(409, { error: "You already have Pro access. Manage your subscription instead of starting a new checkout." }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => json(409, { error: "You already have Pro access. Manage your subscription instead of starting a new checkout." }));
     const result = await runCheckout("pro", { fetchImpl, go });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(409);
