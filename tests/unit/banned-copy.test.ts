@@ -31,7 +31,9 @@ const SOURCE_FILES = [
   ...previewCopyFiles(),
   "server/index.ts",
   "server/seo.ts",
+  "server/og-image.ts",
   "server/static-seo-pages.ts",
+  "shared/trade-ups-faq.ts",
   "src/data/blog-meta.ts",
 ];
 

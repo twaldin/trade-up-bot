@@ -880,7 +880,7 @@ export function PreviewBoard({
           <a className="preview-delay__cta" href="/pricing">See Pro</a>
         </div>
       )}
-      {!embed && <FeeLine line={boardFeeLine()} />}
+      {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && <p className="preview-note">Loading trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
       <div className="preview-bento">

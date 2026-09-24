@@ -27,7 +27,8 @@ import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
-import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE, detailTypeLabel, tradeUpDetailJsonLd } from "../shared/types.js";
+import { detailTradeUpHeading, shareDocumentTitle, tradeUpCountPhrase } from "../shared/copy.js";
+import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE, tradeUpDetailJsonLd } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { COLLECTION_TRADEUP_LEDE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -210,7 +211,7 @@ registerCanonicalRedirectRoutes(app);
       // Redis PNG cache — use raw getBuffer/set on the ioredis client to avoid JSON corruption
       const { getRedis } = await import("./redis.js");
       const redis = getRedis();
-      const ogKey = `og:tradeup:${req.params.id}`;
+      const ogKey = `og:tradeup_${SEO_CRAWLER_CACHE_REV}:${req.params.id}`;
       if (redis) {
         const cached = await redis.getBuffer(ogKey).catch(() => null);
         if (cached) {
@@ -352,7 +353,7 @@ registerCanonicalRedirectRoutes(app);
         + `</ul></nav>`;
       const bodyHtml = collTuBreadcrumb
         + `<h1>${e(displayName)} Trade-Ups</h1>`
-        + `<p>${e(COLLECTION_TRADEUP_LEDE.replace("${display}", displayName))} Updated daily from real listings on CSFloat, DMarket, and Skinport. <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>.</p>`
+        + `<p>${e(COLLECTION_TRADEUP_LEDE.replace("${display}", displayName))} Prices are updated daily from real listings on CSFloat, DMarket, and Skinport. <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>.</p>`
         + (bestProfit > 0 ? `<p>Top expected P/L: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
         + tablesHtml
         + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
@@ -510,7 +511,7 @@ registerCanonicalRedirectRoutes(app);
         skinTablesHtml += `<h2>${e(rarity)} (${rs.length})</h2><table><thead><tr><th>Skin</th><th>Weapon</th><th>Listings</th><th>From</th></tr></thead><tbody>${rows}</tbody></table>`;
       }
 
-      const tuLink = `<p><strong>${tuCount} trade-ups with positive expected profit</strong> currently use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">Explore ${displayName} trade-up contracts</a></p>`;
+      const tuLink = `<p><strong>${tradeUpCountPhrase(tuCount)} with positive expected profit</strong> currently use skins from this collection. <a href="/trade-ups/collection/${req.params.slug}">Explore ${displayName} trade-up contracts</a></p>`;
 
       // Float-exact "best right now" summary — the differentiator. Only rendered when a genuinely
       // profitable, non-stale contract exists, so it never shows a penny/stale claim.
@@ -547,7 +548,7 @@ registerCanonicalRedirectRoutes(app);
         + collImageHtml
         + `<p>The ${e(displayName)} collection is a CS2 weapon case collection containing ${skins.length} skins across ${grouped.size} rarity tiers. `
         + `There are currently ${totalListings.toLocaleString()} active listings across CSFloat, DMarket, and Skinport. `
-        + (tuCount > 0 ? `The collection features in ${tuCount} trade-ups with positive expected profit, ` : "")
+        + (tuCount > 0 ? `The collection features in ${tradeUpCountPhrase(tuCount)} with positive expected profit, ` : "")
         + `Browse skins, compare prices, and find trade-up opportunities below.</p>`
         + bestProfitHtml
         + collectionOverviewHtml
@@ -567,7 +568,7 @@ registerCanonicalRedirectRoutes(app);
         {
           "@context": "https://schema.org", "@type": "CollectionPage",
           name: `${displayName} Collection`,
-          description: `${skins.length} CS2 skins in the ${displayName} collection. ${totalListings.toLocaleString()} active listings.${tuCount > 0 ? ` ${tuCount} trade-ups with positive expected profit.` : ""}`,
+          description: `${skins.length} CS2 skins in the ${displayName} collection. ${totalListings.toLocaleString()} active listings.${tuCount > 0 ? ` ${tradeUpCountPhrase(tuCount)} with positive expected profit.` : ""}`,
           url: `https://tradeupbot.app/collections/${req.params.slug}`,
           numberOfItems: skins.length,
           ...(collectionImageUrl ? { image: collectionImageUrl } : {}),
@@ -576,7 +577,7 @@ registerCanonicalRedirectRoutes(app);
 
       const meta = {
         title: `${displayName} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`,
-        description: `Browse ${skins.length} skins in the ${displayName} collection. ${totalListings.toLocaleString()} listings from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tuCount} trade-ups with positive expected profit.` : ""}`,
+        description: `Browse ${skins.length} skins in the ${displayName} collection. ${totalListings.toLocaleString()} listings from CSFloat, DMarket, Skinport.${tuCount > 0 ? ` ${tradeUpCountPhrase(tuCount)} with positive expected profit.` : ""}`,
         url: `https://tradeupbot.app/collections/${req.params.slug}`,
         ogImage: collectionImageUrl || undefined,
         bodyHtml,
@@ -822,10 +823,10 @@ registerCanonicalRedirectRoutes(app);
       // Trade-up stats paragraphs
       let tuStatsParagraphs = "";
       if (inputTuCount > 0) {
-        tuStatsParagraphs += `<p>This skin appears in <strong>${inputTuCount} trade-ups with positive expected profit</strong> as an input.</p>`;
+        tuStatsParagraphs += `<p>This skin appears in <strong>${tradeUpCountPhrase(inputTuCount)} with positive expected profit</strong> as an input.</p>`;
       }
       if (outputTuCount > 0) {
-        tuStatsParagraphs += `<p><strong>${outputTuCount} trade-ups with positive expected profit</strong> can produce this skin as an output.</p>`;
+        tuStatsParagraphs += `<p><strong>${tradeUpCountPhrase(outputTuCount)} with positive expected profit</strong> can produce this skin as an output.</p>`;
       }
 
       // FAQ section
@@ -882,8 +883,8 @@ registerCanonicalRedirectRoutes(app);
         {
           q: `What trade-ups use ${skinName}?`,
           a: inputTuCount > 0
-            ? `${skinName} appears as an input in ${inputTuCount} trade-ups with positive expected profit.${outputTuCount > 0 ? ` Additionally, ${outputTuCount} trade-ups with positive expected profit can produce this skin as an output.` : ""}`
-            : `There are currently no trade-ups with positive expected profit using ${skinName} as an input.${outputTuCount > 0 ? ` However, ${outputTuCount} trade-ups with positive expected profit can produce this skin as an output.` : ""}`,
+            ? `${skinName} appears as an input in ${tradeUpCountPhrase(inputTuCount)} with positive expected profit.${outputTuCount > 0 ? ` Additionally, ${tradeUpCountPhrase(outputTuCount)} with positive expected profit can produce this skin as an output.` : ""}`
+            : `There are currently no trade-ups with positive expected profit using ${skinName} as an input.${outputTuCount > 0 ? ` However, ${tradeUpCountPhrase(outputTuCount)} with positive expected profit can produce this skin as an output.` : ""}`,
         },
       ];
       const faqHtml = `<h2>Frequently Asked Questions</h2>`
@@ -953,7 +954,7 @@ registerCanonicalRedirectRoutes(app);
         },
       ];
 
-      const tuSuffix = inputTuCount > 0 ? ` ${inputTuCount} trade-ups with positive expected profit available.` : "";
+      const tuSuffix = inputTuCount > 0 ? ` ${tradeUpCountPhrase(inputTuCount)} with positive expected profit available.` : "";
       const meta = {
         title: `${skinName} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`,
         description: `${skinName}${collectionSummaryForDescription} prices from $${minPrice} to $${maxPrice}. ${listingSummaryForDescription} on CSFloat, DMarket, Skinport. Float range ${floatRangeText}.${tuSuffix}`,

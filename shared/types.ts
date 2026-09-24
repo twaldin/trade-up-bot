@@ -55,7 +55,7 @@ export function tradeUpDetailJsonLd(id: string | number, typeLabel: string): Rec
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
       { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
-      { "@type": "ListItem", position: 3, name: `${typeLabel} Trade-Up`, item: `https://tradeupbot.app/trade-ups/${id}` },
+      { "@type": "ListItem", position: 3, name: typeLabel, item: `https://tradeupbot.app/trade-ups/${id}` },
     ],
   };
 }

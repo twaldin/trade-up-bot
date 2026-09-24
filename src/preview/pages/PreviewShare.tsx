@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
-import { detailTypeLabel, tradeUpDetailJsonLd } from "../../../shared/types.js";
+import { detailTradeUpHeading, shareDocumentTitle } from "../../../shared/copy.js";
+import { TRADE_UP_TYPE_LABELS, tradeUpDetailJsonLd } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
 import { trackEvent } from "../../lib/analytics.js";
@@ -18,7 +19,7 @@ import {
   type ActiveClaimRow,
   type VerifyPayload,
 } from "../lib/my-trade-ups.js";
-import { SIGN_IN_TO_CLAIM, shareDocumentTitle } from "../lib/copy.js";
+import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
 
 function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
@@ -202,15 +203,16 @@ export function PreviewShare() {
     setExpiresAt(null);
   }
 
-  const typeLabel = tu?.type ? detailTypeLabel(tu.type) : "Trade-up";
+  const heading = tu?.type ? detailTradeUpHeading(tu.type) : "Trade-up";
+  const shareType = tu?.type ? (TRADE_UP_TYPE_LABELS[tu.type] ?? heading) : "Trade-up";
   const profit = tu ? formatDollars(tu.profit_cents) : "$0.00";
   const chance = tu ? formatOdds(tu.chance_to_profit ?? 0) : "0%";
   const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
   const title = tu
-    ? shareDocumentTitle(typeLabel, profit, chance)
+    ? shareDocumentTitle(shareType, tu.profit_cents, tu.outcomes ?? [])
     : "Trade-up | TradeUpBot";
   const h1 = tu
-    ? `${typeLabel} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`
+    ? `${heading} — ${profit} Expected P/L (${roi}% ROI)`
     : "Trade-up";
   const panel = shareActionPanel(user);
   const realIds = tu ? realListingIds(tu) : [];
@@ -219,9 +221,9 @@ export function PreviewShare() {
     <div className="preview-page">
       <PreviewSeo
         title={title}
-        description={tu ? `$${formatDollars(tu.total_cost_cents).slice(1)} cost, ${roi}% ROI. Found on TradeUpBot.` : "Trade-up detail on TradeUpBot."}
+        description={tu ? `$${formatDollars(tu.total_cost_cents).slice(1)} cost, ${roi}% ROI. ${chance} of outcomes above cost. Found on TradeUpBot.` : "Trade-up detail on TradeUpBot."}
         canonical={id ? `https://tradeupbot.app/trade-ups/${id}` : "https://tradeupbot.app/trade-ups"}
-        jsonLd={tu && id ? tradeUpDetailJsonLd(id, typeLabel) : undefined}
+        jsonLd={tu && id ? tradeUpDetailJsonLd(id, heading) : undefined}
       />
       <header className="preview-page__head">
         <div>
@@ -235,7 +237,7 @@ export function PreviewShare() {
         </div>
         {tu && (
           <div className="preview-page__meta">
-            <span>{typeLabel}</span>
+            <span>{heading}</span>
             <i />
             {(panel === "sign-in" || panel === "upgrade") && (
               <a className="preview-btn preview-btn--quiet"

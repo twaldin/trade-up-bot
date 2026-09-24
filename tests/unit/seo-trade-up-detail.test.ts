@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderTradeUpDetail } from "../../server/seo.js";
+import { detailTradeUpHeading } from "../../shared/copy.js";
 import { detailTypeLabel, tradeUpDetailJsonLd } from "../../shared/types.js";
 
 const tradeUp = {
@@ -36,18 +37,18 @@ describe("renderTradeUpDetail (#3 + #9-detail)", () => {
     expect(html).toContain("12.3%");
   });
 
-  it("uses the same input-rarity label for the H1 and the document title", () => {
+  it("uses the input-to-output heading for the H1 and the breadcrumb", () => {
     const label = detailTypeLabel(tradeUp.type);
+    const heading = detailTradeUpHeading(tradeUp.type);
     const html = renderTradeUpDetail(tradeUp, inputs, outcomes, related);
     expect(label).toBe("Classified");
-    expect(html).toContain(`<h1>${label} Trade-Up`);
+    expect(heading).toBe("Classified to Covert Trade-Up");
+    expect(html).toContain(`<h1>${heading}`);
     expect(html).not.toContain("<h1>Covert Trade-Up");
-    const title = `${label} Trade-Up — $35.09 expected P/L (32% above cost) | TradeUpBot`;
-    expect(title.startsWith(`${label} Trade-Up`)).toBe(true);
-    const ld = tradeUpDetailJsonLd(tradeUp.id, label);
+    const ld = tradeUpDetailJsonLd(tradeUp.id, heading);
     const parsed = JSON.parse(JSON.stringify(ld)) as { "@type": string; itemListElement: { name: string }[] };
     expect(parsed["@type"]).toBe("BreadcrumbList");
-    expect(parsed.itemListElement[2]?.name).toBe("Classified Trade-Up");
+    expect(parsed.itemListElement[2]?.name).toBe("Classified to Covert Trade-Up");
     expect(JSON.stringify(ld)).not.toMatch(/aggregateRating|review|ratingValue|offers/i);
   });
 

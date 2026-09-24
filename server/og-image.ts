@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
+import { formatOdds } from "../src/preview/lib/board.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Vendored Inter font binaries (OFL-licensed, https://fonts.google.com/specimen/Inter).
@@ -99,10 +100,11 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
   const typeColor = TYPE_COLORS[data.type] || "#888";
   const inputSummary = buildInputSummary(data.inputs);
   const collections = buildCollections(data.inputs);
-  const chance = Math.round((data.chance_to_profit ?? 0) * 100);
+  const aboveCost = formatOdds(data.chance_to_profit ?? 0);
+  const chancePct = (data.chance_to_profit ?? 0) * 100;
   const profitColor = data.profit_cents >= 0 ? "#22c55e" : "#ef4444";
   const roiColor = data.roi_percentage >= 0 ? "#22c55e" : "#ef4444";
-  const chanceColor = chance >= 50 ? "#22c55e" : chance >= 30 ? "#fbbf24" : "#ef4444";
+  const chanceColor = chancePct >= 50 ? "#22c55e" : chancePct >= 30 ? "#fbbf24" : "#ef4444";
   const bestColor = data.best_case_cents >= 0 ? "#22c55e" : "#ef4444";
   const worstColor = data.worst_case_cents >= 0 ? "#22c55e" : "#ef4444";
 
@@ -191,9 +193,9 @@ export async function generateOgImage(data: TradeUpData): Promise<Buffer> {
     },
       // Row 1: Profit, ROI, Chance, Cost
       h("div", { style: { display: "flex", justifyContent: "space-around" } },
-        stat("Profit", fmt(data.profit_cents), profitColor, true),
+        stat("Expected P/L", fmt(data.profit_cents), profitColor, true),
         stat("ROI", `${data.roi_percentage.toFixed(1)}%`, roiColor),
-        stat("Chance", `${chance}%`, chanceColor),
+        stat("Above cost", aboveCost, chanceColor),
         stat("Cost", fmt(data.total_cost_cents), "#d4d4d4"),
       ),
       // Row 2: EV, Best, Worst

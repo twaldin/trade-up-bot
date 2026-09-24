@@ -1,4 +1,5 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { detailTradeUpHeading } from "../shared/copy.js";
 import { detailTypeLabel } from "../shared/types.js";
 export { tradeUpDetailJsonLd } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
@@ -403,6 +404,7 @@ export function renderTradeUpDetail(
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
 const typeLabel = detailTypeLabel(tradeUp.type);
   const hideInputCommercials = opts?.hideInputCommercials === true;
+  const heading = detailTradeUpHeading(tradeUp.type);
 
   const inputRows = inputs.map(inp => {
     const price = !hideInputCommercials && inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : "";
@@ -424,7 +426,7 @@ const typeLabel = detailTypeLabel(tradeUp.type);
     ? `all 10 inputs from the ${e(collections[0])} collection`
     : `inputs from ${e(collections.join(", "))}`;
 
-  return `<h1>${e(typeLabel)} Trade-Up — ${e(profit)} Expected P/L (${roi}% ROI)</h1>
+  return `<h1>${e(heading)} — ${e(profit)} Expected P/L (${roi}% ROI)</h1>
 <p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
 
 <h2>Inputs</h2>
