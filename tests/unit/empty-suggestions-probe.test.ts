@@ -5,7 +5,7 @@ import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
-import { LOOSEN_PROBE_DEBOUNCE_MS } from "../../src/preview/lib/empty-suggestions.js";
+import { LOOSEN_PROBE_DEBOUNCE_MS, probeCoolingDown, resetProbeCooldown } from "../../src/preview/lib/empty-suggestions.js";
 import { useLoosenProbe } from "../../src/preview/lib/use-loosen-probe.js";
 
 function Harness({
@@ -32,6 +32,7 @@ describe("useLoosenProbe", () => {
   let host: HTMLDivElement;
 
   afterEach(() => {
+    resetProbeCooldown();
     act(() => { root?.unmount(); });
     host?.remove();
   });
@@ -73,7 +74,36 @@ describe("useLoosenProbe", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(urls[0]).toContain("per_page=1");
     expect(urls[0]).toContain("max_cost=200");
-    expect(label).toBe("Raise max cost to $2");
+    expect(label).toBe("Raise max cost to $2.00");
+  });
+
+  it("waits 60s after a 429 before probing again", async () => {
+    const fetchFn = vi.fn(async () => new Response("{}", { status: 429 }));
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(Harness, {
+        typing: false,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        onReady: () => {},
+      }));
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(probeCoolingDown()).toBe(true);
+
+    function Next({ cost }: { cost: string }) {
+      useLoosenProbe({
+        enabled: true,
+        query: { ...DEFAULT_QUERY, maxCost: cost },
+        fetchFn: fetchFn as unknown as typeof fetch,
+      });
+      return null;
+    }
+    await act(async () => { root.render(createElement(Next, { cost: "3" })); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("drops a probe that starts while the filters are still changing", async () => {

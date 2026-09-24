@@ -7,8 +7,8 @@ import {
   stateFromBoardSearch,
   type BoardUrlState,
 } from "../../src/preview/lib/board-url.js";
-import { loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
-import { EXPECTED_PL_HELP, ExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
+import { formatSuggestionDollars, loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
+import { EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -102,17 +102,38 @@ describe("empty-state suggestion candidates", () => {
   it("offers 2x, 5x, and 10x when max cost is the tightest", () => {
     const steps = loosenCandidates({ ...DEFAULT_QUERY, maxCost: "1", minChance: "10" }, "");
     expect(steps.map((step) => step.label)).toEqual([
-      "Raise max cost to $2",
-      "Raise max cost to $5",
-      "Raise max cost to $10",
+      "Raise max cost to $2.00",
+      "Raise max cost to $5.00",
+      "Raise max cost to $10.00",
     ]);
     expect(steps[2].query.minChance).toBe("10");
   });
 
-  it("walks chance down by buckets when that bound is the tightest", () => {
+  it("walks min above cost down the fixed ladder when that bound is the tightest", () => {
     const steps = loosenCandidates({ ...DEFAULT_QUERY, minChance: "80", maxCost: "400" }, "");
+    expect(steps.map((step) => step.label)).toEqual([
+      "Lower min above cost to 60%",
+      "Lower min above cost to 40%",
+      "Lower min above cost to 20%",
+    ]);
     expect(steps.map((step) => step.query.minChance)).toEqual(["60", "40", "20"]);
     expect(steps[0].query.maxCost).toBe("400");
+    expect(loosenCandidates({ ...DEFAULT_QUERY, minChance: "79" }, "").map((step) => step.query.minChance)).toEqual(["60", "40", "20"]);
+    expect(loosenCandidates({ ...DEFAULT_QUERY, minChance: "100" }, "").map((step) => step.query.minChance)).toEqual(["80", "60", "40"]);
+    const below = loosenCandidates({ ...DEFAULT_QUERY, minChance: "15" }, "");
+    expect(below.map((step) => step.label)).toEqual(["Clear min above cost"]);
+    expect(below[0].query.minChance).toBe("");
+  });
+
+  it("prints money with two decimals and clears a zero min profit", () => {
+    expect(formatSuggestionDollars(61.7)).toBe("$61.70");
+    expect(formatSuggestionDollars(-3.2)).toBe("-$3.20");
+    const steps = loosenCandidates({ ...DEFAULT_QUERY, minProfit: "123.40" }, "");
+    expect(steps[0].label).toBe("Lower min profit to $61.70");
+    expect(steps[0].query.minProfit).toBe("61.70");
+    const cleared = loosenCandidates({ ...DEFAULT_QUERY, minProfit: "0.01" }, "");
+    expect(cleared.some((step) => step.label === "Clear min profit")).toBe(true);
+    expect(cleared.find((step) => step.label === "Clear min profit")?.query.minProfit).toBe("");
   });
 
   it("clears a skin filter without touching the other controls", () => {
@@ -125,12 +146,31 @@ describe("empty-state suggestion candidates", () => {
 });
 
 describe("expected P/L helper", () => {
-  it("renders the neutral explanation and avoids earnings claims", () => {
+  const banned = /\b(bankroll|guaranteed|plays|finish green|chance|odds|roll)\b/i;
+
+  it("renders the explanation without a duplicate title", () => {
     const html = renderToStaticMarkup(createElement(Fragment, null, ExpectedPlHelp() as ReactNode));
     expect(html).toContain(EXPECTED_PL_HELP);
     expect(html).toContain("preview-pl-help");
-    const banned = /\b(bankroll|guaranteed|plays|finish green)\b/i;
-    expect(EXPECTED_PL_HELP).not.toMatch(banned);
-    expect(html).not.toMatch(banned);
+    expect(html).not.toContain("title=");
+    expect(showExpectedPlHelp(-100, 0.5)).toBe(true);
+    expect(showExpectedPlHelp(-100, 0.49)).toBe(false);
+    expect(showExpectedPlHelp(0, 0.8)).toBe(false);
+    expect(showExpectedPlHelp(-100, null)).toBe(false);
+  });
+
+  it("keeps chance, odds, and roll out of the explainer, tooltip, and loosen labels", () => {
+    const labels = [
+      ...loosenCandidates({ ...DEFAULT_QUERY, maxCost: "1" }, ""),
+      ...loosenCandidates({ ...DEFAULT_QUERY, minChance: "100" }, ""),
+      ...loosenCandidates({ ...DEFAULT_QUERY, minChance: "15" }, ""),
+      ...loosenCandidates({ ...DEFAULT_QUERY, minProfit: "3.20" }, ""),
+      ...loosenCandidates({ ...DEFAULT_QUERY, skin: "AK-47 | Redline" }, ""),
+      ...loosenCandidates(DEFAULT_QUERY, "ak"),
+      ...loosenCandidates({ ...DEFAULT_QUERY, type: "classified_covert" }, ""),
+    ].map((step) => step.label);
+    for (const copy of [EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ...labels]) {
+      expect(copy).not.toMatch(banned);
+    }
   });
 });

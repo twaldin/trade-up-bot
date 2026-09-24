@@ -48,7 +48,7 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
-import { EXPECTED_PL_HELP, ExpectedPlHelp } from "../components/ExpectedPlHelp.js";
+import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice } from "../lib/board-notice.js";
 import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
 import { useLoosenProbe } from "../lib/use-loosen-probe.js";
@@ -645,7 +645,7 @@ export function TradeUpCard({
         <p className="preview-cardline">
           Cost <b>{formatDollars(inputCostCents(tu))}</b>
           <i />
-          <b className={signClass(tu.profit_cents)} title={EXPECTED_PL_HELP}>
+          <b className={signClass(tu.profit_cents)} title={EXPECTED_PL_TOOLTIP}>
             {signedDollars(tu.profit_cents)} / {tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}%
           </b>
           {chance !== null && (
@@ -699,7 +699,7 @@ export function TradeUpCard({
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note={NOTE_WORST_OUTCOMES} tone={tail === null ? "" : signClass(tail)} />
                 </div>
-                <ExpectedPlHelp />
+                {showExpectedPlHelp(evPnL, chance) && <ExpectedPlHelp />}
                 <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">
                   <div className="preview-subpanel">
@@ -905,8 +905,9 @@ export function PreviewBoard({
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length > 0 && <p className="preview-note">Updating trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
-      <div className="preview-bento">
+      <div className={`preview-bento${loading && tradeUps.length > 0 ? " preview-bento--stale" : ""}`}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}

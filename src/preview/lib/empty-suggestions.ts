@@ -19,7 +19,23 @@ export const LOOSEN_PROBE_DEBOUNCE_MS = 400;
 
 const COST_FACTORS = [2, 5, 10];
 const PROFIT_DIVISORS = [2, 5, 10];
-const CHANCE_BUCKET = 20;
+/** Fixed ladder. A min below 20 still offers the clear step. */
+const ABOVE_COST_STEPS = [80, 60, 40, 20, 0];
+export const PROBE_COOLDOWN_MS = 60_000;
+
+let probeCooldownUntil = 0;
+
+export function noteProbeRateLimit(now = Date.now()): void {
+  probeCooldownUntil = now + PROBE_COOLDOWN_MS;
+}
+
+export function probeCoolingDown(now = Date.now()): boolean {
+  return now < probeCooldownUntil;
+}
+
+export function resetProbeCooldown(): void {
+  probeCooldownUntil = 0;
+}
 
 function tightnessChance(raw: string): number {
   const value = Number(raw);
@@ -39,9 +55,15 @@ function tightnessMinProfit(raw: string): number {
   return Math.min(dollars, 100) / 100;
 }
 
-function money(dollars: number): string {
-  const rounded = Math.round(dollars * 100) / 100;
-  return String(rounded);
+/** Suggestion labels. Two decimals, and a loss reads -$3.20. */
+export function formatSuggestionDollars(dollars: number): string {
+  const cents = Math.round(dollars * 100);
+  const abs = (Math.abs(cents) / 100).toFixed(2);
+  return cents < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+function dollarField(dollars: number): string {
+  return (Math.round(dollars * 100) / 100).toFixed(2);
 }
 
 type Kind = "chance" | "cost" | "profit" | "skin" | "search" | "type";
@@ -65,39 +87,42 @@ function tightest(query: BoardQuery, text: string): Kind | null {
 function costSteps(query: BoardQuery, text: string): LoosenSuggestion[] {
   const base = Number(query.maxCost);
   return COST_FACTORS.map((factor) => {
-    const raised = money(base * factor);
+    const raised = base * factor;
     return {
-      label: `Raise max cost to $${raised}`,
-      query: { ...query, maxCost: raised },
+      label: `Raise max cost to ${formatSuggestionDollars(raised)}`,
+      query: { ...query, maxCost: dollarField(raised) },
       text,
     };
   });
 }
 
 function chanceSteps(query: BoardQuery, text: string): LoosenSuggestion[] {
-  const start = Math.round(Number(query.minChance));
-  const steps: LoosenSuggestion[] = [];
-  for (let drop = CHANCE_BUCKET; drop <= start && steps.length < LOOSEN_PROBE_CAP; drop += CHANCE_BUCKET) {
-    const next = start - drop;
-    steps.push({
-      label: `Lower min chance to ${next}%`,
-      query: { ...query, minChance: next === 0 ? "" : String(next) },
-      text,
-    });
-  }
-  return steps;
+  const start = Number(query.minChance);
+  if (!Number.isFinite(start) || start <= 0) return [];
+  return ABOVE_COST_STEPS.filter((step) => step < start).slice(0, LOOSEN_PROBE_CAP).map((next) => ({
+    label: next === 0 ? "Clear min above cost" : `Lower min above cost to ${next}%`,
+    query: { ...query, minChance: next === 0 ? "" : String(next) },
+    text,
+  }));
 }
 
 function profitSteps(query: BoardQuery, text: string): LoosenSuggestion[] {
   const base = Number(query.minProfit);
-  return PROFIT_DIVISORS.map((divisor) => {
-    const lowered = Math.round((base / divisor) * 100) / 100;
-    return {
-      label: `Lower min profit to $${money(lowered)}`,
-      query: { ...query, minProfit: lowered <= 0 ? "" : money(lowered) },
+  const steps: LoosenSuggestion[] = [];
+  for (const divisor of PROFIT_DIVISORS) {
+    if (steps.length >= LOOSEN_PROBE_CAP) break;
+    const cents = Math.round((base / divisor) * 100);
+    if (cents <= 0) {
+      steps.push({ label: "Clear min profit", query: { ...query, minProfit: "" }, text });
+      break;
+    }
+    steps.push({
+      label: `Lower min profit to ${formatSuggestionDollars(cents / 100)}`,
+      query: { ...query, minProfit: dollarField(cents / 100) },
       text,
-    };
-  });
+    });
+  }
+  return steps;
 }
 
 /** Up to three steps for the tightest filter, smallest change first. */

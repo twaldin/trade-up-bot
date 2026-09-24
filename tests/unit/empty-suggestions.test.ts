@@ -16,11 +16,11 @@ describe("loosen probes", () => {
     const seen: string[] = [];
     const found = await firstReturningStep(steps, async (step) => {
       seen.push(step.query.maxCost);
-      return step.query.maxCost === "5" ? "hit" : "miss";
+      return step.query.maxCost === "5.00" ? "hit" : "miss";
     });
-    expect(seen).toEqual(["2", "5"]);
-    expect(found?.label).toBe("Raise max cost to $5");
-    expect(found?.query.maxCost).toBe("5");
+    expect(seen).toEqual(["2.00", "5.00"]);
+    expect(found?.label).toBe("Raise max cost to $5.00");
+    expect(found?.query.maxCost).toBe("5.00");
   });
 
   it("returns nothing when every probe is empty, so the UI can show only Clear filters", async () => {

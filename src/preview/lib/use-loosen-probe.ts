@@ -5,6 +5,8 @@ import {
   firstReturningStep,
   loosenCandidates,
   loosenProbePath,
+  noteProbeRateLimit,
+  probeCoolingDown,
   probeFoundRows,
   probesAllowed,
   type LoosenSuggestion,
@@ -25,7 +27,7 @@ export function useLoosenProbe(opts: {
 
   useEffect(() => {
     setSuggestion(null);
-    if (!enabled || !query || !probesAllowed(typing)) return;
+    if (!enabled || !query || !probesAllowed(typing) || probeCoolingDown()) return;
     const candidates = loosenCandidates(query, text);
     if (candidates.length === 0) return;
     const controller = new AbortController();
@@ -38,7 +40,10 @@ export function useLoosenProbe(opts: {
             credentials: "include",
             signal: controller.signal,
           });
-          if (res.status === 429) return "stop";
+          if (res.status === 429) {
+            noteProbeRateLimit();
+            return "stop";
+          }
           if (!res.ok) return "miss";
           const body: unknown = await res.json();
           return probeFoundRows(body) ? "hit" : "miss";
