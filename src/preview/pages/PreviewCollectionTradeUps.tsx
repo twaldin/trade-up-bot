@@ -81,7 +81,9 @@ export function PreviewCollectionTradeUps() {
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           throttle={board.throttle}
+          retryReady={board.retryReady}
           failed={board.failed}
+          refreshing={board.refreshing}
           onRetry={board.retry}
           collection={title}
           heading={`${display} Trade-Ups`}

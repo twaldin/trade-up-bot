@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrateBoardCard } from "../../src/preview/lib/board-hydrate.js";
 import { SLOW_DOWN_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
-import { TradeUpCard } from "../../src/preview/pages/PreviewBoard.js";
+import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
 function bareCard() {
@@ -109,14 +109,16 @@ describe("board card hydration 429", () => {
     let root: Root | null = null;
     await act(async () => {
       root = createRoot(host);
-      root.render(createElement(TradeUpCard, {
-        tu: { ...bareCard(), hydrateThrottled: true },
-        expanded: false,
+      root.render(createElement(PreviewBoard, {
+        tradeUps: [{ ...bareCard(), hydrateThrottled: true }, { ...bareCard(), id: 43, hydrateThrottled: true }],
+        loading: false,
+        isFree: false,
+        expandedId: null,
         onExpand: () => {},
       }));
     });
     expect(host.textContent).toContain(SLOW_DOWN_COPY);
-    expect(host.querySelector("[role='status']")?.textContent).toBe(SLOW_DOWN_COPY);
+    expect(host.querySelectorAll("[role='status']")).toHaveLength(1);
     await act(async () => { root?.unmount(); });
     host.remove();
   });

@@ -616,7 +616,6 @@ export function TradeUpCard({
           <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
         </div>
       )}
-      {tu.hydrateThrottled && <BoardNotice notice="throttled" />}
 
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow
@@ -774,6 +773,7 @@ export function PreviewBoard({
   loadMore,
   exhausted,
   throttle,
+  retryReady = false,
   failed,
   refreshing = false,
   onRetry,
@@ -784,7 +784,7 @@ export function PreviewBoard({
   lockedSkin,
   embed = false,
 }: {
-  tradeUps: TradeUp[];
+  tradeUps: HydratedTradeUp[];
   loading: boolean;
   isFree: boolean;
   expandedId: number | null;
@@ -797,6 +797,8 @@ export function PreviewBoard({
   loadMore?: () => void;
   exhausted?: boolean;
   throttle?: string | null;
+  /** True once the automatic 429 retry has been spent. Shows the Retry button. */
+  retryReady?: boolean;
   failed?: boolean;
   /** Page-1 filter change still showing the previous rows. */
   refreshing?: boolean;
@@ -825,10 +827,11 @@ export function PreviewBoard({
   useEffect(() => () => window.clearTimeout(typingTimer.current), []);
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
+  const cardsThrottled = tradeUps.some((tu) => tu.hydrateThrottled === true);
   const notice = boardNotice({
     loading,
     rows: tradeUps.length,
-    throttled: Boolean(throttle),
+    throttled: Boolean(throttle) || cardsThrottled,
     failed: Boolean(failed),
     filtered,
   });
@@ -840,16 +843,18 @@ export function PreviewBoard({
     collection,
     skin: lockedSkin,
   });
+  const showRetry = notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled));
   const noticeNode = (
     <BoardNotice
       notice={notice}
       onClearFilters={clearFilters}
-      onRetry={onRetry}
+      onRetry={showRetry ? onRetry : undefined}
       suggestion={suggestion}
       onApplySuggestion={suggestion && onQuery ? () => {
         onQuery(suggestion.query);
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
+      detail={notice === "throttled" && tradeUps.length > 0 ? "Showing the previous results until it loads." : undefined}
     />
   );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
@@ -924,9 +929,9 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && notice !== "throttled" && <p className="preview-note">Loading trade-ups…</p>}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
-      {tradeUps.length === 0 && noticeNode}
+      {noticeNode}
       <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={refreshing || undefined}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
@@ -937,7 +942,6 @@ export function PreviewBoard({
           <span className="preview-note">Loading more trade-ups…</span>
         </div>
       )}
-      {tradeUps.length > 0 && noticeNode}
       {exhausted && tradeUps.length > 0 && !notice && (
         <p className="preview-note">That is every trade-up matching these filters.</p>
       )}
@@ -985,6 +989,7 @@ export function usePreviewTradeUps(options: {
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [rowsKey, setRowsKey] = useState<string | null>(null);
+  const [retryReady, setRetryReady] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
@@ -1014,6 +1019,17 @@ export function usePreviewTradeUps(options: {
   }, [key, settledKey]);
   const page = cursor.key === settledKey ? cursor.page : 1;
   const exhausted = endKey === settledKey;
+  const scope = `${collection ?? ""}\0${skin ?? ""}`;
+  const scopeRef = useRef(scope);
+  useEffect(() => {
+    if (scopeRef.current === scope) return;
+    scopeRef.current = scope;
+    setTradeUps([]);
+    setThrottle(null);
+    setRetryReady(false);
+    setBackoffUntil(0);
+    attemptRef.current = 0;
+  }, [scope]);
 
   // A filter change starts a new list at page 1. The cursor must be rewritten,
   // not only read as page 1 while its key mismatches: otherwise clearing back
@@ -1057,6 +1073,8 @@ export function usePreviewTradeUps(options: {
       emit: {
         rows: (next) => {
           if (!live) return;
+          attemptRef.current = 0;
+          setRetryReady(false);
           setTradeUps(next as HydratedTradeUp[]);
           if (page === 1) setRowsKey(settledKey);
         },
@@ -1070,8 +1088,12 @@ export function usePreviewTradeUps(options: {
         rateLimited: (retryAfterMs) => {
           if (!live) return;
           setThrottle(SLOW_DOWN_COPY);
-          // One automatic retry. A second 429 stays on the notice.
-          if (attemptRef.current >= 1) return;
+          // One automatic retry. A second 429 stays on the notice until Retry.
+          if (attemptRef.current >= 1) {
+            setRetryReady(true);
+            return;
+          }
+          setRetryReady(false);
           const next = applyRateLimit(attemptRef.current, Date.now(), { retryAfterMs });
           attemptRef.current = next.attempt;
           setBackoffUntil(next.backoffUntil);
@@ -1118,6 +1140,9 @@ export function usePreviewTradeUps(options: {
 
   const retry = useCallback(() => {
     setFailed(false);
+    setThrottle(null);
+    setRetryReady(false);
+    attemptRef.current = 0;
     setReloadTick((tick) => tick + 1);
   }, []);
 
@@ -1144,10 +1169,10 @@ export function usePreviewTradeUps(options: {
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
-      loadMore, exhausted, throttle,
+      loadMore, exhausted, throttle, retryReady,
       failed, retry, clearFilters,
     }),
-    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
+    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
       clearFilters, faceTick, total, totalProfitable],
   );
 }

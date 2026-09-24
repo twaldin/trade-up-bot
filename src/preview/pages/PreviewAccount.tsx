@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
+import type { TradeUp } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
 import { authHref } from "../../lib/ref.js";
 import { trackVerifyClick } from "../../lib/conversions.js";
@@ -9,7 +9,9 @@ import { formatDollars } from "../../utils/format.js";
 import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { hasProAccess } from "../lib/billing.js";
-import { hydrateOutcomesIfNeeded } from "../lib/skin-images.js";
+import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { SLOW_DOWN_COPY, parseRetryAfter } from "../lib/page-fetch.js";
+import { BoardNotice } from "../components/BoardNotice.js";
 import {
   ACCOUNT_EMPTY,
   ACCOUNT_TABS,
@@ -41,18 +43,6 @@ interface AuthUser {
 
 function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
-}
-
-async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {
-  if (tu.inputs.length > 0) return tu;
-  try {
-    const res = await fetch(`/api/trade-up/${tu.id}/inputs`, { credentials: "include" });
-    if (!res.ok) return tu;
-    const data = await res.json() as { inputs?: TradeUpInput[] };
-    return { ...tu, inputs: data.inputs ?? [] };
-  } catch {
-    return tu;
-  }
 }
 
 function skinNames(rows: TradeUp[]): string[] {
@@ -105,8 +95,13 @@ function FaceStack({ names }: { names: string[] }) {
 export function PreviewAccount() {
   const location = useLocation();
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const [sessionHold, setSessionHold] = useState<string | null>(null);
+  const [sessionSpent, setSessionSpent] = useState(false);
+  const [sessionRetry, setSessionRetry] = useState(0);
+  const sessionAttempts = useRef(0);
+  const claimAttempts = useRef(0);
   const [activeTab, setActiveTab] = useState<(typeof ACCOUNT_TABS)[number]["key"]>("claims");
-  const [claimTradeUps, setClaimTradeUps] = useState<TradeUp[]>([]);
+  const [claimTradeUps, setClaimTradeUps] = useState<HydratedTradeUp[]>([]);
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -153,17 +148,27 @@ export function PreviewAccount() {
         setEntries([]);
         return;
       }
+      if (res.status === 429) {
+        setNote(SLOW_DOWN_COPY);
+        if (claimAttempts.current < 1) {
+          claimAttempts.current += 1;
+          const wait = parseRetryAfter(res.headers.get("retry-after")) ?? 2000;
+          window.setTimeout(() => {
+            if (!signal?.aborted) void fetchData(signal);
+          }, wait);
+        }
+        return;
+      }
       if (!res.ok) {
         setNote("Could not load trade-ups.");
         return;
       }
+      claimAttempts.current = 0;
       const data = await res.json() as { trade_ups?: TradeUp[] | UserTradeUp[] };
       if (signal?.aborted) return;
       if (activeTab === "claims") {
         const rows = (data.trade_ups ?? []) as TradeUp[];
-        const hydrated = await Promise.all(rows.map(async (tu) => (
-          hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu))
-        )));
+        const hydrated = await Promise.all(rows.map((tu) => hydrateBoardCard(tu)));
         if (signal?.aborted) return;
         setClaimTradeUps(hydrated);
         const mine = new Set<number>();
@@ -215,11 +220,45 @@ export function PreviewAccount() {
   }, [activeTab, user]);
 
   useEffect(() => {
+    let live = true;
+    let timer = 0;
     fetch("/api/auth/me", { credentials: "include" })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data: AuthUser | null) => setUser(data?.steam_id ? data : null))
-      .catch(() => setUser(null));
-  }, []);
+      .then(async (res) => {
+        if (!live) return;
+        if (res.status === 429) {
+          setSessionHold(SLOW_DOWN_COPY);
+          if (sessionAttempts.current >= 1) {
+            setSessionSpent(true);
+            return;
+          }
+          sessionAttempts.current += 1;
+          const wait = parseRetryAfter(res.headers.get("retry-after")) ?? 2000;
+          timer = window.setTimeout(() => {
+            if (live) setSessionRetry((n) => n + 1);
+          }, wait);
+          return;
+        }
+        sessionAttempts.current = 0;
+        setSessionHold(null);
+        setSessionSpent(false);
+        const data = res.ok ? await res.json() as AuthUser : null;
+        setUser(data?.steam_id ? data : null);
+      })
+      .catch(() => {
+        if (live) setUser(null);
+      });
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [sessionRetry]);
+
+  const retrySession = () => {
+    sessionAttempts.current = 0;
+    setSessionSpent(false);
+    setSessionHold(null);
+    setSessionRetry((n) => n + 1);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -544,9 +583,20 @@ export function PreviewAccount() {
         )}
       </header>
 
-      {user === undefined && <p className="preview-note">Checking session…</p>}
+      {sessionHold && (
+        <div className="preview-notice" role="status">
+          <p className="preview-note">{sessionHold}</p>
+          {sessionSpent && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={retrySession}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
 
-      {user === null && (
+      {user === undefined && !sessionHold && <p className="preview-note">Checking session…</p>}
+
+      {user === null && !sessionHold && (
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Session</p>
@@ -608,11 +658,15 @@ export function PreviewAccount() {
       {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
       {user && loading && <p className="preview-note">Loading…</p>}
 
-      {user && !loading && activeTab === "claims" && claimTradeUps.length === 0 && (
+      {user && !loading && !note && activeTab === "claims" && claimTradeUps.length === 0 && (
         <div className="preview-empty">
           <p>{empty.title}</p>
           <p className="preview-note">{empty.sub}</p>
         </div>
+      )}
+
+      {user && activeTab === "claims" && claimTradeUps.some((tu) => tu.hydrateThrottled) && (
+        <BoardNotice notice="throttled" />
       )}
 
       {user && activeTab === "claims" && claimTradeUps.length > 0 && (

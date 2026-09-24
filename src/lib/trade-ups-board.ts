@@ -9,7 +9,7 @@ import type { TradeUp } from "../../shared/types.js";
 
 export const RATE_LIMIT_MESSAGE = "Too many requests, please try again later.";
 export const EMPTY_FILTER_COPY = "No trade-ups match these filters.";
-export const RATE_LIMIT_COPY = "Rate limited — retrying shortly.";
+export const RATE_LIMIT_COPY = "Slow down — try again in a moment.";
 export const LOAD_ERROR_COPY = "Couldn't load trade-ups. Retry.";
 
 const BACKOFF_MS = 2_000;

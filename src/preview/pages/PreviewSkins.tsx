@@ -332,7 +332,7 @@ export function PreviewSkinsPage() {
         {rows.map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
       </div>
       {loading && rows.length === 0 && <p className="preview-note">Loading skins…</p>}
-      {!loading && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
+      {!loading && !notice && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
 
       {!exhausted && !notice && (
         <div className="preview-sentinel" ref={sentinel}>
@@ -616,7 +616,9 @@ export function PreviewSkinPage() {
             loadMore={board.loadMore}
             exhausted={board.exhausted}
             throttle={board.throttle}
+            retryReady={board.retryReady}
             failed={board.failed}
+            refreshing={board.refreshing}
             onRetry={board.retry}
             heading="Trade-ups using this skin"
             lede="Ranked the same way as the board, filtered to this skin as an input or an output."
@@ -922,14 +924,14 @@ export function PreviewCollectionPage() {
     if (skinsStatus === "failed") return "Couldn't load this collection's skins.";
     return "Loading skins…";
   })();
-  const heading = title ?? (waitingOnIndex && index.throttled ? SLOW_DOWN_COPY : unknown ? "Collection not found" : "Loading collection…");
+  const heading = title ?? (unknown ? "Collection not found" : "Loading collection…");
 
   // Every skin in the collection, not a six-tile strip.
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
-  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
-  const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? board.throttle : `${board.tradeUps.length} trade-ups`;
+  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6, enabled: Boolean(title) });
+  const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
 
   return (
     <div className="preview-page">
@@ -986,7 +988,9 @@ export function PreviewCollectionPage() {
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           throttle={board.throttle}
+          retryReady={board.retryReady}
           failed={board.failed}
+          refreshing={board.refreshing}
           onRetry={board.retry}
           collection={title}
           heading="Trade-ups from this collection"

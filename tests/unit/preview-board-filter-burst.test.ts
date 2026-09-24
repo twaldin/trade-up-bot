@@ -52,6 +52,7 @@ function BoardHarness() {
     query: api.query,
     onQuery: api.onQuery,
     throttle: api.throttle,
+    retryReady: api.retryReady,
     failed: api.failed,
     onRetry: api.retry,
     onClearFilters: api.clearFilters,
@@ -119,5 +120,34 @@ describe("board filter bursts", () => {
     await act(async () => { await Promise.resolve(); });
     expect(host.textContent).toContain(SLOW_DOWN_COPY);
     expect(host.textContent).not.toContain("Loading trade-ups…");
+    expect(host.textContent).not.toContain("Retry");
+  });
+
+  it("shows Retry after the automatic retry is also limited, then auto-retries a later 429", async () => {
+    let lists = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(String(url));
+      if (!String(url).includes("/api/trade-ups?")) return listBody(0);
+      lists += 1;
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: (name: string) => (name.toLowerCase() === "retry-after" ? "0" : null) },
+        json: async () => { throw new Error("html"); },
+      };
+    }));
+    await mount(createElement(BoardHarness));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    expect(lists, "list requests before the Retry button").toBe(2);
+    expect(host.textContent).toContain("Retry");
+    expect(host.textContent).not.toContain("Loading trade-ups…");
+
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Retry"));
+    await act(async () => { button?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const afterClick = lists;
+    expect(afterClick).toBe(3);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    expect(lists).toBeGreaterThan(afterClick);
   });
 });

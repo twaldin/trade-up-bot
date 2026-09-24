@@ -42,6 +42,7 @@ function BoardRoute() {
       loadMore={state.loadMore}
       exhausted={state.exhausted}
       throttle={state.throttle}
+      retryReady={state.retryReady}
       failed={state.failed}
       refreshing={state.refreshing}
       onRetry={state.retry}

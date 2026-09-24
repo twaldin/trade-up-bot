@@ -13,16 +13,29 @@ export function BoardNotice({
   onRetry,
   suggestion,
   onApplySuggestion,
+  detail,
 }: {
   notice: BoardNoticeKind | null;
   onClearFilters?: () => void;
   onRetry?: () => void;
   suggestion?: { label: string } | null;
   onApplySuggestion?: () => void;
+  /** Extra sentence when the rows on screen are from the previous request. */
+  detail?: string;
 }) {
   switch (notice) {
     case "throttled":
-      return <p className="preview-note" role="status">{SLOW_DOWN_COPY}</p>;
+      return (
+        <div className="preview-notice" role="status">
+          <p className="preview-note">{detail ? `${SLOW_DOWN_COPY} ${detail}` : SLOW_DOWN_COPY}</p>
+          {onRetry && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
+              <RotateCw size={11} aria-hidden />
+              Retry
+            </button>
+          )}
+        </div>
+      );
     case "error":
       return (
         <div className="preview-notice" role="alert">
