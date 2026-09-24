@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PreviewSeo } from "../components/PreviewSeo.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
 import { seoPage } from "../lib/seo-pages.js";
 
 const seo = seoPage("/pricing");
@@ -35,14 +37,6 @@ const subscribe = async (plan: string) => {
   });
   const data = await res.json() as { url?: string };
   if (data.url) window.location.href = data.url;
-};
-
-type BillingInterval = "monthly" | "yearly" | "lifetime";
-
-const PLAN_FOR: Record<BillingInterval, string> = {
-  monthly: "pro",
-  yearly: "pro-yearly",
-  lifetime: "pro-lifetime",
 };
 
 const COMPARE = [
@@ -96,6 +90,7 @@ function Cell({ value }: { value: string | boolean }) {
 export function PreviewPricing() {
   const [user, setUser] = useState<{ tier: string; lifetime?: boolean } | null>(null);
   const [billing, setBilling] = useState<BillingInterval>("monthly");
+  const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -151,24 +146,24 @@ export function PreviewPricing() {
 
         <section className="preview-panel preview-plan preview-plan--pro">
           <p className="o-kicker">Pro</p>
-          {billing === "monthly" && <p className="preview-plan__price">$6.99<span>/mo</span></p>}
+          {billing === "monthly" && <p className="preview-plan__price">{PRO_PRICE.monthly.amount}<span>{PRO_PRICE.monthly.unit}</span></p>}
           {billing === "yearly" && (
-            <p className="preview-plan__price">$5<span>/mo</span><em>billed $59.99/year</em></p>
+            <p className="preview-plan__price">{PRO_PRICE.yearly.amount}<span>{PRO_PRICE.yearly.unit}</span><em>{PRO_PRICE.yearly.note}</em></p>
           )}
-          {billing === "lifetime" && <p className="preview-plan__price">$74.99<span> one-time</span></p>}
+          {billing === "lifetime" && <p className="preview-plan__price">{PRO_PRICE.lifetime.amount}<span>{PRO_PRICE.lifetime.unit}</span></p>}
           <p className="preview-note">Real-time data, claim system, and full analytics.</p>
           <ul className="preview-plan__list">
             <li><IconCheck /> Everything in Free</li>
-            <li><IconCheck /> Real-time data (no delay)</li>
-            <li><IconCheck /> Claim system (30 min lock)</li>
-            <li><IconCheck /> Up to 5 active claims</li>
-            <li><IconCheck /> Verify availability (20/hr)</li>
-            <li><IconCheck /> Claims (10/hr)</li>
+            {PRO_FEATURES.map((feature) => (
+              <li key={feature}><IconCheck /> {feature}</li>
+            ))}
           </ul>
           <button
             type="button"
             className="preview-btn preview-btn--lime preview-btn--block"
-            onClick={() => user ? void subscribe(PLAN_FOR[billing]) : login()}
+            onClick={(event) => user
+              ? void subscribe(PLAN_FOR[billing])
+              : interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget)}
           >
             {user?.tier === "pro" ? "Current plan" : "Go Pro"}
           </button>
@@ -245,6 +240,8 @@ export function PreviewPricing() {
         <Link className="preview-btn preview-btn--lime" to="/trade-ups">Find Real Tradeups -&gt;</Link>
         <Link className="preview-btn" to="/features">Compare features</Link>
       </div>
+
+      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }

@@ -22,6 +22,8 @@ const shell = read("../../src/preview/PreviewShell.tsx");
 const css = read("../../src/preview/preview.css");
 const landing = read("../../src/preview/pages/PreviewLanding.tsx");
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
+// The Pro card reads its price strings from the shared plan module.
+const pricingPlans = pricing + read("../../src/preview/lib/pro-pricing.ts");
 const features = read("../../src/preview/pages/PreviewFeatures.tsx");
 const faq = read("../../src/preview/pages/PreviewFaq.tsx");
 const blog = read("../../src/preview/pages/PreviewBlog.tsx");
@@ -157,9 +159,9 @@ describe("marketing pages keep unique SEO and landing chrome, not console cards 
       expect(source, name).not.toMatch(/noindex/);
     }
     expect(pricing).toContain("$0");
-    expect(pricing).toContain("$6.99");
-    expect(pricing).toContain("$59.99");
-    expect(pricing).toContain("$74.99");
+    expect(pricingPlans).toContain("$6.99");
+    expect(pricingPlans).toContain("$59.99");
+    expect(pricingPlans).toContain("$74.99");
     expect(pricing).toContain("/api/subscribe");
     expect(features).toContain("TradeUpBot Features");
     expect(faq).toContain("CS2 Trade-Up FAQ");

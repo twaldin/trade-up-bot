@@ -4,9 +4,9 @@ import type { TradeUp } from "../../../shared/types.js";
 import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
-import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
 import {
   MY_TRADE_UPS_API,
@@ -44,6 +44,7 @@ export function PreviewShare() {
   const [verifyResult, setVerifyResult] = useState<VerifyPayload | undefined>(undefined);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -254,14 +255,13 @@ export function PreviewShare() {
       {tu && panel === "sign-in" && (
         <section className="preview-panel">
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
-          <a
+          <button
+            type="button"
             className="preview-btn preview-btn--lime"
-            href={authHref(window.location.pathname)}
-            onClick={() => trackEvent("sign_up_start", { location: "share_verify" })}
-            rel="nofollow"
+            onClick={(event) => interstitial.open({ surface: "share_verify" }, event.currentTarget)}
           >
-            Sign in with Steam
-          </a>
+            Verify or claim this trade-up
+          </button>
         </section>
       )}
 
@@ -363,6 +363,8 @@ export function PreviewShare() {
       {tu && (
         <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
       )}
+
+      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }

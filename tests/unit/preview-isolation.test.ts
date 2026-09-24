@@ -203,7 +203,11 @@ describe("console cutover", () => {
       "components/PreviewFilters.tsx",
       "components/PreviewTable.tsx",
       "components/PriceScatter.tsx",
+      "components/SteamInterstitial.tsx",
       "lib/seo-pages.ts",
+      "lib/pro-pricing.ts",
+      "lib/steam-interstitial.ts",
+      "lib/auth-state.ts",
     ];
     for (const file of files) {
       const source = readFileSync(resolve(testDir, `../../src/preview/${file}`), "utf8");

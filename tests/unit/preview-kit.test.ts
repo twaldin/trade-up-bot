@@ -308,6 +308,7 @@ describe("preview craft bar", () => {
       "components/PreviewFilters.tsx",
       "components/PreviewTable.tsx",
       "components/PriceScatter.tsx",
+      "components/SteamInterstitial.tsx",
       "lib/page-fetch.ts",
     ];
     for (const file of surfaces) {

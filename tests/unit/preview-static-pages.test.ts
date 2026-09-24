@@ -16,6 +16,8 @@ function staticPage(path: string) {
 }
 
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
+// The Pro card reads its price strings from the shared plan module.
+const pricingPlans = pricing + read("../../src/preview/lib/pro-pricing.ts");
 const faq = read("../../src/preview/pages/PreviewFaq.tsx");
 const features = read("../../src/preview/pages/PreviewFeatures.tsx");
 const blog = read("../../src/preview/pages/PreviewBlog.tsx");
@@ -65,16 +67,16 @@ describe("leftover marketing pages join the kit shell", () => {
 
   it("does not invent prices, testimonials, or volume on pricing", () => {
     expect(pricing).toContain("$0");
-    expect(pricing).toContain("$6.99");
-    expect(pricing).toContain("$59.99");
-    expect(pricing).toContain("$74.99");
+    expect(pricingPlans).toContain("$6.99");
+    expect(pricingPlans).toContain("$59.99");
+    expect(pricingPlans).toContain("$74.99");
     expect(pricing).toContain("/api/subscribe");
     expect(pricing).toContain('JSON.stringify({ plan })');
-    expect(pricing).toContain("pro-yearly");
-    expect(pricing).toContain("pro-lifetime");
+    expect(pricingPlans).toContain("pro-yearly");
+    expect(pricingPlans).toContain("pro-lifetime");
     expect(pricing).toContain("Go Pro");
     expect(pricing).not.toMatch(/testimonial/i);
-    expect(pricing).not.toContain("$15");
+    expect(pricingPlans).not.toContain("$15");
   });
 
   it("keeps FAQ, features, terms, and privacy claims from the existing pages", () => {
