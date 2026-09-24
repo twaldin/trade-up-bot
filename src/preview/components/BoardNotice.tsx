@@ -11,10 +11,14 @@ export function BoardNotice({
   notice,
   onClearFilters,
   onRetry,
+  suggestion,
+  onApplySuggestion,
 }: {
   notice: BoardNoticeKind | null;
   onClearFilters?: () => void;
   onRetry?: () => void;
+  suggestion?: { label: string } | null;
+  onApplySuggestion?: () => void;
 }) {
   switch (notice) {
     case "throttled":
@@ -35,6 +39,11 @@ export function BoardNotice({
       return (
         <div className="preview-notice" role="status">
           <p className="preview-note">{FILTERED_EMPTY_COPY}</p>
+          {suggestion && onApplySuggestion && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={onApplySuggestion}>
+              {suggestion.label}
+            </button>
+          )}
           {onClearFilters && (
             <button type="button" className="preview-btn preview-btn--quiet" onClick={onClearFilters}>
               <X size={11} aria-hidden />

@@ -1708,6 +1708,10 @@
   text-overflow: ellipsis;
 }
 
+.preview-pl-help {
+  margin-top: 6px;
+}
+
 .preview-viz-grid {
   display: grid;
   grid-template-columns: 1fr;

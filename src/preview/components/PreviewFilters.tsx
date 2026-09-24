@@ -35,7 +35,7 @@ export const BOARD_SORTS: [string, string][] = [
   ["created", "Newest"],
 ];
 
-const TYPES = [
+export const BOARD_TYPES = [
   "consumer_industrial",
   "industrial_milspec",
   "milspec_restricted",
@@ -101,7 +101,7 @@ export function PreviewFilters({
         <span>Tier</span>
         <select className="preview-field__select" value={query.type} onChange={(event) => set("type", event.target.value)}>
           <option value="">All</option>
-          {TYPES.map((type) => (
+          {BOARD_TYPES.map((type) => (
             <option key={type} value={type}>{rarityLabel(type)}</option>
           ))}
         </select>

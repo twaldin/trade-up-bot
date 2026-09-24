@@ -48,9 +48,12 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
+import { EXPECTED_PL_HELP, ExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice } from "../lib/board-notice.js";
+import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
+import { loosenSuggestion } from "../lib/empty-suggestions.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
-import { chipsToBoardParams, type ParsedQuery } from "../lib/query-parse.js";
+import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
   SLOW_DOWN_COPY,
@@ -642,7 +645,7 @@ export function TradeUpCard({
         <p className="preview-cardline">
           Cost <b>{formatDollars(inputCostCents(tu))}</b>
           <i />
-          <b className={signClass(tu.profit_cents)}>
+          <b className={signClass(tu.profit_cents)} title={EXPECTED_PL_HELP}>
             {signedDollars(tu.profit_cents)} / {tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}%
           </b>
           {chance !== null && (
@@ -696,6 +699,7 @@ export function TradeUpCard({
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note={NOTE_WORST_OUTCOMES} tone={tail === null ? "" : signClass(tail)} />
                 </div>
+                <ExpectedPlHelp />
                 <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">
                   <div className="preview-subpanel">
@@ -811,7 +815,21 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const noticeNode = <BoardNotice notice={notice} onClearFilters={clearFilters} onRetry={onRetry} />;
+  const suggestion = notice === "filtered-empty" && query
+    ? loosenSuggestion(query, search ?? "")
+    : null;
+  const noticeNode = (
+    <BoardNotice
+      notice={notice}
+      onClearFilters={clearFilters}
+      onRetry={onRetry}
+      suggestion={suggestion}
+      onApplySuggestion={suggestion && onQuery ? () => {
+        onQuery(suggestion.query);
+        if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
+      } : undefined}
+    />
+  );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
   const ordered = expandedIndex >= 0 ? reorderForExpanded(tradeUps, expandedIndex, cols) : tradeUps;
 
@@ -943,9 +961,9 @@ export function usePreviewTradeUps(options: {
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [query, setQuery] = useState<BoardQuery>(DEFAULT_QUERY);
-  const [search, setSearch] = useState("");
-  const [parsed, setParsed] = useState<ParsedQuery>({ chips: [], rest: [] });
+  const [query, setQuery] = useState<BoardQuery>(() => readBoardLocation(typeof window === "undefined" ? null : window.location).query);
+  const [search, setSearch] = useState(() => readBoardLocation(typeof window === "undefined" ? null : window.location).text);
+  const [parsed, setParsed] = useState<ParsedQuery>(() => parseQuery(readBoardLocation(typeof window === "undefined" ? null : window.location).text));
   // Page and end-of-list belong to one filter key, so a new key reads page 1 on
   // the same render and never requests the previous filter's page number.
   const [cursor, setCursor] = useState({ key: "", page: 1 });
@@ -960,6 +978,11 @@ export function usePreviewTradeUps(options: {
   const attemptRef = useRef(0);
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
+
+  useEffect(() => {
+    if (collection || skin || typeof window === "undefined") return;
+    replaceBoardUrl({ query, text: search }, window.location, window.history);
+  }, [query, search, collection, skin]);
 
   const semantic = useMemo(() => chipsToBoardParams(parsed.chips, parsed.rest), [parsed]);
   const params = new URLSearchParams(boardQueryString(query, perPage));
