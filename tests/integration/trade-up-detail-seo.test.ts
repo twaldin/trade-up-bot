@@ -146,6 +146,6 @@ describe("GET /trade-ups/:id crawler HTML", () => {
 
   it("renders the shortened pair when two collections do not fit", async () => {
     const page = await rendered("milspec");
-    expect(page.title).toBe("Mil-Spec to Restricted: Prisma 2 + Fracture | TradeUpBot");
+    expect(page.title).toBe("Mil-Spec to Restricted: Fracture + Prisma 2 | TradeUpBot");
   });
 });

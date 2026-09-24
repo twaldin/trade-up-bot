@@ -58,7 +58,7 @@ describe("tradeUpDocumentTitle", () => {
     const title = tradeUpDocumentTitle("milspec_restricted", [
       { skin_name: "P250 | Sand Dune", probability: 0.2 },
     ], ["The Prisma 2 Collection", "The Fracture Collection"]);
-    expect(title).toBe("Mil-Spec to Restricted: Prisma 2 + Fracture | TradeUpBot");
+    expect(title).toBe("Mil-Spec to Restricted: Fracture + Prisma 2 | TradeUpBot");
     expect(title.length).toBeLessThanOrEqual(60);
   });
 
@@ -66,7 +66,7 @@ describe("tradeUpDocumentTitle", () => {
     const title = tradeUpDocumentTitle("restricted_classified", [], [
       "Recoil", "Fracture", "Prisma",
     ]);
-    expect(title).toBe("Restricted to Classified: Recoil + 2 more | TradeUpBot");
+    expect(title).toBe("Restricted to Classified: Fracture + 2 more | TradeUpBot");
   });
 
   it("falls back to the first collection, then the pair alone, and stays within 60 characters", () => {
@@ -94,19 +94,26 @@ describe("tradeUpDocumentTitle", () => {
 
 describe("tradeUp H1, description, and og:title", () => {
   it("builds the H1 from the pair and keeps the percentage out of titles", () => {
-    expect(tradeUpH1("classified_covert", 4120, 12.3, [])).toBe(
-      "Classified to Covert Trade-Up — $41.20 Expected P/L (12.3% ROI)",
+    expect(tradeUpH1("classified_covert", 4120, 16.5, [])).toBe(
+      "Classified to Covert Trade-Up — +$41.20 Expected P/L (16.5% ROI)",
+    );
+    expect(tradeUpH1("covert_knife", -1234, -1.37, [{ skin_name: "★ Butterfly Knife | Fade", probability: 1 }])).toBe(
+      "Covert to Knife Trade-Up — −$12.34 Expected P/L (−1.4% ROI)",
     );
     const og = tradeUpOgTitle("classified_covert", 4120);
     expect(og).toBe("Classified to Covert: +$41.20 Expected P/L | TradeUpBot");
+    expect(tradeUpOgTitle("covert_knife", -1234, [{ skin_name: "★ Butterfly Knife | Fade", probability: 1 }])).toBe(
+      "Covert to Knife Trade-Up: −$12.34 Expected P/L | TradeUpBot",
+    );
     expect(og.length).toBeLessThanOrEqual(60);
     expect(og).not.toContain("%");
+    expect(tradeUpH1("covert_knife", -1234, -1.4)).not.toContain("-$");
+    expect(tradeUpOgTitle("classified_covert", -500)).not.toContain("-$");
+    expect(tradeUpDocumentTitle("classified_covert", [], ["Recoil"])).not.toContain("-$");
   });
 
-  it("caps a huge og:title at 60 characters", () => {
-    const og = tradeUpOgTitle("classified_covert", -1e17);
-    expect(og.length).toBe(60);
-    expect(og.startsWith("Classified to Covert")).toBe(true);
+  it("keeps the brand on a huge og:title", () => {
+    expect(tradeUpOgTitle("classified_covert", -1e17)).toBe("Classified to Covert Trade-Up | TradeUpBot");
   });
 
   it("puts the percentage only in the description, with the cost and inputs", () => {
@@ -118,7 +125,7 @@ describe("tradeUp H1, description, and og:title", () => {
       inputNames: ["★ AK-47 | Redline", "AWP | Graphite"],
     });
     expect(description).toBe(
-      "-$12.34 expected P/L after fees, >99% of outcomes above cost, $50.00 cost. Inputs: AK-47 Redline, AWP Graphite.",
+      "−$12.34 expected P/L after fees, >99% of outcomes above cost, $50.00 cost. Inputs: AK-47 Redline, AWP Graphite.",
     );
   });
 });

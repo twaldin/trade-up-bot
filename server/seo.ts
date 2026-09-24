@@ -460,7 +460,7 @@ export function renderTradeUpDetail(
   const e = escapeHtml;
   const cost = formatDollars(tradeUp.total_cost_cents);
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
-const typeLabel = detailTypeLabel(tradeUp.type);
+const pair = tradeUpPair(tradeUp.type, outcomes);
   const hideInputCommercials = opts?.hideInputCommercials === true;
   const heading = tradeUpH1(tradeUp.type, tradeUp.profit_cents, tradeUp.roi_percentage, outcomes);
 
@@ -485,7 +485,7 @@ const typeLabel = detailTypeLabel(tradeUp.type);
     : `inputs from ${e(collections.join(", "))}`;
 
   return `<h1>${e(heading)}</h1>
-<p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
+<p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(pair)} contract. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
 
 <h2>Inputs</h2>
 <p>This trade-up contract uses 10 input skins of the same rarity. The 10 inputs are:</p>

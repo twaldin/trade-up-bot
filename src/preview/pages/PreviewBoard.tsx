@@ -29,6 +29,7 @@ import {
   payoffPoints,
   percentileProfitCents,
   previewSkinHref,
+  rarityLabel,
   reorderForExpanded,
   signClass,
   splitSkinName,
@@ -611,7 +612,7 @@ export function TradeUpCard({
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow
           inputLabel={`${inputRarityLabel(tu.type)} inputs`}
-          outputLabel={`${tradeUpPair(tu.type ?? "", tu.outcomes)} outputs`}
+          outputLabel={`${rarityLabel(tu.type)} outputs`}
           inputColor={inColor}
           outputColor={outColor}
           inputs={inputs.map((group) => (

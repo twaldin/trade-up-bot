@@ -19,11 +19,18 @@ const GLOVE_NAME = /Gloves|Hand Wraps/i;
 export interface TradeUpOutcomeName {
   skin_name: string;
   probability: number;
+  estimated_price_cents?: number;
 }
 
 export function signedExpectedPl(profitCents: number): string {
   if (profitCents > 0) return `+${formatDollars(profitCents)}`;
-  return formatDollars(profitCents);
+  if (profitCents < 0) return `\u2212${formatDollars(-profitCents)}`;
+  return formatDollars(0);
+}
+
+export function signedPercent(value: number): string {
+  const v = Math.round(value * 10) / 10;
+  return v < 0 ? `\u2212${Math.abs(v).toFixed(1)}` : v.toFixed(1);
 }
 
 export function cleanListingName(name: string): string {
@@ -48,15 +55,15 @@ export function tradeUpPair(type: string, outcomes: { skin_name: string }[] = []
 }
 
 function uniqueCollections(collections: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
+  const counts = new Map<string, number>();
   for (const name of collections) {
     const clean = cleanCollectionName(name);
-    if (!clean || seen.has(clean)) continue;
-    seen.add(clean);
-    out.push(clean);
+    if (!clean) continue;
+    counts.set(clean, (counts.get(clean) ?? 0) + 1);
   }
-  return out;
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
 }
 
 /** 'A', 'A + B', or 'A + N more'. */
@@ -71,7 +78,14 @@ export function collectionDescriptor(collections: string[]): string {
 function likeliestOutcome(outcomes: TradeUpOutcomeName[]): TradeUpOutcomeName | undefined {
   let best: TradeUpOutcomeName | undefined;
   for (const outcome of outcomes) {
-    if (!best || outcome.probability > best.probability) best = outcome;
+    if (!best || outcome.probability > best.probability) {
+      best = outcome;
+      continue;
+    }
+    if (outcome.probability !== best.probability) continue;
+    const price = outcome.estimated_price_cents ?? Number.POSITIVE_INFINITY;
+    const bestPrice = best.estimated_price_cents ?? Number.POSITIVE_INFINITY;
+    if (price < bestPrice) best = outcome;
   }
   return best;
 }
@@ -118,12 +132,13 @@ export function tradeUpDocumentTitle(
   ]);
 }
 
-export function tradeUpOgTitle(type: string, profitCents: number, outcomes: { skin_name: string }[] = []): string {
+export function tradeUpOgTitle(type: string, profitCents: number, outcomes: TradeUpOutcomeName[] = []): string {
   const pair = tradeUpPair(type, outcomes);
   const money = signedExpectedPl(profitCents);
   return fitTitle([
     `${pair} Trade-Up: ${money} Expected P/L${BRAND}`,
     `${pair}: ${money} Expected P/L${BRAND}`,
+    `${pair} Trade-Up${BRAND}`,
   ]);
 }
 
@@ -131,11 +146,11 @@ export function tradeUpH1(
   type: string,
   profitCents: number,
   roiPercentage: number | null,
-  outcomes: { skin_name: string }[] = [],
+  outcomes: TradeUpOutcomeName[] = [],
 ): string {
   const pair = tradeUpPair(type, outcomes);
-  const profit = formatDollars(profitCents);
-  const roi = roiPercentage?.toFixed(1) ?? "0";
+  const profit = signedExpectedPl(profitCents);
+  const roi = signedPercent(roiPercentage ?? 0);
   return `${pair} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`;
 }
 
