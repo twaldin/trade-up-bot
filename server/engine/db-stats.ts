@@ -5,7 +5,92 @@
 import pg from "pg";
 import { withRetry, isTransientDbError, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { lookupOutputPrice, buildPriceCache, warmOutputPriceCaches, type OutputPriceResult } from "./pricing.js";
+import { storedInputCost } from "./fees.js";
 import type { TradeUpOutcome } from "../../shared/types.js";
+
+type Queryable = pg.Pool | pg.PoolClient;
+
+export interface RecomputedTradeUpCost {
+  total_cost_cents: number;
+  expected_value_cents: number;
+  profit_cents: number;
+  roi_percentage: number;
+  chance_to_profit: number;
+  best_case_cents: number;
+  worst_case_cents: number;
+}
+
+/** Cost-side stats for a trade-up from its (fee-inclusive) input cost and stored EV/outcomes. */
+export function computeTradeUpCostStats(
+  cost: number,
+  ev: number,
+  outcomes: { estimated_price_cents: number; probability: number }[],
+): Omit<RecomputedTradeUpCost, "expected_value_cents" | "total_cost_cents"> {
+  const profit = ev - cost;
+  const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
+  const chance = computeChanceToProfit(outcomes, cost);
+  const { bestCase, worstCase } = computeBestWorstCase(outcomes, cost);
+  return { profit_cents: profit, roi_percentage: roi, chance_to_profit: chance, best_case_cents: bestCase, worst_case_cents: worstCase };
+}
+
+/**
+ * Recompute total_cost = Σ trade_up_inputs.price_cents and every cost-derived
+ * column (profit, roi, chance, best, worst) from the stored EV/outcomes, so the
+ * score trigger always sees consistent inputs. Returns null if the trade-up is gone.
+ */
+export async function recomputeTradeUpCost(db: Queryable, tradeUpId: number): Promise<RecomputedTradeUpCost | null> {
+  const { rows } = await db.query(
+    `SELECT tu.expected_value_cents, tu.outcomes_json,
+            (SELECT SUM(price_cents) FROM trade_up_inputs WHERE trade_up_id = tu.id) AS total
+     FROM trade_ups tu WHERE tu.id = $1`,
+    [tradeUpId]
+  );
+  const tu = rows[0] as { expected_value_cents: number; outcomes_json: string | null; total: string | null } | undefined;
+  if (!tu || tu.total === null) return null;
+
+  const cost = parseInt(tu.total, 10);
+  const ev = tu.expected_value_cents;
+  const outcomes = JSON.parse(tu.outcomes_json || "[]") as { estimated_price_cents: number; probability: number }[];
+  const stats = computeTradeUpCostStats(cost, ev, outcomes);
+
+  await db.query(
+    `UPDATE trade_ups SET total_cost_cents = $1, profit_cents = $2, roi_percentage = $3,
+       chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6
+     WHERE id = $7`,
+    [cost, stats.profit_cents, stats.roi_percentage, stats.chance_to_profit, stats.best_case_cents, stats.worst_case_cents, tradeUpId]
+  );
+  return { total_cost_cents: cost, expected_value_cents: ev, ...stats };
+}
+
+/**
+ * Re-derive stored input costs for every trade-up using `listingId` from its
+ * current raw listing price. Only inputs whose stored cost differs from
+ * storedInputCost(raw, input source) are written; only those trade-ups are recomputed.
+ */
+export async function applyListingPriceToInputs(
+  db: Queryable,
+  listingId: string,
+  rawPriceCents: number,
+): Promise<{ inputsUpdated: number; tradeUpsUpdated: number }> {
+  const { rows } = await db.query(
+    "SELECT trade_up_id, source, price_cents FROM trade_up_inputs WHERE listing_id = $1",
+    [listingId]
+  );
+  let inputsUpdated = 0;
+  const tradeUpIds = new Set<number>();
+  for (const r of rows as { trade_up_id: number; source: string | null; price_cents: number }[]) {
+    const expected = storedInputCost(rawPriceCents, r.source);
+    if (expected === r.price_cents) continue;
+    await db.query(
+      "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
+      [expected, r.trade_up_id, listingId]
+    );
+    inputsUpdated++;
+    tradeUpIds.add(r.trade_up_id);
+  }
+  for (const id of tradeUpIds) await recomputeTradeUpCost(db, id);
+  return { inputsUpdated, tradeUpsUpdated: tradeUpIds.size };
+}
 
 export async function updateCollectionScores(pool: pg.Pool) {
   const { rows: scores } = await pool.query(`
@@ -70,9 +155,10 @@ export async function updateCollectionScores(pool: pg.Pool) {
 
 /**
  * Batch recalc trade-up stats when input listing prices have changed.
- * Finds trade-ups where trade_up_inputs.price_cents differs from the current
- * listings.price_cents, updates the input prices, and recalculates
- * profit/roi/chance/best/worst from the stored outcomes_json.
+ * Finds inputs whose stored (fee-inclusive) price differs from
+ * storedInputCost(listings.price_cents, input source), writes that fee-inclusive
+ * price, and recalculates profit/roi/chance/best/worst from the stored outcomes_json.
+ * Stripped inputs (stored = raw) therefore heal the next time their listing is flagged.
  * Lightweight — no float calculations or outcome re-evaluation needed.
  *
  * Optimization: when `sinceTimestamp` is provided, only checks listings whose
@@ -94,20 +180,30 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   if (changedListings.length === 0) return { updated: 0 };
   const changedIds = changedListings.map((r: { id: string }) => r.id);
   const ph = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
-  const { rows: staleInputRows } = await pool.query(`
-    SELECT DISTINCT tui.trade_up_id
+  const { rows: inputRows } = await pool.query(`
+    SELECT tui.trade_up_id, tui.listing_id, tui.source, tui.price_cents AS stored, l.price_cents AS raw
     FROM trade_up_inputs tui
     JOIN listings l ON tui.listing_id = l.id
-    WHERE tui.listing_id IN (${ph}) AND tui.price_cents != l.price_cents
+    WHERE tui.listing_id IN (${ph})
   `, changedIds);
-  if (staleInputRows.length === 0) {
+
+  // Fee-to-fee comparison: a flagged listing whose raw price is unchanged must be a no-op.
+  const driftByTradeUp = new Map<number, { listing_id: string; price_cents: number }[]>();
+  for (const r of inputRows as { trade_up_id: number; listing_id: string; source: string | null; stored: number; raw: number }[]) {
+    const expected = storedInputCost(r.raw, r.source);
+    if (expected === r.stored) continue;
+    const list = driftByTradeUp.get(r.trade_up_id) ?? [];
+    list.push({ listing_id: r.listing_id, price_cents: expected });
+    driftByTradeUp.set(r.trade_up_id, list);
+  }
+  if (driftByTradeUp.size === 0) {
     // No actual price mismatches in this batch — clear their flags
     const clearPh = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
     await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
     return { updated: 0 };
   }
 
-  const tuIds = staleInputRows.map(r => r.trade_up_id);
+  const tuIds = [...driftByTradeUp.keys()];
 
   let updated = 0;
   const BATCH = 500;
@@ -115,43 +211,20 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     const batch = tuIds.slice(i, i + BATCH);
     await withRetry(async () => {
       const client = await pool.connect();
+      let batchUpdated = 0;
       try {
         await client.query('BEGIN');
         for (const tuId of batch) {
-          // Update input prices
-          await client.query(`
-            UPDATE trade_up_inputs SET price_cents = (
-              SELECT l.price_cents FROM listings l WHERE l.id = trade_up_inputs.listing_id
-            ) WHERE trade_up_id = $1 AND listing_id IN (
-              SELECT l.id FROM listings l
-              JOIN trade_up_inputs tui2 ON tui2.listing_id = l.id
-              WHERE tui2.trade_up_id = $1 AND tui2.price_cents != l.price_cents
-            )
-          `, [tuId]);
-
-          // Recalculate stats
-          const { rows: costRows } = await client.query("SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = $1", [tuId]);
-          const cost = parseInt(costRows[0].total, 10);
-          const { rows: tuRows } = await client.query("SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = $1", [tuId]);
-          const tu = tuRows[0] as { expected_value_cents: number; outcomes_json: string | null } | undefined;
-          if (!tu) continue;
-
-          const ev = tu.expected_value_cents;
-          const profit = ev - cost;
-          const roi = cost > 0 ? Math.round((profit / cost) * 10000) / 100 : 0;
-
-          const outcomes = JSON.parse(tu.outcomes_json || "[]") as { estimated_price_cents: number; probability: number }[];
-          const chance = computeChanceToProfit(outcomes, cost);
-          const { bestCase: best, worstCase: worst } = computeBestWorstCase(outcomes, cost);
-
-          await client.query(`
-            UPDATE trade_ups SET total_cost_cents = $1, profit_cents = $2, roi_percentage = $3,
-              chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6
-            WHERE id = $7
-          `, [cost, profit, roi, chance, best, worst, tuId]);
-          updated++;
+          for (const d of driftByTradeUp.get(tuId) ?? []) {
+            await client.query(
+              "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
+              [d.price_cents, tuId, d.listing_id]
+            );
+          }
+          if (await recomputeTradeUpCost(client, tuId)) batchUpdated++;
         }
         await client.query('COMMIT');
+        updated += batchUpdated;
       } catch (err) {
         await client.query('ROLLBACK');
         throw err;

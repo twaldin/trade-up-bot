@@ -22,6 +22,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import Redis from "ioredis";
 import { cascadeTradeUpStatuses } from "./engine.js";
+import { applyListedResult } from "./sync.js";
 import { emitEvent } from "./db.js";
 
 const { Pool } = pg;
@@ -311,35 +312,7 @@ async function main() {
           if (data.state === "listed") {
             cycleActive++;
             stats.totalActive++;
-            // Update price if changed
-            if (data.price && data.price !== listing.price_cents) {
-              await pool.query(
-                "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
-                [data.price, new Date().toISOString(), listing.id]
-              );
-              // Inline recalc for affected trade-ups
-              const { rows: affectedTus } = await pool.query(
-                "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = $1", [listing.id]
-              );
-              if (affectedTus.length > 0) {
-                await pool.query(
-                  "UPDATE trade_up_inputs SET price_cents = $1 WHERE listing_id = $2", [data.price, listing.id]
-                );
-                for (const { trade_up_id } of affectedTus) {
-                  const { rows: [costRow] } = await pool.query(
-                    "SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = $1", [trade_up_id]
-                  );
-                  const newCost = parseInt(costRow.total);
-                  await pool.query(`
-                    UPDATE trade_ups SET total_cost_cents = $1,
-                      profit_cents = expected_value_cents - $1,
-                      roi_percentage = CASE WHEN $1 > 0 THEN ROUND(((expected_value_cents - $1)::numeric / $1) * 100, 2) ELSE 0 END
-                    WHERE id = $2
-                  `, [newCost, trade_up_id]);
-                }
-              }
-            }
-            await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [listing.id]);
+            await applyListedResult(pool, listing, data);
           } else if (data.state === "sold") {
             const salePrice = data.price || listing.price_cents;
             const saleFloat = data.item?.float_value || listing.float_value;

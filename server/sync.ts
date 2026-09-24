@@ -46,6 +46,7 @@ export {
   purgeStaleListings,
   getSkinsNeedingCoverage,
   checkListingStaleness,
+  applyListedResult,
 } from "./sync/listings.js";
 
 // Wanted list (theory-guided fetching)
