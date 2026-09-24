@@ -44,6 +44,19 @@ describe("skin detail listings cannot bury the trade-up board", () => {
     expect(css).toMatch(/@media \(min-width: 1100px\)[\s\S]*\.preview-skin-tabs\.preview-tabs\s*\{[^}]*display:\s*none/);
   });
 
+  it("leads the narrow skin page with Listings | Trade-ups and the active pane", () => {
+    const narrow = css.match(/@media \(max-width: 1099px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    // Tabs sit outside the stage so they can stay pinned while the chart scrolls by.
+    expect(stats.indexOf('aria-label="Skin detail"')).toBeLessThan(stats.indexOf("preview-skin-detail__meta"));
+    expect(stats.indexOf('aria-label="Skin detail"')).toBeLessThan(stats.indexOf('className="preview-skin-stage"'));
+    expect(narrow).toMatch(/\.preview-skin-tabs\s*\{[^}]*position:\s*sticky/);
+    expect(narrow).toMatch(/\.preview-skin-tabs\s*\{[^}]*top:\s*0/);
+    expect(narrow).toMatch(/\.preview-skin-tabs\s*\{[^}]*order:\s*-2/);
+    expect(narrow).toMatch(/\.preview-skin-stage\s*\{[^}]*order:\s*-1/);
+    expect(narrow).toMatch(/\.preview-skin-pane--listings\s*\{[^}]*max-height:/);
+    expect(stats).toContain("scrollIntoView");
+  });
+
   it("caps listings overflow inside its pane and never page-scrolls the board away", () => {
     expect(stats).toContain("preview-skin-pane--listings");
     expect(stats).toContain("LISTING_PAGE");

@@ -322,6 +322,8 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
   const [listingVisible, setListingVisible] = useState(LISTING_PAGE);
   const [pane, setPane] = useState<"listings" | "tradeups">("listings");
   const listingSentinel = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const panesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -403,8 +405,42 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
     ) },
   ];
 
+  const showPane = (next: "listings" | "tradeups") => {
+    setPane(next);
+    const panes = panesRef.current;
+    const tabs = tabsRef.current;
+    if (panes && tabs && panes.getBoundingClientRect().top < tabs.getBoundingClientRect().bottom) {
+      panes.scrollIntoView({ block: "start" });
+    }
+  };
+
   return (
     <div className="preview-skin-detail">
+      <div className="preview-tabs preview-skin-tabs" role="tablist" aria-label="Skin detail" ref={tabsRef}>
+        <button
+          type="button"
+          role="tab"
+          className="o-tab"
+          aria-selected={pane === "listings"}
+          data-state={pane === "listings" ? "active" : "inactive"}
+          data-pane="listings"
+          onClick={() => showPane("listings")}
+        >
+          Listings
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="o-tab"
+          aria-selected={pane === "tradeups"}
+          data-state={pane === "tradeups" ? "active" : "inactive"}
+          data-pane="tradeups"
+          onClick={() => showPane("tradeups")}
+        >
+          Trade-ups
+        </button>
+      </div>
+
       <div className="preview-skin-detail__meta">
         <section className="preview-hero-skin" style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
           <Face name={skin.name} size={150} />
@@ -444,31 +480,7 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
       </section>
 
       <div className="preview-skin-stage">
-        <div className="preview-tabs preview-skin-tabs" role="tablist" aria-label="Skin detail">
-          <button
-            type="button"
-            role="tab"
-            className="o-tab"
-            aria-selected={pane === "listings"}
-            data-state={pane === "listings" ? "active" : "inactive"}
-            data-pane="listings"
-            onClick={() => setPane("listings")}
-          >
-            Listings
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className="o-tab"
-            aria-selected={pane === "tradeups"}
-            data-state={pane === "tradeups" ? "active" : "inactive"}
-            data-pane="tradeups"
-            onClick={() => setPane("tradeups")}
-          >
-            Trade-ups
-          </button>
-        </div>
-        <div className="preview-skin-panes" data-pane={pane}>
+        <div className="preview-skin-panes" data-pane={pane} ref={panesRef}>
           <section className="preview-panel preview-skin-pane preview-skin-pane--listings">
             <header className="preview-panel__head">
               <p className="o-kicker">Live listings</p>
