@@ -985,6 +985,50 @@
   background: var(--line-soft);
 }
 
+/* The card body is the expand target; this is only its label, not a button. */
+.preview-cardline__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.preview-cardline__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  transition: color var(--t-control) var(--ease);
+}
+
+.preview-card:hover .preview-cardline__open {
+  color: var(--text);
+}
+
+.preview-cardline__verify {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  background: var(--nest-2);
+  color: var(--text);
+  font: 500 11px/1 var(--font-body);
+  text-decoration: none;
+  transition: border-color var(--t-control) var(--ease);
+}
+
+.preview-cardline__verify:hover {
+  border-color: var(--accent-border);
+}
+
+.preview-cardline__verify:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
 /* ------------------------------------------------------------- fee line */
 
 /* Says which marketplace fees are already inside Cost, EV and P/L. */

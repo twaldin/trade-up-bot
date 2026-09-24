@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, ChevronUp, ExternalLink } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
@@ -617,6 +617,23 @@ export function TradeUpCard({
               {Math.round(chance * 100)}% chance of profit
             </>
           )}
+          <span className="preview-cardline__actions">
+            <span className="preview-cardline__open" aria-hidden>
+              Details
+              <ChevronDown size={12} />
+            </span>
+            <a
+              className="preview-cardline__verify"
+              href={verifyClaimHref(tu.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open this trade-up to re-check that its listings are still live"
+              onClick={stop}
+            >
+              Verify
+              <ExternalLink size={10} aria-hidden />
+            </a>
+          </span>
         </p>
       )}
 
