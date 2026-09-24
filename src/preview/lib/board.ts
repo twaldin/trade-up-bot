@@ -206,11 +206,13 @@ export function signClass(cents: number): SignTone {
  * Odds a hunter can add up. Anything above 0 and below 0.1% is "<0.1%",
  * under 10% keeps one decimal, and 10% and above is a whole percent.
  * Exactly 0 is "0%": there is no roll, so it is not a sub-0.1% outcome.
+ * 99.5% up to but not including 100% is ">99%", so rounding cannot print 100%.
  */
 export function formatOdds(probability: number): string {
   if (!(probability > 0)) return "0%";
   const pct = probability * 100;
   if (pct < 0.1) return "<0.1%";
+  if (pct >= 99.5 && probability < 1) return ">99%";
   if (pct < 10) {
     const oneDecimal = pct.toFixed(1);
     if (Number(oneDecimal) >= 10) return "10%";

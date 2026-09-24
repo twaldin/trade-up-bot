@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { FeeLine } from "../../src/preview/components/FeeLine.js";
 import { MARKETPLACE_FEES, effectiveBuyCostRaw } from "../../server/engine/fees.js";
 import {
   CALCULATOR_EXAMPLE_FEE_LINE,
@@ -58,15 +61,22 @@ describe("fee labels", () => {
     expect(feeMarketsFor([])).toEqual([]);
   });
 
+  it("renders the hedged cost copy while the flag is true", () => {
+    const html = renderToStaticMarkup(createElement(FeeLine, { line: boardFeeLine([], true) }));
+    expect(html).toContain(
+      "Cost adds buyer fees when a trade-up is found (CSFloat 2.8% + $0.30, DMarket 2.5%, Skinport 0%, Buff 3.5% + $0.15).",
+    );
+    expect(html).toContain("Listings re-priced since then count at their listed price.");
+    expect(html).toContain("Outcome prices are after CSFloat&#x27;s 2% seller fee.");
+    const card = renderToStaticMarkup(createElement(FeeLine, { line: boardFeeLine(["skinport", "csfloat"], true) }));
+    expect(card).toContain("Cost adds buyer fees when a trade-up is found (CSFloat 2.8% + $0.30, Skinport 0%).");
+    expect(card).not.toContain("DMarket");
+  });
+
   it("lists every market on the board and only the card's markets on a card", () => {
     const board = boardFeeLine();
-    expect(board.cost).toBe(
-      "Cost includes buyer fees: CSFloat 2.8% + $0.30, DMarket 2.5%, Skinport 0%, Buff 3.5% + $0.15.",
-    );
+    expect(board.cost).toBe(boardFeeLine([], true).cost);
     expect(board.outcomes).toBe("Outcome prices are after CSFloat's 2% seller fee.");
-    expect(boardFeeLine(["skinport", "csfloat"]).cost).toBe(
-      "Cost includes buyer fees: CSFloat 2.8% + $0.30, Skinport 0%.",
-    );
     expect(boardFeeLine(["calculator"]).cost).toBe(board.cost);
   });
 

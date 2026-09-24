@@ -1,5 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
+import { SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
   averageFloat,
@@ -80,6 +84,9 @@ describe("preview P/L tone and odds", () => {
     expect(formatOdds(0.099)).toBe("9.9%");
     expect(formatOdds(0.1)).toBe("10%");
     expect(formatOdds(0.5)).toBe("50%");
+    expect(formatOdds(0.994)).toBe("99%");
+    expect(formatOdds(0.995)).toBe(">99%");
+    expect(formatOdds(0.999)).toBe(">99%");
     expect(formatOdds(1)).toBe("100%");
   });
 
@@ -105,6 +112,22 @@ describe("preview P/L tone and odds", () => {
     expect(labels).not.toContain("0%");
     const tu = makeTradeUp({ outcomes, total_cost_cents: 50000 });
     expect(uniqueOutputs(tu).map((row) => formatOdds(row.probability))).toEqual(labels);
+  });
+});
+
+describe("board rate limit", () => {
+  it("renders the slow-down copy when the board is rate limited", () => {
+    const html = renderToStaticMarkup(createElement(PreviewBoard, {
+      tradeUps: [],
+      loading: false,
+      isFree: false,
+      expandedId: null,
+      onExpand: () => {},
+      throttle: SLOW_DOWN_COPY,
+    }));
+    expect(html).toContain("preview-note");
+    expect(html).toContain("Slow down — try again in a moment.");
+    expect(html).not.toContain("Loading more trade-ups");
   });
 });
 

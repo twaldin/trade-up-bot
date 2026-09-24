@@ -53,11 +53,8 @@ function outcomeFeeCopy(): string {
   return `Outcome prices are after ${seller.name}'s ${percent(seller.sellerFeePct)} seller fee.`;
 }
 
-/**
- * False: cost copy says buyer fees are included. The hedged sentence stays
- * available by passing true, for a reprice path that stores the raw listed price.
- */
-export const REPRICE_DROPS_BUYER_FEE = false;
+/** flip to false after PR 166 deploy and approved backfill --apply */
+export const REPRICE_DROPS_BUYER_FEE = true;
 
 /** Every market on the board; only the card's own markets once its listings load. */
 export function boardFeeLine(
