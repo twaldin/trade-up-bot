@@ -47,7 +47,7 @@ import { BoardNotice } from "../components/BoardNotice.js";
 import { boardNotice } from "../lib/board-notice.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, type ParsedQuery } from "../lib/query-parse.js";
-import { loadBoardRows } from "../lib/board-load.js";
+import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
   SLOW_DOWN_COPY,
   applyRateLimit,
@@ -956,7 +956,7 @@ export function usePreviewTradeUps(options: {
       append: page > 1,
       isLive: () => live,
       fetchRows: async () => {
-        const res = await fetch(`/api/trade-ups?${key}&page=${page}`, { credentials: "include" });
+        const res = await fetch(boardListUrl(key, page), { credentials: "include" });
         const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number }>(res);
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },

@@ -28,6 +28,11 @@ export function consoleTargetFor(pathname: string): string {
   return target === "" ? "/" : target;
 }
 
+/** Only the landing hero shows the global counts; other pages must not pay for them. */
+export function needsLandingStats(page: ConsolePage): boolean {
+  return page === "landing";
+}
+
 /** Falls back to reading the page off the path when no page is passed in. */
 export function pageFor(page: ConsolePage | undefined, pathname: string): ConsolePage {
   if (page) return page;

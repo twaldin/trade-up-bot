@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { boardQueryString, DEFAULT_QUERY } from "./components/PreviewFilters.js";
-import { isMarketingPage, pageFor, type ConsolePage } from "./lib/console-routes.js";
+import { isMarketingPage, needsLandingStats, pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
 import { landingStatsFromSources, type LandingStatCounts } from "./lib/landing-stats.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
@@ -55,8 +55,15 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
   const [stats, setStats] = useState<LandingStatCounts | null>(null);
   const location = useLocation();
 
+  const page = pageFor(props.page, location.pathname);
+  const wantsStats = needsLandingStats(page);
+
   useEffect(() => {
     document.getElementById("root")?.classList.remove("app-shell");
+  }, []);
+
+  useEffect(() => {
+    if (!wantsStats) return;
     const boardUrl = `/api/trade-ups?${boardQueryString(DEFAULT_QUERY, 1)}&page=1`;
     let live = true;
     Promise.all([
@@ -71,10 +78,9 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       setStats(landingStatsFromSources({ global, board }));
     });
     return () => { live = false; };
-  }, []);
+  }, [wantsStats]);
 
   const onMode = () => setMode((m) => (m === "dark" ? "light" : "dark"));
-  const page = pageFor(props.page, location.pathname);
   const view = (() => {
     switch (page) {
       case "board": return <BoardRoute />;

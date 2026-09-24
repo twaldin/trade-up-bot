@@ -10,6 +10,17 @@
 
 import { isRateLimitError } from "./page-fetch.js";
 
+/**
+ * The list embeds what each card needs. Without it every row cost two more
+ * requests (outcomes + inputs): 26 per 12-card page against a 120/min limiter.
+ * Hosts that ignore `include` still work — `hydrate` fetches whatever is missing.
+ */
+export const BOARD_LIST_INCLUDE = "outcomes,inputs";
+
+export function boardListUrl(key: string, page: number): string {
+  return `/api/trade-ups?${key}&page=${page}&include=${BOARD_LIST_INCLUDE}`;
+}
+
 export interface BoardLoadPorts<T> {
   fetchRows: () => Promise<{ rows: T[]; isFree: boolean; total?: number }>;
   hydrate: (row: T) => Promise<T>;

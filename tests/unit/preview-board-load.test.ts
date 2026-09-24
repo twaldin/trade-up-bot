@@ -1,7 +1,12 @@
 import { createElement, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { loadBoardRows } from "../../src/preview/lib/board-load.js";
+import { BOARD_LIST_INCLUDE, boardListUrl, loadBoardRows } from "../../src/preview/lib/board-load.js";
+import { needsLandingStats, type ConsolePage } from "../../src/preview/lib/console-routes.js";
+import { hydrateOutcomesIfNeeded } from "../../src/preview/lib/skin-images.js";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   BOARD_SORTS,
   boardQueryString,
@@ -551,5 +556,46 @@ describe("preview filter bar Clear", () => {
     const tree = PreviewFilters({ query: { ...DEFAULT_QUERY, minChance: "40" }, onChange });
     findButton(tree, "Clear")?.props.onClick?.();
     expect(onChange).toHaveBeenCalledWith(DEFAULT_QUERY);
+  });
+});
+
+const sourceDir = dirname(fileURLToPath(import.meta.url));
+const readSource = (rel: string) => readFileSync(resolve(sourceDir, rel), "utf8");
+
+describe("board request fan-out", () => {
+  it("asks the list for embedded outcomes and inputs", () => {
+    const url = new URL(boardListUrl("per_page=12&sort=trade_up_score&order=desc", 3), "http://x");
+    expect(url.pathname).toBe("/api/trade-ups");
+    expect(url.searchParams.get("include")).toBe(BOARD_LIST_INCLUDE);
+    expect(BOARD_LIST_INCLUDE.split(",").sort()).toEqual(["inputs", "outcomes"]);
+    expect(url.searchParams.get("page")).toBe("3");
+    expect(url.searchParams.get("per_page")).toBe("12");
+  });
+
+  it("the board hook fetches through boardListUrl", () => {
+    const board = readSource("../../src/preview/pages/PreviewBoard.tsx");
+    expect(board).toContain("boardListUrl(key, page)");
+    expect(board).not.toMatch(/fetch\(`\/api\/trade-ups\?\$\{key\}&page=\$\{page\}`/);
+  });
+
+  it("an embedded row needs no per-row outcomes request", async () => {
+    const fetchFn = vi.fn<typeof fetch>();
+    const row = { id: 7, outcomes: [{ skin_name: "AK-47 | Redline" }] };
+    await expect(hydrateOutcomesIfNeeded(row, fetchFn)).resolves.toBe(row);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("landing stats only load on the landing page", () => {
+  it("is true for the landing page and false for console pages", () => {
+    expect(needsLandingStats("landing")).toBe(true);
+    const others: ConsolePage[] = ["board", "skins", "skin", "collections", "collection", "calculator", "account", "pricing", "share"];
+    for (const page of others) expect(needsLandingStats(page)).toBe(false);
+  });
+
+  it("PreviewApp gates its global-stats + board-count fetch on needsLandingStats", () => {
+    const app = readSource("../../src/preview/PreviewApp.tsx");
+    expect(app).toContain("needsLandingStats(page)");
+    expect(app).toMatch(/if \(!wantsStats\) return;/);
   });
 });
