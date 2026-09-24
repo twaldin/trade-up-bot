@@ -7,7 +7,7 @@ import {
   stateFromBoardSearch,
   type BoardUrlState,
 } from "../../src/preview/lib/board-url.js";
-import { loosenSuggestion } from "../../src/preview/lib/empty-suggestions.js";
+import { loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
 import { EXPECTED_PL_HELP, ExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -98,26 +98,29 @@ describe("board URL", () => {
   });
 });
 
-describe("empty-state suggestions", () => {
-  it("raises max cost when that bound is the tightest", () => {
-    const next = loosenSuggestion({ ...DEFAULT_QUERY, maxCost: "20", minChance: "10" }, "");
-    expect(next?.label).toBe("Raise max cost to $40");
-    expect(next?.query.maxCost).toBe("40");
-    expect(next?.query.minChance).toBe("10");
+describe("empty-state suggestion candidates", () => {
+  it("offers 2x, 5x, and 10x when max cost is the tightest", () => {
+    const steps = loosenCandidates({ ...DEFAULT_QUERY, maxCost: "1", minChance: "10" }, "");
+    expect(steps.map((step) => step.label)).toEqual([
+      "Raise max cost to $2",
+      "Raise max cost to $5",
+      "Raise max cost to $10",
+    ]);
+    expect(steps[2].query.minChance).toBe("10");
   });
 
-  it("lowers min chance when that bound is the tightest", () => {
-    const next = loosenSuggestion({ ...DEFAULT_QUERY, minChance: "80", maxCost: "400" }, "");
-    expect(next?.label).toBe("Lower min chance to 60%");
-    expect(next?.query.minChance).toBe("60");
-    expect(next?.query.maxCost).toBe("400");
+  it("walks chance down by buckets when that bound is the tightest", () => {
+    const steps = loosenCandidates({ ...DEFAULT_QUERY, minChance: "80", maxCost: "400" }, "");
+    expect(steps.map((step) => step.query.minChance)).toEqual(["60", "40", "20"]);
+    expect(steps[0].query.maxCost).toBe("400");
   });
 
   it("clears a skin filter without touching the other controls", () => {
-    const next = loosenSuggestion({ ...DEFAULT_QUERY, skin: "AK-47 | Redline", sort: "roi" }, "");
-    expect(next?.label).toBe("Clear skin");
-    expect(next?.query.skin).toBe("");
-    expect(next?.query.sort).toBe("roi");
+    const steps = loosenCandidates({ ...DEFAULT_QUERY, skin: "AK-47 | Redline", sort: "roi" }, "");
+    expect(steps).toHaveLength(1);
+    expect(steps[0].label).toBe("Clear skin");
+    expect(steps[0].query.skin).toBe("");
+    expect(steps[0].query.sort).toBe("roi");
   });
 });
 

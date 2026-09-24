@@ -51,7 +51,7 @@ import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_HELP, ExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice } from "../lib/board-notice.js";
 import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
-import { loosenSuggestion } from "../lib/empty-suggestions.js";
+import { useLoosenProbe } from "../lib/use-loosen-probe.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
@@ -815,9 +815,13 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const suggestion = notice === "filtered-empty" && query
-    ? loosenSuggestion(query, search ?? "")
-    : null;
+  const suggestion = useLoosenProbe({
+    enabled: notice === "filtered-empty",
+    query,
+    text: search ?? "",
+    collection,
+    skin: lockedSkin,
+  });
   const noticeNode = (
     <BoardNotice
       notice={notice}
@@ -900,7 +904,7 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
       <div className="preview-bento">
         {ordered.map((tu) => (
