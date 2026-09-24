@@ -625,6 +625,7 @@ export function TradeUpCard({
               target="_blank"
               rel="noopener noreferrer"
               title="Open this trade-up to re-check that its listings are still live"
+              aria-label="Verify trade-up (opens in new tab)"
               onClick={stop}
             >
               Verify

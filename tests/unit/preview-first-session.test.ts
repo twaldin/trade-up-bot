@@ -35,6 +35,11 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(buttons).not.toContain("preview-card__expand");
   });
 
+  it("gives Verify a 24px touch target and a new-tab label", () => {
+    expect(line).toContain('aria-label="Verify trade-up (opens in new tab)"');
+    expect(css).toMatch(/\.preview-cardline__verify\s*\{[^}]*min-height: 24px/);
+  });
+
   it("styles the hint and the link from kit tokens", () => {
     expect(css).toContain(".preview-cardline__open");
     expect(css).toContain(".preview-cardline__verify");
