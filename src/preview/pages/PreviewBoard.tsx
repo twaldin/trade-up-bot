@@ -81,6 +81,9 @@ import { createFaceCache, faceFor, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
 
+/** Filter and sort edits wait this long so a burst becomes one list request. */
+export const FILTER_SETTLE_MS = 350;
+
 /** Shared with the my-trade-ups page so claim cards and table faces share one cache. */
 export function warmBoardFaces(names: string[]): Promise<void> {
   return loadFaces(names, FACE_CACHE).then(() => undefined);
@@ -1003,19 +1006,25 @@ export function usePreviewTradeUps(options: {
   if (collection) params.set("collection", collection);
   if (skin) params.set("skin", skin);
   const key = params.toString();
-  const page = cursor.key === key ? cursor.page : 1;
-  const exhausted = endKey === key;
+  const [settledKey, setSettledKey] = useState(key);
+  useEffect(() => {
+    if (settledKey === key) return;
+    const handle = window.setTimeout(() => setSettledKey(key), FILTER_SETTLE_MS);
+    return () => window.clearTimeout(handle);
+  }, [key, settledKey]);
+  const page = cursor.key === settledKey ? cursor.page : 1;
+  const exhausted = endKey === settledKey;
 
   // A filter change starts a new list at page 1. The cursor must be rewritten,
   // not only read as page 1 while its key mismatches: otherwise clearing back
   // to the previous key revives the page number from before the filter.
   useEffect(() => {
-    setCursor({ key, page: 1 });
+    setCursor({ key: settledKey, page: 1 });
     setEndKey(null);
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
-  }, [key]);
+  }, [settledKey]);
 
   useEffect(() => {
     if (!enabled) {
@@ -1024,13 +1033,17 @@ export function usePreviewTradeUps(options: {
       return;
     }
     let live = true;
+    const controller = new AbortController();
     inFlightRef.current = true;
     setFailed(false);
     void loadBoardRows<TradeUp>({
       append: page > 1,
-      isLive: () => live,
+      isLive: () => live && !controller.signal.aborted,
       fetchRows: async () => {
-        const res = await fetch(boardListUrl(key, page), { credentials: "include" });
+        const res = await fetch(boardListUrl(settledKey, page), {
+          credentials: "include",
+          signal: controller.signal,
+        });
         const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number }>(res);
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
@@ -1038,36 +1051,41 @@ export function usePreviewTradeUps(options: {
         }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
-      hydrate: (tu) => hydrateBoardCard(tu),
+      hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
       emit: {
         rows: (next) => {
           if (!live) return;
           setTradeUps(next as HydratedTradeUp[]);
-          if (page === 1) setRowsKey(key);
+          if (page === 1) setRowsKey(settledKey);
         },
         isFree: setIsFree,
         loading: setLoading,
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(key);
+          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(settledKey);
         },
-        rateLimited: () => {
+        rateLimited: (retryAfterMs) => {
           if (!live) return;
-          const next = applyRateLimit(attemptRef.current, Date.now());
+          setThrottle(SLOW_DOWN_COPY);
+          // One automatic retry. A second 429 stays on the notice.
+          if (attemptRef.current >= 1) return;
+          const next = applyRateLimit(attemptRef.current, Date.now(), { retryAfterMs });
           attemptRef.current = next.attempt;
           setBackoffUntil(next.backoffUntil);
-          setThrottle(SLOW_DOWN_COPY);
         },
         failed: () => { if (live) setFailed(true); },
       },
     }).finally(() => {
       if (live) inFlightRef.current = false;
     });
-    return () => { live = false; };
-  }, [key, page, perPage, enabled, reloadTick]);
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [settledKey, page, perPage, enabled, reloadTick]);
 
   useEffect(() => {
     cacheNames(tradeUps.flatMap((tu) => skinNames([tu]).map((name) => ({ name }))));
@@ -1085,7 +1103,7 @@ export function usePreviewTradeUps(options: {
     return () => window.clearTimeout(handle);
   }, [backoffUntil]);
 
-  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== key;
+  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== settledKey;
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -1095,8 +1113,8 @@ export function usePreviewTradeUps(options: {
       now: Date.now(),
     })) return;
     inFlightRef.current = true;
-    setCursor({ key, page: page + 1 });
-  }, [loading, exhausted, failed, backoffUntil, key, page]);
+    setCursor({ key: settledKey, page: page + 1 });
+  }, [loading, exhausted, failed, backoffUntil, settledKey, page]);
 
   const retry = useCallback(() => {
     setFailed(false);

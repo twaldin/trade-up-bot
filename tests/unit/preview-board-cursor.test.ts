@@ -73,6 +73,11 @@ describe("usePreviewTradeUps page reset", () => {
     rerender();
   }
 
+  async function settleFilters() {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await settle();
+  }
+
   function listUrls() {
     return pages.filter((url) => url.includes("/api/trade-ups?"));
   }
@@ -88,14 +93,14 @@ describe("usePreviewTradeUps page reset", () => {
     expect(listUrls().at(-1)).toContain("page=3");
 
     await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "100" }); });
-    await settle();
+    await settleFilters();
     const filtered = listUrls().at(-1) ?? "";
     expect(filtered).toContain("min_chance=100");
     expect(filtered).toContain("page=1");
     expect(filtered).not.toContain("page=3");
 
     await act(async () => { api.clearFilters(); });
-    await settle();
+    await settleFilters();
     const cleared = listUrls().filter((url) => !url.includes("min_chance="));
     expect(cleared.at(-1)).toContain("page=1");
     expect(cleared.at(-1)).not.toContain("page=3");
@@ -110,12 +115,12 @@ describe("usePreviewTradeUps page reset", () => {
     expect(listUrls().at(-1)).toContain("page=3");
 
     await act(async () => { api.onQuery({ ...DEFAULT_QUERY, sort: "profit" }); });
-    await settle();
+    await settleFilters();
     expect(listUrls().at(-1)).toContain("sort=profit");
     expect(listUrls().at(-1)).toContain("page=1");
 
     await act(async () => { api.onQuery(DEFAULT_QUERY); });
-    await settle();
+    await settleFilters();
     const back = listUrls().filter((url) => url.includes("sort=trade_up_score"));
     expect(back.at(-1)).toContain("page=1");
     expect(back.at(-1)).not.toContain("page=3");

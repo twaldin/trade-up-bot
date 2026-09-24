@@ -186,16 +186,18 @@ describe("preview board load order", () => {
     expect(warmFaces).not.toHaveBeenCalled();
   });
 
-  it("clears the previous filter's rows on a first-page 429 and reports it as throttled", async () => {
+  it("keeps the last rows on a 429 and reports Retry-After instead of clearing the board", async () => {
     const { RateLimitError } = await import("../../src/preview/lib/page-fetch.js");
     const failed = vi.fn();
     const rateLimited = vi.fn();
-    const harness = ports({ fetchRows: async () => { throw new RateLimitError(); } });
+    const harness = ports({ fetchRows: async () => { throw new RateLimitError("slow", 1500); } });
+    harness.rows.push([{ id: 7, outcomes: [] }]);
     harness.ports.emit = { ...harness.ports.emit, failed, rateLimited };
     await loadBoardRows<Row>(harness.ports);
-    expect(harness.rows).toEqual([[]]);
-    expect(rateLimited).toHaveBeenCalledTimes(1);
+    expect(harness.rows).toEqual([[{ id: 7, outcomes: [] }]]);
+    expect(rateLimited).toHaveBeenCalledWith(1500);
     expect(failed).not.toHaveBeenCalled();
+    expect(harness.loading).toEqual([true, false]);
   });
 
   it("passes the API total through with the page size", async () => {
@@ -589,7 +591,7 @@ describe("board request fan-out", () => {
 
   it("the board hook fetches through boardListUrl", () => {
     const board = readSource("../../src/preview/pages/PreviewBoard.tsx");
-    expect(board).toContain("boardListUrl(key, page)");
+    expect(board).toContain("boardListUrl(settledKey, page)");
     expect(board).not.toMatch(/fetch\(`\/api\/trade-ups\?\$\{key\}&page=\$\{page\}`/);
   });
 

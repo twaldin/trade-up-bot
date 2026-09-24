@@ -8,7 +8,7 @@
  * and faces are warmed afterwards without anything waiting on them.
  */
 
-import { isRateLimitError } from "./page-fetch.js";
+import { isAbortError, isRateLimitError, retryAfterOf } from "./page-fetch.js";
 
 /**
  * The list embeds what each card needs. Without it every row cost two more
@@ -42,7 +42,7 @@ export interface BoardLoadPorts<T> {
     /** Rows this page returned and the API total, so the caller can stop paging. */
     pageSize?: (count: number, total?: number) => void;
     /** 429 / "Too many requests" — do not treat as an empty page. */
-    rateLimited?: () => void;
+    rateLimited?: (retryAfterMs: number | null) => void;
     /** Any other failed list request — not an empty result either. */
     failed?: () => void;
   };
@@ -72,28 +72,33 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
     emit.pageSize?.(rows.length, total);
     put(rows);
     painted = rows;
-
-    const hydrated = await Promise.all(
-      rows.map(async (row) => {
-        try {
-          return await ports.hydrate(row);
-        } catch {
-          return row;
-        }
-      }),
-    );
-    replaceTail(hydrated, rows.length);
-    painted = hydrated;
   } catch (err) {
-    if (!live()) return;
-    // A first page belongs to a new filter, so the old filter's rows must go either way.
-    if (!append) emit.rows([]);
-    if (isRateLimitError(err)) emit.rateLimited?.();
-    else emit.failed?.();
+    if (!live() || isAbortError(err)) return;
+    // A 429 keeps whatever was already on screen. Clearing it is what left the
+    // board on an endless "Loading trade-ups…" after a filter burst.
+    if (isRateLimitError(err)) emit.rateLimited?.(retryAfterOf(err));
+    else {
+      if (!append) emit.rows([]);
+      emit.failed?.();
+    }
     painted = null;
   } finally {
     if (live()) emit.loading(false);
   }
+
+  if (!live() || !painted) return;
+  const hydrated = await Promise.all(
+    painted.map(async (row) => {
+      try {
+        if (!live()) return row;
+        return await ports.hydrate(row);
+      } catch {
+        return row;
+      }
+    }),
+  );
+  replaceTail(hydrated, painted.length);
+  painted = hydrated;
 
   if (!live() || !painted || painted.length === 0) return;
   const names = ports.namesOf(painted);
