@@ -111,7 +111,8 @@ describe("preview landing depth", () => {
 
 describe("kit landing unique home head", () => {
   it("emits the unique indexed title, not a second h1", () => {
-    expect(chrome).toContain("TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings");
+    expect(chrome).toContain("{HOME_TITLE}");
+    expect(copy).toContain("TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings");
     expect(chrome).toContain("index, follow");
     expect(chrome).toContain("buildHomepageJsonLd");
     expect(app).toContain("PreviewChrome");

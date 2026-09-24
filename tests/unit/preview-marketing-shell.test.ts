@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isMarketingPage, pageFor, type ConsolePage } from "../../src/preview/lib/console-routes.js";
 import {
+  FOOTER_NOT_VALVE,
   PREVIEW_CTA_DISCORD,
   PREVIEW_CTA_PRIMARY,
   PREVIEW_DISCORD_HREF,
@@ -94,7 +95,8 @@ describe("landing chrome carries product nav and a real footer", () => {
     expect(chrome).toContain('to="/privacy"');
     expect(chrome).toContain("Terms");
     expect(chrome).toContain("Privacy");
-    expect(chrome).toContain("not affiliated with Valve");
+    expect(chrome).toContain("{FOOTER_NOT_VALVE}");
+    expect(FOOTER_NOT_VALVE).toContain("Not affiliated with or endorsed by Valve");
   });
 });
 

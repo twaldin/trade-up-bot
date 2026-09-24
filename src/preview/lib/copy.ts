@@ -99,9 +99,3 @@ export const HOME_SOCIAL_DESCRIPTION =
 
 export const FOOTER_NOT_VALVE = "Not affiliated with or endorsed by Valve.";
 export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
-
-/** Display-only. A stored 0.995–0.999 must not print as 100%. */
-export function formatAboveCostPercent(fraction: number): string {
-  if (fraction < 1 - 1e-9 && Math.round(fraction * 100) === 100) return ">99%";
-  return `${Math.round(fraction * 100)}%`;
-}
