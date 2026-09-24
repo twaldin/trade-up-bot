@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
-import { collectionSlugFromPath, trackTradeUpDetailOpen } from "../../lib/conversions.js";
+import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -662,7 +662,7 @@ export function TradeUpCard({
               rel="noopener noreferrer"
               title="Open this trade-up to re-check that its listings are still live"
               aria-label="Verify trade-up (opens in new tab)"
-              onClick={stop}
+              onClick={(event) => { trackVerifyClick("board_card"); stop(event); }}
             >
               Verify
               <ExternalLink size={10} aria-hidden />
@@ -733,7 +733,7 @@ export function TradeUpCard({
                   href={verifyClaimHref(tu.id)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={stop}
+                  onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
                 >
                   Verify / Claim trade-up
                 </a>

@@ -126,7 +126,7 @@ export function PreviewShare() {
   };
 
   async function handleVerify(tuId: number) {
-    trackVerifyClick();
+    trackVerifyClick("pro");
     setVerifying(true);
     setActionError(null);
     try {
@@ -236,6 +236,11 @@ export function PreviewShare() {
           <div className="preview-page__meta">
             <span>{typeLabel}</span>
             <i />
+            {(panel === "sign-in" || panel === "upgrade") && (
+              <a className="preview-btn preview-btn--quiet"
+                 href={panel === "sign-in" ? "#share-verify" : "/pricing"}
+                 onClick={() => trackVerifyClick("share_bar")}>Verify</a>
+            )}
             <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
               void navigator.clipboard.writeText(window.location.href);
               setCopied(true);
@@ -256,7 +261,7 @@ export function PreviewShare() {
       )}
 
       {tu && panel === "sign-in" && (
-        <section className="preview-panel">
+        <section className="preview-panel" id="share-verify">
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <button
             type="button"

@@ -9,8 +9,9 @@ import {
   purchaseEventId,
   trackedPlan,
   type Attribution,
+  type TrackedPlan,
 } from "../../shared/tracking.js";
-import { trackEvent, trackPurchase } from "./analytics.js";
+import { trackEvent, trackPurchase, type GtagItem } from "./analytics.js";
 import { checkoutAttribution, storedAttribution } from "./attribution.js";
 import { newEventId, pixelEvent, type FbqParams } from "./meta-pixel.js";
 import { clientTracking } from "./tracking-config.js";
@@ -19,36 +20,51 @@ function pagePath(): string {
   return typeof window !== "undefined" ? window.location.pathname : "/";
 }
 
-function ga4KeyEvent(name: string, params: Record<string, string | number>): boolean {
+function ga4KeyEvent(name: string, params: Record<string, string | number | GtagItem[]>): boolean {
   const id = clientTracking().ga4MeasurementId;
   if (!id) return false;
   trackEvent(name, { ...params, send_to: id });
   return true;
 }
 
+function planItem(plan: TrackedPlan, value: number): GtagItem {
+  return { item_id: plan, item_name: plan, price: value, quantity: 1 };
+}
+
 /**
- * Pricing "Go Pro" click. Returns extra /api/subscribe body fields (attribution for the
- * webhook's purchase conversion), or null when tracking is off so the request is unchanged.
+ * Checkout start. `value` is USD. Returns attribution for /api/subscribe, or null when
+ * tracking is off so the request body stays `{ plan }`.
+ * PR 164's shared checkout function should call this. Until that lands, /pricing does.
  */
-export function trackCheckoutStart(checkoutPlan: string): { attribution: Attribution } | null {
+export function trackBeginCheckout(plan: string, value: number): { attribution: Attribution } | null {
   const tracking = clientTracking();
-  const plan = trackedPlan(checkoutPlan);
+  const tracked = trackedPlan(plan);
   const attribution = checkoutAttribution();
   const campaign = campaignParams(attribution);
   if (!tracking.ga4MeasurementId) {
-    trackEvent("begin_checkout", { item_name: checkoutPlan });
+    trackEvent("begin_checkout", { item_name: plan });
+  } else if (tracked) {
+    ga4KeyEvent("begin_checkout", {
+      currency: "USD",
+      value,
+      items: [planItem(tracked, value)],
+      ...campaign,
+    });
   }
-  if (plan) {
-    const priceUsd = centsToUsd(PLAN_PRICE_CENTS[plan]);
-    ga4KeyEvent("checkout_start", { plan, price_usd: priceUsd, ...campaign });
-    pixelEvent("checkout_start", { value: priceUsd, currency: "USD", content_name: plan, plan, price_usd: priceUsd, ...campaign }, newEventId("checkout"));
+  if (tracked) {
+    pixelEvent("begin_checkout", {
+      value,
+      currency: "USD",
+      content_name: tracked,
+      ...campaign,
+    }, newEventId("checkout"));
   }
   return tracking.enabled ? { attribution } : null;
 }
 
-/** Calculator returned a result (floats + fees). Landing UTMs and click ids ride along. */
-export function trackCalculatorComplete(): void {
-  const params = { page_path: pagePath(), ...campaignParams(storedAttribution()) };
+/** Calculator returned a result. `source` is the example loader or a hand-entered contract. */
+export function trackCalculatorComplete(source: "example" | "custom"): void {
+  const params = { page_path: pagePath(), source, ...campaignParams(storedAttribution()) };
   ga4KeyEvent("calculator_complete", params);
   pixelEvent("calculator_complete", params, newEventId("calc"));
 }
@@ -63,11 +79,34 @@ export function trackTradeUpDetailOpen(opts: { collectionSlug: string | null; le
   pixelEvent("trade_up_detail_open", params, newEventId("detail"));
 }
 
-/** User clicked Verify. */
-export function trackVerifyClick(): void {
-  const params = { page_path: pagePath() };
+export type VerifySurface = "board_card" | "expanded" | "share_bar" | "pro";
+
+/** User clicked Verify. Prospects hit the card, the expanded button, and the share bar. */
+export function trackVerifyClick(surface: VerifySurface): void {
+  const params = { page_path: pagePath(), surface };
   ga4KeyEvent("verify_click", params);
   pixelEvent("verify_click", params, newEventId("verify"));
+}
+
+/** /pricing rendered. */
+export function trackPricingView(): void {
+  const items = (Object.keys(PLAN_PRICE_CENTS) as TrackedPlan[]).map((plan) => planItem(plan, centsToUsd(PLAN_PRICE_CENTS[plan])));
+  ga4KeyEvent("view_item", { currency: "USD", value: centsToUsd(PLAN_PRICE_CENTS.pro_monthly), items });
+  pixelEvent("view_item", { content_name: "pricing", content_type: "product" }, newEventId("pricing"));
+}
+
+/** Steam callback return. New accounts also fire Meta CompleteRegistration with the server's event id. */
+export function trackAuthReturn(kind: "sign_up" | "login", eventId: string | null): void {
+  ga4KeyEvent(kind, { method: "steam" });
+  if (kind === "sign_up" && eventId) pixelEvent("sign_up", { status: "complete" }, eventId);
+}
+
+/**
+ * PR 164's steam_continue click. Meta Lead. No-op until META_PIXEL_ID is set.
+ * 164 is not on main yet; call this from that click when it lands.
+ */
+export function trackSteamContinue(): void {
+  pixelEvent("lead", { content_name: "steam_continue" }, newEventId("lead"));
 }
 
 /**
@@ -87,10 +126,12 @@ export function trackPurchaseComplete(args: {
   const planParams: FbqParams = plan ? { plan, price_usd: centsToUsd(PLAN_PRICE_CENTS[plan]) } : {};
   const campaign = campaignParams(storedAttribution());
   if (!args.ga4ServerSide) {
+    const items = plan ? [planItem(plan, args.value)] : [];
     const sent = ga4KeyEvent("purchase", {
       transaction_id: args.transactionId,
       value: args.value,
       currency: args.currency,
+      ...(items.length > 0 ? { items } : {}),
       ...planParams,
       ...campaign,
     });

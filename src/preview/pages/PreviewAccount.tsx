@@ -253,7 +253,7 @@ export function PreviewAccount() {
   }
 
   async function handleVerify(id: number) {
-    trackVerifyClick();
+    trackVerifyClick("pro");
     setActionError(null);
     setVerifyingId(id);
     try {

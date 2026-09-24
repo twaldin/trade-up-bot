@@ -59,11 +59,14 @@ describe("purchaseEventId", () => {
 });
 
 describe("META_EVENTS", () => {
-  it("maps checkout_start and purchase to Meta standard events and the rest to custom events", () => {
-    expect(META_EVENTS.checkout_start).toEqual({ kind: "standard", name: "InitiateCheckout" });
+  it("maps standard events and keeps the rest custom", () => {
+    expect(META_EVENTS.begin_checkout).toEqual({ kind: "standard", name: "InitiateCheckout" });
     expect(META_EVENTS.purchase).toEqual({ kind: "standard", name: "Purchase" });
+    expect(META_EVENTS.trade_up_detail_open).toEqual({ kind: "standard", name: "ViewContent" });
+    expect(META_EVENTS.view_item).toEqual({ kind: "standard", name: "ViewContent" });
+    expect(META_EVENTS.sign_up).toEqual({ kind: "standard", name: "CompleteRegistration" });
+    expect(META_EVENTS.lead).toEqual({ kind: "standard", name: "Lead" });
     expect(META_EVENTS.calculator_complete.kind).toBe("custom");
-    expect(META_EVENTS.trade_up_detail_open.kind).toBe("custom");
     expect(META_EVENTS.verify_click.kind).toBe("custom");
   });
 

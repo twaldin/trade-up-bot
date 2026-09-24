@@ -26,7 +26,8 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(line).toContain("preview-cardline__verify");
     expect(line).toContain("verifyClaimHref(tu.id)");
     expect(line).toMatch(/target="_blank"/);
-    expect(line).toContain("onClick={stop}");
+    expect(line).toContain('trackVerifyClick("board_card")');
+    expect(line).toContain("stop(event)");
   });
 
   it("does not bring back a header band or a visible expand button", () => {
@@ -74,7 +75,7 @@ describe("calculator first session", () => {
   it("evaluates the example straight away so the payoff shows on one click", () => {
     const load = calc.slice(calc.indexOf("const loadExample"), calc.indexOf("const calculate"));
     expect(load).toContain("/api/calculator/example");
-    expect(load).toContain("await evaluate(data.inputs)");
+    expect(load).toContain('await evaluate(data.inputs, "example")');
   });
 
   it("reads the example through the kit rate-limit path instead of a bare res.json()", () => {

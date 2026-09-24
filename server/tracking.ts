@@ -13,3 +13,4 @@ export {
 } from "./tracking/purchase.js";
 export type { CheckoutSessionLike, PurchaseConversion, SendOutcome, TrackCheckoutCompletedArgs } from "./tracking/purchase.js";
 export { trackingCspSources } from "./tracking/csp.js";
+export { authReturnLocation, browserTrackingOn, metaRegistrationRequest, trackCompleteRegistration } from "./tracking/registration.js";

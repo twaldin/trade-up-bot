@@ -35,15 +35,31 @@ export function purchaseEventId(checkoutSessionId: string): string {
   return `purchase_${checkoutSessionId}`;
 }
 
-export type KeyEvent = "purchase" | "checkout_start" | "calculator_complete" | "trade_up_detail_open" | "verify_click";
+export type KeyEvent =
+  | "purchase"
+  | "begin_checkout"
+  | "calculator_complete"
+  | "trade_up_detail_open"
+  | "verify_click"
+  | "view_item"
+  | "sign_up"
+  | "lead";
 
 export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom"; name: string }>> = {
   purchase: { kind: "standard", name: "Purchase" },
-  checkout_start: { kind: "standard", name: "InitiateCheckout" },
+  begin_checkout: { kind: "standard", name: "InitiateCheckout" },
   calculator_complete: { kind: "custom", name: "CalculatorComplete" },
-  trade_up_detail_open: { kind: "custom", name: "TradeUpDetailOpen" },
+  trade_up_detail_open: { kind: "standard", name: "ViewContent" },
   verify_click: { kind: "custom", name: "VerifyClick" },
+  view_item: { kind: "standard", name: "ViewContent" },
+  sign_up: { kind: "standard", name: "CompleteRegistration" },
+  lead: { kind: "standard", name: "Lead" },
 };
+
+/** Shared by the browser Pixel and CAPI so a new Steam account is counted once. */
+export function registrationEventId(externalIdHash: string): string {
+  return `reg_${externalIdHash}`;
+}
 
 /** Landing-URL params kept on first landing and attached to key events. `utm_matchtype` is part of the Google Ads final-URL suffix. */
 export const ATTRIBUTION_URL_PARAMS = [

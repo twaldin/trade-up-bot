@@ -44,6 +44,18 @@ describe("reportPurchase", () => {
     expect(fbq).toHaveBeenCalledWith("track", "Purchase", expect.objectContaining({ value: 6.99 }), { eventID: "purchase_cs_test_1" });
   });
 
+  it("does not double-count when a second tab starts before the first finishes", async () => {
+    let release: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(() => pending));
+    const first = reportPurchase("pro", "cs_test_1");
+    const second = reportPurchase("pro", "cs_test_1");
+    release(new Response(JSON.stringify({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" }), { status: 200 }));
+    await first;
+    await second;
+    expect(gtag).toHaveBeenCalledTimes(1);
+  });
+
   it("reports nothing for an unverified session", async () => {
     globalThis.tubTracking = { ga4MeasurementId: "G-NEWPROP123", metaPixelId: "123456789012345" };
     stubCheckoutSession({ error: "Not paid" }, 409);

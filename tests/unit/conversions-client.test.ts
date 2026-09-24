@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 import {
   collectionSlugFromPath,
   trackCalculatorComplete,
-  trackCheckoutStart,
+  trackBeginCheckout,
+  trackPricingView,
+  trackAuthReturn,
+  trackSteamContinue,
   trackPurchaseComplete,
   trackTradeUpDetailOpen,
   trackVerifyClick,
@@ -37,7 +40,7 @@ describe("with every tracking env var unset (production today)", () => {
   beforeEach(() => { installBrowser({ pathname: "/pricing", search: "?utm_source=meta" }); });
 
   it("checkout keeps the legacy begin_checkout event and sends no extra checkout body", () => {
-    expect(trackCheckoutStart("pro")).toBeNull();
+    expect(trackBeginCheckout("pro", 6.99)).toBeNull();
     expect(gtag.mock.calls).toEqual([["event", "begin_checkout", { item_name: "pro" }]]);
   });
 
@@ -48,8 +51,8 @@ describe("with every tracking env var unset (production today)", () => {
 
   it("new-only hooks stay silent", () => {
     trackTradeUpDetailOpen({ collectionSlug: "dreams-nightmares" });
-    trackCalculatorComplete();
-    trackVerifyClick();
+    trackCalculatorComplete("custom");
+    trackVerifyClick("pro");
     expect(gtag).not.toHaveBeenCalled();
   });
 
@@ -60,7 +63,7 @@ describe("with every tracking env var unset (production today)", () => {
     });
     captureAttributionFromUrl();
     navigate(browser, "/calculator", "");
-    trackCalculatorComplete();
+    trackCalculatorComplete("custom");
     expect(browser.localStorage.data.size).toBe(0);
     expect(gtag).not.toHaveBeenCalled();
     expect(fbq).not.toHaveBeenCalled();
@@ -74,10 +77,10 @@ describe("with every tracking env var unset (production today)", () => {
   });
 
   it("never calls the Meta Pixel, even if something else defined fbq", () => {
-    trackCheckoutStart("pro");
-    trackCalculatorComplete();
+    trackBeginCheckout("pro", 6.99);
+    trackCalculatorComplete("custom");
     trackTradeUpDetailOpen({ collectionSlug: null });
-    trackVerifyClick();
+    trackVerifyClick("pro");
     trackPurchaseComplete({ ...purchaseArgs, ga4ServerSide: false });
     expect(fbq).not.toHaveBeenCalled();
   });
@@ -91,10 +94,11 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
   it("checkout_start replaces begin_checkout and carries plan, price, and the landing attribution", () => {
     installBrowser({ pathname: "/calculator", search: "?utm_source=google&utm_medium=cpc&utm_campaign=tu_w1_search_calc&utm_term=trade+up&gclid=Cj0K" });
     captureAttributionFromUrl();
-    const body = trackCheckoutStart("pro-yearly");
-    expect(gtag.mock.calls).toEqual([["event", "checkout_start", {
-      plan: "yearly",
-      price_usd: 59.99,
+    const body = trackBeginCheckout("pro-yearly", 59.99);
+    expect(gtag.mock.calls).toEqual([["event", "begin_checkout", {
+      currency: "USD",
+      value: 59.99,
+      items: [{ item_id: "yearly", item_name: "yearly", price: 59.99, quantity: 1 }],
       utm_source: "google",
       utm_medium: "cpc",
       utm_campaign: "tu_w1_search_calc",
@@ -112,9 +116,10 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
     });
     captureAttributionFromUrl();
     navigate(browser, "/calculator", "");
-    trackCalculatorComplete();
+    trackCalculatorComplete("custom");
     expect(gtag).toHaveBeenCalledWith("event", "calculator_complete", {
       page_path: "/calculator",
+      source: "custom",
       utm_source: "google",
       utm_medium: "cpc",
       utm_campaign: "tu_w1_search_calc",
@@ -133,9 +138,10 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
     });
     captureAttributionFromUrl();
     navigate(browser, "/calculator", "");
-    trackCalculatorComplete();
+    trackCalculatorComplete("custom");
     expect(gtag).toHaveBeenCalledWith("event", "calculator_complete", {
       page_path: "/calculator",
+      source: "custom",
       utm_source: "google",
       utm_medium: "cpc",
       utm_campaign: "tu_w1_search_calc",
@@ -149,12 +155,12 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
 
   it("calculator_complete and verify_click carry page_path", () => {
     installBrowser({ pathname: "/calculator" });
-    trackCalculatorComplete();
+    trackCalculatorComplete("custom");
     installBrowser({ pathname: "/trade-ups/42" });
-    trackVerifyClick();
+    trackVerifyClick("pro");
     expect(gtag.mock.calls).toEqual([
-      ["event", "calculator_complete", { page_path: "/calculator", send_to: GA4 }],
-      ["event", "verify_click", { page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "calculator_complete", { page_path: "/calculator", source: "custom", send_to: GA4 }],
+      ["event", "verify_click", { page_path: "/trade-ups/42", surface: "pro", send_to: GA4 }],
     ]);
   });
 
@@ -173,7 +179,13 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
     installBrowser({ pathname: "/" });
     trackPurchaseComplete({ ...purchaseArgs, ga4ServerSide: false });
     expect(gtag.mock.calls).toEqual([["event", "purchase", {
-      transaction_id: "cs_test_123", value: 6.99, currency: "USD", plan: "pro_monthly", price_usd: 6.99, send_to: GA4,
+      transaction_id: "cs_test_123",
+      value: 6.99,
+      currency: "USD",
+      items: [{ item_id: "pro_monthly", item_name: "pro_monthly", price: 6.99, quantity: 1 }],
+      plan: "pro_monthly",
+      price_usd: 6.99,
+      send_to: GA4,
     }]]);
   });
 
@@ -186,7 +198,7 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
   it("does not throw when gtag is blocked", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/calculator" });
-    expect(() => trackCalculatorComplete()).not.toThrow();
+    expect(() => trackCalculatorComplete("custom")).not.toThrow();
   });
 });
 
@@ -198,12 +210,12 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
   it("checkout_start maps to InitiateCheckout with value in USD", () => {
     installBrowser({ pathname: "/pricing", search: "?utm_source=meta&utm_medium=paid_social&fbclid=IwAR1" });
     captureAttributionFromUrl();
-    trackCheckoutStart("pro-lifetime");
+    trackBeginCheckout("pro-lifetime", 74.99);
     expect(fbq).toHaveBeenCalledTimes(1);
     const [cmd, name, params, options] = fbq.mock.calls[0];
     expect([cmd, name]).toEqual(["track", "InitiateCheckout"]);
     expect(params).toEqual({
-      value: 74.99, currency: "USD", content_name: "lifetime", plan: "lifetime", price_usd: 74.99,
+      value: 74.99, currency: "USD", content_name: "lifetime",
       utm_source: "meta", utm_medium: "paid_social", fbclid: "IwAR1",
     });
     expect(options?.eventID).toMatch(/^checkout_[0-9a-f-]{36}$/);
@@ -221,28 +233,28 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
 
   it("the other key events are custom events", () => {
     installBrowser({ pathname: "/calculator" });
-    trackCalculatorComplete();
+    trackCalculatorComplete("custom");
     installBrowser({ pathname: "/collections/dreams-nightmares" });
     trackTradeUpDetailOpen({ collectionSlug: "dreams-nightmares" });
     installBrowser({ pathname: "/trade-ups/42" });
-    trackVerifyClick();
+    trackVerifyClick("pro");
     expect(fbq.mock.calls.map(([cmd, name, params]) => [cmd, name, params])).toEqual([
-      ["trackCustom", "CalculatorComplete", { page_path: "/calculator" }],
-      ["trackCustom", "TradeUpDetailOpen", { page_path: "/collections/dreams-nightmares", collection_slug: "dreams-nightmares" }],
-      ["trackCustom", "VerifyClick", { page_path: "/trade-ups/42" }],
+      ["trackCustom", "CalculatorComplete", { page_path: "/calculator", source: "custom" }],
+      ["track", "ViewContent", { page_path: "/collections/dreams-nightmares", collection_slug: "dreams-nightmares" }],
+      ["trackCustom", "VerifyClick", { page_path: "/trade-ups/42", surface: "pro" }],
     ]);
   });
 
   it("GA4 stays on legacy events when only the Pixel is configured", () => {
     installBrowser({ pathname: "/pricing" });
-    trackCheckoutStart("pro");
+    trackBeginCheckout("pro", 6.99);
     expect(gtag.mock.calls).toEqual([["event", "begin_checkout", { item_name: "pro" }]]);
   });
 
   it("does not throw when the Pixel is blocked", () => {
     globalThis.fbq = undefined;
     installBrowser({ pathname: "/pricing" });
-    expect(() => trackCheckoutStart("pro")).not.toThrow();
+    expect(() => trackBeginCheckout("pro", 6.99)).not.toThrow();
   });
 });
 

@@ -124,8 +124,8 @@ export function PreviewPrivacy() {
         <p>TradeUpBot sets a session cookie to keep you signed in. That cookie is required for the service. Google Analytics, described below, sets its own first-party cookies (such as <code>_ga</code>). If Meta advertising measurement is turned on, the Meta Pixel sets <code>_fbp</code> and <code>_fbc</code> cookies.</p>
 
         <h2>Analytics and advertising</h2>
-        <p>Google Analytics 4 (gtag.js) runs on the site. It records pages you open, browser and device data, and these events: calculator results, opening a trade-up, Verify clicks, starting checkout, and a completed purchase. If you arrived from an ad, the campaign parameters and click ids in that URL (including <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>utm_term</code>, <code>utm_matchtype</code>, <code>gclid</code>, and <code>fbclid</code>) are stored in your browser and sent with later checkout and purchase events. A completed purchase can also be reported from our server to Google Analytics, using the analytics client id captured at checkout, so the purchase is counted once.</p>
-        <p>When Meta advertising measurement is turned on, the Meta Pixel sends the same events from your browser, and our server sends the purchase to Meta's Conversions API. That server event includes a SHA-256 hash of your email and of your Steam ID, plus the IP address and browser user agent from the checkout request, and the click ids. The raw email and Steam ID are not sent to Meta.</p>
+        <p>Google Analytics 4 (gtag.js) runs on the site. It records pages you open, browser and device data, and these events: calculator results (including the ad parameters from the page you landed on), opening a trade-up, Verify clicks, pricing views, checkout, a completed purchase, and Steam sign-in (a new account or a return visit). Sign-in clicks on the site are also recorded, including pricing, the trade-up page, the nav, and the expanded trade-up row. If you arrived from an ad, the campaign parameters and click ids in that URL (including <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>utm_term</code>, <code>utm_matchtype</code>, <code>gclid</code>, and <code>fbclid</code>) are stored in your browser and sent with calculator, checkout, and purchase events. A completed purchase can also be reported from our server to Google Analytics, using the analytics client id captured at checkout, so the purchase is counted once.</p>
+        <p>When Meta advertising measurement is turned on, the Meta Pixel sends the same events from your browser. Our server sends the purchase and, for a brand-new account, the registration to Meta's Conversions API. Those server events include a SHA-256 hash of your email (purchase only) and of your Steam ID, plus the IP address and browser user agent, and the click ids. At checkout we also store that IP address, user agent, and hashed Steam ID on the Stripe payment with Google and Meta, so the purchase can be matched to the ad click. The raw email and Steam ID are not sent to Google or Meta.</p>
         <p>To opt out, block these cookies or scripts in your browser, or use the vendor controls: <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer">Google Analytics opt-out</a>, <a href="https://adssettings.google.com" target="_blank" rel="noopener noreferrer">Google ad settings</a>, and <a href="https://www.facebook.com/ads/preferences" target="_blank" rel="noopener noreferrer">Meta ad preferences</a>.</p>
 
         <h2>Third-Party Services</h2>
@@ -133,11 +133,19 @@ export function PreviewPrivacy() {
         <div className="preview-tiles">
           <article className="preview-tile">
             <h3>Stripe</h3>
-            <p>Payment processing for subscriptions. Stripe receives your payment information directly and shares your email address with us for account management. See Stripe's privacy policy at <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">stripe.com/privacy</a>.</p>
+            <p>Payment processing for subscriptions. Stripe receives your payment information directly and shares your email address with us for account management. On checkout we also store your IP address, browser user agent, and a SHA-256 hash of your Steam ID on the Stripe payment so the purchase can be matched to an ad click. See Stripe's privacy policy at <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">stripe.com/privacy</a>.</p>
           </article>
           <article className="preview-tile">
             <h3>Steam (Valve)</h3>
             <p>Authentication via Steam OpenID. We receive your public Steam ID and display name. See Valve's privacy policy at <a href="https://store.steampowered.com/privacy_agreement/" target="_blank" rel="noopener noreferrer">store.steampowered.com/privacy_agreement</a>.</p>
+          </article>
+          <article className="preview-tile">
+            <h3>Google</h3>
+            <p>Analytics and advertising measurement (Google Analytics 4). Google receives the events above, the analytics client id, and, on a paid checkout, the IP address, browser user agent, and hashed Steam ID stored on the Stripe payment. See <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com/privacy</a>.</p>
+          </article>
+          <article className="preview-tile">
+            <h3>Meta</h3>
+            <p>Advertising measurement, only when the Meta Pixel and Conversions API are turned on. Meta receives the same events, and on a purchase or new account the IP address, browser user agent, and hashed Steam ID. See <a href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener noreferrer">facebook.com/privacy/policy</a>.</p>
           </article>
           <article className="preview-tile">
             <h3>CSFloat, DMarket, Skinport</h3>
