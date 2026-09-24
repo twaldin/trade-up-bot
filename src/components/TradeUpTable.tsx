@@ -230,6 +230,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
   // Lazy-loaded outcomes and inputs (not included in list response to save bandwidth)
   const [loadedOutcomes, setLoadedOutcomes] = useState<Map<number, TradeUp["outcomes"]>>(new Map());
   const [loadedInputs, setLoadedInputs] = useState<Map<number, TradeUp["inputs"]>>(new Map());
+  const [redactedInputIds, setRedactedInputIds] = useState<Set<number>>(new Set());
   // Guard against duplicate in-flight detail fetches (rapid collapse/re-expand)
   const inflightDetails = useRef(new Set<string>());
 
@@ -260,6 +261,9 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
           if (res.ok) {
             const data = await res.json();
             setLoadedInputs(prev => new Map(prev).set(tuId, data.inputs || []));
+            if (data.inputs_redacted) {
+              setRedactedInputIds(prev => new Set(prev).add(tuId));
+            }
           }
         }).catch(() => {}).finally(() => { inflightDetails.current.delete(inputsKey); })
       );
@@ -318,6 +322,12 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
 
     return (
     <div className="bg-card">
+        {redactedInputIds.has(tu.id) && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 bg-yellow-950/40 border border-yellow-500/30 rounded-md text-xs text-yellow-200">
+            <span>This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</span>
+            <a href="/pricing" className="font-medium text-yellow-400 hover:text-yellow-300 whitespace-nowrap">View Plans →</a>
+          </div>
+        )}
         {!signedIn && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 bg-blue-950/30 border border-blue-500/30 rounded-md text-xs text-blue-200">
             <span>Claim these listings before someone else does.</span>

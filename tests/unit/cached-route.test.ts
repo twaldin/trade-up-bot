@@ -55,6 +55,25 @@ describe("cachedRoute single-flight coalescing", () => {
     });
   });
 
+  it("coalesces the full payload and presents per request", async () => {
+    const app = express();
+    app.get("/test", cachedRoute("test_present_key", 60, async (_req, res) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 40));
+      res.json({ listing_id: "listing-secret", float_value: 0.151234 });
+    }, (data, req) => {
+      if (req.headers["x-tier"] === "pro") return data;
+      return { listing_id: "hidden", float_value: null };
+    }));
+
+    const [free, pro] = await Promise.all([
+      request(app).get("/test").set("x-tier", "free"),
+      request(app).get("/test").set("x-tier", "pro"),
+    ]);
+
+    expect(free.body).toEqual({ listing_id: "hidden", float_value: null });
+    expect(pro.body).toEqual({ listing_id: "listing-secret", float_value: 0.151234 });
+  });
+
   describe("sequential non-deduplication (Redis down)", () => {
     it("invokes the handler on each sequential request when there is no Redis cache", async () => {
       let callCount = 0;

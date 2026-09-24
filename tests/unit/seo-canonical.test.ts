@@ -48,7 +48,10 @@ describe("canonical and robots SEO helpers", () => {
 });
 
 describe("server route canonical/noindex/404 behavior", () => {
-  const source = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
+  const source = [
+    readFileSync(join(__dir, "../../server/index.ts"), "utf-8"),
+    readFileSync(join(__dir, "../../server/trade-up-share-seo.ts"), "utf-8"),
+  ].join("\n");
 
   it("dynamic collection, skin, and trade-up routes return 404/410 instead of falling through to SPA", () => {
     expect(source).toContain('res.status(404).send("Collection trade-up page not found")');

@@ -9,7 +9,7 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
-import { getEffectiveTier } from "../shared/pro-access.js";
+import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -372,14 +372,19 @@ export function requireTier(...tiers: string[]) {
   };
 }
 
+/**
+ * Board delay and fresh-row redaction apply only to anonymous and free viewers.
+ * Basic is a grandfathered legacy paid tier ($5/mo) and keeps today's full, undelayed payload.
+ * Pro and a verified lifetime purchase are already "pro" from getEffectiveTier.
+ */
+export function isDelayedTier(user: TierUser): boolean {
+  return getEffectiveTier(user) === "free";
+}
+
 // Get tier config for the current user's actual tier (no view_as override)
 export function getTierConfig(req: Request): { delay: number; limit: number; showListingIds: boolean } {
-  const tier = getEffectiveTier(req.user as User | undefined);
-
-  switch (tier) {
-    case "pro":
-      return { delay: 0, limit: 0, showListingIds: true };
-    default:
-      return { delay: 3 * 60 * 60, limit: 0, showListingIds: true };
+  if (!isDelayedTier(req.user as TierUser)) {
+    return { delay: 0, limit: 0, showListingIds: true };
   }
+  return { delay: 3 * 60 * 60, limit: 0, showListingIds: true };
 }

@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
-import { PreviewBoard, signedDollars } from "../../src/preview/pages/PreviewBoard.js";
+import { MemoryRouter } from "react-router-dom";
+import { PreviewBoard, TradeUpCard, signedDollars } from "../../src/preview/pages/PreviewBoard.js";
 import { formatDollars } from "../../src/utils/format.js";
 import { SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
@@ -20,6 +21,7 @@ import {
   evDrivers,
   evWaterfall,
   inputCostCents,
+  inputListingHref,
   inputListingHrefs,
   inputQty,
   inputRarityColor,
@@ -251,6 +253,52 @@ describe("preview board numbers", () => {
     const hrefs = inputListingHrefs(group?.listings ?? []);
     expect(hrefs).toHaveLength(2);
     expect(hrefs.every((href) => href.startsWith("https://"))).toBe(true);
+  });
+
+  it("emits no marketplace URL when the listing id is hidden", () => {
+    const hidden = input({ listing_id: "hidden", source: "buff", marketplace_id: "goods-1", price_cents: 2000 });
+    expect(inputListingHref(hidden)).toBeNull();
+    expect(inputListingHrefs([hidden, input({ listing_id: "live-1" })])).toEqual([
+      inputListingHref(input({ listing_id: "live-1" })),
+    ]);
+  });
+
+  it("shows the free-delay banner and no marketplace link on a redacted console card", () => {
+    const tu = makeTradeUp({
+      inputs_redacted: true,
+      total_cost_cents: 10000,
+      inputs: [input({
+        listing_id: "hidden",
+        source: undefined,
+        price_cents: undefined,
+        float_value: 0,
+        marketplace_id: undefined,
+      })],
+    });
+    const html = renderToStaticMarkup(createElement(
+      MemoryRouter,
+      null,
+      createElement(TradeUpCard, { tu, expanded: true, onExpand: () => {} }),
+    ));
+    expect(html).toContain("inside the free delay");
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("$100.00");
+    expect(html).not.toContain("csfloat.com");
+    expect(html).not.toContain("buff.market");
+    expect(html).not.toContain("skinport.com");
+    expect(html).not.toContain("dmarket.com");
+    expect(html).not.toMatch(/preview-listing" href=/);
+  });
+
+  it("keeps a marketplace link when the listing id is live", () => {
+    const tu = makeTradeUp({ listingIds: ["abc"] });
+    const html = renderToStaticMarkup(createElement(
+      MemoryRouter,
+      null,
+      createElement(TradeUpCard, { tu, expanded: true, onExpand: () => {} }),
+    ));
+    expect(html).toContain("https://csfloat.com/item/abc");
+    expect(html).not.toContain("inside the free delay");
   });
 
   it("reports blocked popups after the first listing so the card can expand", () => {

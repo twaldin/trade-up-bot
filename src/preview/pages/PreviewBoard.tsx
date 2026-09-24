@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
-import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
+import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -14,6 +14,7 @@ import {
   formatFloat,
   formatOdds,
   inputCostCents,
+  inputListingHref,
   inputListingHrefs,
   inputRarityColor,
   inputRarityLabel,
@@ -480,18 +481,25 @@ function RankedList({ title, points, empty }: { title: string; points: PayoffPoi
 }
 
 function ListingRow({ input, index }: { input: TradeUpInput; index: number }) {
-  const href = listingUrl(
-    input.listing_id,
-    input.skin_name,
-    input.condition,
-    input.float_value,
-    input.price_cents,
-    input.source,
-    input.marketplace_id,
-    input.stattrak,
-  );
+  const href = inputListingHref(input);
   const { weapon, finish } = splitSkinName(input.skin_name);
   const float = formatFloat(input.float_value);
+  const body = (
+    <>
+      <span className="preview-listing__n">{String(index + 1).padStart(2, "0")}</span>
+      <span className="preview-listing__name">
+        {weapon && <em>{weapon}</em>}
+        <b>{finish}</b>
+      </span>
+      {input.source ? <span className="preview-chip">{sourceLabel(input.source)}</span> : null}
+      <span className="preview-listing__float">{float ?? "—"}</span>
+      {typeof input.price_cents === "number" ? (
+        <span className="preview-listing__price">{formatDollars(input.price_cents)}</span>
+      ) : null}
+      {href ? <ExternalLink size={11} aria-hidden /> : null}
+    </>
+  );
+  if (!href) return <div className="preview-listing">{body}</div>;
   return (
     <a
       className="preview-listing"
@@ -501,15 +509,7 @@ function ListingRow({ input, index }: { input: TradeUpInput; index: number }) {
       onClick={stop}
       title={typeof input.float_value === "number" ? `Float ${input.float_value}` : undefined}
     >
-      <span className="preview-listing__n">{String(index + 1).padStart(2, "0")}</span>
-      <span className="preview-listing__name">
-        {weapon && <em>{weapon}</em>}
-        <b>{finish}</b>
-      </span>
-      <span className="preview-chip">{sourceLabel(input.source)}</span>
-      <span className="preview-listing__float">{float ?? "—"}</span>
-      <span className="preview-listing__price">{formatDollars(input.price_cents)}</span>
-      <ExternalLink size={11} aria-hidden />
+      {body}
     </a>
   );
 }
@@ -559,6 +559,7 @@ export function TradeUpCard({
   const { drivers, drags } = evDrivers(points, 4);
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
+  const inputsRedacted = tu.inputs_redacted === true || tu.inputs.some((row) => row.listing_id === "hidden");
   const toggle = () => {
     if (!expandable) return;
     onExpand(expanded ? null : tu.id);
@@ -589,6 +590,13 @@ export function TradeUpCard({
           <ChevronUp size={12} aria-hidden />
           Collapse
         </button>
+      )}
+
+      {inputsRedacted && (
+        <div className="preview-notice" role="status" onClick={stop}>
+          <p className="preview-note">This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</p>
+          <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
+        </div>
       )}
 
       {(inputs.length > 0 || outputs.length > 0) && (

@@ -8,9 +8,12 @@ import {
   isKnownSortKey,
   listCacheTier,
   NO_CHANCE_MATCH,
+  tradeUpHiddenByDelay,
   tradeUpSortColumn,
   tradeUpsCacheKey,
 } from "../../server/routes/trade-ups-query.js";
+import { isDelayedTier } from "../../server/auth.js";
+import { getEffectiveTier } from "../../shared/pro-access.js";
 import { computeChanceToProfit } from "../../server/engine.js";
 import { BOARD_SORTS } from "../../src/preview/components/PreviewFilters.js";
 
@@ -186,6 +189,14 @@ describe("tradeUpsCacheKey", () => {
     expect(anon).not.toBe(pro);
     expect(anon).not.toBe(internal);
     expect(listCacheTier({ authorization: "Bearer nope", internalToken: "bot-token" })).toBe("free");
+    expect(listCacheTier({ tier: "basic" })).toBe("basic");
+    expect(listCacheTier({ tier: "basic" })).not.toBe(listCacheTier({ tier: "free" }));
+    expect(getEffectiveTier({ tier: "free", lifetime: true })).toBe("pro");
+    expect(isDelayedTier(undefined)).toBe(true);
+    expect(isDelayedTier({ tier: "free" })).toBe(true);
+    expect(isDelayedTier({ tier: "basic" })).toBe(false);
+    expect(isDelayedTier({ tier: "pro" })).toBe(false);
+    expect(isDelayedTier({ tier: "free", lifetime: true })).toBe(false);
   });
 
   it("is what the list route caches under", () => {
@@ -201,5 +212,20 @@ describe("discord /top min_chance bounds", () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../discord-bot/index.ts"), "utf-8");
     expect(source).toContain('setName("min_chance")');
     expect(source).toMatch(/setName\("min_chance"\)[\s\S]*?setMinValue\(0\)\.setMaxValue\(100\)/);
+  });
+});
+
+describe("tradeUpHiddenByDelay", () => {
+  const now = Date.parse("2026-09-24T12:00:00.000Z");
+  const delay = 3 * 60 * 60;
+
+  it("hides a row strictly younger than the free delay and shows the boundary", () => {
+    expect(tradeUpHiddenByDelay(new Date(now - delay * 1000 + 1).toISOString(), delay, now)).toBe(true);
+    expect(tradeUpHiddenByDelay(new Date(now - delay * 1000).toISOString(), delay, now)).toBe(false);
+    expect(tradeUpHiddenByDelay(new Date(now - delay * 1000 - 1).toISOString(), delay, now)).toBe(false);
+  });
+
+  it("never hides a row when the viewer delay is zero", () => {
+    expect(tradeUpHiddenByDelay(new Date(now).toISOString(), 0, now)).toBe(false);
   });
 });

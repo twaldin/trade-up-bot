@@ -231,8 +231,20 @@ export function cachedRoute(
   keyFn: string | ((req: Request) => string | null),
   ttlSeconds: number,
   handler: (req: Request, res: Response, next: NextFunction) => void | Promise<void>,
+  present?: (data: unknown, req: Request) => unknown | Promise<unknown>,
 ) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const sendCached = async (raw: string) => {
+      if (!present) {
+        res.setHeader("Content-Type", "application/json");
+        res.send(raw);
+        return;
+      }
+      const shown = await present(JSON.parse(raw) as unknown, req);
+      res.setHeader("Content-Type", "application/json");
+      res.send(JSON.stringify(shown));
+    };
+
     const key = typeof keyFn === "string" ? keyFn : keyFn(req);
 
     // No key → no caching and no coalescing (e.g. keyFn returned null)
@@ -246,8 +258,7 @@ export function cachedRoute(
         const cached = await _redis.get(key);
         if (cached !== null) {
           res.setHeader("X-Cache", "HIT");
-          res.setHeader("Content-Type", "application/json");
-          res.send(cached); // send raw string, skip re-serialization
+          await sendCached(cached); // full payload stays cached; present runs per request
           return;
         }
       } catch { /* Redis error — fall through to single-flight path */ }
@@ -261,8 +272,7 @@ export function cachedRoute(
       if (raw !== null) {
         // Leader succeeded — serve its result
         res.setHeader("X-Cache", "COALESCED");
-        res.setHeader("Content-Type", "application/json");
-        res.send(raw);
+        await sendCached(raw);
         return;
       }
       // Leader failed — fall through and run the handler independently
@@ -285,18 +295,24 @@ export function cachedRoute(
       const statusCode = res.statusCode;
       res.setHeader("X-Cache", "MISS");
       if (statusCode < 300) {
-        // 2xx: store in Redis and resolve waiters with the raw JSON string
+        // 2xx: store the handler payload. `present` may redact what this
+        // caller sees; that view is never written back to Redis.
         const raw = JSON.stringify(data);
         if (_available && _redis) {
           _redis.set(key, raw, "EX", ttlSeconds).catch(() => {});
         }
         resolved = true;
         resolve(raw);
-      } else {
-        // Non-2xx: skip Redis and resolve with null so followers run independently
-        resolved = true;
-        resolve(null);
+        if (!present) return originalJson(data);
+        void Promise.resolve(present(data, req)).then(
+          (shown) => { originalJson(shown); },
+          (err) => { next(err); },
+        );
+        return res;
       }
+      // Non-2xx: skip Redis and resolve with null so followers run independently
+      resolved = true;
+      resolve(null);
       return originalJson(data);
     } as typeof res.json;
 

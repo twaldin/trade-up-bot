@@ -677,8 +677,8 @@ export function PreviewAccount() {
                         <span className="preview-faces__art"><Face name={row.skin_name} /></span>
                         <span className="preview-outcome__name">{row.skin_name}</span>
                         <span className="preview-chip">{row.condition}</span>
-                        <span className="o-mono">{row.float_value.toFixed(4)}</span>
-                        <span className="o-mono">{formatDollars(row.price_cents)}</span>
+                        <span className="o-mono">{typeof row.float_value === "number" ? row.float_value.toFixed(4) : "—"}</span>
+                        {typeof row.price_cents === "number" ? <span className="o-mono">{formatDollars(row.price_cents)}</span> : null}
                       </label>
                     ))}
                   </div>

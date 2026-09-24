@@ -161,6 +161,7 @@ export interface TradeUp {
   claimed_by_me?: boolean;
   claimed_by_other?: boolean;
   claim_expires_at?: string;
+  inputs_redacted?: boolean;
   previous_inputs?: {
     old_profit_cents: number;
     old_cost_cents: number;

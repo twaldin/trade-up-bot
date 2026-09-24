@@ -356,6 +356,7 @@ export interface TradeUpInputRow {
   condition: string;
   collection_name: string;
   price_cents?: number;
+  source?: string;
 }
 
 export interface TradeUpOutcomeRow {
@@ -398,7 +399,8 @@ export function renderTradeUpDetail(
   tradeUp: TradeUpDetailRow,
   inputs: TradeUpInputRow[],
   outcomes: TradeUpOutcomeRow[],
-  related: TradeUpRelatedLink[]
+  related: TradeUpRelatedLink[],
+  opts?: { hideInputCommercials?: boolean },
 ): string {
   const e = escapeHtml;
   const profit = formatDollars(tradeUp.profit_cents);
@@ -406,10 +408,13 @@ export function renderTradeUpDetail(
   const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
   const typeLabel = TRADE_UP_TYPE_DISPLAY[tradeUp.type] || tradeUp.type;
+  const hideInputCommercials = opts?.hideInputCommercials === true;
 
-  const inputRows = inputs.map(inp =>
-    `<li>${e(inp.skin_name)} (${e(inp.condition)}) — ${e(inp.collection_name)}${inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : ""}</li>`
-  ).join("");
+  const inputRows = inputs.map(inp => {
+    const price = !hideInputCommercials && inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : "";
+    const source = !hideInputCommercials && inp.source ? ` — ${e(inp.source)}` : "";
+    return `<li>${e(inp.skin_name)} (${e(inp.condition)}) — ${e(inp.collection_name)}${price}${source}</li>`;
+  }).join("");
 
   const outcomeRows = outcomes.map(out => {
     const pct = Math.round(out.probability * 100);

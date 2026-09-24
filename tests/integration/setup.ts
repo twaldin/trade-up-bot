@@ -481,6 +481,10 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestCont
   // Mock auth middleware: inject user on every request
   // Override via X-Test-User-Id and X-Test-User-Tier headers
   app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.headers["x-test-user-id"] === "anonymous") {
+      next();
+      return;
+    }
     const userId = (req.headers["x-test-user-id"] as string) || defaultUserId;
     const tier = (req.headers["x-test-user-tier"] as string) || defaultTier;
     req.user = {

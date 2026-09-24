@@ -106,3 +106,15 @@ export function listCacheTier(opts: { tier?: string; authorization?: string; int
   const internal = Boolean(opts.internalToken && opts.authorization === `Bearer ${opts.internalToken}`);
   return internal ? "pro" : (opts.tier || "free");
 }
+
+/**
+ * Same age cut the list uses: `created_at <= now - delay` stays visible.
+ * A row strictly younger than `delaySeconds` is hidden. `delaySeconds` comes
+ * from `getTierConfig` (0 for Pro / internal). The boundary instant is visible.
+ */
+export function tradeUpHiddenByDelay(createdAt: string | Date, delaySeconds: number, nowMs = Date.now()): boolean {
+  if (!(delaySeconds > 0)) return false;
+  const createdMs = new Date(createdAt).getTime();
+  if (Number.isNaN(createdMs)) return true;
+  return createdMs > nowMs - delaySeconds * 1000;
+}
