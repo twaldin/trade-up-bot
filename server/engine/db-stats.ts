@@ -5,7 +5,7 @@
 import pg from "pg";
 import { withRetry, isTransientDbError, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { lookupOutputPrice, buildPriceCache, warmOutputPriceCaches, type OutputPriceResult } from "./pricing.js";
-import { storedInputCost } from "./fees.js";
+import { repricedInputCost } from "./fees.js";
 import { floatToCondition, type TradeUpOutcome } from "../../shared/types.js";
 import {
   ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale,
@@ -96,7 +96,7 @@ export async function applyListingPriceToInputs(
     skin_name: string; float_value: number;
   }[]) {
     const feeSource = listingSource ?? r.listing_source ?? r.source ?? "csfloat";
-    const expected = storedInputCost(rawPriceCents, feeSource);
+    const expected = repricedInputCost(rawPriceCents, feeSource);
     if (refLookup) {
       const condition = floatToCondition(Number(r.float_value));
       if (isInputPriceOutlier({
@@ -232,7 +232,7 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     skin_name: string; float_value: number; stored: number; raw: number;
   }[]) {
     const feeSource = r.listing_source ?? r.source ?? "csfloat";
-    const expected = storedInputCost(r.raw, feeSource);
+    const expected = repricedInputCost(r.raw, feeSource);
     const condition = floatToCondition(Number(r.float_value));
     if (isInputPriceOutlier({
       skinName: r.skin_name,

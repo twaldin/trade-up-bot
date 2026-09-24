@@ -27,6 +27,25 @@ export function storedInputCost(rawListingPriceCents: number, source: string | n
   return effectiveBuyCostRaw(rawListingPriceCents, source ?? "csfloat");
 }
 
+/**
+ * Temporary safety toggle. Default false: reprices keep the buyer fee so they
+ * match the PR 166 backfill. Set REPRICE_DROPS_BUYER_FEE=true to store the raw
+ * listing price again.
+ */
+export function repriceDropsBuyerFee(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.REPRICE_DROPS_BUYER_FEE === "true";
+}
+
+/** Stored input price a reprice should write. Fee-inclusive unless the flag is true. */
+export function repricedInputCost(
+  rawListingPriceCents: number,
+  source: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  if (repriceDropsBuyerFee(env)) return rawListingPriceCents;
+  return storedInputCost(rawListingPriceCents, source);
+}
+
 /** Effective cost from raw price + source string */
 export function effectiveBuyCostRaw(priceCents: number, source: string): number {
   const fees = MARKETPLACE_FEES[source as keyof typeof MARKETPLACE_FEES];

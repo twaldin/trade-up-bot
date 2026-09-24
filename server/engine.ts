@@ -16,7 +16,7 @@ export { EXCLUDED_COLLECTIONS, CONDITION_BOUNDS } from "./engine/types.js";
 export { RARITY_TIERS, getTierById, getGunTiers, getNewTiers } from "./engine/rarity-tiers.js";
 
 // === Fees ===
-export { MARKETPLACE_FEES, effectiveBuyCost, effectiveBuyCostRaw, effectiveSellProceeds, storedInputCost } from "./engine/fees.js";
+export { MARKETPLACE_FEES, effectiveBuyCost, effectiveBuyCostRaw, effectiveSellProceeds, storedInputCost, repriceDropsBuyerFee, repricedInputCost } from "./engine/fees.js";
 
 // === Utilities ===
 export { pick, shuffle, listingSig, parseSig, computeChanceToProfit, computeBestWorstCase, withRetry, isTransientDbError, pickWeightedStrategy } from "./engine/utils.js";

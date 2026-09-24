@@ -21,7 +21,13 @@ const DISCOVERY_STATEMENT_TIMEOUT = "10s";
 
 export interface LeakedTradeUpHealResult {
   updated: number;
+  partial: number;
+  stale: number;
   cacheFlushed: boolean;
+}
+
+export function formatHealCycleLog(result: LeakedTradeUpHealResult): string {
+  return `[heal] cycle ok updated=${result.updated} partial=${result.partial} stale=${result.stale} cacheFlushed=${result.cacheFlushed}`;
 }
 
 let lastStartedAt = 0;
@@ -52,18 +58,27 @@ function isStatementTimeout(err: unknown): boolean {
  */
 export async function healLeakedTradeUps(pool: pg.Pool): Promise<LeakedTradeUpHealResult> {
   const listingIds = await discoverMissingListingIds(pool);
-  if (listingIds === null) return { updated: 0, cacheFlushed: false };
+  if (listingIds === null) return { updated: 0, partial: 0, stale: 0, cacheFlushed: false };
 
+  const tally = { partial: 0, stale: 0 };
   const updated = await cascadeTradeUpStatuses(pool, listingIds, {
     invalidateCache: false,
     preserveFullyMissing: true,
+    tally,
   });
   let cacheFlushed = false;
   if (updated > 0) {
     await cacheInvalidatePrefix("tu:");
     cacheFlushed = true;
   }
-  return { updated, cacheFlushed };
+  const result: LeakedTradeUpHealResult = {
+    updated,
+    partial: tally.partial,
+    stale: tally.stale,
+    cacheFlushed,
+  };
+  console.log(formatHealCycleLog(result));
+  return result;
 }
 
 /**

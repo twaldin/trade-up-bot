@@ -75,7 +75,7 @@ describe("fee labels", () => {
 
   it("lists every market on the board and only the card's markets on a card", () => {
     const board = boardFeeLine();
-    expect(board.cost).toBe(boardFeeLine([], true).cost);
+    expect(board.cost).toBe(boardFeeLine([], false).cost);
     expect(board.outcomes).toBe("Outcome prices are after CSFloat's 2% seller fee.");
     expect(boardFeeLine(["calculator"]).cost).toBe(board.cost);
   });

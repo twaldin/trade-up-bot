@@ -53,8 +53,16 @@ function outcomeFeeCopy(): string {
   return `Outcome prices are after ${seller.name}'s ${percent(seller.sellerFeePct)} seller fee.`;
 }
 
-/** flip to false after PR 166 deploy and approved backfill --apply */
-export const REPRICE_DROPS_BUYER_FEE = true;
+/**
+ * Default false after the PR 166 backfill. Set REPRICE_DROPS_BUYER_FEE=true
+ * to restore the hedged cost copy (repriced listings counted at listed price).
+ */
+function envFlagTrue(name: string): boolean {
+  if (typeof process === "undefined") return false;
+  return process.env[name] === "true";
+}
+
+export const REPRICE_DROPS_BUYER_FEE = envFlagTrue("REPRICE_DROPS_BUYER_FEE");
 
 /** Every market on the board; only the card's own markets once its listings load. */
 export function boardFeeLine(
