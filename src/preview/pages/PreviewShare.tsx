@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
-import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
+import { detailTypeLabel, tradeUpDetailJsonLd } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
 import { trackEvent } from "../../lib/analytics.js";
@@ -202,7 +202,7 @@ export function PreviewShare() {
     setExpiresAt(null);
   }
 
-  const typeLabel = tu?.type ? (TRADE_UP_TYPE_LABELS[tu.type] || tu.type) : "Trade-up";
+  const typeLabel = tu?.type ? detailTypeLabel(tu.type) : "Trade-up";
   const profit = tu ? formatDollars(tu.profit_cents) : "$0.00";
   const chance = tu ? formatOdds(tu.chance_to_profit ?? 0) : "0%";
   const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
@@ -221,6 +221,7 @@ export function PreviewShare() {
         title={title}
         description={tu ? `$${formatDollars(tu.total_cost_cents).slice(1)} cost, ${roi}% ROI. Found on TradeUpBot.` : "Trade-up detail on TradeUpBot."}
         canonical={id ? `https://tradeupbot.app/trade-ups/${id}` : "https://tradeupbot.app/trade-ups"}
+        jsonLd={tu && id ? tradeUpDetailJsonLd(id, typeLabel) : undefined}
       />
       <header className="preview-page__head">
         <div>

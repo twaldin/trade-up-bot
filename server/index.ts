@@ -27,7 +27,7 @@ import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
-import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
+import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE, detailTypeLabel, tradeUpDetailJsonLd } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { COLLECTION_TRADEUP_LEDE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -1000,7 +1000,7 @@ registerCanonicalRedirectRoutes(app);
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtml, {
-          title: "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot",
+          title: TRADE_UPS_DOCUMENT_TITLE,
           description: "Live CS2 trade-up contracts from real listings, with expected value after fees. Filter by expected profit, cost, and rarity. CSFloat, DMarket, Skinport.",
           url: "https://tradeupbot.app/trade-ups",
         }));
@@ -1042,7 +1042,7 @@ registerCanonicalRedirectRoutes(app);
           acceptedAnswer: { "@type": "Answer", text: item.a },
         })) };
         const html = buildSeoHtml({
-          title: "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot",
+          title: TRADE_UPS_DOCUMENT_TITLE,
           description: tradeUpsHubDescription(counts),
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({

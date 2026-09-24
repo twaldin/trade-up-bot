@@ -278,6 +278,7 @@ export function PreviewSkinsPage() {
 
   return (
     <div className="preview-page">
+      <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
       <header className="preview-page__head">
         <div>
           <h1>Skins</h1>
@@ -567,6 +568,7 @@ export function PreviewSkinPage() {
   const { weapon, finish } = splitSkinName(name);
   return (
     <div className="preview-page">
+      <title>{`${name} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`}</title>
       <header className="preview-page__head">
         <div>
           <h1>{finish}</h1>
@@ -866,6 +868,7 @@ export function PreviewCollectionPage() {
 
   return (
     <div className="preview-page">
+      <title>{`${(title ?? "Collection").replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`}</title>
       <header className="preview-page__head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">

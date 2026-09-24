@@ -1,4 +1,6 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { detailTypeLabel } from "../shared/types.js";
+export { tradeUpDetailJsonLd } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -387,15 +389,6 @@ export interface TradeUpsHubCollection {
   count: number;
 }
 
-const TRADE_UP_TYPE_DISPLAY: Record<string, string> = {
-  covert_knife: "Knife/Glove",
-  classified_covert: "Classified",
-  restricted_classified: "Restricted",
-  milspec_restricted: "Mil-Spec",
-  industrial_milspec: "Industrial Grade",
-  consumer_industrial: "Consumer Grade",
-};
-
 export function renderTradeUpDetail(
   tradeUp: TradeUpDetailRow,
   inputs: TradeUpInputRow[],
@@ -408,7 +401,7 @@ export function renderTradeUpDetail(
   const cost = formatDollars(tradeUp.total_cost_cents);
   const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
-  const typeLabel = TRADE_UP_TYPE_DISPLAY[tradeUp.type] || tradeUp.type;
+const typeLabel = detailTypeLabel(tradeUp.type);
   const hideInputCommercials = opts?.hideInputCommercials === true;
 
   const inputRows = inputs.map(inp => {
@@ -463,7 +456,7 @@ export function renderTradeUpsHub(args: {
     displayTradeUps.push(args.topTradeUps[displayTradeUps.length % args.topTradeUps.length]);
   }
   const tradeRows = displayTradeUps.map((t, index) =>
-    `<tr><td><a href="/trade-ups/${t.id}${index >= args.topTradeUps.length ? `?hub_rank=${index + 1}` : ""}">${e(TRADE_UP_TYPE_DISPLAY[t.type] || t.type)}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${formatOdds(t.chance_to_profit ?? 0)}</td></tr>`
+    `<tr><td><a href="/trade-ups/${t.id}${index >= args.topTradeUps.length ? `?hub_rank=${index + 1}` : ""}">${e(detailTypeLabel(t.type))}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${formatOdds(t.chance_to_profit ?? 0)}</td></tr>`
   ).join("\n");
   const fallbackCollections: TradeUpsHubCollection[] = [
     { name: "Dreams & Nightmares", slug: "dreams-nightmares", count: 0 },

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
+import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import {
@@ -834,6 +835,7 @@ export function PreviewBoard({
 
   return (
     <div className={embed ? "preview-board-embed" : "preview-page"}>
+      {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>

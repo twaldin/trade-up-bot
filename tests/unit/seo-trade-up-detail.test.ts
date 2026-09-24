@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderTradeUpDetail } from "../../server/seo.js";
+import { detailTypeLabel, tradeUpDetailJsonLd } from "../../shared/types.js";
 
 const tradeUp = {
   id: 767744697,
@@ -33,6 +34,21 @@ describe("renderTradeUpDetail (#3 + #9-detail)", () => {
     expect(html).toMatch(/<h1>/);
     expect(html).toContain("$35.09");
     expect(html).toContain("12.3%");
+  });
+
+  it("uses the same input-rarity label for the H1 and the document title", () => {
+    const label = detailTypeLabel(tradeUp.type);
+    const html = renderTradeUpDetail(tradeUp, inputs, outcomes, related);
+    expect(label).toBe("Classified");
+    expect(html).toContain(`<h1>${label} Trade-Up`);
+    expect(html).not.toContain("<h1>Covert Trade-Up");
+    const title = `${label} Trade-Up — $35.09 expected P/L (32% above cost) | TradeUpBot`;
+    expect(title.startsWith(`${label} Trade-Up`)).toBe(true);
+    const ld = tradeUpDetailJsonLd(tradeUp.id, label);
+    const parsed = JSON.parse(JSON.stringify(ld)) as { "@type": string; itemListElement: { name: string }[] };
+    expect(parsed["@type"]).toBe("BreadcrumbList");
+    expect(parsed.itemListElement[2]?.name).toBe("Classified Trade-Up");
+    expect(JSON.stringify(ld)).not.toMatch(/aggregateRating|review|ratingValue|offers/i);
   });
 
   it("renders all 10 inputs under an Inputs section", () => {

@@ -31,6 +31,35 @@ export const TRADE_UP_TYPE_LABELS: Record<string, string> = {
   staircase: "Staircase",
 };
 
+/** Input rarity, the label the detail-page H1 uses. */
+const DETAIL_TYPE_LABELS: Record<string, string> = {
+  covert_knife: "Knife/Glove",
+  classified_covert: "Classified",
+  restricted_classified: "Restricted",
+  milspec_restricted: "Mil-Spec",
+  industrial_milspec: "Industrial Grade",
+  consumer_industrial: "Consumer Grade",
+};
+
+export const TRADE_UPS_DOCUMENT_TITLE = "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot";
+
+export function detailTypeLabel(type: string): string {
+  return DETAIL_TYPE_LABELS[type] ?? TRADE_UP_TYPE_LABELS[type] ?? type;
+}
+
+/** Breadcrumb only. No ratings or prices. */
+export function tradeUpDetailJsonLd(id: string | number, typeLabel: string): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://tradeupbot.app/" },
+      { "@type": "ListItem", position: 2, name: "Trade-Ups", item: "https://tradeupbot.app/trade-ups" },
+      { "@type": "ListItem", position: 3, name: `${typeLabel} Trade-Up`, item: `https://tradeupbot.app/trade-ups/${id}` },
+    ],
+  };
+}
+
 // Float value -> condition mapping
 export const CONDITIONS = [
   { name: "Factory New", abbr: "FN", min: 0.0, max: 0.07 },
