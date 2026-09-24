@@ -4,6 +4,7 @@ import { PreviewSeo } from "../components/PreviewSeo.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { rarityTint } from "../lib/board.js";
+import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { seoPage } from "../lib/seo-pages.js";
 
 const seo = seoPage("/features");
@@ -105,7 +106,7 @@ export function PreviewFeatures() {
         <header className="preview-panel__head">
           <p className="o-kicker">Start free</p>
         </header>
-        <p className="preview-note">Sign in with Steam. The free tier shows trade-up data on a 3-hour delay; contracts whose inputs sell in the meantime drop out.</p>
+        <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
         <div className="preview-toolbar">
           <a
             className="preview-btn preview-btn--lime"

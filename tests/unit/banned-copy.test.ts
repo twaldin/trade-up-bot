@@ -104,6 +104,27 @@ describe("banned ad copy", () => {
     });
   }
 
+  it("pins the sign-in bar and the FAQ Steam sentence", () => {
+    const bar = "Verify and Claim are Pro features. Signing in with Steam is free.";
+    const faq = "Signing in with Steam is free. Verify and Claim are Pro features.";
+    const copy = readFileSync(join(root, "src/preview/lib/copy.ts"), "utf8");
+    const seo = readFileSync(join(root, "server/static-seo-pages.ts"), "utf8");
+    expect(copy).toContain(`"${bar}"`);
+    const faqHits = seo.split(faq).length - 1;
+    expect(faqHits).toBe(2);
+    for (const rel of [
+      "src/preview/pages/PreviewShare.tsx",
+      "src/preview/pages/PreviewAccount.tsx",
+      "src/preview/pages/PreviewFeatures.tsx",
+    ]) {
+      const source = readFileSync(join(root, rel), "utf8");
+      expect(source).toContain("SIGN_IN_TO_CLAIM");
+      expect(source).not.toContain("Verify is part of Pro");
+      expect(source).not.toContain("Sign in to claim and purchase");
+      expect(source).not.toContain("Sign in to see claims");
+    }
+  });
+
   it("prerendered HTML has none of the banned phrases", () => {
     const present = PRERENDERED.filter((rel) => existsSync(join(root, rel)));
     expect(present.length, "run npm run build so dist HTML exists").toBeGreaterThan(0);
