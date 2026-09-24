@@ -1,5 +1,3 @@
-import { getEffectiveTier } from "../auth.js";
-
 /**
  * Query-string contract for GET /api/trade-ups.
  *
@@ -106,7 +104,7 @@ export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string,
 /** Delay tier the list handler will actually apply, including the internal bot token. */
 export function listCacheTier(opts: { tier?: string; authorization?: string; internalToken?: string }): string {
   const internal = Boolean(opts.internalToken && opts.authorization === `Bearer ${opts.internalToken}`);
-  return internal ? "pro" : getEffectiveTier(opts.tier);
+  return internal ? "pro" : (opts.tier || "free");
 }
 
 /**

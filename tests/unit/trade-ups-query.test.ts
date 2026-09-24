@@ -12,6 +12,8 @@ import {
   tradeUpSortColumn,
   tradeUpsCacheKey,
 } from "../../server/routes/trade-ups-query.js";
+import { isDelayedTier } from "../../server/auth.js";
+import { getEffectiveTier } from "../../shared/pro-access.js";
 import { computeChanceToProfit } from "../../server/engine.js";
 import { BOARD_SORTS } from "../../src/preview/components/PreviewFilters.js";
 
@@ -187,9 +189,14 @@ describe("tradeUpsCacheKey", () => {
     expect(anon).not.toBe(pro);
     expect(anon).not.toBe(internal);
     expect(listCacheTier({ authorization: "Bearer nope", internalToken: "bot-token" })).toBe("free");
-    expect(listCacheTier({ tier: "basic" })).toBe("free");
-    expect(listCacheTier({ tier: "lifetime" })).toBe("pro");
-    expect(listCacheTier({ tier: "basic" })).toBe(listCacheTier({ tier: "free" }));
+    expect(listCacheTier({ tier: "basic" })).toBe("basic");
+    expect(listCacheTier({ tier: "basic" })).not.toBe(listCacheTier({ tier: "free" }));
+    expect(getEffectiveTier({ tier: "free", lifetime: true })).toBe("pro");
+    expect(isDelayedTier(undefined)).toBe(true);
+    expect(isDelayedTier({ tier: "free" })).toBe(true);
+    expect(isDelayedTier({ tier: "basic" })).toBe(false);
+    expect(isDelayedTier({ tier: "pro" })).toBe(false);
+    expect(isDelayedTier({ tier: "free", lifetime: true })).toBe(false);
   });
 
   it("is what the list route caches under", () => {

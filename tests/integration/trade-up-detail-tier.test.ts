@@ -92,6 +92,7 @@ describe("trade-up detail tier delay", () => {
     ]) {
       const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(headers);
       expect(detail.status).toBe(200);
+      expect(detail.headers["x-effective-tier"]).toBe("free");
       expect(detail.headers["cache-control"]).toBe("private, no-store");
       expect(detail.headers.vary).toContain("Cookie");
       expect(detail.headers.vary).toContain("Authorization");
@@ -102,6 +103,7 @@ describe("trade-up detail tier delay", () => {
 
       const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(headers);
       expect(inputs.status).toBe(200);
+      expect(inputs.headers["x-effective-tier"]).toBe("free");
       expect(inputs.headers["cache-control"]).toBe("private, no-store");
       expectRedacted(inputs.body);
 
@@ -139,32 +141,47 @@ describe("trade-up detail tier delay", () => {
     }
   });
 
-  it("redacts fresh rows for basic and leaves lifetime full", async () => {
+  it("gives basic the full fresh payload and leaves lifetime full", async () => {
     const id = await insertTradeUp(ctx, "1 hour");
 
     const basicHeaders = { "X-Test-User-Id": "user_basic", "X-Test-User-Tier": "basic" };
     const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(basicHeaders);
     expect(detail.status).toBe(200);
-    expectRedacted(detail.body);
+    expect(detail.headers["x-effective-tier"]).toBe("basic");
+    expectFull(detail.body);
     const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(basicHeaders);
     expect(inputs.status).toBe(200);
-    expectRedacted(inputs.body);
+    expect(inputs.headers["x-effective-tier"]).toBe("basic");
+    expectFull(inputs.body);
     const list = await request(ctx.app)
       .get("/api/trade-ups?include=inputs&per_page=50&type=classified_covert")
       .set(basicHeaders);
     expect(list.status).toBe(200);
-    expect(list.body.tier_config.delay).toBe(3 * 60 * 60);
-    expect(list.body.trade_ups.find((tu: { id: number }) => tu.id === id)).toBeUndefined();
+    expect(list.body.tier_config.delay).toBe(0);
+    const listed = list.body.trade_ups.find((tu: { id: number }) => tu.id === id);
+    expect(listed).toBeDefined();
+    expect(listed.inputs[0].listing_id).toBe(`listing-${id}`);
+    expect(listed.inputs[0].price_cents).toBe(2000);
+    expect(listed.inputs[0].source).toBe("csfloat");
 
     const html = await request(ctx.app).get(`/trade-ups/${id}`).set(basicHeaders).set("User-Agent", GOOGLEBOT);
     const section = inputSection(html.text);
-    expect(section).not.toMatch(/\$\d/);
-    expect(section.toLowerCase()).not.toMatch(/csfloat|skinport|dmarket|buff/);
+    expect(section).toContain("$20.00");
+    expect(section).toContain("csfloat");
 
-    const lifetimeHeaders = { "X-Test-User-Id": "user_life", "X-Test-User-Tier": "lifetime" };
+    const lifetimeHeaders = {
+      "X-Test-User-Id": "user_life",
+      "X-Test-User-Tier": "free",
+      "X-Test-User-Lifetime": "true",
+    };
     const life = await request(ctx.app).get(`/api/trade-ups/${id}`).set(lifetimeHeaders);
     expect(life.status).toBe(200);
+    expect(life.headers["x-effective-tier"]).toBe("pro");
     expectFull(life.body);
+    const lifeInputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(lifetimeHeaders);
+    expect(lifeInputs.status).toBe(200);
+    expect(lifeInputs.headers["x-effective-tier"]).toBe("pro");
+    expectFull(lifeInputs.body);
     const lifeList = await request(ctx.app)
       .get("/api/trade-ups?per_page=50&type=classified_covert")
       .set(lifetimeHeaders);
@@ -178,10 +195,12 @@ describe("trade-up detail tier delay", () => {
 
     const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(headers);
     expect(detail.status).toBe(200);
+    expect(detail.headers["x-effective-tier"]).toBe("pro");
     expectFull(detail.body);
 
     const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(headers);
     expect(inputs.status).toBe(200);
+    expect(inputs.headers["x-effective-tier"]).toBe("pro");
     expectFull(inputs.body);
 
     const html = await request(ctx.app).get(`/trade-ups/${id}`).set(headers).set("User-Agent", GOOGLEBOT);
