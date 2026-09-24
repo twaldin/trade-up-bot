@@ -53,6 +53,19 @@ describe("with every tracking env var unset (production today)", () => {
     expect(gtag).not.toHaveBeenCalled();
   });
 
+  it("does not keep UTMs or fire calculator_complete while tracking is unset", () => {
+    const browser = installBrowser({
+      pathname: "/",
+      search: "?utm_source=google&utm_medium=cpc&utm_campaign=tu_w1_search_calc&utm_matchtype=e&gclid=Cj0K",
+    });
+    captureAttributionFromUrl();
+    navigate(browser, "/calculator", "");
+    trackCalculatorComplete();
+    expect(browser.localStorage.data.size).toBe(0);
+    expect(gtag).not.toHaveBeenCalled();
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
   it("success page keeps the legacy client-side GA4 purchase payload", () => {
     trackPurchaseComplete({ ...purchaseArgs, ga4ServerSide: false });
     expect(gtag.mock.calls).toEqual([["event", "purchase", {
@@ -90,6 +103,27 @@ describe("GA4 key events (GA4_MEASUREMENT_ID set)", () => {
       send_to: GA4,
     }]]);
     expect(body?.attribution).toMatchObject({ utm_source: "google", gclid: "Cj0K" });
+  });
+
+  it("keeps the Google final-URL suffix when the SPA navigates into /calculator", () => {
+    const browser = installBrowser({
+      pathname: "/",
+      search: "?utm_source=google&utm_medium=cpc&utm_campaign=tu_w1_search_calc&utm_content=adgroup1&utm_term=cs2+trade+up&utm_matchtype=e&gclid=Cj0K",
+    });
+    captureAttributionFromUrl();
+    navigate(browser, "/calculator", "");
+    trackCalculatorComplete();
+    expect(gtag).toHaveBeenCalledWith("event", "calculator_complete", {
+      page_path: "/calculator",
+      utm_source: "google",
+      utm_medium: "cpc",
+      utm_campaign: "tu_w1_search_calc",
+      utm_content: "adgroup1",
+      utm_term: "cs2 trade up",
+      utm_matchtype: "e",
+      gclid: "Cj0K",
+      send_to: GA4,
+    });
   });
 
   it("calculator_complete keeps the Google final-URL suffix after the SPA drops the query", () => {
