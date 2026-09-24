@@ -138,7 +138,7 @@ export function PreviewPricing() {
             <li className="is-off"><IconX /> No verification</li>
             <li className="is-off"><IconX /> No claims</li>
           </ul>
-          <button type="button" className="preview-btn preview-btn--block" onClick={login}>Get started</button>
+          <Link className="preview-btn preview-btn--block" to="/trade-ups">Browse free — no account needed</Link>
         </section>
 
         <section className="preview-panel preview-plan preview-plan--pro">

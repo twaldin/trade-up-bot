@@ -125,6 +125,15 @@ describe("pricing teaser shows Pro value before the paywall", () => {
   });
 });
 
+describe("pricing page Free plan does not wall browsing behind Steam", () => {
+  it("sends the Free button to the board instead of the Steam login", () => {
+    expect(pricing).not.toMatch(/onClick=\{login\}>Get started/);
+    const freeAt = pricing.indexOf('<p className="o-kicker">Free</p>');
+    const proAt = pricing.indexOf("preview-plan--pro");
+    expect(pricing.slice(freeAt, proAt)).toContain('to="/trade-ups"');
+  });
+});
+
 describe("marketing header at phone widths", () => {
   it("splits the CTA from the view prefs so it can own the first row", () => {
     expect(chrome).toContain("preview-nav__cta");
