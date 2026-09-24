@@ -43,6 +43,9 @@ function BoardRoute() {
       loadMore={state.loadMore}
       exhausted={state.exhausted}
       throttle={state.throttle}
+      failed={state.failed}
+      onRetry={state.retry}
+      onClearFilters={state.clearFilters}
     />
   );
 }

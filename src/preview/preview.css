@@ -875,6 +875,13 @@
   color: var(--text-muted);
 }
 
+.preview-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .preview-note b {
   font-weight: 600;
   color: var(--text);

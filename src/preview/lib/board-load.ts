@@ -11,7 +11,7 @@
 import { isRateLimitError } from "./page-fetch.js";
 
 export interface BoardLoadPorts<T> {
-  fetchRows: () => Promise<{ rows: T[]; isFree: boolean }>;
+  fetchRows: () => Promise<{ rows: T[]; isFree: boolean; total?: number }>;
   hydrate: (row: T) => Promise<T>;
   namesOf: (rows: T[]) => string[];
   warmFaces: (names: string[]) => Promise<unknown>;
@@ -22,10 +22,12 @@ export interface BoardLoadPorts<T> {
     isFree: (isFree: boolean) => void;
     loading: (loading: boolean) => void;
     facesReady: () => void;
-    /** Number of rows this page returned, so the caller can stop paging. */
-    pageSize?: (count: number) => void;
+    /** Rows this page returned and the API total, so the caller can stop paging. */
+    pageSize?: (count: number, total?: number) => void;
     /** 429 / "Too many requests" — do not treat as an empty page. */
     rateLimited?: () => void;
+    /** Any other failed list request — not an empty result either. */
+    failed?: () => void;
   };
 }
 
@@ -44,9 +46,9 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
 
   let painted: T[] | null = null;
   try {
-    const { rows, isFree } = await ports.fetchRows();
+    const { rows, isFree, total } = await ports.fetchRows();
     emit.isFree(isFree);
-    emit.pageSize?.(rows.length);
+    emit.pageSize?.(rows.length, total);
     put(rows);
     painted = rows;
 
@@ -62,8 +64,10 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
     replaceTail(hydrated, rows.length);
     painted = hydrated;
   } catch (err) {
+    // A first page belongs to a new filter, so the old filter's rows must go either way.
+    if (!append) emit.rows([]);
     if (isRateLimitError(err)) emit.rateLimited?.();
-    else if (!append) emit.rows([]);
+    else emit.failed?.();
     painted = null;
   } finally {
     emit.loading(false);

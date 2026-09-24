@@ -596,6 +596,8 @@ export function PreviewSkinPage() {
             loadMore={board.loadMore}
             exhausted={board.exhausted}
             throttle={board.throttle}
+            failed={board.failed}
+            onRetry={board.retry}
             heading="Trade-ups using this skin"
             lede="Ranked the same way as the board, filtered to this skin as an input or an output."
             lockedSkin={name}
@@ -912,6 +914,8 @@ export function PreviewCollectionPage() {
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           throttle={board.throttle}
+          failed={board.failed}
+          onRetry={board.retry}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."

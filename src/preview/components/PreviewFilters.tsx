@@ -25,13 +25,13 @@ export const DEFAULT_QUERY: BoardQuery = {
   maxCost: "",
 };
 
-const SORTS: [string, string][] = [
+export const BOARD_SORTS: [string, string][] = [
   ["trade_up_score", "Score"],
-  ["profit_cents", "Profit"],
-  ["roi_percentage", "ROI"],
-  ["total_cost_cents", "Cost"],
-  ["chance_to_profit", "Chance"],
-  ["created_at", "Newest"],
+  ["profit", "Profit"],
+  ["roi", "ROI"],
+  ["cost", "Cost"],
+  ["chance", "Chance"],
+  ["created", "Newest"],
 ];
 
 const TYPES = [
@@ -53,7 +53,7 @@ export function boardQueryString(query: BoardQuery, perPage = 12): string {
   if (query.type) params.set("type", query.type);
   if (query.skin.trim()) params.set("skin", query.skin.trim());
   if (query.minProfit) params.set("min_profit", String(Math.round(Number(query.minProfit) * 100)));
-  if (query.minChance) params.set("min_chance", String(Number(query.minChance) / 100));
+  if (query.minChance) params.set("min_chance", query.minChance);
   if (query.maxCost) params.set("max_cost", String(Math.round(Number(query.maxCost) * 100)));
   return params.toString();
 }
@@ -66,11 +66,16 @@ export function isDefaultQuery(query: BoardQuery): boolean {
 export function PreviewFilters({
   query,
   onChange,
+  onClear,
+  canClear,
   collection,
   lockedSkin,
 }: {
   query: BoardQuery;
   onChange: (next: BoardQuery) => void;
+  /** Resets everything the board filters by, search chips included. */
+  onClear?: () => void;
+  canClear?: boolean;
   collection?: string;
   lockedSkin?: string;
 }) {
@@ -104,7 +109,7 @@ export function PreviewFilters({
       <label className="preview-field">
         <span>Sort</span>
         <select className="preview-field__select" value={query.sort} onChange={(event) => set("sort", event.target.value)}>
-          {SORTS.map(([value, label]) => (
+          {BOARD_SORTS.map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
@@ -152,8 +157,8 @@ export function PreviewFilters({
         />
       </label>
 
-      {!isDefaultQuery(query) && (
-        <button type="button" className="preview-btn preview-btn--quiet" onClick={() => onChange(DEFAULT_QUERY)}>
+      {(canClear ?? !isDefaultQuery(query)) && (
+        <button type="button" className="preview-btn preview-btn--quiet" onClick={onClear ?? (() => onChange(DEFAULT_QUERY))}>
           <X size={11} aria-hidden />
           Clear
         </button>

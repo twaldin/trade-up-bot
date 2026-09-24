@@ -6,6 +6,7 @@ import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
+import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 function canonicalListingStatus(
@@ -124,7 +125,12 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   router.get("/api/trade-ups", cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
-    return "tu:" + JSON.stringify(req.query) + (req.user?.steam_id || "anon") + (req.user?.tier || "free");
+    const tier = listCacheTier({
+      tier: req.user?.tier,
+      authorization: req.headers.authorization,
+      internalToken: process.env.INTERNAL_API_TOKEN,
+    });
+    return tradeUpsCacheKey(req.query, req.user?.steam_id || "anon", tier);
   }, 1800, async (req, res) => { // 30 min TTL — matches cycle time, daemon invalidates after each cycle
     const {
       sort = "trade_up_score",
@@ -250,13 +256,19 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       where += ` AND t.total_cost_cents >= $${paramIndex++}`;
       params.push(parseInt(min_cost));
     }
-    if (min_chance) {
+    const minChance = chanceThreshold(min_chance, "min");
+    if (minChance === NO_CHANCE_MATCH) {
+      where += ` AND false`;
+    } else if (minChance !== null) {
       where += ` AND t.chance_to_profit >= $${paramIndex++}`;
-      params.push(parseFloat(min_chance) / 100);
+      params.push(minChance);
     }
-    if (max_chance) {
+    const maxChance = chanceThreshold(max_chance, "max");
+    if (maxChance === NO_CHANCE_MATCH) {
+      where += ` AND false`;
+    } else if (maxChance !== null) {
       where += ` AND t.chance_to_profit <= $${paramIndex++}`;
-      params.push(parseFloat(max_chance) / 100);
+      params.push(maxChance);
     }
 
     // Skin name filter (exact match from autocomplete, or fuzzy search)
@@ -340,19 +352,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       params.push(parseInt(min_win));
     }
 
-    const sortMap: Record<string, string> = {
-      trade_up_score: "t.trade_up_score",
-      score: "t.trade_up_score",
-      profit: "t.profit_cents",
-      roi: "t.roi_percentage",
-      chance: "t.chance_to_profit",
-      cost: "t.total_cost_cents",
-      ev: "t.expected_value_cents",
-      created: "t.created_at",
-      best: "t.best_case_cents",
-      worst: "t.worst_case_cents",
-    };
-    const sortCol = sortMap[sort] ?? "t.trade_up_score";
+    const sortCol = tradeUpSortColumn(sort);
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
     // API-surface diversity: TradeUpStore-style top-N per collection-combo

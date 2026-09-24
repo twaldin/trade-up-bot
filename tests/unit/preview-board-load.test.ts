@@ -1,10 +1,22 @@
+import { createElement, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { loadBoardRows } from "../../src/preview/lib/board-load.js";
 import {
+  BOARD_SORTS,
   boardQueryString,
   DEFAULT_QUERY,
   isDefaultQuery,
+  PreviewFilters,
 } from "../../src/preview/components/PreviewFilters.js";
+import { BoardNotice } from "../../src/preview/components/BoardNotice.js";
+import {
+  boardNotice,
+  FILTERED_EMPTY_COPY,
+  LOAD_ERROR_COPY,
+  UNFILTERED_EMPTY_COPY,
+} from "../../src/preview/lib/board-notice.js";
+import { reachedTotal, SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import { sortRows } from "../../src/preview/components/PreviewTable.js";
 import {
   groupBySeries,
@@ -20,7 +32,7 @@ describe("preview board query", () => {
     expect(params.get("order")).toBe("desc");
   });
 
-  it("converts dollars to integer cents and percent to a fraction", () => {
+  it("converts dollars to integer cents and sends chance as a percent", () => {
     const params = new URLSearchParams(boardQueryString({
       ...DEFAULT_QUERY,
       minProfit: "1.27",
@@ -29,7 +41,27 @@ describe("preview board query", () => {
     }));
     expect(params.get("min_profit")).toBe("127");
     expect(params.get("max_cost")).toBe("5000");
-    expect(params.get("min_chance")).toBe("0.4");
+    expect(params.get("min_chance")).toBe("40");
+  });
+
+  it("sends Classified + Profit + min chance 100 + max $60 the way the API reads it", () => {
+    const params = new URLSearchParams(boardQueryString({
+      ...DEFAULT_QUERY,
+      type: "restricted_classified",
+      sort: "profit",
+      minChance: "100",
+      maxCost: "60",
+    }));
+    expect(params.get("type")).toBe("restricted_classified");
+    expect(params.get("sort")).toBe("profit");
+    expect(params.get("min_chance")).toBe("100");
+    expect(params.get("max_cost")).toBe("6000");
+  });
+
+  it("offers only sort keys the API's short vocabulary uses", () => {
+    expect(BOARD_SORTS.map(([value]) => value)).toEqual([
+      "trade_up_score", "profit", "roi", "cost", "chance", "created",
+    ]);
   });
 
   it("omits blank filters rather than sending empty values", () => {
@@ -132,16 +164,41 @@ describe("preview board load order", () => {
     expect(harness.facesReady).toHaveBeenCalledTimes(1);
   });
 
-  it("clears the board and stops loading when the list request fails", async () => {
+  it("clears the board and reports a failure, not an empty result, when the list request fails", async () => {
     const warmFaces = vi.fn(async () => undefined);
+    const failed = vi.fn();
+    const rateLimited = vi.fn();
     const harness = ports({
       fetchRows: async () => { throw new Error("offline"); },
       warmFaces,
     });
+    harness.ports.emit = { ...harness.ports.emit, failed, rateLimited };
     await loadBoardRows<Row>(harness.ports);
     expect(harness.rows[harness.rows.length - 1]).toEqual([]);
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(rateLimited).not.toHaveBeenCalled();
     expect(harness.loading).toEqual([true, false]);
     expect(warmFaces).not.toHaveBeenCalled();
+  });
+
+  it("clears the previous filter's rows on a first-page 429 and reports it as throttled", async () => {
+    const { RateLimitError } = await import("../../src/preview/lib/page-fetch.js");
+    const failed = vi.fn();
+    const rateLimited = vi.fn();
+    const harness = ports({ fetchRows: async () => { throw new RateLimitError(); } });
+    harness.ports.emit = { ...harness.ports.emit, failed, rateLimited };
+    await loadBoardRows<Row>(harness.ports);
+    expect(harness.rows).toEqual([[]]);
+    expect(rateLimited).toHaveBeenCalledTimes(1);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it("passes the API total through with the page size", async () => {
+    const pageSize = vi.fn();
+    const harness = ports({ fetchRows: async () => ({ rows: [{ id: 1, outcomes: [] }], isFree: false, total: 24 }) });
+    harness.ports.emit = { ...harness.ports.emit, pageSize };
+    await loadBoardRows<Row>(harness.ports);
+    expect(pageSize).toHaveBeenCalledWith(1, 24);
   });
 
   it("keeps the board up when hydration fails", async () => {
@@ -293,8 +350,9 @@ describe("preview board paging", () => {
     expect(emitted[1]?.[1]?.outcomes).toEqual(["X"]);
   });
 
-  it("keeps the existing rows when a page request fails", async () => {
+  it("keeps the existing rows when a page request fails, and reports the failure", async () => {
     const emitted: unknown[] = [];
+    const failed = vi.fn();
     await loadBoardRows<{ id: number; outcomes: string[] }>({
       fetchRows: async () => { throw new Error("offline"); },
       hydrate: async (row) => row,
@@ -306,9 +364,11 @@ describe("preview board paging", () => {
         isFree: () => {},
         loading: () => {},
         facesReady: () => {},
+        failed,
       },
     });
     expect(emitted).toEqual([]);
+    expect(failed).toHaveBeenCalledTimes(1);
   });
 
   it("does not treat a 429 as an empty page and does not tight-loop", async () => {
@@ -334,5 +394,119 @@ describe("preview board paging", () => {
     expect(emitted).toEqual([]);
     expect(pageSize).not.toHaveBeenCalled();
     expect(rateLimited).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops at the API total even when every page came back full", () => {
+    expect(reachedTotal(2, 12, 24)).toBe(true);
+    expect(reachedTotal(3, 12, 24)).toBe(true);
+    expect(reachedTotal(1, 12, 24)).toBe(false);
+    expect(reachedTotal(1, 12, 0)).toBe(true);
+    expect(reachedTotal(5, 12, undefined)).toBe(false);
+  });
+});
+
+type Props = { children?: ReactNode; onClick?: () => void; className?: string };
+
+const markup = (node: ReactNode) => renderToStaticMarkup(createElement(Fragment, null, node));
+
+function findButton(node: ReactNode, label: string): ReactElement<Props> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findButton(child, label);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!isValidElement<Props>(node)) return null;
+  if (node.type === "button" && markup(node).includes(label)) return node;
+  return findButton(node.props.children, label);
+}
+
+describe("preview board notice", () => {
+  const base = { loading: false, rows: 0, throttled: false, failed: false, filtered: false };
+
+  it("tells a filtered empty board apart from an empty scan", () => {
+    expect(boardNotice({ ...base, filtered: true })).toBe("filtered-empty");
+    expect(boardNotice(base)).toBe("empty");
+  });
+
+  it("shows nothing while loading or once rows are on the board", () => {
+    expect(boardNotice({ ...base, loading: true })).toBeNull();
+    expect(boardNotice({ ...base, rows: 12, filtered: true })).toBeNull();
+  });
+
+  it("reports a failed load as an error, never as an empty result", () => {
+    expect(boardNotice({ ...base, failed: true, filtered: true })).toBe("error");
+    expect(boardNotice({ ...base, failed: true, rows: 12 })).toBe("error");
+  });
+
+  it("lets a 429 win over every empty or error message", () => {
+    expect(boardNotice({ ...base, throttled: true, filtered: true })).toBe("throttled");
+    expect(boardNotice({ ...base, throttled: true, failed: true })).toBe("throttled");
+  });
+
+  it("renders the filtered empty copy with a Clear filters button", () => {
+    const onClearFilters = vi.fn();
+    const tree = BoardNotice({ notice: "filtered-empty", onClearFilters });
+    const html = markup(tree);
+    expect(html).toContain(FILTERED_EMPTY_COPY);
+    expect(FILTERED_EMPTY_COPY).toBe("No trade-ups match these filters.");
+    findButton(tree, "Clear filters")?.props.onClick?.();
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the unfiltered empty copy with no buttons", () => {
+    const html = markup(BoardNotice({ notice: "empty" }));
+    expect(UNFILTERED_EMPTY_COPY).toBe("No live trade-ups right now. Check back after the next scan.");
+    expect(html).toContain(UNFILTERED_EMPTY_COPY);
+    expect(html).not.toContain("<button");
+  });
+
+  it("renders the error copy with a Retry button", () => {
+    const onRetry = vi.fn();
+    const tree = BoardNotice({ notice: "error", onRetry });
+    const html = markup(tree);
+    expect(LOAD_ERROR_COPY).toBe("Couldn't load trade-ups.");
+    expect(html).toContain("Couldn&#x27;t load trade-ups.");
+    expect(html).not.toContain(FILTERED_EMPTY_COPY);
+    findButton(tree, "Retry")?.props.onClick?.();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders only the slow-down copy on a 429", () => {
+    const html = markup(BoardNotice({ notice: "throttled" }));
+    expect(html).toContain(SLOW_DOWN_COPY);
+    expect(html).not.toContain(FILTERED_EMPTY_COPY);
+    expect(html).not.toContain(UNFILTERED_EMPTY_COPY);
+    expect(html).not.toContain("<button");
+  });
+
+  it("renders nothing without a notice", () => {
+    expect(BoardNotice({ notice: null })).toBeNull();
+  });
+});
+
+describe("preview filter bar Clear", () => {
+  it("clears through onClear so search chips go too, even when only chips are set", () => {
+    const onClear = vi.fn();
+    const onChange = vi.fn();
+    const tree = PreviewFilters({ query: DEFAULT_QUERY, onChange, onClear, canClear: true });
+    const clear = findButton(tree, "Clear");
+    expect(clear).not.toBeNull();
+    clear?.props.onClick?.();
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("hides Clear when nothing is set", () => {
+    const tree = PreviewFilters({ query: DEFAULT_QUERY, onChange: vi.fn(), onClear: vi.fn(), canClear: false });
+    expect(findButton(tree, "Clear")).toBeNull();
+  });
+
+  it("still resets the query when no onClear is given", () => {
+    const onChange = vi.fn();
+    const tree = PreviewFilters({ query: { ...DEFAULT_QUERY, minChance: "40" }, onChange });
+    findButton(tree, "Clear")?.props.onClick?.();
+    expect(onChange).toHaveBeenCalledWith(DEFAULT_QUERY);
   });
 });
