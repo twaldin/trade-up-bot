@@ -260,6 +260,17 @@ describe("SteamInterstitial markup", () => {
     expect(text).toContain("After sign-in you'll come back to this trade-up.");
   });
 
+  it("sends a signed-in user to /pricing and does not render a Steam link", () => {
+    stubWindow("/trade-ups/1");
+    const html = render({ surface: "share_verify", loggedIn: true });
+    expect(html).not.toContain("/auth/steam");
+    expect(html).not.toContain("Continue with Steam");
+    expect(html).not.toContain("Why Steam");
+    expect(html).toContain('href="/pricing"');
+    expect(textOf(html)).toContain("See plans");
+    expect(textOf(html)).toContain("Verify and Claim are Pro features");
+  });
+
   it("renders no content while closed", () => {
     const html = render(null);
     expect(html).not.toContain("/auth/steam");
@@ -277,7 +288,7 @@ describe("SteamInterstitial markup", () => {
 describe("entry points open the interstitial instead of going straight to Steam", () => {
   it("Go Pro opens the modal for logged-out visitors and keeps checkout for logged-in users", () => {
     expect(pricing).toContain('surface: "pricing_go_pro"');
-    expect(pricing).toContain("subscribe(PLAN_FOR[billing])");
+    expect(pricing).toContain("runCheckout(PLAN_FOR[billing])");
     expect(pricing).toContain("<SteamInterstitial");
   });
 

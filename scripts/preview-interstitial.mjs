@@ -245,6 +245,11 @@ try {
     });
     check(!m.scrollX, `390 ${mode}: no horizontal scroll`);
     check(Math.round(m.left) === 16 && Math.round(m.right) === 16, `390 ${mode}: 16px gutters (${m.left}/${m.right})`);
+    const bottom = await mobile.page.evaluate(() => {
+      const rect = document.querySelector("dialog.preview-sheet").getBoundingClientRect();
+      return Math.round(window.innerHeight - rect.bottom);
+    });
+    check(bottom <= 1, `390 ${mode}: bottom sheet sits on the viewport edge (${bottom}px)`);
     check(m.height <= m.maxHeight + 1, `390 ${mode}: height ${Math.round(m.height)} ≤ 90dvh ${Math.round(m.maxHeight)}`);
     check(m.buttons.every((b) => b.h >= 44 && b.w >= m.cardWidth - 34), `390 ${mode}: buttons full-width and ≥44px ${JSON.stringify(m.buttons)}`);
     check(m.buttons.length === 2 && m.buttons[0].top < m.buttons[1].top && m.firstIsContinue, `390 ${mode}: buttons stacked, Continue first`);
@@ -332,6 +337,10 @@ try {
     await page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.trim() === "See Pro")?.click());
     await sleep(300);
     check(await dialogOpen(page), "free share: See Pro opens the interstitial");
+    const signedInHref = await page.evaluate(() => document.querySelector("dialog.preview-sheet .preview-sheet__go")?.getAttribute("href"));
+    check(signedInHref === "/pricing", `free share: main action is /pricing (${signedInHref})`);
+    const steam = await page.evaluate(() => document.querySelector("dialog.preview-sheet")?.innerHTML.includes("/auth/steam"));
+    check(!steam, "free share: signed-in modal has no Steam link");
     await page.screenshot({ path: `${OUT}/upgrade-prompt-interstitial-dark.png` });
     const ev = (await events(page)).filter(([name]) => name !== "tradeup_view");
     check(ev[0]?.[0] === "claim_interstitial_view" && ev[0]?.[1]?.logged_in === true, `free share: view event logged_in true ${JSON.stringify(ev[0])}`);
@@ -380,11 +389,11 @@ try {
     await page.close();
   }
   {
-    const { page } = await openPage("/my-trade-ups", { user: "pro" });
+    const { page } = await openPage("/my-trade-ups", { user: "lifetime" });
     await page.waitForSelector(".preview-page__meta", { timeout: 30000 });
     const meta = await page.$eval(".preview-page__meta", (el) => el.textContent);
-    check(meta?.includes("Manage subscription"), `pro: /my-trade-ups header shows Manage subscription (${meta})`);
-    await page.screenshot({ path: `${OUT}/manage-subscription-account-dark.png` });
+    check(meta?.includes("Manage subscription"), `lifetime: /my-trade-ups header shows Manage subscription (${meta})`);
+    await page.screenshot({ path: `${OUT}/manage-subscription-account-lifetime-dark.png` });
     await page.close();
     const free = await openPage("/pricing", { user: "free" });
     const freeManage = await free.page.evaluate(() => document.body.innerText.includes("Manage subscription\n") || [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Manage subscription"));

@@ -17,7 +17,7 @@ function staticPage(path: string) {
 
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
 // The Pro card reads its price strings from the shared plan module.
-const pricingPlans = pricing + read("../../src/preview/lib/pro-pricing.ts");
+const pricingPlans = pricing + read("../../src/preview/lib/pro-pricing.ts") + read("../../src/preview/lib/checkout.ts");
 const faq = read("../../src/preview/pages/PreviewFaq.tsx");
 const features = read("../../src/preview/pages/PreviewFeatures.tsx");
 const blog = read("../../src/preview/pages/PreviewBlog.tsx");
@@ -70,8 +70,8 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(pricingPlans).toContain("$6.99");
     expect(pricingPlans).toContain("$59.99");
     expect(pricingPlans).toContain("$74.99");
-    expect(pricing).toContain("/api/subscribe");
-    expect(pricing).toContain('JSON.stringify({ plan })');
+    expect(pricingPlans).toContain("/api/subscribe");
+    expect(pricingPlans).toContain('JSON.stringify({ plan })');
     expect(pricingPlans).toContain("pro-yearly");
     expect(pricingPlans).toContain("pro-lifetime");
     expect(pricing).toContain("Go Pro");

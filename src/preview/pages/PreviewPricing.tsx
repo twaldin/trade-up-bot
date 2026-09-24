@@ -6,6 +6,7 @@ import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInte
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { hasProAccess } from "../lib/billing.js";
+import { runCheckout } from "../lib/checkout.js";
 import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
 import { seoPage } from "../lib/seo-pages.js";
 
@@ -27,18 +28,6 @@ const IconX = () => (
 const login = () => {
   trackEvent("sign_up_start", { location: "pricing" });
   window.location.href = authHref(window.location.pathname);
-};
-
-const subscribe = async (plan: string) => {
-  trackEvent("begin_checkout", { item_name: plan });
-  const res = await fetch("/api/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ plan }),
-  });
-  const data = await res.json() as { url?: string };
-  if (data.url) window.location.href = data.url;
 };
 
 const COMPARE = [
@@ -90,15 +79,16 @@ function Cell({ value }: { value: string | boolean }) {
 }
 
 export function PreviewPricing() {
-  const [user, setUser] = useState<{ tier: string; lifetime?: boolean } | null>(null);
+  const [user, setUser] = useState<{ tier: string; lifetime?: boolean; steam_id?: string } | null | undefined>(undefined);
   const [billing, setBilling] = useState<BillingInterval>("monthly");
+  const [checkoutError, setCheckoutError] = useState<{ message: string; manage: boolean } | null>(null);
   const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.ok ? res.json() : null)
-      .then(setUser)
-      .catch(() => {});
+      .then((data: { steam_id?: string; tier?: string; lifetime?: boolean } | null) => setUser(data?.steam_id ? { tier: data.tier ?? "free", lifetime: data.lifetime, steam_id: data.steam_id } : null))
+      .catch(() => setUser(null));
   }, []);
 
   return (
@@ -163,15 +153,24 @@ export function PreviewPricing() {
           <button
             type="button"
             className="preview-btn preview-btn--lime preview-btn--block"
-            disabled={hasProAccess(user)}
+            disabled={user === undefined || hasProAccess(user)}
             onClick={(event) => {
-              if (hasProAccess(user)) return;
-              if (user) void subscribe(PLAN_FOR[billing]);
-              else interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget);
+              if (user === undefined || hasProAccess(user)) return;
+              if (user) {
+                void runCheckout(PLAN_FOR[billing]).then((result) => {
+                  if (!result.ok) setCheckoutError({ message: result.error || "Checkout failed", manage: result.status === 409 });
+                });
+              } else interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget);
             }}
           >
-            {hasProAccess(user) ? "Current plan" : "Go Pro"}
+            {user === undefined ? "Checking…" : hasProAccess(user) ? "Current plan" : "Go Pro"}
           </button>
+          {checkoutError && (
+            <p className="preview-note preview-note--loss" role="alert">
+              {checkoutError.message}
+              {checkoutError.manage && <> <ManageSubscription className="preview-link" /></>}
+            </p>
+          )}
           {hasProAccess(user) && (
             <ManageSubscription className="preview-btn preview-btn--block" />
           )}

@@ -3101,5 +3101,18 @@ html:has(.preview-sheet[open]) { overflow: hidden; }
 }
 
 @media (max-width: 599px) {
+  .preview-sheet {
+    width: calc(100% - 32px);
+    max-height: 90dvh;
+    margin: auto 16px 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .preview-sheet[open] { animation-name: preview-sheet-up; }
   .preview-sheet__x { width: 44px; min-height: 44px; }
+}
+
+@keyframes preview-sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
 }
