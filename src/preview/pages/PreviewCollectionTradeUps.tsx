@@ -80,6 +80,8 @@ export function PreviewCollectionTradeUps() {
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           throttle={board.throttle}
+          failed={board.failed}
+          onRetry={board.retry}
           collection={title}
           heading={`${display} Trade-Ups`}
           lede={`Profitable trade-ups using skins from the ${display} collection.`}

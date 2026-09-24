@@ -70,6 +70,11 @@ export function pageIsShort(received: number, pageSize: number): boolean {
   return received < pageSize;
 }
 
+/** Full pages can still be the last one: stop once the pages asked for cover the API total. */
+export function reachedTotal(page: number, pageSize: number, total: number | undefined): boolean {
+  return typeof total === "number" && Number.isFinite(total) && page * pageSize >= total;
+}
+
 type JsonResponse = {
   status: number;
   ok: boolean;

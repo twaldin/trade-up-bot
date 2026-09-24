@@ -66,11 +66,16 @@ export function isDefaultQuery(query: BoardQuery): boolean {
 export function PreviewFilters({
   query,
   onChange,
+  onClear,
+  canClear,
   collection,
   lockedSkin,
 }: {
   query: BoardQuery;
   onChange: (next: BoardQuery) => void;
+  /** Resets everything the board filters by, search chips included. */
+  onClear?: () => void;
+  canClear?: boolean;
   collection?: string;
   lockedSkin?: string;
 }) {
@@ -152,8 +157,8 @@ export function PreviewFilters({
         />
       </label>
 
-      {!isDefaultQuery(query) && (
-        <button type="button" className="preview-btn preview-btn--quiet" onClick={() => onChange(DEFAULT_QUERY)}>
+      {(canClear ?? !isDefaultQuery(query)) && (
+        <button type="button" className="preview-btn preview-btn--quiet" onClick={onClear ?? (() => onChange(DEFAULT_QUERY))}>
           <X size={11} aria-hidden />
           Clear
         </button>
