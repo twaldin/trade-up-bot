@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
+import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
@@ -28,7 +29,6 @@ import {
   payoffPoints,
   percentileProfitCents,
   previewSkinHref,
-  rarityLabel,
   reorderForExpanded,
   signClass,
   splitSkinName,
@@ -584,7 +584,7 @@ export function TradeUpCard({
     >
       {expandable && (
         <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
-          {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
+          {expanded ? "Collapse" : "Expand"} the {tradeUpPair(tu.type ?? "", tu.outcomes)} trade-up
         </button>
       )}
 
@@ -611,7 +611,7 @@ export function TradeUpCard({
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow
           inputLabel={`${inputRarityLabel(tu.type)} inputs`}
-          outputLabel={`${rarityLabel(tu.type)} outputs`}
+          outputLabel={`${tradeUpPair(tu.type ?? "", tu.outcomes)} outputs`}
           inputColor={inColor}
           outputColor={outColor}
           inputs={inputs.map((group) => (

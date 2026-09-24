@@ -868,7 +868,7 @@ export function PreviewCollectionPage() {
 
   return (
     <div className="preview-page">
-      <title>{`${(title ?? "Collection").replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot`}</title>
+      <title>{title ? `${title.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot` : "CS2 Collections | TradeUpBot"}</title>
       <header className="preview-page__head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">

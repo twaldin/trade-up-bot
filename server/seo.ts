@@ -1,7 +1,8 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
-import { detailTradeUpHeading } from "../shared/copy.js";
-import { detailTypeLabel } from "../shared/types.js";
+import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
+import { detailTypeLabel, tradeUpDetailJsonLd } from "../shared/types.js";
 export { tradeUpDetailJsonLd } from "../shared/types.js";
+import type { Pool } from "pg";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -9,9 +10,10 @@ import { formatDollars } from "../src/utils/format.js";
 
 export { buildCollectionsHubJsonLd, buildHomepageJsonLd };
 
-interface SeoMeta {
+export interface SeoMeta {
   title: string;
   description: string;
+  ogTitle?: string;
   url: string;
   robots?: string;
   ogImage?: string;
@@ -205,6 +207,7 @@ export function dedupeHead(html: string): string {
 
 export function buildSeoHtml(meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
+  const ogTitle = escapeHtml(meta.ogTitle ?? meta.title);
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
   const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
@@ -235,14 +238,14 @@ export function buildSeoHtml(meta: SeoMeta): string {
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
 <link rel="canonical" href="${escapeHtml(meta.url)}" />
-<meta property="og:title" content="${title}" />
+<meta property="og:title" content="${ogTitle}" />
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${escapeHtml(meta.url)}" />
 <meta property="og:type" content="${escapeHtml(ogType)}" />
 <meta property="og:site_name" content="TradeUpBot" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
+<meta name="twitter:title" content="${ogTitle}" />
 <meta name="twitter:description" content="${desc}" />
 <meta name="twitter:image" content="${ogImage}" />
 ${jsonLdTag}
@@ -258,6 +261,63 @@ ${jsonLdTag}
  */
 export function deletedTradeUpStatus(id: string): 404 | 410 {
   return /^\d+$/.test(id) ? 410 : 404;
+}
+
+export async function loadTradeUpDetailPage(pool: Pool, id: string): Promise<{ status: 404 | 410 } | { status: 200; meta: SeoMeta }> {
+  const { rows: [row] } = await pool.query(
+    "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json FROM trade_ups WHERE id = $1",
+    [id],
+  );
+  if (!row) return { status: deletedTradeUpStatus(id) };
+
+  const isStale = row.listing_status === "stale"
+    || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
+
+  const { rows: inputs } = await pool.query(
+    "SELECT skin_name, condition, collection_name, price_cents FROM trade_up_inputs WHERE trade_up_id = $1",
+    [row.id],
+  );
+  const outcomes = JSON.parse(row.outcomes_json || "[]") as Array<{
+    skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
+  }>;
+  const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
+  const related = [
+    ...collections.map((c: string) => ({
+      label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
+      url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
+    })).slice(0, 2),
+    { label: "All CS2 Trade-Ups", url: "/trade-ups" },
+    { label: "Browse CS2 Collections", url: "/collections" },
+  ];
+  const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name);
+  const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
+
+  return {
+    status: 200,
+    meta: {
+      title: tradeUpDocumentTitle(row.type, outcomes, collectionNames),
+      ogTitle: tradeUpOgTitle(row.type, row.profit_cents, outcomes),
+      description: tradeUpDescription({
+        type: row.type,
+        profitCents: row.profit_cents,
+        costCents: row.total_cost_cents,
+        chanceToProfit: row.chance_to_profit ?? 0,
+        outcomes,
+        inputNames,
+      }),
+      url: `https://tradeupbot.app/trade-ups/${id}`,
+      ogImage: `https://tradeupbot.app/og/trade-ups/${id}.png`,
+      robots: isStale ? "noindex, follow" : "index, follow",
+      includeLegal: true,
+      jsonLd: tradeUpDetailJsonLd(id, tradeUpPair(row.type, outcomes)),
+      bodyHtml: renderTradeUpDetail(
+        { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
+        inputs,
+        outcomes,
+        related,
+      ),
+    },
+  };
 }
 
 export interface CollectionHubLink {
@@ -398,13 +458,11 @@ export function renderTradeUpDetail(
   opts?: { hideInputCommercials?: boolean },
 ): string {
   const e = escapeHtml;
-  const profit = formatDollars(tradeUp.profit_cents);
   const cost = formatDollars(tradeUp.total_cost_cents);
-  const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
 const typeLabel = detailTypeLabel(tradeUp.type);
   const hideInputCommercials = opts?.hideInputCommercials === true;
-  const heading = detailTradeUpHeading(tradeUp.type);
+  const heading = tradeUpH1(tradeUp.type, tradeUp.profit_cents, tradeUp.roi_percentage, outcomes);
 
   const inputRows = inputs.map(inp => {
     const price = !hideInputCommercials && inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : "";
@@ -426,7 +484,7 @@ const typeLabel = detailTypeLabel(tradeUp.type);
     ? `all 10 inputs from the ${e(collections[0])} collection`
     : `inputs from ${e(collections.join(", "))}`;
 
-  return `<h1>${e(heading)} — ${e(profit)} Expected P/L (${roi}% ROI)</h1>
+  return `<h1>${e(heading)}</h1>
 <p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
 
 <h2>Inputs</h2>
@@ -520,6 +578,7 @@ export function isCrawler(userAgent: string): boolean {
  */
 export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
+  const ogTitle = escapeHtml(meta.ogTitle ?? meta.title);
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
   const robots = meta.robots || "index, follow";
@@ -544,13 +603,13 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
 <link rel="canonical" href="${url}" />
-<meta property="og:title" content="${title}" />
+<meta property="og:title" content="${ogTitle}" />
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${url}" />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
+<meta name="twitter:title" content="${ogTitle}" />
 <meta name="twitter:description" content="${desc}" />
 <meta name="twitter:image" content="${ogImage}" />${jsonLdTag}`;
 

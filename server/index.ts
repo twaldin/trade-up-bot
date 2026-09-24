@@ -27,8 +27,8 @@ import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
-import { detailTradeUpHeading, shareDocumentTitle, tradeUpCountPhrase } from "../shared/copy.js";
-import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE, tradeUpDetailJsonLd } from "../shared/types.js";
+import { tradeUpCountPhrase, tradeUpPair } from "../shared/copy.js";
+import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { COLLECTION_TRADEUP_LEDE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -310,7 +310,7 @@ registerCanonicalRedirectRoutes(app);
       // preserved_at filter excludes stale trade-ups (mirrors detail handler staleness check).
       const { rows: tradeUps } = await pool.query(`
         SELECT DISTINCT ON (t.id) t.id, t.type, t.total_cost_cents, t.profit_cents,
-               t.roi_percentage, t.chance_to_profit, t.best_case_cents, t.worst_case_cents
+               t.roi_percentage, t.chance_to_profit, t.best_case_cents, t.worst_case_cents, t.outcomes_json
         FROM trade_up_inputs ti JOIN trade_ups t ON ti.trade_up_id = t.id
         WHERE ti.collection_name = $1 AND t.listing_status = 'active' AND t.is_theoretical = false AND t.profit_cents > 100
           AND (t.preserved_at IS NULL OR t.preserved_at > NOW() - INTERVAL '7 days')
@@ -380,7 +380,7 @@ registerCanonicalRedirectRoutes(app);
             "@type": "ListItem",
             position: i + 1,
             url: `https://tradeupbot.app/trade-ups/${t.id}`,
-            name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} expected P/L (${t.roi_percentage.toFixed(1)}% ROI)`,
+            name: `${tradeUpPair(t.type, JSON.parse(t.outcomes_json || "[]") as { skin_name: string }[])} — $${(t.profit_cents / 100).toFixed(2)} expected P/L (${t.roi_percentage.toFixed(1)}% ROI)`,
           })),
         },
       ];

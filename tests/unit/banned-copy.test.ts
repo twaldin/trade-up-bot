@@ -34,6 +34,7 @@ const SOURCE_FILES = [
   "server/og-image.ts",
   "server/static-seo-pages.ts",
   "shared/trade-ups-faq.ts",
+  "shared/types.ts",
   "src/data/blog-meta.ts",
 ];
 

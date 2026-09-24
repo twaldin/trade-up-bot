@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTradeUpsHub } from "../../server/seo.js";
 import { formatOdds } from "../../src/preview/lib/board.js";
-import { shareDocumentTitle } from "../../shared/copy.js";
+import { tradeUpDocumentTitle } from "../../shared/copy.js";
 import { TRADE_UPS_FAQ } from "../../shared/trade-ups-faq.js";
 
 const tradeUps = Array.from({ length: 6 }, (_, i) => ({
@@ -67,15 +67,12 @@ describe("renderTradeUpsHub", () => {
     expect(formatOdds(1)).toBe("100%");
   });
 
-  it("keeps share titles within 60 characters and out of the percentage", () => {
-    const title = shareDocumentTitle("Knife/Glove", -1234567, [
-      { skin_name: "★ A Name Far Too Long To Lead The Share Title", probability: 1 },
-    ]);
-    expect(title).toBe("Knife/Glove Trade-Up: -$12345.67 Expected P/L | TradeUpBot");
+  it("keeps document titles within 60 characters and out of the percentage", () => {
+    const title = tradeUpDocumentTitle("covert_knife", [
+      { skin_name: "★ Butterfly Knife | Fade", probability: 1 },
+    ], ["The Dreams & Nightmares Collection"]);
+    expect(title).toBe("Covert to Knife Trade-Up: Dreams & Nightmares | TradeUpBot");
     expect(title.length).toBeLessThanOrEqual(60);
     expect(title).not.toContain("%");
-    const short = shareDocumentTitle("Covert", 320, [{ skin_name: "AK-47 | Redline", probability: 0.5 }]);
-    expect(short.length).toBeLessThanOrEqual(60);
-    expect(short).not.toContain("%");
   });
 });

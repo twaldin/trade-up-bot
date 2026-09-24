@@ -523,6 +523,7 @@ export function PreviewAccount() {
 
   return (
     <div className="preview-page">
+      <title>My Trade-Ups | TradeUpBot</title>
       <header className="preview-page__head">
         <div>
           <h1>My trade-ups</h1>
