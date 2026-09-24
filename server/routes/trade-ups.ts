@@ -1,6 +1,6 @@
 import { Router } from "express";
 import pg from "pg";
-import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
@@ -671,9 +671,17 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       return;
     }
 
-    // Load inputs for this trade-up
-    const { rows: inputs } = await pool.query(
-      "SELECT listing_id, skin_id, skin_name, price_cents, float_value, condition, source FROM trade_up_inputs WHERE trade_up_id = $1",
+    // Load inputs (fee-inclusive stored price) alongside the raw listing price we last saw
+    const { rows: inputs } = await pool.query<{
+      listing_id: string; skin_id: string; skin_name: string; price_cents: number;
+      float_value: number; condition: string; source: string | null; listing_price_cents: number | null;
+      listing_source: string | null;
+    }>(
+      `SELECT tui.listing_id, tui.skin_id, tui.skin_name, tui.price_cents, tui.float_value, tui.condition, tui.source,
+              l.price_cents AS listing_price_cents, l.source AS listing_source
+       FROM trade_up_inputs tui
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE tui.trade_up_id = $1`,
       [tradeUpId]
     );
 
@@ -693,6 +701,17 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       price_changed?: boolean;
       sold_at?: string;
     }[] = [];
+
+    // Listing change is detected raw-to-raw; input drift fee-to-fee against storedInputCost.
+    const driftedInputs = new Map<string, { price: number; source: string }>();
+    const repriceInput = (input: (typeof inputs)[number], raw: number | null | undefined) => {
+      if (!raw || raw <= 0) return { expected: input.price_cents, drift: false };
+      const feeSource = input.listing_source ?? input.source ?? "csfloat";
+      const expected = storedInputCost(raw, feeSource);
+      const drift = expected !== input.price_cents || feeSource !== input.source;
+      if (drift) driftedInputs.set(input.listing_id, { price: expected, source: feeSource });
+      return { expected, drift };
+    };
 
     // Pre-fetch DMarket listings by skin name (batch to minimize API calls)
     const dmSkinNames = new Set(
@@ -802,9 +821,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         );
 
         if (match) {
-          const priceChanged = match.priceCents !== input.price_cents;
-          // Update listing in DB
-          if (priceChanged) {
+          const listingChanged = match.priceCents !== input.listing_price_cents;
+          if (listingChanged) {
             await pool.query(
               "UPDATE listings SET price_cents = $1, price_updated_at = NOW(), staleness_checked_at = NOW() WHERE id = $2",
               [match.priceCents, input.listing_id]
@@ -812,13 +830,14 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           } else {
             await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           }
+          const { expected, drift } = repriceInput(input, match.priceCents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
             status: "active",
-            current_price: match.priceCents,
+            current_price: expected,
             original_price: input.price_cents,
-            price_changed: priceChanged,
+            price_changed: listingChanged || drift,
           });
         } else {
           // No float match — listing is gone
@@ -848,8 +867,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
           continue;
         }
         if (activeSet.has(input.listing_id)) {
-          const currentPrice = dmPrices.get(input.listing_id);
-          const priceChanged = currentPrice !== undefined && currentPrice !== input.price_cents;
+          const currentPrice = dmPrices.get(input.listing_id) || undefined;
+          const listingChanged = currentPrice !== undefined && currentPrice !== input.listing_price_cents;
           // Re-insert if listing was deleted from our DB but still active on DMarket
           const { rows: existRows } = await pool.query("SELECT id FROM listings WHERE id = $1", [input.listing_id]);
           if (existRows.length === 0) {
@@ -859,7 +878,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
               ON CONFLICT (id) DO NOTHING
             `, [input.listing_id, input.skin_id, currentPrice ?? input.price_cents, input.float_value]);
           } else {
-            if (priceChanged && currentPrice !== undefined) {
+            if (listingChanged && currentPrice !== undefined) {
               await pool.query(
                 "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
                 [currentPrice, new Date().toISOString(), input.listing_id]
@@ -867,13 +886,14 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
             }
             await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           }
+          const { expected, drift } = repriceInput(input, currentPrice ?? input.listing_price_cents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
             status: "active",
-            current_price: currentPrice ?? input.price_cents,
+            current_price: expected,
             original_price: input.price_cents,
-            price_changed: priceChanged,
+            price_changed: listingChanged || drift,
           });
         } else {
           await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
@@ -926,21 +946,22 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
         };
 
         if (data.state === "listed") {
-          const priceChanged = data.price !== input.price_cents;
-          if (priceChanged) {
+          const listingChanged = !!data.price && data.price !== input.listing_price_cents;
+          if (listingChanged) {
             await pool.query(
               "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
               [data.price, new Date().toISOString(), input.listing_id]
             );
           }
           await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
+          const { expected, drift } = repriceInput(input, data.price || input.listing_price_cents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
             status: "active",
-            current_price: data.price,
+            current_price: expected,
             original_price: input.price_cents,
-            price_changed: priceChanged,
+            price_changed: listingChanged || drift,
           });
         } else if (data.state === "sold") {
           const salePrice = data.price || input.price_cents;
@@ -1012,42 +1033,33 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       );
     }
 
-    // Recalculate trade-up if prices changed
+    // Write drifted (fee-inclusive) input costs and recompute cost-derived stats
     let updatedTradeUp: { total_cost_cents: number; expected_value_cents: number; profit_cents: number; roi_percentage: number } | null = null;
-    if (anyPriceChanged && allActive) {
-      // Sum up current prices (use verified price if available, else original)
-      const newTotalCost = results.reduce((sum, r) => {
-        const price = r.current_price ?? r.original_price;
-        return sum + price;
-      }, 0);
-
-      // Get current EV from outcomes
-      const { rows: [tu] } = await pool.query(
-        "SELECT expected_value_cents, outcomes_json FROM trade_ups WHERE id = $1",
-        [tradeUpId]
-      );
-      if (tu) {
-        const ev = tu.expected_value_cents;
-        const profit = ev - newTotalCost;
-        const roi = newTotalCost > 0 ? Math.round((profit / newTotalCost) * 10000) / 100 : 0;
-
-        // Update DB with new cost
-        await pool.query(
-          "UPDATE trade_ups SET total_cost_cents = $1, profit_cents = $2, roi_percentage = $3 WHERE id = $4",
-          [newTotalCost, profit, roi, tradeUpId]
-        );
-
-        // Also update input prices in trade_up_inputs
-        for (const r of results) {
-          if (r.price_changed && r.current_price !== undefined) {
-            await pool.query(
-              "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
-              [r.current_price, tradeUpId, r.listing_id]
-            );
-          }
+    if (anyPriceChanged && allActive && driftedInputs.size > 0) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        for (const [listingId, fix] of driftedInputs) {
+          await client.query(
+            "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
+            [fix.price, fix.source, tradeUpId, listingId]
+          );
         }
-
-        updatedTradeUp = { total_cost_cents: newTotalCost, expected_value_cents: ev, profit_cents: profit, roi_percentage: roi };
+        const recomputed = await recomputeTradeUpCost(client, tradeUpId);
+        await client.query("COMMIT");
+        if (recomputed) {
+          updatedTradeUp = {
+            total_cost_cents: recomputed.total_cost_cents,
+            expected_value_cents: recomputed.expected_value_cents,
+            profit_cents: recomputed.profit_cents,
+            roi_percentage: recomputed.roi_percentage,
+          };
+        }
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
       }
     }
 
@@ -1066,7 +1078,6 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     // Await Redis invalidation before responding so next request sees fresh data
     if (anyUnavailable || anyPriceChanged) {
-      const { cacheInvalidatePrefix } = await import("../redis.js");
       await cacheInvalidatePrefix("tu:");
       await cacheInvalidatePrefix("tu_inputs:" + tradeUpId);
     }

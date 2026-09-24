@@ -14,7 +14,17 @@ export const MARKETPLACE_FEES = {
 
 /** Effective cost of a listing, including marketplace buyer fees (deposit/wallet fees) */
 export function effectiveBuyCost(listing: ListingWithCollection): number {
-  return effectiveBuyCostRaw(listing.price_cents, listing.source ?? "csfloat");
+  return storedInputCost(listing.price_cents, listing.source);
+}
+
+/**
+ * The ONLY way to turn a raw marketplace listing price into a stored input cost
+ * (trade_up_inputs.price_cents / trade_ups.total_cost_cents). Discovery and every
+ * reprice path must go through this so stored costs always include the buyer fee.
+ * A missing source defaults to csfloat, matching the trade_up_inputs.source default.
+ */
+export function storedInputCost(rawListingPriceCents: number, source: string | null | undefined): number {
+  return effectiveBuyCostRaw(rawListingPriceCents, source ?? "csfloat");
 }
 
 /** Effective cost from raw price + source string */

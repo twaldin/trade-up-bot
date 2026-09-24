@@ -1,8 +1,42 @@
 
 import pg from "pg";
 import { emitEvent } from "../db.js";
-import { deleteListings, cascadeTradeUpStatuses } from "../engine.js";
+import { deleteListings, cascadeTradeUpStatuses, applyListingPriceToInputs } from "../engine.js";
 import type { SkinCoverageInfo, ListingCheckResult } from "./types.js";
+
+/**
+ * Apply a CSFloat "listed" lookup result to our DB (csfloat-checker + checkListingStaleness).
+ * Change detection is raw-to-raw against listings.price_cents; only a real change
+ * rewrites the listing, bumps price_updated_at, and reprices inputs to the
+ * fee-inclusive storedInputCost. Always marks the listing as staleness-checked.
+ */
+export async function applyListedResult(
+  pool: pg.Pool,
+  listing: { id: string; price_cents: number },
+  data: { price: number },
+): Promise<{ listingChanged: boolean; inputsUpdated: number; tradeUpsUpdated: number }> {
+  let result = { listingChanged: false, inputsUpdated: 0, tradeUpsUpdated: 0 };
+  if (data.price && data.price !== listing.price_cents) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
+        [data.price, new Date().toISOString(), listing.id]
+      );
+      const applied = await applyListingPriceToInputs(client, listing.id, data.price);
+      await client.query("COMMIT");
+      result = { listingChanged: true, ...applied };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [listing.id]);
+  return result;
+}
 
 /**
  * Delete listings older than maxAgeDays. Old listings are likely sold/delisted
@@ -73,6 +107,7 @@ export async function getSkinsNeedingCoverage(
 
 /**
  * Check listing staleness via individual listing lookups (50K/24h pool).
+ * CSFloat listings only — any other source would 404 on the CSFloat API and be deleted.
  * For each listing in our DB, fetches its current state:
  *   - "listed" -> keep it (update price if changed)
  *   - "sold" -> record as sale observation + delete from listings
@@ -106,6 +141,7 @@ export async function checkListingStaleness(
     FROM listings l
     JOIN skins s ON l.skin_id = s.id
     LEFT JOIN profitable_listings pl ON l.id = pl.listing_id
+    WHERE l.source = 'csfloat'
     ORDER BY
       CASE WHEN pl.listing_id IS NOT NULL THEN 0 ELSE 1 END,
       COALESCE(l.staleness_checked_at, l.created_at) ASC
@@ -156,36 +192,7 @@ export async function checkListingStaleness(
 
       if (data.state === "listed") {
         result.stillListed++;
-        // Update price if changed, mark as checked
-        if (data.price && data.price !== listing.price_cents) {
-          await pool.query(
-            "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
-            [data.price, new Date().toISOString(), listing.id]
-          );
-          // Recalc trade-up costs for all trade-ups using this listing
-          const { rows: affectedTus } = await pool.query(
-            "SELECT DISTINCT trade_up_id FROM trade_up_inputs WHERE listing_id = $1", [listing.id]
-          );
-          if (affectedTus.length > 0) {
-            await pool.query(
-              "UPDATE trade_up_inputs SET price_cents = $1 WHERE listing_id = $2", [data.price, listing.id]
-            );
-            for (const { trade_up_id } of affectedTus) {
-              const { rows: [costRow] } = await pool.query(
-                "SELECT SUM(price_cents) as total FROM trade_up_inputs WHERE trade_up_id = $1", [trade_up_id]
-              );
-              const newCost = parseInt(costRow.total);
-              await pool.query(
-                `UPDATE trade_ups SET total_cost_cents = $1,
-                 profit_cents = expected_value_cents - $1,
-                 roi_percentage = CASE WHEN $1 > 0 THEN ROUND(((expected_value_cents - $1)::numeric / $1) * 100, 2) ELSE 0 END
-                 WHERE id = $2`,
-                [newCost, trade_up_id]
-              );
-            }
-          }
-        }
-        await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [listing.id]);
+        await applyListedResult(pool, listing, data);
       } else if (data.state === "sold") {
         // Record as sale observation (valuable price data!)
         const salePrice = data.price || listing.price_cents;
