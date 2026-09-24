@@ -31,13 +31,13 @@ export function PreviewFeatures() {
       <header className="preview-page__head">
         <div>
           <h1>TradeUpBot Features</h1>
-          <p>How TradeUpBot finds, prices, and verifies profitable CS2 trade-up contracts.</p>
+          <p>How TradeUpBot finds, prices, and verifies CS2 trade-up contracts from real listings.</p>
         </div>
       </header>
 
       <section className="preview-doc">
         <h2>Real marketplace listings</h2>
-        <p>Every trade-up is built from skins currently listed on CSFloat, DMarket, Skinport, and Buff.market. Each input links to a specific listing with its actual float and price, so the cost you see is the cost you pay.</p>
+        <p>Every trade-up is built from skins currently listed on CSFloat, DMarket, Skinport, and Buff.market. Each input links to a specific listing with its actual float and price.</p>
         <div className="preview-tiles">
           {MARKETS.map(([title, body]) => (
             <article key={title} className="preview-tile">
@@ -88,12 +88,12 @@ export function PreviewFeatures() {
       <section className="preview-doc">
         <h2>Price intelligence from 3 data sources</h2>
         <p>Output pricing uses CSFloat sale history first. DMarket and Skinport listing data fill gaps when CSFloat has no coverage for a skin or condition. Knife and glove output pricing uses a KNN model trained on 120,000+ price observations for float-precise estimates.</p>
-        <p>Input pricing uses actual listing prices with marketplace-specific buyer fees applied: CSFloat (2.8% + $0.30), DMarket (2.5%), Skinport (0%). Seller fees are deducted from output estimates: CSFloat (2%), DMarket (2%), Skinport (8%). All values in the table reflect these real-world costs.</p>
+        <p>Input pricing uses actual listing prices plus marketplace buyer fees: CSFloat (2.8% + $0.30), DMarket (2.5%), Skinport (0%), Buff (3.5% + $0.15). Output estimates are netted at CSFloat's 2% seller fee, whichever marketplace the price data came from.</p>
       </section>
 
       <section className="preview-doc">
         <h2>Collection browser with knife/glove pool info</h2>
-        <p>Browse every CS2 collection: which knife and glove finishes are in its pool, how many listings exist per rarity tier, and which collections currently have profitable trade-ups. Filter by knives, gloves, or profitability.</p>
+        <p>Browse every CS2 collection: which knife and glove finishes are in its pool, how many listings exist per rarity tier, and which collections currently have positive-EV trade-ups. Filter by knives, gloves, or expected profit.</p>
       </section>
 
       <section className="preview-doc">

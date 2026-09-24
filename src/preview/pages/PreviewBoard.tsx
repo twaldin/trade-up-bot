@@ -56,7 +56,15 @@ import {
   reachedTotal,
   readPagedJson,
 } from "../lib/page-fetch.js";
-import { DELAY_BANNER } from "../lib/copy.js";
+import {
+  DELAY_BANNER,
+  LABEL_AFTER_FEES,
+  LABEL_EXPECTED_PL,
+  LABEL_EXPECTED_VALUE,
+  LABEL_OUTCOMES_ABOVE_COST,
+  NOTE_PL_ABOVE_ZERO,
+  NOTE_WORST_OUTCOMES,
+} from "../lib/copy.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
@@ -391,9 +399,9 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   return (
     <Figure
       label="Probability of clearing a P/L"
-      note={<>In profit on <b>{pProfit}</b> of rolls.</>}
+      note={<>Above cost in <b>{pProfit}</b> of outcomes.</>}
     >
-      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit}.`}>
+      <div className="preview-cdf" role="img" aria-label={`Share of outcomes at or above each profit-and-loss level. ${pProfit} of outcomes are above cost.`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -622,7 +630,7 @@ export function TradeUpCard({
           {chance !== null && (
             <>
               <i />
-              {formatOdds(chance)} chance of profit
+              {formatOdds(chance)} above cost
             </>
           )}
           <span className="preview-cardline__actions">
@@ -662,13 +670,13 @@ export function TradeUpCard({
               <div className="preview-expand__viz">
                 <div className="preview-readouts">
                   <Readout label="Cost" value={formatDollars(inputCostCents(tu))} note={`${totals.count || 10} listings`} />
-                  <Readout label="Expected value" value={formatDollars(tu.expected_value_cents)} note="probability-weighted" />
-                  <Readout label="Expected P/L" value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
+                  <Readout label={LABEL_EXPECTED_VALUE} value={formatDollars(tu.expected_value_cents)} note={LABEL_AFTER_FEES} />
+                  <Readout label={LABEL_EXPECTED_PL} value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
                   <Readout label="Median P/L" value={median === null ? "—" : signedDollars(median)} note="50th percentile" tone={median === null ? "" : signClass(median)} />
-                  <Readout label="Chance of profit" value={chance === null ? "—" : formatOdds(chance)} note="P(P/L > $0)" />
+                  <Readout label={LABEL_OUTCOMES_ABOVE_COST} value={chance === null ? "—" : formatOdds(chance)} note={NOTE_PL_ABOVE_ZERO} />
                   <Readout label="Worst case" value={worst === null ? "—" : signedDollars(worst)} note="lowest outcome" tone={worst === null ? "" : signClass(worst)} />
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
-                  <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note="10% worst rolls" tone={tail === null ? "" : signClass(tail)} />
+                  <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note={NOTE_WORST_OUTCOMES} tone={tail === null ? "" : signClass(tail)} />
                 </div>
                 <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">

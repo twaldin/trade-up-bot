@@ -58,7 +58,7 @@ describe("preview landing depth", () => {
   it("thickens How / FAQ / blog / pricing with leftover-page copy", () => {
     expect(PREVIEW_HOW.length).toBeGreaterThan(3);
     expect(PREVIEW_VALUE).toHaveLength(3);
-    expect(PREVIEW_VALUE_HEADLINE).toBe("What you see is what you pay");
+    expect(PREVIEW_VALUE_HEADLINE).toBe("Priced from listings you can buy");
     expect(landing).toContain('id="how"');
     expect(landing).toContain('id="faq"');
     expect(landing).toContain('id="blog"');
@@ -111,7 +111,7 @@ describe("preview landing depth", () => {
 
 describe("kit landing unique home head", () => {
   it("emits the unique indexed title, not a second h1", () => {
-    expect(chrome).toContain("TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings");
+    expect(chrome).toContain("TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings");
     expect(chrome).toContain("index, follow");
     expect(chrome).toContain("buildHomepageJsonLd");
     expect(app).toContain("PreviewChrome");

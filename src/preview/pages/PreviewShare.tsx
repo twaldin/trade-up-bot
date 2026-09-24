@@ -206,10 +206,10 @@ export function PreviewShare() {
   const chance = tu ? Math.round((tu.chance_to_profit ?? 0) * 100) : 0;
   const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
   const title = tu
-    ? `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`
+    ? `${typeLabel} Trade-Up — $${profit} expected P/L (${chance}% above cost) | TradeUpBot`
     : "Trade-up | TradeUpBot";
   const h1 = tu
-    ? `${typeLabel} Trade-Up — $${profit} Profit (${roi}% ROI)`
+    ? `${typeLabel} Trade-Up — $${profit} Expected P/L (${roi}% ROI)`
     : "Trade-up";
   const isAuthenticated = !!user;
   const isBasicPlus = user?.tier === "pro" || user?.tier === "admin" || !!user?.is_admin;

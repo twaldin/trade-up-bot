@@ -216,7 +216,7 @@ export function PreviewPricing() {
         <h2>Product screenshots from the TradeUpBot dashboard.</h2>
         <figure className="preview-shot">
           <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" />
-          <figcaption>Trade-up table with profit, EV, chance to profit, and direct listing links</figcaption>
+          <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and direct listing links</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
@@ -237,7 +237,7 @@ export function PreviewPricing() {
             <source type="image/webp" srcSet="/collections-375w.webp 375w, /collections-768w.webp 768w, /collections-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
             <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" />
           </picture>
-          <figcaption>Collection browser with knife/glove pool info, listing counts, and profitability filters</figcaption>
+          <figcaption>Collection browser with knife/glove pool info, listing counts, and expected-profit filters</figcaption>
         </figure>
       </section>
 

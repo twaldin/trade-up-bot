@@ -13,7 +13,7 @@ export const PREVIEW_LEDE =
 export const PREVIEW_SUBLEDE =
   "Every input links to a specific listing on CSFloat, DMarket, Skinport, or Buff.market, with its exact float and price. The output float is computed from your inputs, not estimated.";
 
-export const PREVIEW_VALUE_HEADLINE = "What you see is what you pay";
+export const PREVIEW_VALUE_HEADLINE = "Priced from listings you can buy";
 
 export const PREVIEW_VALUE = [
   ["Real listings", "Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market."],
@@ -79,3 +79,29 @@ export const PREVIEW_FAQ: { q: string; a: string }[] = [
 ];
 
 export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees them the moment they're found.";
+
+/** Visible metric labels. Engine fields (chance_to_profit, profit_cents) stay unchanged. */
+export const LABEL_OUTCOMES_ABOVE_COST = "Outcomes above cost";
+export const LABEL_ABOVE_COST_PCT = "Above cost %";
+export const LABEL_MIN_ABOVE_COST = "Min above cost %";
+export const LABEL_EXPECTED_VALUE = "Expected value";
+export const LABEL_AFTER_FEES = "after fees";
+export const LABEL_EXPECTED_PL = "Expected P/L";
+export const LABEL_OUTCOME_PROBABILITY = "Outcome probability";
+export const NOTE_WORST_OUTCOMES = "worst 10% of outcomes";
+export const NOTE_PL_ABOVE_ZERO = "P(P/L > $0)";
+
+export const HOME_TITLE = "TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings";
+export const HOME_DESCRIPTION =
+  "Fee-adjusted expected value for CS2 trade-ups, built from real listings on CSFloat, DMarket, Skinport, and Buff.market. Verify inputs before you buy.";
+export const HOME_SOCIAL_DESCRIPTION =
+  "CS2 trade-ups built from real, buyable listings, with expected value after fees. Verify availability and claim before anyone else.";
+
+export const FOOTER_NOT_VALVE = "Not affiliated with or endorsed by Valve.";
+export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
+
+/** Display-only. A stored 0.995–0.999 must not print as 100%. */
+export function formatAboveCostPercent(fraction: number): string {
+  if (fraction < 1 - 1e-9 && Math.round(fraction * 100) === 100) return ">99%";
+  return `${Math.round(fraction * 100)}%`;
+}

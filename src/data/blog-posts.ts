@@ -19,7 +19,7 @@ export const blogPosts: BlogPost[] = [
   {
     slug: "how-cs2-trade-ups-work",
     title: "How CS2 Trade-Ups Work: 10 Skins, Float & Profit",
-    excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, odds, and fees. Use this guide to calculate smarter contracts before buying.",
+    excerpt: "Learn how CS2 trade-ups work with 10 skins, float math, outcome probabilities, and fees. Use this guide to calculate smarter contracts before buying.",
     publishedAt: "2026-03-15",
     readTime: "6 min read",
     author: "TradeUpBot Team",
