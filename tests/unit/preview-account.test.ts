@@ -102,7 +102,7 @@ describe("my-trade-ups helpers", () => {
       "csfloat", "skinport", "buff", "steam_market", "other",
     ]);
     expect(signClass(1)).toBe("is-plus");
-    expect(signClass(0)).toBe("is-plus");
+    expect(signClass(0)).toBe("is-zero");
     expect(signClass(-1)).toBe("is-minus");
   });
 

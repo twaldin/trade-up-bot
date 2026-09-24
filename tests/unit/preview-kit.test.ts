@@ -150,7 +150,7 @@ describe("preview craft bar", () => {
   it("puts $ delta and odds on the output tiles, not on a second widget", () => {
     expect(board).toContain("preview-skin__delta");
     expect(board).toContain("signedDollars");
-    expect(board).toMatch(/Math\.round\(outcome\.probability \* 100\)/);
+    expect(board).toContain("formatOdds(outcome.probability)");
     expect(board).toContain("estimated_price_cents");
     expect(board).not.toContain("preview-strip__face");
   });

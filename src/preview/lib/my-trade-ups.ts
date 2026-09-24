@@ -81,9 +81,7 @@ export interface VerifyPayload {
   };
 }
 
-export function signClass(cents: number): string {
-  return cents >= 0 ? "is-plus" : "is-minus";
-}
+export { signClass } from "./board.js";
 
 /** Dollars typed in the sell confirm → integer cents, or null if unusable. */
 export function parseSalePriceCents(raw: string): number | null {

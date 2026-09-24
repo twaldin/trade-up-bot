@@ -12,6 +12,7 @@ import {
   conditionShort,
   evDrivers,
   formatFloat,
+  formatOdds,
   inputCostCents,
   inputListingHrefs,
   inputRarityColor,
@@ -26,6 +27,7 @@ import {
   previewSkinHref,
   rarityLabel,
   reorderForExpanded,
+  signClass,
   splitSkinName,
   uniqueInputs,
   uniqueOutputs,
@@ -72,11 +74,6 @@ export function boardFaceFor(name: string): string | null {
 
 export function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
-}
-
-/** Lime is profit, --loss is loss. No third colour anywhere on the board. */
-function signClass(cents: number): string {
-  return cents >= 0 ? "is-plus" : "is-minus";
 }
 
 function axisPercent(value: number, lo: number, hi: number): number {
@@ -260,7 +257,7 @@ export function OutputTile({
       variant="output"
       buyHref={outputHref(outcome)}
       lead={formatDollars(outcome.estimated_price_cents)}
-      trail={`${Math.round(outcome.probability * 100)}%`}
+      trail={formatOdds(outcome.probability)}
       delta={signedDollars(delta)}
       deltaTone={signClass(delta)}
       wear={wear}
@@ -385,7 +382,7 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   const cdf = cdfCurve(tu);
   if (cdf.length === 0) return null;
   const data = cdf.map((point) => ({ x: point.x / 100, p: Math.round(point.p * 1000) / 10 }));
-  const pProfit = Math.round(chanceOfProfit(points) * 100);
+  const pProfit = formatOdds(chanceOfProfit(points));
   const xs = data.map((row) => row.x);
   const span = Math.max(...xs) - Math.min(...xs);
   // A $0.60-wide P/L range rounded to whole dollars prints "+$9" four times.
@@ -394,9 +391,9 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   return (
     <Figure
       label="Probability of clearing a P/L"
-      note={<>Break-even or better on <b>{pProfit}%</b> of rolls.</>}
+      note={<>In profit on <b>{pProfit}</b> of rolls.</>}
     >
-      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit} percent.`}>
+      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit}.`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -464,7 +461,7 @@ function RankedList({ title, points, empty }: { title: string; points: PayoffPoi
           <Link className="preview-rank__name" to={previewSkinHref(point.name)} title={point.name} onClick={stop}>
             {point.name}
           </Link>
-          <span className="preview-rank__odds">{Math.round(point.probability * 100)}%</span>
+          <span className="preview-rank__odds">{formatOdds(point.probability)}</span>
           <span className={`preview-rank__amt ${signClass(point.evContributionCents)}`}>
             {signedDollars(point.evContributionCents)}
           </span>
@@ -614,7 +611,7 @@ export function TradeUpCard({
           {chance !== null && (
             <>
               <i />
-              {Math.round(chance * 100)}% chance of profit
+              {formatOdds(chance)} chance of profit
             </>
           )}
           <span className="preview-cardline__actions">
@@ -654,7 +651,7 @@ export function TradeUpCard({
                   <Readout label="Expected value" value={formatDollars(tu.expected_value_cents)} note="probability-weighted" />
                   <Readout label="Expected P/L" value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
                   <Readout label="Median P/L" value={median === null ? "—" : signedDollars(median)} note="50th percentile" tone={median === null ? "" : signClass(median)} />
-                  <Readout label="Chance of profit" value={chance === null ? "—" : `${Math.round(chance * 100)}%`} note="P(P/L > $0)" />
+                  <Readout label="Chance of profit" value={chance === null ? "—" : formatOdds(chance)} note="P(P/L > $0)" />
                   <Readout label="Worst case" value={worst === null ? "—" : signedDollars(worst)} note="lowest outcome" tone={worst === null ? "" : signClass(worst)} />
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note="10% worst rolls" tone={tail === null ? "" : signClass(tail)} />

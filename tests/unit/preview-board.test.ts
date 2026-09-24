@@ -7,6 +7,8 @@ import {
   chanceOfProfit,
   conditionShort,
   formatFloat,
+  formatOdds,
+  signClass,
   previewCollectionHref,
   previewSkinHref,
   reorderForExpanded,
@@ -60,6 +62,23 @@ function outcome(overrides: Partial<TradeUpOutcome>): TradeUpOutcome {
     ...overrides,
   };
 }
+
+describe("preview P/L tone and odds", () => {
+  it("keeps break-even neutral: lime for profit, loss red for loss, nothing for zero", () => {
+    expect(signClass(1)).toBe("is-plus");
+    expect(signClass(0)).toBe("is-zero");
+    expect(signClass(-1)).toBe("is-minus");
+  });
+
+  it("prints odds under 1% as <1% rather than rounding a live outcome to 0%", () => {
+    expect(formatOdds(0.004)).toBe("<1%");
+    expect(formatOdds(0.0049)).toBe("<1%");
+    expect(formatOdds(0.005)).toBe("1%");
+    expect(formatOdds(0.5)).toBe("50%");
+    expect(formatOdds(1)).toBe("100%");
+    expect(formatOdds(0)).toBe("0%");
+  });
+});
 
 describe("preview board numbers", () => {
   it("uses the trade-up input total as cost, not an outcome price", () => {

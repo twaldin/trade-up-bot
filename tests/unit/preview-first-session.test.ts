@@ -55,6 +55,11 @@ describe("calculator first session", () => {
     expect(load).toContain("await evaluate(data.inputs)");
   });
 
+  it("colours calculator profit with the shared tone, so break-even stays neutral", () => {
+    expect(calc).toContain("tone={signClass(profit)}");
+    expect(calc).not.toContain('profit >= 0 ? "is-plus"');
+  });
+
   it("does not fetch or run the example on first render", () => {
     expect(calc).not.toMatch(/useEffect\([\s\S]{0,200}\/api\/calculator\/example/);
     expect(calc).toContain("useState<CalculatorExampleSlot[]>(emptyCalculatorSlots())");

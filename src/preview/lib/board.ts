@@ -193,6 +193,21 @@ export function averageFloat(listings: TradeUpInput[]): number | null {
   return floats.reduce((sum, value) => sum + value, 0) / floats.length;
 }
 
+export type SignTone = "is-plus" | "is-minus" | "is-zero";
+
+/** Lime is profit, --loss is loss, and break-even takes neither. */
+export function signClass(cents: number): SignTone {
+  if (cents > 0) return "is-plus";
+  if (cents < 0) return "is-minus";
+  return "is-zero";
+}
+
+/** A live outcome under 1% still rolls, so it never prints as 0%. */
+export function formatOdds(probability: number): string {
+  if (probability > 0 && probability < 0.005) return "<1%";
+  return `${Math.round(probability * 100)}%`;
+}
+
 /** Four decimals, the number every marketplace prints. Null stays null. */
 export function formatFloat(value: number | null | undefined): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
-import { formatFloat, outputRarityColor, rarityLabel, uniqueOutputs } from "../lib/board.js";
+import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import { CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
@@ -229,8 +229,8 @@ export function PreviewCalculator() {
         <div className="preview-readouts">
           <Readout label="Cost" value={formatDollars(result.total_cost_cents)} />
           <Readout label="Expected value" value={formatDollars(result.expected_value_cents)} />
-          <Readout label="Profit" value={signedDollars(profit)} tone={profit >= 0 ? "is-plus" : "is-minus"} />
-          <Readout label="Chance of profit" value={stats ? `${Math.round(stats.chance_to_profit * 100)}%` : "—"} />
+          <Readout label="Profit" value={signedDollars(profit)} tone={signClass(profit)} />
+          <Readout label="Chance of profit" value={stats ? formatOdds(stats.chance_to_profit) : "—"} />
         </div>
       )}
       <FeeLine line={CALCULATOR_FEE_LINE} />
