@@ -1,39 +1,10 @@
 import { assertCleanCopy } from "./copy/guard";
-import { captureDate, need, readout, take, WEAR, type Facts, type Take } from "./facts";
+import { captureDate, need, readout, take, type Facts } from "./facts";
 import type { ScreenAdProps } from "./compositions/ScreenAd";
 import type { StaticAdProps } from "./compositions/StaticAd";
-import type { Focus } from "./components/Footage";
+import { MIN_FOCUS_W } from "./components/Footage";
 import { DIMENSIONS, FPS, type Format } from "./theme";
-
-const HONESTY = "Estimates after fees. You can lose money.";
-
-type Rect = { x: number; y: number; w: number; h: number };
-
-const rect = (t: Take, name: string): Rect => {
-  const r = t.rects?.[name];
-  if (!r) throw new Error(`take ${t.id} has no rect "${name}"`);
-  return r;
-};
-
-const center = (r: Rect, extraW = 80): Focus => ({
-  cx: r.x + r.w / 2,
-  cy: r.y + r.h / 2,
-  w: r.w + extraW,
-});
-
-/** One cell of the top readout row. A wider window would include the row below it. */
-const readoutCell = (r: Rect, col: number): Focus => ({
-  cx: r.x + (r.w / 4) * (col + 0.5),
-  cy: r.y + r.h * 0.2,
-  w: 68,
-});
-
-/** Right side of an output tile: the float. The outcome share sits further left. */
-const outputFloat = (r: Rect): Focus => ({
-  cx: r.x + r.w * 0.8,
-  cy: r.y + 18,
-  w: 58,
-});
+import { EXAMPLE, HONESTY, LIVE } from "./live-read";
 
 const proOffer = (facts: Facts): string => {
   const pricing = facts.takes["d-pricing"]?.facts;
@@ -47,14 +18,7 @@ const proOffer = (facts: Facts): string => {
   return `Free tier, then Pro $${match[1]}/mo. Cancel anytime.`;
 };
 
-const conditionPrice = (text: string, code: string): string => {
-  const match = text.match(new RegExp(`${code}\\n[^\\n]+\\n(\\$\\d+\\.\\d{2})`));
-  if (!match) throw new Error(`no ${code} condition price in the captured skin page`);
-  return match[1];
-};
-
-const dated = (facts: Facts, id: string) =>
-  `Captured on tradeupbot.app, ${captureDate(take(facts, id).capturedAt)}.`;
+const MARKET: Record<string, string> = { CF: "CSFloat", DM: "DMarket" };
 
 export type VideoJob = {
   id: string;
@@ -88,7 +52,7 @@ const still = (props: StaticAdProps): StillJob => {
   const { takes, ...copy } = props;
   void takes;
   assertCleanCopy(props.id, copy);
-  const dim = DIMENSIONS[props.format === "square" ? "square" : "portrait"];
+  const dim = DIMENSIONS[props.format];
   return { id: props.id, ...dim, props };
 };
 
@@ -99,59 +63,104 @@ const endCard = (facts: Facts, headline: string, cta: string) => ({
   url: "tradeupbot.app",
   offer: proOffer(facts),
   honesty: HONESTY,
+  example: EXAMPLE,
 });
 
 export const buildCatalog = (facts: Facts) => {
   const board = take(facts, "d-board");
-  const skins = take(facts, "d-skins");
   const calc = take(facts, "d-calculator");
   const faq = take(facts, "d-faq");
   const tradeup = take(facts, "d-tradeup");
-  const out = need(board.facts.skins?.find((s) => s.kind === "output" && s.name === "Nightwish"), "Nightwish output");
-  const wear = WEAR[need(out.wear, "output wear")];
   const ev = readout(board, "Expected value");
-  const pl = readout(board, "Expected P/L");
   const cost = readout(board, "Cost");
   const result = need(calc.facts.result, "calculator result");
   const fee = need(faq.facts.feeAnswer, "fee answer");
-  const when = dated(facts, "d-board");
-  const bsPrice = conditionPrice(need(skins.facts.detailText, "skin page text"), "BS");
+  if (cost.value !== "$53.14" || ev.value !== "$56.35") {
+    throw new Error("board cost/EV drifted from the 24 Sept capture used in this pack");
+  }
+  if (result.cost !== "$27.42" || result.expectedValue !== "$27.41" || result.profit !== "-$0.01") {
+    throw new Error("calculator example drifted from the 24 Sept capture");
+  }
+  if (!tradeup.facts.signinBanner?.includes("Sign in to verify")) {
+    throw new Error("sign-in banner text was not captured");
+  }
+  const feeRows = [
+    { market: "CSFloat", buyer: "2.8% + $0.30" },
+    { market: "DMarket", buyer: "2.5%" },
+    { market: "Skinport", buyer: "None" },
+    { market: "Buff", buyer: "3.5% + $0.15" },
+  ];
+  for (const row of feeRows) {
+    const needle = row.buyer === "None" ? "no buyer fee" : row.buyer.split(" ")[0];
+    if (!fee.includes(needle) && !fee.includes(row.buyer)) throw new Error(`fee row ${row.market} is not in the captured FAQ`);
+  }
+  if (!fee.includes("$0.30")) throw new Error("FAQ answer is missing the CSFloat flat buyer fee");
 
-  const floatVertical: ScreenAdProps = {
+  const floatBase: ScreenAdProps = {
     id: "meta-a-float-vertical",
-    angle: "Exact float vs condition average",
+    angle: "Exact float vs a condition price",
     format: "vertical",
     layout: "panel",
-    footnote: when,
+    footnote: LIVE.nightwish.label,
     takes: facts.takes,
     endCard: endCard(facts, "Price the exact float.", "Open the calculator"),
     scenes: [
       {
         id: "hook",
-        seconds: 2.2,
-        caption: { text: "A condition average is one price for every float.", emphasis: ["one price"] },
-        footage: { kind: "video", take: "d-skins", from: 22.95, focus: center(rect(skins, "price-by-condition"), 40) },
+        seconds: 2.4,
+        caption: { text: `0.07 float: ${LIVE.nightwish.fn} vs ${LIVE.nightwish.mw}`, emphasis: [LIVE.nightwish.fn, LIVE.nightwish.mw] },
+        graphic: {
+          type: "range",
+          stopAt: LIVE.nightwish.marker,
+          kicker: "Cheapest listings, 24 Sept 2026",
+          rows: [
+            { k: "FN", v: LIVE.nightwish.fn },
+            { k: "MW", v: LIVE.nightwish.mw },
+          ],
+          size: 80,
+        },
       },
       {
-        id: "condition",
+        id: "boundary",
+        seconds: 4,
+        caption: { text: "Cross 0.07 and the cheapest Nightwish listing drops.", emphasis: ["0.07"] },
+        graphic: {
+          type: "range",
+          stopAt: LIVE.nightwish.marker,
+          kicker: LIVE.nightwish.label,
+          rows: [
+            { k: "FN", v: LIVE.nightwish.fn },
+            { k: "MW", v: LIVE.nightwish.mw },
+          ],
+          size: 72,
+        },
+        footnote: "Factory New and Minimal Wear. Live skin page, 24 Sept 2026.",
+      },
+      {
+        id: "contract",
         seconds: 4.2,
-        caption: { text: `${wear} ${out.weapon} | ${out.name}, cheapest listing: a condition price.`, emphasis: ["condition price"] },
-        footage: { kind: "image", take: "d-skins", shot: "price-by-condition" },
-        callout: { label: `${wear} · cheapest`, value: bsPrice, note: "Price by condition, live page" },
+        caption: { text: "A board contract can land far from that boundary.", emphasis: ["boundary"] },
+        graphic: {
+          type: "figure",
+          kicker: "Output float · AK-47 | Nightwish",
+          value: "0.5428",
+          note: "Battle-Scarred on contract 780598151. The float is set by the 10 listings.",
+          size: 88,
+        },
+        footnote: EXAMPLE,
       },
       {
-        id: "float",
+        id: "ev",
         seconds: 4.4,
-        caption: { text: `This contract produces float ${out.float}.`, emphasis: [need(out.float, "float")] },
-        footage: { kind: "video", take: "d-board", from: "output-float", offset: 0.3, focus: outputFloat(rect(board, "output0")) },
-        callout: { label: "Predicted output float", value: need(out.float, "float"), note: `${out.weapon} | ${out.name}` },
-      },
-      {
-        id: "price",
-        seconds: 4.6,
-        caption: { text: "The listing price is for that float, after fees.", emphasis: ["that float"] },
-        footage: { kind: "video", take: "d-board", from: "readouts", offset: 0.4, focus: readoutCell(rect(board, "readouts"), 1) },
-        callout: { label: "Expected value · estimate", value: need(ev.value, "ev"), note: `Cost ${cost.value} · P/L ${pl.value} after fees` },
+        caption: { text: "Expected value (after fees), both outcomes.", emphasis: ["both outcomes"] },
+        graphic: {
+          type: "figure",
+          kicker: "Expected value (after fees), both outcomes",
+          value: need(ev.value, "ev"),
+          note: `Cost ${cost.value}. This is not the listing price for that float. Estimate.`,
+          size: 88,
+        },
+        footnote: EXAMPLE,
       },
     ],
   };
@@ -160,53 +169,69 @@ export const buildCatalog = (facts: Facts) => {
     ...base,
     id,
     format,
-    scenes: base.scenes.map((s) => ({ ...s })),
+    scenes: base.scenes.map((s) => ({ ...s, graphic: s.graphic ? { ...s.graphic } : undefined })),
   });
 
-  const ugc: ScreenAdProps = {
-    id: "meta-b-ugc-vertical",
-    angle: "Screen recording, calculator then verify",
+  const screen: ScreenAdProps = {
+    id: "meta-b-screen-vertical",
+    angle: "Screen demo",
     format: "vertical",
-    layout: "fullbleed",
-    footnote: dated(facts, "d-calculator"),
+    layout: "panel",
+    footnote: EXAMPLE,
     takes: facts.takes,
-    endCard: endCard(facts, "Fees in. Then verify.", "Try the calculator"),
+    endCard: endCard(facts, "Check the estimate.", "See trade-ups"),
     scenes: [
       {
-        id: "hook",
-        seconds: 1.8,
-        caption: { text: "Open the calculator.", emphasis: ["calculator"] },
-        footage: { kind: "video", take: "d-calculator", from: "empty", focus: { cx: 720, cy: 420, w: 1100 } },
-      },
-      {
-        id: "example",
-        seconds: 3.6,
-        caption: { text: "Ten live listings. Each one has its own float.", emphasis: ["own float"] },
-        footage: { kind: "video", take: "d-calculator", from: 5.0, focus: center(rect(calc, "inputs"), 40) },
-      },
-      {
-        id: "result",
-        seconds: 4.4,
-        caption: { text: "After fees, the worked example loses a cent.", emphasis: ["loses a cent"] },
-        footage: { kind: "video", take: "d-calculator", from: "result-in-view", offset: -0.3, focus: center(rect(calc, "result"), 200) },
-        callout: {
-          label: "Estimate after fees",
-          value: need(result.profit, "profit"),
-          note: `Cost ${result.cost} · expected value ${result.expectedValue}`,
+        id: "skip",
+        seconds: 1.5,
+        caption: { text: "Skip this one.", emphasis: ["Skip"] },
+        graphic: {
+          type: "figure",
+          kicker: "Calculator example · 24 Sept 2026",
+          value: "-$0.01",
+          note: `Cost ${result.cost} → expected value (after fees) ${result.expectedValue}.`,
           tone: "loss",
+          size: 96,
+        },
+        footnote: "Worked example from the calculator. Not the hero.",
+      },
+      {
+        id: "cost",
+        seconds: 4.2,
+        caption: { text: "One contract. Cost of the 10 listings.", emphasis: ["One contract"] },
+        graphic: {
+          type: "figure",
+          kicker: `Contract ${LIVE.hero.id}`,
+          value: LIVE.hero.cost,
+          note: "Positive expected value, and one outcome priced under that cost.",
+          size: 88,
         },
       },
       {
-        id: "fees",
-        seconds: 3.4,
-        caption: { text: "The fee depends on the marketplace.", emphasis: ["marketplace"] },
-        footage: { kind: "video", take: "d-faq", from: "fees-open", offset: 0.3, focus: center(rect(faq, "fee-answer"), 80) },
+        id: "below",
+        seconds: 5,
+        caption: { text: "These two outcomes are priced under the cost.", emphasis: ["under the cost"] },
+        graphic: {
+          type: "stack",
+          title: `Under the ${LIVE.hero.cost} cost`,
+          size: 44,
+          rows: LIVE.hero.belowCost.map((row) => ({ k: row.name, v: row.price, tone: "loss" as const })),
+        },
       },
       {
-        id: "verify",
-        seconds: 2.6,
-        caption: { text: "Then verify the listings are still for sale.", emphasis: ["verify"] },
-        footage: { kind: "video", take: "d-board", from: "verify-button", offset: -0.2, focus: center(rect(board, "verify"), 220) },
+        id: "ev",
+        seconds: 4.3,
+        caption: { text: "Expected value (after fees). Estimate.", emphasis: ["Estimate"] },
+        graphic: {
+          type: "stack",
+          title: "After fees · estimate",
+          size: 56,
+          rows: [
+            { k: "Cost", v: LIVE.hero.cost },
+            { k: "Expected value (after fees)", v: LIVE.hero.expectedValue, tone: "plus" },
+            { k: "Expected P/L", v: LIVE.hero.expectedPl, tone: "plus" },
+          ],
+        },
       },
     ],
   };
@@ -216,134 +241,163 @@ export const buildCatalog = (facts: Facts) => {
     angle: "Verify before you buy",
     format: "vertical",
     layout: "panel",
-    footnote: dated(facts, "d-tradeup"),
+    footnote: EXAMPLE,
     takes: facts.takes,
-    endCard: endCard(facts, "Verify, then decide.", "See live trade-ups"),
+    endCard: endCard(facts, "Verify is part of Pro.", "See trade-ups"),
     scenes: [
       {
         id: "hook",
-        seconds: 2,
+        seconds: 2.2,
         caption: { text: "A green estimate is not a promise.", emphasis: ["not a promise"] },
-        footage: { kind: "video", take: "d-board", from: "listings", offset: 0.2, focus: center(rect(board, "listings"), 40) },
+        footage: { kind: "video", take: "d-board", from: "verify-click", offset: -0.9, focus: { cx: 1255, cy: 450, w: Math.max(400, MIN_FOCUS_W) } },
+        callout: { label: "across 10 listings", value: need(cost.value, "cost"), valueSize: 72 },
       },
       {
         id: "listings",
-        seconds: 4.6,
-        caption: { text: "Every input is a listing you can open.", emphasis: ["listing you can open"] },
-        footage: { kind: "video", take: "d-board", from: "listings", offset: 1.2, focus: center(rect(board, "listings"), 20) },
-        callout: { label: "10 listings · cost", value: need(cost.value, "cost"), note: "CSFloat and DMarket" },
-      },
-      {
-        id: "verify",
-        seconds: 4.2,
-        caption: { text: "Verify re-checks each one before you buy.", emphasis: ["before you buy"] },
-        footage: { kind: "video", take: "d-board", from: "verify-button", focus: center(rect(board, "verify"), 180) },
+        seconds: 4.4,
+        caption: { text: "One contract = 10 listings.", emphasis: ["10 listings"] },
+        graphic: {
+          type: "stack",
+          title: "First 6 of 10 · CSFloat and DMarket",
+          size: 32,
+          rows: need(board.facts.listings, "listings").slice(0, 6).map((row) => {
+            const market = MARKET[row.market];
+            if (!market) throw new Error(`unknown market code ${row.market}`);
+            return { k: `${row.n} ${market}`, v: row.price };
+          }),
+        },
+        footnote: `${EXAMPLE} Total ${cost.value}.`,
       },
       {
         id: "signin",
-        seconds: 4.6,
-        caption: { text: "Verifying asks you to sign in. Listings can already be gone.", emphasis: ["sign in"] },
-        footage: { kind: "video", take: "d-tradeup", from: "signin", offset: 0.2, focus: center(rect(tradeup, "signin"), 80) },
+        seconds: 4.2,
+        caption: { text: "The page asks you to sign in.", emphasis: ["sign in"] },
+        footage: { kind: "image", take: "d-tradeup", shot: "signin" },
+        footnote: "Sign in to verify, claim, and purchase listings.",
+      },
+      {
+        id: "pro",
+        seconds: 3.8,
+        caption: { text: "Verify is part of Pro.", emphasis: ["Pro"] },
+        graphic: {
+          type: "figure",
+          kicker: "Signed-in free accounts get a 403",
+          value: "Pro",
+          note: "Verify is part of Pro. It re-checks all 10 before you spend.",
+          size: 88,
+        },
+        footnote: "Free view is delayed 3 hours.",
       },
     ],
   };
 
   const videos = [
-    video(floatVertical),
-    video(withFormat(floatVertical, "square", "meta-a-float-square")),
-    video(withFormat(floatVertical, "landscape", "meta-a-float-landscape")),
-    video(ugc),
+    video(floatBase),
+    video(withFormat(floatBase, "square", "meta-a-float-square")),
+    video(withFormat(floatBase, "portrait", "meta-a-float-portrait")),
+    video(screen),
     video(verify),
   ];
 
-  const feeRows = [
-    { market: "CSFloat", buyer: "2.8% + $0.30", seller: "2%" },
-    { market: "DMarket", buyer: "2.5%", seller: "2%" },
-    { market: "Skinport", buyer: "None", seller: "8%" },
-    { market: "Buff", buyer: "3.5% + $0.15", seller: "2.5%" },
+  const listings = need(board.facts.listings, "listings").slice(0, 6).map((row) => {
+    const market = MARKET[row.market];
+    if (!market) throw new Error(`unknown market code ${row.market}`);
+    return { n: row.n, name: row.name, market, float: row.float, price: row.price };
+  });
+
+  const boundary = (size: number): StaticAdProps["visual"] => ({
+    type: "boundary",
+    kicker: "Float range · marker at 0.07",
+    stopAt: LIVE.nightwish.marker,
+    size,
+    rows: [
+      { k: "FN", v: LIVE.nightwish.fn },
+      { k: "MW", v: LIVE.nightwish.mw },
+    ],
+  });
+
+  const source = `Source: tradeupbot.app, ${LIVE.date}.`;
+  const designs: { id: string; formats: ("square" | "portrait" | "vertical")[]; props: Omit<StaticAdProps, "format" | "id" | "takes"> }[] = [
+    {
+      id: "float-boundary",
+      formats: ["square", "portrait", "vertical"],
+      props: {
+        angle: "Exact float vs a condition price",
+        headline: `0.07 float: ${LIVE.nightwish.fn} vs ${LIVE.nightwish.mw}`,
+        emphasis: [LIVE.nightwish.fn, LIVE.nightwish.mw],
+        sub: LIVE.nightwish.label,
+        visual: boundary(72),
+        cta: "Open the calculator",
+        url: "tradeupbot.app/calculator",
+        disclaimer: HONESTY,
+        source,
+      },
+    },
+    {
+      id: "float-number",
+      formats: ["square", "portrait"],
+      props: {
+        angle: "Exact float vs a condition price",
+        headline: "Can your 10 listings reach the float?",
+        emphasis: ["10 listings"],
+        sub: `Cost ${cost.value} · Expected value (after fees) ${ev.value} across both outcomes · estimate`,
+        visual: {
+          type: "number",
+          label: "Predicted output float · AK-47 | Nightwish",
+          value: "0.5428",
+          detail: "Battle-Scarred on the 24 Sept board example. The expected value covers both outcomes.",
+        },
+        cta: "Open the calculator",
+        url: "tradeupbot.app/calculator",
+        disclaimer: HONESTY,
+        source: EXAMPLE,
+      },
+    },
+    {
+      id: "verify",
+      formats: ["square", "portrait"],
+      props: {
+        angle: "Verify before you buy",
+        headline: "$53.14 across 10 listings. Check all 10.",
+        emphasis: ["Check all 10"],
+        sub: "One contract = 10 listings (first 6 shown). Verify is part of Pro. Free view is delayed 3 hours.",
+        visual: { type: "listings", label: "CSFloat and DMarket", rows: listings },
+        cta: "See trade-ups",
+        url: "tradeupbot.app/trade-ups",
+        disclaimer: HONESTY,
+        source: EXAMPLE,
+      },
+    },
+    {
+      id: "fees",
+      formats: ["square", "portrait"],
+      props: {
+        angle: "Fees in the math",
+        headline: "Ten CSFloat buys: $3.00 in flat fees",
+        emphasis: ["$3.00"],
+        sub: "CSFloat adds 2.8% + $0.30 to every buy. Ten inputs is $3.00 in flat fees before the 2.8%.",
+        visual: {
+          type: "fees",
+          label: "Buyer fees, from the live FAQ",
+          rows: feeRows,
+          note: "Board adds each market's buyer fee. Outcomes netted at CSFloat's 2% seller fee.",
+        },
+        cta: "See trade-ups",
+        url: "tradeupbot.app/trade-ups",
+        disclaimer: HONESTY,
+        source: `Source: tradeupbot.app/faq on ${captureDate(faq.capturedAt)}.`,
+      },
+    },
   ];
-  for (const row of feeRows) {
-    if (!fee.includes(row.buyer === "None" ? "no buyer fee" : row.buyer.replace(" + ", " + ")) && !fee.includes(row.buyer.split(" ")[0])) {
-      throw new Error(`fee row ${row.market} ${row.buyer} is not in the captured FAQ answer`);
+
+  const suffix: Record<Format, string> = { square: "1080", portrait: "1350", vertical: "1920", landscape: "1920x1080" };
+  const stills: StillJob[] = [];
+  for (const d of designs) {
+    for (const format of d.formats) {
+      const visual = d.id === "float-boundary" ? boundary(format === "square" ? 64 : 80) : d.props.visual;
+      stills.push(still({ ...d.props, visual, id: `static-${d.id}-${suffix[format]}`, format, takes: facts.takes }));
     }
   }
-  if (!fee.includes(out.weapon ? "2%" : "2%")) throw new Error("fee answer missing seller fees");
 
-  const source = `Source: tradeupbot.app on ${captureDate(board.capturedAt)}.`;
-  const designs: Omit<StaticAdProps, "format" | "id" | "takes">[] = [
-    {
-      angle: "Exact float vs condition average",
-      headline: "Same skin. The float changes the price.",
-      emphasis: ["float"],
-      sub: `${wear} ${out.weapon} | ${out.name} shows one cheapest listing per condition. A contract prices the float it actually produces.`,
-      visual: {
-        type: "split",
-        left: { title: "One price per condition", note: "A flat line. No float, no listing." },
-        right: { take: "d-skins", shot: "price-by-condition", title: "Price by condition", note: "Live skin page. Cheapest listing in each condition." },
-      },
-      cta: "Open the calculator",
-      url: "tradeupbot.app/calculator",
-      disclaimer: HONESTY,
-      source,
-    },
-    {
-      angle: "Exact float vs condition average",
-      headline: `Float ${out.float}, not a condition midpoint.`,
-      emphasis: [need(out.float, "float")],
-      sub: `This contract’s ${out.weapon} | ${out.name} output is float ${out.float} (${wear}). Expected value ${ev.value} on a ${cost.value} cost.`,
-        visual: {
-        type: "number",
-        label: "Predicted output float",
-        value: need(out.float, "float"),
-        detail: `${out.weapon} | ${out.name} · ${wear}. Expected value ${ev.value}, estimate after fees.`,
-        shot: { take: "d-skins", shot: "chart" },
-      },
-      cta: "Open the calculator",
-      url: "tradeupbot.app/calculator",
-      disclaimer: HONESTY,
-      source,
-    },
-    {
-      angle: "Verify before you buy",
-      headline: "Verify the listings before you buy.",
-      emphasis: ["Verify"],
-      sub: "Each input links to a live listing. Verify re-checks that it is still for sale, and at what price. Signing in is required.",
-      visual: {
-        type: "listings",
-        label: "Inputs on the expanded card",
-        rows: need(board.facts.listings, "listings").slice(0, 6).map((row) => ({
-          n: need(row.n, "listing n"),
-          name: need(row.name, "listing name"),
-          market: need(row.market, "listing market"),
-          float: need(row.float, "listing float"),
-          price: need(row.price, "listing price"),
-        })),
-      },
-      cta: "See live trade-ups",
-      url: "tradeupbot.app/trade-ups",
-      disclaimer: HONESTY,
-      source,
-    },
-    {
-      angle: "Fees in the math",
-      headline: "The fee depends on where you buy.",
-      emphasis: ["where you buy"],
-      sub: "Copied from the live FAQ. Applied per listing, on the way in and on the way out.",
-      visual: { type: "fees", label: "Marketplace fees, from the FAQ", rows: feeRows },
-      cta: "Open the calculator",
-      url: "tradeupbot.app/calculator",
-      disclaimer: HONESTY,
-      source: `Source: tradeupbot.app/faq on ${captureDate(faq.capturedAt)}.`,
-    },
-  ];
-
-  const stills: StillJob[] = [];
-  for (const format of ["square", "portrait"] as const) {
-    designs.forEach((d, i) => {
-      const id = `static-${["float-split", "float-number", "verify", "fees"][i]}-${format === "square" ? "1080" : "1350"}`;
-      stills.push(still({ ...d, id, format, takes: facts.takes }));
-    });
-  }
-
-  return { videos, stills, fee, result, out, ev, cost, pl };
+  return { videos, stills, fee, result, ev, cost };
 };

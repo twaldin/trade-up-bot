@@ -6,15 +6,22 @@ import { Brand } from "../components/Brand";
 import { Emphasis } from "../components/Emphasis";
 import { Footage, fadeIn, type Focus, type FocusKey, type FootageSpec } from "../components/Footage";
 import { EndCard, type EndCardProps } from "../components/EndCard";
+import { BigRows, RangeBar } from "../components/Graphics";
+import { HONESTY } from "../live-read";
 
-export type Callout = { label: string; value: string; note?: string; tone?: "plain" | "profit" | "loss" };
+export type Callout = { label: string; value: string; note?: string; tone?: "plain" | "plus" | "loss"; valueSize?: number };
+
+export type Graphic =
+  | { type: "range"; stopAt: number; kicker: string; rows: { k: string; v: string }[]; size?: number }
+  | { type: "figure"; kicker: string; value: string; note: string; tone?: "plain" | "plus" | "loss"; size?: number }
+  | { type: "stack"; title: string; rows: { k: string; v: string; tone?: "plain" | "plus" | "loss" }[]; size?: number };
 
 export type Scene = {
   id: string;
   seconds: number;
   caption: { text: string; emphasis?: string[] };
-  footage: FootageSpec;
-  /** Different framing per output format (same clip, same timing). */
+  footage?: FootageSpec;
+  graphic?: Graphic;
   focusByFormat?: Partial<Record<Format, Focus | FocusKey[]>>;
   callout?: Callout;
   footnote?: string;
@@ -24,10 +31,9 @@ export type ScreenAdProps = {
   id: string;
   angle: string;
   format: Format;
-  layout: "panel" | "fullbleed";
+  layout: "panel";
   scenes: Scene[];
   endCard: EndCardProps;
-  /** Shown under the footage when a scene has no footnote of its own. */
   footnote: string;
   takes: Record<string, Take>;
 };
@@ -37,92 +43,122 @@ export const adDurationInFrames = (p: Pick<ScreenAdProps, "scenes" | "endCard">)
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Geometry = {
-  brand?: { x: number; y: number; size: number };
-  caption: Rect & { size: number; align: "left" | "center"; boxed: boolean };
+  brand: { x: number; y: number; size: number };
+  honesty: Rect & { size: number };
+  caption: Rect & { size: number };
   panel: Rect;
   radius: number;
   footnote: Rect & { size: number };
   pointerScale: number;
-  callout: { size: number };
 };
 
-const geometry = (format: Format, layout: ScreenAdProps["layout"]): Geometry => {
-  if (layout === "fullbleed") {
-    return {
-      caption: { x: 70, y: 300, w: 940, h: 380, size: 58, align: "center", boxed: true },
-      panel: { x: 0, y: 0, w: 1080, h: 1920 },
-      radius: 0,
-      footnote: { x: 70, y: 1545, w: 940, h: 60, size: 25 },
-      pointerScale: 1.4,
-      callout: { size: 1.1 },
-    };
-  }
+const geometry = (format: Format): Geometry => {
   switch (format) {
     case "square":
       return {
-        brand: { x: 60, y: 44, size: 26 },
-        caption: { x: 60, y: 104, w: 960, h: 220, size: 48, align: "left", boxed: false },
-        panel: { x: 60, y: 344, w: 960, h: 630 },
+        brand: { x: 48, y: 28, size: 22 },
+        honesty: { x: 48, y: 72, w: 984, h: 36, size: 20 },
+        caption: { x: 48, y: 112, w: 984, h: 120, size: 36 },
+        panel: { x: 48, y: 244, w: 984, h: 700 },
         radius: 12,
-        footnote: { x: 60, y: 996, w: 960, h: 50, size: 21 },
-        pointerScale: 0.9,
-        callout: { size: 0.85 },
+        footnote: { x: 48, y: 960, w: 984, h: 80, size: 18 },
+        pointerScale: 0.85,
+      };
+    case "portrait":
+      return {
+        brand: { x: 56, y: 36, size: 24 },
+        honesty: { x: 56, y: 84, w: 968, h: 40, size: 22 },
+        caption: { x: 56, y: 132, w: 968, h: 140, size: 40 },
+        panel: { x: 56, y: 284, w: 968, h: 860 },
+        radius: 12,
+        footnote: { x: 56, y: 1160, w: 968, h: 120, size: 20 },
+        pointerScale: 0.95,
       };
     case "landscape":
       return {
-        brand: { x: 90, y: 92, size: 30 },
-        caption: { x: 90, y: 200, w: 680, h: 640, size: 60, align: "left", boxed: false },
-        panel: { x: 830, y: 92, w: 1000, h: 820 },
-        radius: 14,
-        footnote: { x: 830, y: 940, w: 1000, h: 60, size: 22 },
+        brand: { x: 72, y: 36, size: 24 },
+        honesty: { x: 72, y: 88, w: 1776, h: 40, size: 22 },
+        caption: { x: 72, y: 140, w: 700, h: 700, size: 42 },
+        panel: { x: 820, y: 140, w: 1020, h: 760 },
+        radius: 12,
+        footnote: { x: 72, y: 980, w: 1776, h: 60, size: 20 },
         pointerScale: 1,
-        callout: { size: 0.95 },
       };
     default:
+      // 9:16 safe band is y 270–1250 (top 14%, bottom 35% clear).
       return {
-        brand: { x: 72, y: 150, size: 34 },
-        caption: { x: 72, y: 250, w: 936, h: 400, size: 66, align: "left", boxed: false },
-        panel: { x: 60, y: 680, w: 960, h: 900 },
-        radius: 16,
-        footnote: { x: 72, y: 1612, w: 936, h: 70, size: 26 },
-        pointerScale: 1.1,
-        callout: { size: 1 },
+        brand: { x: 72, y: 278, size: 26 },
+        honesty: { x: 280, y: 278, w: 728, h: 40, size: 22 },
+        caption: { x: 72, y: 340, w: 936, h: 140, size: 40 },
+        panel: { x: 72, y: 490, w: 936, h: 400 },
+        radius: 14,
+        footnote: { x: 72, y: 910, w: 936, h: 150, size: 22 },
+        pointerScale: 1,
       };
   }
 };
 
-const CalloutCard: React.FC<{ c: Callout; scale: number; frame: number }> = ({ c, scale, frame }) => {
-  const color = c.tone === "profit" ? C.accent : c.tone === "loss" ? C.loss : C.text;
+const toneColor = (tone: Callout["tone"]) => (tone === "plus" ? C.accent : tone === "loss" ? C.loss : C.text);
+
+const CalloutCard: React.FC<{ c: Callout; frame: number }> = ({ c, frame }) => (
+  <div
+    style={{
+      position: "absolute",
+      left: 20,
+      bottom: 16,
+      opacity: fadeIn(frame, 0, 6),
+      background: "rgba(38,37,35,0.96)",
+      border: `1px solid ${C.lineHard}`,
+      borderRadius: 10,
+      padding: "12px 18px",
+      maxWidth: "92%",
+    }}
+  >
+    <div style={{ fontFamily: FONT.mono, fontSize: 20, color: C.muted }}>{c.label}</div>
+    <div style={{ fontFamily: FONT.mono, fontSize: c.valueSize ?? 72, color: toneColor(c.tone), lineHeight: 1.05, fontWeight: 500 }}>{c.value}</div>
+    {c.note && <div style={{ fontFamily: FONT.body, fontSize: 22, color: C.muted, marginTop: 4 }}>{c.note}</div>}
+  </div>
+);
+
+const GraphicView: React.FC<{ g: Graphic }> = ({ g }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const pop = interpolate(frame, [0, Math.round(0.4 * fps)], [0.92, 1], { extrapolateRight: "clamp" });
+  if (g.type === "range") {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 36px", gap: 28 }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, letterSpacing: 0.4 }}>{g.kicker}</div>
+        <RangeBar stopAt={g.stopAt} />
+        <BigRows rows={g.rows} size={g.size ?? 80} />
+      </div>
+    );
+  }
+  if (g.type === "figure") {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 36px", transform: `scale(${pop})` }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted }}>{g.kicker}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: g.size ?? 96, color: toneColor(g.tone), letterSpacing: -1, lineHeight: 1.05 }}>{g.value}</div>
+        <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.muted, marginTop: 12, lineHeight: 1.3 }}>{g.note}</div>
+      </div>
+    );
+  }
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: 24 * scale,
-        bottom: 24 * scale,
-        opacity: fadeIn(frame, 10, 8),
-        background: "rgba(38,37,35,0.95)",
-        border: `1px solid ${C.lineHard}`,
-        borderRadius: 10,
-        padding: `${16 * scale}px ${22 * scale}px`,
-        maxWidth: "88%",
-      }}
-    >
-      <div style={{ fontFamily: FONT.mono, fontSize: 22 * scale, color: C.muted, letterSpacing: 0.4 }}>{c.label}</div>
-      <div style={{ fontFamily: FONT.mono, fontSize: 54 * scale, color, lineHeight: 1.15, fontWeight: 500 }}>{c.value}</div>
-      {c.note && <div style={{ fontFamily: FONT.body, fontSize: 22 * scale, color: C.muted, marginTop: 4 }}>{c.note}</div>}
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "24px 32px", gap: 8 }}>
+      <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, marginBottom: 8 }}>{g.title}</div>
+      {g.rows.map((r) => (
+        <div key={r.k} style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: `1px solid ${C.lineSoft}`, padding: "10px 0" }}>
+          <span style={{ fontFamily: FONT.body, fontSize: 28, color: C.text, fontWeight: 600 }}>{r.k}</span>
+          <span style={{ fontFamily: FONT.mono, fontSize: g.size ?? 48, color: toneColor(r.tone) }}>{r.v}</span>
+        </div>
+      ))}
     </div>
   );
 };
 
 const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g: Geometry }> = ({ scene, index, props, g }) => {
   const frame = useCurrentFrame();
-  const take = props.takes[scene.footage.take];
-  if (!take) throw new Error(`take ${scene.footage.take} not passed to ${props.id}`);
-  const override = scene.focusByFormat?.[props.format];
-  const spec: FootageSpec = override ? { ...scene.footage, focus: override } : scene.footage;
+  if (!scene.footage && !scene.graphic) throw new Error(`${props.id}/${scene.id} has no footage or graphic`);
   const capOpacity = index === 0 ? 1 : fadeIn(frame, 0, 6);
-  const capShift = index === 0 ? 0 : interpolate(capOpacity, [0, 1], [10, 0]);
-  const cap = g.caption;
   return (
     <AbsoluteFill>
       <div
@@ -135,42 +171,42 @@ const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g
           borderRadius: g.radius,
           overflow: "hidden",
           background: C.panel,
-          border: g.radius ? `1px solid ${C.lineHard}` : undefined,
+          border: `1px solid ${C.lineHard}`,
         }}
       >
-        <Footage spec={spec} take={take} width={g.panel.w} height={g.panel.h} sceneSec={scene.seconds} pointerScale={g.pointerScale} />
-        {scene.callout && <CalloutCard c={scene.callout} scale={g.callout.size} frame={frame} />}
+        {scene.footage && props.takes[scene.footage.take] && (
+          <Footage
+            spec={scene.footage}
+            take={props.takes[scene.footage.take]}
+            width={g.panel.w}
+            height={g.panel.h}
+            sceneSec={scene.seconds}
+            pointerScale={g.pointerScale}
+          />
+        )}
+        {scene.footage && !props.takes[scene.footage.take] && <AbsoluteFill />}
+        {scene.graphic && <GraphicView g={scene.graphic} />}
+        {scene.callout && <CalloutCard c={scene.callout} frame={frame} />}
       </div>
       <div
         style={{
           position: "absolute",
-          left: cap.x,
-          top: cap.y,
-          width: cap.w,
-          height: cap.h,
+          left: g.caption.x,
+          top: g.caption.y,
+          width: g.caption.w,
+          height: g.caption.h,
           display: "flex",
-          alignItems: cap.boxed ? "flex-start" : props.format === "landscape" ? "center" : "flex-end",
-          justifyContent: cap.align === "center" ? "center" : "flex-start",
+          alignItems: "flex-end",
+          opacity: capOpacity,
+          fontFamily: FONT.body,
+          fontWeight: 600,
+          fontSize: g.caption.size,
+          lineHeight: 1.12,
+          letterSpacing: -0.4,
+          color: C.text,
         }}
       >
-        <div
-          style={{
-            opacity: capOpacity,
-            transform: `translateY(${capShift}px)`,
-            fontFamily: FONT.body,
-            fontWeight: cap.boxed ? 700 : 600,
-            fontSize: cap.size,
-            lineHeight: 1.13,
-            letterSpacing: -0.6,
-            color: C.text,
-            textAlign: cap.align,
-            ...(cap.boxed
-              ? { background: "rgba(17,17,16,0.9)", padding: "22px 30px", borderRadius: 16, border: `1px solid ${C.lineHard}` }
-              : {}),
-          }}
-        >
-          <Emphasis text={scene.caption.text} emphasis={scene.caption.emphasis} />
-        </div>
+        <Emphasis text={scene.caption.text} emphasis={scene.caption.emphasis} />
       </div>
       <div
         style={{
@@ -182,8 +218,6 @@ const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g
           fontSize: g.footnote.size,
           lineHeight: 1.35,
           color: C.muted,
-          textAlign: cap.boxed ? "center" : "left",
-          ...(cap.boxed ? { background: "rgba(17,17,16,0.88)", padding: "10px 16px", borderRadius: 10 } : {}),
         }}
       >
         {scene.footnote ?? props.footnote}
@@ -194,7 +228,7 @@ const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g
 
 export const ScreenAd: React.FC<ScreenAdProps> = (props) => {
   const { fps } = useVideoConfig();
-  const g = geometry(props.format, props.layout);
+  const g = geometry(props.format);
   let at = 0;
   const seqs = props.scenes.map((scene, i) => {
     const from = Math.round(at * fps);
@@ -210,10 +244,24 @@ export const ScreenAd: React.FC<ScreenAdProps> = (props) => {
   return (
     <AbsoluteFill style={{ background: C.bg }}>
       {seqs}
-      {g.brand && endFrom > 0 && (
-        <Sequence durationInFrames={endFrom} name="brand">
+      {endFrom > 0 && (
+        <Sequence durationInFrames={endFrom} name="chrome">
           <div style={{ position: "absolute", left: g.brand.x, top: g.brand.y }}>
             <Brand size={g.brand.size} />
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              left: g.honesty.x,
+              top: g.honesty.y,
+              width: g.honesty.w,
+              fontFamily: FONT.mono,
+              fontSize: g.honesty.size,
+              color: C.text,
+              lineHeight: 1.2,
+            }}
+          >
+            {HONESTY}
           </div>
         </Sequence>
       )}

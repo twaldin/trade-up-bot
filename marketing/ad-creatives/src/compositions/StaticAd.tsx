@@ -4,6 +4,7 @@ import type { Take } from "../facts";
 import { C, FONT } from "../theme";
 import { Brand } from "../components/Brand";
 import { Emphasis } from "../components/Emphasis";
+import { BigRows, RangeBar } from "../components/Graphics";
 
 type ShotRef = { take: string; shot: string };
 
@@ -11,14 +12,15 @@ export type StaticVisual =
   | { type: "shot"; shot: ShotRef; label?: string }
   | { type: "shots"; items: (ShotRef & { label: string })[] }
   | { type: "split"; left: { title: string; note: string }; right: ShotRef & { title: string; note: string } }
-  | { type: "number"; label: string; value: string; detail: string; shot: ShotRef }
-  | { type: "fees"; rows: { market: string; buyer: string; seller: string }[]; label: string }
+  | { type: "number"; label: string; value: string; detail: string }
+  | { type: "boundary"; kicker: string; rows: { k: string; v: string }[]; stopAt: number; size: number }
+  | { type: "fees"; rows: { market: string; buyer: string }[]; label: string; note: string }
   | { type: "listings"; label: string; rows: { n: string; name: string; market: string; float: string; price: string }[] };
 
 export type StaticAdProps = {
   id: string;
   angle: string;
-  format: "square" | "portrait";
+  format: "square" | "portrait" | "vertical";
   headline: string;
   emphasis?: string[];
   sub: string;
@@ -97,33 +99,34 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
         </div>
       );
     }
-    case "number": {
-      const s = shotSrc(takes, v.shot);
+    case "number":
       return (
-        <div style={{ ...box, flexDirection: "row", alignItems: "center" }}>
-          <div style={{ flex: 1.1, display: "flex", flexDirection: "column" }}>
-            <Kicker>{v.label}</Kicker>
-            <div style={{ fontFamily: FONT.mono, fontSize: 150, lineHeight: 1, color: C.text, letterSpacing: -4 }}>{v.value}</div>
-            <div style={{ fontFamily: FONT.body, fontSize: 26, color: C.muted, marginTop: 18, lineHeight: 1.35 }}>{v.detail}</div>
-          </div>
-          <div style={{ flex: 1, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Framed src={s.src} />
-          </div>
+        <div style={{ ...box, flexDirection: "column", justifyContent: "center" }}>
+          <Kicker>{v.label}</Kicker>
+          <div style={{ fontFamily: FONT.mono, fontSize: 140, lineHeight: 1, color: C.text, letterSpacing: -3 }}>{v.value}</div>
+          <div style={{ fontFamily: FONT.body, fontSize: 28, color: C.muted, marginTop: 18, lineHeight: 1.35 }}>{v.detail}</div>
         </div>
       );
-    }
+    case "boundary":
+      return (
+        <div style={{ ...box, flexDirection: "column", justifyContent: "center", gap: 28 }}>
+          <Kicker>{v.kicker}</Kicker>
+          <RangeBar stopAt={v.stopAt} instant />
+          <BigRows rows={v.rows} size={v.size} instant />
+        </div>
+      );
     case "fees":
       return (
         <div style={{ ...box, flexDirection: "column", justifyContent: "center" }}>
           <Kicker>{v.label}</Kicker>
           <div style={{ border: `1px solid ${C.lineHard}`, borderRadius: 12, overflow: "hidden", background: C.panel }}>
-            {[{ market: "Marketplace", buyer: "Buyer fee", seller: "Seller fee" }, ...v.rows].map((r, i) => (
+            {[{ market: "Marketplace", buyer: "Buyer fee" }, ...v.rows].map((r, i) => (
               <div
                 key={r.market}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1.2fr 1fr 1fr",
-                  padding: "18px 26px",
+                  gridTemplateColumns: "1.4fr 1fr",
+                  padding: "16px 26px",
                   borderTop: i ? `1px solid ${C.lineSoft}` : undefined,
                   fontFamily: i ? FONT.mono : FONT.body,
                   fontSize: i ? 32 : 22,
@@ -133,10 +136,10 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
               >
                 <span style={{ fontFamily: FONT.body, fontWeight: i ? 600 : 400 }}>{r.market}</span>
                 <span>{r.buyer}</span>
-                <span>{r.seller}</span>
               </div>
             ))}
           </div>
+          <div style={{ fontFamily: FONT.body, fontSize: 26, color: C.text, marginTop: 18, lineHeight: 1.35 }}>{v.note}</div>
         </div>
       );
     case "listings":
@@ -173,6 +176,7 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
 
 export const StaticAd: React.FC<StaticAdProps> = (p) => {
   const sq = p.format === "square";
+  const tall = p.format === "vertical";
   const pad = 64;
   return (
     <AbsoluteFill style={{ background: C.bg, padding: pad, display: "flex", flexDirection: "column", fontFamily: FONT.body }}>
@@ -180,7 +184,7 @@ export const StaticAd: React.FC<StaticAdProps> = (p) => {
         <Brand size={sq ? 28 : 32} />
         <span style={{ fontFamily: FONT.mono, fontSize: sq ? 22 : 24, color: C.muted }}>{p.url}</span>
       </div>
-      <div style={{ marginTop: sq ? 34 : 56, fontWeight: 600, fontSize: sq ? 62 : 74, lineHeight: 1.06, letterSpacing: -1.4, color: C.text }}>
+      <div style={{ marginTop: sq ? 28 : tall ? 48 : 40, fontWeight: 600, fontSize: sq ? 52 : tall ? 64 : 58, lineHeight: 1.06, letterSpacing: -1.2, color: C.text }}>
         <Emphasis text={p.headline} emphasis={p.emphasis} />
       </div>
       <div style={{ marginTop: sq ? 16 : 24, fontSize: sq ? 27 : 31, lineHeight: 1.35, color: C.muted, maxWidth: 930 }}>{p.sub}</div>

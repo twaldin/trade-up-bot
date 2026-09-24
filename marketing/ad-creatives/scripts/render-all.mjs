@@ -12,18 +12,24 @@ const bundled = await bundle({ entryPoint: path.join(root, "src/index.tsx"), pub
 const ids = [
   "meta-a-float-vertical",
   "meta-a-float-square",
-  "meta-a-float-landscape",
-  "meta-b-ugc-vertical",
+  "meta-a-float-portrait",
+  "meta-b-screen-vertical",
   "meta-c-verify-vertical",
-  "static-float-split-1080",
+  "static-float-boundary-1080",
+  "static-float-boundary-1350",
+  "static-float-boundary-1920",
   "static-float-number-1080",
-  "static-verify-1080",
-  "static-fees-1080",
-  "static-float-split-1350",
   "static-float-number-1350",
+  "static-verify-1080",
   "static-verify-1350",
+  "static-fees-1080",
   "static-fees-1350",
-].filter((id) => !only || only.split(",").includes(id));
+].filter((id) => {
+  if (!only || only === "all") return true;
+  if (only === "videos") return id.startsWith("meta-");
+  if (only === "stills") return id.startsWith("static-");
+  return only.split(",").includes(id);
+});
 
 for (const id of ids) {
   const composition = await selectComposition({ serveUrl: bundled, id });

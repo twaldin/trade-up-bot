@@ -48,9 +48,21 @@ if (descriptions.length !== 4) {
   failed = true;
   console.log(`expected 4 descriptions, found ${descriptions.length}`);
 }
-if (!/^\| 15 \| 1 \|/m.test(md)) {
+for (const n of [1, 12, 13]) {
+  if (!new RegExp(`^\\| ${n} \\| 1 \\|`, "m").test(md)) {
+    failed = true;
+    console.log(`headline ${n} is not pinned to position 1`);
+  }
+}
+for (const n of [14, 15]) {
+  if (!new RegExp(`^\\| ${n} \\| 2 \\|`, "m").test(md)) {
+    failed = true;
+    console.log(`headline ${n} is not pinned to position 2`);
+  }
+}
+if (!/^\| 1 \| 1 \| 86 \|/m.test(md)) {
   failed = true;
-  console.log("headline 15 is not pinned to position 1");
+  console.log("description 1 is not pinned to description position 1");
 }
 if (failed) process.exit(1);
 console.log(`copy ok (${headlines.length} headlines, ${descriptions.length} descriptions)`);

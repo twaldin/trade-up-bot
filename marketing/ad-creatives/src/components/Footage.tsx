@@ -44,8 +44,11 @@ const focusAt = (focus: Focus | FocusKey[], sec: number): Focus => {
 
 type View = { s: number; left: number; top: number; x0: number; y0: number };
 
+/** Source-pixel floor. A 9:16 panel is ~2.7× a 360px window, so letters stay readable. */
+export const MIN_FOCUS_W = 360;
+
 const viewFor = (f: Focus, srcW: number, srcH: number, panelW: number, panelH: number): View => {
-  const w = f.w;
+  const w = Math.max(f.w, MIN_FOCUS_W);
   const h = (w * panelH) / panelW;
   const cx = w >= srcW ? srcW / 2 : Math.min(Math.max(f.cx, w / 2), srcW - w / 2);
   const cy = h >= srcH ? srcH / 2 : Math.min(Math.max(f.cy, h / 2), srcH - h / 2);

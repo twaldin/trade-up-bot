@@ -32,7 +32,7 @@ const emptyVideo: ScreenAdProps = {
   format: "vertical",
   layout: "panel",
   scenes: [],
-  endCard: { seconds: 3.6, headline: "", cta: "", url: "", offer: "", honesty: "" },
+  endCard: { seconds: 3.6, headline: "", cta: "", url: "", offer: "", honesty: "", example: "" },
   footnote: "",
   takes: {},
 };
@@ -43,7 +43,7 @@ const emptyStill: StaticAdProps = {
   format: "square",
   headline: "",
   sub: "",
-  visual: { type: "fees", rows: [], label: "" },
+  visual: { type: "fees", rows: [], label: "", note: "" },
   cta: "",
   url: "",
   disclaimer: "",
@@ -54,19 +54,20 @@ const emptyStill: StaticAdProps = {
 const VIDEO_IDS = [
   ["meta-a-float-vertical", "vertical"],
   ["meta-a-float-square", "square"],
-  ["meta-a-float-landscape", "landscape"],
-  ["meta-b-ugc-vertical", "vertical"],
+  ["meta-a-float-portrait", "portrait"],
+  ["meta-b-screen-vertical", "vertical"],
   ["meta-c-verify-vertical", "vertical"],
 ] as const;
 
 const STILL_IDS = [
-  ["static-float-split-1080", "square"],
+  ["static-float-boundary-1080", "square"],
+  ["static-float-boundary-1350", "portrait"],
+  ["static-float-boundary-1920", "vertical"],
   ["static-float-number-1080", "square"],
-  ["static-verify-1080", "square"],
-  ["static-fees-1080", "square"],
-  ["static-float-split-1350", "portrait"],
   ["static-float-number-1350", "portrait"],
+  ["static-verify-1080", "square"],
   ["static-verify-1350", "portrait"],
+  ["static-fees-1080", "square"],
   ["static-fees-1350", "portrait"],
 ] as const;
 
