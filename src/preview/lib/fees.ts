@@ -53,17 +53,34 @@ function outcomeFeeCopy(): string {
   return `Outcome prices are after ${seller.name}'s ${percent(seller.sellerFeePct)} seller fee.`;
 }
 
+/**
+ * Discovery adds the buyer fee, but a reprice writes the raw listed price back
+ * over that input, so board cost is hedged. Set to false once every reprice
+ * path keeps the fee; the preview-fees test fails until the two agree.
+ */
+export const REPRICE_DROPS_BUYER_FEE = true;
+
 /** Every market on the board; only the card's own markets once its listings load. */
-export function boardFeeLine(sources: (string | undefined)[] = []): FeeLineCopy {
+export function boardFeeLine(
+  sources: (string | undefined)[] = [],
+  hedged: boolean = REPRICE_DROPS_BUYER_FEE,
+): FeeLineCopy {
   const markets = feeMarketsFor(sources);
   const listed = (markets.length > 0 ? markets : MARKET_ORDER).map(buyerFeeLabel).join(", ");
   return {
-    cost: `Cost includes buyer fees: ${listed}.`,
+    cost: hedged
+      ? `Cost adds buyer fees when a trade-up is found (${listed}). Listings re-priced since then count at their listed price.`
+      : `Cost includes buyer fees: ${listed}.`,
     outcomes: outcomeFeeCopy(),
   };
 }
 
 export const CALCULATOR_FEE_LINE: FeeLineCopy = {
   cost: "Cost is the prices you enter, with no buyer fee added.",
+  outcomes: outcomeFeeCopy(),
+};
+
+export const CALCULATOR_EXAMPLE_FEE_LINE: FeeLineCopy = {
+  cost: "Cost is the example's listed prices, with no buyer fee added.",
   outcomes: outcomeFeeCopy(),
 };

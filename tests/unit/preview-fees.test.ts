@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MARKETPLACE_FEES, effectiveBuyCostRaw } from "../../server/engine/fees.js";
 import {
+  CALCULATOR_EXAMPLE_FEE_LINE,
   CALCULATOR_FEE_LINE,
   MODELED_FEES,
+  REPRICE_DROPS_BUYER_FEE,
   OUTCOME_SELL_MARKET,
   boardFeeLine,
   buyerFeeLabel,
@@ -34,6 +36,16 @@ describe("fee copy mirrors the engine's modeled fees", () => {
     expect(new Set(netted)).toEqual(new Set([OUTCOME_SELL_MARKET]));
   });
 
+  it("hedges the board cost until every reprice path applies the buyer fee", () => {
+    const reprices = [
+      "../../server/csfloat-checker.ts",
+      "../../server/sync/listings.ts",
+      "../../server/routes/trade-ups.ts",
+    ];
+    const repricesKeepFee = reprices.every((file) => read(file).includes("effectiveBuyCost"));
+    expect(REPRICE_DROPS_BUYER_FEE).toBe(!repricesKeepFee);
+  });
+
   it("matches the calculator, which adds no buyer fee to entered prices", () => {
     const route = read("../../server/routes/calculator.ts");
     expect(route).toContain('source: "calculator"');
@@ -59,10 +71,25 @@ describe("fee labels", () => {
 
   it("lists every market on the board and only the card's markets on a card", () => {
     const board = boardFeeLine();
-    expect(board.cost).toBe("Cost includes buyer fees: CSFloat 2.8% + $0.30, DMarket 2.5%, Skinport 0%, Buff 3.5% + $0.15.");
+    expect(board.cost).toBe(
+      "Cost adds buyer fees when a trade-up is found (CSFloat 2.8% + $0.30, DMarket 2.5%, Skinport 0%, Buff 3.5% + $0.15). "
+      + "Listings re-priced since then count at their listed price.",
+    );
     expect(board.outcomes).toBe("Outcome prices are after CSFloat's 2% seller fee.");
-    expect(boardFeeLine(["skinport", "csfloat"]).cost).toBe("Cost includes buyer fees: CSFloat 2.8% + $0.30, Skinport 0%.");
+    expect(boardFeeLine(["skinport", "csfloat"]).cost).toBe(
+      "Cost adds buyer fees when a trade-up is found (CSFloat 2.8% + $0.30, Skinport 0%). "
+      + "Listings re-priced since then count at their listed price.",
+    );
     expect(boardFeeLine(["calculator"]).cost).toBe(board.cost);
+  });
+
+  it("keeps the unhedged wording one switch away", () => {
+    expect(boardFeeLine(["csfloat"], false).cost).toBe("Cost includes buyer fees: CSFloat 2.8% + $0.30.");
+  });
+
+  it("says the example is priced at its listed prices", () => {
+    expect(CALCULATOR_EXAMPLE_FEE_LINE.cost).toBe("Cost is the example's listed prices, with no buyer fee added.");
+    expect(CALCULATOR_EXAMPLE_FEE_LINE.outcomes).toBe(CALCULATOR_FEE_LINE.outcomes);
   });
 });
 
@@ -76,7 +103,7 @@ describe("fee line placement", () => {
     expect(board).toContain("boardFeeLine()");
     expect(board).toMatch(/boardFeeLine\(tu\.inputs\.map/);
     expect(calc).toContain("<FeeLine");
-    expect(calc).toContain("CALCULATOR_FEE_LINE");
+    expect(calc).toContain("isExample ? CALCULATOR_EXAMPLE_FEE_LINE : CALCULATOR_FEE_LINE");
   });
 
   it("uses kit chrome and says trade-up, never contract", () => {

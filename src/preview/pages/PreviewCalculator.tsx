@@ -3,7 +3,7 @@ import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
-import { CALCULATOR_FEE_LINE } from "../lib/fees.js";
+import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -233,7 +233,7 @@ export function PreviewCalculator() {
           <Readout label="Chance of profit" value={stats ? formatOdds(stats.chance_to_profit) : "—"} />
         </div>
       )}
-      <FeeLine line={CALCULATOR_FEE_LINE} />
+      <FeeLine line={isExample ? CALCULATOR_EXAMPLE_FEE_LINE : CALCULATOR_FEE_LINE} />
       {result && (
         <section className="preview-flow__side">
           <p className="preview-lane__label">
