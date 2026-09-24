@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, ChevronUp, ExternalLink } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
@@ -12,6 +12,7 @@ import {
   conditionShort,
   evDrivers,
   formatFloat,
+  formatOdds,
   inputCostCents,
   inputListingHrefs,
   inputRarityColor,
@@ -26,6 +27,7 @@ import {
   previewSkinHref,
   rarityLabel,
   reorderForExpanded,
+  signClass,
   splitSkinName,
   uniqueInputs,
   uniqueOutputs,
@@ -55,6 +57,8 @@ import {
   readPagedJson,
 } from "../lib/page-fetch.js";
 import { DELAY_BANNER } from "../lib/copy.js";
+import { boardFeeLine } from "../lib/fees.js";
+import { FeeLine } from "../components/FeeLine.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
@@ -68,13 +72,8 @@ export function boardFaceFor(name: string): string | null {
   return faceFor(FACE_CACHE, name);
 }
 
-function signedDollars(cents: number): string {
+export function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
-}
-
-/** Lime is profit, --loss is loss. No third colour anywhere on the board. */
-function signClass(cents: number): string {
-  return cents >= 0 ? "is-plus" : "is-minus";
 }
 
 function axisPercent(value: number, lo: number, hi: number): number {
@@ -235,7 +234,7 @@ function InputTile({
   );
 }
 
-function OutputTile({
+export function OutputTile({
   outcome,
   rarity,
   costCents,
@@ -258,7 +257,7 @@ function OutputTile({
       variant="output"
       buyHref={outputHref(outcome)}
       lead={formatDollars(outcome.estimated_price_cents)}
-      trail={`${Math.round(outcome.probability * 100)}%`}
+      trail={formatOdds(outcome.probability)}
       delta={signedDollars(delta)}
       deltaTone={signClass(delta)}
       wear={wear}
@@ -383,7 +382,7 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   const cdf = cdfCurve(tu);
   if (cdf.length === 0) return null;
   const data = cdf.map((point) => ({ x: point.x / 100, p: Math.round(point.p * 1000) / 10 }));
-  const pProfit = Math.round(chanceOfProfit(points) * 100);
+  const pProfit = formatOdds(chanceOfProfit(points));
   const xs = data.map((row) => row.x);
   const span = Math.max(...xs) - Math.min(...xs);
   // A $0.60-wide P/L range rounded to whole dollars prints "+$9" four times.
@@ -392,9 +391,9 @@ function CdfChart({ tu, points }: { tu: TradeUp; points: PayoffPoint[] }) {
   return (
     <Figure
       label="Probability of clearing a P/L"
-      note={<>Break-even or better on <b>{pProfit}%</b> of rolls.</>}
+      note={<>In profit on <b>{pProfit}</b> of rolls.</>}
     >
-      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit} percent.`}>
+      <div className="preview-cdf" role="img" aria-label={`Probability of clearing a profit and loss level. Chance of profit ${pProfit}.`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -462,7 +461,7 @@ function RankedList({ title, points, empty }: { title: string; points: PayoffPoi
           <Link className="preview-rank__name" to={previewSkinHref(point.name)} title={point.name} onClick={stop}>
             {point.name}
           </Link>
-          <span className="preview-rank__odds">{Math.round(point.probability * 100)}%</span>
+          <span className="preview-rank__odds">{formatOdds(point.probability)}</span>
           <span className={`preview-rank__amt ${signClass(point.evContributionCents)}`}>
             {signedDollars(point.evContributionCents)}
           </span>
@@ -528,10 +527,13 @@ export function TradeUpCard({
   tu,
   expanded,
   onExpand,
+  expandable = true,
 }: {
   tu: TradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
+  /** False for teaser cards that share expand state with another card they must not disturb. */
+  expandable?: boolean;
 }) {
   const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
@@ -549,16 +551,24 @@ export function TradeUpCard({
   const { drivers, drags } = evDrivers(points, 4);
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
-  const toggle = () => onExpand(expanded ? null : tu.id);
+  const toggle = () => {
+    if (!expandable) return;
+    onExpand(expanded ? null : tu.id);
+  };
+  const open = () => {
+    if (expandable) onExpand(tu.id);
+  };
 
   return (
     <article
-      className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""}`}
+      className={`preview-card ${expanded ? "preview-card--expanded preview-bento__row" : ""} ${expandable ? "" : "preview-card--static"}`}
       onClick={toggle}
     >
-      <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
-        {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
-      </button>
+      {expandable && (
+        <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
+          {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
+        </button>
+      )}
 
       {/* Clicking the card toggles it, but the tiles own most of that surface,
           so an expanded card carries one quiet way out. */}
@@ -586,7 +596,7 @@ export function TradeUpCard({
               rarity={inColor}
               hot={hot === group.name}
               onHover={setHot}
-              onNeedExpand={() => onExpand(tu.id)}
+              onNeedExpand={open}
             />
           ))}
           outputs={outputs.map((outcome) => (
@@ -612,9 +622,29 @@ export function TradeUpCard({
           {chance !== null && (
             <>
               <i />
-              {Math.round(chance * 100)}% chance of profit
+              {formatOdds(chance)} chance of profit
             </>
           )}
+          <span className="preview-cardline__actions">
+            {expandable && (
+              <span className="preview-cardline__open" aria-hidden>
+                Details
+                <ChevronDown size={12} />
+              </span>
+            )}
+            <a
+              className="preview-cardline__verify"
+              href={verifyClaimHref(tu.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open this trade-up to re-check that its listings are still live"
+              aria-label="Verify trade-up (opens in new tab)"
+              onClick={stop}
+            >
+              Verify
+              <ExternalLink size={10} aria-hidden />
+            </a>
+          </span>
         </p>
       )}
 
@@ -635,11 +665,12 @@ export function TradeUpCard({
                   <Readout label="Expected value" value={formatDollars(tu.expected_value_cents)} note="probability-weighted" />
                   <Readout label="Expected P/L" value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
                   <Readout label="Median P/L" value={median === null ? "—" : signedDollars(median)} note="50th percentile" tone={median === null ? "" : signClass(median)} />
-                  <Readout label="Chance of profit" value={chance === null ? "—" : `${Math.round(chance * 100)}%`} note="P(P/L > $0)" />
+                  <Readout label="Chance of profit" value={chance === null ? "—" : formatOdds(chance)} note="P(P/L > $0)" />
                   <Readout label="Worst case" value={worst === null ? "—" : signedDollars(worst)} note="lowest outcome" tone={worst === null ? "" : signClass(worst)} />
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note="10% worst rolls" tone={tail === null ? "" : signClass(tail)} />
                 </div>
+                <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">
                   <div className="preview-subpanel">
                     <EvWaterfall tu={tu} />
@@ -823,6 +854,7 @@ export function PreviewBoard({
           <a className="preview-delay__cta" href="/pricing">See Pro</a>
         </div>
       )}
+      {!embed && <FeeLine line={boardFeeLine()} />}
       {loading && <p className="preview-note">Loading trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
       <div className="preview-bento">
@@ -922,6 +954,7 @@ export function usePreviewTradeUps(options: {
     setFailed(false);
     void loadBoardRows<TradeUp>({
       append: page > 1,
+      isLive: () => live,
       fetchRows: async () => {
         const res = await fetch(`/api/trade-ups?${key}&page=${page}`, { credentials: "include" });
         const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number }>(res);
@@ -949,7 +982,7 @@ export function usePreviewTradeUps(options: {
         failed: () => { if (live) setFailed(true); },
       },
     }).finally(() => {
-      inFlightRef.current = false;
+      if (live) inFlightRef.current = false;
     });
     return () => { live = false; };
   }, [key, page, perPage, enabled, reloadTick]);

@@ -742,6 +742,18 @@
   color: var(--loss);
 }
 
+.preview-calc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 2px 4px;
+}
+
+.preview-panel__meta .preview-chip {
+  margin-right: 6px;
+}
+
 /* The free-tier notice is the upgrade CTA, so it carries the brand fill with
    black ink on it — the one place lime is allowed to shout. */
 .preview-delay {
@@ -985,6 +997,87 @@
   background: var(--line-soft);
 }
 
+/* The card body is the expand target; this is only its label, not a button. */
+.preview-cardline__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.preview-cardline__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  transition: color var(--t-control) var(--ease);
+}
+
+.preview-card:hover .preview-cardline__open {
+  color: var(--text);
+}
+
+.preview-card--static {
+  cursor: default;
+}
+
+.preview-cardline__verify {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-control);
+  background: var(--nest-2);
+  color: var(--text);
+  font: 500 11px/1 var(--font-body);
+  text-decoration: none;
+  transition: border-color var(--t-control) var(--ease);
+}
+
+.preview-cardline__verify:hover {
+  border-color: var(--accent-border);
+}
+
+.preview-cardline__verify:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- fee line */
+
+/* Says which marketplace fees are already inside Cost, EV and P/L. */
+.preview-fees {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.preview-fees__label {
+  padding: 0 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-chip);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.preview-expand__viz > .preview-fees--strip {
+  flex: 0 0 auto;
+  margin-top: -4px;
+  padding: 0 2px;
+}
+
 /* ------------------------------------------------------------ skin tiles */
 
 .preview-lane {
@@ -1025,6 +1118,12 @@
 
 .preview-skins--out {
   grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+}
+
+/* A page-wide row would spread two outcomes to opposite edges; pack them left. */
+.preview-skins--calc {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 160px));
+  justify-content: start;
 }
 
 .preview-skins--compact {

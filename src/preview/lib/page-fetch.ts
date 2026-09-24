@@ -81,6 +81,18 @@ type JsonResponse = {
   json: () => Promise<unknown>;
 };
 
+/**
+ * Calculator evaluate. A 429 from production is plain text, so the status is
+ * checked before any JSON parse.
+ */
+export async function readEvaluationBody(res: JsonResponse): Promise<
+  { rateLimited: true; data: null } | { rateLimited: false; data: unknown }
+> {
+  if (res.status === 429) return { rateLimited: true, data: null };
+  const data = await res.json().catch(() => null);
+  return { rateLimited: false, data };
+}
+
 export async function readPagedJson<T>(res: JsonResponse): Promise<T> {
   const body = await res.json().catch(() => null);
   if (isRateLimited(res.status, body)) {

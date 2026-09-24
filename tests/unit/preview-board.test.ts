@@ -1,5 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
+import { SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import type { TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import {
   averageFloat,
@@ -7,6 +11,8 @@ import {
   chanceOfProfit,
   conditionShort,
   formatFloat,
+  formatOdds,
+  signClass,
   previewCollectionHref,
   previewSkinHref,
   reorderForExpanded,
@@ -60,6 +66,72 @@ function outcome(overrides: Partial<TradeUpOutcome>): TradeUpOutcome {
     ...overrides,
   };
 }
+
+describe("preview P/L tone and odds", () => {
+  it("keeps break-even neutral: lime for profit, loss red for loss, nothing for zero", () => {
+    expect(signClass(1)).toBe("is-plus");
+    expect(signClass(0)).toBe("is-zero");
+    expect(signClass(-1)).toBe("is-minus");
+  });
+
+  it("prints sub-0.1% odds, one decimal under 10%, and whole percents from 10%", () => {
+    expect(formatOdds(0)).toBe("0%");
+    expect(formatOdds(0.000167)).toBe("<0.1%");
+    expect(formatOdds(0.00025)).toBe("<0.1%");
+    expect(formatOdds(0.001)).toBe("0.1%");
+    expect(formatOdds(0.010271)).toBe("1.0%");
+    expect(formatOdds(0.041667)).toBe("4.2%");
+    expect(formatOdds(0.099)).toBe("9.9%");
+    expect(formatOdds(0.1)).toBe("10%");
+    expect(formatOdds(0.5)).toBe("50%");
+    expect(formatOdds(0.994)).toBe("99%");
+    expect(formatOdds(0.99499)).toBe("99%");
+    expect(formatOdds(0.995)).toBe(">99%");
+    expect(formatOdds(0.999)).toBe(">99%");
+    expect(formatOdds(0.9999)).toBe(">99%");
+    expect(formatOdds(1)).toBe("100%");
+  });
+
+  it("labels a 48-outcome knife roll without collapsing rare finishes to 0%", () => {
+    const bands = [
+      { count: 20, probability: 0.041667, price: 1000 },
+      { count: 16, probability: 0.010271, price: 5000 },
+      { count: 8, probability: 0.000167, price: 80000 },
+      { count: 4, probability: 0.00025, price: 120000 },
+    ];
+    let n = 0;
+    const outcomes = bands.flatMap((band) => Array.from({ length: band.count }, () => outcome({
+      skin_id: `o-${n}`,
+      skin_name: `Finish ${n++}`,
+      probability: band.probability,
+      estimated_price_cents: band.price,
+    })));
+    expect(outcomes).toHaveLength(48);
+    const labels = outcomes.map((row) => formatOdds(row.probability));
+    expect(labels.filter((label) => label === "4.2%")).toHaveLength(20);
+    expect(labels.filter((label) => label === "1.0%")).toHaveLength(16);
+    expect(labels.filter((label) => label === "<0.1%")).toHaveLength(12);
+    expect(labels).not.toContain("0%");
+    const tu = makeTradeUp({ outcomes, total_cost_cents: 50000 });
+    expect(uniqueOutputs(tu).map((row) => formatOdds(row.probability))).toEqual(labels);
+  });
+});
+
+describe("board rate limit", () => {
+  it("renders the slow-down copy when the board is rate limited", () => {
+    const html = renderToStaticMarkup(createElement(PreviewBoard, {
+      tradeUps: [],
+      loading: false,
+      isFree: false,
+      expandedId: null,
+      onExpand: () => {},
+      throttle: SLOW_DOWN_COPY,
+    }));
+    expect(html).toContain("preview-note");
+    expect(html).toContain("Slow down — try again in a moment.");
+    expect(html).not.toContain("Loading more trade-ups");
+  });
+});
 
 describe("preview board numbers", () => {
   it("uses the trade-up input total as cost, not an outcome price", () => {
