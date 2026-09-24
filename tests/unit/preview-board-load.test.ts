@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadBoardRows } from "../../src/preview/lib/board-load.js";
 import {
+  BOARD_SORTS,
   boardQueryString,
   DEFAULT_QUERY,
   isDefaultQuery,
@@ -20,7 +21,7 @@ describe("preview board query", () => {
     expect(params.get("order")).toBe("desc");
   });
 
-  it("converts dollars to integer cents and percent to a fraction", () => {
+  it("converts dollars to integer cents and sends chance as a percent", () => {
     const params = new URLSearchParams(boardQueryString({
       ...DEFAULT_QUERY,
       minProfit: "1.27",
@@ -29,7 +30,27 @@ describe("preview board query", () => {
     }));
     expect(params.get("min_profit")).toBe("127");
     expect(params.get("max_cost")).toBe("5000");
-    expect(params.get("min_chance")).toBe("0.4");
+    expect(params.get("min_chance")).toBe("40");
+  });
+
+  it("sends Classified + Profit + min chance 100 + max $60 the way the API reads it", () => {
+    const params = new URLSearchParams(boardQueryString({
+      ...DEFAULT_QUERY,
+      type: "restricted_classified",
+      sort: "profit",
+      minChance: "100",
+      maxCost: "60",
+    }));
+    expect(params.get("type")).toBe("restricted_classified");
+    expect(params.get("sort")).toBe("profit");
+    expect(params.get("min_chance")).toBe("100");
+    expect(params.get("max_cost")).toBe("6000");
+  });
+
+  it("offers only sort keys the API's short vocabulary uses", () => {
+    expect(BOARD_SORTS.map(([value]) => value)).toEqual([
+      "trade_up_score", "profit", "roi", "cost", "chance", "created",
+    ]);
   });
 
   it("omits blank filters rather than sending empty values", () => {
