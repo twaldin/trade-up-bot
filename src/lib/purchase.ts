@@ -1,6 +1,6 @@
-// Post-checkout GA4 purchase reporting. Verifies the Stripe session server-side (amount,
+// Post-checkout purchase reporting. Verifies the Stripe session server-side (amount,
 // ownership) before firing, and dedupes per session id so a refresh can't double-count.
-import { trackPurchase } from "./analytics.js";
+import { trackPurchaseComplete } from "./conversions.js";
 
 const FIRED_PREFIX = "tub_purchase_";
 
@@ -16,12 +16,14 @@ export async function reportPurchase(tier: string, sessionId: string): Promise<v
       credentials: "include",
     });
     if (!res.ok) return;
-    const data: { transaction_id: string; value: number; currency: string } = await res.json();
-    trackPurchase({
+    const data: { transaction_id: string; value: number; currency: string; ga4_server_side?: boolean } = await res.json();
+    trackPurchaseComplete({
+      sessionId,
+      checkoutPlan: tier,
       transactionId: data.transaction_id,
       value: data.value,
       currency: data.currency,
-      tier,
+      ga4ServerSide: data.ga4_server_side === true,
     });
     try {
       window.sessionStorage.setItem(firedKey, "1");

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
+import { collectionSlugFromPath, trackTradeUpDetailOpen } from "../../lib/conversions.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -560,12 +561,18 @@ export function TradeUpCard({
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
   const inputsRedacted = tu.inputs_redacted === true || tu.inputs.some((row) => row.listing_id === "hidden");
+  const reportOpen = () => {
+    trackTradeUpDetailOpen({ collectionSlug: collectionSlugFromPath(window.location.pathname) });
+  };
   const toggle = () => {
     if (!expandable) return;
+    if (!expanded) reportOpen();
     onExpand(expanded ? null : tu.id);
   };
   const open = () => {
-    if (expandable) onExpand(tu.id);
+    if (!expandable) return;
+    if (!expanded) reportOpen();
+    onExpand(tu.id);
   };
 
   return (

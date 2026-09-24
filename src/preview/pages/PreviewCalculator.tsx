@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
+import { trackCalculatorComplete } from "../../lib/conversions.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import {
   LABEL_AFTER_FEES,
@@ -107,6 +108,7 @@ export function PreviewCalculator() {
       const tradeUp = data.trade_up;
       setResult(tradeUp);
       setStats(data.stats ?? null);
+      trackCalculatorComplete();
       void warmBoardFaces(tradeUp.outcomes.map((outcome) => outcome.skin_name))
         .then(() => setFaceTick((tick) => tick + 1));
     } catch {

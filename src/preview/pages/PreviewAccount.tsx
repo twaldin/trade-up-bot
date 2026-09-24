@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
 import { authHref } from "../../lib/ref.js";
+import { trackVerifyClick } from "../../lib/conversions.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { ManageSubscription } from "../components/ManageSubscription.js";
@@ -252,6 +253,7 @@ export function PreviewAccount() {
   }
 
   async function handleVerify(id: number) {
+    trackVerifyClick();
     setActionError(null);
     setVerifyingId(id);
     try {

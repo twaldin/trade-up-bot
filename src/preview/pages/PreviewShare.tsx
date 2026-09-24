@@ -5,6 +5,7 @@ import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -93,7 +94,7 @@ export function PreviewShare() {
         };
         setTu(next);
         setExpandedId(next.id);
-        trackEvent("tradeup_view", { tradeup_id: String(data.id) });
+        trackTradeUpDetailOpen({ collectionSlug: null, legacyTradeUpId: data.id });
       })
       .catch((err: Error) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -125,6 +126,7 @@ export function PreviewShare() {
   };
 
   async function handleVerify(tuId: number) {
+    trackVerifyClick();
     setVerifying(true);
     setActionError(null);
     try {
