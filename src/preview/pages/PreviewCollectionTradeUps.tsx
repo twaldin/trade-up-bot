@@ -32,8 +32,8 @@ export function PreviewCollectionTradeUps() {
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
   const display = title ? displayNameFor(title) : slug;
-  const pageTitle = `Best ${display} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`;
-  const description = `${board.tradeUps.length} profitable trade-ups from the ${display} collection. Real listings from CSFloat, DMarket, Skinport.`;
+  const pageTitle = `Best ${display} Trade-Ups — Live CS2 Contracts | TradeUpBot`;
+  const description = `${board.tradeUps.length} trade-ups with positive expected profit after fees from the ${display} collection. Real listings from CSFloat, DMarket, Skinport.`;
 
   return (
     <div className="preview-page">

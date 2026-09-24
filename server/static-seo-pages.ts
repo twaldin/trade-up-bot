@@ -30,7 +30,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
   {
     path: "/calculator",
     title: "Free CS2 Trade-Up Calculator — EV, Float & Fees | TradeUpBot",
-    description: "Free online CS2 trade-up calculator and simulator. Enter 10 skins to see expected value after fees, output float, ROI, and the share of outcomes above cost — with live CSFloat, DMarket and Skinport pricing.",
+    description: "Free CS2 trade-up calculator: enter 10 skins to see EV after fees, output float, ROI, and share of outcomes above cost from live CSFloat and DMarket prices.",
     bodyHtml: `<h1>CS2 Trade-Up Calculator</h1><p>The TradeUpBot CS2 trade-up calculator helps players estimate contract cost, expected value, output float, and potential profit before buying 10 inputs. Use it to compare rarity tiers, understand condition boundaries, and avoid contracts where marketplace fees erase the expected return.</p><p>Trade-up math depends on input skin prices, output probabilities, collection weighting, and the adjusted float formula. TradeUpBot pairs calculator logic with live listings from CSFloat, DMarket, and Skinport so you can move from theory to real buyable opportunities.</p><p><a href="/trade-ups">Browse live trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>
 <h2>What the calculator does</h2>
 <p>Enter up to 10 input skins — with their collection, rarity, exact float value, and current buy price — and the calculator outputs: expected value (EV) after fees, expected profit or loss, return on investment (ROI), the share of outcomes above cost, output float, and the full probability distribution across every possible output skin. Input cost is the prices you enter, with no buyer fee added. Output values are netted at CSFloat's 2% seller fee, whichever marketplace the price data came from.</p>
@@ -153,7 +153,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
     bodyHtml: `<h1>TradeUpBot Pricing</h1><p>TradeUpBot pricing is designed around how often you evaluate CS2 trade-up contracts. Free access helps traders explore trade-ups on a delay, while Pro unlocks faster data, verification, claims, and higher limits for active marketplace research.</p><p>Every plan is built around the same core data model: real listings, integer-cent pricing, marketplace fees, deterministic output float calculations, and collection-weighted output probabilities. Upgrade when you need fresher opportunities, more verification checks, and faster access to newly found contracts.</p>
 <h2>Plans</h2>
 <ul>
-<li><strong>Free — $0:</strong> Browse profitable CS2 trade-ups on a delay, with float data and skin pages.</li>
+<li><strong>Free — $0:</strong> Browse CS2 trade-ups on a 3-hour delay, with float data and skin pages.</li>
 <li><strong>Pro — $6.99/month:</strong> Real-time trade-ups, listing verification, the claim system, and full analytics.</li>
 <li><strong>Pro Yearly — $59.99/year:</strong> The same Pro access billed annually (about $5/month).</li>
 <li><strong>Pro Lifetime — $74.99 once:</strong> Lifetime Pro access for a single one-time payment.</li>
@@ -167,7 +167,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
         description: "CS2 trade-up discovery with float-exact pricing from real CSFloat, DMarket, Skinport, and Buff listings.",
         brand: { "@type": "Brand", name: "TradeUpBot" },
         offers: [
-          { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD", description: "Browse profitable CS2 trade-ups on a delay, with float data and skin pages." },
+          { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD", description: "Browse CS2 trade-ups on a 3-hour delay, with float data and skin pages." },
           { "@type": "Offer", name: "Pro Monthly", price: "6.99", priceCurrency: "USD", description: "Real-time trade-ups, listing verification, the claim system, and full analytics, billed monthly." },
           { "@type": "Offer", name: "Pro Yearly", price: "59.99", priceCurrency: "USD", description: "The same Pro access billed annually." },
           { "@type": "Offer", name: "Pro Lifetime", price: "74.99", priceCurrency: "USD", description: "Lifetime Pro access for a single one-time payment." },
@@ -200,7 +200,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
     title: "Listing Sniper — Live Listing Alerts | TradeUpBot",
     description: "Listings priced below estimated market value, sorted by discount percentage.",
     robots: "noindex, follow",
-    bodyHtml: `<h1>Listing Sniper</h1><p>Listings priced below estimated market value, sorted by discount percentage.</p><p>Listing Sniper Alerts surface live listing alerts from CSFloat, DMarket, Buff, and Skinport. Filter by skin, collection, marketplace, and minimum difference.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>`,
+    bodyHtml: `<h1>Listing Sniper</h1><p>Listings priced below estimated market value, sorted by discount percentage.</p><p>Listing Sniper Alerts surface live listing alerts from CSFloat, DMarket, Buff, and Skinport. Filter by skin, collection, marketplace, and minimum difference.</p><p><a href="/trade-ups">Browse live CS2 trade-ups</a> or <a href="/skins">research CS2 skin prices and float ranges</a>.</p>`,
   },
 ];
 

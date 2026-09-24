@@ -28,7 +28,7 @@ describe("SEO crawler page robustness", () => {
 
   it("collection trade-up crawler pages include H1 and trade-up data table markup", () => {
     expect(serverSource).toContain("<h1>${e(displayName)} Trade-Ups</h1>");
-    expect(serverSource).toContain("<th>ID</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th>");
+    expect(serverSource).toContain("<th>ID</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th>");
     expect(serverSource).toContain("Best ${displayName} Trade-Ups");
   });
 

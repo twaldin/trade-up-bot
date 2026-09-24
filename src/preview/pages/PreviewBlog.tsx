@@ -6,7 +6,7 @@ import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 
 const INDEX_TITLE = "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot";
-const INDEX_DESCRIPTION = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.";
+const INDEX_DESCRIPTION = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and expected profit after fees.";
 
 function formatDate(iso: string, long = false): string {
   return new Date(iso).toLocaleDateString("en-US", {

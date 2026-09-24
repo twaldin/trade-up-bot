@@ -285,8 +285,8 @@ registerCanonicalRedirectRoutes(app);
         if (!shellHtmlLocal) return next();
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtmlLocal, {
-          title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
-          description: `${tuCount} profitable trade-ups from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
+          title: `Best ${displayName} Trade-Ups — Live CS2 Contracts | TradeUpBot`,
+          description: `${tuCount} trade-ups with positive expected profit after fees from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
           url: pageUrl,
         }));
         return;
@@ -323,7 +323,7 @@ registerCanonicalRedirectRoutes(app);
         const rows = sorted.map((t: { id: number; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
           `<tr><td><a href="/trade-ups/${t.id}">#${t.id}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
         ).join("");
-        tablesHtml += `<h2>${e(label)} Trade-Ups (${tus.length})</h2><table><thead><tr><th>ID</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+        tablesHtml += `<h2>${e(label)} Trade-Ups (${tus.length})</h2><table><thead><tr><th>ID</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th></tr></thead><tbody>${rows}</tbody></table>`;
       }
 
       const bestProfit = tradeUps.length > 0 ? Math.max(...tradeUps.map(t => t.profit_cents)) : 0;
@@ -335,13 +335,13 @@ registerCanonicalRedirectRoutes(app);
         + `</ol></nav>`;
       const collTuRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
         + `<li><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></li>`
-        + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
+        + `<li><a href="/trade-ups">All CS2 trade-ups</a></li>`
         + `<li><a href="/collections">All CS2 collections</a></li>`
         + `</ul></nav>`;
       const bodyHtml = collTuBreadcrumb
         + `<h1>${e(displayName)} Trade-Ups</h1>`
-        + `<p>${tradeUps.length} profitable trade-up contracts using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
-        + (bestProfit > 0 ? `<p>Best profit: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
+        + `<p>${tradeUps.length} trade-up contracts with positive expected profit after fees using skins from the <a href="/collections/${req.params.slug}">${e(displayName)} collection</a>. Updated daily from real listings on CSFloat, DMarket, and Skinport.</p>`
+        + (bestProfit > 0 ? `<p>Top expected P/L: <strong>$${(bestProfit / 100).toFixed(2)}</strong></p>` : "")
         + tablesHtml
         + `<p><a href="/trade-ups?collection=${encodeURIComponent(collectionName)}">View all ${e(displayName)} trade-ups with live data and filters</a></p>`
         + collTuRelated;
@@ -361,20 +361,20 @@ registerCanonicalRedirectRoutes(app);
         {
           "@context": "https://schema.org", "@type": "ItemList",
           name: `Best ${displayName} CS2 Trade-Up Contracts`,
-          description: `Top profitable trade-up contracts using skins from the ${displayName} collection, ranked by profit.`,
+          description: `Top trade-up contracts using skins from the ${displayName} collection, ranked by expected profit after fees.`,
           numberOfItems: tradeUps.length,
           itemListElement: itemListTus.map((t, i) => ({
             "@type": "ListItem",
             position: i + 1,
             url: `https://tradeupbot.app/trade-ups/${t.id}`,
-            name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} profit (${t.roi_percentage.toFixed(1)}% ROI)`,
+            name: `${TRADE_UP_TYPE_LABELS[t.type] || t.type} — $${(t.profit_cents / 100).toFixed(2)} expected P/L (${t.roi_percentage.toFixed(1)}% ROI)`,
           })),
         },
       ];
 
       const collTuHtml = buildSeoHtml({
-        title: `Best ${displayName} Trade-Ups — Profitable CS2 Contracts | TradeUpBot`,
-        description: `${tradeUps.length} profitable trade-ups from the ${displayName} collection.${bestProfit > 0 ? ` Best profit: $${(bestProfit / 100).toFixed(2)}.` : ""} Real listings from CSFloat, DMarket, Skinport.`,
+        title: `Best ${displayName} Trade-Ups — Live CS2 Contracts | TradeUpBot`,
+        description: `${tradeUps.length} trade-ups with positive expected profit after fees from the ${displayName} collection. Real listings from CSFloat, DMarket, Skinport.`,
         url: pageUrl,
         bodyHtml,
         jsonLd,
@@ -427,7 +427,7 @@ registerCanonicalRedirectRoutes(app);
           label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
           url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
         })).slice(0, 2),
-        { label: "All Profitable CS2 Trade-Ups", url: "/trade-ups" },
+        { label: "All CS2 Trade-Ups", url: "/trade-ups" },
         { label: "Browse CS2 Collections", url: "/collections" },
       ];
 
@@ -591,7 +591,7 @@ registerCanonicalRedirectRoutes(app);
       const collRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
         + `<li><a href="/trade-ups/collection/${req.params.slug}">${e(displayName)} trade-up contracts</a></li>`
         + `<li><a href="/collections">All CS2 collections</a></li>`
-        + `<li><a href="/trade-ups">All profitable CS2 trade-ups</a></li>`
+        + `<li><a href="/trade-ups">All CS2 trade-ups</a></li>`
         + `<li><a href="/skins">Browse all CS2 skins</a></li>`
         + `</ul></nav>`;
       const collectionOverviewHtml = `<h2>Collection trade-up research</h2>`
@@ -873,7 +873,7 @@ registerCanonicalRedirectRoutes(app);
         const rows = tradeUps.map((t: { id: number; type: string; total_cost_cents: number; profit_cents: number; roi_percentage: number; chance_to_profit: number }) =>
           `<tr><td><a href="/trade-ups/${t.id}">${e(TRADE_UP_TYPE_LABELS[t.type] || t.type)}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
         ).join("");
-        tuTable = `<h2>Trade-Ups Using ${e(skinName)}</h2><table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+        tuTable = `<h2>Trade-Ups Using ${e(skinName)}</h2><table><thead><tr><th>Type</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th></tr></thead><tbody>${rows}</tbody></table>`;
       }
 
       // Trade-up stats paragraphs
@@ -1057,8 +1057,8 @@ registerCanonicalRedirectRoutes(app);
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtml, {
-          title: "CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
-          description: "Live CS2 trade-up contracts built from real marketplace listings, with expected value after fees. Filter by expected profit, ROI, cost, and rarity, or use the calculator. Data from CSFloat, DMarket, and Skinport.",
+          title: "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot",
+          description: "Live CS2 trade-up contracts from real listings, with expected value after fees. Filter by expected profit, cost, and rarity. CSFloat, DMarket, Skinport.",
           url: "https://tradeupbot.app/trade-ups",
         }));
         return;
@@ -1101,8 +1101,8 @@ registerCanonicalRedirectRoutes(app);
           { "@type": "Question", name: "Are these listings live?", acceptedAnswer: { "@type": "Answer", text: "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." } },
         ] };
         const html = buildSeoHtml({
-          title: "CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
-          description: `${profitable.toLocaleString()} CS2 trade-ups with positive expected profit after fees, out of ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport — or model your own contract with the calculator.`,
+          title: "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot",
+          description: `${profitable.toLocaleString()} CS2 trade-ups with positive expected profit after fees, of ${total.toLocaleString()} live contracts.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({
             total,
@@ -1115,7 +1115,7 @@ registerCanonicalRedirectRoutes(app);
             })),
           }),
           jsonLd: [
-            { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "GameApplication", operatingSystem: "Web", description: `${profitable} profitable CS2 trade-ups from ${total} active contracts.` },
+            { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "UtilityApplication", operatingSystem: "Web", description: `${profitable} CS2 trade-ups with positive expected profit after fees, out of ${total} active contracts.` },
             faqSchema,
           ],
         });
@@ -1270,12 +1270,12 @@ registerCanonicalRedirectRoutes(app);
     app.get("/blog", (req, res) => {
       const ua = req.headers["user-agent"] || "";
       const title = "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot";
-      const description = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.";
+      const description = "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and expected profit after fees.";
       const url = "https://tradeupbot.app/blog";
       const postLinks = blogPosts.map((post) =>
         `<li><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a><p>${escapeHtml(post.excerpt)}</p></li>`
       ).join("");
-      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, collection strategy, and profitable contract discovery. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live profitable trade-ups</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p><h2>Latest CS2 Trade-Up Articles</h2><ul>${postLinks}</ul>`;
+      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, collection strategy, and profitable contract discovery. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live CS2 trade-ups</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p><h2>Latest CS2 Trade-Up Articles</h2><ul>${postLinks}</ul>`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({

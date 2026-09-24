@@ -152,8 +152,8 @@ export function PreviewCalculator() {
     <div className="preview-page">
       <header className="preview-page__head">
         <div>
-          <h1>Calculator</h1>
-          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove roll, then evaluate the trade-up.</p>
+          <h1>CS2 Trade-Up Calculator</h1>
+          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove trade-up, then see expected value after fees and output float.</p>
         </div>
       </header>
       <div className="preview-toolbar">

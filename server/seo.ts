@@ -1,4 +1,5 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
 
 export { buildCollectionsHubJsonLd, buildHomepageJsonLd };
 
@@ -299,7 +300,10 @@ export function renderSeoFooter(): string {
     `<li><a href="/listing-sniper">Listing Sniper Alerts</a></li></ul>` +
     `<h2>Top Collections</h2><ul>${collLinks}</ul>` +
     `<h2>Guides</h2><ul>${guideLinks}<li><a href="/blog">All CS2 Trade-Up Guides</a></li></ul>` +
-    `</nav></footer>`;
+    `</nav>` +
+    `<p>${e(FOOTER_NOT_VALVE)} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>` +
+    `<p>${e(FOOTER_AGE)}</p>` +
+    `</footer>`;
 }
 
 export function renderCollectionsHub(collections: CollectionHubLink[]): string {

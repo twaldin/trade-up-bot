@@ -218,7 +218,7 @@ export function PreviewLanding({
         <p className="o-kicker">Live trade-up</p>
         <h2>The card, expanded</h2>
         <p className="preview-section__lede">
-          KPI row, output tiles with price and odds, and the float-versus-price graph language — not a screenshot.
+          KPI row, output tiles with price and share of outcomes above cost, and the float-versus-price graph language — not a screenshot.
         </p>
         {featured && (
           <div className="preview-live">
@@ -241,7 +241,7 @@ export function PreviewLanding({
         <p className="o-kicker">Skins</p>
         <h2>Stacked from the live inputs</h2>
         <p className="preview-section__lede">
-          Faces take the rarity tint of that skin. Lime stays profit, never a rarity.
+          Faces take the rarity tint of that skin. Green marks outcomes above cost.
         </p>
         <div
           ref={(node) => {

@@ -33,7 +33,7 @@ export function expectedSeoRoutes(): ExpectedSeoRoute[] {
     {
       path: "/blog",
       title: "Blog — CS2 Trade-Up Guides & Analysis | TradeUpBot",
-      description: "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and how to find profitable trade-ups.",
+      description: "Guides and analysis on CS2 trade-up contracts, float mechanics, marketplace strategy, and expected profit after fees.",
       canonical: `${BASE_URL}/blog`,
     },
     ...blogPosts.map((post) => ({

@@ -156,7 +156,7 @@ export function PreviewPricing() {
             <p className="preview-plan__price">$5<span>/mo</span><em>billed $59.99/year</em></p>
           )}
           {billing === "lifetime" && <p className="preview-plan__price">$74.99<span> one-time</span></p>}
-          <p className="preview-note">Real-time data, claim system, and full analytics. The price of one CS2 case key.</p>
+          <p className="preview-note">Real-time data, claim system, and full analytics.</p>
           <ul className="preview-plan__list">
             <li><IconCheck /> Everything in Free</li>
             <li><IconCheck /> Real-time data (no delay)</li>
