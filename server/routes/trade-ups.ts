@@ -655,7 +655,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   router.post("/api/verify-trade-up/:id", async (req, res) => {
     // Verify requires pro tier
     const userId = req.user?.steam_id;
-    if (!userId || !hasProAccess(req.user as User)) {
+    const viewer = req.user as User | undefined;
+    if (!userId || (!hasProAccess(viewer) && viewer?.tier === "free")) {
       res.status(403).json({ error: "Verify requires Pro plan" });
       return;
     }
