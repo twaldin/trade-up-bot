@@ -4,7 +4,7 @@ import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../share
 import { formatDollars } from "../../utils/format.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
-import { SLOW_DOWN_COPY, isRateLimitError, readPagedJson } from "../lib/page-fetch.js";
+import { SLOW_DOWN_COPY, isRateLimitError, readEvaluationBody, readPagedJson } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -87,9 +87,14 @@ export function PreviewCalculator() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputs }),
       });
-      const data = await res.json() as { error?: string; errors?: string[]; trade_up?: TradeUp; stats?: CalculatorStats };
-      if (!res.ok || !data.trade_up) {
-        setError(data.error || data.errors?.join(", ") || "Evaluation failed");
+      const read = await readEvaluationBody(res);
+      if (read.rateLimited) {
+        setError(SLOW_DOWN_COPY);
+        return;
+      }
+      const data = read.data as { error?: string; errors?: string[]; trade_up?: TradeUp; stats?: CalculatorStats } | null;
+      if (!res.ok || !data?.trade_up) {
+        setError(data?.error || data?.errors?.join(", ") || "Evaluation failed");
         return;
       }
       const tradeUp = data.trade_up;

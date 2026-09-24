@@ -52,6 +52,8 @@ describe("collapsed board cards invite open and Verify", () => {
     const landing = read("../../src/preview/pages/PreviewLanding.tsx");
     const peek = landing.slice(landing.indexOf("{peek.map("), landing.indexOf("preview-peek__graph"));
     expect(peek).toContain("expandable={false}");
+    const companion = landing.slice(landing.indexOf("preview-live__hero"), landing.indexOf("Stacked from the live inputs"));
+    expect(companion.match(/expandable=\{false\}/g)?.length).toBe(1);
   });
 
   it("styles the hint and the link from kit tokens", () => {
@@ -80,6 +82,10 @@ describe("calculator first session", () => {
     expect(load).toContain("isRateLimitError(err)");
     expect(load).toContain("SLOW_DOWN_COPY");
     expect(load).not.toContain("res.json()");
+    const evaluate = calc.slice(calc.indexOf("const evaluate"), calc.indexOf("const loadExample"));
+    expect(evaluate).toContain("readEvaluationBody(res)");
+    expect(evaluate).toContain("SLOW_DOWN_COPY");
+    expect(evaluate).not.toContain("res.json()");
   });
 
   it("colours calculator profit with the shared tone, so break-even stays neutral", () => {

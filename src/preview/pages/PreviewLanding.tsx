@@ -230,7 +230,7 @@ export function PreviewLanding({
               />
             </div>
             {collapsed && live.expandedId !== collapsed.id && (
-              <TradeUpCard tu={collapsed} expanded={false} onExpand={live.onExpand} />
+              <TradeUpCard tu={collapsed} expanded={false} expandable={false} onExpand={live.onExpand} />
             )}
           </div>
         )}

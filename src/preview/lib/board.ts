@@ -202,10 +202,21 @@ export function signClass(cents: number): SignTone {
   return "is-zero";
 }
 
-/** A live outcome under 1% still rolls, so it never prints as 0%. */
+/**
+ * Odds a hunter can add up. Anything above 0 and below 0.1% is "<0.1%",
+ * under 10% keeps one decimal, and 10% and above is a whole percent.
+ * Exactly 0 is "0%": there is no roll, so it is not a sub-0.1% outcome.
+ */
 export function formatOdds(probability: number): string {
-  if (probability > 0 && probability < 0.005) return "<1%";
-  return `${Math.round(probability * 100)}%`;
+  if (!(probability > 0)) return "0%";
+  const pct = probability * 100;
+  if (pct < 0.1) return "<0.1%";
+  if (pct < 10) {
+    const oneDecimal = pct.toFixed(1);
+    if (Number(oneDecimal) >= 10) return "10%";
+    return `${oneDecimal}%`;
+  }
+  return `${Math.round(pct)}%`;
 }
 
 /** Four decimals, the number every marketplace prints. Null stays null. */

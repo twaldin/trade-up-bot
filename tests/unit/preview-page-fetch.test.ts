@@ -8,6 +8,7 @@ import {
   isRateLimitError,
   isRateLimited,
   pageIsShort,
+  readEvaluationBody,
   readPagedJson,
 } from "../../src/preview/lib/page-fetch.js";
 
@@ -68,6 +69,33 @@ describe("429 backoff", () => {
     };
     await expect(readPagedJson(res)).rejects.toBeInstanceOf(RateLimitError);
     await expect(readPagedJson(res)).rejects.toSatisfy((err: unknown) => isRateLimitError(err));
+  });
+});
+
+describe("calculator evaluate body", () => {
+  it("treats a plain-text 429 as rate limited and does not parse it", async () => {
+    let parsed = false;
+    const res = {
+      status: 429,
+      ok: false,
+      json: async () => {
+        parsed = true;
+        throw new SyntaxError("Unexpected token T in JSON at position 0");
+      },
+    };
+    await expect(readEvaluationBody(res)).resolves.toEqual({ rateLimited: true, data: null });
+    expect(parsed).toBe(false);
+  });
+
+  it("returns null instead of throwing when a non-429 body is not JSON", async () => {
+    const res = {
+      status: 500,
+      ok: false,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON");
+      },
+    };
+    await expect(readEvaluationBody(res)).resolves.toEqual({ rateLimited: false, data: null });
   });
 });
 
