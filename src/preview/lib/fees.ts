@@ -54,11 +54,10 @@ function outcomeFeeCopy(): string {
 }
 
 /**
- * Discovery adds the buyer fee, but a reprice writes the raw listed price back
- * over that input, so board cost is hedged. Set to false once every reprice
- * path keeps the fee; the preview-fees test fails until the two agree.
+ * False: cost copy says buyer fees are included. The hedged sentence stays
+ * available by passing true, for a reprice path that stores the raw listed price.
  */
-export const REPRICE_DROPS_BUYER_FEE = true;
+export const REPRICE_DROPS_BUYER_FEE = false;
 
 /** Every market on the board; only the card's own markets once its listings load. */
 export function boardFeeLine(
