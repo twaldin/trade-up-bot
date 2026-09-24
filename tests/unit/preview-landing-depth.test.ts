@@ -16,6 +16,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const landing = read("../../src/preview/pages/PreviewLanding.tsx");
+const heroProofLib = read("../../src/preview/lib/hero-proof.ts");
 const css = read("../../src/preview/preview.css");
 const copy = read("../../src/preview/lib/copy.ts");
 const app = read("../../src/preview/PreviewApp.tsx");
@@ -93,7 +94,8 @@ describe("preview landing depth", () => {
   });
 
   it("renders every card input on the story rail, not a tease of 8", () => {
-    expect(landing).toContain("storyRailInputs");
+    expect(heroProofLib).toContain("listings: storyRailInputs(tu)");
+    expect(landing).toContain("proof.listings.map(");
     expect(landing).not.toContain("slice(0, 8)");
     expect(landing).toContain("preview-listings--story");
   });

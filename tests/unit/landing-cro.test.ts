@@ -65,12 +65,85 @@ describe("hero says the free path out loud", () => {
   });
 });
 
-describe("live proof ends in an action", () => {
-  it("labels the listings strip with the real trade-up cost", () => {
-    expect(landing).toContain("featured.total_cost_cents");
-    expect(landing).toMatch(/preview-listings--story[\s\S]*preview-panel__head|preview-panel__head[\s\S]*preview-listings--story/);
+function heroSection(): string {
+  const at = landing.indexOf('<section className="preview-hero');
+  return landing.slice(at, landing.indexOf("</section>", at));
+}
+
+function heroProofComponent(): string {
+  const at = landing.indexOf("function HeroProof(");
+  return landing.slice(at, landing.indexOf("\n}\n", at));
+}
+
+describe("first screen carries its own proof", () => {
+  it("splits the hero into copy and a live proof panel", () => {
+    const hero = heroSection();
+    expect(hero).toContain("preview-hero__copy");
+    expect(hero).toContain("<HeroProof");
+    expect(hero.indexOf("preview-hero__copy")).toBeLessThan(hero.indexOf("<HeroProof"));
   });
 
+  it("keeps one lede in the hero copy and moves the listing claim onto the panel it describes", () => {
+    expect(heroSection()).not.toContain("preview-hero__sub");
+    expect(heroProofComponent()).toContain("PREVIEW_SUBLEDE");
+  });
+
+  it("builds the panel from a real, buyable board row", () => {
+    const proof = heroProofComponent();
+    expect(landing).toContain("pickHeroTradeUp(live.tradeUps)");
+    expect(proof).toContain("heroProof(");
+    expect(proof).toContain("preview-listings--story");
+    expect(proof).toContain("inputListingHref(row)");
+    expect(proof).toContain("formatFloat(row.float_value)");
+    expect(proof).toContain("formatDollars(row.price_cents)");
+  });
+
+  it("gives every output its price and odds, and states each headline number once", () => {
+    const proof = heroProofComponent();
+    expect(proof).toContain("formatDollars(row.priceCents)");
+    expect(proof).toMatch(/Math\.round\(row\.probability \* 100\)/);
+    for (const label of ["Cost", "Expected value", "Expected profit", "Chance of profit"]) {
+      expect(proof.split(`label="${label}"`).length - 1, label).toBe(1);
+    }
+  });
+
+  it("links the panel to the trade-up and names the free delay with a way out", () => {
+    const proof = heroProofComponent();
+    expect(proof).toContain("to={`/trade-ups/${proof.id}`}");
+    expect(proof).toMatch(/isFree\s*&&/);
+    const bannerAt = proof.indexOf("{DELAY_BANNER}");
+    expect(bannerAt).toBeGreaterThan(-1);
+    expect(proof.slice(bannerAt, bannerAt + 400)).toContain('to="/pricing"');
+  });
+
+  it("holds the panel's shape while the board loads instead of jumping", () => {
+    expect(heroProofComponent()).toContain("preview-proof__skeleton");
+  });
+});
+
+describe("the rest of the page stops repeating the hero", () => {
+  it("never renders the hero trade-up again below the fold", () => {
+    expect(landing).toMatch(/live\.tradeUps\.filter\(\(tu\) => tu\.id !== hero\?\.id\)/);
+  });
+
+  it("drops the duplicate listings strip from the value band", () => {
+    const at = landing.indexOf("PREVIEW_VALUE_HEADLINE}");
+    const band = landing.slice(at, landing.indexOf("</section>", at));
+    expect(band).not.toContain("preview-listings");
+  });
+
+  it("spends lime on at most two buttons: the hero CTA and the Pro plan", () => {
+    expect(landing.split("preview-btn--lime").length - 1).toBeLessThanOrEqual(2);
+  });
+
+  it("sets the site counts as a slim line, not a wall of tiles", () => {
+    const stats = cssBlock(css, ".preview-hero .preview-stats {");
+    expect(stats).toMatch(/display:\s*flex/);
+    expect(stats).not.toMatch(/background:\s*var\(--panel-rule\)/);
+  });
+});
+
+describe("live proof ends in an action", () => {
   it("links the featured card to its own page and to the board", () => {
     expect(landing).toContain("to={`/trade-ups/${featured.id}`}");
     const liveAt = landing.indexOf("preview-live");
@@ -79,11 +152,9 @@ describe("live proof ends in an action", () => {
     expect(landing.slice(peekAt)).toMatch(/to="\/trade-ups"/);
   });
 
-  it("says the free view is delayed, and where Pro removes the delay", () => {
-    expect(landing).toContain("DELAY_BANNER");
-    expect(landing).toMatch(/live\.isFree\s*&&/);
-    const bannerAt = landing.indexOf("{DELAY_BANNER}");
-    expect(landing.slice(bannerAt, bannerAt + 400)).toContain('to="/pricing"');
+  it("says the free view is delayed once, on the hero panel", () => {
+    expect(landing.split("{DELAY_BANNER}").length - 1).toBe(1);
+    expect(landing).toContain("isFree={live.isFree}");
   });
 });
 
