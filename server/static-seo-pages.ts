@@ -1,5 +1,6 @@
 import { blogMeta } from "../src/data/blog-meta.js";
 import {
+  PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_DISCORD,
   PREVIEW_CTA_NOTE,
   PREVIEW_DISCORD_HREF,
@@ -279,6 +280,7 @@ ${seoFaq}
 <p><a href="/faq">Read the full FAQ</a></p>
 </section>
 <p><a href="/trade-ups">Find Real Tradeups -&gt;</a></p>
+<p><a href="/calculator">${escapeHtml(PREVIEW_CTA_CALCULATOR)}</a></p>
 <p><a href="${PREVIEW_DISCORD_HREF}">${escapeHtml(PREVIEW_CTA_DISCORD)}</a></p>
 <p>${escapeHtml(PREVIEW_CTA_NOTE)}</p>`;
 }

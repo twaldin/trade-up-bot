@@ -44,15 +44,13 @@ describe("preview landing depth", () => {
     expect(landing).not.toContain("DemoAnimation");
   });
 
-  it("tints stacked faces from the real skin rarity, never a rainbow or lime rarity", () => {
-    expect(landing).toContain("inputRarityColor");
+  it("cuts the stacked skin deck; remaining faces take the real output rarity, never a rainbow or lime", () => {
     expect(landing).toContain("outputRarityColor");
     expect(landing).toContain("boardFaceFor");
-    expect(landing).toContain("preview-floatdeck");
+    expect(landing).not.toContain("preview-floatdeck");
     expect(landing).not.toContain("rarityTint(\"Extraordinary\")");
     expect(landing).not.toMatch(/#d7fe52/);
-    expect(css).toContain(".preview-floatdeck");
-    expect(css).toContain("perspective:");
+    expect(css).not.toContain(".preview-floatdeck");
     expect(css).not.toContain(".preview-strip");
   });
 

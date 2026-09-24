@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import { HERO_PROOF_OUTCOMES, heroProof, pickHeroTradeUp } from "../../src/preview/lib/hero-proof.js";
+import { chanceOfProfit, payoffPoints } from "../../src/preview/lib/board.js";
 import type { TradeUpOutcome } from "../../shared/types.js";
 
 function outcome(name: string, probability: number, priceCents: number): TradeUpOutcome {
@@ -27,6 +28,13 @@ describe("pickHeroTradeUp", () => {
     expect(pickHeroTradeUp([])).toBeNull();
     expect(pickHeroTradeUp([makeTradeUp({ listingIds: [] })])).toBeNull();
   });
+
+  it("skips rows whose outcomes are not loaded yet", () => {
+    const noOutcomes = makeTradeUp({ id: 1, outcomes: [] });
+    const full = makeTradeUp({ id: 2 });
+    expect(pickHeroTradeUp([noOutcomes, full])?.id).toBe(2);
+    expect(pickHeroTradeUp([noOutcomes])).toBeNull();
+  });
 });
 
 describe("heroProof", () => {
@@ -34,6 +42,7 @@ describe("heroProof", () => {
     expect(heroProof(null)).toBeNull();
     expect(heroProof(makeTradeUp({ listingIds: [] }))).toBeNull();
     expect(heroProof(makeTradeUp({ is_theoretical: true }))).toBeNull();
+    expect(heroProof(makeTradeUp({ outcomes: [] }))).toBeNull();
   });
 
   it("lists every input listing, not a subset", () => {
@@ -73,14 +82,21 @@ describe("heroProof", () => {
     for (const row of proof?.outcomes ?? []) expect(Number.isInteger(row.profitCents)).toBe(true);
   });
 
-  it("uses the stored chance of profit and falls back to the outcomes", () => {
-    const stored = heroProof(makeTradeUp({ chance_to_profit: 0.73 }));
-    expect(stored?.chance).toBe(0.73);
-    const computed = heroProof(makeTradeUp({
+  it("computes chance of profit from the outcomes, exactly as the board card does", () => {
+    const tu = makeTradeUp({
       total_cost_cents: 1000,
+      chance_to_profit: 0.73,
       outcomes: [outcome("A", 0.25, 2000), outcome("B", 0.75, 500)],
-    }));
-    expect(computed?.chance).toBeCloseTo(0.25);
+    });
+    expect(heroProof(tu)?.chance).toBe(chanceOfProfit(payoffPoints(tu)));
+    expect(heroProof(tu)?.chance).toBeCloseTo(0.25);
+  });
+
+  it("falls back to the stored chance only when no outcome carries odds", () => {
+    const stored = heroProof(makeTradeUp({ chance_to_profit: 0.73, outcomes: [outcome("A", 0, 2000)] }));
+    expect(stored?.chance).toBe(0.73);
+    const neither = heroProof(makeTradeUp({ outcomes: [outcome("A", 0, 2000)] }));
+    expect(neither?.chance).toBeNull();
   });
 
   it("carries the headline numbers straight from the row", () => {

@@ -38,7 +38,7 @@ export interface HeroProof {
 }
 
 function buyable(tu: TradeUp | null | undefined): tu is TradeUp {
-  return Boolean(tu && !tu.is_theoretical && tu.inputs.length > 0);
+  return Boolean(tu && !tu.is_theoretical && tu.inputs.length > 0 && tu.outcomes.length > 0);
 }
 
 export function pickHeroTradeUp(rows: readonly TradeUp[]): TradeUp | null {
@@ -57,11 +57,12 @@ export function heroProof(tu: TradeUp | null | undefined): HeroProof | null {
       profitCents: outcome.estimated_price_cents - cost,
     }))
     .sort((a, b) => b.probability - a.probability || b.priceCents - a.priceCents);
-  const stored = tu.chance_to_profit;
+  // Same precedence as the board card, so `/` and `/trade-ups` never disagree.
+  const stored = typeof tu.chance_to_profit === "number" && Number.isFinite(tu.chance_to_profit)
+    ? tu.chance_to_profit
+    : null;
   const points = payoffPoints(tu);
-  const chance = typeof stored === "number" && Number.isFinite(stored)
-    ? stored
-    : points.length > 0 ? chanceOfProfit(points) : null;
+  const chance = points.length > 0 ? chanceOfProfit(points) : stored;
 
   return {
     id: tu.id,

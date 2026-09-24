@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_NOTE,
   PREVIEW_PLAN_FREE,
   PREVIEW_PLAN_PRO,
@@ -17,6 +18,8 @@ const landing = read("../../src/preview/pages/PreviewLanding.tsx");
 const chrome = read("../../src/preview/PreviewChrome.tsx");
 const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
 const css = read("../../src/preview/preview.css");
+const heroProofLib = read("../../src/preview/lib/hero-proof.ts");
+const board = read("../../src/preview/pages/PreviewBoard.tsx");
 
 function cssBlock(source: string, header: string): string {
   const at = source.indexOf(header);
@@ -102,7 +105,7 @@ describe("first screen carries its own proof", () => {
     const proof = heroProofComponent();
     expect(proof).toContain("formatDollars(row.priceCents)");
     expect(proof).toMatch(/Math\.round\(row\.probability \* 100\)/);
-    for (const label of ["Cost", "Expected value", "Expected profit", "Chance of profit"]) {
+    for (const label of ["Cost", "Expected value (after fees)", "Expected P/L", "P(P/L > $0)"]) {
       expect(proof.split(`label="${label}"`).length - 1, label).toBe(1);
     }
   });
@@ -118,6 +121,49 @@ describe("first screen carries its own proof", () => {
 
   it("holds the panel's shape while the board loads instead of jumping", () => {
     expect(heroProofComponent()).toContain("preview-proof__skeleton");
+  });
+
+  it("gets its chance of profit from the same formula as the board card", () => {
+    expect(heroProofLib).toContain("points.length > 0 ? chanceOfProfit(points) : stored");
+    expect(board).toContain("points.length > 0 ? chanceOfProfit(points) : (tu.chance_to_profit ?? null)");
+  });
+});
+
+describe("frontend review changes on the first screen", () => {
+  it("offers the calculator as the outlined second hero action instead of Discord", () => {
+    expect(PREVIEW_CTA_CALCULATOR).toBe("Try the calculator");
+    const at = heroSection().indexOf("preview-toolbar");
+    const toolbar = heroSection().slice(at, heroSection().indexOf("</div>", at));
+    expect(toolbar).toMatch(/<Link to="\/calculator" className="preview-btn preview-btn--lg">\s*\{PREVIEW_CTA_CALCULATOR\}/);
+    expect(landing).not.toContain("PREVIEW_DISCORD_HREF");
+    expect(landing).not.toContain("trackDiscordCta");
+    expect(landing).not.toContain("PREVIEW_CTA_DISCORD");
+  });
+
+  it("gives crawlers the same calculator action", () => {
+    expect(HOMEPAGE_SEO.bodyHtml).toContain(`<a href="/calculator">${PREVIEW_CTA_CALCULATOR}</a>`);
+  });
+
+  it("lifts the headline numbers to just under the panel header on phones", () => {
+    const narrow = cssBlock(css, "@media (max-width: 519px)");
+    expect(narrow).toMatch(/\.preview-proof > \*\s*\{[^}]*order:\s*2/);
+    expect(narrow).toMatch(/\.preview-proof__head\s*\{[^}]*order:\s*0/);
+    expect(narrow).toMatch(/\.preview-proof__kpis,\s*\.preview-proof__skeleton--kpis\s*\{[^}]*order:\s*1/);
+  });
+
+  it("names the board and guide sections plainly", () => {
+    expect(landing).toContain('<p className="o-kicker">The board</p>');
+    expect(landing).toContain("<h2>Trade-up guides</h2>");
+    expect(landing).not.toContain("Board + graph");
+    expect(landing).not.toContain("Guides from the live set");
+  });
+
+  it("cuts the stacked skin deck and its motion hooks", () => {
+    for (const gone of ["preview-floatdeck", "preview-floatcard", "floatSkins", "deckRef", "tiltRef", "usePointerTilt"]) {
+      expect(landing, gone).not.toContain(gone);
+    }
+    expect(css).not.toContain(".preview-floatdeck");
+    expect(css).not.toContain(".preview-floatcard");
   });
 });
 
@@ -174,6 +220,7 @@ describe("pricing teaser shows Pro value before the paywall", () => {
   it("only quotes Pro limits the pricing page already promises", () => {
     const pro = PREVIEW_PLAN_PRO.join(" ");
     expect(pro).toContain("20/hr");
+    expect(pro).toContain("10/hr");
     expect(pro).toContain("30 min");
     expect(pro).toMatch(/up to 5/i);
     expect(pricing).toContain('pro: "20/hr"');

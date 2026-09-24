@@ -1,30 +1,29 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Check } from "lucide-react";
 import { DeviceScreen } from "../components/DeviceScreen.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import { Laptop } from "../kit/ledger/laptop.js";
 import { Phone } from "../kit/orbit/phone.js";
-import { usePointerTilt, useScrollProgress } from "../kit/lib/motion.js";
+import { useScrollProgress } from "../kit/lib/motion.js";
 import { blogMeta } from "../../data/blog-meta.js";
 import {
   formatFloat,
   inputListingHref,
-  inputRarityColor,
   outputRarityColor,
   previewSkinHref,
   splitSkinName,
-  uniqueInputs,
   uniqueOutputs,
 } from "../lib/board.js";
+import { FeeLine } from "../components/FeeLine.js";
 import { heroProof, pickHeroTradeUp } from "../lib/hero-proof.js";
+import { boardFeeLine } from "../lib/fees.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
-  PREVIEW_CTA_DISCORD,
+  PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_NOTE,
   PREVIEW_CTA_PRIMARY,
-  PREVIEW_DISCORD_HREF,
   PREVIEW_FAQ,
   PREVIEW_HEADLINE,
   PREVIEW_HOW,
@@ -36,7 +35,6 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../lib/copy.js";
-import { trackDiscordCta } from "../../lib/analytics.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
@@ -110,18 +108,18 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
 
 const SKELETON_ROWS = Array.from({ length: 10 }, (_, index) => index);
 
-function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boolean; isFree: boolean }) {
+export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boolean; isFree: boolean }) {
   const proof = heroProof(tu);
   const outTint = outputRarityColor(tu?.type);
   return (
     <aside
       className="preview-proof o-lifted o-arrive"
       style={{ "--stagger": 3 } as CSSProperties}
-      aria-label="Top live trade-up"
+      aria-label="Top trade-up on the board"
       aria-busy={!proof && loading}
     >
       <header className="preview-proof__head">
-        <p className="o-panel-title">Top live trade-up</p>
+        <p className="o-panel-title">Top trade-up on the board</p>
         {proof && <span className="preview-panel__meta">{proof.route}</span>}
       </header>
       <p className="preview-proof__caption">{PREVIEW_SUBLEDE}</p>
@@ -193,15 +191,16 @@ function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boole
           </div>
           <div className="preview-proof__kpis">
             <Kpi label="Cost" value={formatDollars(proof.costCents)} />
-            <Kpi label="Expected value" value={formatDollars(proof.evCents)} />
+            <Kpi label="Expected value (after fees)" value={formatDollars(proof.evCents)} />
             <Kpi
-              label="Expected profit"
+              label="Expected P/L"
               value={signedDollars(proof.profitCents)}
               note={`${proof.roiPct.toFixed(1)}% ROI`}
               tone={toneOf(proof.profitCents)}
             />
-            <Kpi label="Chance of profit" value={proof.chance === null ? "—" : `${Math.round(proof.chance * 100)}%`} />
+            <Kpi label="P(P/L > $0)" value={proof.chance === null ? "—" : `${Math.round(proof.chance * 100)}%`} />
           </div>
+          <FeeLine line={boardFeeLine(proof.listings.map((row) => row.source))} />
           <footer className="preview-proof__foot">
             <Link to={`/trade-ups/${proof.id}`} className="preview-btn">Open this trade-up</Link>
             {isFree && (
@@ -211,7 +210,7 @@ function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boole
             )}
           </footer>
         </>
-      ) : (
+      ) : loading ? (
         <>
           <div className="preview-proof__skeleton" aria-hidden>
             {SKELETON_ROWS.map((index) => <span key={index} />)}
@@ -223,12 +222,12 @@ function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boole
           <div className="preview-proof__skeleton preview-proof__skeleton--kpis" aria-hidden>
             <span />
           </div>
-          <p className="preview-note preview-proof__status">
-            {loading
-              ? "Loading the top live trade-up…"
-              : <>The board is refreshing. <Link to="/trade-ups">Open the board</Link> for live trade-ups.</>}
-          </p>
+          <p className="preview-note preview-proof__status">Loading the top trade-up on the board…</p>
         </>
+      ) : (
+        <p className="preview-note preview-proof__status">
+          The board is refreshing. <Link to="/trade-ups">Open the board</Link>.
+        </p>
       )}
     </aside>
   );
@@ -245,8 +244,6 @@ export function PreviewLanding({
   onBoardCounts?: (counts: BoardCountSource) => void;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
-  const [deckRef] = useScrollProgress<HTMLDivElement>("cover");
-  const tiltRef = usePointerTilt<HTMLDivElement>();
   const live = usePreviewTradeUps({ perPage: 5 });
 
   useEffect(() => {
@@ -270,23 +267,6 @@ export function PreviewLanding({
     live.onExpand(featured.id);
   }, [featured, live.expandedId, live.onExpand]);
 
-  const floatSkins = useMemo(() => {
-    if (!featured) return [];
-    const inTint = inputRarityColor(featured.type);
-    const outTint = outputRarityColor(featured.type);
-    const inputs = uniqueInputs(featured).map((group) => ({
-      name: group.name,
-      tint: inTint,
-      role: "in" as const,
-    }));
-    const outputs = uniqueOutputs(featured).map((outcome) => ({
-      name: outcome.skin_name,
-      tint: outTint,
-      role: "out" as const,
-    }));
-    return [...inputs, ...outputs].slice(0, 6);
-  }, [featured]);
-
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
   const statTiles = visibleLandingStatTiles(stats);
 
@@ -295,7 +275,7 @@ export function PreviewLanding({
       <section className="preview-hero">
         <div className="preview-hero__copy">
           <p className="o-kicker o-arrive" style={{ "--stagger": 0 } as CSSProperties}>
-            Live listings · CSFloat · DMarket · Skinport · Buff.market
+            Listings · CSFloat · DMarket · Skinport · Buff.market
           </p>
           <h1 className="o-arrive" style={{ "--stagger": 1 } as CSSProperties}>{PREVIEW_HEADLINE}</h1>
           <p className="preview-hero__lede o-arrive" style={{ "--stagger": 2 } as CSSProperties}>
@@ -305,15 +285,9 @@ export function PreviewLanding({
             <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
               {PREVIEW_CTA_PRIMARY}
             </Link>
-            <a
-              href={PREVIEW_DISCORD_HREF}
-              className="preview-btn preview-btn--lg"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => trackDiscordCta("home")}
-            >
-              {PREVIEW_CTA_DISCORD}
-            </a>
+            <Link to="/calculator" className="preview-btn preview-btn--lg">
+              {PREVIEW_CTA_CALCULATOR}
+            </Link>
             <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
           </div>
           {statTiles.length > 0 && (
@@ -390,43 +364,6 @@ export function PreviewLanding({
         )}
       </section>
 
-      <section className="preview-section preview-section--band">
-        <p className="o-kicker">Skins</p>
-        <h2>Stacked from the live inputs</h2>
-        <p className="preview-section__lede">
-          Faces take the rarity tint of that skin. Green marks outcomes above cost.
-        </p>
-        <div
-          ref={(node) => {
-            deckRef.current = node;
-            tiltRef.current = node;
-          }}
-          className="preview-floatdeck"
-        >
-          {floatSkins.map((skin, index) => {
-            const { weapon, finish } = splitSkinName(skin.name);
-            return (
-              <Link
-                key={`${skin.role}-${skin.name}`}
-                className="preview-floatcard"
-                to={previewSkinHref(skin.name)}
-                style={{
-                  "--skin-tint": skin.tint,
-                  "--i": index,
-                  "--n": floatSkins.length,
-                } as CSSProperties}
-              >
-                <span className="preview-floatcard__art"><Face name={skin.name} /></span>
-                <span className="preview-floatcard__meta">
-                  <em>{weapon}</em>
-                  <b>{finish}</b>
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
       <section ref={pinRef} className="preview-section" id="how">
         <p className="o-kicker">Pipeline</p>
         <h2>How it works</h2>
@@ -445,7 +382,7 @@ export function PreviewLanding({
       </section>
 
       <section className="preview-section preview-section--band">
-        <p className="o-kicker">Board + graph</p>
+        <p className="o-kicker">The board</p>
         <h2>A peek at the live board</h2>
         <p className="preview-section__lede">
           The next trade-ups on the board, beside real listings and sales for the top output skin plotted by float and price.
@@ -508,7 +445,7 @@ export function PreviewLanding({
 
       <section id="blog" className="preview-section preview-section--band">
         <p className="o-kicker">Blog</p>
-        <h2>Guides from the live set</h2>
+        <h2>Trade-up guides</h2>
         <p className="preview-section__lede">
           How trade-ups, float values, and marketplace fees work, with the numbers behind them.
         </p>

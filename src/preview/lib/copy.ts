@@ -4,6 +4,7 @@ export const PREVIEW_HEADLINE = "CS2 trade-ups built from real, buyable listings
 
 export const PREVIEW_CTA_PRIMARY = "Find Real Tradeups ->";
 export const PREVIEW_CTA_DISCORD = "Join the Discord";
+export const PREVIEW_CTA_CALCULATOR = "Try the calculator";
 export const PREVIEW_CTA_NOTE = "Free to browse — no account needed.";
 export const PREVIEW_DISCORD_HREF = "https://discord.gg/gQ8cPqBq2a";
 export const PREVIEW_GITHUB_HREF = "https://github.com/twaldin/trade-up-bot";
@@ -22,7 +23,7 @@ export const PREVIEW_VALUE = [
   ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
 ] as const;
 
-/** Pipeline copy from the live landing + features page. More than three steps. */
+/** Pipeline copy. First HTML and any HowTo markup are generated from this list. */
 export const PREVIEW_HOW: { n: string; title: string; body: string }[] = [
   {
     n: "01",
@@ -32,27 +33,17 @@ export const PREVIEW_HOW: { n: string; title: string; body: string }[] = [
   {
     n: "02",
     title: "Discover",
-    body: "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle.",
+    body: "Algorithms test thousands of input combinations at 45+ float targets. Swap optimization improves results each cycle. Output pricing uses CSFloat sale history first.",
   },
   {
     n: "03",
-    title: "Target floats",
-    body: "Each input combination is evaluated at 45+ float targets, clustered around condition boundaries (Factory New/Minimal Wear at 0.07, Minimal Wear/Field-Tested at 0.15, and so on).",
+    title: "Verify (Pro)",
+    body: "Before spending money, hit Verify. It calls each marketplace's API to confirm every input listing still exists and at what price. Cost, expected value, and ROI update from the response.",
   },
   {
     n: "04",
-    title: "Price the exact float",
-    body: "Output pricing uses CSFloat sale history first. DMarket and Skinport listing data fill gaps when CSFloat has no coverage for a skin or condition.",
-  },
-  {
-    n: "05",
-    title: "Verify (Pro)",
-    body: "Before spending money, hit Verify. It calls each marketplace's API to confirm every input listing still exists and at what price. The trade-up's cost, profit, and ROI update from the response.",
-  },
-  {
-    n: "06",
     title: "Claim",
-    body: "Pro users see results instantly. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy.",
+    body: "Pro users see results the moment they're found. Claim a trade-up to hide its listings from other TradeUpBot users for 30 minutes while you buy. The free board is delayed 3 hours.",
   },
 ];
 
@@ -90,6 +81,7 @@ export const PREVIEW_PLAN_PRO = [
   "Real-time trade-ups, no delay",
   "Verify every input is still listed (20/hr)",
   "Claim a trade-up for a 30 min lock, up to 5 at once",
+  "Claims (10/hr)",
 ] as const;
 
 export const PREVIEW_PRO_PRICES = "Or $59.99/year ($5/mo) · $74.99 lifetime";

@@ -105,7 +105,7 @@ describe("landing chrome carries product nav and a real footer", () => {
 });
 
 describe("home CTAs and locked headline", () => {
-  it("uses the two signed hero CTAs and keeps the locked h1", () => {
+  it("uses the signed primary CTA, the calculator second action, and keeps the locked h1", () => {
     expect(PREVIEW_HEADLINE).toBe("CS2 trade-ups built from real, buyable listings");
     expect(PREVIEW_CTA_PRIMARY).toBe("Find Real Tradeups ->");
     expect(PREVIEW_CTA_DISCORD).toBe("Join the Discord");
@@ -114,9 +114,9 @@ describe("home CTAs and locked headline", () => {
     expect(PREVIEW_DISCORD_HREF).not.toContain("w4jFs8g5kU");
     expect(PREVIEW_GITHUB_HREF).toBe("https://github.com/twaldin/trade-up-bot");
     expect(landing).toContain("PREVIEW_CTA_PRIMARY");
-    expect(landing).toContain("PREVIEW_CTA_DISCORD");
-    expect(landing).toContain("PREVIEW_DISCORD_HREF");
-    expect(landing).toContain('trackDiscordCta("home")');
+    expect(landing).toContain("PREVIEW_CTA_CALCULATOR");
+    expect(landing).toContain('to="/calculator"');
+    expect(landing).not.toContain('trackDiscordCta("home")');
     expect(landing).toContain("to=\"/trade-ups\"");
     expect(landing).not.toContain("Open the console");
     expect(landing).not.toContain("How it works</a>");
