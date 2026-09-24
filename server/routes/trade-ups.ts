@@ -3,6 +3,7 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
+import { hasProAccess } from "../../shared/pro-access.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
@@ -654,8 +655,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   router.post("/api/verify-trade-up/:id", async (req, res) => {
     // Verify requires pro tier
     const userId = req.user?.steam_id;
-    const userTier = req.user?.tier || "free";
-    if (!userId || userTier === "free") {
+    if (!userId || !hasProAccess(req.user as User)) {
       res.status(403).json({ error: "Verify requires Pro plan" });
       return;
     }

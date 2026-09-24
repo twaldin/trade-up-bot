@@ -3,10 +3,7 @@ export const BILLING_PORTAL_API = "/api/billing-portal";
 
 const FALLBACK_ERROR = "Could not open billing. Try again.";
 
-/** Pro subscribers and lifetime buyers. `tier` is "pro" for both; `lifetime` is checked too in case tier lags. */
-export function hasProAccess(user: { tier: string; lifetime?: boolean } | null | undefined): boolean {
-  return !!user && (user.tier === "pro" || !!user.lifetime);
-}
+export { hasProAccess } from "../../../shared/pro-access.js";
 
 /** Opens the Stripe billing portal for the signed-in user. Resolves to an error message, or null once redirecting. */
 export async function openBillingPortal(

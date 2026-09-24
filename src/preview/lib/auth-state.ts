@@ -1,3 +1,5 @@
+import { hasProAccess } from "./billing.js";
+
 /** `/api/auth/me` user as the kit pages read it. `undefined` = still loading, `null` = logged out. */
 export interface AuthUser {
   steam_id: string;
@@ -16,6 +18,6 @@ export type ShareActionPanel = "pending" | "sign-in" | "pro" | "upgrade";
 export function shareActionPanel(user: AuthUser | null | undefined): ShareActionPanel {
   if (user === undefined) return "pending";
   if (user === null) return "sign-in";
-  if (user.tier === "pro" || user.tier === "admin" || !!user.is_admin || !!user.lifetime) return "pro";
+  if (hasProAccess(user) || user.tier === "admin" || !!user.is_admin) return "pro";
   return "upgrade";
 }

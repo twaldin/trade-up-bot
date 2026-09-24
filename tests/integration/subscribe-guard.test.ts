@@ -145,6 +145,29 @@ describe("POST /api/subscribe refuses a second Pro checkout", () => {
     expect(stripeMock.sessionsCreate).not.toHaveBeenCalled();
   });
 
+  it("collapses two concurrent Free checkouts into one customer and one session url", async () => {
+    stripeMock.customersCreate.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return { id: "cus_once" };
+    });
+    const seen = new Map<string, { url: string }>();
+    stripeMock.sessionsCreate.mockImplementation(async (_params: unknown, opts: { idempotencyKey?: string }) => {
+      const key = opts?.idempotencyKey ?? "";
+      expect(key).toMatch(/^checkout_user_free_pro_\d+$/);
+      const existing = seen.get(key);
+      if (existing) return existing;
+      const created = { url: "https://checkout.stripe.test/cs_once" };
+      seen.set(key, created);
+      return created;
+    });
+    const [a, b] = await Promise.all([subscribe("user_free", "pro"), subscribe("user_free", "pro")]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.body.url).toBe(b.body.url);
+    expect(stripeMock.customersCreate).toHaveBeenCalledTimes(1);
+    expect(seen.size).toBe(1);
+  });
+
   it("still rejects a logged-out caller and an unknown plan", async () => {
     expect((await subscribe(null, "pro")).status).toBe(401);
     expect((await subscribe("user_free", "nope")).status).toBe(400);

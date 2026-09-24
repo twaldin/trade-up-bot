@@ -15,6 +15,20 @@ function getPlan(plan: string): { priceId: string; name: string; mode: "subscrip
   return null;
 }
 
+const checkoutLocks = new Map<string, Promise<void>>();
+
+/** Serialize checkout for one user inside this process. Redis is not required for the API. */
+function withCheckoutLock<T>(steamId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = checkoutLocks.get(steamId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const settled = run.then(() => undefined, () => undefined);
+  checkoutLocks.set(steamId, settled);
+  void settled.finally(() => {
+    if (checkoutLocks.get(steamId) === settled) checkoutLocks.delete(steamId);
+  });
+  return run;
+}
+
 export function stripeRouter(pool: pg.Pool): Router {
   const router = Router();
   const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -36,68 +50,69 @@ export function stripeRouter(pool: pg.Pool): Router {
     }
 
     try {
-      // Read tier fresh. The cached Passport user can lag a webhook, and a second checkout
-      // would double-charge someone who already has Pro or lifetime.
-      const { rows } = await pool.query(
-        "SELECT tier, lifetime, stripe_customer_id FROM users WHERE steam_id = $1",
-        [user.steam_id],
-      );
-      const row = rows[0];
-      const alreadyPro = row?.tier === "pro" || row?.lifetime === true;
-      if (alreadyPro) {
-        const buyingLifetime = plan === "pro-lifetime" && row?.lifetime !== true;
-        res.status(409).json({
-          error: buyingLifetime
-            ? "Cancel your current plan in Manage subscription first, then buy Lifetime."
-            : "You already have Pro access. Manage your subscription instead of starting a new checkout.",
-        });
-        return;
-      }
-
-      // A past_due or unpaid subscription is stored as tier free, so the tier check above
-      // misses it. Refuse checkout while any subscription is still open.
-      let customerId: string | null = row?.stripe_customer_id || user.stripe_customer_id || null;
-      if (customerId) {
-        const listed = await stripe.subscriptions.list({ customer: customerId, status: "all" });
-        const open = listed.data.some((sub) =>
-          sub.status === "active" || sub.status === "trialing" || sub.status === "past_due"
-          || sub.status === "unpaid" || sub.status === "incomplete",
+      await withCheckoutLock(user.steam_id, async () => {
+        // Read tier fresh. The cached Passport user can lag a webhook, and a second checkout
+        // would double-charge someone who already has Pro or lifetime.
+        const { rows } = await pool.query(
+          "SELECT tier, lifetime, stripe_customer_id FROM users WHERE steam_id = $1",
+          [user.steam_id],
         );
-        if (open) {
+        const row = rows[0];
+        const alreadyPro = row?.tier === "pro" || row?.lifetime === true;
+        if (alreadyPro) {
+          const buyingLifetime = plan === "pro-lifetime" && row?.lifetime !== true;
           res.status(409).json({
-            error: plan === "pro-lifetime"
+            error: buyingLifetime
               ? "Cancel your current plan in Manage subscription first, then buy Lifetime."
-              : "You already have a subscription. Use Manage subscription instead of starting a new checkout.",
+              : "You already have Pro access. Manage your subscription instead of starting a new checkout.",
           });
           return;
         }
-      }
 
-      // Create or reuse Stripe customer
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          metadata: { steam_id: user.steam_id, display_name: user.display_name },
-        });
-        customerId = customer.id;
-        await pool.query("UPDATE users SET stripe_customer_id = $1 WHERE steam_id = $2", [customerId, user.steam_id]);
-        // Drop the cached Passport user so the post-checkout return reads the fresh customer id.
-        invalidateUserCache(user.steam_id);
-      }
+        // A past_due or unpaid subscription is stored as tier free, so the tier check above
+        // misses it. Refuse checkout while any subscription is still open.
+        let customerId: string | null = row?.stripe_customer_id || user.stripe_customer_id || null;
+        if (customerId) {
+          const listed = await stripe.subscriptions.list({ customer: customerId, status: "all" });
+          const open = listed.data.some((sub) =>
+            sub.status === "active" || sub.status === "trialing" || sub.status === "past_due"
+            || sub.status === "unpaid" || sub.status === "incomplete",
+          );
+          if (open) {
+            res.status(409).json({
+              error: plan === "pro-lifetime"
+                ? "Cancel your current plan in Manage subscription first, then buy Lifetime."
+                : "You already have a subscription. Use Manage subscription instead of starting a new checkout.",
+            });
+            return;
+          }
+        }
 
-      const planInfo = getPlan(plan)!;
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
-        mode: planInfo.mode,
-        line_items: [{ price: planInfo.priceId, quantity: 1 }],
-        allow_promotion_codes: true,
-        success_url: `${process.env.BASE_URL}/?upgraded=${plan}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
+        if (!customerId) {
+          const customer = await stripe.customers.create({
+            metadata: { steam_id: user.steam_id, display_name: user.display_name },
+          });
+          customerId = customer.id;
+          await pool.query("UPDATE users SET stripe_customer_id = $1 WHERE steam_id = $2", [customerId, user.steam_id]);
+          invalidateUserCache(user.steam_id);
+        }
+
+        const planInfo = getPlan(plan)!;
+        const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+        const session = await stripe.checkout.sessions.create({
+          customer: customerId,
+          mode: planInfo.mode,
+          line_items: [{ price: planInfo.priceId, quantity: 1 }],
+          allow_promotion_codes: true,
+          success_url: `${process.env.BASE_URL}/?upgraded=${plan}&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
+        }, { idempotencyKey: `checkout_${user.steam_id}_${plan}_${bucket}` });
+
+        res.json({ url: session.url });
       });
-
-      res.json({ url: session.url });
     } catch (err: any) {
       console.error("Stripe checkout error:", err.message);
-      res.status(500).json({ error: "Failed to create checkout session" });
+      if (!res.headersSent) res.status(500).json({ error: "Failed to create checkout session" });
     }
   });
 

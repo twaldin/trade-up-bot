@@ -9,6 +9,7 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
+import { hasProAccess } from "../shared/pro-access.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -352,6 +353,13 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.user) return next();
   res.status(401).json({ error: "Login required" });
+}
+
+/** Pro tier or lifetime. Lifetime counts while the tier column still says free. */
+export function requireProAccess(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) return res.status(401).json({ error: "Login required" });
+  if (hasProAccess(req.user as User)) return next();
+  res.status(403).json({ error: "Requires pro tier" });
 }
 
 // Middleware: require specific tier (admin flag does NOT auto-pass — admin uses their real tier)
