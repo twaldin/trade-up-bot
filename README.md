@@ -197,6 +197,20 @@ npm run dev
 
 Requires `.env` with `CSFLOAT_API_KEY`, `DMARKET_PUBLIC_KEY`, `DMARKET_SECRET_KEY`, `STRIPE_SECRET_KEY`, and related Stripe config.
 
+### Conversion tracking (optional)
+
+Every tracker is off, and adds nothing to the page, until its env var is set. See `.env.example` for the full list.
+
+| Var | Read at | Enables |
+|-----|---------|---------|
+| `GA4_MEASUREMENT_ID` | build (`npm run build`) + API runtime | GA4 key events in the browser (`checkout_start`, `calculator_complete`, `trade_up_detail_open`, `verify_click`, `purchase`) |
+| `GA4_API_SECRET` | API runtime | GA4 `purchase` via Measurement Protocol from the Stripe webhook (with `GA4_MEASUREMENT_ID`) |
+| `META_PIXEL_ID` | build + API runtime | Meta Pixel base code (PageView) and the key events |
+| `META_CAPI_TOKEN` | API runtime | Meta Conversions API `Purchase` from the Stripe webhook (with `META_PIXEL_ID`) |
+| `META_DOMAIN_VERIFICATION` | build | `<meta name="facebook-domain-verification">` fallback for the DNS TXT record |
+
+Browser ids are injected into `<head>` by the `tracking-head` Vite plugin, so changing them needs a rebuild; secrets are only read by the API process, so changing them needs a restart. GA4 `purchase` is sent exactly once: server-side through the Measurement Protocol when `GA4_API_SECRET` is set (the success page then skips it), otherwise client-side on the success page as before. Code: `shared/tracking.ts`, `shared/tracking-head.ts`, `src/lib/conversions.ts`, `src/lib/attribution.ts`, `server/tracking/`.
+
 ## Testing
 
 Use Node.js 20 (the CI version). Run `npm ci` and `npm run build` before
