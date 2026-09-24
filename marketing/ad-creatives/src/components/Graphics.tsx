@@ -7,12 +7,12 @@ const STOPS = [0, 0.07, 0.15, 0.38, 0.45, 1];
 const LABEL_ROW = [0, 1, 0, 1, 0, 1];
 
 /** Wear boundaries as labelled on the live skin chart. Not a price series. */
-export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boolean }> = ({ stopAt, height = 130, instant }) => {
+export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boolean }> = ({ stopAt, height = 160, instant }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const p = instant ? stopAt : interpolate(frame, [0, Math.round(0.9 * fps)], [0.55, stopAt], { extrapolateRight: "clamp" });
   return (
-    <div style={{ position: "relative", height, margin: "0 64px" }}>
+    <div data-visual="range" style={{ position: "relative", height, minHeight: height, flexShrink: 0, margin: "0 64px" }}>
       <div style={{ position: "absolute", left: 0, right: 0, top: 28, height: 8, borderRadius: 4, background: C.lineHard }} />
       {STOPS.map((s) => (
         <div key={s} style={{ position: "absolute", left: `${s * 100}%`, top: 18, width: 2, height: 28, background: C.muted, transform: "translateX(-1px)" }} />
@@ -35,7 +35,7 @@ export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boo
           style={{
             position: "absolute",
             left: `${s * 100}%`,
-            top: 58 + LABEL_ROW[i] * 34,
+            top: 62 + LABEL_ROW[i] * 46,
             transform: "translateX(-50%)",
             fontFamily: FONT.mono,
             fontSize: 28,

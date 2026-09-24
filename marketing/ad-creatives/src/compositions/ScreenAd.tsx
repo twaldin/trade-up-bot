@@ -61,10 +61,10 @@ const geometry = (format: Format): Geometry => {
     return {
       brand: { x: 48, y: band.top, size: 22 },
       honesty: { x: 48, y: band.top + 32, w: 984, h: 36, size: foot },
-      caption: { x: 48, y: band.top + 72, w: 984, h: 64, size: 28 },
-      panel: { x: 48, y: band.top + 142, w: 984, h: 320 },
+      caption: { x: 48, y: band.top + 68, w: 984, h: 52, size: 26 },
+      panel: { x: 48, y: band.top + 124, w: 984, h: 320 },
       radius: 12,
-      footnote: { x: 48, y: band.bottom - 80, w: 984, h: 72, size: foot },
+      footnote: { x: 48, y: band.top + 460, w: 984, h: 72, size: foot },
       pointerScale: 0.85,
     };
   }
@@ -104,7 +104,7 @@ const geometry = (format: Format): Geometry => {
 const toneColor = (tone: Callout["tone"]) => (tone === "plus" ? C.accent : tone === "loss" ? C.loss : C.text);
 
 const CalloutCard: React.FC<{ c: Callout; frame: number }> = ({ c, frame }) => (
-  <div
+        <div
     style={{
       position: "absolute",
       left: 20,
@@ -115,33 +115,36 @@ const CalloutCard: React.FC<{ c: Callout; frame: number }> = ({ c, frame }) => (
       borderRadius: 10,
       padding: "12px 18px",
       maxWidth: "92%",
+      display: "flex",
+      flexDirection: "column",
+      gap: 16,
     }}
   >
-    <div style={{ fontFamily: FONT.mono, fontSize: 20, color: C.muted }}>{c.label}</div>
-    <div style={{ fontFamily: FONT.mono, fontSize: c.valueSize ?? 72, color: toneColor(c.tone), lineHeight: 1.05, fontWeight: 500 }}>{c.value}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 20, color: C.muted, lineHeight: 1.15 }}>{c.label}</div>
+      <div style={{ fontFamily: FONT.mono, fontSize: c.valueSize ?? 72, color: toneColor(c.tone), lineHeight: 1, fontWeight: 500 }}>{c.value}</div>
     {c.note && <div style={{ fontFamily: FONT.body, fontSize: 22, color: C.muted, marginTop: 4 }}>{c.note}</div>}
   </div>
 );
 
 const GraphicView: React.FC<{ g: Graphic }> = ({ g }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const pop = interpolate(frame, [0, Math.round(0.4 * fps)], [0.92, 1], { extrapolateRight: "clamp" });
+  const { fps, height } = useVideoConfig();
   if (g.type === "range") {
+    const rowSize = height <= 1080 ? 36 : height <= 1350 ? 48 : Math.min(g.size ?? 64, 64);
     return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 28px", gap: 16 }}>
-        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, letterSpacing: 0.4 }}>{g.kicker}</div>
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "12px 20px", gap: 12, overflow: "hidden" }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, letterSpacing: 0.4, lineHeight: 1.2, flexShrink: 0 }}>{g.kicker}</div>
         <RangeBar stopAt={g.stopAt} />
-        <BigRows rows={g.rows} size={g.size ?? 80} />
+        <BigRows rows={g.rows} size={rowSize} />
       </div>
     );
   }
   if (g.type === "figure") {
     const fill = g.motion ? interpolate(frame, [0, Math.round(0.5 * fps)], [0, 1], { extrapolateRight: "clamp" }) : 1;
     return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 36px", transform: `scale(${pop})` }}>
-        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted }}>{g.kicker}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: g.size ?? 96, color: toneColor(g.tone), letterSpacing: -1, lineHeight: 1.05 }}>{g.value}</div>
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", padding: "20px 28px", gap: 20 }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 22, color: C.muted, lineHeight: 1.15 }}>{g.kicker}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: Math.min(g.size ?? 96, height <= 1350 ? 72 : 88), color: toneColor(g.tone), letterSpacing: -1, lineHeight: 1 }}>{g.value}</div>
         {g.motion && (
           <div style={{ marginTop: 14, height: 10, width: "100%", background: C.lineHard, borderRadius: 5 }}>
             <div style={{ height: 10, width: `${fill * 100}%`, background: C.loss, borderRadius: 5 }} />
@@ -215,6 +218,7 @@ const SceneView: React.FC<{ scene: Scene; index: number; props: ScreenAdProps; g
           background: C.panel,
           border: `1px solid ${C.lineHard}`,
         }}
+        data-visual="panel"
       >
         {scene.footage && props.takes[scene.footage.take] && (
           <Footage
