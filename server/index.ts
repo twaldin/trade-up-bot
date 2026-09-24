@@ -9,6 +9,8 @@ import { initRedis } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
+import { publicBoardWarmPaths, registerBoardWarmer } from "./routes/board-warm.js";
+import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "./routes/active-trade-up-counts.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { registerTradeUpShareSeo } from "./trade-up-share-seo.js";
 import { previewFacesRouter } from "./routes/preview-faces.js";
@@ -1010,9 +1012,7 @@ registerCanonicalRedirectRoutes(app);
         }
       } catch { }
       try {
-        const { rows: [stats] } = await pool.query(
-          "SELECT COUNT(*)::int as total, COUNT(*) FILTER (WHERE profit_cents > 0)::int as profitable FROM trade_ups WHERE listing_status = 'active' AND is_theoretical = false"
-        );
+        const counts = await loadActiveTradeUpCounts(pool);
         const { rows: topTradeUps } = await pool.query(`
           SELECT t.id, t.type, t.total_cost_cents, t.profit_cents, t.roi_percentage, t.chance_to_profit
           FROM trade_ups t
@@ -1028,8 +1028,8 @@ registerCanonicalRedirectRoutes(app);
           ORDER BY count DESC, ti.collection_name
           LIMIT 12
         `);
-        const total = stats?.total || 0;
-        const profitable = stats?.profitable || 0;
+        const total = counts.total;
+        const profitable = counts.profitable;
         const faqSchema = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: [
           { "@type": "Question", name: "What is a CS2 trade-up contract?", acceptedAnswer: { "@type": "Answer", text: "A CS2 trade-up contract exchanges 10 weapon skins of the same rarity for 1 skin of the next higher rarity. The output is randomly selected from collections matching your inputs, weighted proportionally by input count per collection." } },
           { "@type": "Question", name: "How does TradeUpBot find trade-ups?", acceptedAnswer: { "@type": "Answer", text: "TradeUpBot scans real marketplace listings across CSFloat, DMarket, and Skinport. For each valid combination of 10 inputs, it calculates expected output value using the actual CS2 float formula and accounts for marketplace fees on both buy and sell sides." } },
@@ -1037,7 +1037,7 @@ registerCanonicalRedirectRoutes(app);
         ] };
         const html = buildSeoHtml({
           title: "CS2 Trade-Ups — Live Contracts, Real Listings | TradeUpBot",
-          description: `${profitable.toLocaleString()} CS2 trade-ups with positive expected profit after fees, of ${total.toLocaleString()} live contracts.`,
+          description: tradeUpsHubDescription(counts),
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({
             total,
@@ -1314,6 +1314,12 @@ registerCanonicalRedirectRoutes(app);
       console.error("Homepage first HTML materialize failed:", err instanceof Error ? err.message : err);
     }
   }
+
+  registerBoardWarmer(async () => {
+    for (const path of publicBoardWarmPaths()) {
+      await fetch(`http://127.0.0.1:${PORT}${path}`).then((res) => res.arrayBuffer(), () => undefined);
+    }
+  });
 
   // Start listening
   const server = app.listen(PORT, () => {

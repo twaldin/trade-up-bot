@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { boardQueryString, DEFAULT_QUERY } from "./components/PreviewFilters.js";
 import { isMarketingPage, needsLandingStats, pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
-import { landingStatsFromSources, type LandingStatCounts } from "./lib/landing-stats.js";
+import { landingStatsFromSources, type BoardCountSource, type LandingStatCounts } from "./lib/landing-stats.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBlogIndex, PreviewBlogPost } from "./pages/PreviewBlog.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
@@ -52,11 +51,13 @@ function BoardRoute() {
 
 export default function PreviewApp(props: { page?: ConsolePage } = {}) {
   const [mode, setMode] = useState<"light" | "dark">("dark");
-  const [stats, setStats] = useState<LandingStatCounts | null>(null);
+  const [globalStats, setGlobalStats] = useState<LandingStatCounts | null>(null);
+  const [boardCounts, setBoardCounts] = useState<BoardCountSource | null>(null);
   const location = useLocation();
 
   const page = pageFor(props.page, location.pathname);
   const wantsStats = needsLandingStats(page);
+  const stats = wantsStats ? landingStatsFromSources({ global: globalStats, board: boardCounts }) : null;
 
   useEffect(() => {
     document.getElementById("root")?.classList.remove("app-shell");
@@ -64,19 +65,13 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
 
   useEffect(() => {
     if (!wantsStats) return;
-    const boardUrl = `/api/trade-ups?${boardQueryString(DEFAULT_QUERY, 1)}&page=1`;
     let live = true;
-    Promise.all([
-      fetch("/api/global-stats", { credentials: "include" })
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null),
-      fetch(boardUrl, { credentials: "include" })
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null),
-    ]).then(([global, board]) => {
-      if (!live) return;
-      setStats(landingStatsFromSources({ global, board }));
-    });
+    fetch("/api/global-stats", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)
+      .then((global: LandingStatCounts | null) => {
+        if (live) setGlobalStats(global);
+      });
     return () => { live = false; };
   }, [wantsStats]);
 
@@ -101,7 +96,7 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       case "sniper": return <PreviewSniper />;
       case "collectionTradeUps": return <PreviewCollectionTradeUps />;
       case "landing":
-      default: return <PreviewLanding stats={stats} mode={mode} />;
+      default: return <PreviewLanding stats={stats} mode={mode} onBoardCounts={setBoardCounts} />;
     }
   })();
 

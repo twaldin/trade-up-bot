@@ -3,6 +3,7 @@ import pg from "pg";
 import fs from "fs";
 import { getSyncMeta } from "../db.js";
 import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
+import { loadActiveTradeUpCounts } from "./active-trade-up-counts.js";
 import { buildStatusData } from "./status-helpers.js";
 
 /** Seconds browsers may reuse /api/global-stats; the numbers only move per daemon cycle. */
@@ -44,9 +45,12 @@ async function queryGlobalStats(pool: pg.Pool): Promise<Record<string, number>> 
       (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
   `);
 
+  const active = await loadActiveTradeUpCounts(pool);
   const data = {
     total_trade_ups: parseInt(stats.total_tu, 10),
     profitable_trade_ups: parseInt(stats.profitable_tu, 10) || 0,
+    active_trade_ups: active.total,
+    active_profitable_trade_ups: active.profitable,
     total_data_points: parseInt(stats.listings, 10) + parseInt(stats.sale_obs, 10) + parseInt(stats.sale_hist, 10) + parseInt(stats.refs, 10),
     listings: parseInt(stats.listings, 10),
     sale_observations: parseInt(stats.sale_obs, 10),

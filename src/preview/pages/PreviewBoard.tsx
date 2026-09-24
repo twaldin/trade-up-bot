@@ -932,6 +932,8 @@ export function usePreviewTradeUps(options: {
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [totalProfitable, setTotalProfitable] = useState(0);
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
   // Faces land in a module-level cache, so a bump is what repaints the art.
@@ -973,7 +975,11 @@ export function usePreviewTradeUps(options: {
       isLive: () => live,
       fetchRows: async () => {
         const res = await fetch(boardListUrl(key, page), { credentials: "include" });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number }>(res);
+        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number }>(res);
+        if (live && page === 1 && typeof data.total === "number") {
+          setTotal(data.total);
+          setTotalProfitable(typeof data.total_profitable === "number" ? data.total_profitable : 0);
+        }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
       hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
@@ -1055,12 +1061,13 @@ export function usePreviewTradeUps(options: {
   return useMemo(
     () => ({
       tradeUps, loading, isFree, expandedId, onExpand,
+      total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
       loadMore, exhausted, throttle,
       failed, retry, clearFilters,
     }),
     [tradeUps, loading, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
-      clearFilters, faceTick],
+      clearFilters, faceTick, total, totalProfitable],
   );
 }

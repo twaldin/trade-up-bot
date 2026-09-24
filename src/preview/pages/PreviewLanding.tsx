@@ -35,6 +35,7 @@ import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
   formatLandingStat,
   visibleLandingStatTiles,
+  type BoardCountSource,
   type LandingStatCounts,
 } from "../lib/landing-stats.js";
 import { boardFaceFor, TradeUpCard, usePreviewTradeUps } from "./PreviewBoard.js";
@@ -85,14 +86,22 @@ function LandingGraph({ name }: { name: string }) {
 export function PreviewLanding({
   stats,
   mode = "dark",
+  onBoardCounts,
 }: {
   stats: LandingStatCounts | null;
   mode?: "light" | "dark";
+  /** Hero trade-up totals come from this teaser response. No second count query. */
+  onBoardCounts?: (counts: BoardCountSource) => void;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
   const [deckRef] = useScrollProgress<HTMLDivElement>("cover");
   const tiltRef = usePointerTilt<HTMLDivElement>();
   const live = usePreviewTradeUps({ perPage: 3 });
+
+  useEffect(() => {
+    if (!onBoardCounts || live.total == null) return;
+    onBoardCounts({ total: live.total, total_profitable: live.totalProfitable });
+  }, [live.total, live.totalProfitable, onBoardCounts]);
   const featured = live.tradeUps[0] ?? null;
   const collapsed = live.tradeUps[1] ?? null;
   const peek = live.tradeUps.slice(1, 3);
