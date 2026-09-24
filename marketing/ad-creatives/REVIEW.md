@@ -60,6 +60,14 @@ Free view delayed 3 h. Not affiliated with or endorsed by Valve. Board and contr
 - Meta primary text: “Cross 0.07 and the cheapest AK-47 | Nightwish listing drops from $99.59 (FN) to $64.10 (MW).”
 - No board ROI percent is used in ad copy.
 
+## r5
+
+- Square and portrait FN/MW labels are at least 24px. The square cut is centred in the frame.
+- The 1920 boundary still keeps 24px above the bottom safe line (padding below the 672px band).
+- “Signed-in free accounts can't run Verify” replaces the 403 line.
+- Video C’s opening board shot hides the cursor, which was sitting on Claim. Footage is not re-captured; that waits until #171 is live.
+- Video B’s hero card is 8 seconds. The end card holds to 5 seconds so the cut stays 15 seconds.
+
 ## Google RSA
 
 `google-search-rsa.md` is ad group A for `/calculator`. Position 1 is the three calculator-name headlines. Position 2 is the two honesty lines. Description position 1 is D1. The trade-up sitelink is “Trade-up board” with line 2 “Free view delayed 3 hours”. UTMs are a campaign-level Final URL suffix. Do not spend until the landing copy PR is live.

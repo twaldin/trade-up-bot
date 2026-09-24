@@ -175,7 +175,7 @@ const Visual: React.FC<{ v: StaticVisual; takes: Record<string, Take> }> = ({ v,
 export const StaticAd: React.FC<StaticAdProps> = (p) => {
   const tall = p.format === "vertical";
   const padTop = tall ? 270 : 48;
-  const padBottom = tall ? 672 : 48;
+  const padBottom = tall ? 696 : 48;
   const headline = tall ? 56 : p.format === "portrait" ? 48 : 44;
   return (
     <AbsoluteFill

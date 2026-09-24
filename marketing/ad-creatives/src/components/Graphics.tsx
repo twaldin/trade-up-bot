@@ -63,7 +63,7 @@ export const BigRows: React.FC<{ rows: { k: string; v: string }[]; size?: number
     <div style={{ opacity: o, display: "flex", flexDirection: "column", gap: 8 }}>
       {rows.map((r) => (
         <div key={r.k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 24 }}>
-          <span style={{ fontFamily: FONT.mono, fontSize: size * 0.45, color: C.muted }}>{r.k}</span>
+          <span style={{ fontFamily: FONT.mono, fontSize: Math.max(24, size * 0.45), color: C.muted }}>{r.k}</span>
           <span style={{ fontFamily: FONT.mono, fontSize: size, color: C.text, letterSpacing: -1 }}>{r.v}</span>
         </div>
       ))}

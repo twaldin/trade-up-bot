@@ -58,13 +58,14 @@ const geometry = (format: Format): Geometry => {
   const band = safeBand(height);
   const foot = 28;
   if (format === "square") {
+    const shift = 122;
     return {
-      brand: { x: 48, y: band.top, size: 22 },
-      honesty: { x: 48, y: band.top + 32, w: 984, h: 36, size: foot },
-      caption: { x: 48, y: band.top + 68, w: 984, h: 52, size: 28 },
-      panel: { x: 48, y: band.top + 124, w: 984, h: 320 },
+      brand: { x: 48, y: band.top + shift, size: 22 },
+      honesty: { x: 48, y: band.top + 32 + shift, w: 984, h: 36, size: foot },
+      caption: { x: 48, y: band.top + 68 + shift, w: 984, h: 52, size: 28 },
+      panel: { x: 48, y: band.top + 124 + shift, w: 984, h: 320 },
       radius: 12,
-      footnote: { x: 48, y: band.top + 460, w: 984, h: 72, size: foot },
+      footnote: { x: 48, y: band.top + 460 + shift, w: 984, h: 72, size: foot },
       pointerScale: 0.85,
     };
   }

@@ -179,7 +179,7 @@ export const buildCatalog = (facts: Facts) => {
     layout: "panel",
     footnote: EXAMPLE,
     takes: facts.takes,
-    endCard: endCard(facts, "Check the estimate.", "See trade-ups"),
+    endCard: { ...endCard(facts, "Check the estimate.", "See trade-ups"), seconds: 5 },
     scenes: [
       {
         id: "skip",
@@ -198,7 +198,7 @@ export const buildCatalog = (facts: Facts) => {
       },
       {
         id: "hero",
-        seconds: 13,
+        seconds: 8,
         caption: { text: "Two outcomes are priced under the cost.", emphasis: ["Two outcomes"] },
         graphic: {
           type: "compare",
@@ -225,7 +225,7 @@ export const buildCatalog = (facts: Facts) => {
         id: "hook",
         seconds: 2.2,
         caption: { text: "A green estimate is not a promise.", emphasis: ["not a promise"] },
-        footage: { kind: "video", take: "d-board", from: "verify-click", offset: -0.9, focus: { cx: 1255, cy: 450, w: Math.max(400, MIN_FOCUS_W) } },
+        footage: { kind: "video", take: "d-board", from: "verify-click", offset: -0.9, focus: { cx: 1255, cy: 450, w: Math.max(400, MIN_FOCUS_W) }, pointer: false },
         callout: { label: "across 10 listings", value: need(cost.value, "cost"), valueSize: 72 },
       },
       {
@@ -257,7 +257,7 @@ export const buildCatalog = (facts: Facts) => {
         caption: { text: "Verify is part of Pro.", emphasis: ["Pro"] },
         graphic: {
           type: "figure",
-          kicker: "Signed-in free accounts get a 403",
+          kicker: "Signed-in free accounts can't run Verify",
           value: "Pro",
           note: "Verify is part of Pro. It re-checks all 10 before you spend.",
           size: 88,

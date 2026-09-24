@@ -15,6 +15,8 @@ export type VideoFootage = {
   offset?: number;
   rate?: number;
   focus: Focus | FocusKey[];
+  /** Omit the captured cursor. The opening Verify shot parks it on Claim. */
+  pointer?: boolean;
 };
 
 export type ImageFootage = {
@@ -145,8 +147,8 @@ export const Footage: React.FC<{
   const f = focusAt(spec.focus, sec);
   const v = viewFor(f, take.viewport.width, take.viewport.height, width, height);
   const toPanel = (x: number, y: number) => ({ x: (x - v.x0) * v.s, y: (y - v.y0) * v.s });
-  const pointer = take.device === "desktop" ? pointerAt(take.events, tt) : null;
-  const pulses = take.events.filter((e) => (e.type === "click" || e.type === "tap") && tt >= e.t && tt - e.t < 0.55);
+  const pointer = spec.pointer === false || take.device !== "desktop" ? null : pointerAt(take.events, tt);
+  const pulses = spec.pointer === false ? [] : take.events.filter((e) => (e.type === "click" || e.type === "tap") && tt >= e.t && tt - e.t < 0.55);
   const size = 40 * pointerScale;
 
   return (
