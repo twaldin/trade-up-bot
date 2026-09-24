@@ -308,6 +308,18 @@
   font-size: 13px;
 }
 
+/* The hero CTA is a full phrase. Nowrap keeps "Find Real Tradeups ->" on one
+   line; the narrow rule shrinks padding so it still fits beside the calculator
+   at 360px. */
+.preview-hero .preview-btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 399px) {
+  .preview-hero { padding-left: 16px; padding-right: 16px; }
+  .preview-hero .preview-btn--lg { padding: 0 10px; font-size: 12px; }
+}
+
 .preview-hero__note {
   font-size: 12px;
   color: var(--text-muted);

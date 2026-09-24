@@ -68,7 +68,7 @@ describe("preview landing depth", () => {
     expect(landing).toContain('to="/faq"');
     expect(landing).toContain('to="/blog"');
     expect(landing).toContain('to="/pricing"');
-    expect(landing).toContain("$6.99");
+    expect(landing).toContain('proPriceLine("monthly")');
     expect(landing).toContain("Free");
     expect(faqQuestions.length).toBeGreaterThan(5);
     expect(PREVIEW_FAQ).toHaveLength(5);

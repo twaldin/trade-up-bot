@@ -12,6 +12,7 @@ import {
   PREVIEW_PRO_PRICES,
 } from "../../src/preview/lib/copy.js";
 import { HOMEPAGE_SEO } from "../../server/static-seo-pages.js";
+import { BOARD_LIST_INCLUDE } from "../../src/preview/lib/board-load.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -22,6 +23,7 @@ const pricing = read("../../src/preview/pages/PreviewPricing.tsx");
 const css = read("../../src/preview/preview.css");
 const heroProofLib = read("../../src/preview/lib/hero-proof.ts");
 const board = read("../../src/preview/pages/PreviewBoard.tsx");
+const boardLoad = read("../../src/preview/lib/board-load.ts");
 
 function cssBlock(source: string, header: string): string {
   const at = source.indexOf(header);
@@ -230,8 +232,8 @@ describe("How it works stays the signed 4-step pipeline", () => {
       "Verify (Pro)",
       "Claim",
     ]);
-    expect(PREVIEW_VALUE.map(([title]) => title)).toContain("Verify before buying (Pro)");
-    expect(HOMEPAGE_SEO.bodyHtml).toContain("<h3>Verify before buying (Pro)</h3>");
+    expect(PREVIEW_VALUE.map(([title]) => title)).toContain("Verify (Pro) before buying");
+    expect(HOMEPAGE_SEO.bodyHtml).toContain("<h3>Verify (Pro) before buying</h3>");
     expect(HOMEPAGE_SEO.bodyHtml).toContain("<h2>How it works</h2>");
     for (const step of PREVIEW_HOW) {
       expect(HOMEPAGE_SEO.bodyHtml).toContain(`<h3>${step.title}</h3>`);
@@ -240,13 +242,32 @@ describe("How it works stays the signed 4-step pipeline", () => {
   });
 });
 
+describe("landing list fetch uses the shared include", () => {
+  it("loads trade-ups through the board hook, which asks for outcomes and inputs", () => {
+    expect(landing).toContain("usePreviewTradeUps({ perPage: 5 })");
+    expect(board).toContain("boardListUrl(key, page)");
+    expect(boardLoad).toContain(`include=${"${BOARD_LIST_INCLUDE}"}`);
+    expect(BOARD_LIST_INCLUDE).toBe("outcomes,inputs");
+  });
+});
+
+describe("hero CTA stays one line on a phone", () => {
+  it("does not wrap the Find Real Tradeups label", () => {
+    expect(cssBlock(css, ".preview-hero .preview-btn {")).toMatch(/white-space:\s*nowrap/);
+    const narrow = cssBlock(css, "@media (max-width: 399px)");
+    expect(narrow).toMatch(/\.preview-hero \.preview-btn--lg\s*\{[^}]*font-size:\s*12px/);
+  });
+});
+
 describe("pricing teaser shows Pro value before the paywall", () => {
-  it("shows every monthly price with its period", () => {
+  it("shows every monthly price with its period, from the shared price module", () => {
     const at = landing.indexOf('id="pricing"');
     const section = landing.slice(at, landing.indexOf("</section>", at));
-    expect(section).toContain("Free, then Pro at $6.99/mo");
-    expect(section).toContain("$6.99<span>/mo</span>");
-    expect(section).not.toMatch(/\$6\.99(?!\/mo|<span>\/mo<\/span>)/);
+    expect(section).toContain('Free, then Pro at {proPriceLine("monthly")}');
+    expect(section).toContain("{PRO_PRICE.monthly.amount}<span>{PRO_PRICE.monthly.unit}</span>");
+    expect(section).not.toContain("$6.99");
+    expect(landing).not.toContain("$6.99");
+    expect(PREVIEW_PRO_PRICES).toBe("Or $5/mo · billed $59.99/year · $74.99 one-time");
     expect(HOMEPAGE_SEO.bodyHtml).toContain("Pro — $6.99/mo");
     expect(HOMEPAGE_SEO.bodyHtml).not.toMatch(/\$6\.99(?!\/mo)/);
   });
@@ -259,8 +280,9 @@ describe("pricing teaser shows Pro value before the paywall", () => {
     expect(PREVIEW_PLAN_PRO.length).toBeGreaterThanOrEqual(3);
     for (const price of ["$59.99", "$74.99"]) {
       expect(PREVIEW_PRO_PRICES).toContain(price);
-      expect(pricing).toContain(price);
     }
+    expect(pricing).toContain("PRO_PRICE.yearly");
+    expect(pricing).toContain("PRO_PRICE.lifetime");
   });
 
   it("only quotes Pro limits the pricing page already promises", () => {
@@ -271,7 +293,7 @@ describe("pricing teaser shows Pro value before the paywall", () => {
     expect(pro).toMatch(/up to 5/i);
     expect(pricing).toContain('pro: "20/hr"');
     expect(pricing).toContain('pro: "Up to 5"');
-    expect(pricing).toContain("30 min lock");
+    expect(pricing).toContain("PRO_FEATURES");
   });
 
   it("offers a no-login free action next to the Pro action", () => {

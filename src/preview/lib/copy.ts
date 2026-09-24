@@ -1,3 +1,5 @@
+import { proPriceLine } from "./pro-pricing.js";
+
 /** Production landing copy — headlines and FAQ stay as-is. */
 
 export const PREVIEW_HEADLINE = "CS2 trade-ups built from real, buyable listings";
@@ -84,7 +86,7 @@ export const PREVIEW_PLAN_PRO = [
   "Claims (10/hr)",
 ] as const;
 
-export const PREVIEW_PRO_PRICES = "Or $59.99/year ($5/mo) · $74.99 lifetime";
+export const PREVIEW_PRO_PRICES = `Or ${proPriceLine("yearly")} · ${proPriceLine("lifetime")}`;
 
 export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees them the moment they're found.";
 

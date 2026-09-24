@@ -18,6 +18,7 @@ import {
   PREVIEW_VALUE_HEADLINE,
 } from "../src/preview/lib/copy.js";
 import { renderLandingStatsHtml, type LandingStatCounts } from "../src/preview/lib/landing-stats.js";
+import { proPriceLine } from "../src/preview/lib/pro-pricing.js";
 import { buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
 import { escapeHtml } from "./seo.js";
 
@@ -262,7 +263,7 @@ ${how}
 <h3>Free — $0</h3>
 <ul>${freePlan}</ul>
 <p><a href="/trade-ups">Browse free</a></p>
-<h3>Pro — $6.99/mo</h3>
+<h3>Pro — ${escapeHtml(proPriceLine("monthly"))}</h3>
 <ul>${proPlan}</ul>
 <p>${escapeHtml(PREVIEW_PRO_PRICES)}</p>
 <p><a href="/pricing">Compare plans</a></p>

@@ -18,6 +18,7 @@ import {
 import { FeeLine } from "../components/FeeLine.js";
 import { heroProof, pickHeroTradeUp } from "../lib/hero-proof.js";
 import { boardFeeLine } from "../lib/fees.js";
+import { PRO_PRICE, proPriceLine } from "../lib/pro-pricing.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
@@ -164,7 +165,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             <p className="preview-proof__label">Can return</p>
             {proof.outcomes.map((row) => {
               const { weapon, finish } = splitSkinName(row.name);
-              const odds = row.probability < 0.01 ? "<1%" : `${Math.round(row.probability * 100)}%`;
+              const share = row.probability < 0.01 ? "<1%" : `${Math.round(row.probability * 100)}%`;
               return (
                 <Link
                   key={row.name}
@@ -177,7 +178,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
                     {weapon && <em>{weapon}</em>}
                     <b>{finish}</b>
                   </span>
-                  <span className="preview-proof__odds">{odds}</span>
+                  <span className="preview-proof__odds">{share}</span>
                   <span className="preview-listing__price">{formatDollars(row.priceCents)}</span>
                   <span className={`preview-proof__delta ${toneOf(row.profitCents)}`}>{signedDollars(row.profitCents)}</span>
                 </Link>
@@ -413,7 +414,7 @@ export function PreviewLanding({
 
       <section id="pricing" className="preview-section">
         <p className="o-kicker">Pricing</p>
-        <h2>Free, then Pro at $6.99/mo</h2>
+        <h2>Free, then Pro at {proPriceLine("monthly")}</h2>
         <p className="preview-section__lede">
           Start free. Upgrade when the 3-hour delay costs you trade-ups.
         </p>
@@ -430,7 +431,7 @@ export function PreviewLanding({
           </article>
           <article className="preview-tile preview-tile--pro preview-tile--plan">
             <h3>Pro</h3>
-            <p className="preview-plan__price">$6.99<span>/mo</span></p>
+            <p className="preview-plan__price">{PRO_PRICE.monthly.amount}<span>{PRO_PRICE.monthly.unit}</span></p>
             <ul className="preview-plan__list">
               {PREVIEW_PLAN_PRO.map((item) => (
                 <li key={item}><Check size={12} aria-hidden />{item}</li>
