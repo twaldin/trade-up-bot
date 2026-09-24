@@ -367,7 +367,7 @@ export function PreviewLanding({
         <p className="o-kicker">Pipeline</p>
         <h2>How it works</h2>
         <p className="preview-section__lede">
-          Scan, discover, target the float, price it, then verify and claim before you buy.
+          Scan, discover, then verify and claim before you buy.
         </p>
         <div className="preview-steps preview-steps--pipeline">
           {PREVIEW_HOW.map((step) => (

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_NOTE,
+  PREVIEW_HOW,
   PREVIEW_PLAN_FREE,
   PREVIEW_PLAN_PRO,
   PREVIEW_PRO_PRICES,
@@ -210,6 +211,29 @@ describe("live proof ends in an action", () => {
   it("says the free view is delayed once, on the hero panel", () => {
     expect(landing.split("{DELAY_BANNER}").length - 1).toBe(1);
     expect(landing).toContain("isFree={live.isFree}");
+  });
+});
+
+describe("How it works stays the signed 4-step pipeline", () => {
+  it("ledes with scan, discover, verify, and claim", () => {
+    const at = landing.indexOf('id="how"');
+    const section = landing.slice(at, landing.indexOf("</section>", at));
+    expect(section).toContain("Scan, discover, then verify and claim before you buy.");
+    expect(section).not.toContain("target the float");
+  });
+
+  it("labels Verify as Pro and keeps all four steps in the first HTML", () => {
+    expect(PREVIEW_HOW.map((step) => step.title)).toEqual([
+      "Scan",
+      "Discover",
+      "Verify (Pro)",
+      "Claim",
+    ]);
+    expect(HOMEPAGE_SEO.bodyHtml).toContain("<h2>How it works</h2>");
+    for (const step of PREVIEW_HOW) {
+      expect(HOMEPAGE_SEO.bodyHtml).toContain(`<h3>${step.title}</h3>`);
+      expect(HOMEPAGE_SEO.bodyHtml).toContain(step.body);
+    }
   });
 });
 
