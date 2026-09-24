@@ -36,14 +36,14 @@ export function isKnownSortKey(sort: string): boolean {
   return Object.hasOwn(SORT_COLUMNS, sort) || Object.hasOwn(SORT_ALIASES, sort);
 }
 
-export function canonicalSortKey(sort: string | undefined): string {
-  if (!sort) return DEFAULT_SORT;
+export function canonicalSortKey(sort: unknown): string {
+  if (typeof sort !== "string" || !sort) return DEFAULT_SORT;
   if (Object.hasOwn(SORT_COLUMNS, sort)) return sort;
   if (Object.hasOwn(SORT_ALIASES, sort)) return SORT_ALIASES[sort];
   return DEFAULT_SORT;
 }
 
-export function tradeUpSortColumn(sort: string | undefined): string {
+export function tradeUpSortColumn(sort: unknown): string {
   return SORT_COLUMNS[canonicalSortKey(sort)];
 }
 
@@ -62,37 +62,47 @@ export const NO_CHANCE_MATCH = "no_match";
  * the filter; NO_CHANCE_MATCH for non-numeric or outside 0–100.
  */
 export function chanceThreshold(
-  percent: string | undefined,
+  percent: unknown,
   bound: "min" | "max",
 ): number | null | typeof NO_CHANCE_MATCH {
-  if (percent === undefined || percent.trim() === "") return null;
+  if (percent == null) return null;
+  if (typeof percent !== "string") return NO_CHANCE_MATCH;
+  if (percent.trim() === "") return null;
   const value = Number(percent);
   if (!Number.isFinite(value) || value < 0 || value > 100) return NO_CHANCE_MATCH;
   const fraction = value / 100;
   return bound === "min" ? fraction - CHANCE_TOLERANCE : fraction + CHANCE_TOLERANCE;
 }
 
-const asString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
-
 /**
  * Cache key built from what the handler will actually run, so equivalent
  * queries share an entry and an alias can never be served a result that was
  * cached under a different interpretation. Stays under the `tu:` prefix that
  * the daemon and claims invalidate.
+ *
+ * `tier` is the effective delay tier: internal-token calls are "pro" (no delay),
+ * same as a signed-in pro user. Anonymous stays "free".
  */
 export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string, tier: string): string {
   const normalized: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(query)) {
     if (value === undefined || value === "") continue;
+    if (name === "page" && (value === "1" || value === 1)) continue;
     normalized[name] = value;
   }
-  normalized.sort = canonicalSortKey(asString(query.sort));
+  normalized.sort = canonicalSortKey(query.sort);
   normalized.order = query.order === "asc" ? "asc" : "desc";
   for (const [name, bound] of [["min_chance", "min"], ["max_chance", "max"]] as const) {
-    const threshold = chanceThreshold(asString(query[name]), bound);
+    const threshold = chanceThreshold(query[name], bound);
     if (threshold === null) delete normalized[name];
     else normalized[name] = threshold;
   }
   const ordered = Object.fromEntries(Object.entries(normalized).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
   return `tu:v2:${JSON.stringify(ordered)}${viewer}${tier}`;
+}
+
+/** Delay tier the list handler will actually apply, including the internal bot token. */
+export function listCacheTier(opts: { tier?: string; authorization?: string; internalToken?: string }): string {
+  const internal = Boolean(opts.internalToken && opts.authorization === `Bearer ${opts.internalToken}`);
+  return internal ? "pro" : (opts.tier || "free");
 }

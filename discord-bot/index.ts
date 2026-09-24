@@ -86,7 +86,7 @@ const commands = [
       opt.setName("max_cost").setDescription("Maximum cost in dollars"),
     )
     .addNumberOption(opt =>
-      opt.setName("min_chance").setDescription("Minimum chance to profit (0-100)"),
+      opt.setName("min_chance").setDescription("Minimum chance to profit (0-100)").setMinValue(0).setMaxValue(100),
     )
     .addNumberOption(opt =>
       opt.setName("min_roi").setDescription("Minimum ROI percentage"),

@@ -6,6 +6,7 @@ import {
   canonicalSortKey,
   chanceThreshold,
   isKnownSortKey,
+  listCacheTier,
   NO_CHANCE_MATCH,
   tradeUpSortColumn,
   tradeUpsCacheKey,
@@ -35,13 +36,15 @@ describe("tradeUpSortColumn", () => {
     expect(tradeUpSortColumn("newest")).toBe("t.created_at");
   });
 
-  it("falls back to trade_up_score for missing or unknown keys", () => {
+  it("falls back to trade_up_score for missing, unknown, or non-string keys", () => {
     expect(tradeUpSortColumn(undefined)).toBe("t.trade_up_score");
     expect(tradeUpSortColumn("")).toBe("t.trade_up_score");
     expect(tradeUpSortColumn("nope")).toBe("t.trade_up_score");
     expect(tradeUpSortColumn("__proto__")).toBe("t.trade_up_score");
     expect(tradeUpSortColumn("toString")).toBe("t.trade_up_score");
     expect(canonicalSortKey("constructor")).toBe("trade_up_score");
+    expect(canonicalSortKey(["profit"])).toBe("trade_up_score");
+    expect(tradeUpSortColumn(["profit"])).toBe("t.trade_up_score");
   });
 
   it("knows every sort the preview board offers", () => {
@@ -111,6 +114,12 @@ describe("chanceThreshold", () => {
     expect(chanceThreshold("", "min")).toBeNull();
     expect(chanceThreshold("  ", "max")).toBeNull();
   });
+
+  it("matches nothing for repeated or array chance params instead of throwing", () => {
+    expect(chanceThreshold(["40"], "min")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold(["100", "1"], "max")).toBe(NO_CHANCE_MATCH);
+    expect(chanceThreshold(40, "min")).toBe(NO_CHANCE_MATCH);
+  });
 });
 
 describe("tradeUpsCacheKey", () => {
@@ -151,9 +160,46 @@ describe("tradeUpsCacheKey", () => {
     expect(key({}).startsWith("tu:")).toBe(true);
   });
 
+  it("does not key an array sort as the default while the handler sorts by that column", () => {
+    expect(key({ sort: ["profit"] })).toBe(key({}));
+    expect(tradeUpSortColumn(["profit"])).toBe(tradeUpSortColumn(undefined));
+  });
+
+  it("keys an array chance as no-match, never as the unfiltered list", () => {
+    expect(key({ min_chance: ["40", "100"] })).not.toBe(key({}));
+    expect(key({ min_chance: ["40"] })).toBe(key({ min_chance: "abc" }));
+    expect(key({ max_chance: ["5"] })).not.toBe(key({}));
+  });
+
+  it("treats page=1 and a missing page as the same list", () => {
+    expect(key({ page: "1" })).toBe(key({}));
+    expect(key({ page: "2" })).not.toBe(key({}));
+  });
+
+  it("gives anonymous and pro or internal callers different keys", () => {
+    const anon = tradeUpsCacheKey({}, "anon", listCacheTier({}));
+    const pro = tradeUpsCacheKey({}, "steam-pro", listCacheTier({ tier: "pro" }));
+    const internal = tradeUpsCacheKey({}, "anon", listCacheTier({
+      authorization: "Bearer bot-token",
+      internalToken: "bot-token",
+    }));
+    expect(anon).not.toBe(pro);
+    expect(anon).not.toBe(internal);
+    expect(listCacheTier({ authorization: "Bearer nope", internalToken: "bot-token" })).toBe("free");
+  });
+
   it("is what the list route caches under", () => {
     const route = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../server/routes/trade-ups.ts"), "utf-8");
+    expect(route).toContain("listCacheTier(");
     expect(route).toContain("tradeUpsCacheKey(req.query");
     expect(route).not.toContain('"tu:" + JSON.stringify(req.query)');
+  });
+});
+
+describe("discord /top min_chance bounds", () => {
+  it("rejects chance values outside 0–100 at the slash command", () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../discord-bot/index.ts"), "utf-8");
+    expect(source).toContain('setName("min_chance")');
+    expect(source).toMatch(/setName\("min_chance"\)[\s\S]*?setMinValue\(0\)\.setMaxValue\(100\)/);
   });
 });
