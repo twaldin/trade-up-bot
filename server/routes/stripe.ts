@@ -6,6 +6,12 @@ import Stripe from "stripe";
 import pg from "pg";
 import { requireAuth, invalidateAllUserCache, invalidateUserCache, type User } from "../auth.js";
 import { syncDiscordRoles } from "../discord-rest.js";
+import {
+  checkoutSessionTrackingFields,
+  checkoutTrackingMetadata,
+  serverTrackingConfig,
+  trackCheckoutCompleted,
+} from "../tracking.js";
 
 // Read at request time, not module load (env may not be loaded yet)
 function getPlan(plan: string): { priceId: string; name: string; mode: "subscription" | "payment" } | null {
@@ -102,6 +108,15 @@ export function stripeRouter(pool: pg.Pool): Router {
 
         const planInfo = getPlan(plan)!;
         const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+        const realIp = req.headers["x-real-ip"];
+        const trackingMetadata = checkoutTrackingMetadata({
+          config: serverTrackingConfig(),
+          checkoutPlan: plan,
+          attribution: req.body?.attribution,
+          steamId: user.steam_id,
+          userAgent: req.headers["user-agent"],
+          ip: typeof realIp === "string" && realIp ? realIp : req.ip,
+        });
         const session = await stripe.checkout.sessions.create({
           customer: customerId,
           mode: planInfo.mode,
@@ -109,6 +124,7 @@ export function stripeRouter(pool: pg.Pool): Router {
           allow_promotion_codes: true,
           success_url: `${process.env.BASE_URL}/?upgraded=${plan}&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.BASE_URL}/?cancelled=true`,
+          ...(trackingMetadata ? { metadata: trackingMetadata } : {}),
         }, { idempotencyKey: `checkout_${user.steam_id}_${plan}_${bucket}` });
 
         res.json({ url: session.url });
@@ -148,6 +164,7 @@ export function stripeRouter(pool: pg.Pool): Router {
         transaction_id: cs.id,
         value: (cs.amount_total ?? 0) / 100,
         currency: (cs.currency ?? "usd").toUpperCase(),
+        ...checkoutSessionTrackingFields(serverTrackingConfig()),
       });
     } catch {
       res.status(404).json({ error: "Checkout session not found" });
@@ -282,6 +299,22 @@ export function stripeRouter(pool: pg.Pool): Router {
             console.error(`Discord role sync failed: ${err.message}`));
         }
         break;
+      }
+    }
+
+    if (event.type === "checkout.session.completed") {
+      try {
+        const cs = event.data.object as Stripe.Checkout.Session;
+        void trackCheckoutCompleted({
+          session: cs,
+          eventCreatedSec: event.created,
+          listLineItemPriceIds: async () => {
+            const items = await stripe.checkout.sessions.listLineItems(cs.id);
+            return items.data.flatMap((item) => (item.price?.id ? [item.price.id] : []));
+          },
+        });
+      } catch {
+        // Conversion tracking is best-effort; it must never fail the webhook.
       }
     }
 

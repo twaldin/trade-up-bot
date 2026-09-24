@@ -90,6 +90,7 @@ import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
 import { injectLandingStats, landingStatsFromSources } from "../src/preview/lib/landing-stats.js";
 import { HOMEPAGE_SEO, STATIC_SEO_PAGES, renderHomepageSeoBody } from "./static-seo-pages.js";
 import { writeHomepageFirstHtmlFile } from "./homepage-first-html.js";
+import { trackingCspSources } from "./tracking.js";
 
 const app = express();
 const PORT = 3001;
@@ -120,15 +121,16 @@ app.use(rateLimit({
 }));
 app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));
 app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKey }));
+const trackingCsp = trackingCspSources();
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", ...trackingCsp.scriptSrc],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "https://community.cloudflare.steamstatic.com", "https://community.akamai.steamstatic.com", "https://community.steamstatic.com", "data:"],
-      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com", "https://open.er-api.com"],
+      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "https://community.cloudflare.steamstatic.com", "https://community.akamai.steamstatic.com", "https://community.steamstatic.com", "data:", ...trackingCsp.imgSrc],
+      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com", "https://open.er-api.com", ...trackingCsp.connectSrc],
       frameSrc: ["https://checkout.stripe.com"],
     },
   },
