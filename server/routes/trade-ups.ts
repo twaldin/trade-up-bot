@@ -6,6 +6,7 @@ import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
+import { chanceThreshold, tradeUpSortColumn } from "./trade-ups-query.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 function canonicalListingStatus(
@@ -250,13 +251,15 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       where += ` AND t.total_cost_cents >= $${paramIndex++}`;
       params.push(parseInt(min_cost));
     }
-    if (min_chance) {
+    const minChance = chanceThreshold(min_chance, "min");
+    if (minChance !== null) {
       where += ` AND t.chance_to_profit >= $${paramIndex++}`;
-      params.push(parseFloat(min_chance) / 100);
+      params.push(minChance);
     }
-    if (max_chance) {
+    const maxChance = chanceThreshold(max_chance, "max");
+    if (maxChance !== null) {
       where += ` AND t.chance_to_profit <= $${paramIndex++}`;
-      params.push(parseFloat(max_chance) / 100);
+      params.push(maxChance);
     }
 
     // Skin name filter (exact match from autocomplete, or fuzzy search)
@@ -340,19 +343,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       params.push(parseInt(min_win));
     }
 
-    const sortMap: Record<string, string> = {
-      trade_up_score: "t.trade_up_score",
-      score: "t.trade_up_score",
-      profit: "t.profit_cents",
-      roi: "t.roi_percentage",
-      chance: "t.chance_to_profit",
-      cost: "t.total_cost_cents",
-      ev: "t.expected_value_cents",
-      created: "t.created_at",
-      best: "t.best_case_cents",
-      worst: "t.worst_case_cents",
-    };
-    const sortCol = sortMap[sort] ?? "t.trade_up_score";
+    const sortCol = tradeUpSortColumn(sort);
     const sortOrder = order === "asc" ? "ASC" : "DESC";
 
     // API-surface diversity: TradeUpStore-style top-N per collection-combo
