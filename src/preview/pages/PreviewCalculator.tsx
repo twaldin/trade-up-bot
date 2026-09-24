@@ -4,6 +4,7 @@ import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../share
 import { formatDollars } from "../../utils/format.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
+import { SLOW_DOWN_COPY, isRateLimitError, readPagedJson } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -108,8 +109,8 @@ export function PreviewCalculator() {
     setLoading(true);
     try {
       const res = await fetch("/api/calculator/example", { credentials: "include" });
-      const data = await res.json() as { inputs?: CalculatorExampleSlot[] };
-      if (!res.ok || !data.inputs?.length) {
+      const data = await readPagedJson<{ inputs?: CalculatorExampleSlot[] }>(res);
+      if (!data.inputs?.length) {
         setError(EXAMPLE_UNAVAILABLE);
         setLoading(false);
         return;
@@ -117,8 +118,8 @@ export function PreviewCalculator() {
       setSlots(data.inputs);
       setIsExample(true);
       await evaluate(data.inputs);
-    } catch {
-      setError(EXAMPLE_UNAVAILABLE);
+    } catch (err) {
+      setError(isRateLimitError(err) ? SLOW_DOWN_COPY : EXAMPLE_UNAVAILABLE);
       setLoading(false);
     }
   };

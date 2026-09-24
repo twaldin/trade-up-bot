@@ -74,6 +74,14 @@ describe("calculator first session", () => {
     expect(load).toContain("await evaluate(data.inputs)");
   });
 
+  it("reads the example through the kit rate-limit path instead of a bare res.json()", () => {
+    const load = calc.slice(calc.indexOf("const loadExample"), calc.indexOf("const calculate"));
+    expect(load).toContain("readPagedJson");
+    expect(load).toContain("isRateLimitError(err)");
+    expect(load).toContain("SLOW_DOWN_COPY");
+    expect(load).not.toContain("res.json()");
+  });
+
   it("colours calculator profit with the shared tone, so break-even stays neutral", () => {
     expect(calc).toContain("tone={signClass(profit)}");
     expect(calc).not.toContain('profit >= 0 ? "is-plus"');
