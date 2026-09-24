@@ -125,6 +125,35 @@ describe("preview face loading is bounded", () => {
   });
 });
 
+describe("preview faces under the rate limit", () => {
+  it("treats a 429 as rate-limited, not as a missing faces route: no /__face/ fan-out", async () => {
+    const { browseHeldUntil, resetBrowseFetchState } = await import("../../src/preview/lib/page-fetch.js");
+    resetBrowseFetchState();
+    const cache = createFaceCache();
+    const names = Array.from({ length: 60 }, (_, i) => `AK-47 | Skin ${i}`);
+    // express-rate-limit's default 429 body is a string, served as text/html.
+    const fetchFn = vi.fn(async (_input: RequestInfo | URL) => new Response("Too many requests, please try again later.", {
+      status: 429,
+      headers: { "content-type": "text/html; charset=utf-8", "retry-after": "20" },
+    }));
+    const before = Date.now();
+    await loadFaces(names, cache, fetchFn as unknown as typeof fetch, 200);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn.mock.calls.every(([url]) => String(url).startsWith("/api/preview/faces"))).toBe(true);
+    expect(browseHeldUntil()).toBeGreaterThanOrEqual(before + 20_000);
+    resetBrowseFetchState();
+  });
+
+  it("still scrapes when the host really has no faces route", async () => {
+    const cache = createFaceCache();
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => (String(input).startsWith("/api/preview/faces")
+      ? new Response("<html>not found</html>", { status: 404, headers: { "content-type": "text/html" } })
+      : new Response("<html></html>", { status: 200, headers: { "content-type": "text/html" } })));
+    await loadFaces(["AWP | Asiimov"], cache, fetchFn as unknown as typeof fetch, 200);
+    expect(fetchFn.mock.calls.some(([url]) => String(url).startsWith("/__face/"))).toBe(true);
+  });
+});
+
 describe("preview face cache keys", () => {
   it("round-trips names that contain the market-hash pipe", () => {
     const names = ["AK-47 | Nightwish", "Dual Berettas | Melondrama", "MP9 | Starlight Protector"];

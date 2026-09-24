@@ -6,8 +6,16 @@ import { FilterBar, EMPTY_FILTERS, filtersToParams } from "./FilterBar.js";
 import type { Filters } from "./FilterBar.js";
 import { Button } from "@shared/components/ui/button.js";
 import { Badge } from "@shared/components/ui/badge.js";
-import type { TradeUp } from "../../shared/types.js";
 import { TRADE_UP_TYPE_TABS } from "../utils/rarity.js";
+import {
+  applyBoardFetch,
+  collectionTradeUpsCopy,
+  runBoardFetchLoop,
+  sleep,
+  type BoardSnapshot,
+} from "../lib/trade-ups-board.js";
+
+const EMPTY_SNAPSHOT: BoardSnapshot = { tradeUps: [], total: 0, totalProfitable: 0, loadKind: "ok" };
 
 interface Props {
   collectionName: string;
@@ -30,8 +38,7 @@ const RARITY_TABS = [
 
 export function CollectionViewer({ collectionName, onBack, onNavigateCollection }: Props) {
   const [knifePool, setKnifePool] = useState<{ knifeTypes: string[]; gloveTypes: string[]; finishCount: number } | null>(null);
-  const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
-  const [tradeUpTotal, setTradeUpTotal] = useState(0);
+  const [snapshot, setSnapshot] = useState<BoardSnapshot>(EMPTY_SNAPSHOT);
   const [tradeUpsLoading, setTradeUpsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [skinRarity, setSkinRarity] = useState("all");
@@ -53,7 +60,8 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
     return () => ctrl.abort();
   }, [collectionName]);
 
-  // Fetch trade-ups with collection filter + type + filters
+  // Fetch trade-ups with collection filter + type + filters. A 429 retries with
+  // backoff and keeps the last good rows instead of painting an empty result.
   useEffect(() => {
     const ctrl = new AbortController();
     setTradeUpsLoading(true);
@@ -66,16 +74,26 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
     params.set("include_stale", "true");
     if (tuType !== "all") params.set("type", tuType);
 
-    fetch(`/api/trade-ups?${params}`, { credentials: "include", signal: ctrl.signal })
-      .then(r => r.json())
-      .then(data => {
-        setTradeUps(data.trade_ups || []);
-        setTradeUpTotal(data.total || 0);
-      })
+    runBoardFetchLoop({
+      signal: ctrl.signal,
+      sleep: (ms) => sleep(ms, ctrl.signal),
+      request: async () => {
+        const res = await fetch(`/api/trade-ups?${params}`, { credentials: "include", signal: ctrl.signal });
+        const body: unknown = await res.json().catch(() => null);
+        return { status: res.status, ok: res.ok, body };
+      },
+      onResult: (result) => {
+        if (ctrl.signal.aborted) return;
+        setSnapshot((prev) => applyBoardFetch(prev, result));
+      },
+    })
       .catch(() => {})
       .finally(() => { if (!ctrl.signal.aborted) setTradeUpsLoading(false); });
     return () => ctrl.abort();
   }, [collectionName, tuSort, tuOrder, tuType, tuPage, filters]);
+
+  const { tradeUps, total: tradeUpTotal } = snapshot;
+  const tradeUpsNotice = collectionTradeUpsCopy({ loading: tradeUpsLoading, snapshot });
 
   const handleTuSort = (column: string) => {
     if (tuSort === column) setTuOrder(tuOrder === "desc" ? "asc" : "desc");
@@ -163,10 +181,13 @@ export function CollectionViewer({ collectionName, onBack, onNavigateCollection 
                 <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
               </div>
 
-              {tradeUpsLoading ? (
+              {tradeUpsNotice && tradeUps.length > 0 && (
+                <div className="py-2 text-center text-sm text-muted-foreground">{tradeUpsNotice}</div>
+              )}
+              {tradeUps.length === 0 && tradeUpsNotice ? (
+                <div className="py-8 text-center text-muted-foreground">{tradeUpsNotice}</div>
+              ) : tradeUpsLoading && tradeUps.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground animate-pulse">Loading trade-ups...</div>
-              ) : tradeUps.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">No trade-ups found involving this collection.</div>
               ) : (
                 <>
                   <TradeUpTable

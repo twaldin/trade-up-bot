@@ -162,6 +162,17 @@ export function emptyStateCopy(kind: BoardEmptyKind): string | null {
   return null;
 }
 
+export const COLLECTION_EMPTY_COPY = "No trade-ups found involving this collection.";
+
+/** CollectionViewer's notice: a throttle says so, even over last-good rows. */
+export function collectionTradeUpsCopy(opts: { loading: boolean; snapshot: BoardSnapshot }): string | null {
+  const { loading, snapshot } = opts;
+  if (snapshot.loadKind === "rate_limited") return RATE_LIMIT_COPY;
+  if (loading) return null;
+  if (snapshot.loadKind === "error") return snapshot.tradeUps.length > 0 ? null : LOAD_ERROR_COPY;
+  return snapshot.tradeUps.length === 0 ? COLLECTION_EMPTY_COPY : null;
+}
+
 export function backoffMs(attempt: number): number {
   const exp = Math.max(0, Math.min(attempt, 4));
   return Math.min(BACKOFF_CAP_MS, BACKOFF_MS * 2 ** exp);

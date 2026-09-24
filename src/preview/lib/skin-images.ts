@@ -1,6 +1,7 @@
 /** Cached name → Steam / stored image_url. Never fetches ByMykel JSON. */
 
 import { toSlug } from "../../../shared/slugs.js";
+import { noteRateLimited, parseRetryAfter, waitForBrowseHold } from "./page-fetch.js";
 
 export const BYMYKEL_URL_RE = /bymykel|CSGO-API/i;
 
@@ -146,25 +147,36 @@ function inflightFor(cache: FaceMap): Map<string, Promise<void>> {
   return inflight;
 }
 
-/** Returns true when the host has no faces route and the caller should scrape. */
-async function fillFaceBatch(batch: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<boolean> {
+/**
+ * "missing" means the host has no faces route and the caller should scrape.
+ * A 429 is not that: express-rate-limit's body is text/html, and scraping in
+ * response would turn one throttled request into up to 48 more.
+ */
+type FaceBatchOutcome = "ok" | "missing" | "throttled";
+
+async function fillFaceBatch(batch: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<FaceBatchOutcome> {
   try {
+    await waitForBrowseHold();
     const res = await fetchFn(facesRequestUrl(batch), { credentials: "include" });
+    if (res.status === 429) {
+      noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
+      return "throttled";
+    }
     const type = res.headers.get("content-type") ?? "";
-    if (res.status === 404 || type.includes("text/html")) return true;
+    if (res.status === 404 || type.includes("text/html")) return "missing";
     if (res.ok) {
       const data = (await res.json()) as { faces?: Record<string, string | null> };
       if (data.faces) rememberFaces(cache, data.faces);
     }
-    return false;
+    return "ok";
   } catch {
-    return true;
+    return "missing";
   }
 }
 
 async function fillFaces(missing: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<void> {
   const outcomes = await Promise.all(faceBatches(missing).map((batch) => fillFaceBatch(batch, cache, fetchFn)));
-  const facesMissing = outcomes.some(Boolean);
+  const facesMissing = outcomes.includes("missing") && !outcomes.includes("throttled");
 
   const stillMissing = missing.filter((name) => !cache.has(name));
   if (facesMissing && stillMissing.length > 0) {

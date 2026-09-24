@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
@@ -12,7 +12,7 @@ import {
   NOTE_OF_OUTCOMES,
 } from "../lib/copy.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
-import { SLOW_DOWN_COPY, isRateLimitError, readEvaluationBody, readPagedJson } from "../lib/page-fetch.js";
+import { SLOW_DOWN_COPY, browseErrorKind, fetchBrowseJson, isRateLimitError, readEvaluationBody, readPagedJson, retryDelayMs } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -33,6 +33,9 @@ interface CalculatorStats {
 }
 
 const EXAMPLE_UNAVAILABLE = "The example is not available right now. Search a skin to build one instead.";
+/** Matches the server's 300s `calc_search:` cache. */
+const SEARCH_TTL_MS = 5 * 60_000;
+const SEARCH_FAILED_COPY = "Search is unavailable right now. Try again.";
 
 export function PreviewCalculator() {
   const [slots, setSlots] = useState<CalculatorExampleSlot[]>(emptyCalculatorSlots());
@@ -46,16 +49,47 @@ export function PreviewCalculator() {
   // Faces land in the board's module-level cache, so a bump is what repaints the art.
   const [, setFaceTick] = useState(0);
   const debounceRef = useRef<number | undefined>(undefined);
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
+  const searchAbort = useRef<AbortController | null>(null);
+  const searchRetry = useRef<number | undefined>(undefined);
 
-  const search = useCallback((q: string) => {
+  // A 429 keeps the last results on screen and retries once the hold lifts;
+  // it must not read as "no skin matches".
+  const search = useCallback(function run(q: string) {
+    searchAbort.current?.abort();
+    window.clearTimeout(searchRetry.current);
     if (q.length < 2) {
       setResults([]);
+      setSearchNotice(null);
       return;
     }
-    fetch(`/api/calculator/search?q=${encodeURIComponent(q)}`, { credentials: "include" })
-      .then((res) => res.json())
-      .then((data: { results?: SearchResult[] }) => setResults(data.results ?? []))
-      .catch(() => setResults([]));
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    fetchBrowseJson<{ results?: SearchResult[] }>(`/api/calculator/search?q=${encodeURIComponent(q)}`, {
+      signal: controller.signal,
+      ttlMs: SEARCH_TTL_MS,
+    })
+      .then((data) => {
+        setResults(data.results ?? []);
+        setSearchNotice(null);
+      })
+      .catch((err: unknown) => {
+        const kind = browseErrorKind(err);
+        if (kind === "aborted") return;
+        if (kind === "throttled") {
+          setSearchNotice(SLOW_DOWN_COPY);
+          searchRetry.current = window.setTimeout(() => run(q), retryDelayMs());
+          return;
+        }
+        setResults([]);
+        setSearchNotice(SEARCH_FAILED_COPY);
+      });
+  }, []);
+
+  useEffect(() => () => {
+    searchAbort.current?.abort();
+    window.clearTimeout(searchRetry.current);
+    window.clearTimeout(debounceRef.current);
   }, []);
 
   const addResult = (item: SearchResult) => {
@@ -74,7 +108,7 @@ export function PreviewCalculator() {
       return next;
     });
     setQuery("");
-    setResults([]);
+    search("");
   };
 
   const evaluate = async (source: CalculatorExampleSlot[], origin: "example" | "custom") => {
@@ -188,6 +222,7 @@ export function PreviewCalculator() {
           Clear
         </button>
       </div>
+      {searchNotice && <p className="preview-note">{searchNotice}</p>}
       {results.length > 0 && (
         <div className="preview-rows">
           {results.slice(0, 8).map((item) => (
