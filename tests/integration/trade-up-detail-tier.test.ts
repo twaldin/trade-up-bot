@@ -139,6 +139,39 @@ describe("trade-up detail tier delay", () => {
     }
   });
 
+  it("redacts fresh rows for basic and leaves lifetime full", async () => {
+    const id = await insertTradeUp(ctx, "1 hour");
+
+    const basicHeaders = { "X-Test-User-Id": "user_basic", "X-Test-User-Tier": "basic" };
+    const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(basicHeaders);
+    expect(detail.status).toBe(200);
+    expectRedacted(detail.body);
+    const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(basicHeaders);
+    expect(inputs.status).toBe(200);
+    expectRedacted(inputs.body);
+    const list = await request(ctx.app)
+      .get("/api/trade-ups?include=inputs&per_page=50&type=classified_covert")
+      .set(basicHeaders);
+    expect(list.status).toBe(200);
+    expect(list.body.tier_config.delay).toBe(3 * 60 * 60);
+    expect(list.body.trade_ups.find((tu: { id: number }) => tu.id === id)).toBeUndefined();
+
+    const html = await request(ctx.app).get(`/trade-ups/${id}`).set(basicHeaders).set("User-Agent", GOOGLEBOT);
+    const section = inputSection(html.text);
+    expect(section).not.toMatch(/\$\d/);
+    expect(section.toLowerCase()).not.toMatch(/csfloat|skinport|dmarket|buff/);
+
+    const lifetimeHeaders = { "X-Test-User-Id": "user_life", "X-Test-User-Tier": "lifetime" };
+    const life = await request(ctx.app).get(`/api/trade-ups/${id}`).set(lifetimeHeaders);
+    expect(life.status).toBe(200);
+    expectFull(life.body);
+    const lifeList = await request(ctx.app)
+      .get("/api/trade-ups?per_page=50&type=classified_covert")
+      .set(lifetimeHeaders);
+    expect(lifeList.body.tier_config.delay).toBe(0);
+    expect(lifeList.body.trade_ups.find((tu: { id: number }) => tu.id === id)).toBeDefined();
+  });
+
   it("returns the full row to Pro even when the row is inside the delay", async () => {
     const id = await insertTradeUp(ctx, "1 hour");
     const headers = { "X-Test-User-Id": "user_pro", "X-Test-User-Tier": "pro" };

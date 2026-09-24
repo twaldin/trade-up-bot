@@ -133,8 +133,8 @@ async function viewerOwnsClaim(pool: pg.Pool, req: Request, tradeUpId: number): 
 }
 
 /**
- * Free and anonymous viewers of a row younger than the list delay get a
- * summary only. Pro, internal, older rows, and the claimer get the full row.
+ * Non-Pro viewers (anon, free, basic) of a row younger than the list delay get a
+ * summary only. Pro, lifetime, internal, older rows, and the claimer get the full row.
  */
 export async function inputsAreRedacted(
   pool: pg.Pool,
@@ -327,9 +327,9 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       where = `WHERE t.is_theoretical = false AND t.listing_status = 'active'`;
     }
 
-    // Free tier: 3-hour delay
-    if (effectiveTier === "free") {
-      where += ` AND t.created_at <= NOW() - INTERVAL '10800 seconds'`;
+    // Every non-Pro tier (anon, free, basic) uses the same delay. Lifetime is Pro.
+    if (tierConfig.delay > 0) {
+      where += ` AND t.created_at <= NOW() - INTERVAL '${tierConfig.delay} seconds'`;
     }
 
 

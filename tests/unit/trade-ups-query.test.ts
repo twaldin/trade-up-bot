@@ -187,6 +187,9 @@ describe("tradeUpsCacheKey", () => {
     expect(anon).not.toBe(pro);
     expect(anon).not.toBe(internal);
     expect(listCacheTier({ authorization: "Bearer nope", internalToken: "bot-token" })).toBe("free");
+    expect(listCacheTier({ tier: "basic" })).toBe("free");
+    expect(listCacheTier({ tier: "lifetime" })).toBe("pro");
+    expect(listCacheTier({ tier: "basic" })).toBe(listCacheTier({ tier: "free" }));
   });
 
   it("is what the list route caches under", () => {
