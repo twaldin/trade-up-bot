@@ -6,7 +6,7 @@ import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
-import { chanceThreshold, tradeUpSortColumn } from "./trade-ups-query.js";
+import { chanceThreshold, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
 
 function canonicalListingStatus(
@@ -125,7 +125,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
   router.get("/api/trade-ups", cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
-    return "tu:" + JSON.stringify(req.query) + (req.user?.steam_id || "anon") + (req.user?.tier || "free");
+    return tradeUpsCacheKey(req.query, req.user?.steam_id || "anon", req.user?.tier || "free");
   }, 1800, async (req, res) => { // 30 min TTL — matches cycle time, daemon invalidates after each cycle
     const {
       sort = "trade_up_score",

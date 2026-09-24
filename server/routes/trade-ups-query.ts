@@ -5,32 +5,46 @@
  * - `min_chance` / `max_chance` are percents (0–100); the column is a 0–1 fraction.
  */
 
-export const TRADE_UP_SORT_COLUMNS: Readonly<Record<string, string>> = Object.freeze({
+const SORT_COLUMNS: Readonly<Record<string, string>> = Object.freeze({
   trade_up_score: "t.trade_up_score",
-  score: "t.trade_up_score",
   profit: "t.profit_cents",
-  profit_cents: "t.profit_cents",
   roi: "t.roi_percentage",
-  roi_percentage: "t.roi_percentage",
   chance: "t.chance_to_profit",
-  chance_to_profit: "t.chance_to_profit",
   cost: "t.total_cost_cents",
-  total_cost_cents: "t.total_cost_cents",
   ev: "t.expected_value_cents",
-  expected_value_cents: "t.expected_value_cents",
   created: "t.created_at",
-  created_at: "t.created_at",
   best: "t.best_case_cents",
-  best_case_cents: "t.best_case_cents",
   worst: "t.worst_case_cents",
-  worst_case_cents: "t.worst_case_cents",
 });
 
-const DEFAULT_SORT_COLUMN = "t.trade_up_score";
+const SORT_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  score: "trade_up_score",
+  profit_cents: "profit",
+  roi_percentage: "roi",
+  chance_to_profit: "chance",
+  total_cost_cents: "cost",
+  expected_value_cents: "ev",
+  created_at: "created",
+  newest: "created",
+  best_case_cents: "best",
+  worst_case_cents: "worst",
+});
+
+const DEFAULT_SORT = "trade_up_score";
+
+export function isKnownSortKey(sort: string): boolean {
+  return Object.hasOwn(SORT_COLUMNS, sort) || Object.hasOwn(SORT_ALIASES, sort);
+}
+
+export function canonicalSortKey(sort: string | undefined): string {
+  if (!sort) return DEFAULT_SORT;
+  if (Object.hasOwn(SORT_COLUMNS, sort)) return sort;
+  if (Object.hasOwn(SORT_ALIASES, sort)) return SORT_ALIASES[sort];
+  return DEFAULT_SORT;
+}
 
 export function tradeUpSortColumn(sort: string | undefined): string {
-  if (!sort || !Object.hasOwn(TRADE_UP_SORT_COLUMNS, sort)) return DEFAULT_SORT_COLUMN;
-  return TRADE_UP_SORT_COLUMNS[sort];
+  return SORT_COLUMNS[canonicalSortKey(sort)];
 }
 
 // chance_to_profit is a sum of float probabilities, so a certain trade-up can
@@ -44,4 +58,29 @@ export function chanceThreshold(percent: string | undefined, bound: "min" | "max
   if (!Number.isFinite(value)) return null;
   const fraction = Math.min(100, Math.max(0, value)) / 100;
   return bound === "min" ? fraction - CHANCE_TOLERANCE : fraction + CHANCE_TOLERANCE;
+}
+
+const asString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+/**
+ * Cache key built from what the handler will actually run, so equivalent
+ * queries share an entry and an alias can never be served a result that was
+ * cached under a different interpretation. Stays under the `tu:` prefix that
+ * the daemon and claims invalidate.
+ */
+export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string, tier: string): string {
+  const normalized: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(query)) {
+    if (value === undefined || value === "") continue;
+    normalized[name] = value;
+  }
+  normalized.sort = canonicalSortKey(asString(query.sort));
+  normalized.order = query.order === "asc" ? "asc" : "desc";
+  for (const [name, bound] of [["min_chance", "min"], ["max_chance", "max"]] as const) {
+    const threshold = chanceThreshold(asString(query[name]), bound);
+    if (threshold === null) delete normalized[name];
+    else normalized[name] = threshold;
+  }
+  const ordered = Object.fromEntries(Object.entries(normalized).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return `tu:v2:${JSON.stringify(ordered)}${viewer}${tier}`;
 }

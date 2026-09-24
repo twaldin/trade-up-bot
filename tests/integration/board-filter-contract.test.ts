@@ -4,6 +4,7 @@ import { createTestApp, type TestContext } from "./setup.js";
 
 // chance, profit, cost — every row is restricted_classified and under $60.
 // 0.1 * 10 sums to 0.9999999999999999: the engine's own "100%".
+// Row i was created i minutes before row i - 1, so row 0 is the newest.
 const ROWS: [number, number, number][] = [
   [1.0, 400, 3000],
   [0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1 + 0.1, 1200, 4000],
@@ -12,6 +13,7 @@ const ROWS: [number, number, number][] = [
   [0.0333, -405, 1331],
   [0.025, -1179, 2661],
   [0.5, 2500, 5000],
+  [0.4999, 50, 2000],
 ];
 
 interface Row { chance_to_profit: number; profit_cents: number; total_cost_cents: number; type: string }
@@ -25,9 +27,10 @@ describe("/api/trade-ups board filter contract", () => {
       await ctx.pool.query(`
         INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit,
           type, best_case_cents, worst_case_cents, listing_status, outcomes_json, output_skin_names, collection_names, created_at)
-        VALUES ($1, $2, $3, $4, $5, 'restricted_classified', $6, $7, 'active', '[]', $8, $9, NOW() - INTERVAL '4 hours')
+        VALUES ($1, $2, $3, $4, $5, 'restricted_classified', $6, $7, 'active', '[]', $8, $9,
+          NOW() - INTERVAL '4 hours' - make_interval(mins => $10))
       `, [cost, cost + profit, profit, Math.round((profit / cost) * 10000) / 100, chance,
-          profit + 500, profit - 500, ["Out"], [`Board Contract ${i}`]]);
+          profit + 500, profit - 500, ["Out"], [`Board Contract ${i}`], i]);
     }
   });
 
@@ -52,8 +55,15 @@ describe("/api/trade-ups board filter contract", () => {
     }
   });
 
-  it("min_chance is a percent: 40 keeps the 50% row and drops the ~3% rows", async () => {
+  it("min_chance is a percent: 40 keeps the ~50% rows and drops the ~3% rows", async () => {
     const rows = await list("type=restricted_classified&min_chance=40&sort=profit&order=desc");
+    expect(rows.map((r) => r.profit_cents)).toEqual([2500, 1200, 800, 400, 50]);
+  });
+
+  it("min_chance=50 keeps the 0.50 row and drops the 0.4999 row", async () => {
+    const rows = await list("type=restricted_classified&min_chance=50&sort=profit&order=desc");
+    expect(rows.map((r) => r.chance_to_profit)).toContain(0.5);
+    expect(rows.map((r) => r.chance_to_profit)).not.toContain(0.4999);
     expect(rows.map((r) => r.profit_cents)).toEqual([2500, 1200, 800, 400]);
   });
 
@@ -64,12 +74,22 @@ describe("/api/trade-ups board filter contract", () => {
 
   it("sort=profit_cents sorts by profit rather than falling back to score", async () => {
     const rows = await list("type=restricted_classified&sort=profit_cents&order=desc");
-    expect(rows.map((r) => r.profit_cents)).toEqual([2500, 1200, 800, 400, -405, -1008, -1179]);
+    expect(rows.map((r) => r.profit_cents)).toEqual([2500, 1200, 800, 400, 50, -405, -1008, -1179]);
   });
 
   it("sort=total_cost_cents ascending sorts by cost", async () => {
     const rows = await list("type=restricted_classified&sort=total_cost_cents&order=asc");
-    expect(rows.map((r) => r.total_cost_cents)).toEqual([1331, 2661, 3000, 4000, 4631, 5000, 5500]);
+    expect(rows.map((r) => r.total_cost_cents)).toEqual([1331, 2000, 2661, 3000, 4000, 4631, 5000, 5500]);
+  });
+
+  it("sort=created orders newest first, and newest is the same sort", async () => {
+    const newestFirst = ROWS.map(([, profit]) => profit);
+    const created = await list("type=restricted_classified&sort=created&order=desc");
+    expect(created.map((r) => r.profit_cents)).toEqual(newestFirst);
+    const newest = await list("type=restricted_classified&sort=newest&order=desc");
+    expect(newest.map((r) => r.profit_cents)).toEqual(newestFirst);
+    const oldest = await list("type=restricted_classified&sort=created&order=asc");
+    expect(oldest.map((r) => r.profit_cents)).toEqual([...newestFirst].reverse());
   });
 
   it("a non-numeric min_chance is ignored instead of erroring", async () => {
