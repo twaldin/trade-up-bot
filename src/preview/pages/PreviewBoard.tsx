@@ -70,7 +70,7 @@ export function boardFaceFor(name: string): string | null {
   return faceFor(FACE_CACHE, name);
 }
 
-function signedDollars(cents: number): string {
+export function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
 }
 
@@ -237,7 +237,7 @@ function InputTile({
   );
 }
 
-function OutputTile({
+export function OutputTile({
   outcome,
   rarity,
   costCents,

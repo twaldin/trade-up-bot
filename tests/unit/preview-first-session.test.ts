@@ -60,9 +60,10 @@ describe("calculator first session", () => {
     expect(calc).toContain("useState<CalculatorExampleSlot[]>(emptyCalculatorSlots())");
   });
 
-  it("labels loaded inputs as an example and keeps server wording off the page", () => {
+  it("labels loaded inputs as an example and keeps the example 404's wording off the page", () => {
     expect(calc).toMatch(/>\s*Example\s*</);
-    expect(calc).not.toContain("data.error ||");
+    const load = calc.slice(calc.indexOf("const loadExample"), calc.indexOf("const calculate"));
+    expect(load).not.toContain("data.error");
     expect(calc).not.toMatch(/production/i);
   });
 

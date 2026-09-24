@@ -1,18 +1,11 @@
-import { useCallback, useRef, useState, type CSSProperties } from "react";
-import { Link } from "react-router-dom";
-import type { TradeUp, TradeUpOutcome } from "../../../shared/types.js";
+import { useCallback, useRef, useState } from "react";
+import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
-import {
-  conditionShort,
-  formatFloat,
-  outputHref,
-  outputRarityColor,
-  previewSkinHref,
-  splitSkinName,
-} from "../lib/board.js";
+import { formatFloat, outputRarityColor, rarityLabel, uniqueOutputs } from "../lib/board.js";
 import { CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
+import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
 interface SearchResult {
   name: string;
@@ -30,14 +23,19 @@ interface CalculatorStats {
   worst_case_cents: number;
 }
 
+const EXAMPLE_UNAVAILABLE = "The example is not available right now. Search a skin to build one instead.";
+
 export function PreviewCalculator() {
   const [slots, setSlots] = useState<CalculatorExampleSlot[]>(emptyCalculatorSlots());
+  const [isExample, setIsExample] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TradeUp | null>(null);
   const [stats, setStats] = useState<CalculatorStats | null>(null);
+  // Faces land in the board's module-level cache, so a bump is what repaints the art.
+  const [, setFaceTick] = useState(0);
   const debounceRef = useRef<number | undefined>(undefined);
 
   const search = useCallback((q: string) => {
@@ -52,6 +50,7 @@ export function PreviewCalculator() {
   }, []);
 
   const addResult = (item: SearchResult) => {
+    setIsExample(false);
     setSlots((prev) => {
       const next = [...prev];
       const empty = next.findIndex((slot) => !slot.resolved);
@@ -69,23 +68,12 @@ export function PreviewCalculator() {
     setResults([]);
   };
 
-  const loadExample = async () => {
-    setError(null);
-    const res = await fetch("/api/calculator/example", { credentials: "include" });
-    const data = await res.json() as { error?: string; inputs?: CalculatorExampleSlot[] };
-    if (!res.ok || !data.inputs?.length) {
-      setError(data.error || "Could not load example");
-      return;
-    }
-    setSlots(data.inputs);
-  };
-
-  const calculate = async () => {
+  const evaluate = async (source: CalculatorExampleSlot[]) => {
     setLoading(true);
     setError(null);
     setResult(null);
     setStats(null);
-    const inputs = slots
+    const inputs = source
       .filter((slot) => slot.resolved && slot.floatValue && slot.priceCents)
       .map((slot) => ({
         skinName: slot.skinName,
@@ -103,8 +91,11 @@ export function PreviewCalculator() {
         setError(data.error || data.errors?.join(", ") || "Evaluation failed");
         return;
       }
-      setResult(data.trade_up);
+      const tradeUp = data.trade_up;
+      setResult(tradeUp);
       setStats(data.stats ?? null);
+      void warmBoardFaces(tradeUp.outcomes.map((outcome) => outcome.skin_name))
+        .then(() => setFaceTick((tick) => tick + 1));
     } catch {
       setError("Network error");
     } finally {
@@ -112,6 +103,37 @@ export function PreviewCalculator() {
     }
   };
 
+  const loadExample = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/calculator/example", { credentials: "include" });
+      const data = await res.json() as { inputs?: CalculatorExampleSlot[] };
+      if (!res.ok || !data.inputs?.length) {
+        setError(EXAMPLE_UNAVAILABLE);
+        setLoading(false);
+        return;
+      }
+      setSlots(data.inputs);
+      setIsExample(true);
+      await evaluate(data.inputs);
+    } catch {
+      setError(EXAMPLE_UNAVAILABLE);
+      setLoading(false);
+    }
+  };
+
+  const calculate = () => evaluate(slots);
+
+  const clear = () => {
+    setSlots(emptyCalculatorSlots());
+    setIsExample(false);
+    setResult(null);
+    setStats(null);
+    setError(null);
+  };
+
+  const filled = slots.filter((slot) => slot.resolved);
   const profit = result ? result.profit_cents : 0;
 
   return (
@@ -119,7 +141,7 @@ export function PreviewCalculator() {
       <header className="preview-page__head">
         <div>
           <h1>Calculator</h1>
-          <p>Same live calculator API as production. Add skins, then evaluate the trade-up.</p>
+          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove roll, then evaluate the trade-up.</p>
         </div>
       </header>
       <div className="preview-toolbar">
@@ -133,11 +155,20 @@ export function PreviewCalculator() {
             debounceRef.current = window.setTimeout(() => search(event.target.value), 250);
           }}
         />
-        <button type="button" className="preview-btn" onClick={() => void loadExample()}>Load example</button>
-        <button type="button" className="preview-btn preview-btn--lime" onClick={() => void calculate()} disabled={loading}>
+        {filled.length > 0 && (
+          <button type="button" className="preview-btn" onClick={() => void loadExample()} disabled={loading}>
+            Load example
+          </button>
+        )}
+        <button
+          type="button"
+          className={`preview-btn ${filled.length > 0 ? "preview-btn--lime" : ""}`}
+          onClick={() => void calculate()}
+          disabled={loading || filled.length === 0}
+        >
           {loading ? "Evaluating…" : "Evaluate"}
         </button>
-        <button type="button" className="preview-btn" onClick={() => { setSlots(emptyCalculatorSlots()); setResult(null); setStats(null); }}>
+        <button type="button" className="preview-btn" onClick={clear}>
           Clear
         </button>
       </div>
@@ -157,10 +188,13 @@ export function PreviewCalculator() {
       <section className="preview-panel">
         <header className="preview-panel__head">
           <p className="o-kicker">Inputs</p>
-          <span className="preview-panel__meta">{slots.filter((slot) => slot.resolved).length} / 10</span>
+          <span className="preview-panel__meta">
+            {isExample && <span className="preview-chip">Example</span>}
+            {filled.length} / 10
+          </span>
         </header>
         <div className="preview-listings">
-          {slots.filter((slot) => slot.resolved).map((slot, i) => (
+          {filled.map((slot, i) => (
             <div key={`${slot.skinName}-${i}`} className="preview-listing">
               <span className="preview-listing__n">{String(i + 1).padStart(2, "0")}</span>
               <span className="preview-listing__name"><b>{slot.skinName}</b></span>
@@ -172,8 +206,21 @@ export function PreviewCalculator() {
               <span />
             </div>
           ))}
-          {slots.every((slot) => !slot.resolved) && (
-            <p className="preview-note">Search a skin above, or load the worked example.</p>
+          {filled.length === 0 && (
+            <div className="preview-calc-empty">
+              <p className="preview-note">
+                See a full trade-up first: the example loads ten current listings from the board and evaluates them.
+              </p>
+              <button
+                type="button"
+                className="preview-btn preview-btn--lime"
+                onClick={() => void loadExample()}
+                disabled={loading}
+              >
+                {loading ? "Loading…" : "Load example"}
+              </button>
+              <p className="preview-note">Or search a skin above to build your own.</p>
+            </div>
           )}
         </div>
       </section>
@@ -182,39 +229,28 @@ export function PreviewCalculator() {
         <div className="preview-readouts">
           <Readout label="Cost" value={formatDollars(result.total_cost_cents)} />
           <Readout label="Expected value" value={formatDollars(result.expected_value_cents)} />
-          <Readout label="Profit" value={formatDollars(profit)} tone={profit >= 0 ? "is-plus" : "is-minus"} />
+          <Readout label="Profit" value={signedDollars(profit)} tone={profit >= 0 ? "is-plus" : "is-minus"} />
           <Readout label="Chance of profit" value={stats ? `${Math.round(stats.chance_to_profit * 100)}%` : "—"} />
         </div>
       )}
       <FeeLine line={CALCULATOR_FEE_LINE} />
       {result && (
-        <div className="preview-skins preview-skins--out">
-          {result.outcomes.map((outcome: TradeUpOutcome) => (
-            <div
-              key={outcome.skin_id + outcome.skin_name}
-              className="preview-skin preview-skin--output"
-              style={{ "--skin-tint": outputRarityColor(result.type) } as CSSProperties}
-            >
-              <a
-                className="preview-skin__buy"
-                href={outputHref(outcome)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`Buy ${outcome.skin_name} on the marketplace`}
-              >
-                <span className="preview-skin__art" />
-                <span className="preview-skin__lead">{formatDollars(outcome.estimated_price_cents)}</span>
-                <span className="preview-skin__trail">{Math.round(outcome.probability * 100)}%</span>
-              </a>
-              <Link className="preview-skin__label" to={previewSkinHref(outcome.skin_name)}>
-                <em>
-                  {conditionShort(outcome.predicted_condition)} {formatFloat(outcome.predicted_float)}
-                </em>
-                <b>{splitSkinName(outcome.skin_name).finish}</b>
-              </Link>
-            </div>
-          ))}
-        </div>
+        <section className="preview-flow__side">
+          <p className="preview-lane__label">
+            {rarityLabel(result.type)} outputs
+            <i style={{ background: outputRarityColor(result.type) }} />
+          </p>
+          <div className="preview-skins preview-skins--out preview-skins--calc">
+            {uniqueOutputs(result).map((outcome) => (
+              <OutputTile
+                key={outcome.skin_id + outcome.skin_name}
+                outcome={outcome}
+                rarity={outputRarityColor(result.type)}
+                costCents={result.total_cost_cents}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
