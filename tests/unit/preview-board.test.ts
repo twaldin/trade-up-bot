@@ -85,8 +85,10 @@ describe("preview P/L tone and odds", () => {
     expect(formatOdds(0.1)).toBe("10%");
     expect(formatOdds(0.5)).toBe("50%");
     expect(formatOdds(0.994)).toBe("99%");
+    expect(formatOdds(0.99499)).toBe("99%");
     expect(formatOdds(0.995)).toBe(">99%");
     expect(formatOdds(0.999)).toBe(">99%");
+    expect(formatOdds(0.9999)).toBe(">99%");
     expect(formatOdds(1)).toBe("100%");
   });
 
