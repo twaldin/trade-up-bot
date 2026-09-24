@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { hasProAccess } from "../lib/billing.js";
 import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
 import { seoPage } from "../lib/seo-pages.js";
 
@@ -57,7 +59,7 @@ const COMPARE = [
 const FAQ = [
   {
     q: "Can I cancel anytime?",
-    a: "Yes. You can cancel your subscription at any time from your account menu. Your access continues until the end of the current billing period. No cancellation fees.",
+    a: "Yes. You can cancel your subscription at any time with Manage subscription, here on Pricing or on My trade-ups, once you're signed in. Your access continues until the end of the current billing period. No cancellation fees.",
   },
   {
     q: "What payment methods are accepted?",
@@ -167,6 +169,9 @@ export function PreviewPricing() {
           >
             {user?.tier === "pro" ? "Current plan" : "Go Pro"}
           </button>
+          {hasProAccess(user) && (
+            <ManageSubscription className="preview-btn preview-btn--block" />
+          )}
         </section>
       </div>
 

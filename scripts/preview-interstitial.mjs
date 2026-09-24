@@ -112,7 +112,7 @@ try {
     check(aria.role === "dialog" && aria.modal === "true" && aria.title === "Go Pro" && aria.body, "pricing: dialog role/aria-modal/labelledby/describedby");
     const text = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
     check(text.includes("$6.99/mo"), "pricing: monthly modal shows $6.99/mo");
-    check(text.includes("Cancel anytime."), "pricing: monthly modal shows the cancel line");
+    check(text.includes("Cancel anytime from Manage subscription."), "pricing: monthly modal shows the cancel line");
     await page.screenshot({ path: `${OUT}/interstitial-pricing-desktop-dark.png` });
 
     // Tab trap: Tab from the last control wraps to the first, Shift+Tab from the first wraps to the last.
@@ -155,7 +155,7 @@ try {
     await sleep(250);
     const lifetime = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
     check(lifetime.includes("$74.99 one-time"), "pricing: lifetime modal shows $74.99 one-time");
-    check(lifetime.includes("Lifetime Pro access for a single one-time payment.") && !lifetime.includes("Cancel anytime."), "pricing: lifetime line replaces the cancel line");
+    check(lifetime.includes("Lifetime Pro access for a single one-time payment.") && !lifetime.includes("Cancel anytime from Manage subscription."), "pricing: lifetime line replaces the cancel line");
     const notNow = await page.$$eval("dialog.preview-sheet button", (bs) => bs.findIndex((b) => b.textContent?.trim() === "Not now"));
     await page.evaluate((i) => document.querySelectorAll("dialog.preview-sheet button")[i].click(), notNow);
     await sleep(250);
@@ -330,6 +330,37 @@ try {
     const ev = await events(page);
     check(JSON.stringify(ev) === JSON.stringify([["begin_checkout", { item_name: "pro" }]]), `free: begin_checkout fires as before ${JSON.stringify(ev)}`);
     await page.close();
+  }
+  // Pro and lifetime: Manage subscription on /pricing opens the billing portal. Screenshot before the redirect.
+  for (const user of ["pro", "lifetime"]) {
+    for (const mode of ["dark", "light"]) {
+      const shot = await openPage("/pricing", { user, mode, width: mode === "light" && user === "pro" ? 390 : 1280, height: mode === "light" && user === "pro" ? 844 : 900 });
+      const shown = await shot.page.evaluate(() => [...document.querySelectorAll(".preview-plan--pro button")].some((b) => b.textContent?.trim() === "Manage subscription"));
+      check(shown, `${user} ${mode}: /pricing shows Manage subscription`);
+      await shot.page.screenshot({ path: `${OUT}/manage-subscription-pricing-${user}-${shot.page.viewport().width}-${mode}.png` });
+      await shot.page.close();
+    }
+    const { page, portalCalls, subscribeCalls } = await openPage("/pricing", { user });
+    await Promise.all([
+      page.waitForNavigation({ timeout: 15000 }).catch(() => null),
+      page.evaluate(() => [...document.querySelectorAll(".preview-plan--pro button")].find((b) => b.textContent?.trim() === "Manage subscription")?.click()),
+    ]);
+    check(portalCalls.length === 1 && portalCalls[0] === "POST", `${user}: Manage subscription POSTs /api/billing-portal`);
+    check(subscribeCalls.length === 0, `${user}: Manage subscription does not start checkout`);
+    check(new URL(page.url()).pathname === "/qa-portal-stub", `${user}: Manage subscription follows the portal url`);
+    await page.close();
+  }
+  {
+    const { page } = await openPage("/my-trade-ups", { user: "pro" });
+    await page.waitForSelector(".preview-page__meta", { timeout: 30000 });
+    const meta = await page.$eval(".preview-page__meta", (el) => el.textContent);
+    check(meta?.includes("Manage subscription"), `pro: /my-trade-ups header shows Manage subscription (${meta})`);
+    await page.screenshot({ path: `${OUT}/manage-subscription-account-dark.png` });
+    await page.close();
+    const free = await openPage("/pricing", { user: "free" });
+    const freeManage = await free.page.evaluate(() => document.body.innerText.includes("Manage subscription\n") || [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Manage subscription"));
+    check(!freeManage, "free: no Manage subscription button");
+    await free.page.close();
   }
 } finally {
   await browser.close();
