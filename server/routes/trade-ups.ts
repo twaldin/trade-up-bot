@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
@@ -7,7 +7,7 @@ import { getEffectiveTier } from "../../shared/pro-access.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
-import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
+import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpHiddenByDelay, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import {
   RANK_SNAPSHOT_SIZE,
   groupInputRows,
@@ -116,6 +116,48 @@ const redisRankStore: RankSnapshotStore = {
   },
 };
 
+/** Delay seconds the list applies, including the internal bot token (treated as Pro). */
+function viewerDelaySeconds(req: Request): number {
+  const internalToken = process.env.INTERNAL_API_TOKEN;
+  const authHeader = req.headers.authorization;
+  if (internalToken && authHeader === `Bearer ${internalToken}`) return 0;
+  return getTierConfig(req).delay;
+}
+
+/** Claimers always see the row they hold, even inside the free delay. */
+async function viewerOwnsClaim(pool: pg.Pool, req: Request, tradeUpId: number): Promise<boolean> {
+  const user = req.user as User | undefined;
+  if (!user?.steam_id) return false;
+  const claims = await getActiveClaims(pool);
+  return claims.some((claim) => claim.trade_up_id === tradeUpId && claim.user_id === user.steam_id);
+}
+
+/**
+ * Free and anonymous viewers of a row younger than the list delay get a
+ * summary only. Pro, internal, older rows, and the claimer get the full row.
+ */
+async function inputsAreRedacted(
+  pool: pg.Pool,
+  req: Request,
+  tradeUpId: number,
+  createdAt: string | Date,
+): Promise<boolean> {
+  if (!tradeUpHiddenByDelay(createdAt, viewerDelaySeconds(req))) return false;
+  return !(await viewerOwnsClaim(pool, req, tradeUpId));
+}
+
+type InputRow = Record<string, unknown> & { listing_id?: string; float_value?: number | null; marketplace_id?: string | null };
+
+/** Drop listing ids, marketplace links, and exact floats. Skin, price, and wear stay. */
+function redactInputRow<T extends InputRow>(row: T): T {
+  return {
+    ...row,
+    listing_id: "hidden",
+    marketplace_id: null,
+    float_value: null,
+  };
+}
+
 export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotStore } = {}): Router {
   const router = Router();
   const rankStore = opts.rankStore ?? redisRankStore;
@@ -181,6 +223,31 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       res.json({ skins: [], collections: [], markets: [] });
     }
   });
+
+  // The list cache stores the full payload. Fresh rows are redacted here, after
+  // the read, so a free viewer never receives a cached Pro body and a redacted
+  // body is never written back under tu:.
+  const presentList = async (data: unknown, req: Request): Promise<unknown> => {
+    if (!data || typeof data !== "object" || !("trade_ups" in data)) return data;
+    const delay = viewerDelaySeconds(req);
+    if (!(delay > 0)) return data;
+    const body = data as { trade_ups: Array<Record<string, unknown>> };
+    if (!Array.isArray(body.trade_ups)) return data;
+    const userId = (req.user as User | undefined)?.steam_id;
+    const claims = userId ? await getActiveClaims(pool) : [];
+    const mine = new Set(claims.filter((claim) => claim.user_id === userId).map((claim) => claim.trade_up_id));
+    return {
+      ...body,
+      trade_ups: body.trade_ups.map((tu) => {
+        const id = typeof tu.id === "number" ? tu.id : Number(tu.id);
+        const created = tu.created_at;
+        if (mine.has(id)) return tu;
+        if ((typeof created !== "string" && !(created instanceof Date)) || !tradeUpHiddenByDelay(created, delay)) return tu;
+        const inputs = Array.isArray(tu.inputs) ? tu.inputs.map((row) => redactInputRow(row as InputRow)) : tu.inputs;
+        return { ...tu, inputs, previous_inputs: null, inputs_redacted: true };
+      }),
+    };
+  };
 
   router.get("/api/trade-ups", cachedRoute((req) => {
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
@@ -613,7 +680,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", 20),
     };
     res.json(result);
-  }));
+  }, presentList));
 
   router.get("/api/trade-ups/:id", async (req, res) => {
     // #172 owns redaction of fresh rows. This is the only tier decision on detail.
@@ -642,15 +709,18 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     const missingCount = Math.max(0, counts.missing_count);
     const realInputCount = Math.max(0, counts.real_input_count);
     const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
+    const redacted = await inputsAreRedacted(pool, req, row.id, row.created_at);
 
     res.json({
       ...row,
+      previous_inputs: redacted ? null : row.previous_inputs,
       real_input_count: realInputCount,
       listing_status: listingStatus,
       missing_inputs: missingCount,
       missing_count: missingCount,
-      inputs,
+      inputs: redacted ? inputs.map(redactInputRow) : inputs,
       outcomes,
+      ...(redacted ? { inputs_redacted: true } : {}),
     });
   });
 
@@ -1129,7 +1199,30 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   });
 
   // Load inputs on-demand (not included in list response to save bandwidth).
-  // Header is per request, outside the shared cache. #172 owns redaction.
+  // Header is per request, outside the shared cache. The shared cache is full-access only —
+  // a redacted response must not be stored under it.
+  router.get("/api/trade-up/:id/inputs", async (req, res, next) => {
+    res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+    const { rows: [meta] } = await pool.query<{ created_at: Date }>(
+      "SELECT created_at FROM trade_ups WHERE id = $1",
+      [id],
+    );
+    if (!meta) { res.status(404).json({ error: "Not found" }); return; }
+    if (await inputsAreRedacted(pool, req, id, meta.created_at)) {
+      const { rows: inputs } = await pool.query(
+        `SELECT tui.*, l.marketplace_id FROM trade_up_inputs tui
+         LEFT JOIN listings l ON tui.listing_id = l.id
+         WHERE tui.trade_up_id = $1`,
+        [id],
+      );
+      res.json({ inputs: inputs.map(redactInputRow), inputs_redacted: true });
+      return;
+    }
+    return cachedInputsHandler(req, res, next);
+  });
+
   const cachedInputsHandler = cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
@@ -1166,11 +1259,6 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       ...(claimedIds.has(inp.listing_id) ? { claimed_by_other: true } : {}),
     }));
     res.json({ inputs: enrichedInputs });
-  });
-
-  router.get("/api/trade-up/:id/inputs", (req, res, next) => {
-    res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
-    return cachedInputsHandler(req, res, next);
   });
 
   // Load outcomes on-demand (not included in list response to save bandwidth)
