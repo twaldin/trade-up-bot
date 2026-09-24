@@ -262,7 +262,7 @@ ${how}
 <h3>Free — $0</h3>
 <ul>${freePlan}</ul>
 <p><a href="/trade-ups">Browse free</a></p>
-<h3>Pro — $6.99/month</h3>
+<h3>Pro — $6.99/mo</h3>
 <ul>${proPlan}</ul>
 <p>${escapeHtml(PREVIEW_PRO_PRICES)}</p>
 <p><a href="/pricing">Compare plans</a></p>

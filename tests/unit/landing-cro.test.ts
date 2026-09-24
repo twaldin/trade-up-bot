@@ -241,6 +241,16 @@ describe("How it works stays the signed 4-step pipeline", () => {
 });
 
 describe("pricing teaser shows Pro value before the paywall", () => {
+  it("shows every monthly price with its period", () => {
+    const at = landing.indexOf('id="pricing"');
+    const section = landing.slice(at, landing.indexOf("</section>", at));
+    expect(section).toContain("Free, then Pro at $6.99/mo");
+    expect(section).toContain("$6.99<span>/mo</span>");
+    expect(section).not.toMatch(/\$6\.99(?!\/mo|<span>\/mo<\/span>)/);
+    expect(HOMEPAGE_SEO.bodyHtml).toContain("Pro — $6.99/mo");
+    expect(HOMEPAGE_SEO.bodyHtml).not.toMatch(/\$6\.99(?!\/mo)/);
+  });
+
   it("lists real plan features and every Pro price point", () => {
     expect(landing).toContain("PREVIEW_PLAN_FREE");
     expect(landing).toContain("PREVIEW_PLAN_PRO");
