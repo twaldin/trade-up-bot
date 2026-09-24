@@ -9,19 +9,30 @@ import type { Request, Response, NextFunction } from "express";
 let _redis: Redis | null = null;
 let _available = false;
 
-/** Initialize Redis connection. Non-blocking — API works without Redis. */
+function redisRetryStrategy(times: number): number | null {
+  if (times > 3) return null; // stop retrying
+  return Math.min(times * 500, 3000);
+}
+
+/** Initialize Redis connection. Non-blocking — API works without Redis.
+ *  `REDIS_URL` (for example `redis://127.0.0.1:6379/15`) selects host, port, and db. */
 export function initRedis(): void {
   try {
-    _redis = new Redis({
-      host: "127.0.0.1",
-      port: 6379,
+    if (_redis) {
+      _redis.removeAllListeners();
+      _redis.disconnect();
+      _redis = null;
+      _available = false;
+    }
+    const shared = {
       maxRetriesPerRequest: 1,
-      retryStrategy(times) {
-        if (times > 3) return null; // stop retrying
-        return Math.min(times * 500, 3000);
-      },
+      retryStrategy: redisRetryStrategy,
       lazyConnect: true,
-    });
+    };
+    const url = process.env.REDIS_URL;
+    _redis = url
+      ? new Redis(url, shared)
+      : new Redis({ host: "127.0.0.1", port: 6379, ...shared });
 
     _redis.on("connect", () => {
       _available = true;

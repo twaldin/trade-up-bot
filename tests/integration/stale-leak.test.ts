@@ -1,21 +1,31 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, seedTestData, type TestContext } from "./setup.js";
 
 /**
- * Coherence between the WHERE filter (listing_status column) and the canonical
- * status recomputed from live listings.
- *
- * Bug: a listing deleted without cascadeTradeUpStatuses running (race, crashed
- * fetcher, raw DELETE) leaves listing_status='active' in the column. The list
- * endpoint's WHERE passes the row, then canonicalListingStatus() recomputes
- * 'partial'/'stale' from the live LEFT JOIN — so the default view (Show stale
- * OFF) renders yellow/red rows it promised to hide.
+ * GET /api/trade-ups is read-only. Rows whose input listings vanished without
+ * a status cascade stay hidden in the default view (canonical status / missing
+ * inputs), and the request does not UPDATE trade_ups or flush tu:*.
  */
+
+const redisCalls = vi.hoisted(() => ({ invalidate: [] as string[] }));
+
+vi.mock("../../server/redis.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../server/redis.js")>();
+  return {
+    ...actual,
+    cacheInvalidatePrefix: async (prefix: string) => {
+      redisCalls.invalidate.push(prefix);
+      return 0;
+    },
+  };
+});
+
 describe("stale-leak coherence guard", () => {
   let ctx: TestContext;
 
   beforeEach(async () => {
+    redisCalls.invalidate.length = 0;
     ctx = await createTestApp({ defaultTier: "pro", defaultUserId: "user_pro" });
     await seedTestData(ctx.pool, {
       profitableCount: 6,
@@ -47,6 +57,17 @@ describe("stale-leak coherence guard", () => {
     return tu.id;
   }
 
+  function spyTradeUpUpdates(): { count: () => number; restore: () => void } {
+    const original = ctx.pool.query.bind(ctx.pool);
+    let updates = 0;
+    const spy = vi.spyOn(ctx.pool, "query").mockImplementation((...args: unknown[]) => {
+      const sql = args[0];
+      if (typeof sql === "string" && /update\s+trade_ups/i.test(sql)) updates += 1;
+      return original(...(args as Parameters<typeof ctx.pool.query>));
+    });
+    return { count: () => updates, restore: () => spy.mockRestore() };
+  }
+
   it("default view (stale OFF) never returns rows with non-active canonical status", async () => {
     const brokenId = await breakOneTradeUp();
 
@@ -60,39 +81,43 @@ describe("stale-leak coherence guard", () => {
     expect(returnedIds).not.toContain(brokenId);
     for (const tu of res.body.trade_ups) {
       expect(tu.listing_status).toBe("active");
+      expect(tu.missing_count ?? 0).toBe(0);
     }
   });
 
-  it("self-heals the listing_status column on read", async () => {
+  it("GET issues zero trade_ups writes and never flushes tu:*", async () => {
     const brokenId = await breakOneTradeUp();
+    const writes = spyTradeUpUpdates();
 
-    await request(ctx.app)
-      .get("/api/trade-ups?type=covert_knife")
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?type=covert_knife&page_bust=1")
       .set("X-Test-User-Id", "user_pro")
       .set("X-Test-User-Tier", "pro");
+
+    writes.restore();
+    expect(res.status).toBe(200);
+    expect(writes.count()).toBe(0);
+    expect(redisCalls.invalidate).toEqual([]);
 
     const { rows: [row] } = await ctx.pool.query(
       `SELECT listing_status, preserved_at FROM trade_ups WHERE id = $1`,
       [brokenId]
     );
-    expect(row.listing_status).toBe("partial");
-    expect(row.preserved_at).not.toBeNull();
+    expect(row.listing_status).toBe("active");
+    expect(row.preserved_at).toBeNull();
   });
 
-  it("healed row stays visible under include_stale=true", async () => {
+  it("include_stale still shows the leaked row with canonical status without writing", async () => {
     const brokenId = await breakOneTradeUp();
-
-    // First request drops + heals
-    await request(ctx.app)
-      .get("/api/trade-ups?type=covert_knife")
-      .set("X-Test-User-Id", "user_pro")
-      .set("X-Test-User-Tier", "pro");
+    const writes = spyTradeUpUpdates();
 
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife&include_stale=true")
       .set("X-Test-User-Id", "user_pro")
       .set("X-Test-User-Tier", "pro");
 
+    writes.restore();
+    expect(writes.count()).toBe(0);
     expect(res.status).toBe(200);
     const broken = res.body.trade_ups.find((tu: { id: number }) => tu.id === brokenId);
     expect(broken).toBeDefined();
@@ -100,20 +125,14 @@ describe("stale-leak coherence guard", () => {
     expect(broken.missing_count).toBeGreaterThan(0);
   });
 
-  it("heals ALL-inputs-missing to 'stale' and keeps it reachable via include_stale", async () => {
+  it("all-inputs-missing stays hidden by default and reads as stale under include_stale", async () => {
     const brokenId = await breakOneTradeUp(true);
 
-    await request(ctx.app)
+    const hidden = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife")
       .set("X-Test-User-Id", "user_pro")
       .set("X-Test-User-Tier", "pro");
-
-    const { rows: [row] } = await ctx.pool.query(
-      `SELECT listing_status, preserved_at FROM trade_ups WHERE id = $1`,
-      [brokenId]
-    );
-    expect(row.listing_status).toBe("stale");
-    expect(row.preserved_at).not.toBeNull();
+    expect(hidden.body.trade_ups.map((tu: { id: number }) => tu.id)).not.toContain(brokenId);
 
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife&include_stale=true")
@@ -122,34 +141,40 @@ describe("stale-leak coherence guard", () => {
     const broken = res.body.trade_ups.find((tu: { id: number }) => tu.id === brokenId);
     expect(broken).toBeDefined();
     expect(broken.listing_status).toBe("stale");
+
+    const { rows: [row] } = await ctx.pool.query(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [brokenId]
+    );
+    expect(row.listing_status).toBe("active");
   });
 
-  it("refills the page after healing so leaked rows don't leave holes", async () => {
-    // 6 already seeded + 50 more = 56 actives; per_page=50 → page 1 must stay
-    // full even when the top row leaks.
+  it("does not requery to refill page slots (read-only filter drops the leak)", async () => {
     await seedTestData(ctx.pool, {
       profitableCount: 50,
       unprofitableCount: 0,
       staleCount: 0,
       type: "covert_knife",
     });
-    // seedTestData uses one collection-combo; the API list caps at 20 per combo.
-    // Unique combos keep the refill assertion about healing, not diversity.
     await ctx.pool.query(`
       UPDATE trade_ups
       SET collection_names = ARRAY['Test Collection Alpha', 'Combo ' || id::text]
       WHERE type = 'covert_knife' AND listing_status = 'active'
     `);
     const brokenId = await breakOneTradeUp();
+    const writes = spyTradeUpUpdates();
 
     const res = await request(ctx.app)
       .get("/api/trade-ups?type=covert_knife&per_page=50")
       .set("X-Test-User-Id", "user_pro")
       .set("X-Test-User-Tier", "pro");
 
+    writes.restore();
+    expect(writes.count()).toBe(0);
     expect(res.status).toBe(200);
     const ids = res.body.trade_ups.map((tu: { id: number }) => tu.id);
     expect(ids).not.toContain(brokenId);
-    expect(ids.length).toBe(50);
+    expect(ids.length).toBe(49);
+    expect(redisCalls.invalidate).toEqual([]);
   });
 });

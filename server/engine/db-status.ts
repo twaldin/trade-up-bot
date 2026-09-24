@@ -4,12 +4,26 @@
 
 import pg from "pg";
 
+export interface CascadeTradeUpStatusOptions {
+  /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
+  invalidateCache?: boolean;
+  /**
+   * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
+   * show them). Default deletes those rows, which existing callers rely on.
+   */
+  preserveFullyMissing?: boolean;
+}
+
 /**
  * Cascade trade-up listing_status changes when specific listings are deleted or claimed.
  * Lightweight: only re-evaluates trade-ups referencing the given listing IDs.
  * Skips trade-ups with active claims (they stay 'active' for the claimer).
  */
-export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]): Promise<number> {
+export async function cascadeTradeUpStatuses(
+  pool: pg.Pool,
+  listingIds: string[],
+  options?: CascadeTradeUpStatusOptions,
+): Promise<number> {
   if (listingIds.length === 0) return 0;
   const { cacheInvalidatePrefix } = await import("../redis.js");
   // Batch in chunks of 500 to avoid param limit issues
@@ -17,10 +31,17 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
   for (let i = 0; i < listingIds.length; i += 500) {
     const chunk = listingIds.slice(i, i + 500);
     // Compute status for affected trade-ups
+    // preserveFullyMissing is the daemon heal. Only column-active rows are in
+    // scope there: a stale row that still has some live inputs must not be
+    // rewritten to partial (partial rows are claimable).
+    const activeGuard = options?.preserveFullyMissing
+      ? "JOIN trade_ups tu_guard ON tu_guard.id = tui.trade_up_id AND tu_guard.listing_status = 'active'"
+      : "";
     const { rows: statusRows } = await pool.query(`
       WITH affected_tus AS (
         SELECT DISTINCT tui.trade_up_id
         FROM trade_up_inputs tui
+        ${activeGuard}
         WHERE tui.listing_id = ANY($1)
       ),
       status_calc AS (
@@ -49,14 +70,31 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
     }
 
     const toDelete: number[] = [];
+    const toStale: number[] = [];
     const toUpdate: { trade_up_id: number; missing: number; total: number }[] = [];
     for (const row of statusRows) {
       if (activelyClaimed.has(row.trade_up_id)) continue; // skip actively claimed
       if (row.missing === row.total) {
-        toDelete.push(row.trade_up_id);
+        if (options?.preserveFullyMissing) toStale.push(row.trade_up_id);
+        else toDelete.push(row.trade_up_id);
       } else {
         toUpdate.push(row);
       }
+    }
+
+    if (toStale.length > 0) {
+      const r = await pool.query(`
+        UPDATE trade_ups SET
+          listing_status = 'stale',
+          preserved_at = COALESCE(preserved_at, NOW())
+        WHERE id = ANY($1)
+          AND listing_status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM trade_up_claims tc
+            WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
+          )
+      `, [toStale]);
+      totalUpdated += r.rowCount ?? 0;
     }
 
     // Delete fully stale trade-ups immediately
@@ -72,6 +110,11 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
       const activeIds = toUpdate.filter(r => r.missing === 0).map(r => r.trade_up_id);
 
       if (partialIds.length > 0) {
+        // preserveFullyMissing re-checks active here. The SELECT already
+        // filtered to active, but the row can go stale before this UPDATE.
+        const activeRecheck = options?.preserveFullyMissing
+          ? "AND listing_status = 'active'"
+          : "";
         const r = await pool.query(`
           UPDATE trade_ups SET
             listing_status = 'partial',
@@ -81,6 +124,7 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
             END
           WHERE id = ANY($1)
             AND listing_status IS DISTINCT FROM 'partial'
+            ${activeRecheck}
             AND NOT EXISTS (
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
@@ -105,7 +149,7 @@ export async function cascadeTradeUpStatuses(pool: pg.Pool, listingIds: string[]
       }
     }
   }
-  if (totalUpdated > 0) {
+  if (totalUpdated > 0 && options?.invalidateCache !== false) {
     await cacheInvalidatePrefix("tu:");
   }
   return totalUpdated;
