@@ -29,7 +29,7 @@ describe("renderTradeUpsHub", () => {
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const words = text.split(" ").filter(Boolean);
 
-    expect(html).toContain("<h1>Find Profitable CS2 Trade-Up Contracts</h1>");
+    expect(html).toContain("<h1>Live CS2 Trade-Up Contracts from Real Listings</h1>");
     expect(words.length).toBeGreaterThanOrEqual(200);
     expect(html.match(/href="\/trade-ups\/collection\//g)?.length).toBeGreaterThanOrEqual(5);
     expect(html.match(/href="\/blog\//g)?.length).toBeGreaterThanOrEqual(2);

@@ -117,7 +117,7 @@ describe("best-cs2-trade-up-simulator guide SEO lock", () => {
 
   it("does not change /calculator title, H1, or JSON-LD", () => {
     const calculator = STATIC_SEO_PAGES.find((page) => page.path === "/calculator");
-    expect(calculator?.title).toBe("Free CS2 Trade-Up Calculator — Profit, Float & EV | TradeUpBot");
+    expect(calculator?.title).toBe("Free CS2 Trade-Up Calculator — EV, Float & Fees | TradeUpBot");
     expect(calculator?.bodyHtml).toContain("<h1>CS2 Trade-Up Calculator</h1>");
     expect(calculator?.jsonLd?.[0]).toMatchObject({
       "@type": "SoftwareApplication",

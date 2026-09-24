@@ -14,7 +14,7 @@ describe("static SEO HTML normalization", () => {
 
     expect(route).toBeTruthy();
     expect(verifySeoHtml(route!, "calculator/index.html", out)).toEqual([]);
-    expect(out).toContain("<title>Free CS2 Trade-Up Calculator — Profit, Float &amp; EV | TradeUpBot</title>");
+    expect(out).toContain("<title>Free CS2 Trade-Up Calculator — EV, Float &amp; Fees | TradeUpBot</title>");
   });
 
   it("normalizes blog post paths to trailing-slash canonicals", () => {

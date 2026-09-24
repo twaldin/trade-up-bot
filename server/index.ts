@@ -434,7 +434,7 @@ registerCanonicalRedirectRoutes(app);
       const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
 
       const meta = {
-        title: `${typeLabel} Trade-Up — $${profit} profit (${chance}% chance) | TradeUpBot`,
+        title: `${typeLabel} Trade-Up — $${profit} expected P/L (${chance}% above cost) | TradeUpBot`,
         description: `$${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
         url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
         ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
@@ -573,7 +573,7 @@ registerCanonicalRedirectRoutes(app);
       // profitable, non-stale contract exists, so it never shows a penny/stale claim.
       const bestProfitHtml = bestTu
         ? `<p><strong>Best profitable ${e(displayName)} trade-up right now:</strong> `
-          + `+$${(bestTu.profit_cents / 100).toFixed(2)} profit at ${Math.round((bestTu.chance_to_profit ?? 0) * 100)}% chance to profit`
+          + `+$${(bestTu.profit_cents / 100).toFixed(2)} expected P/L, ${Math.round((bestTu.chance_to_profit ?? 0) * 100)}% of outcomes above cost`
           + `${bestTu.roi_percentage != null ? ` (${bestTu.roi_percentage.toFixed(1)}% ROI)` : ""}, `
           + `built from real, currently-listed marketplace inputs. `
           + `<a href="/trade-ups/${bestTu.id}">View this ${e(displayName)} trade-up</a>.</p>`
@@ -596,7 +596,7 @@ registerCanonicalRedirectRoutes(app);
         + `</ul></nav>`;
       const collectionOverviewHtml = `<h2>Collection trade-up research</h2>`
         + `<p>The ${e(displayName)} Collection matters for trade-up planning because collection membership changes the output pool, not just the cosmetic theme. `
-        + `A contract using ${e(displayName)} inputs can roll next-rarity skins from this collection according to the collection weights represented by the 10 input skins. `
+        + `A contract using ${e(displayName)} inputs can return next-rarity skins from this collection according to the collection weights represented by the 10 input skins. `
         + `That makes rarity depth, listing supply, float ranges, and floor prices important signals when comparing contracts. Use the rarity sections below to see how many skins are available at each tier, which weapons appear in the collection, and where the cheapest active listings start. `
         + `For profitable trade-ups, TradeUpBot combines these collection details with real marketplace prices, deterministic output-float math, CSFloat, DMarket, and Skinport data, then links the live opportunities on the dedicated collection trade-up page.</p>`;
       const bodyHtml = collBreadcrumb
@@ -955,7 +955,7 @@ registerCanonicalRedirectRoutes(app);
       const skinRelated = `<nav aria-label="Related pages"><h2>Related Pages</h2><ul>`
         + (primaryCollection ? `<li><a href="/collections/${collectionToSlug(primaryCollection)}">${e(collDisplay)} Collection — all skins</a></li>` : "")
         + (primaryCollection ? `<li><a href="/trade-ups/collection/${collectionToSlug(primaryCollection)}">${e(collDisplay)} Collection trade-ups</a></li>` : "")
-        + (inputTuCount > 0 ? `<li><a href="/trade-ups">Find profitable trade-ups using ${e(skinName)}</a></li>` : "")
+        + (inputTuCount > 0 ? `<li><a href="/trade-ups">Find trade-ups using ${e(skinName)}</a></li>` : "")
         + `<li><a href="/skins">Browse all CS2 skins</a></li>`
         + `</ul></nav>`;
       const bodyHtml = skinBreadcrumb
@@ -1057,8 +1057,8 @@ registerCanonicalRedirectRoutes(app);
       if (!isCrawler(ua)) {
         res.setHeader("Content-Type", "text/html");
         res.send(injectMetaIntoSpa(shellHtml, {
-          title: "CS2 Trade-Ups — Live Profitable Contracts | TradeUpBot",
-          description: "Find profitable CS2 trade-up contracts from real marketplace listings. Use the calculator, filter by profit, ROI, cost, and rarity. Data from CSFloat, DMarket, and Skinport.",
+          title: "CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
+          description: "Live CS2 trade-up contracts built from real marketplace listings, with expected value after fees. Filter by expected profit, ROI, cost, and rarity, or use the calculator. Data from CSFloat, DMarket, and Skinport.",
           url: "https://tradeupbot.app/trade-ups",
         }));
         return;
@@ -1101,8 +1101,8 @@ registerCanonicalRedirectRoutes(app);
           { "@type": "Question", name: "Are these listings live?", acceptedAnswer: { "@type": "Answer", text: "Every trade-up is built from listings that existed on the marketplace at discovery time. Listings can sell before you act — use the Verify button to confirm availability before purchasing." } },
         ] };
         const html = buildSeoHtml({
-          title: "CS2 Trade-Ups — Live Profitable Contracts | TradeUpBot",
-          description: `${profitable.toLocaleString()} profitable CS2 trade-ups from ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport — or model your own contract with the calculator.`,
+          title: "CS2 Trade-Ups — Live Contracts from Real Listings | TradeUpBot",
+          description: `${profitable.toLocaleString()} CS2 trade-ups with positive expected profit after fees, out of ${total.toLocaleString()} active contracts. Real listings from CSFloat, DMarket, and Skinport — or model your own contract with the calculator.`,
           url: "https://tradeupbot.app/trade-ups",
           bodyHtml: renderTradeUpsHub({
             total,
