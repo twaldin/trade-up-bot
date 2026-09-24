@@ -57,13 +57,13 @@ describe("buildSkinResearchParagraphs", () => {
 
   it("surfaces the profitable-contract count and best profit when the skin is an input", () => {
     const html = buildSkinResearchParagraphs(AK);
-    expect(html).toContain("3 profitable");
+    expect(html).toContain("3 trade-ups with positive expected profit");
     expect(html).toContain("$12.34");
   });
 
   it("states plainly when no profitable contracts exist, without overclaiming", () => {
     const html = buildSkinResearchParagraphs(GLOVE);
-    expect(html.toLowerCase()).toContain("no profitable");
+    expect(html.toLowerCase()).toContain("no trade-ups with positive expected profit");
     // Never promise exact/guaranteed sale outcomes (codex overclaim guard).
     expect(html.toLowerCase()).not.toContain("guarantee");
     expect(html.toLowerCase()).not.toContain("exact output");
@@ -95,7 +95,7 @@ describe("buildSkinResearchParagraphs", () => {
     expect(html).not.toContain("trade up into");
     expect(html).not.toContain("sits one tier below");
     expect(html).toContain("trade-up result");
-    expect(html).toContain("4 profitable"); // still surfaces its output role
+    expect(html).toContain("4 trade-ups with positive expected profit");
   });
 
   it("uses singular grammar for float-only note when there is no collection", () => {

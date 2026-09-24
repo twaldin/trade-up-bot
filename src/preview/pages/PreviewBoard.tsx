@@ -67,6 +67,7 @@ import {
   NOTE_OF_OUTCOMES,
   NOTE_WORST_OUTCOMES,
 } from "../lib/copy.js";
+import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
@@ -893,6 +894,17 @@ export function PreviewBoard({
       {tradeUps.length > 0 && noticeNode}
       {exhausted && tradeUps.length > 0 && !notice && (
         <p className="preview-note">That is every trade-up matching these filters.</p>
+      )}
+      {!embed && (
+        <section className="preview-panel">
+          <h2>Common questions</h2>
+          {TRADE_UPS_FAQ.map((item) => (
+            <div key={item.q}>
+              <h3>{item.q}</h3>
+              <p>{item.a}</p>
+            </div>
+          ))}
+        </section>
       )}
     </div>
   );

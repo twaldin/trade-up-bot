@@ -25,7 +25,7 @@ export function buildBlogPostSeo(post: BlogPost): {
   const title = `${post.title} | TradeUpBot`;
   const url = `https://tradeupbot.app/blog/${post.slug}/`;
   const ctaHtml = `<div style="margin-top:2rem;padding:1.5rem;border:1px solid #333;border-radius:0.75rem">` +
-    `<h2 style="margin:0 0 0.5rem">See live profitable trade-ups right now</h2>` +
+    `<h2 style="margin:0 0 0.5rem">See live CS2 trade-ups right now</h2>` +
     `<p style="margin:0 0 1rem;color:#aaa">TradeUpBot scans CSFloat, DMarket, and Skinport continuously. ` +
     `Every trade-up is built from real, buyable listings — fee-adjusted profit shown upfront. Free tier available.</p>` +
     `<a href="/trade-ups">Browse trade-ups</a> &nbsp;&middot;&nbsp; ` +

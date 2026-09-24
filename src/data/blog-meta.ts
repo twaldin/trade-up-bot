@@ -67,7 +67,7 @@ export const blogMeta: BlogMeta[] = [
   {
     slug: "cs2-trade-up-calculator-guide",
     title: "CS2 Trade Up Calculator Guide: Profits, Floats & Fees",
-    excerpt: "Use this CS2 trade up calculator guide to test floats, odds, and fees before buying inputs. Start calculating smarter contracts today.",
+    excerpt: "Use this CS2 trade up calculator guide to test floats, expected value, and fees before buying inputs. Start calculating smarter contracts today.",
     publishedAt: "2026-05-12",
     readTime: "8 min read",
     author: "TradeUpBot Team",

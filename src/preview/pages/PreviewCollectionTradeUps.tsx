@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { previewCollectionHref } from "../lib/board.js";
+import { COLLECTION_TRADEUP_LEDE } from "../lib/copy.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
 
 function displayNameFor(name: string): string {
@@ -33,7 +34,7 @@ export function PreviewCollectionTradeUps() {
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
   const display = title ? displayNameFor(title) : slug;
   const pageTitle = `Best ${display} Trade-Ups — Live CS2 Contracts | TradeUpBot`;
-  const description = `${board.tradeUps.length} trade-ups with positive expected profit after fees from the ${display} collection. Real listings from CSFloat, DMarket, Skinport.`;
+  const description = COLLECTION_TRADEUP_LEDE.replace("${display}", display);
 
   return (
     <div className="preview-page">
@@ -84,7 +85,7 @@ export function PreviewCollectionTradeUps() {
           onRetry={board.retry}
           collection={title}
           heading={`${display} Trade-Ups`}
-          lede={`Trade-ups with positive expected profit after fees, using skins from the ${display} collection.`}
+          lede={description}
           embed
         />
       )}

@@ -105,3 +105,15 @@ export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
 
 /** Logged-out trade-up page. Verify is Pro (`POST /api/verify-trade-up/:id` returns 403 otherwise). */
 export const SIGN_IN_TO_CLAIM = "Verify and Claim are Pro features. Signing in with Steam is free.";
+
+export const REPRICE_CAVEAT = "Prices refresh continuously; verify listings before buying";
+
+export const COLLECTION_TRADEUP_LEDE = "Trade-ups using skins from the ${display} collection, with expected value after fees.";
+
+/** Share-page document title. Stays within a 60-character social title. */
+export function shareDocumentTitle(typeLabel: string, profit: string, chance: string): string {
+  const full = `${typeLabel} — ${profit} P/L (${chance}) | TradeUpBot`;
+  if (full.length <= 60) return full;
+  const shorter = `${typeLabel} — ${profit} | TradeUpBot`;
+  return shorter.length <= 60 ? shorter : shorter.slice(0, 60);
+}

@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { blogMeta } from "../../data/blog-meta.js";
-import { blogPostHeading, blogPosts, getPostBySlug } from "../../data/blog-posts.js";
+import { blogIndexLabel, blogPostHeading, blogPosts, getPostBySlug } from "../../data/blog-posts.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
@@ -35,7 +35,7 @@ export function PreviewBlogIndex() {
               {" · "}
               {post.readTime}
             </p>
-            <h2>{post.title}</h2>
+            <h2>{blogIndexLabel(post.title)}</h2>
             <p>{post.excerpt}</p>
             <span className="preview-note">{post.author}</span>
           </Link>

@@ -47,13 +47,12 @@ const PRERENDERED = [
 const ALLOWLIST = [
   "never guaranteed", // FAQ disclaimer: returns are never guaranteed
   "not guaranteed", // product FAQ: not guaranteed profit
-  "test floats, odds, and fees", // existing calculator-guide excerpt, not a home teaser
   "const win", // window handle in openListings, not user-facing copy
   "if (win)", // same window handle
   "Win rate", // completed-sale statistic on the account page
-  "How to Use TradeUpBot to Find Profitable Trade-Ups", // published guide title
-  "profitable-trade-ups-theory-vs-reality", // published guide URL slug
 ];
+
+const GUIDE_TITLE = "How to Use TradeUpBot to Find Profitable Trade-Ups";
 
 const BANNED: { label: string; pattern: RegExp }[] = [
   { label: "case key", pattern: /case key/i },
@@ -68,7 +67,7 @@ const BANNED: { label: string; pattern: RegExp }[] = [
   { label: "rolls", pattern: /\brolls?\b/i },
   { label: "bankroll", pattern: /bankroll/i },
   { label: "finish green", pattern: /finish(?:es)? (?:in the )?green/i },
-  { label: "Min chance %", pattern: /Min chance %/ },
+  { label: "Min chance %", pattern: /min chance %/i },
   { label: "Find Profitable", pattern: /Find Profitable/i },
   { label: "Live Profitable", pattern: /Live Profitable/i },
   { label: "guaranteed", pattern: /guaranteed/i },
@@ -86,9 +85,10 @@ function stripComments(source: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-function visible(raw: string): string {
+function visible(raw: string, rel: string): string {
   let text = stripComments(raw);
-  for (const allowed of ALLOWLIST) text = text.split(allowed).join(" ");
+  const allowed = rel === "src/data/blog-meta.ts" ? [...ALLOWLIST, GUIDE_TITLE] : ALLOWLIST;
+  for (const entry of allowed) text = text.split(entry).join(" ");
   return text;
 }
 
@@ -99,7 +99,7 @@ function hits(text: string): string[] {
 describe("banned ad copy", () => {
   for (const rel of SOURCE_FILES) {
     it(`${rel} has none of the banned phrases`, () => {
-      const found = hits(visible(readFileSync(join(root, rel), "utf8")));
+      const found = hits(visible(readFileSync(join(root, rel), "utf8"), rel));
       expect(found, found.join(", ")).toEqual([]);
     });
   }
@@ -125,11 +125,18 @@ describe("banned ad copy", () => {
     }
   });
 
+  it("home and /blog HTML do not say Find Profitable", () => {
+    for (const rel of ["dist/index.html", "dist/blog/index.html"]) {
+      const html = existsSync(join(root, rel)) ? readFileSync(join(root, rel), "utf8") : "";
+      expect(html, rel).not.toContain("Find Profitable");
+    }
+  });
+
   it("prerendered HTML has none of the banned phrases", () => {
     const present = PRERENDERED.filter((rel) => existsSync(join(root, rel)));
     expect(present.length, "run npm run build so dist HTML exists").toBeGreaterThan(0);
     const found = present.flatMap((rel) =>
-      hits(visible(readFileSync(join(root, rel), "utf8"))).map((label) => `${rel}: ${label}`),
+      hits(visible(readFileSync(join(root, rel), "utf8"), rel)).map((label) => `${rel}: ${label}`),
     );
     expect(found, found.join(", ")).toEqual([]);
   });

@@ -18,7 +18,7 @@ import {
   type ActiveClaimRow,
   type VerifyPayload,
 } from "../lib/my-trade-ups.js";
-import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
+import { SIGN_IN_TO_CLAIM, shareDocumentTitle } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
 
 function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
@@ -207,7 +207,7 @@ export function PreviewShare() {
   const chance = tu ? formatOdds(tu.chance_to_profit ?? 0) : "0%";
   const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
   const title = tu
-    ? `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`
+    ? shareDocumentTitle(typeLabel, profit, chance)
     : "Trade-up | TradeUpBot";
   const h1 = tu
     ? `${typeLabel} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`
