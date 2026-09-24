@@ -56,8 +56,27 @@ describe("reportPurchase", () => {
     expect(gtag).toHaveBeenCalledTimes(1);
   });
 
-  it("treats a pending flag older than 60 seconds as stale", async () => {
-    window.localStorage.setItem("tub_purchase_cs_test_1", `pending:${Date.now() - 61_000}`);
+  it("lets a pending flag older than 30 minutes through and keeps a fresh one", async () => {
+    window.localStorage.setItem("tub_purchase_cs_test_1", `pending:${Date.now() - 29 * 60 * 1000}`);
+    stubCheckoutSession({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" });
+    await reportPurchase("pro", "cs_test_1");
+    expect(gtag).not.toHaveBeenCalled();
+
+    window.localStorage.setItem("tub_purchase_cs_test_1", `pending:${Date.now() - 31 * 60 * 1000}`);
+    await reportPurchase("pro", "cs_test_1");
+    expect(gtag).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the pending flag on a non-2xx response and on a fetch failure so a retry can report", async () => {
+    stubCheckoutSession({ error: "Not paid" }, 409);
+    await reportPurchase("pro", "cs_test_1");
+    expect(window.localStorage.getItem("tub_purchase_cs_test_1")).toBeNull();
+    expect(gtag).not.toHaveBeenCalled();
+
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => { throw new Error("network"); }));
+    await reportPurchase("pro", "cs_test_1");
+    expect(window.localStorage.getItem("tub_purchase_cs_test_1")).toBeNull();
+
     stubCheckoutSession({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" });
     await reportPurchase("pro", "cs_test_1");
     expect(gtag).toHaveBeenCalledTimes(1);

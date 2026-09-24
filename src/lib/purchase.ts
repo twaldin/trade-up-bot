@@ -1,10 +1,11 @@
 // Post-checkout purchase reporting. Verifies the Stripe session server-side (amount,
-// ownership) before firing. localStorage dedupes across tabs; the in-flight set stops two
-// tabs that read storage before either write from both reporting.
+// ownership) before firing. localStorage dedupes across tabs; a pending claim expires
+// after 30 minutes and is removed on a failed or non-2xx fetch so a retry can report.
+// The in-flight set stops two tabs that read storage before either write from both reporting.
 import { trackPurchaseComplete } from "./conversions.js";
 
 const FIRED_PREFIX = "tub_purchase_";
-const PENDING_TTL_MS = 60_000;
+const PENDING_TTL_MS = 30 * 60 * 1000;
 const inflight = new Set<string>();
 
 function pendingIsFresh(value: string, now: number): boolean {
