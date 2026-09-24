@@ -221,6 +221,21 @@ describe("Verify keeps input costs fee-inclusive", () => {
     expect(await readTradeUp(ctx.pool, id)).toEqual(afterBackfill);
   });
 
+  it("updates trade_ups.input_sources when it rewrites the input source", async () => {
+    const listingId = "dmarket:src-fix";
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId, source: "csfloat", raw: 500, stored: 500, float: 0.15 },
+    ]);
+    await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = $1", [listingId]);
+    await ctx.pool.query("UPDATE trade_ups SET input_sources = ARRAY['csfloat'] WHERE id = $1", [id]);
+    market.dmarket.set(listingId, 500);
+
+    await verify(ctx, id);
+
+    const { rows } = await ctx.pool.query("SELECT input_sources FROM trade_ups WHERE id = $1", [id]);
+    expect(rows[0].input_sources).toEqual(["dmarket"]);
+  });
+
   it("stores exactly what discovery stores for the same listing on every marketplace", async () => {
     const id = await seedFeeTradeUp(ctx.pool, seeds({ csf: 1000, dm: 1000, buff: 1000 }));
     setMarket({ csf: 1234, dm: 777, buff: 4321 });

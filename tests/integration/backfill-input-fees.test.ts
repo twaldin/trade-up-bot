@@ -248,6 +248,53 @@ describe("input-fee backfill", () => {
     await ctx.pool.query("INSERT INTO sync_meta (key, value) VALUES ('backfill-rw', '1')");
   });
 
+  it("tier free still corrects a trade-up created inside the public delay", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-fresh", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    const report = await runInputFeeBackfill(ctx.pool, { tier: "free", log: () => undefined });
+    expect(report.inputsAffected).toBe(1);
+    expect(report.sample[0].trade_up_id).toBe(id);
+  });
+
+  it("raw M1 before is the pre-write pro-board snapshot", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-m1", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    const before = await readTradeUp(ctx.pool, id);
+    const lines: string[] = [];
+    const report = await runInputFeeBackfill(ctx.pool, { dryRun: false, log: (l) => lines.push(l) });
+    expect(report.m1RawBefore).toBe(before.trade_up_score);
+    expect(report.m1RawAfter).not.toBe(report.m1RawBefore);
+    expect(lines.join("\n")).not.toContain("differs from SQL");
+    expect(lines.join("\n")).toContain("M1 raw (pro board");
+  });
+
+  it("keeps CSV rows pending when COMMIT throws", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-commit", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    await ctx.pool.query(`
+      CREATE FUNCTION bf_fail_commit() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'commit failed';
+      END $$ LANGUAGE plpgsql`);
+    await ctx.pool.query(`
+      CREATE CONSTRAINT TRIGGER bf_fail_commit
+      AFTER UPDATE ON trade_up_inputs
+      DEFERRABLE INITIALLY DEFERRED
+      FOR EACH ROW EXECUTE FUNCTION bf_fail_commit()`);
+    const csvPath = path.join(os.tmpdir(), `backfill-commit-${process.pid}.csv`);
+    fs.rmSync(csvPath, { force: true });
+    await expect(runInputFeeBackfill(ctx.pool, { dryRun: false, csvPath, pauseMs: 0, log: () => undefined }))
+      .rejects.toThrow(/commit failed/);
+    const csv = fs.readFileSync(csvPath, "utf8");
+    expect(csv).toMatch(/^pending,/m);
+    expect(csv).not.toMatch(/^committed,/m);
+    expect((await readInputPrices(ctx.pool, id))["bf-commit"]).toBe(1000);
+    fs.rmSync(csvPath, { force: true });
+  });
+
   it("retries a batch when the first UPDATE raises 55P03", async () => {
     const id = await seedFeeTradeUp(ctx.pool, [
       { listingId: "bf-lock", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },

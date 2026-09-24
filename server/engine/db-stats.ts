@@ -55,7 +55,10 @@ export async function recomputeTradeUpCost(db: Queryable, tradeUpId: number): Pr
 
   await db.query(
     `UPDATE trade_ups SET total_cost_cents = $1, profit_cents = $2, roi_percentage = $3,
-       chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6
+       chance_to_profit = $4, best_case_cents = $5, worst_case_cents = $6,
+       input_sources = COALESCE((
+         SELECT ARRAY_AGG(DISTINCT source ORDER BY source) FROM trade_up_inputs WHERE trade_up_id = $7
+       ), '{}')
      WHERE id = $7`,
     [cost, stats.profit_cents, stats.roi_percentage, stats.chance_to_profit, stats.best_case_cents, stats.worst_case_cents, tradeUpId]
   );

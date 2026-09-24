@@ -12,11 +12,13 @@
  * A row is corrected only when its listing still exists, the stored input
  * price equals the raw listing price, and storedInputCost(raw, source) differs.
  * Inputs whose listing is gone are counted as unclassifiable and left alone.
+ * `--tier free` changes only the parity board. Raw M1 is always the pro board,
+ * snapshotted before any batch writes.
  *
  * Revert CSV (`status,trade_up_id,listing_id,old_price,new_price,old_source,new_source`):
  * each batch is appended as `pending` before COMMIT, then rewritten to `committed`
  * after COMMIT (rows whose UPDATE did not change one row are dropped). A crash in
- * that window leaves `pending` rows. Revert a `committed` row, and a `pending` row
+ * that window, or COMMIT itself throwing, leaves `pending` rows. Revert a `committed` row, and a `pending` row
  * whose current price and source already equal new_price/new_source (the commit
  * landed). Leave a pending row that is still at old_price (the commit did not).
  * Restoring a row sets price_cents = old_price and source = old_source, then
@@ -507,6 +509,7 @@ async function applyPlans(
     const wrote = new Set<string>();
     const touched = new Set<number>();
     let landed = false;
+    let committing = false;
     try {
       await client.query(`SET SESSION statement_timeout = '${STATEMENT_TIMEOUT}'`);
       await client.query("BEGIN");
@@ -534,13 +537,14 @@ async function applyPlans(
         await recomputeTradeUpCost(client, plan.id);
       }
       beforeCommit?.();
+      committing = true;
       await client.query("COMMIT");
       landed = true;
       if (csvPath) settlePending(csvPath, pendingLines, wrote);
     } catch (err) {
       if (!landed) {
         await client.query("ROLLBACK").catch(() => undefined);
-        if (csvPath && pendingLines.length > 0) settlePending(csvPath, pendingLines, new Set());
+        if (!committing && csvPath && pendingLines.length > 0) settlePending(csvPath, pendingLines, new Set());
       }
       throw err;
     } finally {
@@ -563,6 +567,13 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
 
   const run = async (db: Queryable): Promise<BackfillReport> => {
     const rankWindow = await loadRankWindow(db, where);
+    const proWhere = boardWhere("pro");
+    const proRankWindow = tier === "pro" ? rankWindow : await loadRankWindow(db, proWhere);
+    const m1RawBefore = rawMedian(proRankWindow.map(row => ({ id: row.id, score: row.trade_up_score })));
+    const sqlRawBefore = await rawM1(db, proWhere, log);
+    if (sqlRawBefore !== null && m1RawBefore !== null && Math.abs(sqlRawBefore - m1RawBefore) > 1e-6) {
+      log(`warning: raw M1 snapshot ${m1RawBefore} differs from SQL percentile_cont ${sqlRawBefore}`);
+    }
     const scoreUpdates = new Map<number, number>();
     const windowPage = diversifiedTop(rankWindow, row => row.trade_up_score ?? 0, 50).map(row => row.id);
     let sqlPage: number[] = [];
@@ -609,13 +620,12 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
          JOIN trade_ups tu ON tu.id = tui.trade_up_id
          WHERE tu.is_theoretical = false
            AND tu.listing_status = 'active'
-           AND ($4::boolean = false OR tu.created_at <= NOW() - INTERVAL '10800 seconds')
            AND tui.trade_up_id > $1
            AND tui.price_cents = l.price_cents
            AND COALESCE(l.source, tui.source) = ANY($2::text[])
          ORDER BY tui.trade_up_id
          LIMIT $3`,
-        [cursor, FEE_SOURCES, batchSize, tier === "free"]
+        [cursor, FEE_SOURCES, batchSize]
       );
       if (idRows.length === 0) break;
       const ids = idRows.map(r => r.trade_up_id);
@@ -720,8 +730,7 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
     const m1Before = displayedTopMedianScore(diversifiedTop(rankWindow, row => row.trade_up_score ?? 0, 100));
     const afterTop = diversifiedTop(rankWindow, row => scoreUpdates.get(row.id) ?? row.trade_up_score ?? 0, 100);
     const m1After = displayedTopMedianScore(afterTop);
-    const m1RawBefore = await rawM1(db, where, log);
-    const m1RawAfter = rawMedian(rankWindow.map(row => ({
+    const m1RawAfter = rawMedian(proRankWindow.map(row => ({
       id: row.id,
       score: scoreUpdates.has(row.id) ? scoreUpdates.get(row.id)! : row.trade_up_score,
     })));
@@ -783,7 +792,7 @@ export function formatBackfillReport(report: BackfillReport): string {
     `cost delta (new - old), cents: mean ${report.costDelta.mean}, median ${report.costDelta.median}, max ${report.costDelta.max}`,
     `score drop: mean ${report.scoreDrop.mean}, median ${report.scoreDrop.median}, max ${report.scoreDrop.max}`,
     `M1 diversified (median of diversified top 100): ${report.m1Before} -> ${report.m1After}`,
-    `M1 raw (percentile_cont of plain top 100, non-NULL): ${na(report.m1RawBefore)} -> ${na(report.m1RawAfter)}`,
+    `M1 raw (pro board, median of plain top 100 non-NULL): ${na(report.m1RawBefore)} -> ${na(report.m1RawAfter)}`,
     `first page: ${report.firstPageChanged}/${report.firstPageSize} change cost; leave [${report.firstPageLeave.join(", ")}]; join [${report.firstPageJoin.join(", ")}]`,
     `ge50: ${report.ge50Before} -> ${report.ge50After}`,
     "sample (trade_up_id old_cost -> new_cost, old_roi -> new_roi):",

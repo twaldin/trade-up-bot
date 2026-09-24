@@ -161,6 +161,8 @@ describe("input buyer fee on reprice paths", () => {
       expect((await readInputPrices(ctx.pool, id))["src-dm"]).toBe(storedInputCost(500, "dmarket"));
       const { rows } = await ctx.pool.query("SELECT source FROM trade_up_inputs WHERE trade_up_id = $1", [id]);
       expect(rows[0].source).toBe("dmarket");
+      const { rows: sources } = await ctx.pool.query("SELECT input_sources FROM trade_ups WHERE id = $1", [id]);
+      expect(sources[0].input_sources).toEqual(["dmarket"]);
     });
 
     it("(a) a flagged listing with an unchanged price and fee-inclusive inputs is a no-op", async () => {
