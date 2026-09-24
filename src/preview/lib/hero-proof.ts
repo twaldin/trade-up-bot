@@ -1,7 +1,7 @@
 /**
  * The landing hero's proof panel: one real trade-up from the board, reduced to
  * what a first-time visitor can check — the listings it buys, what it can
- * return at what odds, and the four numbers that decide it. Everything is read
+ * return and at what probability, and the four numbers that decide it. Everything is read
  * from the API row; nothing here estimates or rounds a price.
  */
 import type { TradeUp, TradeUpInput } from "../../../shared/types.js";

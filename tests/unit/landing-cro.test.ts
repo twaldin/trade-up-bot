@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_NOTE,
+  LABEL_OUTCOMES_ABOVE_COST,
   PREVIEW_HOW,
   PREVIEW_PLAN_FREE,
   PREVIEW_VALUE,
@@ -13,6 +14,7 @@ import {
 } from "../../src/preview/lib/copy.js";
 import { HOMEPAGE_SEO } from "../../server/static-seo-pages.js";
 import { BOARD_LIST_INCLUDE } from "../../src/preview/lib/board-load.js";
+import { formatOdds } from "../../src/preview/lib/board.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -105,13 +107,21 @@ describe("first screen carries its own proof", () => {
     expect(proof).toContain("formatDollars(row.price_cents)");
   });
 
-  it("gives every output its price and odds, and states each headline number once", () => {
+  it("gives every output its price and probability, and states each headline number once", () => {
     const proof = heroProofComponent();
+    expect(LABEL_OUTCOMES_ABOVE_COST).toBe("Outcomes above cost");
     expect(proof).toContain("formatDollars(row.priceCents)");
-    expect(proof).toMatch(/Math\.round\(row\.probability \* 100\)/);
-    for (const label of ["Cost", "Expected value (after fees)", "Expected P/L", "P(P/L > $0)"]) {
-      expect(proof.split(`label="${label}"`).length - 1, label).toBe(1);
-    }
+    expect(proof).toContain("formatOdds(row.probability)");
+    expect(proof).toContain("label={LABEL_OUTCOMES_ABOVE_COST}");
+    expect(proof).toContain('note="at current prices"');
+    expect(proof).toContain("label={LABEL_EXPECTED_VALUE}");
+    expect(proof).toContain("note={LABEL_AFTER_FEES}");
+    expect(proof).toContain("title={LABEL_OUTCOME_PROBABILITY}");
+    expect(landing).not.toContain("Can return");
+    expect(landing).not.toContain("P(P/L > $0)");
+    expect(formatOdds(0.996)).toBe(">99%");
+    expect(proof.split('label="Cost"').length - 1).toBe(1);
+    expect(proof.split('label="Expected P/L"').length - 1).toBe(1);
   });
 
   it("reuses the board fee line and does not print a board ROI", () => {

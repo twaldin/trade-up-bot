@@ -9,6 +9,7 @@ import { useScrollProgress } from "../kit/lib/motion.js";
 import { blogMeta } from "../../data/blog-meta.js";
 import {
   formatFloat,
+  formatOdds,
   inputListingHref,
   outputRarityColor,
   previewSkinHref,
@@ -22,6 +23,10 @@ import { PRO_PRICE, proPriceLine } from "../lib/pro-pricing.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
+  LABEL_AFTER_FEES,
+  LABEL_EXPECTED_VALUE,
+  LABEL_OUTCOME_PROBABILITY,
+  LABEL_OUTCOMES_ABOVE_COST,
   PREVIEW_CTA_CALCULATOR,
   PREVIEW_CTA_NOTE,
   PREVIEW_CTA_PRIMARY,
@@ -162,10 +167,10 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             })}
           </div>
           <div className="preview-proof__outs">
-            <p className="preview-proof__label">Can return</p>
+            <p className="preview-proof__label">Possible outcomes</p>
             {proof.outcomes.map((row) => {
               const { weapon, finish } = splitSkinName(row.name);
-              const share = row.probability < 0.01 ? "<1%" : `${Math.round(row.probability * 100)}%`;
+              const share = formatOdds(row.probability);
               return (
                 <Link
                   key={row.name}
@@ -178,7 +183,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
                     {weapon && <em>{weapon}</em>}
                     <b>{finish}</b>
                   </span>
-                  <span className="preview-proof__odds">{share}</span>
+                  <span className="preview-proof__odds" title={LABEL_OUTCOME_PROBABILITY} aria-label={`${LABEL_OUTCOME_PROBABILITY} ${share}`}>{share}</span>
                   <span className="preview-listing__price">{formatDollars(row.priceCents)}</span>
                   <span className={`preview-proof__delta ${toneOf(row.profitCents)}`}>{signedDollars(row.profitCents)}</span>
                 </Link>
@@ -192,13 +197,13 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
           </div>
           <div className="preview-proof__kpis">
             <Kpi label="Cost" value={formatDollars(proof.costCents)} />
-            <Kpi label="Expected value (after fees)" value={formatDollars(proof.evCents)} />
+            <Kpi label={LABEL_EXPECTED_VALUE} note={LABEL_AFTER_FEES} value={formatDollars(proof.evCents)} />
             <Kpi
               label="Expected P/L"
               value={signedDollars(proof.profitCents)}
               tone={toneOf(proof.profitCents)}
             />
-            <Kpi label="P(P/L > $0)" value={proof.chance === null ? "—" : `${Math.round(proof.chance * 100)}%`} />
+            <Kpi label={LABEL_OUTCOMES_ABOVE_COST} note="at current prices" value={proof.chance === null ? "—" : formatOdds(proof.chance)} />
           </div>
           <FeeLine line={boardFeeLine(proof.listings.map((row) => row.source))} />
           <footer className="preview-proof__foot">
