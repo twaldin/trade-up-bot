@@ -42,7 +42,6 @@ export async function cascadeTradeUpStatuses(
   options?: CascadeTradeUpStatusOptions,
 ): Promise<number> {
   if (listingIds.length === 0) return 0;
-  const refLookup = options?.inputRefLookup ?? await ensureInputReferences(pool);
   const { cacheInvalidatePrefix } = await import("../redis.js");
   // Batch in chunks of 500 to avoid param limit issues
   let totalUpdated = 0;
@@ -152,6 +151,7 @@ export async function cascadeTradeUpStatuses(
       }
 
       if (activeIds.length > 0) {
+        const refLookup = options?.inputRefLookup ?? await ensureInputReferences(pool);
         const outlierIds = await findOutlierTradeUpIds(pool, activeIds, refLookup);
         const safeActiveIds = activeIds.filter(id => !outlierIds.has(id));
         if (safeActiveIds.length === 0) continue;

@@ -121,11 +121,13 @@ export function isInputPriceOutlier(args: InputPriceOutlierArgs): boolean {
 
 let localMaps: InputReferenceMaps | null = null;
 let localMapsBuiltAt = 0;
+let referenceBuild: Promise<InputReferenceMaps> | null = null;
 
 /** Drop the API/checker reference copy. Tests use this between schemas. */
 export function resetInputReferenceCache(): void {
   localMaps = null;
   localMapsBuiltAt = 0;
+  referenceBuild = null;
 }
 
 /**
@@ -141,7 +143,13 @@ export async function ensureInputReferences(pool: pg.Pool): Promise<InputRefLook
     });
   }
   if (!localMaps || Date.now() - localMapsBuiltAt >= PRICE_CACHE_TTL_MS) {
-    localMaps = await buildInputReferenceMaps(pool);
+    if (!referenceBuild) {
+      referenceBuild = buildInputReferenceMaps(pool).finally(() => {
+        referenceBuild = null;
+      });
+    }
+    const pending = referenceBuild;
+    localMaps = await pending;
     localMapsBuiltAt = Date.now();
   }
   const maps = localMaps;

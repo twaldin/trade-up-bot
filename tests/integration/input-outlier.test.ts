@@ -13,7 +13,8 @@ import { phase1Housekeeping } from "../../server/daemon/phases/housekeeping.js";
 import { loadDiscoveryData, clearDiscoveryCache, getListingsForRarity } from "../../server/engine/data-load.js";
 import { refPriceCache, skinportMedianCache } from "../../server/engine/pricing.js";
 import {
-  buildInputReferenceMaps, exceedsReferenceCap, inputReferenceCents, markTradeUpsOutlierStale, resetInputReferenceCache,
+  buildInputReferenceMaps, ensureInputReferences, exceedsReferenceCap, inputReferenceCents,
+  markTradeUpsOutlierStale, resetInputReferenceCache,
 } from "../../server/engine/input-outlier.js";
 import { floatToCondition } from "../../shared/types.js";
 import { runMarkOutlierStale, withReadOnlySession } from "../../scripts/mark-outlier-stale.js";
@@ -235,6 +236,39 @@ describe("input price outlier guard", () => {
       expect(res.revived).toBe(0);
       const row = (await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [id])).rows[0];
       expect(row.listing_status).toBe("stale");
+    });
+  });
+
+  describe("cascade reference lookup", () => {
+    it("builds the lookup only when a row would become active, and concurrent builds share one flight", async () => {
+      const tuId = await seedFeeTradeUp(ctx.pool, [
+        { listingId: "cascade-ref-1", source: "csfloat", raw: 1000, stored: storedInputCost(1000, "csfloat"), float: 0.2 },
+        { listingId: "cascade-ref-2", source: "csfloat", raw: 1000, stored: storedInputCost(1000, "csfloat"), float: 0.21 },
+      ]);
+      const { rows: inputs } = await ctx.pool.query(
+        "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
+        [tuId],
+      );
+      const listingIds = inputs.map((r: { listing_id: string }) => r.listing_id);
+      await ctx.pool.query("DELETE FROM listings WHERE id = ANY($1)", [listingIds]);
+
+      const refSql = (sql: unknown) => typeof sql === "string" && sql.includes("csfloat_sales");
+      const spy = vi.spyOn(ctx.pool, "query");
+      await cascadeTradeUpStatuses(ctx.pool, listingIds);
+      const buildsWhenDeleting = spy.mock.calls.filter(call => refSql(call[0])).length;
+      expect(buildsWhenDeleting).toBe(0);
+      spy.mockRestore();
+
+      resetInputReferenceCache();
+      refPriceCache.clear();
+      let refQueries = 0;
+      const original = ctx.pool.query.bind(ctx.pool);
+      vi.spyOn(ctx.pool, "query").mockImplementation((...args: Parameters<typeof original>) => {
+        if (refSql(args[0])) refQueries++;
+        return original(...args);
+      });
+      await Promise.all([ensureInputReferences(ctx.pool), ensureInputReferences(ctx.pool)]);
+      expect(refQueries).toBe(1);
     });
   });
 

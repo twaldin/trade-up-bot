@@ -246,10 +246,6 @@ async function applyBatch(
       await client.query("COMMIT");
       landed = true;
       settlePending(csvPath, pendingLines, committed);
-      if (updatedIds.size > 0) {
-        const { cacheInvalidatePrefix } = await import("../server/redis.js");
-        await cacheInvalidatePrefix("tu:");
-      }
     } catch (err) {
       if (!landed) {
         await client.query("ROLLBACK").catch(() => undefined);
@@ -435,7 +431,13 @@ export async function runMarkOutlierStale(pool: pg.Pool, opts: MarkOptions = {})
     return report;
   };
 
-  return withTimedSession(pool, dryRun, run);
+  const report = await withTimedSession(pool, dryRun, run);
+  if (!dryRun) {
+    const { redisConnected, cacheInvalidatePrefix } = await import("../server/redis.js");
+    await redisConnected();
+    await cacheInvalidatePrefix("tu:");
+  }
+  return report;
 }
 
 export function formatMarkReport(report: MarkReport): string {
@@ -468,6 +470,10 @@ async function main() {
   const target = describeDatabaseTarget(databaseUrl);
   console.log(`target ${target.host}/${target.database}`);
   const pool = new Pool({ connectionString: databaseUrl });
+  if (!args.dryRun) {
+    const { initRedis } = await import("../server/redis.js");
+    initRedis();
+  }
   try {
     await runMarkOutlierStale(pool, {
       dryRun: args.dryRun,
@@ -476,6 +482,10 @@ async function main() {
       csvPath: args.csvPath,
     });
   } finally {
+    if (!args.dryRun) {
+      const { closeRedis } = await import("../server/redis.js");
+      await closeRedis();
+    }
     await pool.end();
   }
 }
