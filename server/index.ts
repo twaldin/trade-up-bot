@@ -1391,31 +1391,12 @@ registerCanonicalRedirectRoutes(app);
       try {
         const { cacheGet, cacheSet } = await import("./redis.js");
 
-        // global-stats: COUNT(*) on 1.25M trade_ups
+        // global-stats: COUNT(*) on 1.25M trade_ups. Shares getGlobalStats' single
+        // flight with the homepage materializer that starts at the same moment.
         if (!(await cacheGet("global_stats"))) {
           console.log("Warming cache: global-stats...");
           const t = Date.now();
-          const { rows: [stats] } = await pool.query(`
-            SELECT
-              (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
-              (SELECT SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) FROM trade_ups WHERE is_theoretical = false) as profitable_tu,
-              (SELECT COUNT(*) FROM listings) as listings,
-              (SELECT COUNT(*) FROM price_observations) as sale_obs,
-              (SELECT COUNT(*) FROM sale_history) as sale_hist,
-              (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
-              (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
-          `);
-          const data = {
-            total_trade_ups: parseInt(stats.total_tu),
-            profitable_trade_ups: parseInt(stats.profitable_tu) || 0,
-            total_data_points: parseInt(stats.listings) + parseInt(stats.sale_obs) + parseInt(stats.sale_hist) + parseInt(stats.refs),
-            listings: parseInt(stats.listings),
-            sale_observations: parseInt(stats.sale_obs),
-            sale_history: parseInt(stats.sale_hist),
-            ref_prices: parseInt(stats.refs),
-            total_cycles: parseInt(stats.cycles),
-          };
-          await cacheSet("global_stats", data, 1800); // 30-min TTL — survives daemon cycle
+          await getGlobalStats(pool);
           console.log(`Cache warmed: global-stats (${((Date.now() - t) / 1000).toFixed(1)}s)`);
         }
 

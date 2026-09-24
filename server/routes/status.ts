@@ -2,16 +2,37 @@ import { Router } from "express";
 import pg from "pg";
 import fs from "fs";
 import { getSyncMeta } from "../db.js";
-import { cachedRoute } from "../redis.js";
+import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
 import { buildStatusData } from "./status-helpers.js";
 
-export async function getGlobalStats(pool: pg.Pool): Promise<Record<string, number>> {
-  try {
-    const { cacheGet } = await import("../redis.js");
-    const cached = await cacheGet<Record<string, number>>("global_stats");
-    if (cached) return cached;
-  } catch { }
+/** Seconds browsers may reuse /api/global-stats; the numbers only move per daemon cycle. */
+export const GLOBAL_STATS_BROWSER_MAX_AGE = 60;
 
+// A cold Redis key used to send every concurrent caller (homepage render, hero
+// fetch, startup warm) into its own seven full-table COUNTs. One flight per pool.
+const globalStatsInflight = new WeakMap<pg.Pool, Promise<Record<string, number>>>();
+
+async function loadGlobalStats(pool: pg.Pool): Promise<{ data: Record<string, number>; cacheHit: boolean }> {
+  const cached = await cacheGet<Record<string, number>>("global_stats");
+  if (cached) return { data: cached, cacheHit: true };
+
+  const pending = globalStatsInflight.get(pool);
+  if (pending) return { data: await pending, cacheHit: false };
+
+  const run = queryGlobalStats(pool);
+  globalStatsInflight.set(pool, run);
+  try {
+    return { data: await run, cacheHit: false };
+  } finally {
+    globalStatsInflight.delete(pool);
+  }
+}
+
+export async function getGlobalStats(pool: pg.Pool): Promise<Record<string, number>> {
+  return (await loadGlobalStats(pool)).data;
+}
+
+async function queryGlobalStats(pool: pg.Pool): Promise<Record<string, number>> {
   const { rows: [stats] } = await pool.query(`
     SELECT
       (SELECT COUNT(*) FROM trade_ups WHERE is_theoretical = false) as total_tu,
@@ -34,10 +55,7 @@ export async function getGlobalStats(pool: pg.Pool): Promise<Record<string, numb
     total_cycles: parseInt(stats.cycles, 10),
   };
 
-  try {
-    const { cacheSet } = await import("../redis.js");
-    await cacheSet("global_stats", data, 1800).catch(() => {});
-  } catch { }
+  await cacheSet("global_stats", data, 1800).catch(() => {});
 
   return data;
 }
@@ -51,16 +69,10 @@ export function statusRouter(pool: pg.Pool): Router {
   }));
 
   router.get("/api/global-stats", async (_req, res) => {
-    let cacheHit = false;
     try {
-      const { cacheGet } = await import("../redis.js");
-      const cached = await cacheGet<Record<string, number>>("global_stats");
-      if (cached) cacheHit = true;
-    } catch { /* Redis unavailable */ }
-
-    try {
-      const data = await getGlobalStats(pool);
+      const { data, cacheHit } = await loadGlobalStats(pool);
       res.setHeader("X-Cache", cacheHit ? "HIT" : "MISS");
+      res.setHeader("Cache-Control", `public, max-age=${GLOBAL_STATS_BROWSER_MAX_AGE}`);
       res.json(data);
     } catch {
       res.json({ total_trade_ups: 0, profitable_trade_ups: 0, total_data_points: 0, total_cycles: 0 });

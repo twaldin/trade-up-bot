@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import { statusRouter } from "../../server/routes/status.js";
@@ -208,6 +208,29 @@ describe("Status route integration tests", () => {
 
     // X-Cache header present (MISS because no Redis in test)
     expect(res.headers["x-cache"]).toBe("MISS");
+  });
+
+  it("GET /api/global-stats is browser-cacheable for a minute", async () => {
+    const res = await request(ctx.app).get("/api/global-stats");
+    expect(res.status).toBe(200);
+    expect(res.headers["cache-control"]).toBe("public, max-age=60");
+  });
+
+  it("GET /api/global-stats coalesces concurrent cold requests into one aggregate query", async () => {
+    const spy = vi.spyOn(ctx.pool, "query");
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => request(ctx.app).get("/api/global-stats")),
+      );
+      for (const r of results) {
+        expect(r.status).toBe(200);
+        expect(r.body.total_trade_ups).toBe(10);
+      }
+      const aggregateCalls = spy.mock.calls.filter(([sql]) => typeof sql === "string" && sql.includes("total_tu"));
+      expect(aggregateCalls).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // ─── GET /api/daemon-cycles ─────────────────────────────────────────────

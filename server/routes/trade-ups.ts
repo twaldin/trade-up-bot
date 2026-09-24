@@ -3,11 +3,24 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
+import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
 import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
-import type { TradeUp, TradeUpInput, TradeUpOutcome, InputSummary } from "../../shared/types.js";
+import {
+  RANK_SNAPSHOT_SIZE,
+  groupInputRows,
+  loadRankSnapshot,
+  orderByIds,
+  parseListIncludes,
+  parseOutcomesJson,
+  rankSnapshotKey,
+  snapshotCoversPage,
+  type InputJoinRow,
+  type PageInputs,
+  type RankSnapshotStore,
+} from "./trade-ups-page.js";
+import type { TradeUp, TradeUpOutcome } from "../../shared/types.js";
 
 function canonicalListingStatus(
   rawStatus: TradeUp["listing_status"] | null | undefined,
@@ -19,6 +32,30 @@ function canonicalListingStatus(
   if (missingCount <= 0) return "active";
   if (realInputCount > 0 && missingCount >= realInputCount) return "stale";
   return "partial";
+}
+
+/** A trade_ups row as selected by the list query. */
+interface ListRow {
+  id: number;
+  type: string;
+  total_cost_cents: number;
+  expected_value_cents: number;
+  profit_cents: number;
+  roi_percentage: number;
+  created_at: string;
+  is_theoretical: boolean;
+  listing_status: TradeUp["listing_status"] | null;
+  peak_profit_cents: number | null;
+  profit_streak: number | null;
+  preserved_at: string | null;
+  previous_inputs: string | null;
+  combo_key: string | null;
+  chance_to_profit: number | null;
+  best_case_cents: number | null;
+  worst_case_cents: number | null;
+  trade_up_score: number | null;
+  outcome_count: number | null;
+  outcomes_json?: string | null;
 }
 
 /** Batch-load real_input_count and missing_count for a set of trade-up IDs.
@@ -57,8 +94,30 @@ async function batchLoadInputCounts(
   return result;
 }
 
-export function tradeUpsRouter(pool: pg.Pool): Router {
+/** Page rows' inputs joined to live listings in one round trip (counts, summary, embedded inputs). */
+async function batchLoadPageInputs(pool: pg.Pool, tradeUpIds: number[]): Promise<Map<number, PageInputs>> {
+  if (tradeUpIds.length === 0) return new Map();
+  const { rows } = await pool.query<InputJoinRow>(
+    `SELECT tui.*, l.marketplace_id, l.id AS live_listing_id, l.claimed_by AS listing_claimed_by
+     FROM trade_up_inputs tui
+     LEFT JOIN listings l ON tui.listing_id = l.id
+     WHERE tui.trade_up_id = ANY($1::int[])`,
+    [tradeUpIds]
+  );
+  return groupInputRows(rows);
+}
+
+const redisRankStore: RankSnapshotStore = {
+  get: (key) => cacheGet(key),
+  set: (key, value, ttlSeconds) => cacheSet(key, value, ttlSeconds),
+  del: async (key) => {
+    await getRedis()?.del(key).catch(() => 0);
+  },
+};
+
+export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotStore } = {}): Router {
   const router = Router();
+  const rankStore = opts.rankStore ?? redisRankStore;
 
   // Filter options: Redis-first (daemon pre-populates every cycle).
   // The DISTINCT + GROUP BY queries on 10M+ trade_up_inputs rows block the
@@ -381,102 +440,101 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const limitParam = paramIndex++;
     const offsetParam = paramIndex++;
 
-    // Data query always runs (fast: index scan + LIMIT).
-    // Correlated subqueries for real_input_count / missing_count have been moved to a
-    // single batched query after the page rows resolve (see batchLoadInputCounts).
-    const dataSql =
-      `SELECT t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
+    const includes = parseListIncludes(req.query.include, perPage);
+    const listColumns =
+      `t.id, t.type, t.total_cost_cents, t.expected_value_cents, t.profit_cents,
               t.roi_percentage, t.created_at, t.is_theoretical, t.listing_status,
               t.peak_profit_cents, t.profit_streak, t.preserved_at, t.previous_inputs,
               t.combo_key, t.chance_to_profit, t.best_case_cents, t.worst_case_cents,
               t.trade_up_score,
-              0 as outcome_count
+              0 as outcome_count${includes.outcomes ? ", t.outcomes_json" : ""}`;
+    const orderBy = `ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC`;
+    const dataSql =
+      `SELECT ${listColumns}
        ${diversitySql.fromWhere}
-       ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
+       ${orderBy}
        LIMIT $${limitParam} OFFSET $${offsetParam}`;
     const dataParams = [...params, perPage, offset];
-    const dataPromise = pool.query(dataSql, dataParams);
+    // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
+    const cappedCountSql = `SELECT COUNT(*) as c FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT 10001) sub`;
 
-    let total: number;
-    let totalProfitable: number;
+    let total = 0;
+    let totalProfitable = 0;
+    let rows: ListRow[] | null = null;
 
-    if (!hasExtraFilters && type && !applyDiversity) {
-      // Try Redis-cached counts first (populated by daemon every cycle + API startup)
-      const { cacheGet, cacheSet } = await import("../redis.js");
-      const cachedCounts = await cacheGet<Record<string, { total: number; profitable: number }>>("type_counts");
-      const typeCounts = cachedCounts?.[type];
-
-      if (typeCounts) {
-        total = typeCounts.total;
-        totalProfitable = typeCounts.profitable;
+    // The diversified window sorts every active row regardless of OFFSET, so rank
+    // once per (filters, sort) and slice pages from the snapshot. Rows are re-read
+    // by id; if any snapshot id is no longer active, drop the snapshot and fall
+    // back to the live query so the page has no holes.
+    const snapshotKey = applyDiversity && !includeStale && snapshotCoversPage(offset, perPage)
+      ? rankSnapshotKey({ fromWhere: diversitySql.fromWhere, sortCol, sortOrder, params })
+      : null;
+    if (snapshotKey) {
+      const snapshot = await loadRankSnapshot(snapshotKey, rankStore, async () => {
+        const [{ rows: idRows }, { rows: [countRow] }] = await Promise.all([
+          pool.query<{ id: number }>(
+            `SELECT t.id ${diversitySql.fromWhere} ${orderBy} LIMIT $${limitParam}`,
+            [...params, RANK_SNAPSHOT_SIZE]
+          ),
+          pool.query(cappedCountSql, params),
+        ]);
+        return { ids: idRows.map((r) => Number(r.id)), total: parseInt(countRow?.c) || 0 };
+      });
+      const pageIds = snapshot.ids.slice(offset, offset + perPage);
+      const { rows: byId } = pageIds.length === 0
+        ? { rows: [] }
+        : await pool.query<ListRow>(
+          `SELECT ${listColumns} FROM trade_ups t
+           WHERE t.id = ANY($1::int[]) AND t.is_theoretical = false AND t.listing_status = 'active'`,
+          [pageIds]
+        );
+      const ordered = orderByIds(byId, pageIds);
+      if (ordered) {
+        rows = ordered;
+        total = snapshot.total;
       } else {
-        // Cache miss: compute and cache for all types at once (one query, amortized)
-        const { rows: countRows } = await pool.query(`
-          SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
-          FROM trade_ups WHERE is_theoretical = false AND listing_status = 'active'
-          GROUP BY type
-        `);
-        const counts: Record<string, { total: number; profitable: number }> = {};
-        for (const r of countRows) {
-          counts[r.type] = { total: parseInt(r.c), profitable: parseInt(r.profitable) || 0 };
-        }
-        await cacheSet("type_counts", counts, 1800); // 30 min, refreshed by daemon
-        total = counts[type]?.total ?? 0;
-        totalProfitable = counts[type]?.profitable ?? 0;
-      }
-    } else {
-      // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
-      const { rows: [countRow] } = await pool.query(
-        `SELECT COUNT(*) as c FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT 10001) sub`,
-        params
-      );
-      total = parseInt(countRow?.c) || 0;
-      totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
-    }
-
-    let rows = (await dataPromise).rows;
-
-    // Batch-load real_input_count and missing_count for all page rows in one query.
-    // This replaces the two correlated subqueries that were inlined in the SELECT above.
-    const inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
-
-    const tuIds = rows.map((r: { id: number }) => r.id);
-
-    // Batch-load lightweight input summaries (skin_name, condition, collection_name only).
-    // Full inputs are loaded on-demand when expanding a row via /api/trade-up/:id/inputs.
-    const summaryByTuId = new Map<number, InputSummary>();
-    if (tuIds.length > 0) {
-      const placeholders = tuIds.map((_: number, i: number) => `$${i + 1}`).join(",");
-      const { rows: summaryRows } = await pool.query(
-        `SELECT trade_up_id, skin_name, condition, collection_name FROM trade_up_inputs WHERE trade_up_id IN (${placeholders})`,
-        tuIds
-      );
-
-      // Group by trade_up_id and compute summaries
-      const grouped = new Map<number, typeof summaryRows>();
-      for (const r of summaryRows) {
-        const list = grouped.get(r.trade_up_id) ?? [];
-        list.push(r);
-        grouped.set(r.trade_up_id, list);
-      }
-      for (const [tuId, inputs] of grouped) {
-        const skinCounts = new Map<string, { count: number; condition: string }>();
-        const collections = new Set<string>();
-        for (const inp of inputs) {
-          const existing = skinCounts.get(inp.skin_name);
-          if (existing) existing.count++;
-          else skinCounts.set(inp.skin_name, { count: 1, condition: inp.condition });
-          collections.add(inp.collection_name);
-        }
-        summaryByTuId.set(tuId, {
-          skins: [...skinCounts.entries()]
-            .sort((a, b) => b[1].count - a[1].count)
-            .map(([name, info]) => ({ name, count: info.count, condition: info.condition })),
-          collections: [...collections],
-          input_count: inputs.length,
-        });
+        await rankStore.del(snapshotKey).catch(() => {});
       }
     }
+
+    if (rows === null) {
+      const dataPromise = pool.query<ListRow>(dataSql, dataParams);
+
+      if (!hasExtraFilters && type && !applyDiversity) {
+        // Try Redis-cached counts first (populated by daemon every cycle + API startup)
+        const cachedCounts = await cacheGet<Record<string, { total: number; profitable: number }>>("type_counts");
+        const typeCounts = cachedCounts?.[type];
+
+        if (typeCounts) {
+          total = typeCounts.total;
+          totalProfitable = typeCounts.profitable;
+        } else {
+          // Cache miss: compute and cache for all types at once (one query, amortized)
+          const { rows: countRows } = await pool.query(`
+            SELECT type, COUNT(*) as c, SUM(CASE WHEN profit_cents > 0 THEN 1 ELSE 0 END) as profitable
+            FROM trade_ups WHERE is_theoretical = false AND listing_status = 'active'
+            GROUP BY type
+          `);
+          const counts: Record<string, { total: number; profitable: number }> = {};
+          for (const r of countRows) {
+            counts[r.type] = { total: parseInt(r.c), profitable: parseInt(r.profitable) || 0 };
+          }
+          await cacheSet("type_counts", counts, 1800); // 30 min, refreshed by daemon
+          total = counts[type]?.total ?? 0;
+          totalProfitable = counts[type]?.profitable ?? 0;
+        }
+      } else {
+        const { rows: [countRow] } = await pool.query(cappedCountSql, params);
+        total = parseInt(countRow?.c) || 0;
+        totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
+      }
+
+      rows = (await dataPromise).rows;
+    }
+
+    // One joined query per page: canonical counts, list summaries, and (with
+    // include=inputs) the rows /api/trade-up/:id/inputs would have returned.
+    const inputsById = await batchLoadPageInputs(pool, rows.map((r) => r.id));
 
     // The list query filters on the listing_status column. A listing deleted
     // without cascade leaves that column 'active', so the row is in this page.
@@ -484,11 +542,11 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     // Hide those leaks here. The column is repaired by the daemon heal, not
     // by this request. The claimer keeps the row so they can see the gap.
 
-    const tradeUps: TradeUp[] = rows.map((row: any) => {
-      const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
-      const counts = inputCountsById.get(row.id) ?? { real_input_count: 0, missing_count: 0 };
-      const missingCount = Math.max(0, counts.missing_count);
-      const realInputCount = Math.max(0, counts.real_input_count);
+    const tradeUps = rows.map((row) => {
+      const pageInputs = inputsById.get(row.id);
+      const summary = pageInputs?.summary ?? { skins: [], collections: [], input_count: 0 };
+      const missingCount = Math.max(0, pageInputs?.missingCount ?? 0);
+      const realInputCount = Math.max(0, pageInputs?.realInputCount ?? 0);
       const listingStatus = canonicalListingStatus(row.listing_status, missingCount, realInputCount);
 
       const tu: TradeUp = {
@@ -519,6 +577,8 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
       return {
         ...tu,
+        inputs: includes.inputs ? pageInputs?.inputs ?? [] : [],
+        outcomes: includes.outcomes ? parseOutcomesJson(row.outcomes_json) : [],
         claimed_by_me: claimedByMe.has(row.id),
         claimed_by_other: claimedByOthers.has(row.id),
         claim_expires_at: claimExpiryMap.get(row.id),
