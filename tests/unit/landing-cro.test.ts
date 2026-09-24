@@ -7,6 +7,7 @@ import {
   PREVIEW_CTA_NOTE,
   PREVIEW_HOW,
   PREVIEW_PLAN_FREE,
+  PREVIEW_VALUE,
   PREVIEW_PLAN_PRO,
   PREVIEW_PRO_PRICES,
 } from "../../src/preview/lib/copy.js";
@@ -229,6 +230,8 @@ describe("How it works stays the signed 4-step pipeline", () => {
       "Verify (Pro)",
       "Claim",
     ]);
+    expect(PREVIEW_VALUE.map(([title]) => title)).toContain("Verify before buying (Pro)");
+    expect(HOMEPAGE_SEO.bodyHtml).toContain("<h3>Verify before buying (Pro)</h3>");
     expect(HOMEPAGE_SEO.bodyHtml).toContain("<h2>How it works</h2>");
     for (const step of PREVIEW_HOW) {
       expect(HOMEPAGE_SEO.bodyHtml).toContain(`<h3>${step.title}</h3>`);
