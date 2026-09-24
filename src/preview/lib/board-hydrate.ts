@@ -5,11 +5,11 @@
  */
 
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
-import { SLOW_DOWN_COPY, noteRateLimited, parseRetryAfter, rateLimitWaitMs } from "./page-fetch.js";
+import { noteRateLimited, parseRetryAfter, rateLimitWaitMs } from "./page-fetch.js";
 
 export interface HydratedTradeUp extends TradeUp {
   /** Set when an inputs or outcomes fetch stayed 429 after one retry. */
-  hydrateNotice?: string;
+  hydrateThrottled?: boolean;
 }
 
 type Sleep = (ms: number) => Promise<void>;
@@ -73,14 +73,14 @@ export async function hydrateBoardCard(
     if (inputs) next = { ...next, inputs };
   }
 
-  if (!throttled) return clearHydrateNotice(next);
-  return { ...clearHydrateNotice(next), hydrateNotice: SLOW_DOWN_COPY };
+  if (!throttled) return clearHydrateThrottle(next);
+  return { ...clearHydrateThrottle(next), hydrateThrottled: true };
 }
 
-function clearHydrateNotice(tu: HydratedTradeUp): HydratedTradeUp {
-  if (!tu.hydrateNotice) return tu;
+function clearHydrateThrottle(tu: HydratedTradeUp): HydratedTradeUp {
+  if (!tu.hydrateThrottled) return tu;
   const copy: HydratedTradeUp = { ...tu };
-  delete copy.hydrateNotice;
+  delete copy.hydrateThrottled;
   return copy;
 }
 

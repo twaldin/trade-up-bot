@@ -613,7 +613,7 @@ export function TradeUpCard({
           <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
         </div>
       )}
-      {tu.hydrateNotice && <p className="preview-note">{tu.hydrateNotice}</p>}
+      {tu.hydrateThrottled && <BoardNotice notice="throttled" />}
 
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow

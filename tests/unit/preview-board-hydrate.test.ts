@@ -1,6 +1,12 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrateBoardCard } from "../../src/preview/lib/board-hydrate.js";
 import { SLOW_DOWN_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { TradeUpCard } from "../../src/preview/pages/PreviewBoard.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
 function bareCard() {
@@ -41,7 +47,7 @@ describe("board card hydration 429", () => {
     expect(sleep.mock.calls[0]?.[0]).toBeGreaterThan(0);
     expect(card.outcomes).toHaveLength(0);
     expect(card.inputs).toHaveLength(0);
-    expect(card.hydrateNotice).toBe(SLOW_DOWN_COPY);
+    expect(card.hydrateThrottled).toBe(true);
   });
 
   it("keeps the tiles when the single retry succeeds", async () => {
@@ -85,7 +91,7 @@ describe("board card hydration 429", () => {
     expect(fetches.get("/api/trade-up/42/inputs")).toBe(1);
     expect(card.outcomes).toHaveLength(1);
     expect(card.inputs).toHaveLength(1);
-    expect(card.hydrateNotice).toBeUndefined();
+    expect(card.hydrateThrottled).toBeUndefined();
   });
 
   it("does not retry a non-429 failure and does not invent a slow-down", async () => {
@@ -94,6 +100,24 @@ describe("board card hydration 429", () => {
     const card = await hydrateBoardCard(bareCard(), fetchFn as unknown as typeof fetch, sleep);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(sleep).not.toHaveBeenCalled();
-    expect(card.hydrateNotice).toBeUndefined();
+    expect(card.hydrateThrottled).toBeUndefined();
+  });
+
+  it("paints the board slow-down notice on a card that stayed throttled", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(createElement(TradeUpCard, {
+        tu: { ...bareCard(), hydrateThrottled: true },
+        expanded: false,
+        onExpand: () => {},
+      }));
+    });
+    expect(host.textContent).toContain(SLOW_DOWN_COPY);
+    expect(host.querySelector("[role='status']")?.textContent).toBe(SLOW_DOWN_COPY);
+    await act(async () => { root?.unmount(); });
+    host.remove();
   });
 });
