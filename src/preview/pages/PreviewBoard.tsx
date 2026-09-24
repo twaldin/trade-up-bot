@@ -55,6 +55,8 @@ import {
   readPagedJson,
 } from "../lib/page-fetch.js";
 import { DELAY_BANNER } from "../lib/copy.js";
+import { boardFeeLine } from "../lib/fees.js";
+import { FeeLine } from "../components/FeeLine.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
@@ -640,6 +642,7 @@ export function TradeUpCard({
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note="10% worst rolls" tone={tail === null ? "" : signClass(tail)} />
                 </div>
+                <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">
                   <div className="preview-subpanel">
                     <EvWaterfall tu={tu} />
@@ -823,6 +826,7 @@ export function PreviewBoard({
           <a className="preview-delay__cta" href="/pricing">See Pro</a>
         </div>
       )}
+      {!embed && <FeeLine line={boardFeeLine()} />}
       {loading && <p className="preview-note">Loading trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
       <div className="preview-bento">

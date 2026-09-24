@@ -985,6 +985,39 @@
   background: var(--line-soft);
 }
 
+/* ------------------------------------------------------------- fee line */
+
+/* Says which marketplace fees are already inside Cost, EV and P/L. */
+.preview-fees {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.preview-fees__label {
+  padding: 0 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-chip);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.preview-expand__viz > .preview-fees--strip {
+  flex: 0 0 auto;
+  margin-top: -4px;
+  padding: 0 2px;
+}
+
 /* ------------------------------------------------------------ skin tiles */
 
 .preview-lane {

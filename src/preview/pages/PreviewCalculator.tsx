@@ -11,6 +11,8 @@ import {
   previewSkinHref,
   splitSkinName,
 } from "../lib/board.js";
+import { CALCULATOR_FEE_LINE } from "../lib/fees.js";
+import { FeeLine } from "../components/FeeLine.js";
 
 interface SearchResult {
   name: string;
@@ -184,6 +186,7 @@ export function PreviewCalculator() {
           <Readout label="Chance of profit" value={stats ? `${Math.round(stats.chance_to_profit * 100)}%` : "—"} />
         </div>
       )}
+      <FeeLine line={CALCULATOR_FEE_LINE} />
       {result && (
         <div className="preview-skins preview-skins--out">
           {result.outcomes.map((outcome: TradeUpOutcome) => (
