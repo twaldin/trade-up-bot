@@ -1,0 +1,78 @@
+name: pr-checks
+
+# Test-only mirror of deploy.yml's `test` job for pull requests. This workflow
+# has no deploy job, references no secrets, and never contacts the VPS or
+# https://tradeupbot.app. Deployment lives exclusively in deploy.yml, which
+# does not trigger on pull_request.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Integration and stress tests build on tests/integration/setup.ts, which
+    # requires the tradeupbot_test PostgreSQL database. Redis is not needed:
+    # server/redis.js falls back to in-memory behaviour when it is not initialised.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tradeupbot
+          POSTGRES_PASSWORD: tradeupbot_pg_2026
+          POSTGRES_DB: tradeupbot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://tradeupbot:tradeupbot_pg_2026@localhost:5432/tradeupbot_test
+      # scripts/prerender.ts otherwise fetches live homepage stats from
+      # production; point it at a closed local port so the build stays offline.
+      HOMEPAGE_STATS_URL: http://127.0.0.1:9/api/global-stats
+      HOMEPAGE_BOARD_URL: http://127.0.0.1:9/api/trade-ups
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build (Vite + prerender + SEO HTML verification)
+        run: npm run build
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Integration tests
+        run: npm run test:integration
+      - name: Stress / perf budgets
+        run: npm run test:stress
+      - name: Homepage artifact has no baked zeros
+        run: |
+          if grep -q '<b>0</b>' dist/index.html; then
+            echo "::error::dist/index.html has baked zeros in the homepage first HTML"
+            exit 1
+          fi
+      - name: Googlebot SEO smoke check (local dist)
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory dist > "$RUNNER_TEMP/http.log" 2>&1 &
+          for _ in $(seq 1 20); do
+            curl -sf -o /dev/null http://127.0.0.1:4173/ && break
+            sleep 0.5
+          done
+          npm run verify:seo:public -- --base=http://127.0.0.1:4173 --routes=/calculator,/faq,/features,/blog/how-cs2-trade-ups-work/
