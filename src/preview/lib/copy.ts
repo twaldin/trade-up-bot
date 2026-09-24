@@ -99,3 +99,6 @@ export const HOME_SOCIAL_DESCRIPTION =
 
 export const FOOTER_NOT_VALVE = "Not affiliated with or endorsed by Valve.";
 export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
+
+/** Logged-out trade-up page. Verify is Pro (`POST /api/verify-trade-up/:id` returns 403 otherwise). */
+export const SIGN_IN_TO_CLAIM = "Verify is part of Pro. Sign in to claim and purchase listings.";

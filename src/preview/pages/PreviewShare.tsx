@@ -14,6 +14,7 @@ import {
   type ActiveClaimRow,
   type VerifyPayload,
 } from "../lib/my-trade-ups.js";
+import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
 
 interface AuthUser {
@@ -257,7 +258,7 @@ export function PreviewShare() {
 
       {tu && !isAuthenticated && (
         <section className="preview-panel">
-          <p className="preview-note">Sign in to verify, claim, and purchase listings</p>
+          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <a
             className="preview-btn preview-btn--lime"
             href={authHref(window.location.pathname)}
