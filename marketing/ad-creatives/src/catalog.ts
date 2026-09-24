@@ -130,13 +130,13 @@ export const buildCatalog = (facts: Facts) => {
         id: "hook",
         seconds: 2.2,
         caption: { text: "A condition average is one price for every float.", emphasis: ["one price"] },
-        footage: { kind: "video", take: "d-skins", from: "chart", offset: -0.4, focus: center(rect(skins, "price-by-condition"), 40) },
+        footage: { kind: "video", take: "d-skins", from: 22.95, focus: center(rect(skins, "price-by-condition"), 40) },
       },
       {
         id: "condition",
         seconds: 4.2,
         caption: { text: `${wear} ${out.weapon} | ${out.name}, cheapest listing: a condition price.`, emphasis: ["condition price"] },
-        footage: { kind: "video", take: "d-skins", from: "chart", offset: 0.6, focus: center(rect(skins, "price-by-condition"), 20) },
+        footage: { kind: "image", take: "d-skins", shot: "price-by-condition" },
         callout: { label: `${wear} · cheapest`, value: bsPrice, note: "Price by condition, live page" },
       },
       {
@@ -182,7 +182,7 @@ export const buildCatalog = (facts: Facts) => {
         id: "example",
         seconds: 3.6,
         caption: { text: "Ten live listings. Each one has its own float.", emphasis: ["own float"] },
-        footage: { kind: "video", take: "d-calculator", from: "loaded", offset: 0.2, focus: center(rect(calc, "inputs"), 60) },
+        footage: { kind: "video", take: "d-calculator", from: 5.0, focus: center(rect(calc, "inputs"), 40) },
       },
       {
         id: "result",
