@@ -163,11 +163,14 @@ export function PreviewPricing() {
           <button
             type="button"
             className="preview-btn preview-btn--lime preview-btn--block"
-            onClick={(event) => user
-              ? void subscribe(PLAN_FOR[billing])
-              : interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget)}
+            disabled={hasProAccess(user)}
+            onClick={(event) => {
+              if (hasProAccess(user)) return;
+              if (user) void subscribe(PLAN_FOR[billing]);
+              else interstitial.open({ surface: "pricing_go_pro", billing }, event.currentTarget);
+            }}
           >
-            {user?.tier === "pro" ? "Current plan" : "Go Pro"}
+            {hasProAccess(user) ? "Current plan" : "Go Pro"}
           </button>
           {hasProAccess(user) && (
             <ManageSubscription className="preview-btn preview-btn--block" />

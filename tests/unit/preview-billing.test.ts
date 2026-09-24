@@ -65,6 +65,12 @@ describe("Manage subscription entry points", () => {
     expect(account).toMatch(/hasProAccess\(user\)[\s\S]{0,120}<ManageSubscription/);
   });
 
+  it("disables Current plan so an existing Pro user cannot start checkout", () => {
+    expect(pricing).toContain("disabled={hasProAccess(user)}");
+    expect(pricing).toContain("if (hasProAccess(user)) return;");
+    expect(pricing).toContain('{hasProAccess(user) ? "Current plan" : "Go Pro"}');
+  });
+
   it("cancel copy names Manage subscription instead of a missing account menu", () => {
     expect(INTERSTITIAL_COPY.pro.cancel).toBe("Cancel anytime from Manage subscription. Your access continues until the end of the current billing period. No cancellation fees.");
     expect(pricing).toContain("Manage subscription");

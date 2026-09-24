@@ -36,6 +36,14 @@ export function stripeRouter(pool: pg.Pool): Router {
     }
 
     try {
+      // Read tier fresh. The cached Passport user can lag a webhook, and a second checkout
+      // would double-charge someone who already has Pro or lifetime.
+      const { rows } = await pool.query("SELECT tier, lifetime FROM users WHERE steam_id = $1", [user.steam_id]);
+      if (rows[0]?.tier === "pro" || rows[0]?.lifetime === true) {
+        res.status(409).json({ error: "You already have Pro access. Manage your subscription instead of starting a new checkout." });
+        return;
+      }
+
       // Create or reuse Stripe customer
       let customerId = user.stripe_customer_id;
       if (!customerId) {

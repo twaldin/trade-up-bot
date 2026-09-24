@@ -341,6 +341,13 @@ try {
       await shot.page.close();
     }
     const { page, portalCalls, subscribeCalls } = await openPage("/pricing", { user });
+    const current = await page.evaluate(() => {
+      const btn = [...document.querySelectorAll(".preview-plan--pro button")].find((b) => b.textContent?.trim() === "Current plan");
+      btn?.click();
+      return { disabled: !!btn?.disabled, text: btn?.textContent?.trim() ?? null };
+    });
+    await sleep(400);
+    check(current.disabled && subscribeCalls.length === 0, `${user}: Current plan is disabled and does not start checkout`);
     await Promise.all([
       page.waitForNavigation({ timeout: 15000 }).catch(() => null),
       page.evaluate(() => [...document.querySelectorAll(".preview-plan--pro button")].find((b) => b.textContent?.trim() === "Manage subscription")?.click()),
