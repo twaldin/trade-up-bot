@@ -6,7 +6,11 @@ import pg from "pg";
 import { withRetry, isTransientDbError, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { lookupOutputPrice, buildPriceCache, warmOutputPriceCaches, type OutputPriceResult } from "./pricing.js";
 import { storedInputCost } from "./fees.js";
-import type { TradeUpOutcome } from "../../shared/types.js";
+import { floatToCondition, type TradeUpOutcome } from "../../shared/types.js";
+import {
+  ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale,
+  type InputRefLookup,
+} from "./input-outlier.js";
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -75,9 +79,10 @@ export async function applyListingPriceToInputs(
   listingId: string,
   rawPriceCents: number,
   listingSource?: string | null,
-): Promise<{ inputsUpdated: number; tradeUpsUpdated: number }> {
+  refLookup?: InputRefLookup,
+): Promise<{ inputsUpdated: number; tradeUpsUpdated: number; tradeUpsFlagged: number }> {
   const { rows } = await db.query(
-    `SELECT tui.trade_up_id, tui.source, tui.price_cents, l.source AS listing_source
+    `SELECT tui.trade_up_id, tui.source, tui.price_cents, tui.skin_name, tui.float_value, l.source AS listing_source
      FROM trade_up_inputs tui
      LEFT JOIN listings l ON l.id = tui.listing_id
      WHERE tui.listing_id = $1`,
@@ -85,9 +90,27 @@ export async function applyListingPriceToInputs(
   );
   let inputsUpdated = 0;
   const tradeUpIds = new Set<number>();
-  for (const r of rows as { trade_up_id: number; source: string | null; price_cents: number; listing_source: string | null }[]) {
+  const flagged = new Set<number>();
+  for (const r of rows as {
+    trade_up_id: number; source: string | null; price_cents: number; listing_source: string | null;
+    skin_name: string; float_value: number;
+  }[]) {
     const feeSource = listingSource ?? r.listing_source ?? r.source ?? "csfloat";
     const expected = storedInputCost(rawPriceCents, feeSource);
+    if (refLookup) {
+      const condition = floatToCondition(Number(r.float_value));
+      if (isInputPriceOutlier({
+        skinName: r.skin_name,
+        condition,
+        newPriceCents: rawPriceCents,
+        oldPriceCents: r.price_cents,
+        feeSource,
+        refCents: refLookup(r.skin_name, condition),
+      })) {
+        flagged.add(r.trade_up_id);
+        continue;
+      }
+    }
     if (expected === r.price_cents && feeSource === r.source) continue;
     await db.query(
       "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
@@ -96,8 +119,11 @@ export async function applyListingPriceToInputs(
     inputsUpdated++;
     tradeUpIds.add(r.trade_up_id);
   }
-  for (const id of tradeUpIds) await recomputeTradeUpCost(db, id);
-  return { inputsUpdated, tradeUpsUpdated: tradeUpIds.size };
+  for (const id of tradeUpIds) {
+    if (!flagged.has(id)) await recomputeTradeUpCost(db, id);
+  }
+  await markTradeUpsOutlierStale(db, [...flagged]);
+  return { inputsUpdated, tradeUpsUpdated: tradeUpIds.size, tradeUpsFlagged: flagged.size };
 }
 
 export async function updateCollectionScores(pool: pg.Pool) {
@@ -173,11 +199,11 @@ export async function updateCollectionScores(pool: pg.Pool) {
  * price_updated_at is after that timestamp (avoids scanning all 10M+ input rows).
  * Falls back to full scan if no timestamp is provided.
  */
-export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string): Promise<{ updated: number }> {
+export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string): Promise<{ updated: number; flagged: number }> {
   // Find trade-ups with at least one input whose price differs from the listing.
   // Only check listings with price_updated_at set (avoids full 12M row scan).
   // If no sinceTimestamp, skip entirely — full scan is too expensive on 12M rows.
-  if (!sinceTimestamp) return { updated: 0 };
+  if (!sinceTimestamp) return { updated: 0, flagged: 0 };
 
   // Cap to 500 listings per cycle to keep the JOIN through trade_up_inputs fast.
   // Remaining listings keep their price_updated_at and get picked up next cycle.
@@ -185,12 +211,13 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     "SELECT id FROM listings WHERE price_updated_at > $1 LIMIT 500",
     [sinceTimestamp]
   );
-  if (changedListings.length === 0) return { updated: 0 };
+  if (changedListings.length === 0) return { updated: 0, flagged: 0 };
+  const refLookup = await ensureInputReferences(pool);
   const changedIds = changedListings.map((r: { id: string }) => r.id);
   const ph = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
   const { rows: inputRows } = await pool.query(`
-    SELECT tui.trade_up_id, tui.listing_id, tui.source, l.source AS listing_source,
-           tui.price_cents AS stored, l.price_cents AS raw
+    SELECT tui.trade_up_id, tui.listing_id, tui.source, tui.skin_name, tui.float_value,
+           l.source AS listing_source, tui.price_cents AS stored, l.price_cents AS raw
     FROM trade_up_inputs tui
     JOIN listings l ON tui.listing_id = l.id
     WHERE tui.listing_id IN (${ph})
@@ -199,19 +226,41 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   // Fee-to-fee comparison against the listing's source (discovery's rule).
   // A flagged listing whose raw price is unchanged must be a no-op.
   const driftByTradeUp = new Map<number, { listing_id: string; price_cents: number; source: string }[]>();
-  for (const r of inputRows as { trade_up_id: number; listing_id: string; source: string | null; listing_source: string | null; stored: number; raw: number }[]) {
+  const flagged = new Set<number>();
+  for (const r of inputRows as {
+    trade_up_id: number; listing_id: string; source: string | null; listing_source: string | null;
+    skin_name: string; float_value: number; stored: number; raw: number;
+  }[]) {
     const feeSource = r.listing_source ?? r.source ?? "csfloat";
     const expected = storedInputCost(r.raw, feeSource);
+    const condition = floatToCondition(Number(r.float_value));
+    if (isInputPriceOutlier({
+      skinName: r.skin_name,
+      condition,
+      newPriceCents: r.raw,
+      oldPriceCents: r.stored,
+      feeSource,
+      refCents: refLookup(r.skin_name, condition),
+    })) {
+      flagged.add(r.trade_up_id);
+      continue;
+    }
     if (expected === r.stored && feeSource === r.source) continue;
     const list = driftByTradeUp.get(r.trade_up_id) ?? [];
     list.push({ listing_id: r.listing_id, price_cents: expected, source: feeSource });
     driftByTradeUp.set(r.trade_up_id, list);
   }
+  for (const id of flagged) driftByTradeUp.delete(id);
+  if (flagged.size > 0) {
+    await markTradeUpsOutlierStale(pool, [...flagged]);
+    const { cacheInvalidatePrefix } = await import("../redis.js");
+    await cacheInvalidatePrefix("tu:");
+  }
   if (driftByTradeUp.size === 0) {
     // No actual price mismatches in this batch — clear their flags
     const clearPh = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
     await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
-    return { updated: 0 };
+    return { updated: 0, flagged: flagged.size };
   }
 
   const tuIds = [...driftByTradeUp.keys()];
@@ -252,7 +301,7 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     await pool.query(`UPDATE listings SET price_updated_at = NULL WHERE id IN (${clearPh})`, changedIds);
   }
 
-  return { updated };
+  return { updated, flagged: flagged.size };
 }
 
 /** Concurrent reprice workers. 8-wide plus Skinport WS flush starved the

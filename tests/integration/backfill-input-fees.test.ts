@@ -93,7 +93,7 @@ describe("input-fee backfill", () => {
     ]);
     const before = await readTradeUp(ctx.pool, id);
     const res = await applyListingPriceToInputs(ctx.pool, "bf-noop", 1000);
-    expect(res).toEqual({ inputsUpdated: 0, tradeUpsUpdated: 0 });
+    expect(res).toEqual({ inputsUpdated: 0, tradeUpsUpdated: 0, tradeUpsFlagged: 0 });
     expect(await readTradeUp(ctx.pool, id)).toEqual(before);
     expect((await readInputPrices(ctx.pool, id))["bf-noop"]).toBe(storedInputCost(1000, "csfloat"));
   });

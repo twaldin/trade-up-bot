@@ -379,6 +379,9 @@ export async function main() {
       if (recalcResult.updated > 0) {
         console.log(`  Phase 4b: Recalculated ${recalcResult.updated} trade-ups with changed input prices`);
       }
+      if (recalcResult.flagged > 0) {
+        console.log(`  Phase 4b: flagged ${recalcResult.flagged} trade-ups with outlier input prices`);
+      }
     }
 
     // Phase 4c: Reprice output values with current KNN + price cache.

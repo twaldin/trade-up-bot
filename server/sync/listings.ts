@@ -1,7 +1,7 @@
 
 import pg from "pg";
 import { emitEvent } from "../db.js";
-import { deleteListings, cascadeTradeUpStatuses, applyListingPriceToInputs } from "../engine.js";
+import { deleteListings, cascadeTradeUpStatuses, applyListingPriceToInputs, ensureInputReferences } from "../engine.js";
 import type { SkinCoverageInfo, ListingCheckResult } from "./types.js";
 
 /**
@@ -14,9 +14,10 @@ export async function applyListedResult(
   pool: pg.Pool,
   listing: { id: string; price_cents: number },
   data: { price: number },
-): Promise<{ listingChanged: boolean; inputsUpdated: number; tradeUpsUpdated: number }> {
-  let result = { listingChanged: false, inputsUpdated: 0, tradeUpsUpdated: 0 };
+): Promise<{ listingChanged: boolean; inputsUpdated: number; tradeUpsUpdated: number; tradeUpsFlagged: number }> {
+  let result = { listingChanged: false, inputsUpdated: 0, tradeUpsUpdated: 0, tradeUpsFlagged: 0 };
   if (data.price && data.price !== listing.price_cents) {
+    const refLookup = await ensureInputReferences(pool);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -24,8 +25,12 @@ export async function applyListedResult(
         "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
         [data.price, new Date().toISOString(), listing.id]
       );
-      const applied = await applyListingPriceToInputs(client, listing.id, data.price);
+      const applied = await applyListingPriceToInputs(client, listing.id, data.price, undefined, refLookup);
       await client.query("COMMIT");
+      if (applied.tradeUpsFlagged > 0) {
+        const { cacheInvalidatePrefix } = await import("../redis.js");
+        await cacheInvalidatePrefix("tu:");
+      }
       result = { listingChanged: true, ...applied };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => undefined);

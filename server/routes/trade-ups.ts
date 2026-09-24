@@ -1,6 +1,6 @@
 import { Router } from "express";
 import pg from "pg";
-import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
@@ -20,7 +20,7 @@ import {
   type PageInputs,
   type RankSnapshotStore,
 } from "./trade-ups-page.js";
-import type { TradeUp, TradeUpOutcome } from "../../shared/types.js";
+import { floatToCondition, type TradeUp, type TradeUpOutcome } from "../../shared/types.js";
 
 function canonicalListingStatus(
   rawStatus: TradeUp["listing_status"] | null | undefined,
@@ -711,18 +711,33 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       current_price?: number;
       original_price: number;
       price_changed?: boolean;
+      price_outlier?: boolean;
       sold_at?: string;
     }[] = [];
 
     // Listing change is detected raw-to-raw; input drift fee-to-fee against storedInputCost.
+    const refLookup = await ensureInputReferences(pool);
     const driftedInputs = new Map<string, { price: number; source: string }>();
+    const outlierInputs = new Set<string>();
     const repriceInput = (input: (typeof inputs)[number], raw: number | null | undefined) => {
-      if (!raw || raw <= 0) return { expected: input.price_cents, drift: false };
+      if (!raw || raw <= 0) return { expected: input.price_cents, drift: false, outlier: false };
       const feeSource = input.listing_source ?? input.source ?? "csfloat";
       const expected = storedInputCost(raw, feeSource);
+      const condition = floatToCondition(Number(input.float_value));
+      if (isInputPriceOutlier({
+        skinName: input.skin_name,
+        condition,
+        newPriceCents: raw,
+        oldPriceCents: input.price_cents,
+        feeSource,
+        refCents: refLookup(input.skin_name, condition),
+      })) {
+        outlierInputs.add(input.listing_id);
+        return { expected, drift: false, outlier: true };
+      }
       const drift = expected !== input.price_cents || feeSource !== input.source;
       if (drift) driftedInputs.set(input.listing_id, { price: expected, source: feeSource });
-      return { expected, drift };
+      return { expected, drift, outlier: false };
     };
 
     // Pre-fetch DMarket listings by skin name (batch to minimize API calls)
@@ -842,7 +857,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           } else {
             await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           }
-          const { expected, drift } = repriceInput(input, match.priceCents);
+          const { expected, drift, outlier } = repriceInput(input, match.priceCents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -850,6 +865,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             current_price: expected,
             original_price: input.price_cents,
             price_changed: listingChanged || drift,
+            ...(outlier ? { price_outlier: true } : {}),
           });
         } else {
           // No float match — listing is gone
@@ -898,7 +914,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             }
             await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
           }
-          const { expected, drift } = repriceInput(input, currentPrice ?? input.listing_price_cents);
+          const { expected, drift, outlier } = repriceInput(input, currentPrice ?? input.listing_price_cents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -906,6 +922,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             current_price: expected,
             original_price: input.price_cents,
             price_changed: listingChanged || drift,
+            ...(outlier ? { price_outlier: true } : {}),
           });
         } else {
           await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
@@ -966,7 +983,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             );
           }
           await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
-          const { expected, drift } = repriceInput(input, data.price || input.listing_price_cents);
+          const { expected, drift, outlier } = repriceInput(input, data.price || input.listing_price_cents);
           results.push({
             listing_id: input.listing_id,
             skin_name: input.skin_name,
@@ -974,6 +991,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             current_price: expected,
             original_price: input.price_cents,
             price_changed: listingChanged || drift,
+            ...(outlier ? { price_outlier: true } : {}),
           });
         } else if (data.state === "sold") {
           const salePrice = data.price || input.price_cents;
@@ -1037,6 +1055,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         "UPDATE trade_ups SET listing_status = $1, preserved_at = COALESCE(preserved_at, NOW()) WHERE id = $2",
         [newStatus, tradeUpId]
       );
+    } else if (outlierInputs.size > 0) {
+      await markTradeUpsOutlierStale(pool, [tradeUpId]);
     } else if (allActive) {
       // If verify confirms all active, clear any stale/partial status
       await pool.query(
@@ -1047,7 +1067,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
 
     // Write drifted (fee-inclusive) input costs and recompute cost-derived stats
     let updatedTradeUp: { total_cost_cents: number; expected_value_cents: number; profit_cents: number; roi_percentage: number } | null = null;
-    if (anyPriceChanged && allActive && driftedInputs.size > 0) {
+    if (anyPriceChanged && allActive && driftedInputs.size > 0 && outlierInputs.size === 0) {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
@@ -1089,7 +1109,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     }
 
     // Await Redis invalidation before responding so next request sees fresh data
-    if (anyUnavailable || anyPriceChanged) {
+    if (anyUnavailable || anyPriceChanged || outlierInputs.size > 0) {
       await cacheInvalidatePrefix("tu:");
       await cacheInvalidatePrefix("tu_inputs:" + tradeUpId);
     }

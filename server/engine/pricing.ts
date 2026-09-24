@@ -4,6 +4,7 @@ import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor, type FallbackParams, type FallbackResult } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
+import { buildInputReferenceMaps } from "./input-outlier.js";
 import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCount } from "./knn-pricing.js";
 import { buildCurveCache } from "./curve-classification.js";
 import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
@@ -82,64 +83,10 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
   let overrides = 0;
   let fills = 0;
 
-  // Build per-condition reference price from price_data to detect outlier listings.
-  // Per-condition avoids filtering out legitimate FN premiums (e.g., Wild Lotus FN=$17k vs BS=$150).
-  // CSFloat sales/ref first (most reliable), then Skinport median to fill gaps —
-  // many skins only have CSFloat data for FN, leaving BS/WW/FT without a reference.
-  refPriceCache = new Map<string, number>();
-  const { rows: refRows } = await pool.query(`
-    SELECT skin_name, condition, MIN(CASE WHEN min_price_cents > 0 THEN min_price_cents ELSE median_price_cents END) as ref
-    FROM price_data WHERE (min_price_cents > 0 OR median_price_cents > 0)
-      AND source IN ('csfloat_sales', 'csfloat_ref')
-    GROUP BY skin_name, condition
-  `);
-  for (const r of refRows) if (r.ref > 0) refPriceCache.set(`${r.skin_name}:${r.condition}`, r.ref);
-
-  // Fill gaps with Skinport median (broader condition coverage than CSFloat)
-  const { rows: spRows } = await pool.query(`
-    SELECT skin_name, condition, median_price_cents as ref
-    FROM price_data WHERE median_price_cents > 0 AND source = 'skinport'
-  `);
-  skinportMedianCache.clear();
-  let spFills = 0;
-  for (const r of spRows) {
-    const key = `${r.skin_name}:${r.condition}`;
-    if (r.ref > 0) skinportMedianCache.set(key, r.ref);
-    if (!refPriceCache.has(key) && r.ref > 0) {
-      refPriceCache.set(key, r.ref);
-      spFills++;
-    }
-  }
-  if (spFills > 0) console.log(`  Ref price map: ${refRows.length} from CSFloat, ${spFills} gaps filled from Skinport`);
-
-  // Final fallback: derive median from Buff listings for skins still missing a ref price.
-  // Cheap skins (e.g. Desert Eagle | Mudder FT ~$0.03) may have no CSFloat sales/ref or
-  // Skinport data, so refPriceCache is empty for them. Without a ref, the 20x outlier
-  // guard in data-load.ts passes all listings through — including $400 sticker-premiums.
-  // Buff has near-complete coverage and its listings are bulk market prices, not sticker picks.
-  const { rows: buffRows } = await pool.query(`
-    SELECT s.name as skin_name,
-      CASE
-        WHEN l.float_value < 0.07 THEN 'Factory New'
-        WHEN l.float_value < 0.15 THEN 'Minimal Wear'
-        WHEN l.float_value < 0.38 THEN 'Field-Tested'
-        WHEN l.float_value < 0.45 THEN 'Well-Worn'
-        ELSE 'Battle-Scarred'
-      END as condition,
-      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY l.price_cents) as median
-    FROM listings l JOIN skins s ON l.skin_id = s.id
-    WHERE l.source = 'buff' AND l.price_cents > 0
-    GROUP BY s.name, condition
-  `);
-  let buffFills = 0;
-  for (const r of buffRows) {
-    const key = `${r.skin_name}:${r.condition}`;
-    if (!refPriceCache.has(key) && r.median > 0) {
-      refPriceCache.set(key, Math.round(r.median));
-      buffFills++;
-    }
-  }
-  if (buffFills > 0) console.log(`  Ref price map: ${buffFills} gaps filled from Buff listings median`);
+  // Per-condition reference for outlier detection. Reassigned so data-load's live binding updates.
+  const maps = await buildInputReferenceMaps(pool);
+  refPriceCache = maps.refPriceCache;
+  skinportMedianCache = maps.skinportMedianCache;
 
   for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`

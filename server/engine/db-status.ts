@@ -3,15 +3,22 @@
  */
 
 import pg from "pg";
+import { ensureInputReferences, findOutlierTradeUpIds, type InputRefLookup } from "./input-outlier.js";
 
 export interface CascadeTradeUpStatusOptions {
   /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
   invalidateCache?: boolean;
   /**
    * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
-   * show them). Default deletes those rows, which existing callers rely on.
+   * show them). The affected_tus query only selects listing_status='active'.
+   * Default deletes those rows, which existing callers rely on.
    */
   preserveFullyMissing?: boolean;
+  /**
+   * Active-branch jump guard. When omitted, cascade builds the lookup itself
+   * so existing callers keep the guard without a new argument.
+   */
+  inputRefLookup?: InputRefLookup;
 }
 
 /**
@@ -134,6 +141,10 @@ export async function cascadeTradeUpStatuses(
       }
 
       if (activeIds.length > 0) {
+        const refLookup = options?.inputRefLookup ?? await ensureInputReferences(pool);
+        const outlierIds = await findOutlierTradeUpIds(pool, activeIds, refLookup);
+        const safeActiveIds = activeIds.filter(id => !outlierIds.has(id));
+        if (safeActiveIds.length === 0) continue;
         const r = await pool.query(`
           UPDATE trade_ups SET
             listing_status = 'active',
@@ -144,7 +155,7 @@ export async function cascadeTradeUpStatuses(
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
-        `, [activeIds]);
+        `, [safeActiveIds]);
         totalUpdated += r.rowCount ?? 0;
       }
     }

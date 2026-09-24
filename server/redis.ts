@@ -8,6 +8,7 @@ import type { Request, Response, NextFunction } from "express";
 
 let _redis: Redis | null = null;
 let _available = false;
+let _connect: Promise<void> = Promise.resolve();
 
 function redisRetryStrategy(times: number): number | null {
   if (times > 3) return null; // stop retrying
@@ -45,13 +46,31 @@ export function initRedis(): void {
       _available = false;
     });
 
-    _redis.connect().catch(() => {
+    _connect = _redis.connect().then(() => {
+      _available = true;
+    }).catch(() => {
       console.log("Redis not available — using SQLite-only mode");
       _available = false;
     });
   } catch {
     console.log("Redis init failed — using SQLite-only mode");
   }
+}
+
+/** Resolves when the current initRedis() connect attempt has settled. */
+export function redisConnected(): Promise<void> {
+  return _connect;
+}
+
+/** Quit the client opened by initRedis. Safe when Redis was never initialized. */
+export async function closeRedis(): Promise<void> {
+  await _connect.catch(() => undefined);
+  const client = _redis;
+  _redis = null;
+  _available = false;
+  _connect = Promise.resolve();
+  if (!client) return;
+  await client.quit().catch(() => undefined);
 }
 
 export function getRedis(): Redis | null {
