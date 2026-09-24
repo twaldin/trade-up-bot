@@ -67,6 +67,8 @@ jobs:
         run: npm run build
       - name: Unit tests
         run: npm run test:unit
+      - name: Two-tab purchase dedupe (Chrome)
+        run: npm run test:purchase-dedupe
       - name: Integration tests
         run: npm run test:integration
       - name: Stress / perf budgets

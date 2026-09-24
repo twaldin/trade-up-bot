@@ -98,6 +98,8 @@ async function claimAndFire(win: Window, tier: string, sessionId: string, confir
   if (existing === "1" || (existing != null && pendingIsFresh(existing, Date.now()))) return;
 
   const claimValue = `pending:${Date.now()}:${newToken()}`;
+  const latest = readKey(win, key);
+  if (latest === "1" || (latest != null && pendingIsFresh(latest, Date.now()))) return;
   writeKey(win, key, claimValue);
   inflight.add(sessionId);
   try {

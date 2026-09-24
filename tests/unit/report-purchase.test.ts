@@ -173,6 +173,30 @@ describe("purchase dedupe across two tabs", () => {
     expect(fbq.mock.calls[0][1]).toBe("Purchase");
   });
 
+  it("does not overwrite a finished claim when the first getItem was stale", async () => {
+    const storage = memoryStorage();
+    let reads = 0;
+    const realGet = storage.getItem.bind(storage);
+    storage.getItem = (key) => {
+      if (key !== "tub_purchase_cs_test_1") return realGet(key);
+      reads += 1;
+      return reads === 1 ? null : "1";
+    };
+    const written: string[] = [];
+    const realSet = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      written.push(value);
+      realSet(key, value);
+    };
+    vi.stubGlobal("window", tabWindow(storage));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify(paid), { status: 200 })));
+    await reportPurchase("pro", "cs_test_1");
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(written).toEqual([]);
+    expect(gtag).not.toHaveBeenCalled();
+    expect(storage.getItem("tub_purchase_cs_test_1")).toBe("1");
+  });
+
   it("does not fire when another tab replaces the claim token during the fallback wait", async () => {
     vi.useFakeTimers();
     try {
