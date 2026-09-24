@@ -166,6 +166,15 @@ describe("frontend review changes on the first screen", () => {
     expect(HOMEPAGE_SEO.bodyHtml).toContain(`<a href="/calculator">${PREVIEW_CTA_CALCULATOR}</a>`);
   });
 
+  it("lets the hero KPI label wrap without touching board readouts", () => {
+    const hero = css.slice(css.indexOf(".preview-proof__kpis .preview-readout em {"), css.indexOf(".preview-proof__kpis .preview-readout { border-top"));
+    expect(hero).toMatch(/white-space:\s*normal/);
+    expect(hero).toMatch(/min-height:\s*2\.4em/);
+    const board = css.slice(css.indexOf(".preview-readout em {"));
+    expect(board).toMatch(/white-space:\s*nowrap/);
+    expect(board).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
   it("lifts the headline numbers to just under the panel header on phones", () => {
     const narrow = cssBlock(css, "@media (max-width: 519px)");
     expect(narrow).toMatch(/\.preview-proof > \*\s*\{[^}]*order:\s*2/);

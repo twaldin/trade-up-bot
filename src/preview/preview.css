@@ -490,6 +490,14 @@
   .preview-proof__kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
+/* Hero only. Board readouts keep nowrap + ellipsis. A two-line label
+   reserves the same height in every cell so the values share one baseline. */
+.preview-proof__kpis .preview-readout em {
+  white-space: normal;
+  line-height: 1.2;
+  min-height: 2.4em;
+}
+
 .preview-proof__kpis .preview-readout { border-top: 0; }
 
 /* Phones: the four headline numbers sit under the panel header, not ten
