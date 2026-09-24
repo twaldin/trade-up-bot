@@ -922,6 +922,7 @@ export function usePreviewTradeUps(options: {
     setFailed(false);
     void loadBoardRows<TradeUp>({
       append: page > 1,
+      isLive: () => live,
       fetchRows: async () => {
         const res = await fetch(`/api/trade-ups?${key}&page=${page}`, { credentials: "include" });
         const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number }>(res);
@@ -949,7 +950,7 @@ export function usePreviewTradeUps(options: {
         failed: () => { if (live) setFailed(true); },
       },
     }).finally(() => {
-      inFlightRef.current = false;
+      if (live) inFlightRef.current = false;
     });
     return () => { live = false; };
   }, [key, page, perPage, enabled, reloadTick]);

@@ -17,6 +17,12 @@ export interface BoardLoadPorts<T> {
   warmFaces: (names: string[]) => Promise<unknown>;
   /** True while paging in: rows are appended instead of replacing the board. */
   append?: boolean;
+  /**
+   * False once a newer load owns the board (a filter change, the next page, or
+   * StrictMode's discarded first effect). A stale run that still cleared
+   * `loading` would unlock paging mid-hydration and strand page one bare.
+   */
+  isLive?: () => boolean;
   emit: {
     rows: (rows: T[] | ((previous: T[]) => T[])) => void;
     isFree: (isFree: boolean) => void;
@@ -33,13 +39,16 @@ export interface BoardLoadPorts<T> {
 
 export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> {
   const { emit, append = false } = ports;
+  const live = () => ports.isLive?.() ?? true;
   emit.loading(true);
 
   const put = (next: T[]) => {
+    if (!live()) return;
     if (append) emit.rows((previous) => [...previous, ...next]);
     else emit.rows(next);
   };
   const replaceTail = (next: T[], count: number) => {
+    if (!live()) return;
     if (append) emit.rows((previous) => [...previous.slice(0, previous.length - count), ...next]);
     else emit.rows(next);
   };
@@ -47,6 +56,7 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
   let painted: T[] | null = null;
   try {
     const { rows, isFree, total } = await ports.fetchRows();
+    if (!live()) return;
     emit.isFree(isFree);
     emit.pageSize?.(rows.length, total);
     put(rows);
@@ -64,17 +74,18 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
     replaceTail(hydrated, rows.length);
     painted = hydrated;
   } catch (err) {
+    if (!live()) return;
     // A first page belongs to a new filter, so the old filter's rows must go either way.
     if (!append) emit.rows([]);
     if (isRateLimitError(err)) emit.rateLimited?.();
     else emit.failed?.();
     painted = null;
   } finally {
-    emit.loading(false);
+    if (live()) emit.loading(false);
   }
 
-  if (!painted || painted.length === 0) return;
+  if (!live() || !painted || painted.length === 0) return;
   const names = ports.namesOf(painted);
   if (names.length === 0) return;
-  void ports.warmFaces(names).then(() => emit.facesReady(), () => {});
+  void ports.warmFaces(names).then(() => { if (live()) emit.facesReady(); }, () => {});
 }

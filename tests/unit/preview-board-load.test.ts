@@ -209,6 +209,49 @@ describe("preview board load order", () => {
     expect(harness.rows[harness.rows.length - 1]?.[0]?.id).toBe(1);
     expect(harness.loading).toEqual([true, false]);
   });
+
+  it("goes silent once a newer load has replaced it", async () => {
+    let live = true;
+    const isFree = vi.fn();
+    const pageSize = vi.fn();
+    const facesReady = vi.fn();
+    const harness = ports({
+      isLive: () => live,
+      fetchRows: async () => {
+        live = false;
+        return { rows: [{ id: 1, outcomes: [] }], isFree: true };
+      },
+    });
+    harness.ports.emit.isFree = isFree;
+    harness.ports.emit.facesReady = facesReady;
+    Object.assign(harness.ports.emit, { pageSize });
+
+    await loadBoardRows<Row>(harness.ports);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // A stale run must not clear the loading flag the live run owns.
+    expect(harness.loading).toEqual([true]);
+    expect(harness.rows).toEqual([]);
+    expect(isFree).not.toHaveBeenCalled();
+    expect(pageSize).not.toHaveBeenCalled();
+    expect(facesReady).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stale run from reporting a rate limit", async () => {
+    let live = true;
+    const rateLimited = vi.fn();
+    const harness = ports({
+      isLive: () => live,
+      fetchRows: async () => {
+        live = false;
+        throw new Error("Too many requests, please try again later.");
+      },
+    });
+    Object.assign(harness.ports.emit, { rateLimited });
+    await loadBoardRows<Row>(harness.ports);
+    expect(rateLimited).not.toHaveBeenCalled();
+    expect(harness.loading).toEqual([true]);
+  });
 });
 
 describe("preview table sorting", () => {
