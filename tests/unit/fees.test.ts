@@ -3,6 +3,7 @@ import {
   effectiveBuyCostRaw,
   effectiveSellProceeds,
   effectiveBuyCost,
+  storedInputCost,
   MARKETPLACE_FEES,
 } from "../../server/engine/fees.js";
 import type { ListingWithCollection } from "../../server/engine/types.js";
@@ -135,6 +136,38 @@ describe("effectiveBuyCost", () => {
     // effectiveBuyCost uses listing.source ?? "csfloat"
     const result = effectiveBuyCost(listing);
     expect(result).toBe(1058); // CSFloat fees
+  });
+});
+
+// ─── storedInputCost (the one raw → stored input cost conversion) ─────────
+
+describe("storedInputCost", () => {
+  const fromTable = (raw: number, m: keyof typeof MARKETPLACE_FEES) =>
+    Math.round(raw * (1 + MARKETPLACE_FEES[m].buyerFeePct) + MARKETPLACE_FEES[m].buyerFeeFlat);
+
+  it.each([
+    ["csfloat", 544],
+    ["dmarket", 513],
+    ["skinport", 500],
+    ["buff", 533],
+  ] as const)("raw 500 on %s stores %i (pinned to MARKETPLACE_FEES)", (source, expected) => {
+    expect(storedInputCost(500, source)).toBe(expected);
+    expect(storedInputCost(500, source)).toBe(fromTable(500, source));
+  });
+
+  it.each(["calculator", "unknown_marketplace"])("raw 500 on %s stores raw (no buyer fee)", (source) => {
+    expect(storedInputCost(500, source)).toBe(500);
+  });
+
+  it("defaults a missing source to csfloat, like effectiveBuyCost and the trade_up_inputs.source default", () => {
+    expect(storedInputCost(500, null)).toBe(544);
+    expect(storedInputCost(500, undefined)).toBe(544);
+  });
+
+  it("effectiveBuyCost (discovery) goes through the same conversion", () => {
+    for (const source of ["csfloat", "dmarket", "skinport", "buff", "calculator"]) {
+      expect(effectiveBuyCost(makeListing(1234, source))).toBe(storedInputCost(1234, source));
+    }
   });
 });
 
