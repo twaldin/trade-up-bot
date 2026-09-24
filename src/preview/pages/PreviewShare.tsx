@@ -8,6 +8,7 @@ import { trackEvent } from "../../lib/analytics.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
+import { proPriceLine } from "../lib/pro-pricing.js";
 import {
   MY_TRADE_UPS_API,
   claimTimerLabel,
@@ -267,14 +268,8 @@ export function PreviewShare() {
 
       {tu && panel === "upgrade" && (
         <section className="preview-panel">
-          <p className="preview-note">Verify and Claim are Pro-only.</p>
-          <button
-            type="button"
-            className="preview-btn"
-            onClick={(event) => interstitial.open({ surface: "share_verify", loggedIn: true }, event.currentTarget)}
-          >
-            See Pro
-          </button>
+          <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
+          <Link className="preview-btn" to="/pricing">See Pro plans</Link>
         </section>
       )}
 

@@ -16,6 +16,6 @@ export type ShareActionPanel = "pending" | "sign-in" | "pro" | "upgrade";
 export function shareActionPanel(user: AuthUser | null | undefined): ShareActionPanel {
   if (user === undefined) return "pending";
   if (user === null) return "sign-in";
-  if (user.tier === "pro" || user.tier === "admin" || !!user.is_admin) return "pro";
+  if (user.tier === "pro" || user.tier === "admin" || !!user.is_admin || !!user.lifetime) return "pro";
   return "upgrade";
 }

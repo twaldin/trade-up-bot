@@ -22,7 +22,7 @@ export const INTERSTITIAL_COPY = {
     unlocks: "Pro unlocks:",
     freeStays: "Free stays free, with a 3-hour data delay.",
     next: "After sign-in you'll come back to Pricing to pick a plan. Checkout is by Stripe; card details never touch our servers.",
-    cancel: "Cancel anytime from Manage subscription. Your access continues until the end of the current billing period. No cancellation fees.",
+    cancel: "Cancel anytime. Your access continues until the end of the current billing period. No cancellation fees.",
     lifetime: "Lifetime Pro access for a single one-time payment.",
   },
   claim: {

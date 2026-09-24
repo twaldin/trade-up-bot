@@ -173,43 +173,33 @@ export function SteamInterstitial({ context, onContinue, onDismiss, returnFocusT
                 </p>
               </>
             )}
-            {!context.loggedIn && (
-              <>
-                <section>
-                  <p className="o-kicker">Why Steam</p>
-                  <p>{COPY.steamWhy}</p>
-                </section>
-                <section>
-                  <p className="o-kicker">Next</p>
-                  <p>{context.surface === "pricing_go_pro" ? COPY.pro.next : COPY.claim.next}</p>
-                </section>
-              </>
-            )}
+            <section>
+              <p className="o-kicker">Why Steam</p>
+              <p>{COPY.steamWhy}</p>
+            </section>
+            <section>
+              <p className="o-kicker">Next</p>
+              <p>{context.surface === "pricing_go_pro" ? COPY.pro.next : COPY.claim.next}</p>
+            </section>
             {context.surface === "pricing_go_pro" && (
               <p className="preview-sheet__muted">{context.billing === "lifetime" ? COPY.pro.lifetime : COPY.pro.cancel}</p>
             )}
           </div>
 
           <div className="preview-sheet__actions">
-            {context.loggedIn ? (
-              <Link ref={continueRef} className="preview-btn preview-btn--lime preview-sheet__go" to="/pricing" onClick={() => onDismiss("compare_plans")}>
-                See plans
-              </Link>
-            ) : (
-              <a
-                ref={continueRef}
-                className="preview-btn preview-btn--lime preview-sheet__go"
-                href={authHref(window.location.pathname)}
-                rel="nofollow"
-                onClick={onContinue}
-                onAuxClick={(event) => {
-                  if (event.button === 1) onContinue();
-                }}
-              >
-                <SteamGlyph />
-                {COPY.continue}
-              </a>
-            )}
+            <a
+              ref={continueRef}
+              className="preview-btn preview-btn--lime preview-sheet__go"
+              href={authHref(window.location.pathname)}
+              rel="nofollow"
+              onClick={onContinue}
+              onAuxClick={(event) => {
+                if (event.button === 1) onContinue();
+              }}
+            >
+              <SteamGlyph />
+              {COPY.continue}
+            </a>
             <button type="button" className="preview-btn" onClick={() => onDismiss("cancel")}>
               {COPY.notNow}
             </button>

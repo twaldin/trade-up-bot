@@ -88,7 +88,7 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(features).toContain("Float-targeted discovery across 45+ targets");
     expect(features).toContain("Verify system");
     expect(features).toContain("Claim system");
-    expect(legal).toContain("Last updated: March 2026");
+    expect(legal).toContain("Last updated: September 2026");
     expect(legal).toContain("TradeUpBot is an informational tool only");
     expect(legal).toContain("monthly, yearly, and a one-time lifetime purchase");
     expect(legal).toContain("Manage subscription");

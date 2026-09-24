@@ -73,7 +73,7 @@ describe("Manage subscription entry points", () => {
   });
 
   it("cancel copy names Manage subscription instead of a missing account menu", () => {
-    expect(INTERSTITIAL_COPY.pro.cancel).toBe("Cancel anytime from Manage subscription. Your access continues until the end of the current billing period. No cancellation fees.");
+    expect(INTERSTITIAL_COPY.pro.cancel).toBe("Cancel anytime. Your access continues until the end of the current billing period. No cancellation fees.");
     expect(pricing).toContain("Manage subscription");
     expect(pricing).not.toContain("account menu");
   });

@@ -112,7 +112,7 @@ try {
     check(aria.role === "dialog" && aria.modal === "true" && aria.title === "Go Pro" && aria.body, "pricing: dialog role/aria-modal/labelledby/describedby");
     const text = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
     check(text.includes("$6.99/mo"), "pricing: monthly modal shows $6.99/mo");
-    check(text.includes("Cancel anytime from Manage subscription."), "pricing: monthly modal shows the cancel line");
+    check(text.includes("Cancel anytime. Your access continues until the end of the current billing period. No cancellation fees."), "pricing: monthly modal shows the cancel line");
     await page.screenshot({ path: `${OUT}/interstitial-pricing-desktop-dark.png` });
 
     // Tab trap: Tab from the last control wraps to the first, Shift+Tab from the first wraps to the last.
@@ -138,6 +138,7 @@ try {
     await sleep(250);
     const yearly = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
     check(yearly.includes("$5/mo · billed $59.99/year"), "pricing: yearly modal shows $5/mo · billed $59.99/year");
+    await page.screenshot({ path: `${OUT}/interstitial-pricing-yearly-dark.png` });
     await page.click("dialog.preview-sheet .preview-sheet__x");
     await sleep(250);
     check(!(await dialogOpen(page)), "pricing: X closes the modal");
@@ -155,7 +156,8 @@ try {
     await sleep(250);
     const lifetime = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
     check(lifetime.includes("$74.99 one-time"), "pricing: lifetime modal shows $74.99 one-time");
-    check(lifetime.includes("Lifetime Pro access for a single one-time payment.") && !lifetime.includes("Cancel anytime from Manage subscription."), "pricing: lifetime line replaces the cancel line");
+    check(lifetime.includes("Lifetime Pro access for a single one-time payment.") && !lifetime.includes("Cancel anytime."), "pricing: lifetime line replaces the cancel line");
+    await page.screenshot({ path: `${OUT}/interstitial-pricing-lifetime-dark.png` });
     const notNow = await page.$$eval("dialog.preview-sheet button", (bs) => bs.findIndex((b) => b.textContent?.trim() === "Not now"));
     await page.evaluate((i) => document.querySelectorAll("dialog.preview-sheet button")[i].click(), notNow);
     await sleep(250);
@@ -316,7 +318,7 @@ try {
     await page.evaluateOnNewDocument(() => {
       window.__sawSignIn = false;
       new MutationObserver(() => {
-        if ([...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Sign in to verify"))) window.__sawSignIn = true;
+        if ([...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Verify or claim this trade-up"))) window.__sawSignIn = true;
       }).observe(document, { childList: true, subtree: true });
     });
     await page.goto(`${BASE}${share}`, { waitUntil: "networkidle2", timeout: 90000 });
@@ -329,21 +331,21 @@ try {
   {
     const { page } = await openPage(share, { user: "free" });
     await page.waitForSelector(".preview-panel", { timeout: 60000 });
-    const prompt = await page.evaluate(() => [...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Verify and Claim are Pro-only.")));
-    check(prompt, "free share: upgrade prompt says Verify and Claim are Pro-only");
-    const signIn = await page.evaluate(() => [...document.querySelectorAll("button, a")].some((el) => el.textContent?.trim() === "Verify or claim this trade-up"));
-    check(!signIn, "free share: no logged-out sign-in button");
+    const prompt = await page.evaluate(() => {
+      const panel = [...document.querySelectorAll(".preview-panel")].find((p) => p.textContent?.includes("Verify and Claim are Pro features: $6.99/mo."));
+      const link = panel?.querySelector("a");
+      return { text: !!panel, href: link?.getAttribute("href"), label: link?.textContent?.trim() };
+    });
+    check(prompt.text && prompt.href === "/pricing" && prompt.label === "See Pro plans", `free share: See Pro plans links to /pricing (${JSON.stringify(prompt)})`);
+    const before = (await events(page)).filter(([name]) => name !== "tradeup_view");
+    await page.click(".preview-panel a[href='/pricing']");
+    await sleep(400);
+    const after = (await events(page)).filter(([name]) => name !== "tradeup_view");
+    check(JSON.stringify(after) === JSON.stringify(before), `free share: See Pro plans fires no signup events ${JSON.stringify(after)}`);
+    check(!(await dialogOpen(page)), "free share: See Pro plans does not open the Steam modal");
+    await page.goto(`${BASE}${share}`, { waitUntil: "networkidle2", timeout: 90000 });
+    await page.waitForSelector(".preview-panel a[href='/pricing']", { timeout: 60000 });
     await page.screenshot({ path: `${OUT}/upgrade-prompt-free-dark.png` });
-    await page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.trim() === "See Pro")?.click());
-    await sleep(300);
-    check(await dialogOpen(page), "free share: See Pro opens the interstitial");
-    const signedInHref = await page.evaluate(() => document.querySelector("dialog.preview-sheet .preview-sheet__go")?.getAttribute("href"));
-    check(signedInHref === "/pricing", `free share: main action is /pricing (${signedInHref})`);
-    const steam = await page.evaluate(() => document.querySelector("dialog.preview-sheet")?.innerHTML.includes("/auth/steam"));
-    check(!steam, "free share: signed-in modal has no Steam link");
-    await page.screenshot({ path: `${OUT}/upgrade-prompt-interstitial-dark.png` });
-    const ev = (await events(page)).filter(([name]) => name !== "tradeup_view");
-    check(ev[0]?.[0] === "claim_interstitial_view" && ev[0]?.[1]?.logged_in === true, `free share: view event logged_in true ${JSON.stringify(ev[0])}`);
     await page.close();
     const light = await openPage(share, { user: "free", mode: "light", width: 390, height: 844 });
     await light.page.waitForSelector(".preview-panel", { timeout: 60000 });
@@ -369,6 +371,10 @@ try {
       const shown = await shot.page.evaluate(() => [...document.querySelectorAll(".preview-plan--pro button")].some((b) => b.textContent?.trim() === "Manage subscription"));
       check(shown, `${user} ${mode}: /pricing shows Manage subscription`);
       await shot.page.screenshot({ path: `${OUT}/manage-subscription-pricing-${user}-${shot.page.viewport().width}-${mode}.png` });
+      if (shot.page.viewport().width === 390) {
+        await shot.page.evaluate(() => document.querySelector(".preview-plan--pro")?.scrollIntoView({ block: "center" }));
+        await shot.page.screenshot({ path: `${OUT}/manage-subscription-pricing-390-full.png`, fullPage: true });
+      }
       await shot.page.close();
     }
     const { page, portalCalls, subscribeCalls } = await openPage("/pricing", { user });

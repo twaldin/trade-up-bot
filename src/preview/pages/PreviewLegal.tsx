@@ -12,7 +12,7 @@ export function PreviewTerms() {
       <header className="preview-page__head">
         <div>
           <h1>Terms of Service</h1>
-          <p>Last updated: March 2026</p>
+          <p>Last updated: September 2026</p>
         </div>
       </header>
       <article className="preview-doc">
