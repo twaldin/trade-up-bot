@@ -75,7 +75,9 @@ const seconds = (props: Pick<ScreenAdProps, "scenes" | "endCard">) =>
   props.scenes.reduce((s, x) => s + x.seconds, 0) + props.endCard.seconds;
 
 const video = (props: ScreenAdProps): VideoJob => {
-  assertCleanCopy(props.id, props);
+  const { takes, ...copy } = props;
+  void takes;
+  assertCleanCopy(props.id, copy);
   const total = seconds(props);
   if (total < 15 || total > 20) throw new Error(`${props.id} is ${total}s; videos must be 15–20s`);
   const dim = DIMENSIONS[props.format];
@@ -83,7 +85,9 @@ const video = (props: ScreenAdProps): VideoJob => {
 };
 
 const still = (props: StaticAdProps): StillJob => {
-  assertCleanCopy(props.id, props);
+  const { takes, ...copy } = props;
+  void takes;
+  assertCleanCopy(props.id, copy);
   const dim = DIMENSIONS[props.format === "square" ? "square" : "portrait"];
   return { id: props.id, ...dim, props };
 };
