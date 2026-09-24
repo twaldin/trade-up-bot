@@ -84,7 +84,7 @@ export function stripeRouter(pool: pg.Pool): Router {
               error: plan === "pro-lifetime"
                 ? "Cancel your current plan in Manage subscription first, then buy Lifetime."
                 : failedPayment
-                  ? "Your last payment failed. Update it in Manage subscription instead of starting a new checkout."
+                  ? "Your last payment didn't go through. Update your payment method in Manage subscription."
                   : "You already have a subscription. Use Manage subscription instead of starting a new checkout.",
             });
             return;

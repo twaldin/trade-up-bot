@@ -127,7 +127,7 @@ describe("POST /api/subscribe refuses a second Pro checkout", () => {
       stripeMock.subscriptionsList.mockResolvedValueOnce({ data: [{ status }] });
       const res = await subscribe("user_pastdue", "pro");
       expect(res.status, status).toBe(409);
-      expect(res.body.error).toBe("Your last payment failed. Update it in Manage subscription instead of starting a new checkout.");
+      expect(res.body.error).toBe("Your last payment didn't go through. Update your payment method in Manage subscription.");
     }
     expect(stripeMock.customersCreate).not.toHaveBeenCalled();
     expect(stripeMock.sessionsCreate).not.toHaveBeenCalled();
