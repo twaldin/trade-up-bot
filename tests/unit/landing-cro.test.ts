@@ -110,6 +110,13 @@ describe("first screen carries its own proof", () => {
     }
   });
 
+  it("reuses the board fee line and does not print a board ROI", () => {
+    const proof = heroProofComponent();
+    expect(proof).toContain("boardFeeLine(proof.listings.map((row) => row.source), false)");
+    expect(proof).toContain("<FeeLine");
+    expect(landing).not.toMatch(/roiPct|% ROI/);
+  });
+
   it("links the panel to the trade-up and names the free delay with a way out", () => {
     const proof = heroProofComponent();
     expect(proof).toContain("to={`/trade-ups/${proof.id}`}");
