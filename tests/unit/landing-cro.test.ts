@@ -112,7 +112,8 @@ describe("first screen carries its own proof", () => {
 
   it("reuses the board fee line and does not print a board ROI", () => {
     const proof = heroProofComponent();
-    expect(proof).toContain("boardFeeLine(proof.listings.map((row) => row.source), false)");
+    expect(proof).toContain("boardFeeLine(proof.listings.map((row) => row.source))");
+    expect(proof).not.toContain("boardFeeLine(proof.listings.map((row) => row.source), false)");
     expect(proof).toContain("<FeeLine");
     expect(landing).not.toMatch(/roiPct|% ROI/);
   });
@@ -156,6 +157,7 @@ describe("frontend review changes on the first screen", () => {
     expect(narrow).toMatch(/\.preview-proof > \*\s*\{[^}]*order:\s*2/);
     expect(narrow).toMatch(/\.preview-proof__head\s*\{[^}]*order:\s*0/);
     expect(narrow).toMatch(/\.preview-proof__kpis,\s*\.preview-proof__skeleton--kpis\s*\{[^}]*order:\s*1/);
+    expect(narrow).toMatch(/\.preview-proof > \.preview-fees\s*\{[^}]*order:\s*1/);
   });
 
   it("names the board and guide sections plainly", () => {

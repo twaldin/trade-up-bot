@@ -199,7 +199,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             />
             <Kpi label="P(P/L > $0)" value={proof.chance === null ? "—" : `${Math.round(proof.chance * 100)}%`} />
           </div>
-          <FeeLine line={boardFeeLine(proof.listings.map((row) => row.source), false)} />
+          <FeeLine line={boardFeeLine(proof.listings.map((row) => row.source))} />
           <footer className="preview-proof__foot">
             <Link to={`/trade-ups/${proof.id}`} className="preview-btn">Open this trade-up</Link>
             {isFree && (

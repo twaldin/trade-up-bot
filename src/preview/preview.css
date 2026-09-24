@@ -489,6 +489,8 @@
   .preview-proof__kpis,
   .preview-proof__skeleton--kpis { order: 1; }
 
+  .preview-proof > .preview-fees { order: 1; }
+
   .preview-proof__kpis .preview-readout:nth-child(3) { border-left: 0; }
   .preview-proof__kpis .preview-readout:nth-child(n + 3) { border-top: 1px solid var(--line-soft); }
 }
