@@ -101,7 +101,7 @@ function boardCardFacts(card) {
         label: t(r.querySelector("em")), value: t(r.querySelector("b")), note: t(r.querySelector("small")),
       })),
       cardline: t(c.querySelector(".preview-cardline")),
-      verifyHref: [...c.querySelectorAll("a")].find((a) => /Verify \/ Claim/.test(a.textContent))?.href ?? null,
+      verifyHref: [...c.querySelectorAll("a")].find((a) => /Verify/.test(a.textContent ?? ""))?.href ?? null,
       text: c.innerText,
     };
   });
@@ -144,7 +144,7 @@ for (const device of ["desktop", "mobile"]) {
   take(`${p}-board`, device, "/trade-ups", async ({ page, rec, ctx, ptr, t }) => {
     await sleep(1800);
     rec.mark("board");
-    const card = page.locator("article.preview-card").first();
+    const card = page.locator("article.preview-card").filter({ has: page.locator('a[href*="780598151"]') }).first();
     const line = card.locator(".preview-cardline");
     if (mobile) {
       await smoothScrollTo(page, card, "start", 1500);
@@ -152,7 +152,7 @@ for (const device of ["desktop", "mobile"]) {
       await rec.rect("card", card);
       await sleep(900);
     }
-    await pointAt(page, rec, ptr, device, line, { click: true, ms: 900 });
+    await pointAt(page, rec, ptr, device, card.locator(".preview-cardline__open"), { click: true, ms: 900 });
     rec.mark("expanded");
     await sleep(1600);
     await rec.rect("flow", card.locator(".preview-flow").first());
@@ -190,7 +190,7 @@ for (const device of ["desktop", "mobile"]) {
     await sleep(1400);
     if (popup) await popup.close();
   }, async ({ page, t }) => {
-    const card = page.locator("article.preview-card").first();
+    const card = page.locator("article.preview-card").filter({ has: page.locator('a[href*="780598151"]') }).first();
     await shot(page, t, card.locator(".preview-flow").first(), "flow", 8);
     await shot(page, t, card.locator(".preview-flow__side").nth(1), "outputs", 8);
     await shot(page, t, card.locator(".preview-skin--output").first(), "output0", 6);
@@ -245,13 +245,13 @@ for (const device of ["desktop", "mobile"]) {
     const ev = page.getByText("Expected value", { exact: true }).first();
     await smoothScrollTo(page, ev, "center", 1500);
     await rec.rect("result", ev.locator("xpath=../.."));
-    await pointAt(page, rec, ptr, device, page.getByText("Profit", { exact: true }).first(), { ms: 700 });
+    await pointAt(page, rec, ptr, device, page.getByText("Expected P/L", { exact: true }).first(), { ms: 700 });
     rec.mark("result-in-view");
     await sleep(2800);
     t.facts.text = await page.locator("main").innerText();
     const lines = t.facts.text.split("\n").map((s) => s.trim()).filter(Boolean);
     const after = (label) => lines[lines.indexOf(label) + 1] ?? null;
-    t.facts.result = { cost: after("Cost"), expectedValue: after("Expected value"), profit: after("Profit") };
+    t.facts.result = { cost: after("Cost"), expectedValue: after("Expected value"), profit: after("Expected P/L") };
   }, async ({ page, t }) => {
     const ev = page.getByText("Expected value", { exact: true }).first();
     await shot(page, t, ev.locator("xpath=../.."), "result", 8);

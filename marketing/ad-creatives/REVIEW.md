@@ -31,15 +31,13 @@ A signed-in free user can open the board (contracts delayed 3 hours, `INTERVAL '
 
 Killed and not rendered: `static-float-split-1080`, `static-float-split-1350`, `meta-a-float-landscape`.
 
-## Shots to re-capture after the calculator copy PR
+## Shots re-captured after #171
 
-Do not use the current calculator page in a frame. It still shows the old wording and the buyer-fee claim. The −$0.01 beat is typeset from the captured result numbers only.
+#171 is live in prod (`db7c68a2`). Recaptured 24 Sept 2026 from https://tradeupbot.app: video C’s sign-in banner, the board shot of contract 780598151, and the calculator take. The `signinBanner` check still looks for a “Verify … Pro” sentence. The live banner is “Verify and Claim are Pro features. Signing in with Steam is free.” The on-screen sign-in footnote stays “Signing in is free. Verify is part of Pro.”
 
-Re-capture after #171 is live. The `signinBanner` check looks for a “Verify … Pro” sentence in the live banner. The on-screen sign-in footnote stays “Signing in is free. Verify is part of Pro.”
+The board card now says Expected P/L and Above cost. Cost is still $53.14 and expected value is still $56.35, so the typeset numbers did not change. The opening crop is the total-cost line and the Verify button. The 6.0% ROI row and the outcome chart stay out of that frame.
 
-- Video C’s sign-in banner, framed larger and readable.
-- Video C’s opening board shot. Labels and the fee line change.
-- Any calculator or detail frames. The current calculator page still shows the old wording and the buyer-fee claim. The −$0.01 beat is typeset from the captured result numbers only. This cut keeps the detail H1 out of frame because it says Profit and a 6.0% ROI. Contract 780199345 stays typeset so the card’s outcome shares and the skin whose name fails the copy check stay off screen.
+The live calculator example moved to cost $28.07, expected value $27.79, expected P/L −$0.28. Video B stays the signed typeset example (cost $27.42, expected value $27.41, −$0.01) and is not re-rendered. There is no square cut that uses this footage. Detail H1 stays out of frame. Contract 780199345 stays typeset.
 
 ## End card (every video)
 
@@ -67,6 +65,11 @@ Free view delayed 3 h. Not affiliated with or endorsed by Valve. Board and contr
 - “Signed-in free accounts can't run Verify” replaces the 403 line.
 - Video C’s opening board shot hides the cursor, which was sitting on Claim. Footage is not re-captured; that waits until #171 is live.
 - Video B’s hero card is 8 seconds. The end card holds to 5 seconds so the cut stays 15 seconds.
+
+## r6
+
+- Recaptured the post-#171 sign-in banner, board shot, and calculator take. Re-rendered `meta-c-verify-vertical` only. r5 files for every other cut stay as they were.
+- Frame check rejects guaranteed profit, case key, and gambling phrasing. “not guaranteed profit” is the only allowed disclaimer of that kind. It does not appear in this cut. The on-screen disclaimer stays “Estimates after fees. You can lose money.”
 
 ## Google RSA
 
