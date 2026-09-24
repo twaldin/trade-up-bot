@@ -44,8 +44,8 @@ export function PreviewTerms() {
         </ul>
 
         <h2>5. Payment Terms</h2>
-        <p>TradeUpBot offers free and paid subscription tiers. Paid subscriptions are billed monthly through Stripe. By subscribing, you agree to recurring monthly charges until you cancel.</p>
-        <p>You may cancel your subscription at any time through the account menu or by contacting support. Cancellation takes effect at the end of the current billing period. No refunds are provided for partial billing periods.</p>
+        <p>TradeUpBot offers a free tier and paid Pro plans through Stripe: monthly, yearly, and a one-time lifetime purchase. Monthly and yearly plans renew until you cancel. Lifetime Pro is a single payment with no renewal.</p>
+        <p>You may cancel a monthly or yearly plan at any time with Manage subscription on Pricing or My trade-ups. Cancellation takes effect at the end of the current billing period. There are no cancellation fees and no refunds for partial billing periods. A lifetime purchase is not a subscription, so there is nothing to cancel.</p>
         <p>Subscription prices are subject to change with 30 days notice.</p>
 
         <h2>6. Steam Authentication</h2>

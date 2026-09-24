@@ -90,6 +90,10 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(features).toContain("Claim system");
     expect(legal).toContain("Last updated: March 2026");
     expect(legal).toContain("TradeUpBot is an informational tool only");
+    expect(legal).toContain("monthly, yearly, and a one-time lifetime purchase");
+    expect(legal).toContain("Manage subscription");
+    expect(legal).not.toContain("billed monthly");
+    expect(legal).not.toContain("account menu");
     expect(legal).toContain("What We Collect");
     expect(legal).toContain("Steam OpenID");
   });
