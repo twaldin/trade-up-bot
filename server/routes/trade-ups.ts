@@ -3,7 +3,7 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { cachedRoute, getRateLimit } from "../redis.js";
+import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
 import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
