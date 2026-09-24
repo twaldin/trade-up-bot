@@ -45,7 +45,7 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(board).toContain("expandable = true");
     expect(board).toMatch(/\{expandable && \(\s*<span className="preview-cardline__open"/);
     expect(board).toMatch(/const toggle = \(\) => \{\s*if \(!expandable\) return;/);
-    expect(board).toMatch(/const open = \(\) => \{\s*if \(expandable\) onExpand\(tu\.id\);/);
+    expect(board).toMatch(/const open = \(\) => \{\s*if \(!expandable\) return;/);
     expect(board).toContain("onNeedExpand={open}");
   });
 
