@@ -1,16 +1,23 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type pg from "pg";
-import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
-import { formatOdds } from "../src/preview/lib/board.js";
-import { formatDollars } from "../src/utils/format.js";
+import { tradeUpDescription, tradeUpDocumentTitle, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
+import { tradeUpDetailJsonLd } from "../shared/types.js";
 import { inputsAreRedacted } from "./routes/trade-ups.js";
 import { buildSeoHtml, deletedTradeUpStatus, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
 
+export interface TradeUpDetailRouteOpts {
+  shellHtml?: string;
+}
+
 /** Crawler and SPA-shell HTML for /trade-ups/:id. Fresh rows hide per-input price and source. */
-export function registerTradeUpShareSeo(app: Express, pool: pg.Pool): void {
+export function registerTradeUpDetailRoute(app: Express, pool: pg.Pool, _opts?: TradeUpDetailRouteOpts): void {
   app.get("/trade-ups/:id", (req, res, next) => {
     void handleTradeUpShareSeo(pool, req, res, next);
   });
+}
+
+export function registerTradeUpShareSeo(app: Express, pool: pg.Pool): void {
+  registerTradeUpDetailRoute(app, pool);
 }
 
 export async function handleTradeUpShareSeo(
@@ -20,7 +27,13 @@ export async function handleTradeUpShareSeo(
   next: NextFunction,
 ): Promise<void> {
   const ua = req.headers["user-agent"] || "";
+  const id = String(req.params.id);
   try {
+    if (!/^\d+$/.test(id)) {
+      const status = deletedTradeUpStatus(id);
+      res.status(status).set("X-Robots-Tag", "noindex").send("Trade-up not found");
+      return;
+    }
     const { rows: [row] } = await pool.query(
       "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json, created_at FROM trade_ups WHERE id = $1",
       [req.params.id],
@@ -32,12 +45,6 @@ export async function handleTradeUpShareSeo(
       );
       return;
     }
-    const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;
-    const profit = formatDollars(row.profit_cents);
-    const cost = formatDollars(row.total_cost_cents);
-    const chance = formatOdds(row.chance_to_profit ?? 0);
-    const roi = row.roi_percentage?.toFixed(1) ?? "0";
-
     const isStale = row.listing_status === "stale"
       || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
 
@@ -61,15 +68,26 @@ export async function handleTradeUpShareSeo(
       { label: "Browse CS2 Collections", url: "/collections" },
     ];
 
-    const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
+    const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name);
+    const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
+    const pair = tradeUpPair(row.type, outcomes);
 
     const meta = {
-      title: `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`,
-      description: `${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
+      title: tradeUpDocumentTitle(row.type, outcomes, collectionNames),
+      ogTitle: tradeUpOgTitle(row.type, row.profit_cents, outcomes),
+      description: tradeUpDescription({
+        type: row.type,
+        profitCents: row.profit_cents,
+        costCents: row.total_cost_cents,
+        chanceToProfit: row.chance_to_profit ?? 0,
+        outcomes,
+        inputNames,
+      }),
       url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
       ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
       robots: isStale ? "noindex, follow" : "index, follow",
       includeLegal: true,
+      jsonLd: tradeUpDetailJsonLd(id, pair),
       bodyHtml: renderTradeUpDetail(
         { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
         inputs,

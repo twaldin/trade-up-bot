@@ -1,13 +1,7 @@
-import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildSeoHtml, escapeHtml, loadTradeUpDetailPage } from "../../server/seo.js";
-import {
-  tradeUpDescription,
-  tradeUpDocumentTitle,
-  tradeUpH1,
-  tradeUpOgTitle,
-} from "../../shared/copy.js";
+import { escapeHtml } from "../../server/seo.js";
+import { registerTradeUpDetailRoute } from "../../server/trade-up-share-seo.js";
 import { createTestApp, type TestContext } from "./setup.js";
 
 interface Fixture {
@@ -85,16 +79,7 @@ describe("GET /trade-ups/:id crawler HTML", () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    const app = express();
-    app.get("/trade-ups/:id", async (req, res) => {
-      const page = await loadTradeUpDetailPage(ctx.pool, String(req.params.id));
-      if (page.status !== 200) {
-        res.status(page.status).send(page.status === 410 ? "gone" : "missing");
-        return;
-      }
-      res.type("html").send(buildSeoHtml(page.meta));
-    });
-    ctx.app = app;
+    registerTradeUpDetailRoute(ctx.app, ctx.pool);
     for (const [key, fixture] of Object.entries(fixtures)) {
       ids.set(key, await insertTradeUp(ctx, fixture));
     }
@@ -104,48 +89,49 @@ describe("GET /trade-ups/:id crawler HTML", () => {
     await ctx.cleanup();
   });
 
-  async function rendered(key: string) {
-    const fixture = fixtures[key];
+  async function html(key: string): Promise<string> {
     const id = ids.get(key);
     const res = await request(ctx.app).get(`/trade-ups/${id}`).set("User-Agent", "Googlebot").expect(200);
-    const collections = fixture.inputs.map((row) => row.collection_name);
-    const title = tradeUpDocumentTitle(fixture.type, fixture.outcomes, collections);
-    const description = tradeUpDescription({
-      type: fixture.type,
-      profitCents: fixture.profit,
-      costCents: fixture.cost,
-      chanceToProfit: fixture.chance,
-      outcomes: fixture.outcomes,
-      inputNames: fixture.inputs.map((row) => row.skin_name),
-    });
-    const h1 = tradeUpH1(fixture.type, fixture.profit, fixture.roi, fixture.outcomes);
-    const og = tradeUpOgTitle(fixture.type, fixture.profit, fixture.outcomes);
-    expect(res.text).toContain(`<title>${escapeHtml(title)}</title>`);
-    expect(res.text).toContain(`<meta name="description" content="${escapeHtml(description)}"`);
-    expect(res.text).toContain(`<meta property="og:title" content="${escapeHtml(og)}"`);
-    expect(res.text).toContain(`<h1>${escapeHtml(h1)}</h1>`);
+    expect(res.headers["cache-control"]).toBe("private, no-store");
+    expect(res.headers.vary).toBe("Cookie, Authorization");
+    expect(res.text.match(/application\/ld\+json/g)).toHaveLength(1);
     expect(res.text).not.toMatch(/<title>[^<]*%/);
-    return { title, description, h1, og };
+    expect(res.text).not.toMatch(/<h1>[^<]*-\$/);
+    return res.text;
   }
 
   it("renders a collection descriptor when the likeliest output is under 0.5", async () => {
-    const page = await rendered("recoil");
-    expect(page.title).toBe("Classified to Covert Trade-Up: Recoil | TradeUpBot");
+    const page = await html("recoil");
+    expect(page).toContain("<title>Classified to Covert Trade-Up: Recoil | TradeUpBot</title>");
+    expect(page).toContain('<meta property="og:title" content="Classified to Covert: +$41.20 Expected P/L | TradeUpBot"');
+    expect(page).toContain("<h1>Classified to Covert Trade-Up — +$41.20 Expected P/L (16.5% ROI)</h1>");
+    expect(page).toContain("+$41.20 expected P/L after fees, 32% of outcomes above cost, $250.00 cost. Inputs: AK-47 Redline.");
   });
 
   it("renders the likeliest output name at or above 0.5", async () => {
-    const page = await rendered("asiimov");
-    expect(page.title).toBe("Classified to Covert Trade-Up: AK-47 Asiimov | TradeUpBot");
+    const page = await html("asiimov");
+    expect(page).toContain("<title>Classified to Covert Trade-Up: AK-47 Asiimov | TradeUpBot</title>");
+    expect(page).toContain('<meta property="og:title" content="Classified to Covert: +$3.20 Expected P/L | TradeUpBot"');
+    expect(page).toContain("<h1>Classified to Covert Trade-Up — +$3.20 Expected P/L (4.0% ROI)</h1>");
   });
 
   it("renders a knife trade-up with the collection, not the knife name", async () => {
-    const page = await rendered("knife");
-    expect(page.title).toBe("Covert to Knife Trade-Up: Dreams & Nightmares | TradeUpBot");
-    expect(page.description).toContain(">99% of outcomes above cost");
+    const page = await html("knife");
+    expect(page).toContain(`<title>${escapeHtml("Covert to Knife Trade-Up: Dreams & Nightmares | TradeUpBot")}</title>`);
+    expect(page).toContain(`<meta property="og:title" content="${escapeHtml("Covert to Knife Trade-Up: −$12.34 Expected P/L | TradeUpBot")}"`);
+    expect(page).toContain(`<h1>${escapeHtml("Covert to Knife Trade-Up — −$12.34 Expected P/L (−1.4% ROI)")}</h1>`);
+    expect(page).toContain(escapeHtml("−$12.34 expected P/L after fees, >99% of outcomes above cost"));
   });
 
-  it("renders the shortened pair when two collections do not fit", async () => {
-    const page = await rendered("milspec");
-    expect(page.title).toBe("Mil-Spec to Restricted: Fracture + Prisma 2 | TradeUpBot");
+  it("orders equal collection counts by name", async () => {
+    const page = await html("milspec");
+    expect(page).toContain("<title>Mil-Spec to Restricted: Fracture + Prisma 2 | TradeUpBot</title>");
+  });
+
+  it("returns 404 for a non-numeric id", async () => {
+    const res = await request(ctx.app).get("/trade-ups/not-a-trade-up").set("User-Agent", "Googlebot");
+    expect(res.status).toBe(404);
+    expect(res.text).toBe("Trade-up not found");
+    expect(res.headers["x-robots-tag"]).toBe("noindex");
   });
 });

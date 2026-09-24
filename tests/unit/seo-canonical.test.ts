@@ -76,6 +76,6 @@ const source = [
   it("noindex remains limited to low-listing skins and stale trade-up details", () => {
     expect(source).toContain('const robots = listingCount < 5 ? "noindex, follow" : "index, follow"');
     expect(detailSource).toContain('robots: isStale ? "noindex, follow" : "index, follow"');
-    expect(countMatches(source + detailSource, /noindex, follow/g)).toBe(2);
+    expect(countMatches(source + detailSource, /noindex, follow/g)).toBe(3);
   });
 });

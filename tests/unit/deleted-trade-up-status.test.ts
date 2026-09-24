@@ -23,7 +23,7 @@ describe("deletedTradeUpStatus (410 tombstones for deleted trade-ups)", () => {
   });
 
   it("is wired into the SEO /trade-ups/:id handler with a noindex tombstone", () => {
-    expect(indexSource).toContain("registerTradeUpShareSeo(app, pool)");
+    expect(indexSource).toContain("registerTradeUpDetailRoute(app, pool)");
     expect(shareSource).toContain("deletedTradeUpStatus(String(req.params.id))");
     expect(shareSource).toContain('"X-Robots-Tag", "noindex"');
   });

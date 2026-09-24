@@ -12,7 +12,7 @@ import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { publicBoardWarmPaths, registerBoardWarmer } from "./routes/board-warm.js";
 import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "./routes/active-trade-up-counts.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
-import { registerTradeUpShareSeo } from "./trade-up-share-seo.js";
+import { registerTradeUpDetailRoute } from "./trade-up-share-seo.js";
 import { previewFacesRouter } from "./routes/preview-faces.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
@@ -33,7 +33,6 @@ import { formatOdds } from "../src/preview/lib/board.js";
 import { COLLECTION_TRADEUP_LEDE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
 import { blogIndexLabel, blogPosts } from "../src/data/blog-posts.js";
-import { formatDollars } from "../src/utils/format.js";
 
 /** Bump when crawler HTML or JSON-LD changes so Redis cannot serve the previous copy. */
 const SEO_CRAWLER_CACHE_REV = "v4";
@@ -400,7 +399,7 @@ registerCanonicalRedirectRoutes(app);
   });
 
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
-  registerTradeUpShareSeo(app, pool);
+  registerTradeUpDetailRoute(app, pool);
 
   // SEO: crawler handler for /collections/:slug pages — enriched
   app.get("/collections/:slug", async (req, res, next) => {
