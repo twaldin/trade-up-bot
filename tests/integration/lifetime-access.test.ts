@@ -31,4 +31,36 @@ describe("lifetime access while tier is still free", () => {
       expect(allowed.status, path).not.toBe(403);
     }
   });
+
+  it("serves the live board and detail tier to a lifetime buyer whose tier is still free", async () => {
+    const { rows } = await ctx.pool.query(
+      `INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, listing_status, outcomes_json, created_at)
+       VALUES (10000, 12000, 2000, 20, 0.5, 'classified_covert', 'active', '[]', NOW())
+       RETURNING id`,
+    );
+    const id = rows[0].id as number;
+    const lifetime = { "x-test-user-id": "user_life", "x-test-user-tier": "free", "x-test-user-lifetime": "true" };
+
+    const board = await request(ctx.app).get("/api/trade-ups?include_stale=true&per_page=500").set(lifetime);
+    expect(board.status).toBe(200);
+    expect(board.body.tier).toBe("pro");
+    expect(board.body.tier_config.delay).toBe(0);
+    expect(board.body.trade_ups.some((row: { id: number }) => row.id === id)).toBe(true);
+
+    const free = await request(ctx.app).get("/api/trade-ups?include_stale=true&per_page=500");
+    expect(free.body.tier).toBe("free");
+    expect(free.body.tier_config.delay).toBe(3 * 60 * 60);
+    expect(free.body.trade_ups.some((row: { id: number }) => row.id === id)).toBe(false);
+
+    const detail = await request(ctx.app).get(`/api/trade-ups/${id}`).set(lifetime);
+    expect(detail.status).toBe(200);
+    expect(detail.headers["x-effective-tier"]).toBe("pro");
+
+    const inputs = await request(ctx.app).get(`/api/trade-up/${id}/inputs`).set(lifetime);
+    expect(inputs.status).toBe(200);
+    expect(inputs.headers["x-effective-tier"]).toBe("pro");
+
+    const freeDetail = await request(ctx.app).get(`/api/trade-ups/${id}`);
+    expect(freeDetail.headers["x-effective-tier"]).toBe("free");
+  });
 });

@@ -117,11 +117,17 @@ describe("POST /api/subscribe refuses a second Pro checkout", () => {
   });
 
   it("returns 409 when Stripe still has an open subscription the tier column missed", async () => {
-    for (const status of ["active", "trialing", "past_due", "unpaid", "incomplete"]) {
+    for (const status of ["active", "trialing", "incomplete"]) {
       stripeMock.subscriptionsList.mockResolvedValueOnce({ data: [{ status }] });
       const res = await subscribe("user_pastdue", "pro");
       expect(res.status, status).toBe(409);
-      expect(res.body.error).toMatch(/Manage subscription/);
+      expect(res.body.error).toBe("You already have a subscription. Use Manage subscription instead of starting a new checkout.");
+    }
+    for (const status of ["past_due", "unpaid"]) {
+      stripeMock.subscriptionsList.mockResolvedValueOnce({ data: [{ status }] });
+      const res = await subscribe("user_pastdue", "pro");
+      expect(res.status, status).toBe(409);
+      expect(res.body.error).toBe("Your last payment failed. Update it in Manage subscription instead of starting a new checkout.");
     }
     expect(stripeMock.customersCreate).not.toHaveBeenCalled();
     expect(stripeMock.sessionsCreate).not.toHaveBeenCalled();

@@ -74,6 +74,7 @@ export function stripeRouter(pool: pg.Pool): Router {
         let customerId: string | null = row?.stripe_customer_id || user.stripe_customer_id || null;
         if (customerId) {
           const listed = await stripe.subscriptions.list({ customer: customerId, status: "all" });
+          const failedPayment = listed.data.some((sub) => sub.status === "past_due" || sub.status === "unpaid");
           const open = listed.data.some((sub) =>
             sub.status === "active" || sub.status === "trialing" || sub.status === "past_due"
             || sub.status === "unpaid" || sub.status === "incomplete",
@@ -82,7 +83,9 @@ export function stripeRouter(pool: pg.Pool): Router {
             res.status(409).json({
               error: plan === "pro-lifetime"
                 ? "Cancel your current plan in Manage subscription first, then buy Lifetime."
-                : "You already have a subscription. Use Manage subscription instead of starting a new checkout.",
+                : failedPayment
+                  ? "Your last payment failed. Update it in Manage subscription instead of starting a new checkout."
+                  : "You already have a subscription. Use Manage subscription instead of starting a new checkout.",
             });
             return;
           }

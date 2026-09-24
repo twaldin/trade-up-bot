@@ -110,7 +110,7 @@ export function PreviewPricing() {
             className="o-tab"
             aria-selected={billing === interval}
             data-state={billing === interval ? "active" : "inactive"}
-            onClick={() => setBilling(interval)}
+            onClick={() => { setBilling(interval); setCheckoutError(null); }}
           >
             {interval === "yearly" ? "Yearly · save 28%" : interval === "lifetime" ? "Lifetime · best value" : "Monthly"}
           </button>

@@ -3,7 +3,7 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { hasProAccess } from "../../shared/pro-access.js";
+import { getEffectiveTier } from "../../shared/pro-access.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
@@ -186,7 +186,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     // Don't cache my_claims responses — they change on every claim/release and must be real-time
     if (req.query.my_claims === "true") return null;
     const tier = listCacheTier({
-      tier: req.user?.tier,
+      tier: getEffectiveTier(req.user as User | undefined),
       authorization: req.headers.authorization,
       internalToken: process.env.INTERNAL_API_TOKEN,
     });
@@ -226,7 +226,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       : getTierConfig(req);
     const user = req.user as User | undefined;
     const userId = user?.steam_id || "anonymous";
-    const effectiveTier = isInternal ? "pro" : (user?.tier || "free");
+    const effectiveTier = isInternal ? "pro" : getEffectiveTier(user);
 
     const pageNum = parseInt(page);
     const perPage = Math.min(parseInt(per_page), 500);
@@ -616,6 +616,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   }));
 
   router.get("/api/trade-ups/:id", async (req, res) => {
+    // #172 owns redaction of fresh rows. This is the only tier decision on detail.
+    res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
     const { rows: [row] } = await pool.query(
       `SELECT t.* FROM trade_ups t WHERE t.id = $1`,
       [req.params.id]
@@ -656,7 +658,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     // Verify requires pro tier
     const userId = req.user?.steam_id;
     const viewer = req.user as User | undefined;
-    if (!userId || (!hasProAccess(viewer) && viewer?.tier === "free")) {
+    if (!userId || getEffectiveTier(viewer) === "free") {
       res.status(403).json({ error: "Verify requires Pro plan" });
       return;
     }
@@ -1106,8 +1108,9 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     });
   });
 
-  // Load inputs on-demand (not included in list response to save bandwidth)
-  router.get("/api/trade-up/:id/inputs", cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
+  // Load inputs on-demand (not included in list response to save bandwidth).
+  // Header is per request, outside the shared cache. #172 owns redaction.
+  const cachedInputsHandler = cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
     const { rows: inputs } = await pool.query(
@@ -1143,7 +1146,12 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       ...(claimedIds.has(inp.listing_id) ? { claimed_by_other: true } : {}),
     }));
     res.json({ inputs: enrichedInputs });
-  }));
+  });
+
+  router.get("/api/trade-up/:id/inputs", (req, res, next) => {
+    res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
+    return cachedInputsHandler(req, res, next);
+  });
 
   // Load outcomes on-demand (not included in list response to save bandwidth)
   router.get("/api/trade-up/:id/outcomes", cachedRoute((req) => "tu_outcomes:" + req.params.id, 120, async (req, res) => {

@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { BILLING_PORTAL_API, hasProAccess, openBillingPortal } from "../../src/preview/lib/billing.js";
+import { getEffectiveTier, hasProAccess } from "../../shared/pro-access.js";
+import { BILLING_PORTAL_API, openBillingPortal } from "../../src/preview/lib/billing.js";
 import { INTERSTITIAL_COPY } from "../../src/preview/lib/steam-interstitial.js";
 import { ManageSubscription } from "../../src/preview/components/ManageSubscription.js";
 
@@ -24,6 +25,15 @@ describe("Pro access", () => {
     expect(hasProAccess({ tier: "pro" })).toBe(true);
     expect(hasProAccess({ tier: "pro", lifetime: true })).toBe(true);
     expect(hasProAccess({ tier: "free", lifetime: true })).toBe(true);
+  });
+
+  it("resolves a stale lifetime purchase to pro and leaves other tiers alone", () => {
+    expect(getEffectiveTier(null)).toBe("free");
+    expect(getEffectiveTier(undefined)).toBe("free");
+    expect(getEffectiveTier({ tier: "free" })).toBe("free");
+    expect(getEffectiveTier({ tier: "basic" })).toBe("basic");
+    expect(getEffectiveTier({ tier: "pro" })).toBe("pro");
+    expect(getEffectiveTier({ tier: "free", lifetime: true })).toBe("pro");
   });
 });
 
@@ -69,6 +79,7 @@ describe("Manage subscription entry points", () => {
     expect(pricing).toContain("disabled={user === undefined || hasProAccess(user)}");
     expect(pricing).toContain("if (user === undefined || hasProAccess(user)) return;");
     expect(pricing).toContain('hasProAccess(user) ? "Current plan" : "Go Pro"');
+    expect(pricing).toContain("setBilling(interval); setCheckoutError(null);");
     expect(pricing).toContain('user === undefined ? "Checking…"');
   });
 
