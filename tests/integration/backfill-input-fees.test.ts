@@ -5,7 +5,7 @@ import path from "path";
 import { createTestApp, type TestContext } from "./setup.js";
 import { storedInputCost } from "../../server/engine/fees.js";
 import { applyListingPriceToInputs } from "../../server/engine/db-stats.js";
-import { runInputFeeBackfill } from "../../scripts/backfill-input-fees.js";
+import { projectedScore, runInputFeeBackfill, withReadOnlySession } from "../../scripts/backfill-input-fees.js";
 import { seedFeeTradeUp, readInputPrices, readTradeUp } from "../helpers/input-fees.js";
 
 describe("input-fee backfill", () => {
@@ -90,5 +90,82 @@ describe("input-fee backfill", () => {
     expect(res).toEqual({ inputsUpdated: 0, tradeUpsUpdated: 0 });
     expect(await readTradeUp(ctx.pool, id)).toEqual(before);
     expect((await readInputPrices(ctx.pool, id))["bf-noop"]).toBe(storedInputCost(1000, "csfloat"));
+  });
+
+  it("projectedScore matches the compute_trade_up_score() trigger", async () => {
+    const cost = 1000;
+    const profit = 500;
+    const chance = 0.5;
+    const worst = -200;
+    const { rows } = await ctx.pool.query(
+      `INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+         chance_to_profit, worst_case_cents, type, listing_status, is_theoretical, outcomes_json)
+       VALUES ($1, $2, $3, 0, $4, $5, 'classified_covert', 'active', false, '[]')
+       RETURNING trade_up_score`,
+      [cost, cost + profit, profit, chance, worst]
+    );
+    expect(rows[0].trade_up_score).toBe(projectedScore(cost, profit, chance, worst));
+    expect(rows[0].trade_up_score).toBe(208);
+  });
+
+  it("counts a stored-total projection that disagrees with the input sum", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-mismatch", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    await ctx.pool.query("UPDATE trade_ups SET total_cost_cents = total_cost_cents - 50 WHERE id = $1", [id]);
+    const report = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
+    expect(report.projectionMismatches).toBe(1);
+    expect(report.sample[0].new_cost_cents).toBe(storedInputCost(1000, "csfloat"));
+  });
+
+  it("builds the first page with the diversity cap and reports join/leave", async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 21; i++) {
+      ids.push(await seedFeeTradeUp(ctx.pool, [
+        { listingId: `bf-div-a-${i}`, source: "skinport", raw: 500, stored: 500, float: 0.15 },
+      ]));
+    }
+    const other = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-div-b", source: "skinport", raw: 500, stored: 500, float: 0.16 },
+    ]);
+    await ctx.pool.query("UPDATE trade_ups SET collection_names = ARRAY['Combo A'] WHERE id = ANY($1::int[])", [ids]);
+    await ctx.pool.query("UPDATE trade_ups SET collection_names = ARRAY['Combo B'] WHERE id = $1", [other]);
+
+    const report = await runInputFeeBackfill(ctx.pool, {
+      firstPageIds: [ids[0], 999999],
+      log: () => undefined,
+    });
+    expect(report.inputsAffected).toBe(0);
+    expect(report.firstPageLeave).toContain(999999);
+    expect(report.firstPageJoin.length).toBeGreaterThan(0);
+
+    const site = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
+    expect(site.firstPageSize).toBe(21);
+    expect(site.firstPageLeave).not.toContain(ids[0]);
+  });
+
+  it("a dry-run session cannot write", async () => {
+    await withReadOnlySession(ctx.pool, async (db) => {
+      const { rows } = await db.query("SHOW default_transaction_read_only");
+      expect(rows[0].default_transaction_read_only).toBe("on");
+      await expect(db.query("INSERT INTO sync_meta (key, value) VALUES ('x', 'y')")).rejects.toThrow(/read-only/);
+    });
+    await ctx.pool.query("INSERT INTO sync_meta (key, value) VALUES ('backfill-rw', '1')");
+  });
+
+  it("retries a batch when the first attempt hits a lock timeout", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-lock", source: "csfloat", raw: 1000, stored: 1000, float: 0.15 },
+    ]);
+    const holder = await ctx.pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("LOCK TABLE trade_ups IN ACCESS EXCLUSIVE MODE");
+    const apply = runInputFeeBackfill(ctx.pool, { dryRun: false, pauseMs: 0, lockTimeoutMs: 200, log: () => undefined });
+    await new Promise(r => setTimeout(r, 400));
+    await holder.query("ROLLBACK");
+    holder.release();
+    const report = await apply;
+    expect(report.inputsAffected).toBe(1);
+    expect((await readInputPrices(ctx.pool, id))["bf-lock"]).toBe(storedInputCost(1000, "csfloat"));
   });
 });
