@@ -110,7 +110,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
 <h3>What is the best CS2 trade-up right now?</h3>
 <p>It changes hour to hour as listings sell. The live trade-ups page ranks current contracts by expected profit, ROI, and share of outcomes above cost, each built from real listings on CSFloat, DMarket, and Skinport. Ranked results update continuously, so the current best contract is always the top of that list rather than a fixed answer.</p>
 <h3>Do you need an account to use TradeUpBot?</h3>
-<p>No. Browsing trade-ups, skin pages, collections, and the calculator is free without an account. Signing in with Steam is only needed for claims, verification, and Pro features like real-time contract access.</p>
+<p>No. Browsing trade-ups, skin pages, collections, and the calculator is free without an account. Signing in with Steam is free. Verify and Claim are Pro features.</p>
 </section>
 <p><a href="/trade-ups">See live CS2 trade-ups</a>, <a href="/calculator">open the calculator</a>, and <a href="/blog/how-cs2-trade-ups-work/">learn how trade-ups work</a>.</p>`,
     jsonLd: [
@@ -127,7 +127,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
           { "@type": "Question", name: 'Are CS2 trade-ups still profitable in 2026?', acceptedAnswer: { "@type": "Answer", text: "Some are, at current prices, but margins move. Margins come from price gaps between marketplaces and from float-exact output pricing, and both close as listings sell. TradeUpBot's live table shows contracts whose expected value after fees is above cost at this moment, built from listings you can actually buy. Outcomes are random, returns are never guaranteed, and every contract should be verified before purchase." } },
           { "@type": "Question", name: 'Can you lose money on CS2 trade-ups?', acceptedAnswer: { "@type": "Answer", text: 'Yes. A trade-up consumes all ten inputs, and the output is drawn by probability from the input collections. If the drawn output sells below your input cost after fees, the contract loses money. That is why TradeUpBot shows the share of outcomes above cost and a bounded best and worst case for every contract instead of a single expected-value number.' } },
           { "@type": "Question", name: 'What is the best CS2 trade-up right now?', acceptedAnswer: { "@type": "Answer", text: 'It changes hour to hour as listings sell. The live trade-ups page ranks current contracts by expected profit, ROI, and share of outcomes above cost, each built from real listings on CSFloat, DMarket, and Skinport. Ranked results update continuously, so the current best contract is always the top of that list rather than a fixed answer.' } },
-          { "@type": "Question", name: 'Do you need an account to use TradeUpBot?', acceptedAnswer: { "@type": "Answer", text: 'No. Browsing trade-ups, skin pages, collections, and the calculator is free without an account. Signing in with Steam is only needed for claims, verification, and Pro features like real-time contract access.' } },
+          { "@type": "Question", name: 'Do you need an account to use TradeUpBot?', acceptedAnswer: { "@type": "Answer", text: 'No. Browsing trade-ups, skin pages, collections, and the calculator is free without an account. Signing in with Steam is free. Verify and Claim are Pro features.' } },
         ],
       },
       {
@@ -187,7 +187,7 @@ export const STATIC_SEO_PAGES: StaticSeoPage[] = [
     path: "/terms",
     title: "Terms of Service — TradeUpBot",
     description: "TradeUpBot terms for using CS2 trade-up analysis, marketplace data, subscriptions, and related tools.",
-    bodyHtml: `<h1>Terms of Service</h1><p>TradeUpBot provides CS2 trade-up analysis, market data, educational content, and tools for estimating expected value, float outcomes, and potential profitability. The service does not guarantee profit, marketplace availability, or future prices. Listings can sell or change before a user acts.</p><p>Users are responsible for reviewing marketplace terms, understanding risks, and verifying input listings before purchase. TradeUpBot calculations are informational and depend on available data from third-party marketplaces, including CSFloat, DMarket, and Skinport.</p><p><a href="/privacy">Read the privacy policy</a> or <a href="/faq">review common CS2 trade-up questions</a>.</p>`,
+    bodyHtml: `<h1>Terms of Service</h1><p>TradeUpBot provides CS2 trade-up analysis, market data, educational content, and tools for estimating expected value, float outcomes, and potential profitability. The service does not guarantee profit, marketplace availability, or future prices. Listings can sell or change before a user acts.</p><p>Users are responsible for reviewing marketplace terms, understanding risks, and verifying input listings before purchase. TradeUpBot calculations are informational and depend on available data from third-party marketplaces, including CSFloat, DMarket, and Skinport.</p><h2>9. Age Requirement</h2><p>TradeUpBot is only for users 18 and older.</p><p><a href="/privacy">Read the privacy policy</a> or <a href="/faq">review common CS2 trade-up questions</a>.</p>`,
   },
   {
     path: "/privacy",

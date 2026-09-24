@@ -2773,6 +2773,14 @@
 
 .preview-footer__grid a:hover { text-underline-offset: 2px; text-decoration: underline; }
 
+.preview-console__legal {
+  padding: 16px 22px 28px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.preview-console__legal p { margin: 0 0 6px; }
+
 .preview-footer__legal {
   max-width: 1200px;
   margin: 0 auto;

@@ -61,8 +61,8 @@ import {
   LABEL_AFTER_FEES,
   LABEL_EXPECTED_PL,
   LABEL_EXPECTED_VALUE,
-  LABEL_OUTCOMES_ABOVE_COST,
-  NOTE_PL_ABOVE_ZERO,
+  LABEL_ABOVE_COST,
+  NOTE_OF_OUTCOMES,
   NOTE_WORST_OUTCOMES,
 } from "../lib/copy.js";
 import { boardFeeLine } from "../lib/fees.js";
@@ -673,7 +673,7 @@ export function TradeUpCard({
                   <Readout label={LABEL_EXPECTED_VALUE} value={formatDollars(tu.expected_value_cents)} note={LABEL_AFTER_FEES} />
                   <Readout label={LABEL_EXPECTED_PL} value={signedDollars(evPnL)} note={`${tu.roi_percentage.toFixed(1)}% ROI`} tone={signClass(evPnL)} />
                   <Readout label="Median P/L" value={median === null ? "—" : signedDollars(median)} note="50th percentile" tone={median === null ? "" : signClass(median)} />
-                  <Readout label={LABEL_OUTCOMES_ABOVE_COST} value={chance === null ? "—" : formatOdds(chance)} note={NOTE_PL_ABOVE_ZERO} />
+                  <Readout label={LABEL_ABOVE_COST} value={chance === null ? "—" : formatOdds(chance)} note={NOTE_OF_OUTCOMES} />
                   <Readout label="Worst case" value={worst === null ? "—" : signedDollars(worst)} note="lowest outcome" tone={worst === null ? "" : signClass(worst)} />
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note={NOTE_WORST_OUTCOMES} tone={tail === null ? "" : signClass(tail)} />

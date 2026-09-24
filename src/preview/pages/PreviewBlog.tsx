@@ -120,7 +120,7 @@ export function PreviewBlogPost() {
         <header className="preview-panel__head">
           <p className="o-kicker">Next</p>
         </header>
-        <h2>See live profitable trade-ups right now</h2>
+        <h2>See live CS2 trade-ups right now</h2>
         <p className="preview-note">TradeUpBot scans CSFloat, DMarket, and Skinport continuously. Every trade-up is built from live listings, with marketplace fees factored into profit. Free tier available.</p>
         <div className="preview-toolbar">
           <Link className="preview-btn preview-btn--lime" to="/trade-ups">Browse trade-ups</Link>

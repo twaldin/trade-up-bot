@@ -59,6 +59,8 @@ describe("product and legal leave the console sidebar", () => {
     expect(shell).not.toContain(">Product<");
     expect(shell).not.toContain(">Legal<");
     expect(shell).not.toContain("preview-footer");
+    expect(shell).toContain("FOOTER_NOT_VALVE");
+    expect(shell).toContain("FOOTER_AGE");
   });
 
   it("routes marketing pages through landing chrome, not PreviewShell", () => {

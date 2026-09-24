@@ -73,7 +73,7 @@ export function PreviewTerms() {
         <p>The total liability of TradeUpBot for any claim arising from use of the service shall not exceed the amount you paid for the service in the 12 months preceding the claim.</p>
 
         <h2>9. Age Requirement</h2>
-        <p>You must be at least 13 years of age to use TradeUpBot, consistent with Steam's minimum age requirement. If you are under 18, you should review these terms with a parent or guardian.</p>
+        <p>TradeUpBot is only for users 18 and older.</p>
 
         <h2>10. Changes to Terms</h2>
         <p>We may update these Terms of Service from time to time. Continued use of the service after changes constitutes acceptance of the revised terms. Material changes will be communicated through the platform.</p>

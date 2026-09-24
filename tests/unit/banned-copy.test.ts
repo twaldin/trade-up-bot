@@ -5,19 +5,32 @@
  * Allowlist is exact substrings that are disclaimers or existing guide
  * excerpts, not ad labels. Remove a line here only after the copy is gone.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
+function previewCopyFiles(): string[] {
+  const dir = join(root, "src/preview");
+  const out: string[] = [];
+  const walk = (current: string, rel: string) => {
+    for (const name of readdirSync(current)) {
+      const abs = join(current, name);
+      const next = rel ? `${rel}/${name}` : name;
+      if (name.endsWith(".tsx") || name.endsWith(".ts")) out.push(`src/preview/${next}`);
+      else if (!name.includes(".")) walk(abs, next);
+    }
+  };
+  walk(dir, "");
+  return out;
+}
+
 const SOURCE_FILES = [
-  "src/preview/pages/PreviewPricing.tsx",
-  "src/preview/pages/PreviewCalculator.tsx",
-  "src/preview/pages/PreviewLanding.tsx",
-  "src/preview/pages/PreviewShare.tsx",
+  ...previewCopyFiles(),
   "server/index.ts",
+  "server/seo.ts",
   "server/static-seo-pages.ts",
 ];
 
@@ -37,6 +50,9 @@ const ALLOWLIST = [
   "How to Use TradeUpBot to Find Profitable Trade-Ups", // existing guide title on the home teaser
   "Learn how to use TradeUpBot to find profitable CS2 trade-ups", // existing guide excerpt on the home teaser
   "test floats, odds, and fees", // existing calculator-guide excerpt
+  "const win", // window handle in openListings, not user-facing copy
+  "if (win)", // same window handle
+  "Win rate", // completed-sale statistic on the account page
 ];
 
 const BANNED: { label: string; pattern: RegExp }[] = [
@@ -59,6 +75,7 @@ const BANNED: { label: string; pattern: RegExp }[] = [
   { label: "jackpot", pattern: /jackpot/i },
   { label: "gamble", pattern: /gamble/i },
   { label: "bet", pattern: /\bbet\b/i },
+  { label: "win", pattern: /\bwin\b/i },
   { label: "win big", pattern: /win big/i },
   { label: "case opening", pattern: /case opening/i },
 ];

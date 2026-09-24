@@ -7,7 +7,8 @@ import {
   LABEL_AFTER_FEES,
   LABEL_EXPECTED_PL,
   LABEL_EXPECTED_VALUE,
-  LABEL_OUTCOMES_ABOVE_COST,
+  LABEL_ABOVE_COST,
+  NOTE_OF_OUTCOMES,
 } from "../lib/copy.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { SLOW_DOWN_COPY, isRateLimitError, readEvaluationBody, readPagedJson } from "../lib/page-fetch.js";
@@ -153,7 +154,7 @@ export function PreviewCalculator() {
       <header className="preview-page__head">
         <div>
           <h1>CS2 Trade-Up Calculator</h1>
-          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove trade-up, then see expected value after fees and output float.</p>
+          <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove trade-up, then evaluate it.</p>
         </div>
       </header>
       <div className="preview-toolbar">
@@ -242,7 +243,7 @@ export function PreviewCalculator() {
           <Readout label="Cost" value={formatDollars(result.total_cost_cents)} />
           <Readout label={LABEL_EXPECTED_VALUE} value={formatDollars(result.expected_value_cents)} note={LABEL_AFTER_FEES} />
           <Readout label={LABEL_EXPECTED_PL} value={signedDollars(profit)} tone={signClass(profit)} />
-          <Readout label={LABEL_OUTCOMES_ABOVE_COST} value={stats ? formatOdds(stats.chance_to_profit) : "—"} />
+          <Readout label={LABEL_ABOVE_COST} value={stats ? formatOdds(stats.chance_to_profit) : "—"} note={NOTE_OF_OUTCOMES} />
         </div>
       )}
       <FeeLine line={isExample ? CALCULATOR_EXAMPLE_FEE_LINE : CALCULATOR_FEE_LINE} />

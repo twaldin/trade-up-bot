@@ -1,5 +1,7 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { formatOdds } from "../src/preview/lib/board.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
+import { formatDollars } from "../src/utils/format.js";
 
 export { buildCollectionsHubJsonLd, buildHomepageJsonLd };
 
@@ -18,6 +20,8 @@ interface SeoMeta {
    *  set this — high-cardinality pages (/skins hub, collection trade-ups) must NOT, to stay
    *  under the ~100-links-per-page budget. */
   includeFooter?: boolean;
+  /** Valve and 18+ lines without the link hub. Used on /trade-ups and /trade-ups/:id. */
+  includeLegal?: boolean;
 }
 
 export function escapeHtml(str: string): string {
@@ -217,6 +221,8 @@ export function buildSeoHtml(meta: SeoMeta): string {
   }
   if (meta.includeFooter) {
     bodyContent += renderSeoFooter();
+  } else if (meta.includeLegal) {
+    bodyContent += renderSeoLegal();
   }
 
   return `<!DOCTYPE html><html lang="en"><head>
@@ -283,6 +289,15 @@ const SEO_FOOTER_GUIDES: { slug: string; title: string }[] = [
  * money/content pages flow equity to the product without exceeding the per-page link budget.
  * Opt-in via SeoMeta.includeFooter — never applied to high-cardinality pages.
  */
+/** Valve non-affiliation and 18+ lines. No extra links, so high-cardinality pages can use it. */
+export function renderSeoLegal(): string {
+  const e = escapeHtml;
+  return `<footer>` +
+    `<p>${e(FOOTER_NOT_VALVE)} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>` +
+    `<p>${e(FOOTER_AGE)}</p>` +
+    `</footer>`;
+}
+
 export function renderSeoFooter(): string {
   const e = escapeHtml;
   const collLinks = FALLBACK_COLLECTION_HUB_LINKS.slice(0, 6)
@@ -301,8 +316,7 @@ export function renderSeoFooter(): string {
     `<h2>Top Collections</h2><ul>${collLinks}</ul>` +
     `<h2>Guides</h2><ul>${guideLinks}<li><a href="/blog">All CS2 Trade-Up Guides</a></li></ul>` +
     `</nav>` +
-    `<p>${e(FOOTER_NOT_VALVE)} CS2 and Counter-Strike are trademarks of Valve Corporation.</p>` +
-    `<p>${e(FOOTER_AGE)}</p>` +
+    renderSeoLegal().replace("<footer>", "").replace("</footer>", "") +
     `</footer>`;
 }
 
@@ -387,10 +401,10 @@ export function renderTradeUpDetail(
   related: TradeUpRelatedLink[]
 ): string {
   const e = escapeHtml;
-  const profit = (tradeUp.profit_cents / 100).toFixed(2);
-  const cost = (tradeUp.total_cost_cents / 100).toFixed(2);
+  const profit = formatDollars(tradeUp.profit_cents);
+  const cost = formatDollars(tradeUp.total_cost_cents);
   const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
-  const chance = Math.round((tradeUp.chance_to_profit ?? 0) * 100);
+  const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
   const typeLabel = TRADE_UP_TYPE_DISPLAY[tradeUp.type] || tradeUp.type;
 
   const inputRows = inputs.map(inp =>
@@ -412,8 +426,8 @@ export function renderTradeUpDetail(
     ? `all 10 inputs from the ${e(collections[0])} collection`
     : `inputs from ${e(collections.join(", "))}`;
 
-  return `<h1>${e(typeLabel)} Trade-Up — $${profit} Expected P/L (${roi}% ROI)</h1>
-<p>Cost $${cost} · ${chance}% of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
+  return `<h1>${e(typeLabel)} Trade-Up — ${e(profit)} Expected P/L (${roi}% ROI)</h1>
+<p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
 
 <h2>Inputs</h2>
 <p>This trade-up contract uses 10 input skins of the same rarity. The 10 inputs are:</p>

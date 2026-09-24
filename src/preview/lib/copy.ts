@@ -82,13 +82,16 @@ export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees 
 
 /** Visible metric labels. Engine fields (chance_to_profit, profit_cents) stay unchanged. */
 export const LABEL_OUTCOMES_ABOVE_COST = "Outcomes above cost";
+/** Short tile label. The long form is clipped in the 3-column strip at 390px. */
+export const LABEL_ABOVE_COST = "Above cost";
+export const NOTE_OF_OUTCOMES = "of outcomes";
 export const LABEL_ABOVE_COST_PCT = "Above cost %";
 export const LABEL_MIN_ABOVE_COST = "Min above cost %";
 export const LABEL_EXPECTED_VALUE = "Expected value";
 export const LABEL_AFTER_FEES = "after fees";
 export const LABEL_EXPECTED_PL = "Expected P/L";
 export const LABEL_OUTCOME_PROBABILITY = "Outcome probability";
-export const NOTE_WORST_OUTCOMES = "worst 10% of outcomes";
+export const NOTE_WORST_OUTCOMES = "10th percentile";
 export const NOTE_PL_ABOVE_ZERO = "P(P/L > $0)";
 
 export const HOME_TITLE = "TradeUpBot — CS2 Trade-Ups Built from Real, Buyable Listings";
@@ -101,4 +104,4 @@ export const FOOTER_NOT_VALVE = "Not affiliated with or endorsed by Valve.";
 export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
 
 /** Logged-out trade-up page. Verify is Pro (`POST /api/verify-trade-up/:id` returns 403 otherwise). */
-export const SIGN_IN_TO_CLAIM = "Verify is part of Pro. Sign in to claim and purchase listings.";
+export const SIGN_IN_TO_CLAIM = "Verify and Claim are Pro features. Signing in with Steam is free.";

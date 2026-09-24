@@ -25,6 +25,8 @@ import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderTradeUpDetail, renderCollectionsHub, renderTradeUpsHub, deletedTradeUpStatus, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
+import { formatOdds } from "../src/preview/lib/board.js";
+import { formatDollars } from "../src/utils/format.js";
 import { blogPosts } from "../src/data/blog-posts.js";
 
 // Build reverse map: knife/glove weapon type → case names
@@ -404,9 +406,9 @@ registerCanonicalRedirectRoutes(app);
         return;
       }
       const typeLabel = TRADE_UP_TYPE_LABELS[row.type] || row.type;
-      const profit = (row.profit_cents / 100).toFixed(2);
-      const cost = (row.total_cost_cents / 100).toFixed(2);
-      const chance = Math.round((row.chance_to_profit ?? 0) * 100);
+      const profit = formatDollars(row.profit_cents);
+      const cost = formatDollars(row.total_cost_cents);
+      const chance = formatOdds(row.chance_to_profit ?? 0);
       const roi = row.roi_percentage?.toFixed(1) ?? "0";
 
       const isStale = row.listing_status === "stale"
@@ -434,11 +436,12 @@ registerCanonicalRedirectRoutes(app);
       const inputNames = inputs.slice(0, 3).map((i: { skin_name: string }) => i.skin_name).join(", ");
 
       const meta = {
-        title: `${typeLabel} Trade-Up — $${profit} expected P/L (${chance}% above cost) | TradeUpBot`,
-        description: `$${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
+        title: `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`,
+        description: `${cost} cost, ${roi}% ROI. Inputs: ${inputNames}. Found on TradeUpBot.`,
         url: `https://tradeupbot.app/trade-ups/${req.params.id}`,
         ogImage: `https://tradeupbot.app/og/trade-ups/${req.params.id}.png`,
         robots: isStale ? "noindex, follow" : "index, follow",
+        includeLegal: true,
         bodyHtml: renderTradeUpDetail(
           { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
           inputs,
@@ -1118,6 +1121,7 @@ registerCanonicalRedirectRoutes(app);
             { "@context": "https://schema.org", "@type": "WebApplication", name: "TradeUpBot", url: "https://tradeupbot.app/trade-ups", applicationCategory: "UtilityApplication", operatingSystem: "Web", description: `${profitable} CS2 trade-ups with positive expected profit after fees, out of ${total} active contracts.` },
             faqSchema,
           ],
+          includeLegal: true,
         });
         try {
           const { cacheSet } = await import("./redis.js");

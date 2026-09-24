@@ -117,8 +117,9 @@ describe("calculator first session", () => {
     expect(calc).toContain('label="Cost"');
     expect(calc).toContain("LABEL_EXPECTED_VALUE");
     expect(calc).toContain("LABEL_EXPECTED_PL");
-    expect(calc).toContain("LABEL_OUTCOMES_ABOVE_COST");
-    for (const label of ["Expected value", "Expected P/L", "Outcomes above cost"]) {
+    expect(calc).toContain("LABEL_ABOVE_COST");
+    expect(calc).toContain("NOTE_OF_OUTCOMES");
+    for (const label of ["Expected value", "Expected P/L", "Above cost"]) {
       expect(copy).toContain(`"${label}"`);
     }
   });
