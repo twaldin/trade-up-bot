@@ -3,7 +3,7 @@ import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, storedInputCost, recomputeTradeUpCost } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
-import { cachedRoute, getRateLimit, cacheInvalidatePrefix } from "../redis.js";
+import { cachedRoute, getRateLimit } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
 import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
@@ -438,59 +438,7 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
 
     // Batch-load real_input_count and missing_count for all page rows in one query.
     // This replaces the two correlated subqueries that were inlined in the SELECT above.
-    let inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
-
-    // Coherence guard: the WHERE filtered on the listing_status COLUMN, but canonical
-    // status is recomputed from live listings (batchLoadInputCounts). A listing deleted
-    // without cascadeTradeUpStatuses running (race, crashed fetcher) leaves the column
-    // 'active' — the row passes the WHERE, then renders partial/stale in the default
-    // view. Heal the column (the UPDATE revalidates missing counts in the same
-    // statement, so a listing reinserted since the batch count can't be mis-marked),
-    // invalidate cached pages that may still hold the leaked rows, and requery once so
-    // the page has no holes. Rows claimed by the requesting user stay visible — the
-    // claimer must see their inputs went missing.
-    if (!includeStale && my_claims !== "true") {
-      const leakedIds = rows
-        .filter((r: { id: number }) => {
-          const c = inputCountsById.get(r.id);
-          return c !== undefined && c.missing_count > 0 && !claimedByMe.has(r.id);
-        })
-        .map((r: { id: number }) => r.id);
-      if (leakedIds.length > 0) {
-        const { rows: healed } = await pool.query(
-          `WITH live AS (
-             SELECT tui.trade_up_id,
-                    COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%')::int AS real_inputs,
-                    COUNT(*) FILTER (WHERE tui.listing_id NOT LIKE 'theor%' AND l.id IS NULL)::int AS missing
-             FROM trade_up_inputs tui
-             LEFT JOIN listings l ON tui.listing_id = l.id
-             WHERE tui.trade_up_id = ANY($1::int[])
-             GROUP BY tui.trade_up_id
-           )
-           UPDATE trade_ups t SET
-             listing_status = CASE WHEN live.missing >= live.real_inputs THEN 'stale' ELSE 'partial' END,
-             preserved_at = COALESCE(t.preserved_at, NOW())
-           FROM live
-           WHERE t.id = live.trade_up_id
-             AND t.listing_status = 'active'
-             AND live.missing > 0
-             AND NOT EXISTS (
-               SELECT 1 FROM trade_up_claims tc
-               WHERE tc.trade_up_id = t.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
-             )
-           RETURNING t.id`,
-          [leakedIds]
-        );
-        if (healed.length > 0) {
-          await cacheInvalidatePrefix("tu:");
-          // Healed rows are excluded by the WHERE now — refill the page slots.
-          rows = (await pool.query(dataSql, dataParams)).rows;
-          inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
-          // The count queries ran against the pre-heal set.
-          total = Math.max(0, total - healed.length);
-        }
-      }
-    }
+    const inputCountsById = await batchLoadInputCounts(pool, rows.map((r: { id: number }) => r.id));
 
     const tuIds = rows.map((r: { id: number }) => r.id);
 
@@ -530,9 +478,11 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Canonical status may still disagree with the column for rows the heal skipped
-    // (claim-guarded) or for deletions racing the requery — those residuals are dropped
-    // below rather than healed again (bounded to one requery per request).
+    // The list query filters on the listing_status column. A listing deleted
+    // without cascade leaves that column 'active', so the row is in this page.
+    // Canonical status (and missing_count) still describe the live inputs.
+    // Hide those leaks here. The column is repaired by the daemon heal, not
+    // by this request. The claimer keeps the row so they can see the gap.
 
     const tradeUps: TradeUp[] = rows.map((row: any) => {
       const summary = summaryByTuId.get(row.id) ?? { skins: [], collections: [], input_count: 0 };
@@ -578,7 +528,9 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const residualLeaks = new Set<number>();
     if (!includeStale && my_claims !== "true") {
       for (const tu of tradeUps) {
-        if (tu.listing_status !== "active" && !tu.claimed_by_me) residualLeaks.add(tu.id);
+        const missing = tu.missing_count ?? 0;
+        const leaked = tu.listing_status !== "active" || missing > 0;
+        if (leaked && !tu.claimed_by_me) residualLeaks.add(tu.id);
       }
     }
 

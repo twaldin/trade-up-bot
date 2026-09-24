@@ -282,6 +282,13 @@ export async function main() {
   const stopSkinport = await startSkinportListener(pool);
   console.log(`  Skinport WebSocket: listener started (passive listing feed)`);
 
+  const { startLeakedTradeUpHeal, triggerLeakedTradeUpHeal, LEAKED_TRADEUP_HEAL_INTERVAL_MS } = await import("./leaked-tradeup-heal.js");
+  void triggerLeakedTradeUpHeal(pool).catch((err: unknown) => {
+    console.error("  Leaked trade-up heal failed:", err instanceof Error ? err.message : err);
+  });
+  startLeakedTradeUpHeal(pool);
+  console.log(`  Leaked trade-up heal: every ${LEAKED_TRADEUP_HEAL_INTERVAL_MS / 1000}s (cycle_version bump, no tu:* flush)`);
+
   if (freshStart) {
     await pool.query("DELETE FROM trade_up_inputs");
     const purged = await pool.query("DELETE FROM trade_ups");
