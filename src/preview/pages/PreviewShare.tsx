@@ -265,6 +265,19 @@ export function PreviewShare() {
         </section>
       )}
 
+      {tu && panel === "upgrade" && (
+        <section className="preview-panel">
+          <p className="preview-note">Verify and Claim are Pro-only.</p>
+          <button
+            type="button"
+            className="preview-btn"
+            onClick={(event) => interstitial.open({ surface: "share_verify", loggedIn: true }, event.currentTarget)}
+          >
+            See Pro
+          </button>
+        </section>
+      )}
+
       {tu && panel === "pro" && (
         <section className="preview-panel">
           <header className="preview-panel__head">

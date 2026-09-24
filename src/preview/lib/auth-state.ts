@@ -17,5 +17,5 @@ export function shareActionPanel(user: AuthUser | null | undefined): ShareAction
   if (user === undefined) return "pending";
   if (user === null) return "sign-in";
   if (user.tier === "pro" || user.tier === "admin" || !!user.is_admin) return "pro";
-  return "none";
+  return "upgrade";
 }

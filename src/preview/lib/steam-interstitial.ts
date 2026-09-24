@@ -2,8 +2,8 @@ import { trackEvent } from "../../lib/analytics.js";
 import { proPriceLine, type BillingInterval } from "./pro-pricing.js";
 
 export type InterstitialContext =
-  | { surface: "pricing_go_pro"; billing: BillingInterval }
-  | { surface: "share_verify" };
+  | { surface: "pricing_go_pro"; billing: BillingInterval; loggedIn?: boolean }
+  | { surface: "share_verify"; loggedIn?: boolean };
 
 export type InterstitialSurface = InterstitialContext["surface"];
 
@@ -41,7 +41,11 @@ const SIGN_UP_LOCATION: Record<InterstitialSurface, string> = {
 };
 
 function baseParams(ctx: InterstitialContext): EventParams {
-  return { source_surface: ctx.surface, intent: ctx.surface === "pricing_go_pro" ? "pro" : "claim", logged_in: false };
+  return {
+    source_surface: ctx.surface,
+    intent: ctx.surface === "pricing_go_pro" ? "pro" : "claim",
+    logged_in: ctx.loggedIn === true,
+  };
 }
 
 /** View and continue events also carry the billing tab for the Pro modal. */

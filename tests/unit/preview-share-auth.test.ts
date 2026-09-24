@@ -29,8 +29,11 @@ describe("share page auth tri-state", () => {
     expect(shareActionPanel({ steam_id: "1", tier: "free", is_admin: true })).toBe("pro");
   });
 
-  it("never shows the sign-in panel to a logged-in Free account", () => {
-    expect(shareActionPanel({ steam_id: "1", tier: "free" })).not.toBe("sign-in");
+  it("shows a Pro-only upgrade prompt to a logged-in Free account", () => {
+    expect(shareActionPanel({ steam_id: "1", tier: "free" })).toBe("upgrade");
+    expect(share).toContain('panel === "upgrade"');
+    expect(share).toContain("Verify and Claim are Pro-only.");
+    expect(share).toContain('surface: "share_verify"');
   });
 
   it("starts the share page user as undefined, not null", () => {

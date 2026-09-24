@@ -171,6 +171,15 @@ describe("interstitial GA4 events", () => {
     expect(calls.map(([name]) => name)).toEqual(["pro_interstitial_view", "steam_continue", "sign_up_start"]);
   });
 
+  it("records logged_in true when a signed-in Free user opens it from the upgrade prompt", () => {
+    const { calls, track } = recorder();
+    const tracker = createInterstitialTracker(track);
+    tracker.open({ surface: "share_verify", loggedIn: true });
+    expect(calls).toEqual([
+      ["claim_interstitial_view", { source_surface: "share_verify", intent: "claim", logged_in: true }],
+    ]);
+  });
+
   it("does nothing before an open", () => {
     const { calls, track } = recorder();
     const tracker = createInterstitialTracker(track);

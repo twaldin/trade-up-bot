@@ -320,6 +320,28 @@ try {
     await page.close();
   }
 
+  // Logged-in Free on a trade-up: upgrade prompt where Verify/Claim would be, opening the interstitial.
+  {
+    const { page } = await openPage(share, { user: "free" });
+    await page.waitForSelector(".preview-panel", { timeout: 60000 });
+    const prompt = await page.evaluate(() => [...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Verify and Claim are Pro-only.")));
+    check(prompt, "free share: upgrade prompt says Verify and Claim are Pro-only");
+    const signIn = await page.evaluate(() => [...document.querySelectorAll("button, a")].some((el) => el.textContent?.trim() === "Verify or claim this trade-up"));
+    check(!signIn, "free share: no logged-out sign-in button");
+    await page.screenshot({ path: `${OUT}/upgrade-prompt-free-dark.png` });
+    await page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.trim() === "See Pro")?.click());
+    await sleep(300);
+    check(await dialogOpen(page), "free share: See Pro opens the interstitial");
+    await page.screenshot({ path: `${OUT}/upgrade-prompt-interstitial-dark.png` });
+    const ev = (await events(page)).filter(([name]) => name !== "tradeup_view");
+    check(ev[0]?.[0] === "claim_interstitial_view" && ev[0]?.[1]?.logged_in === true, `free share: view event logged_in true ${JSON.stringify(ev[0])}`);
+    await page.close();
+    const light = await openPage(share, { user: "free", mode: "light", width: 390, height: 844 });
+    await light.page.waitForSelector(".preview-panel", { timeout: 60000 });
+    await light.page.screenshot({ path: `${OUT}/upgrade-prompt-free-390-light.png` });
+    await light.page.close();
+  }
+
   // Logged in as Free: Go Pro goes straight to checkout, no modal, begin_checkout fires.
   {
     const { page, subscribeCalls } = await openPage("/pricing", { user: "free" });
