@@ -151,7 +151,7 @@ describe("POST /api/subscribe refuses a second Pro checkout", () => {
       return { id: "cus_once" };
     });
     const seen = new Map<string, { url: string }>();
-    stripeMock.sessionsCreate.mockImplementation(async (_params: unknown, opts: { idempotencyKey?: string }) => {
+    stripeMock.sessionsCreate.mockImplementation(async (_params?: unknown, opts?: { idempotencyKey?: string }) => {
       const key = opts?.idempotencyKey ?? "";
       expect(key).toMatch(/^checkout_user_free_pro_\d+$/);
       const existing = seen.get(key);
