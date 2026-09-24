@@ -105,7 +105,7 @@ const CalloutCard: React.FC<{ c: Callout; frame: number }> = ({ c, frame }) => (
     style={{
       position: "absolute",
       left: 20,
-      bottom: 16,
+      top: 16,
       opacity: fadeIn(frame, 0, 6),
       background: "rgba(38,37,35,0.96)",
       border: `1px solid ${C.lineHard}`,

@@ -10,7 +10,7 @@ export const RangeBar: React.FC<{ stopAt: number; height?: number; instant?: boo
   const { fps } = useVideoConfig();
   const p = instant ? stopAt : interpolate(frame, [0, Math.round(0.9 * fps)], [0.55, stopAt], { extrapolateRight: "clamp" });
   return (
-    <div style={{ position: "relative", height, width: "100%" }}>
+    <div style={{ position: "relative", height, margin: "0 64px" }}>
       <div style={{ position: "absolute", left: 0, right: 0, top: 28, height: 8, borderRadius: 4, background: C.lineHard }} />
       {STOPS.map((s) => (
         <div key={s} style={{ position: "absolute", left: `${s * 100}%`, top: 18, width: 2, height: 28, background: C.muted, transform: "translateX(-1px)" }} />
