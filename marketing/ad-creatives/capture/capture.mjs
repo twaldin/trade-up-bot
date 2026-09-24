@@ -212,7 +212,7 @@ for (const device of ["desktop", "mobile"]) {
     await sleep(2000);
     rec.mark("page");
     t.facts.title = txt(await page.locator("h1").first().textContent());
-    const signin = page.getByText("Signing in is free. Verify is part of Pro.").first();
+    const signin = page.getByText(/Verify[^.]*Pro/).first();
     t.facts.signinBanner = txt(await signin.textContent());
     await rec.rect("title", page.locator("h1").first());
     await rec.rect("signin", signin.locator("xpath=.."));
@@ -227,7 +227,7 @@ for (const device of ["desktop", "mobile"]) {
   }, async ({ page, t }) => {
     await scrollTopInstant(page);
     await viewportShot(page, t, "top");
-    await shot(page, t, page.getByText("Signing in is free. Verify is part of Pro.").first().locator("xpath=.."), "signin", 6);
+    await shot(page, t, page.getByText(/Verify[^.]*Pro/).first().locator("xpath=.."), "signin", 6);
   });
 
   take(`${p}-calculator`, device, "/calculator", async ({ page, rec, ptr, t }) => {

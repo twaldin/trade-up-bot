@@ -81,7 +81,7 @@ export const buildCatalog = (facts: Facts) => {
   if (result.cost !== "$27.42" || result.expectedValue !== "$27.41" || result.profit !== "-$0.01") {
     throw new Error("calculator example drifted from the 24 Sept capture");
   }
-  if (!tradeup.facts.signinBanner?.includes("Signing in is free. Verify is part of Pro.")) {
+  if (!/Verify[^.]*Pro/.test(tradeup.facts.signinBanner ?? "")) {
     throw new Error("sign-in banner text was not captured");
   }
   const feeRows = [

@@ -35,12 +35,11 @@ Killed and not rendered: `static-float-split-1080`, `static-float-split-1350`, `
 
 Do not use the current calculator page in a frame. It still shows the old wording and the buyer-fee claim. The −$0.01 beat is typeset from the captured result numbers only.
 
-Re-capture after that PR ships:
+Re-capture after #171 is live. The `signinBanner` check looks for a “Verify … Pro” sentence in the live banner. The on-screen sign-in footnote stays “Signing in is free. Verify is part of Pro.”
 
-- The trade-up sign-in banner. Video C’s sign-in footnote is now “Signing in is free. Verify is part of Pro.” The live banner changes when #171 ships, so recapture that screenshot then. The `signinBanner` check looks for that same sentence and is valid only after #171 is live.
-- Any calculator UI (inputs and result chrome), if a later cut should show the page instead of typeset numbers.
-- The trade-up detail H1, once it says Expected P/L. This cut keeps that H1 out of frame because it says Profit and a 6.0% ROI.
-- Contract 780199345 as page footage, if the screen demo should show the live card instead of typeset rows. This cut typesets the API prices so the card’s outcome shares and the skin whose name fails the copy check stay off screen.
+- Video C’s sign-in banner, framed larger and readable.
+- Video C’s opening board shot. Labels and the fee line change.
+- Any calculator or detail frames. The current calculator page still shows the old wording and the buyer-fee claim. The −$0.01 beat is typeset from the captured result numbers only. This cut keeps the detail H1 out of frame because it says Profit and a 6.0% ROI. Contract 780199345 stays typeset so the card’s outcome shares and the skin whose name fails the copy check stay off screen.
 
 ## End card (every video)
 
