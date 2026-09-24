@@ -76,7 +76,8 @@ import {
 import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
-import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
+import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { createFaceCache, faceFor, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
 
@@ -545,7 +546,7 @@ export function TradeUpCard({
   onExpand,
   expandable = true,
 }: {
-  tu: TradeUp;
+  tu: HydratedTradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
   /** False for teaser cards that share expand state with another card they must not disturb. */
@@ -612,6 +613,7 @@ export function TradeUpCard({
           <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
         </div>
       )}
+      {tu.hydrateNotice && <p className="preview-note">{tu.hydrateNotice}</p>}
 
       {(inputs.length > 0 || outputs.length > 0) && (
         <FlowRow
@@ -951,18 +953,6 @@ export function PreviewBoard({
   );
 }
 
-async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {
-  if (tu.inputs.length > 0) return tu;
-  try {
-    const res = await fetch(`/api/trade-up/${tu.id}/inputs`, { credentials: "include" });
-    if (!res.ok) return tu;
-    const data = await res.json() as { inputs?: TradeUpInput[] };
-    return { ...tu, inputs: data.inputs ?? [] };
-  } catch {
-    return tu;
-  }
-}
-
 function skinNames(rows: TradeUp[]): string[] {
   return rows.flatMap((tu) => [
     ...tu.inputs.map((row) => row.skin_name),
@@ -977,7 +967,7 @@ export function usePreviewTradeUps(options: {
   enabled?: boolean;
 } = {}) {
   const { collection, skin, perPage = 12, enabled = true } = options;
-  const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
+  const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -1048,13 +1038,13 @@ export function usePreviewTradeUps(options: {
         }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
-      hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
+      hydrate: (tu) => hydrateBoardCard(tu),
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
       emit: {
         rows: (next) => {
           if (!live) return;
-          setTradeUps(next as TradeUp[]);
+          setTradeUps(next as HydratedTradeUp[]);
           if (page === 1) setRowsKey(key);
         },
         isFree: setIsFree,
@@ -1124,7 +1114,7 @@ export function usePreviewTradeUps(options: {
     if (id == null) return;
     const current = tradeUps.find((t) => t.id === id);
     if (!current) return;
-    const withInputs = await hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(current));
+    const withInputs = await hydrateBoardCard(current);
     setTradeUps((prev) => prev.map((tu) => (tu.id === id ? withInputs : tu)));
     void loadFaces(skinNames([withInputs]), FACE_CACHE)
       .then(() => setFaceTick((tick) => tick + 1));
