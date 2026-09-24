@@ -5,7 +5,7 @@
 import pg from "pg";
 
 export interface CascadeTradeUpStatusOptions {
-  /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and bumps cycle_version instead. */
+  /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
   invalidateCache?: boolean;
   /**
    * Fully-missing trade-ups become `stale` with preserved_at (include_stale can still
@@ -31,10 +31,17 @@ export async function cascadeTradeUpStatuses(
   for (let i = 0; i < listingIds.length; i += 500) {
     const chunk = listingIds.slice(i, i + 500);
     // Compute status for affected trade-ups
+    // preserveFullyMissing is the daemon heal. Only column-active rows are in
+    // scope there: a stale row that still has some live inputs must not be
+    // rewritten to partial (partial rows are claimable).
+    const activeGuard = options?.preserveFullyMissing
+      ? "JOIN trade_ups tu_guard ON tu_guard.id = tui.trade_up_id AND tu_guard.listing_status = 'active'"
+      : "";
     const { rows: statusRows } = await pool.query(`
       WITH affected_tus AS (
         SELECT DISTINCT tui.trade_up_id
         FROM trade_up_inputs tui
+        ${activeGuard}
         WHERE tui.listing_id = ANY($1)
       ),
       status_calc AS (

@@ -14,7 +14,6 @@ import {
 
 const redisCalls = vi.hoisted(() => ({
   invalidate: [] as string[],
-  versions: [] as string[],
 }));
 
 vi.mock("../../server/redis.js", async (importOriginal) => {
@@ -25,9 +24,6 @@ vi.mock("../../server/redis.js", async (importOriginal) => {
       redisCalls.invalidate.push(prefix);
       return 0;
     },
-    setCycleVersion: async (version: string) => {
-      redisCalls.versions.push(version);
-    },
   };
 });
 
@@ -36,7 +32,6 @@ describe("leaked trade-up heal", () => {
 
   beforeEach(async () => {
     redisCalls.invalidate.length = 0;
-    redisCalls.versions.length = 0;
     resetLeakedTradeUpHealSchedule();
     ctx = await createTestApp({ defaultTier: "pro", defaultUserId: "user_pro" });
     await seedTestData(ctx.pool, {
@@ -68,7 +63,7 @@ describe("leaked trade-up heal", () => {
     );
   }
 
-  it("marks partial and fully-missing rows, and bumps cycle_version once", async () => {
+  it("marks partial and fully-missing rows, and flushes tu:* once", async () => {
     const [partialId, staleId] = await activeIds();
     await deleteInputs(partialId, false);
     await deleteInputs(staleId, true);
@@ -77,9 +72,8 @@ describe("leaked trade-up heal", () => {
 
     expect(result).not.toBeNull();
     expect(result!.updated).toBeGreaterThanOrEqual(2);
-    expect(result!.cacheBumped).toBe(true);
-    expect(redisCalls.invalidate).toEqual([]);
-    expect(redisCalls.versions).toHaveLength(1);
+    expect(result!.cacheFlushed).toBe(true);
+    expect(redisCalls.invalidate).toEqual(["tu:"]);
 
     const { rows } = await ctx.pool.query<{ id: number; listing_status: string; preserved_at: Date | null }>(
       `SELECT id, listing_status, preserved_at FROM trade_ups WHERE id = ANY($1::int[])`,
@@ -137,8 +131,7 @@ describe("leaked trade-up heal", () => {
     expect(runs[1]).toBe(runs[0]);
     expect(runs[2]).toBe(runs[0]);
     expect(runs[3]).toBe(runs[0]);
-    expect(redisCalls.versions).toHaveLength(1);
-    expect(redisCalls.invalidate).toEqual([]);
+    expect(redisCalls.invalidate).toEqual(["tu:"]);
 
     const again = await triggerLeakedTradeUpHeal(ctx.pool, now + 1_000);
     expect(again).toBeNull();
@@ -147,8 +140,43 @@ describe("leaked trade-up heal", () => {
     const nextWindow = await triggerLeakedTradeUpHeal(ctx.pool, now + LEAKED_TRADEUP_HEAL_INTERVAL_MS);
     expect(nextWindow).not.toBeNull();
     expect(nextWindow!.updated).toBe(0);
-    expect(nextWindow!.cacheBumped).toBe(false);
+    expect(nextWindow!.cacheFlushed).toBe(false);
     expect(leakedTradeUpHealRunCount()).toBe(2);
-    expect(redisCalls.versions).toHaveLength(1);
+    expect(redisCalls.invalidate).toEqual(["tu:"]);
+  });
+
+  it("leaves an already-stale row stale when it shares a missing listing", async () => {
+    const [activeId, staleId] = await activeIds();
+    await deleteInputs(activeId, false);
+    const { rows: [missing] } = await ctx.pool.query<{ listing_id: string }>(
+      `SELECT tui.listing_id
+       FROM trade_up_inputs tui
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE tui.trade_up_id = $1 AND l.id IS NULL
+       LIMIT 1`,
+      [activeId],
+    );
+    await ctx.pool.query(
+      `INSERT INTO trade_up_inputs (trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source)
+       VALUES ($1, $2, 'skin-classified-1', 'AK-47 | Test Skin', 'Test Collection Alpha', 100, 0.2, 'Field-Tested', 'csfloat')`,
+      [staleId, missing.listing_id],
+    );
+    await ctx.pool.query(
+      `UPDATE trade_ups SET listing_status = 'stale', preserved_at = NOW() - INTERVAL '1 hour' WHERE id = $1`,
+      [staleId],
+    );
+
+    await triggerLeakedTradeUpHeal(ctx.pool);
+
+    const { rows: [row] } = await ctx.pool.query<{ listing_status: string }>(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [staleId],
+    );
+    expect(row.listing_status).toBe("stale");
+    const { rows: [healed] } = await ctx.pool.query<{ listing_status: string }>(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [activeId],
+    );
+    expect(healed.listing_status).toBe("partial");
   });
 });

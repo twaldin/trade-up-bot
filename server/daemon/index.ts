@@ -287,7 +287,7 @@ export async function main() {
     console.error("  Leaked trade-up heal failed:", err instanceof Error ? err.message : err);
   });
   startLeakedTradeUpHeal(pool);
-  console.log(`  Leaked trade-up heal: every ${LEAKED_TRADEUP_HEAL_INTERVAL_MS / 1000}s (cycle_version bump, no tu:* flush)`);
+  console.log(`  Leaked trade-up heal: every ${LEAKED_TRADEUP_HEAL_INTERVAL_MS / 1000}s (flushes tu:* at most once per interval)`);
 
   if (freshStart) {
     await pool.query("DELETE FROM trade_up_inputs");

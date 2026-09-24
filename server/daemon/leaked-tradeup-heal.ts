@@ -9,17 +9,19 @@
 
 import pg from "pg";
 import { cascadeTradeUpStatuses } from "../engine.js";
-import { setCycleVersion } from "../redis.js";
+import { cacheInvalidatePrefix } from "../redis.js";
 
 /** At most one heal per this window, including concurrent triggers. */
-export const LEAKED_TRADEUP_HEAL_INTERVAL_MS = 45_000;
+export const LEAKED_TRADEUP_HEAL_INTERVAL_MS = 90_000;
 
 /** Cap each pass so a bulk listing loss cannot lock the trade-up table. */
 const LEAKED_TRADEUP_HEAL_BATCH = 5_000;
 
+const DISCOVERY_STATEMENT_TIMEOUT = "10s";
+
 export interface LeakedTradeUpHealResult {
   updated: number;
-  cacheBumped: boolean;
+  cacheFlushed: boolean;
 }
 
 let lastStartedAt = 0;
@@ -37,36 +39,66 @@ export function resetLeakedTradeUpHealSchedule(): void {
   runCount = 0;
 }
 
+function isStatementTimeout(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "57014";
+}
+
 /**
  * One pass: missing listing ids on column-active trade-ups, then
  * cascadeTradeUpStatuses. Fully-missing rows stay as `stale` (include_stale)
  * instead of being deleted. Live claims are skipped inside the cascade.
- * Cache: one cycle_version bump per pass, never SCAN+DEL of `tu:*`.
+ * Cache: one SCAN+DEL of `tu:*` when at least one row changed, and never
+ * more than once per debounce window.
  */
 export async function healLeakedTradeUps(pool: pg.Pool): Promise<LeakedTradeUpHealResult> {
-  const { rows } = await pool.query<{ listing_id: string }>(
-    `SELECT DISTINCT tui.listing_id
-     FROM trade_up_inputs tui
-     JOIN trade_ups t ON t.id = tui.trade_up_id
-     LEFT JOIN listings l ON l.id = tui.listing_id
-     WHERE t.listing_status = 'active'
-       AND t.is_theoretical = false
-       AND tui.listing_id NOT LIKE 'theor%'
-       AND l.id IS NULL
-     LIMIT $1`,
-    [LEAKED_TRADEUP_HEAL_BATCH],
-  );
-  const listingIds = rows.map((row) => row.listing_id);
+  const listingIds = await discoverMissingListingIds(pool);
+  if (listingIds === null) return { updated: 0, cacheFlushed: false };
+
   const updated = await cascadeTradeUpStatuses(pool, listingIds, {
     invalidateCache: false,
     preserveFullyMissing: true,
   });
-  let cacheBumped = false;
+  let cacheFlushed = false;
   if (updated > 0) {
-    await setCycleVersion(String(Date.now()));
-    cacheBumped = true;
+    await cacheInvalidatePrefix("tu:");
+    cacheFlushed = true;
   }
-  return { updated, cacheBumped };
+  return { updated, cacheFlushed };
+}
+
+/**
+ * Missing listing ids on column-active trade-ups. null means the statement
+ * timed out: log and skip this cycle. The caller does not retry.
+ */
+async function discoverMissingListingIds(pool: pg.Pool): Promise<string[] | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SET LOCAL statement_timeout = '${DISCOVERY_STATEMENT_TIMEOUT}'`);
+    const { rows } = await client.query<{ listing_id: string }>(
+      `SELECT DISTINCT tui.listing_id
+       FROM trade_up_inputs tui
+       JOIN trade_ups t ON t.id = tui.trade_up_id
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE t.listing_status = 'active'
+         AND t.is_theoretical = false
+         AND tui.listing_id NOT LIKE 'theor%'
+         AND l.id IS NULL
+       LIMIT $1`,
+      [LEAKED_TRADEUP_HEAL_BATCH],
+    );
+    await client.query("COMMIT");
+    return rows.map((row) => row.listing_id);
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    if (isStatementTimeout(err)) {
+      console.error("[leaked-tradeup-heal] discovery statement_timeout; skipping cycle");
+      return null;
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
