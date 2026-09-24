@@ -24,6 +24,12 @@ describe("backfill flag parsing", () => {
     expect(() => parseBackfillArgs(["leftover"])).toThrow(/unexpected argument/);
   });
 
+  it("accepts --tier free and rejects anything else", () => {
+    expect(parseBackfillArgs(["--tier", "free"]).tier).toBe("free");
+    expect(parseBackfillArgs([]).tier).toBe("pro");
+    expect(() => parseBackfillArgs(["--tier", "basic"])).toThrow(/free or pro/);
+  });
+
   it("rejects a batch size outside 50-100", () => {
     expect(() => parseBackfillArgs(["--batch-size", "500"])).toThrow(/50 to 100/);
     expect(parseBackfillArgs(["--batch-size", "80"]).batchSize).toBe(80);

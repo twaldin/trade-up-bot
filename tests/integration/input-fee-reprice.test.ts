@@ -150,6 +150,19 @@ describe("input buyer fee on reprice paths", () => {
     const flag = (ids: string[]) =>
       ctx.pool.query("UPDATE listings SET price_updated_at = NOW() WHERE id = ANY($1)", [ids]);
 
+    it("a csfloat-tagged input on a DMarket listing gets the DMarket fee", async () => {
+      const id = await seedFeeTradeUp(ctx.pool, [
+        { listingId: "src-dm", source: "csfloat", raw: 500, stored: 500, float: 0.15 },
+      ]);
+      await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = 'src-dm'");
+      await flag(["src-dm"]);
+
+      expect((await recalcTradeUpCosts(ctx.pool, since())).updated).toBe(1);
+      expect((await readInputPrices(ctx.pool, id))["src-dm"]).toBe(storedInputCost(500, "dmarket"));
+      const { rows } = await ctx.pool.query("SELECT source FROM trade_up_inputs WHERE trade_up_id = $1", [id]);
+      expect(rows[0].source).toBe("dmarket");
+    });
+
     it("(a) a flagged listing with an unchanged price and fee-inclusive inputs is a no-op", async () => {
       const { a, b } = await seedShared(FEE_CSF_1000);
       const before = [await readTradeUp(ctx.pool, a), await readTradeUp(ctx.pool, b)];

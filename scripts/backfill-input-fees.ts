@@ -30,7 +30,11 @@ const FEE_SOURCES = Object.entries(MARKETPLACE_FEES)
   .filter(([, f]) => f.buyerFeePct !== 0 || f.buyerFeeFlat !== 0)
   .map(([source]) => source);
 
-const BOARD_WHERE = "WHERE t.is_theoretical = false AND t.listing_status = 'active'";
+function boardWhere(tier: "free" | "pro"): string {
+  const base = "WHERE t.is_theoretical = false AND t.listing_status = 'active'";
+  if (tier === "free") return `${base} AND t.created_at <= NOW() - INTERVAL '10800 seconds'`;
+  return base;
+}
 const RANK_WINDOW = 3000;
 const DEFAULT_BATCH = 80;
 const LOCK_RETRY_CODES = new Set(["40P01", "55P03"]);
@@ -67,8 +71,15 @@ export interface BackfillReport {
   firstPageJoin: number[];
   ge50Before: number;
   ge50After: number;
-  unclassifiableInputs: number;
-  sourceMismatches: number;
+  /** Null when the rank-window count timed out. */
+  unclassifiableInputs: number | null;
+  unclassifiableTradeUps: number | null;
+  sourceMismatches: number | null;
+  sourceMismatchTradeUps: number | null;
+  sourceFixInputs: number;
+  sourceFixTradeUps: number;
+  m1RawBefore: number | null;
+  m1RawAfter: number | null;
   projectionMismatches: number;
   perMarketplace: Record<string, number>;
   lastId: number;
@@ -83,6 +94,8 @@ export interface BackfillOptions {
   csvPath?: string;
   /** Site page captured elsewhere. When set, this is the "before" page. */
   firstPageIds?: number[];
+  /** Public board delay. `free` hides rows newer than 3 hours. */
+  tier?: "free" | "pro";
   /** How long a batch waits for a lock before 55P03 and a retry. */
   lockTimeoutMs?: number;
   log?: (line: string) => void;
@@ -114,7 +127,7 @@ interface RankRow {
 
 interface FixPlan {
   id: number;
-  fixes: { listing_id: string; source: string; old: number; next: number }[];
+  fixes: { listing_id: string; source: string; inputSource: string | null; old: number; next: number }[];
   sample: BackfillSample;
   oldScore: number;
   newScore: number;
@@ -175,9 +188,10 @@ export interface ParsedBackfillArgs {
   csvPath?: string;
   batchSize: number;
   firstPageIds?: number[];
+  tier: "free" | "pro";
 }
 
-const KNOWN_FLAGS = new Set(["--apply", "--dry-run", "--from-id", "--csv", "--batch-size", "--first-page-ids"]);
+const KNOWN_FLAGS = new Set(["--apply", "--dry-run", "--from-id", "--csv", "--batch-size", "--first-page-ids", "--tier"]);
 
 /** Strict argv parse. --dry-run and --apply together is an error, as is any unknown flag. */
 export function parseBackfillArgs(argv: string[]): ParsedBackfillArgs {
@@ -187,6 +201,7 @@ export function parseBackfillArgs(argv: string[]): ParsedBackfillArgs {
   let csvPath: string | undefined;
   let batchSize = DEFAULT_BATCH;
   let firstPageIds: number[] | undefined;
+  let tier: "free" | "pro" = "pro";
 
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -208,6 +223,10 @@ export function parseBackfillArgs(argv: string[]): ParsedBackfillArgs {
         throw new Error("--batch-size must be an integer from 50 to 100");
       }
     }
+    if (flag === "--tier") {
+      if (value !== "free" && value !== "pro") throw new Error("--tier must be free or pro");
+      tier = value;
+    }
     if (flag === "--first-page-ids") {
       firstPageIds = value!.split(",").filter(Boolean).map(part => Number(part));
       if (firstPageIds.length === 0 || firstPageIds.some(id => !Number.isInteger(id))) {
@@ -216,7 +235,7 @@ export function parseBackfillArgs(argv: string[]): ParsedBackfillArgs {
     }
   }
   if (apply && dryRun) throw new Error("pass either --dry-run or --apply, not both");
-  return { dryRun: !apply, fromId, csvPath, batchSize, firstPageIds };
+  return { dryRun: !apply, fromId, csvPath, batchSize, firstPageIds, tier };
 }
 
 function pgCode(err: unknown): string {
@@ -264,11 +283,11 @@ export async function withReadOnlySession<T>(pool: pg.Pool, fn: (db: pg.PoolClie
 
 type Queryable = pg.Pool | pg.PoolClient;
 
-async function loadRankWindow(db: Queryable): Promise<RankRow[]> {
+async function loadRankWindow(db: Queryable, where: string): Promise<RankRow[]> {
   const { rows } = await db.query<RankRow>(
     `SELECT id, trade_up_score, collection_names
      FROM trade_ups t
-     ${BOARD_WHERE}
+     ${where}
      ORDER BY t.trade_up_score DESC NULLS LAST, t.id DESC
      LIMIT ${RANK_WINDOW}`
   );
@@ -276,9 +295,9 @@ async function loadRankWindow(db: Queryable): Promise<RankRow[]> {
 }
 
 /** The site's first page: diversity window, score desc, 50 rows. */
-async function loadDiversifiedFirstPage(db: Queryable): Promise<number[]> {
+async function loadDiversifiedFirstPage(db: Queryable, where: string): Promise<number[]> {
   const diversity = applyListDiversityToListSql({
-    where: BOARD_WHERE,
+    where,
     sortCol: "t.trade_up_score",
     sortOrder: "DESC",
     apply: true,
@@ -291,6 +310,82 @@ async function loadDiversifiedFirstPage(db: Queryable): Promise<number[]> {
     diversity.params
   );
   return rows.map(r => r.id);
+}
+
+function rawMedian(rows: { id: number; score: number | null }[]): number | null {
+  const scores = rows
+    .filter((row): row is { id: number; score: number } => row.score !== null)
+    .sort((a, b) => b.score - a.score || b.id - a.id)
+    .slice(0, 100)
+    .map(row => row.score);
+  if (scores.length === 0) return null;
+  return medianOf(scores);
+}
+
+async function rawM1(db: Queryable, where: string, log: (line: string) => void): Promise<number | null> {
+  try {
+    const { rows } = await db.query<{ m1: number | null }>(
+      `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY trade_up_score) AS m1
+       FROM (
+         SELECT t.trade_up_score FROM trade_ups t
+         ${where} AND t.trade_up_score IS NOT NULL
+         ORDER BY t.trade_up_score DESC
+         LIMIT 100
+       ) top100`
+    );
+    return rows[0]?.m1 === null || rows[0]?.m1 === undefined ? null : Number(rows[0].m1);
+  } catch (err) {
+    if (pgCode(err) !== "57014") throw err;
+    log("warning: raw M1 timed out");
+    return null;
+  }
+}
+
+async function countRankWindow(
+  db: Queryable,
+  ids: number[],
+  log: (line: string) => void,
+): Promise<{
+  unclassifiableInputs: number | null;
+  unclassifiableTradeUps: number | null;
+  sourceMismatches: number | null;
+  sourceMismatchTradeUps: number | null;
+}> {
+  const na = { unclassifiableInputs: null, unclassifiableTradeUps: null, sourceMismatches: null, sourceMismatchTradeUps: null };
+  if (ids.length === 0) return { unclassifiableInputs: 0, unclassifiableTradeUps: 0, sourceMismatches: 0, sourceMismatchTradeUps: 0 };
+  try {
+    const { rows } = await db.query<{ trade_up_id: number; source: string | null; listing_source: string | null; listing_id: string; raw: number | null }>(
+      `SELECT tui.trade_up_id, tui.source, tui.listing_id, l.source AS listing_source, l.price_cents AS raw
+       FROM trade_up_inputs tui
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE tui.trade_up_id = ANY($1::int[])`,
+      [ids]
+    );
+    const goneTradeUps = new Set<number>();
+    const mismatchTradeUps = new Set<number>();
+    let gone = 0;
+    let mismatches = 0;
+    for (const row of rows) {
+      const theoretical = row.listing_id === "theoretical" || row.listing_id.startsWith("theory");
+      if (row.raw === null && !theoretical) {
+        gone++;
+        goneTradeUps.add(row.trade_up_id);
+      } else if (row.listing_source !== null && row.listing_source !== row.source) {
+        mismatches++;
+        mismatchTradeUps.add(row.trade_up_id);
+      }
+    }
+    return {
+      unclassifiableInputs: gone,
+      unclassifiableTradeUps: goneTradeUps.size,
+      sourceMismatches: mismatches,
+      sourceMismatchTradeUps: mismatchTradeUps.size,
+    };
+  } catch (err) {
+    if (pgCode(err) !== "57014") throw err;
+    log("warning: rank-window input counts timed out");
+    return na;
+  }
 }
 
 function diversifiedTop(
@@ -325,8 +420,8 @@ async function applyPlans(
       for (const plan of plans) {
         for (const fix of plan.fixes) {
           const updated = await client.query(
-            "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3 AND price_cents = $4",
-            [fix.next, plan.id, fix.listing_id, fix.old]
+            "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4 AND price_cents = $5",
+            [fix.next, fix.source, plan.id, fix.listing_id, fix.old]
           );
           if (updated.rowCount === 1) {
             wrote.push({ trade_up_id: plan.id, listing_id: fix.listing_id, old: fix.old, next: fix.next });
@@ -355,39 +450,38 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
   const log = opts.log ?? ((line: string) => console.log(line));
   let cursor = opts.fromId ?? 0;
 
+  const tier = opts.tier ?? "pro";
+  const where = boardWhere(tier);
+
   const run = async (db: Queryable): Promise<BackfillReport> => {
-    const rankWindow = await loadRankWindow(db);
+    const rankWindow = await loadRankWindow(db, where);
     const scoreUpdates = new Map<number, number>();
-    const firstPageBefore = opts.firstPageIds ?? await loadDiversifiedFirstPage(db);
+    const windowPage = diversifiedTop(rankWindow, row => row.trade_up_score ?? 0, 50).map(row => row.id);
+    let sqlPage: number[] = [];
+    if (!opts.firstPageIds) {
+      try {
+        sqlPage = await loadDiversifiedFirstPage(db, where);
+      } catch (err) {
+        if (pgCode(err) !== "57014") throw err;
+        log("warning: SQL first page timed out");
+      }
+      if (sqlPage.length > 0 && (sqlPage.length !== windowPage.length || sqlPage.some((id, i) => id !== windowPage[i]))) {
+        log("warning: rank-window first page differs from the SQL page");
+      }
+    }
+    const firstPageBefore = opts.firstPageIds ?? windowPage;
     const beforePage = new Set(firstPageBefore);
 
     const { rows: geRows } = await db.query<{ n: string }>(
-      `SELECT COUNT(*)::text AS n FROM trade_ups t ${BOARD_WHERE} AND t.trade_up_score >= 50`
+      `SELECT COUNT(*)::text AS n FROM trade_ups t ${where} AND t.trade_up_score >= 50`
     );
     const ge50Before = parseInt(geRows[0]?.n ?? "0", 10);
-    const { rows: goneRows } = await db.query<{ n: string }>(
-      `SELECT COUNT(*)::text AS n
-       FROM trade_up_inputs tui
-       JOIN trade_ups tu ON tu.id = tui.trade_up_id
-       LEFT JOIN listings l ON l.id = tui.listing_id
-       WHERE tu.is_theoretical = false AND tu.listing_status = 'active'
-         AND l.id IS NULL
-         AND tui.listing_id <> 'theoretical'
-         AND tui.listing_id NOT LIKE 'theory%'`
-    );
-    const unclassifiableInputs = parseInt(goneRows[0]?.n ?? "0", 10);
-    const { rows: mismatchRows } = await db.query<{ n: string }>(
-      `SELECT COUNT(*)::text AS n
-       FROM trade_up_inputs tui
-       JOIN trade_ups tu ON tu.id = tui.trade_up_id
-       JOIN listings l ON l.id = tui.listing_id
-       WHERE tu.is_theoretical = false AND tu.listing_status = 'active'
-         AND tui.source IS DISTINCT FROM l.source`
-    );
-    const sourceMismatches = parseInt(mismatchRows[0]?.n ?? "0", 10);
+    const windowCounts = await countRankWindow(db, rankWindow.map(row => row.id), log);
 
     let tradeUpsAffected = 0;
     let inputsAffected = 0;
+    let sourceFixInputs = 0;
+    const sourceFixTradeUps = new Set<number>();
     let projectionMismatches = 0;
     let ge50Delta = 0;
     let firstPageChanged = 0;
@@ -408,12 +502,13 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
          JOIN trade_ups tu ON tu.id = tui.trade_up_id
          WHERE tu.is_theoretical = false
            AND tu.listing_status = 'active'
+           AND ($4::boolean = false OR tu.created_at <= NOW() - INTERVAL '10800 seconds')
            AND tui.trade_up_id > $1
            AND tui.price_cents = l.price_cents
-           AND tui.source = ANY($2::text[])
+           AND COALESCE(l.source, tui.source) = ANY($2::text[])
          ORDER BY tui.trade_up_id
          LIMIT $3`,
-        [cursor, FEE_SOURCES, batchSize]
+        [cursor, FEE_SOURCES, batchSize, tier === "free"]
       );
       if (idRows.length === 0) break;
       const ids = idRows.map(r => r.trade_up_id);
@@ -455,7 +550,8 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
           const feeSource = input.listing_source ?? input.source;
           const next = input.stored === input.raw ? storedInputCost(input.raw, feeSource) : input.stored;
           if (next !== input.stored) {
-            fixes.push({ listing_id: input.listing_id, source: feeSource ?? "unknown", old: input.stored, next });
+            const source = feeSource ?? "unknown";
+            fixes.push({ listing_id: input.listing_id, source, old: input.stored, next, inputSource: input.source });
           }
           inputSum += next;
         }
@@ -503,7 +599,13 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
         costDeltas.push(plan.sample.new_cost_cents - plan.sample.old_cost_cents);
         scoreDrops.push(plan.oldScore - plan.newScore);
         scoreUpdates.set(plan.id, plan.newScore);
-        for (const fix of plan.fixes) perMarketplace[fix.source] = (perMarketplace[fix.source] ?? 0) + 1;
+        for (const fix of plan.fixes) {
+          perMarketplace[fix.source] = (perMarketplace[fix.source] ?? 0) + 1;
+          if (fix.source !== (fix.inputSource ?? "csfloat")) {
+            sourceFixInputs++;
+            sourceFixTradeUps.add(plan.id);
+          }
+        }
         if (sample.length < sampleSize) sample.push(plan.sample);
         if (beforePage.has(plan.id)) firstPageChanged++;
         if (plan.crossesOutOfGe50) ge50Delta++;
@@ -517,6 +619,11 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
     const m1Before = displayedTopMedianScore(diversifiedTop(rankWindow, row => row.trade_up_score ?? 0, 100));
     const afterTop = diversifiedTop(rankWindow, row => scoreUpdates.get(row.id) ?? row.trade_up_score ?? 0, 100);
     const m1After = displayedTopMedianScore(afterTop);
+    const m1RawBefore = await rawM1(db, where, log);
+    const m1RawAfter = rawMedian(rankWindow.map(row => ({
+      id: row.id,
+      score: scoreUpdates.has(row.id) ? scoreUpdates.get(row.id)! : row.trade_up_score,
+    })));
     const afterPage = new Set(afterTop.slice(0, 50).map(row => row.id));
     const firstPageLeave = firstPageBefore.filter(id => !afterPage.has(id));
     const firstPageJoin = [...afterPage].filter(id => !beforePage.has(id));
@@ -539,8 +646,14 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
       firstPageJoin,
       ge50Before,
       ge50After: ge50Before - ge50Delta,
-      unclassifiableInputs,
-      sourceMismatches,
+      unclassifiableInputs: windowCounts.unclassifiableInputs,
+      unclassifiableTradeUps: windowCounts.unclassifiableTradeUps,
+      sourceMismatches: windowCounts.sourceMismatches,
+      sourceMismatchTradeUps: windowCounts.sourceMismatchTradeUps,
+      sourceFixInputs,
+      sourceFixTradeUps: sourceFixTradeUps.size,
+      m1RawBefore,
+      m1RawAfter,
       projectionMismatches,
       perMarketplace,
       lastId: cursor,
@@ -552,18 +665,24 @@ export async function runInputFeeBackfill(pool: pg.Pool, opts: BackfillOptions =
   return withTimedSession(pool, dryRun, run);
 }
 
+function na(value: number | null): string {
+  return value === null ? "NA" : String(value);
+}
+
 export function formatBackfillReport(report: BackfillReport): string {
   const markets = Object.entries(report.perMarketplace).map(([source, n]) => `${source} ${n}`).join(", ") || "none";
   const lines = [
     `${report.dryRun ? "DRY RUN" : "APPLIED"}: ${report.inputsAffected} inputs on ${report.tradeUpsAffected} trade-ups`,
     `per marketplace: ${markets}`,
-    `unclassifiable (listing gone): ${report.unclassifiableInputs}`,
-    `source mismatches (input source != listing source): ${report.sourceMismatches}`,
+    `unclassifiable in rank window (listing gone): ${na(report.unclassifiableInputs)} inputs on ${na(report.unclassifiableTradeUps)} trade-ups`,
+    `source mismatches in rank window: ${na(report.sourceMismatches)} inputs on ${na(report.sourceMismatchTradeUps)} trade-ups`,
+    `source fixes (fee source != stored source): ${report.sourceFixInputs} inputs on ${report.sourceFixTradeUps} trade-ups`,
     `projection mismatches (stored total + delta vs input sum): ${report.projectionMismatches}`,
     `ROI delta (old - new), pts: mean ${report.avgRoiDelta}, median ${report.medianRoiDelta}, max ${report.maxRoiDelta}`,
     `cost delta (new - old), cents: mean ${report.costDelta.mean}, median ${report.costDelta.median}, max ${report.costDelta.max}`,
     `score drop: mean ${report.scoreDrop.mean}, median ${report.scoreDrop.median}, max ${report.scoreDrop.max}`,
-    `M1 (median of diversified top 100): ${report.m1Before} -> ${report.m1After}`,
+    `M1 diversified (median of diversified top 100): ${report.m1Before} -> ${report.m1After}`,
+    `M1 raw (percentile_cont of plain top 100, non-NULL): ${na(report.m1RawBefore)} -> ${na(report.m1RawAfter)}`,
     `first page: ${report.firstPageChanged}/${report.firstPageSize} change cost; leave [${report.firstPageLeave.join(", ")}]; join [${report.firstPageJoin.join(", ")}]`,
     `ge50: ${report.ge50Before} -> ${report.ge50After}`,
     "sample (trade_up_id old_cost -> new_cost, old_roi -> new_roi):",
@@ -588,6 +707,7 @@ async function main() {
       fromId: args.fromId,
       batchSize: args.batchSize,
       firstPageIds: args.firstPageIds,
+      tier: args.tier,
       csvPath: args.dryRun ? undefined : (args.csvPath ?? `backfill-input-fees-${Date.now()}.csv`),
     });
   } finally {

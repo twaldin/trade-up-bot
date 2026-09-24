@@ -675,9 +675,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     const { rows: inputs } = await pool.query<{
       listing_id: string; skin_id: string; skin_name: string; price_cents: number;
       float_value: number; condition: string; source: string | null; listing_price_cents: number | null;
+      listing_source: string | null;
     }>(
       `SELECT tui.listing_id, tui.skin_id, tui.skin_name, tui.price_cents, tui.float_value, tui.condition, tui.source,
-              l.price_cents AS listing_price_cents
+              l.price_cents AS listing_price_cents, l.source AS listing_source
        FROM trade_up_inputs tui
        LEFT JOIN listings l ON l.id = tui.listing_id
        WHERE tui.trade_up_id = $1`,
@@ -702,12 +703,13 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
     }[] = [];
 
     // Listing change is detected raw-to-raw; input drift fee-to-fee against storedInputCost.
-    const driftedInputs = new Map<string, number>(); // listing_id → fee-inclusive cost to store
+    const driftedInputs = new Map<string, { price: number; source: string }>();
     const repriceInput = (input: (typeof inputs)[number], raw: number | null | undefined) => {
       if (!raw || raw <= 0) return { expected: input.price_cents, drift: false };
-      const expected = storedInputCost(raw, input.source);
-      const drift = expected !== input.price_cents;
-      if (drift) driftedInputs.set(input.listing_id, expected);
+      const feeSource = input.listing_source ?? input.source ?? "csfloat";
+      const expected = storedInputCost(raw, feeSource);
+      const drift = expected !== input.price_cents || feeSource !== input.source;
+      if (drift) driftedInputs.set(input.listing_id, { price: expected, source: feeSource });
       return { expected, drift };
     };
 
@@ -1037,10 +1039,10 @@ export function tradeUpsRouter(pool: pg.Pool): Router {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        for (const [listingId, price] of driftedInputs) {
+        for (const [listingId, fix] of driftedInputs) {
           await client.query(
-            "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
-            [price, tradeUpId, listingId]
+            "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
+            [fix.price, fix.source, tradeUpId, listingId]
           );
         }
         const recomputed = await recomputeTradeUpCost(client, tradeUpId);

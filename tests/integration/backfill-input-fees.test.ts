@@ -6,6 +6,7 @@ import { createTestApp, type TestContext } from "./setup.js";
 import { storedInputCost } from "../../server/engine/fees.js";
 import { applyListingPriceToInputs } from "../../server/engine/db-stats.js";
 import { projectedScore, runInputFeeBackfill, withReadOnlySession } from "../../scripts/backfill-input-fees.js";
+import { recalcTradeUpCosts } from "../../server/engine/db-stats.js";
 import { seedFeeTradeUp, readInputPrices, readTradeUp } from "../helpers/input-fees.js";
 
 describe("input-fee backfill", () => {
@@ -151,6 +152,9 @@ describe("input-fee backfill", () => {
     await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = 'bf-src'");
     const report = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
     expect(report.sourceMismatches).toBe(1);
+    expect(report.sourceMismatchTradeUps).toBe(1);
+    expect(report.sourceFixInputs).toBe(1);
+    expect(report.sourceFixTradeUps).toBe(1);
     expect(report.perMarketplace).toEqual({ dmarket: 1 });
     expect(report.sample[0].new_cost_cents).toBe(storedInputCost(500, "dmarket"));
     expect(report.sample[0].new_cost_cents).not.toBe(storedInputCost(500, "csfloat"));
@@ -182,6 +186,32 @@ describe("input-fee backfill", () => {
     expect(csv).toContain("bf-csv-keep,1000,1058");
     expect(csv).not.toContain("bf-csv-skip");
     fs.rmSync(csvPath, { force: true });
+  });
+
+  it("a backfill then Phase 4b on the same row changes nothing", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-then-4b", source: "csfloat", raw: 500, stored: 500, float: 0.15 },
+    ]);
+    await ctx.pool.query("UPDATE listings SET source = 'dmarket' WHERE id = 'bf-then-4b'");
+    await runInputFeeBackfill(ctx.pool, { dryRun: false, log: () => undefined });
+    const after = await readTradeUp(ctx.pool, id);
+    expect((await readInputPrices(ctx.pool, id))["bf-then-4b"]).toBe(storedInputCost(500, "dmarket"));
+
+    await ctx.pool.query("UPDATE listings SET price_updated_at = NOW() WHERE id = 'bf-then-4b'");
+    const recalc = await recalcTradeUpCosts(ctx.pool, new Date(Date.now() - 60_000).toISOString());
+    expect(recalc.updated).toBe(0);
+    expect(await readTradeUp(ctx.pool, id)).toEqual(after);
+    expect((await readInputPrices(ctx.pool, id))["bf-then-4b"]).toBe(storedInputCost(500, "dmarket"));
+  });
+
+  it("joins and leaves are empty when nothing changes", async () => {
+    await seedFeeTradeUp(ctx.pool, [
+      { listingId: "bf-stable", source: "csfloat", raw: 500, stored: storedInputCost(500, "csfloat"), float: 0.15 },
+    ]);
+    const report = await runInputFeeBackfill(ctx.pool, { log: () => undefined });
+    expect(report.inputsAffected).toBe(0);
+    expect(report.firstPageLeave).toEqual([]);
+    expect(report.firstPageJoin).toEqual([]);
   });
 
   it("a dry-run session cannot write", async () => {

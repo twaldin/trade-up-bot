@@ -71,19 +71,24 @@ export async function applyListingPriceToInputs(
   db: Queryable,
   listingId: string,
   rawPriceCents: number,
+  listingSource?: string | null,
 ): Promise<{ inputsUpdated: number; tradeUpsUpdated: number }> {
   const { rows } = await db.query(
-    "SELECT trade_up_id, source, price_cents FROM trade_up_inputs WHERE listing_id = $1",
+    `SELECT tui.trade_up_id, tui.source, tui.price_cents, l.source AS listing_source
+     FROM trade_up_inputs tui
+     LEFT JOIN listings l ON l.id = tui.listing_id
+     WHERE tui.listing_id = $1`,
     [listingId]
   );
   let inputsUpdated = 0;
   const tradeUpIds = new Set<number>();
-  for (const r of rows as { trade_up_id: number; source: string | null; price_cents: number }[]) {
-    const expected = storedInputCost(rawPriceCents, r.source);
-    if (expected === r.price_cents) continue;
+  for (const r of rows as { trade_up_id: number; source: string | null; price_cents: number; listing_source: string | null }[]) {
+    const feeSource = listingSource ?? r.listing_source ?? r.source ?? "csfloat";
+    const expected = storedInputCost(rawPriceCents, feeSource);
+    if (expected === r.price_cents && feeSource === r.source) continue;
     await db.query(
-      "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
-      [expected, r.trade_up_id, listingId]
+      "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
+      [expected, feeSource, r.trade_up_id, listingId]
     );
     inputsUpdated++;
     tradeUpIds.add(r.trade_up_id);
@@ -181,19 +186,22 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
   const changedIds = changedListings.map((r: { id: string }) => r.id);
   const ph = changedIds.map((_: string, i: number) => `$${i + 1}`).join(",");
   const { rows: inputRows } = await pool.query(`
-    SELECT tui.trade_up_id, tui.listing_id, tui.source, tui.price_cents AS stored, l.price_cents AS raw
+    SELECT tui.trade_up_id, tui.listing_id, tui.source, l.source AS listing_source,
+           tui.price_cents AS stored, l.price_cents AS raw
     FROM trade_up_inputs tui
     JOIN listings l ON tui.listing_id = l.id
     WHERE tui.listing_id IN (${ph})
   `, changedIds);
 
-  // Fee-to-fee comparison: a flagged listing whose raw price is unchanged must be a no-op.
-  const driftByTradeUp = new Map<number, { listing_id: string; price_cents: number }[]>();
-  for (const r of inputRows as { trade_up_id: number; listing_id: string; source: string | null; stored: number; raw: number }[]) {
-    const expected = storedInputCost(r.raw, r.source);
-    if (expected === r.stored) continue;
+  // Fee-to-fee comparison against the listing's source (discovery's rule).
+  // A flagged listing whose raw price is unchanged must be a no-op.
+  const driftByTradeUp = new Map<number, { listing_id: string; price_cents: number; source: string }[]>();
+  for (const r of inputRows as { trade_up_id: number; listing_id: string; source: string | null; listing_source: string | null; stored: number; raw: number }[]) {
+    const feeSource = r.listing_source ?? r.source ?? "csfloat";
+    const expected = storedInputCost(r.raw, feeSource);
+    if (expected === r.stored && feeSource === r.source) continue;
     const list = driftByTradeUp.get(r.trade_up_id) ?? [];
-    list.push({ listing_id: r.listing_id, price_cents: expected });
+    list.push({ listing_id: r.listing_id, price_cents: expected, source: feeSource });
     driftByTradeUp.set(r.trade_up_id, list);
   }
   if (driftByTradeUp.size === 0) {
@@ -217,8 +225,8 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
         for (const tuId of batch) {
           for (const d of driftByTradeUp.get(tuId) ?? []) {
             await client.query(
-              "UPDATE trade_up_inputs SET price_cents = $1 WHERE trade_up_id = $2 AND listing_id = $3",
-              [d.price_cents, tuId, d.listing_id]
+              "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
+              [d.price_cents, d.source, tuId, d.listing_id]
             );
           }
           if (await recomputeTradeUpCost(client, tuId)) batchUpdated++;
