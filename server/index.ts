@@ -29,6 +29,9 @@ import { formatOdds } from "../src/preview/lib/board.js";
 import { formatDollars } from "../src/utils/format.js";
 import { blogPosts } from "../src/data/blog-posts.js";
 
+/** Bump when crawler HTML or JSON-LD changes so Redis cannot serve the previous copy. */
+const SEO_CRAWLER_CACHE_REV = "v3";
+
 // Build reverse map: knife/glove weapon type → case names
 const knifeTypeToCases = new Map<string, string[]>();
 for (const [caseName, mapping] of Object.entries(CASE_KNIFE_MAP)) {
@@ -238,7 +241,7 @@ registerCanonicalRedirectRoutes(app);
     const ua = req.headers["user-agent"] || "";
     try {
       // Redis cache: 1800s TTL. seo_coll_tu:<slug> full crawler HTML; coll_tu_count:<collectionName> non-crawler count.
-      const collTuCacheKey = `seo_coll_tu:${req.params.slug}`;
+      const collTuCacheKey = `seo_coll_tu_${SEO_CRAWLER_CACHE_REV}:${req.params.slug}`;
       const { cacheGet: ctCacheGet, cacheSet: ctCacheSet } = await import("./redis.js");
 
       // Check crawler cache first
@@ -467,8 +470,8 @@ registerCanonicalRedirectRoutes(app);
     try {
       // Redis cache: 3600s TTL. seo_collection: full crawler HTML; seo_collection_meta: meta object.
       // _v2 suffix: bumped for plan 025 best-profit summary so the new HTML serves immediately.
-      const collCacheKey = `seo_collection_v2:${req.params.slug}`;
-      const collMetaCacheKey = `seo_collection_meta_v2:${req.params.slug}`;
+      const collCacheKey = `seo_collection_${SEO_CRAWLER_CACHE_REV}:${req.params.slug}`;
+      const collMetaCacheKey = `seo_collection_meta_${SEO_CRAWLER_CACHE_REV}:${req.params.slug}`;
       const { cacheGet: collCacheGet, cacheSet: collCacheSet } = await import("./redis.js");
       if (isCrawler(ua)) {
         try {
@@ -575,7 +578,7 @@ registerCanonicalRedirectRoutes(app);
       // Float-exact "best right now" summary — the differentiator. Only rendered when a genuinely
       // profitable, non-stale contract exists, so it never shows a penny/stale claim.
       const bestProfitHtml = bestTu
-        ? `<p><strong>Best profitable ${e(displayName)} trade-up right now:</strong> `
+        ? `<p><strong>Best expected P/L ${e(displayName)} trade-up right now:</strong> `
           + `+$${(bestTu.profit_cents / 100).toFixed(2)} expected P/L, ${Math.round((bestTu.chance_to_profit ?? 0) * 100)}% of outcomes above cost`
           + `${bestTu.roi_percentage != null ? ` (${bestTu.roi_percentage.toFixed(1)}% ROI)` : ""}, `
           + `built from real, currently-listed marketplace inputs. `
@@ -665,8 +668,8 @@ registerCanonicalRedirectRoutes(app);
     try {
       // Redis cache: 3600s TTL. seo_skin: stores full crawler HTML; seo_skin_meta: stores the small
       // meta object for non-crawlers. Both are checked before any DB work.
-      const cacheKey = `seo_skin:${req.params.slug}`;
-      const metaCacheKey = `seo_skin_meta:${req.params.slug}`;
+      const cacheKey = `seo_skin_${SEO_CRAWLER_CACHE_REV}:${req.params.slug}`;
+      const metaCacheKey = `seo_skin_meta_${SEO_CRAWLER_CACHE_REV}:${req.params.slug}`;
       const { cacheGet, cacheSet } = await import("./redis.js");
       if (isCrawler(ua)) {
         try {
@@ -918,10 +921,10 @@ registerCanonicalRedirectRoutes(app);
       });
       const goodInputAnswer = (() => {
         if (inputTuCount === 0) {
-          return `${skinName} is not currently used in any profitable trade-up contracts. It is a ${skinMeta.rarity} skin, which trades up into ${outputTier} outputs, but no profitable contracts are available at current market prices.`;
+          return `${skinName} is not currently used in any trade-up contracts with positive expected profit. It is a ${skinMeta.rarity} skin, which trades up into ${outputTier} outputs, but no contracts with positive expected profit are available at current market prices.`;
         }
         const bestFmt = "$" + (bestProfit / 100).toFixed(2);
-        return `Yes — ${skinName} appears as an input in ${inputTuCount} profitable trade-up contract${inputTuCount !== 1 ? "s" : ""} at current market prices. As a ${skinMeta.rarity} skin, it trades up into ${outputTier} outputs. The best current contract offers ${bestFmt} profit. Use TradeUpBot's live calculator to find the best entry price.`;
+        return `Yes — ${skinName} appears as an input in ${inputTuCount} trade-up contract${inputTuCount !== 1 ? "s" : ""} with positive expected profit at current market prices. As a ${skinMeta.rarity} skin, it trades up into ${outputTier} outputs. The best current contract offers ${bestFmt} expected profit. Use TradeUpBot's live calculator to find the best entry price.`;
       })();
 
       const faqEntries = [
@@ -1066,7 +1069,7 @@ registerCanonicalRedirectRoutes(app);
         }));
         return;
       }
-      const cacheKey = "seo_tradeups_list";
+      const cacheKey = `seo_tradeups_list_${SEO_CRAWLER_CACHE_REV}`;
       try {
         const { cacheGet, cacheSet } = await import("./redis.js");
         const cached = await cacheGet<string>(cacheKey);

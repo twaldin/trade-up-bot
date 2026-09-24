@@ -84,7 +84,7 @@ export function PreviewCollectionTradeUps() {
           onRetry={board.retry}
           collection={title}
           heading={`${display} Trade-Ups`}
-          lede={`Profitable trade-ups using skins from the ${display} collection.`}
+          lede={`Trade-ups with positive expected profit after fees, using skins from the ${display} collection.`}
           embed
         />
       )}

@@ -17,7 +17,7 @@ export const PREVIEW_VALUE_HEADLINE = "Priced from listings you can buy";
 
 export const PREVIEW_VALUE = [
   ["Real listings", "Each input links to a live listing on CSFloat, DMarket, Skinport, or Buff.market."],
-  ["Verify before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
+  ["Verify (Pro) before buying", "Verify re-checks every input against the marketplace: still listed, and at what price."],
   ["Claim to lock", "Pro users can claim a trade-up for 30 minutes, hiding its listings from other TradeUpBot users while they buy."],
 ] as const;
 
@@ -45,7 +45,7 @@ export const PREVIEW_HOW: { n: string; title: string; body: string }[] = [
   },
   {
     n: "05",
-    title: "Verify",
+    title: "Verify (Pro)",
     body: "Before spending money, hit Verify. It calls each marketplace's API to confirm every input listing still exists and at what price. The trade-up's cost, profit, and ROI update from the response.",
   },
   {

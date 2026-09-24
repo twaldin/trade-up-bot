@@ -14,7 +14,7 @@ const handler = indexSource.slice(start, end);
 
 describe("plan 025: float-exact best-profit summary on /collections/:slug", () => {
   it("renders a server-side 'best profitable trade-up right now' summary", () => {
-    expect(handler).toContain("Best profitable ");
+    expect(handler).toContain("Best expected P/L ");
     // Claim must be always-true (real-listing), NOT an unconditional float-exact claim —
     // output pricing can fall back to condition-level reference pricing for some contracts.
     expect(handler).toContain("built from real, currently-listed marketplace inputs");
@@ -40,7 +40,7 @@ describe("plan 025: float-exact best-profit summary on /collections/:slug", () =
   });
 
   it("bumps the collection cache key so the new HTML serves immediately", () => {
-    expect(handler).toContain("seo_collection_v2:");
-    expect(handler).toContain("seo_collection_meta_v2:");
+    expect(handler).toContain("seo_collection_${SEO_CRAWLER_CACHE_REV}:");
+    expect(handler).toContain("seo_collection_meta_${SEO_CRAWLER_CACHE_REV}:");
   });
 });

@@ -321,7 +321,7 @@ export function PreviewLanding({
 
       <section id="pricing" className="preview-section">
         <p className="o-kicker">Pricing</p>
-        <h2>Free, then Pro at $6.99</h2>
+        <h2>Free, then Pro at $6.99/mo</h2>
         <p className="preview-section__lede">
           Start free. Upgrade when the 3-hour delay costs you trade-ups.
         </p>

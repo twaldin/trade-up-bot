@@ -35,7 +35,7 @@ export const blogMeta: BlogMeta[] = [
   {
     slug: "how-to-use-tradeupbot",
     title: "How to Use TradeUpBot to Find Profitable Trade-Ups",
-    excerpt: "Learn how to use TradeUpBot to find profitable CS2 trade-ups, verify live listings, claim inputs, and compare risk before you buy.",
+    excerpt: "Learn how to use TradeUpBot to find CS2 trade-ups with positive expected profit, verify live listings, claim inputs, and compare risk before you buy.",
     publishedAt: "2026-03-18",
     readTime: "5 min read",
     author: "TradeUpBot Team",
@@ -59,7 +59,7 @@ export const blogMeta: BlogMeta[] = [
   {
     slug: "cs2-trade-up-probability-expected-value",
     title: "How to Use CS2 Trade-Up Probability and EV Wisely",
-    excerpt: "Learn how to use CS2 trade-up probability, expected value, and chance-to-profit with a $80 example before choosing risky contracts.",
+    excerpt: "Learn how to use CS2 trade-up probability and expected value with a $80 example before choosing risky contracts.",
     publishedAt: "2026-03-21",
     readTime: "6 min read",
     author: "TradeUpBot Team",

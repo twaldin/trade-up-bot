@@ -32,6 +32,7 @@ const SOURCE_FILES = [
   "server/index.ts",
   "server/seo.ts",
   "server/static-seo-pages.ts",
+  "src/data/blog-meta.ts",
 ];
 
 const PRERENDERED = [
@@ -50,6 +51,8 @@ const ALLOWLIST = [
   "const win", // window handle in openListings, not user-facing copy
   "if (win)", // same window handle
   "Win rate", // completed-sale statistic on the account page
+  "How to Use TradeUpBot to Find Profitable Trade-Ups", // published guide title
+  "profitable-trade-ups-theory-vs-reality", // published guide URL slug
 ];
 
 const BANNED: { label: string; pattern: RegExp }[] = [
