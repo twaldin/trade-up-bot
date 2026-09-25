@@ -799,6 +799,7 @@ export function PreviewBoard({
   pagingThrottle = null,
   onRetry,
   onClearFilters,
+  onFilterBlur,
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
@@ -831,6 +832,8 @@ export function PreviewBoard({
   pagingThrottle?: string | null;
   onRetry?: () => void;
   onClearFilters?: () => void;
+  /** Clears the history typing burst so the next edit pushes. */
+  onFilterBlur?: () => void;
   heading?: string;
   lede?: string;
   collection?: string;
@@ -856,10 +859,12 @@ export function PreviewBoard({
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const cardsThrottled = tradeUps.some((tu) => tu.hydrateThrottled === true);
   const topThrottle = pagingThrottle ? null : throttle;
+  // A page-2+ 429 owns the bottom slot. The card-throttle notice stays hidden
+  // so the two never show at once.
   const notice = boardNotice({
     loading,
     rows: tradeUps.length,
-    throttled: Boolean(topThrottle) || cardsThrottled,
+    throttled: pagingThrottle ? false : Boolean(topThrottle) || cardsThrottled,
     failed: Boolean(failed),
     filtered,
   });
@@ -932,6 +937,7 @@ export function PreviewBoard({
           onChange={onSearch}
           onParsed={onParsed}
           onKeyDown={onKeystroke}
+          onBlur={onFilterBlur}
           placeholder="Search trade-ups…"
           examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
         />
@@ -945,6 +951,7 @@ export function PreviewBoard({
           collection={collection}
           lockedSkin={lockedSkin}
           onKeyDown={onKeystroke}
+          onBlur={onFilterBlur}
         />
       )}
       {isFree && (
@@ -958,7 +965,7 @@ export function PreviewBoard({
       {loading && tradeUps.length === 0 && notice !== "throttled" && <p className="preview-note">Loading trade-ups…</p>}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {noticeNode}
-      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={refreshing || undefined}>
+      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={loading || refreshing || undefined}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
@@ -966,8 +973,8 @@ export function PreviewBoard({
       <div
         className="preview-sentinel"
         ref={sentinel}
-        role={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "status" : undefined}
-        aria-live={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "polite" : undefined}
+        role="status"
+        aria-live="polite"
       >
         {pagingThrottle && (
           <p className="preview-note">
@@ -983,8 +990,11 @@ export function PreviewBoard({
           <button
             type="button"
             className="preview-btn preview-btn--quiet"
-            onClick={loadMore}
-            disabled={loadingMore}
+            aria-disabled={loadingMore || undefined}
+            onClick={() => {
+              if (loadingMore) return;
+              loadMore();
+            }}
           >
             {loadingMore ? "Loading more trade-ups…" : "Load more"}
           </button>
@@ -1070,7 +1080,7 @@ export function usePreviewTradeUps(options: {
       replaceBoardUrl(state, window.location, window.history);
       return;
     }
-    const inBurst = Date.now() - burstAt.current <= FILTER_SETTLE_MS;
+    const inBurst = Date.now() - burstAt.current <= TYPING_IDLE_MS;
     const decision = historyAction(inBurst ? openField.current : null, current, next);
     openField.current = decision.field;
     burstAt.current = Date.now();
@@ -1105,26 +1115,38 @@ export function usePreviewTradeUps(options: {
   // Only filter/sort edits settle. A new scope (collection/skin resolved or changed) applies at once.
   const [settled, setSettled] = useState({ key, scope });
   const settledKey = settled.scope === scope ? settled.key : key;
+  const listedRef = useRef({ key, scope });
+  listedRef.current = { key, scope };
   useEffect(() => {
     if (settled.key === key && settled.scope === scope) return;
+    // A new collection or skin applies at once. Filter edits wait out the burst.
     if (settled.scope !== scope) { setSettled({ key, scope }); return; }
-    const handle = window.setTimeout(() => setSettled({ key, scope }), FILTER_SETTLE_MS);
+    const handle = window.setTimeout(() => setSettled(listedRef.current), FILTER_SETTLE_MS);
     return () => window.clearTimeout(handle);
   }, [key, scope, settled]);
   const page = cursor.key === settledKey ? cursor.page : 1;
   const exhausted = endKey === settledKey;
   const scopeRef = useRef(scope);
+  const pathRef = useRef(typeof window === "undefined" ? "" : window.location.pathname);
   useLayoutEffect(() => {
-    if (scopeRef.current === scope) return;
+    const path = typeof window === "undefined" ? "" : window.location.pathname;
+    const pathChanged = pathRef.current !== path;
+    pathRef.current = path;
+    if (scopeRef.current === scope && !pathChanged) return;
+    const scopeChanged = scopeRef.current !== scope;
     scopeRef.current = scope;
-    if (typeof window !== "undefined") {
+    // Resolving a collection name on the same URL must not wipe filters the
+    // person already set. A real navigation adopts that URL instead.
+    if (pathChanged && typeof window !== "undefined") {
       const next = readBoardLocation(window.location);
       openField.current = null;
+      fromPop.current = true;
       replaceBoardUrl(next, window.location, window.history);
       setQuery(next.query);
       setSearch(next.text);
       setParsed(parseQuery(next.text));
     }
+    if (!scopeChanged) return;
     setTradeUps([]);
     setLoading(enabled);
     setThrottle(null);
@@ -1263,6 +1285,11 @@ export function usePreviewTradeUps(options: {
     setParsed({ chips: [], rest: [] });
   }, []);
 
+  const onFilterBlur = useCallback(() => {
+    openField.current = null;
+    burstAt.current = 0;
+  }, []);
+
   const onExpand = useCallback(async (id: number | null) => {
     setExpandedId(id);
     if (id == null) return;
@@ -1279,11 +1306,11 @@ export function usePreviewTradeUps(options: {
       tradeUps, loading, refreshing, isFree, expandedId, onExpand,
       total, totalProfitable,
       query, onQuery: setQuery,
-      search, onSearch: setSearch, onParsed: setParsed,
+      search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
   );
 }

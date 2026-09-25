@@ -132,7 +132,12 @@ describe("board card hydration 429", () => {
     });
     expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
     expect(host.textContent).not.toContain("Retrying");
-    expect(host.querySelectorAll("[role='status']")).toHaveLength(1);
+    const statuses = [...host.querySelectorAll("[role='status']")];
+    const notice = statuses.find((node) => node.classList.contains("preview-notice"));
+    const sentinel = statuses.find((node) => node.classList.contains("preview-sentinel"));
+    expect(notice?.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(sentinel?.getAttribute("aria-live")).toBe("polite");
+    expect(sentinel?.textContent?.trim()).toBe("");
     await act(async () => { root?.unmount(); });
     host.remove();
   });
