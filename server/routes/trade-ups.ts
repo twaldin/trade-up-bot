@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import pg from "pg";
-import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, repricedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale } from "../engine.js";
+import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, repricedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale, lookupDMarketRelinks } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
 import { getTierConfig, type User } from "../auth.js";
 import { getEffectiveTier } from "../../shared/pro-access.js";
@@ -886,6 +886,10 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         }
       }
     }
+    const dmRelinks = await lookupDMarketRelinks(
+      pool,
+      inputs.filter(input => input.listing_id.startsWith("dmarket:")).map(input => input.listing_id),
+    );
 
     // Pre-fetch Buff listings by goods_id (match by float value since Buff has no stable listing IDs across fetches)
     const buffInputsByGoodsId = new Map<string, typeof inputs>();
@@ -1019,29 +1023,39 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           });
           continue;
         }
-        if (activeSet.has(input.listing_id)) {
-          const currentPrice = dmPrices.get(input.listing_id) || undefined;
+        const relinkedId = dmRelinks.get(input.listing_id);
+        const liveId = activeSet.has(input.listing_id)
+          ? input.listing_id
+          : (relinkedId && activeSet.has(relinkedId) ? relinkedId : null);
+        if (liveId) {
+          if (liveId !== input.listing_id) {
+            await pool.query(
+              `UPDATE trade_up_inputs SET listing_id = $1 WHERE trade_up_id = $2 AND listing_id = $3`,
+              [liveId, tradeUpId, input.listing_id],
+            );
+          }
+          const currentPrice = dmPrices.get(liveId) || undefined;
           const listingChanged = currentPrice !== undefined && currentPrice !== input.listing_price_cents;
           // Re-insert if listing was deleted from our DB but still active on DMarket
-          const { rows: existRows } = await pool.query("SELECT id FROM listings WHERE id = $1", [input.listing_id]);
+          const { rows: existRows } = await pool.query("SELECT id FROM listings WHERE id = $1", [liveId]);
           if (existRows.length === 0) {
             await pool.query(`
               INSERT INTO listings (id, skin_id, price_cents, float_value, stattrak, created_at, source, listing_type, staleness_checked_at, price_updated_at)
               VALUES ($1, $2, $3, $4, false, NOW(), 'dmarket', 'buy_now', NOW(), NOW())
               ON CONFLICT (id) DO NOTHING
-            `, [input.listing_id, input.skin_id, currentPrice ?? input.price_cents, input.float_value]);
+            `, [liveId, input.skin_id, currentPrice ?? input.price_cents, input.float_value]);
           } else {
             if (listingChanged && currentPrice !== undefined) {
               await pool.query(
                 "UPDATE listings SET price_cents = $1, created_at = $2, price_updated_at = NOW() WHERE id = $3",
-                [currentPrice, new Date().toISOString(), input.listing_id]
+                [currentPrice, new Date().toISOString(), liveId]
               );
             }
-            await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [input.listing_id]);
+            await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [liveId]);
           }
           const { expected, drift, outlier } = repriceInput(input, currentPrice ?? input.listing_price_cents);
           results.push({
-            listing_id: input.listing_id,
+            listing_id: liveId,
             skin_name: input.skin_name,
             status: "active",
             current_price: expected,

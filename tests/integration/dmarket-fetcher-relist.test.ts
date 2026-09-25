@@ -157,7 +157,12 @@ describe("DMarket fetcher relist reconcile", () => {
       newId: "dmarket:new-rollback",
       priceCents: 538,
     }]);
-    expect(result).toEqual({ applied: 0, failedIds: ["dmarket:old-rollback"], skipped: [] });
+    expect(result).toEqual({
+      applied: 0,
+      failedIds: ["dmarket:old-rollback"],
+      skipped: [],
+      referenceLoadFailed: false,
+    });
     const { rows } = await ctx.pool.query(
       `SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1`,
       [tradeUpId],

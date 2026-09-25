@@ -23,7 +23,7 @@ import type { TradeUp } from "../../shared/types.js";
 
 import {
   startSkinportListener, getSkinportStats, isDMarketConfigured,
-  checkDMarketStaleness,
+  checkDMarketStaleness, formatDMarketStalenessLog,
 } from "../sync.js";
 import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
@@ -742,9 +742,9 @@ export async function main() {
             onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
           });
           totalDmarketChecked += dmResult.checked;
-          if (dmResult.removed > 0 || dmResult.relinked > 0) {
+          if (dmResult.deleted > 0 || dmResult.relinked > 0 || dmResult.contested > 0 || dmResult.failed > 0) {
             freshness.markListingsChanged();
-            console.log(`    DMarket staleness: ${dmResult.checked} checked, ${dmResult.removed} removed, ${dmResult.relinked} relinked`);
+            console.log(formatDMarketStalenessLog(dmResult));
           }
         } catch {
           // DMarket errors don't block engine loop

@@ -59,6 +59,7 @@ export {
   syncDMarketListingsForSkin,
   syncDMarketListingsForRarity,
   checkDMarketStaleness,
+  formatDMarketStalenessLog,
   buyDMarketItem,
   isDMarketConfigured,
 } from "./sync/dmarket.js";

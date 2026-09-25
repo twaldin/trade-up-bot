@@ -6,7 +6,7 @@ import {
   type RelistCandidate,
   type RelistIdentity,
 } from "../../server/dmarket-relist.js";
-import { dedupeRelistPlans, inputUpdateOk, parseReviveArgs, postRepointListingSig, retryDecision, type RelistPlan } from "../../scripts/revive-dmarket-relists.js";
+import { dedupeRelistPlans, inputUpdateOk, parseReviveArgs, postRepointListingSig, relistRevertSql, retryDecision, type RelistPlan } from "../../scripts/revive-dmarket-relists.js";
 
 const missing: RelistIdentity = {
   skinName: "MP7 | Abyssal Apparition",
@@ -141,6 +141,16 @@ describe("apply guards", () => {
   });
 });
 
+describe("relistRevertSql", () => {
+  it("filters every statement to the selected run_id", () => {
+    const sql = relistRevertSql("20260925", "2026-09-25T12:00:00.000Z");
+    expect(sql.match(/a\.run_id = '2026-09-25T12:00:00.000Z'/g)).toHaveLength(3);
+    expect(sql).toContain("trade_ups_bak_relist_20260925");
+    expect(sql).toContain("trade_up_inputs_bak_relist_20260925");
+    expect(() => relistRevertSql("2026-09-25", "run")).toThrow(/YYYYMMDD/);
+  });
+});
+
 describe("parseReviveArgs", () => {
   it("defaults to a 36h dry-run", () => {
     expect(parseReviveArgs([])).toEqual({ dryRun: true, hold: false, hours: 36 });
@@ -160,5 +170,11 @@ describe("assetIdFromInspect", () => {
   it("returns null when the payload has no inspect asset id", () => {
     expect(assetIdFromInspect(null)).toBeNull();
     expect(assetIdFromInspect("steam://run/730")).toBeNull();
+  });
+
+  it("does not read an asset id out of a hex preview link", () => {
+    expect(assetIdFromInspect(
+      "steam://run/730//+csgo_econ_action_preview%200018000000000000000000000000000000000000000000000000000000000000",
+    )).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import pg from "pg";
 import { setSyncMeta } from "../db.js";
 import { type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import { withRetry, computeChanceToProfit, computeBestWorstCase, listingSig, parseSig } from "./utils.js";
+import { retargetDMarketTradeUps } from "./dmarket-relink-map.js";
 
 /**
  * Insert all inputs for one trade-up in a single multi-row INSERT statement.
@@ -87,6 +88,7 @@ export async function getProfitableCombosForWantedList(pool: pg.Pool): Promise<{
 }
 
 export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
+  const toSave = await retargetDMarketTradeUps(pool, tradeUps);
   await withRetry(async () => {
     const client = await pool.connect();
     try {
@@ -99,7 +101,7 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
         await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
       }
 
-      for (const tu of tradeUps) {
+      for (const tu of toSave) {
         const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
         const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
         const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
@@ -146,10 +148,12 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
 
 export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: string = "classified_covert") {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
+  // Retarget first so a relink that landed during the cycle matches the live signature.
+  const liveTradeUps = await retargetDMarketTradeUps(pool, tradeUps);
 
   const newSigs = new Map<string, number>();
-  for (let i = 0; i < tradeUps.length; i++) {
-    const sig = listingSig(tradeUps[i].inputs.map(inp => inp.listing_id));
+  for (let i = 0; i < liveTradeUps.length; i++) {
+    const sig = listingSig(liveTradeUps[i].inputs.map(inp => inp.listing_id));
     newSigs.set(sig, i);
   }
 
@@ -178,7 +182,7 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
   for (const [sig, existId] of existingSigs) {
     const newIdx = newSigs.get(sig);
     if (newIdx !== undefined) {
-      toUpdate.push({ existId, tu: tradeUps[newIdx] });
+      toUpdate.push({ existId, tu: liveTradeUps[newIdx] });
       handled.add(sig);
     }
     // NOTE: We no longer mark missing trade-ups as stale here.
@@ -244,7 +248,7 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
   const toInsert: TradeUp[] = [];
   for (const [sig, idx] of newSigs) {
     if (handled.has(sig)) continue;
-    toInsert.push(tradeUps[idx]);
+    toInsert.push(liveTradeUps[idx]);
   }
 
   for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
