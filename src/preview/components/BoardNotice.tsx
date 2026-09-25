@@ -14,6 +14,7 @@ export function BoardNotice({
   suggestion,
   onApplySuggestion,
   detail,
+  message,
 }: {
   notice: BoardNoticeKind | null;
   onClearFilters?: () => void;
@@ -22,12 +23,15 @@ export function BoardNotice({
   onApplySuggestion?: () => void;
   /** Extra sentence when the rows on screen are from the previous request. */
   detail?: string;
+  /** List throttle copy. Card-only throttles keep the shared fallback. */
+  message?: string;
 }) {
+  const throttleCopy = message || SLOW_DOWN_COPY;
   switch (notice) {
     case "throttled":
       return (
         <div className="preview-notice" role="status">
-          <p className="preview-note">{detail ? `${SLOW_DOWN_COPY} ${detail}` : SLOW_DOWN_COPY}</p>
+          <p className="preview-note">{detail ? `${throttleCopy} ${detail}` : throttleCopy}</p>
           {onRetry && (
             <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
               <RotateCw size={11} aria-hidden />

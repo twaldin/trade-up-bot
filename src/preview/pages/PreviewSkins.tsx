@@ -3,7 +3,7 @@
  * `/api/skin-by-slug`, `/api/collections` and `/api/trade-ups` routes production
  * uses, rendered on the Outlay kit instead of the old chrome.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
@@ -888,6 +888,14 @@ export function PreviewCollectionPage() {
   const [skins, setSkins] = useState<SkinRow[]>([]);
   const [skinsStatus, setSkinsStatus] = useState<"loading" | "ok" | "throttled" | "failed">("loading");
   const [skinsRetry, setSkinsRetry] = useState(0);
+
+  const skinsScope = useRef(title);
+  useLayoutEffect(() => {
+    if (skinsScope.current === title) return;
+    skinsScope.current = title;
+    setSkins([]);
+    setSkinsStatus("loading");
+  }, [title]);
 
   useEffect(() => {
     if (!title) return;

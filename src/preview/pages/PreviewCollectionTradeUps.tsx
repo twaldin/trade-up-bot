@@ -31,7 +31,7 @@ export function PreviewCollectionTradeUps() {
     return () => { live = false; };
   }, [slug]);
 
-  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
+  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6, enabled: Boolean(title) });
   const display = title ? displayNameFor(title) : slug;
   const pageTitle = `Best ${display} Trade-Ups — Live CS2 Contracts | TradeUpBot`;
   const description = COLLECTION_TRADEUP_LEDE.replace("${display}", display);

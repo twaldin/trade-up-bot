@@ -13,7 +13,14 @@
  */
 
 export const RATE_LIMIT_MESSAGE = "Too many requests, please try again later.";
-export const SLOW_DOWN_COPY = "Slow down — try again in a moment.";
+export const SLOW_DOWN_COPY = "Too many requests right now. Retrying shortly.";
+
+/** List and detail 429 copy. A known Retry-After names the wait. */
+export function rateLimitCopy(retryAfterMs: number | null | undefined): string {
+  if (retryAfterMs == null || !Number.isFinite(retryAfterMs)) return SLOW_DOWN_COPY;
+  const seconds = Math.max(0, Math.ceil(retryAfterMs / 1000));
+  return `Too many requests right now. Retrying in ${seconds}s.`;
+}
 
 const BACKOFF_MS = 2_000;
 const BACKOFF_CAP_MS = 32_000;

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
@@ -57,8 +57,9 @@ import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
-  SLOW_DOWN_COPY,
   applyRateLimit,
+  noteRateLimited,
+  rateLimitCopy,
   canLoadMore,
   pageIsShort,
   reachedTotal,
@@ -854,7 +855,8 @@ export function PreviewBoard({
         onQuery(suggestion.query);
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
-      detail={notice === "throttled" && tradeUps.length > 0 ? "Showing the previous results until it loads." : undefined}
+      message={throttle ?? undefined}
+      detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results until it loads." : undefined}
     />
   );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
@@ -1011,25 +1013,29 @@ export function usePreviewTradeUps(options: {
   if (collection) params.set("collection", collection);
   if (skin) params.set("skin", skin);
   const key = params.toString();
-  const [settledKey, setSettledKey] = useState(key);
+  const scope = `${collection ?? ""}\0${skin ?? ""}`;
+  // Only filter/sort edits settle. A new scope (collection/skin resolved or changed) applies at once.
+  const [settled, setSettled] = useState({ key, scope });
+  const settledKey = settled.scope === scope ? settled.key : key;
   useEffect(() => {
-    if (settledKey === key) return;
-    const handle = window.setTimeout(() => setSettledKey(key), FILTER_SETTLE_MS);
+    if (settled.key === key && settled.scope === scope) return;
+    if (settled.scope !== scope) { setSettled({ key, scope }); return; }
+    const handle = window.setTimeout(() => setSettled({ key, scope }), FILTER_SETTLE_MS);
     return () => window.clearTimeout(handle);
-  }, [key, settledKey]);
+  }, [key, scope, settled]);
   const page = cursor.key === settledKey ? cursor.page : 1;
   const exhausted = endKey === settledKey;
-  const scope = `${collection ?? ""}\0${skin ?? ""}`;
   const scopeRef = useRef(scope);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scopeRef.current === scope) return;
     scopeRef.current = scope;
     setTradeUps([]);
+    setLoading(enabled);
     setThrottle(null);
     setRetryReady(false);
     setBackoffUntil(0);
     attemptRef.current = 0;
-  }, [scope]);
+  }, [scope, enabled]);
 
   // A filter change starts a new list at page 1. The cursor must be rewritten,
   // not only read as page 1 while its key mismatches: otherwise clearing back
@@ -1087,7 +1093,8 @@ export function usePreviewTradeUps(options: {
         },
         rateLimited: (retryAfterMs) => {
           if (!live) return;
-          setThrottle(SLOW_DOWN_COPY);
+          noteRateLimited(retryAfterMs);
+          setThrottle(rateLimitCopy(retryAfterMs));
           // One automatic retry. A second 429 stays on the notice until Retry.
           if (attemptRef.current >= 1) {
             setRetryReady(true);
