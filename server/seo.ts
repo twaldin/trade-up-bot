@@ -1,13 +1,17 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
+import { tradeUpH1, tradeUpPair } from "../shared/copy.js";
+import { detailTypeLabel } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
+import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
 import { formatDollars } from "../src/utils/format.js";
 
 export { buildCollectionsHubJsonLd, buildHomepageJsonLd };
 
-interface SeoMeta {
+export interface SeoMeta {
   title: string;
   description: string;
+  ogTitle?: string;
   url: string;
   robots?: string;
   ogImage?: string;
@@ -85,16 +89,16 @@ export function buildSkinResearchParagraphs(i: SkinResearchInput): string {
     ? `Ten ${rarity} inputs${collDraw} trade up into a ${e(i.outputTier)} output, so ${name} sits one tier below the results it helps produce.`
     : `As a top-tier item it is a trade-up result rather than an input, so it appears as the payoff of a contract rather than a feeder into one.`;
   if (i.inputTuCount > 0) {
-    para2 += ` At current market prices it appears as an input in ${i.inputTuCount} profitable contract${i.inputTuCount !== 1 ? "s" : ""}`;
-    para2 += i.bestProfitCents > 0 ? `, the best worth $${(i.bestProfitCents / 100).toFixed(2)} in modeled profit.` : ".";
+    para2 += ` At current market prices it appears as an input in ${i.inputTuCount} trade-up${i.inputTuCount !== 1 ? "s" : ""} with positive expected profit`;
+    para2 += i.bestProfitCents > 0 ? `, the best worth $${(i.bestProfitCents / 100).toFixed(2)} in expected profit.` : ".";
   }
   if (i.outputTuCount > 0) {
-    para2 += ` ${i.outputTuCount} profitable contract${i.outputTuCount !== 1 ? "s" : ""} can produce ${name} as an output.`;
+    para2 += ` ${i.outputTuCount} trade-up${i.outputTuCount !== 1 ? "s" : ""} with positive expected profit can produce ${name} as an output.`;
   }
   if (i.inputTuCount === 0 && i.outputTuCount === 0) {
     para2 += i.collectionDisplay
-      ? ` No profitable contracts use ${name} at current market prices, but its collection and float profile still shape which contracts become viable as prices move.`
-      : ` No profitable contracts use ${name} at current market prices, but its float profile still shapes which contracts become viable as prices move.`;
+      ? ` No trade-ups with positive expected profit use ${name} at current market prices, but its collection and float profile still shape which contracts become viable as prices move.`
+      : ` No trade-ups with positive expected profit use ${name} at current market prices, but its float profile still shapes which contracts become viable as prices move.`;
   }
   para2 += `</p>`;
 
@@ -201,6 +205,7 @@ export function dedupeHead(html: string): string {
 
 export function buildSeoHtml(meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
+  const ogTitle = escapeHtml(meta.ogTitle ?? meta.title);
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
   const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
@@ -231,14 +236,14 @@ export function buildSeoHtml(meta: SeoMeta): string {
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
 <link rel="canonical" href="${escapeHtml(meta.url)}" />
-<meta property="og:title" content="${title}" />
+<meta property="og:title" content="${ogTitle}" />
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${escapeHtml(meta.url)}" />
 <meta property="og:type" content="${escapeHtml(ogType)}" />
 <meta property="og:site_name" content="TradeUpBot" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
+<meta name="twitter:title" content="${ogTitle}" />
 <meta name="twitter:description" content="${desc}" />
 <meta name="twitter:image" content="${ogImage}" />
 ${jsonLdTag}
@@ -335,7 +340,7 @@ export function renderCollectionsHub(collections: CollectionHubLink[]): string {
   ).join("");
 
   return `<h1>CS2 Skin Collections</h1>
-<p>CS2 collections group weapon skins by the case, operation, map, or themed release where those skins entered the game. Each collection contains skins across rarity tiers, and those rarity tiers determine which inputs and outputs can appear in trade-up contracts. When you build a CS2 trade-up, the contract consumes 10 skins of the same rarity tier, then returns one output from the next rarity using the collections represented by your inputs. Browsing collections helps traders compare float ranges, supply, prices, and which cases currently support profitable trade-up opportunities.</p>
+<p>CS2 collections group weapon skins by the case, operation, map, or themed release where those skins entered the game. Each collection contains skins across rarity tiers, and those rarity tiers determine which inputs and outputs can appear in trade-up contracts. When you build a CS2 trade-up, the contract consumes 10 skins of the same rarity tier, then returns one output from the next rarity using the collections represented by your inputs. Browsing collections helps traders compare float ranges, supply, prices, and which cases currently support trade-ups with expected value after fees.</p>
 <p>Use this index to research popular CS2 skin collections, inspect their individual skin pages, and move from collection research into the live <a href="/trade-ups">CS2 trade-ups hub</a>.</p>
 <h2>Popular CS2 Collections</h2>
 <ul>${collectionLinks}</ul>
@@ -386,15 +391,6 @@ export interface TradeUpsHubCollection {
   count: number;
 }
 
-const TRADE_UP_TYPE_DISPLAY: Record<string, string> = {
-  covert_knife: "Knife/Glove",
-  classified_covert: "Classified",
-  restricted_classified: "Restricted",
-  milspec_restricted: "Mil-Spec",
-  industrial_milspec: "Industrial Grade",
-  consumer_industrial: "Consumer Grade",
-};
-
 export function renderTradeUpDetail(
   tradeUp: TradeUpDetailRow,
   inputs: TradeUpInputRow[],
@@ -403,12 +399,11 @@ export function renderTradeUpDetail(
   opts?: { hideInputCommercials?: boolean },
 ): string {
   const e = escapeHtml;
-  const profit = formatDollars(tradeUp.profit_cents);
   const cost = formatDollars(tradeUp.total_cost_cents);
-  const roi = tradeUp.roi_percentage?.toFixed(1) ?? "0";
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
-  const typeLabel = TRADE_UP_TYPE_DISPLAY[tradeUp.type] || tradeUp.type;
+  const pair = tradeUpPair(tradeUp.type, outcomes);
   const hideInputCommercials = opts?.hideInputCommercials === true;
+  const heading = tradeUpH1(tradeUp.type, tradeUp.profit_cents, tradeUp.roi_percentage, outcomes);
 
   const inputRows = inputs.map(inp => {
     const price = !hideInputCommercials && inp.price_cents ? ` — $${(inp.price_cents / 100).toFixed(2)}` : "";
@@ -417,9 +412,8 @@ export function renderTradeUpDetail(
   }).join("");
 
   const outcomeRows = outcomes.map(out => {
-    const pct = Math.round(out.probability * 100);
     const price = (out.estimated_price_cents / 100).toFixed(2);
-    return `<li>${e(out.skin_name)} (${e(out.predicted_condition)}) — ${pct}% probability — est. $${price}</li>`;
+    return `<li>${e(out.skin_name)} (${e(out.predicted_condition)}) — ${formatOdds(out.probability)} probability — est. $${price}</li>`;
   }).join("");
 
   const relatedLinks = related.map(r =>
@@ -431,8 +425,8 @@ export function renderTradeUpDetail(
     ? `all 10 inputs from the ${e(collections[0])} collection`
     : `inputs from ${e(collections.join(", "))}`;
 
-  return `<h1>${e(typeLabel)} Trade-Up — ${e(profit)} Expected P/L (${roi}% ROI)</h1>
-<p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(typeLabel)} rarity tier. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
+  return `<h1>${e(heading)}</h1>
+<p>Cost ${e(cost)} · ${e(chance)} of outcomes above cost · ${e(pair)} contract. Built from ${collectionText}. Data sourced from real listings on CSFloat, DMarket, and Skinport.</p>
 
 <h2>Inputs</h2>
 <p>This trade-up contract uses 10 input skins of the same rarity. The 10 inputs are:</p>
@@ -463,7 +457,7 @@ export function renderTradeUpsHub(args: {
     displayTradeUps.push(args.topTradeUps[displayTradeUps.length % args.topTradeUps.length]);
   }
   const tradeRows = displayTradeUps.map((t, index) =>
-    `<tr><td><a href="/trade-ups/${t.id}${index >= args.topTradeUps.length ? `?hub_rank=${index + 1}` : ""}">${e(TRADE_UP_TYPE_DISPLAY[t.type] || t.type)}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${Math.round((t.chance_to_profit ?? 0) * 100)}%</td></tr>`
+    `<tr><td><a href="/trade-ups/${t.id}${index >= args.topTradeUps.length ? `?hub_rank=${index + 1}` : ""}">${e(detailTypeLabel(t.type))}</a></td><td>$${(t.total_cost_cents / 100).toFixed(2)}</td><td>$${(t.profit_cents / 100).toFixed(2)}</td><td>${t.roi_percentage?.toFixed(1)}%</td><td>${formatOdds(t.chance_to_profit ?? 0)}</td></tr>`
   ).join("\n");
   const fallbackCollections: TradeUpsHubCollection[] = [
     { name: "Dreams & Nightmares", slug: "dreams-nightmares", count: 0 },
@@ -496,13 +490,14 @@ export function renderTradeUpsHub(args: {
 </ul>
 <h2>Best Live Trade-Ups</h2>
 <p>The table below links to individual trade-up detail pages with inputs, output probabilities, expected profit, ROI, share of outcomes above cost, and float-sensitive pricing. Listings can sell quickly, so always verify availability before purchasing all 10 inputs.</p>
-<table><thead><tr><th>Type</th><th>Cost</th><th>Profit</th><th>ROI</th><th>Above cost</th></tr></thead><tbody>${tradeRows}</tbody></table>
+<table><thead><tr><th>Type</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th></tr></thead><tbody>${tradeRows}</tbody></table>
 <h2>Collection Trade-Up Pages</h2>
 <p>Collection pages narrow the output pool and show which cases or operations currently have positive-EV contracts. They are useful when you want to understand why a rarity tier shows positive EV or compare similar contracts across collections.</p>
 <ul>${collectionLinks}</ul>
 <section><h2>Common Questions</h2>
 <h3>What makes a CS2 trade-up profitable?</h3><p>A trade-up is profitable when the probability-weighted value of the possible outputs, after selling fees, is higher than the cost of the 10 inputs plus buying fees. Strong contracts usually combine discounted inputs, favorable collection weighting, valuable outputs, and float targets near expensive condition boundaries.</p>
-<h3>Why do collection trade-up pages matter?</h3><p>Collections define which output skins are eligible. Linking from this hub to collection trade-up pages lets crawlers and traders follow the same research path: broad profitable trade-ups, collection-specific opportunities, then individual contract pages with exact inputs and outcomes.</p>
+<h3>Why do collection trade-up pages matter?</h3><p>Collections define which output skins are eligible. Linking from this hub to collection trade-up pages lets crawlers and traders follow the same research path: the full trade-up list, collection-specific contracts, then individual pages with exact inputs and outcomes.</p>
+${TRADE_UPS_FAQ.map((item) => `<h3>${e(item.q)}</h3><p>${e(item.a)}</p>`).join("")}
 <h3>Should I use the calculator before buying inputs?</h3><p>Yes. A calculator helps confirm that the exact 10 input prices and floats still produce the expected output conditions and expected value. Live listings change fast, so the final check should happen immediately before purchase.</p></section>`;
 }
 
@@ -524,6 +519,7 @@ export function isCrawler(userAgent: string): boolean {
  */
 export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const title = escapeHtml(meta.title);
+  const ogTitle = escapeHtml(meta.ogTitle ?? meta.title);
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
   const robots = meta.robots || "index, follow";
@@ -548,13 +544,13 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
 <meta name="description" content="${desc}" />
 <meta name="robots" content="${robots}" />
 <link rel="canonical" href="${url}" />
-<meta property="og:title" content="${title}" />
+<meta property="og:title" content="${ogTitle}" />
 <meta property="og:description" content="${desc}" />
 <meta property="og:url" content="${url}" />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="${ogImage}" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
+<meta name="twitter:title" content="${ogTitle}" />
 <meta name="twitter:description" content="${desc}" />
 <meta name="twitter:image" content="${ogImage}" />${jsonLdTag}`;
 

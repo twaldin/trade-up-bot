@@ -105,3 +105,7 @@ export const FOOTER_AGE = "18+. You must be 18 or older to use TradeUpBot.";
 
 /** Logged-out trade-up page. Verify is Pro (`POST /api/verify-trade-up/:id` returns 403 otherwise). */
 export const SIGN_IN_TO_CLAIM = "Verify and Claim are Pro features. Signing in with Steam is free.";
+
+export { REPRICE_CAVEAT } from "../../../shared/copy.js";
+
+export const COLLECTION_TRADEUP_LEDE = "Trade-ups using skins from the ${display} collection, with expected value after fees.";

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderTradeUpDetail } from "../../server/seo.js";
+import { tradeUpH1, tradeUpPair } from "../../shared/copy.js";
+import { detailTypeLabel, tradeUpDetailJsonLd } from "../../shared/types.js";
 
 const tradeUp = {
   id: 767744697,
@@ -33,6 +35,22 @@ describe("renderTradeUpDetail (#3 + #9-detail)", () => {
     expect(html).toMatch(/<h1>/);
     expect(html).toContain("$35.09");
     expect(html).toContain("12.3%");
+  });
+
+  it("uses the input-to-output heading for the H1 and the breadcrumb", () => {
+    const label = detailTypeLabel(tradeUp.type);
+    const pair = tradeUpPair(tradeUp.type, outcomes);
+    const heading = tradeUpH1(tradeUp.type, tradeUp.profit_cents, tradeUp.roi_percentage, outcomes);
+    const html = renderTradeUpDetail(tradeUp, inputs, outcomes, related);
+    expect(label).toBe("Classified");
+    expect(pair).toBe("Classified to Covert");
+    expect(html).toContain(`<h1>${heading}</h1>`);
+    expect(html).not.toContain("<h1>Covert Trade-Up");
+    const ld = tradeUpDetailJsonLd(tradeUp.id, pair);
+    const parsed = JSON.parse(JSON.stringify(ld)) as { "@type": string; itemListElement: { name: string }[] };
+    expect(parsed["@type"]).toBe("BreadcrumbList");
+    expect(parsed.itemListElement[2]?.name).toBe("Classified to Covert");
+    expect(JSON.stringify(ld)).not.toMatch(/aggregateRating|review|ratingValue|offers/i);
   });
 
   it("renders all 10 inputs under an Inputs section", () => {
@@ -69,7 +87,7 @@ describe("renderTradeUpDetail (#3 + #9-detail)", () => {
     expect(html).not.toMatch(/href='\/api\//);
   });
 
-  it("omits per-input price and source when the row is inside the free delay", () => {
+  it("omits per-input price and source when the row is inside the 3-hour free delay", () => {
     const priced = inputs.map((row) => ({ ...row, source: "csfloat", price_cents: 1234 }));
     const html = renderTradeUpDetail(tradeUp, priced, outcomes, related, { hideInputCommercials: true });
     const start = html.indexOf("<h2>Inputs</h2>");

@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
-import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
+import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
-import { formatOdds } from "../lib/board.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
@@ -202,16 +201,26 @@ export function PreviewShare() {
     setExpiresAt(null);
   }
 
-  const typeLabel = tu?.type ? (TRADE_UP_TYPE_LABELS[tu.type] || tu.type) : "Trade-up";
-  const profit = tu ? formatDollars(tu.profit_cents) : "$0.00";
-  const chance = tu ? formatOdds(tu.chance_to_profit ?? 0) : "0%";
-  const roi = tu ? (tu.roi_percentage?.toFixed(1) ?? "0") : "0";
+  const outcomes = tu?.outcomes ?? [];
+  const collections = tu ? tu.inputs.map((row) => row.collection_name) : [];
+  const type = tu?.type ?? "";
+  const pair = tu?.type ? tradeUpPair(type, outcomes) : "Trade-up";
   const title = tu
-    ? `${typeLabel} Trade-Up — ${profit} expected P/L (${chance} above cost) | TradeUpBot`
+    ? tradeUpDocumentTitle(type, outcomes, collections)
     : "Trade-up | TradeUpBot";
   const h1 = tu
-    ? `${typeLabel} Trade-Up — ${profit} Expected P/L (${roi}% ROI)`
+    ? tradeUpH1(type, tu.profit_cents, tu.roi_percentage, outcomes)
     : "Trade-up";
+  const description = tu
+    ? tradeUpDescription({
+      type,
+      profitCents: tu.profit_cents,
+      costCents: tu.total_cost_cents,
+      chanceToProfit: tu.chance_to_profit ?? 0,
+      outcomes,
+      inputNames: tu.inputs.map((row) => row.skin_name),
+    })
+    : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
   const realIds = tu ? realListingIds(tu) : [];
 
@@ -219,22 +228,22 @@ export function PreviewShare() {
     <div className="preview-page">
       <PreviewSeo
         title={title}
-        description={tu ? `$${formatDollars(tu.total_cost_cents).slice(1)} cost, ${roi}% ROI. Found on TradeUpBot.` : "Trade-up detail on TradeUpBot."}
+        description={description}
         canonical={id ? `https://tradeupbot.app/trade-ups/${id}` : "https://tradeupbot.app/trade-ups"}
       />
       <header className="preview-page__head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
-            <Link className="preview-link" to="/trade-ups">Board</Link>
+            <Link className="preview-link" to="/trade-ups">Trade-Ups</Link>
             <span aria-hidden>/</span>
-            <span>{tu ? `#${tu.id}` : "Trade-up"}</span>
+            <span>{tu ? pair : "Trade-up"}</span>
           </nav>
           <h1>{loading ? "Loading trade-up…" : error || !tu ? (error || "Trade-up not found") : h1}</h1>
           <p>Same verify, claim, confirm, and release flow as the live board. Expected value on the card is the probability-weighted output; Expected P/L is that value minus cost.</p>
         </div>
         {tu && (
           <div className="preview-page__meta">
-            <span>{typeLabel}</span>
+            <span>{pair}</span>
             <i />
             {(panel === "sign-in" || panel === "upgrade") && (
               <a className="preview-btn preview-btn--quiet"

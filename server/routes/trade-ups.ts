@@ -124,7 +124,7 @@ function viewerDelaySeconds(req: Request): number {
   return getTierConfig(req).delay;
 }
 
-/** Claimers always see the row they hold, even inside the free delay. */
+/** Claimers always see the row they hold, even inside the 3-hour free delay. */
 async function viewerOwnsClaim(pool: pg.Pool, req: Request, tradeUpId: number): Promise<boolean> {
   const user = req.user as User | undefined;
   if (!user?.steam_id) return false;

@@ -15,6 +15,14 @@ export function blogPostHeading(post: Pick<BlogPost, "title" | "h1">): string {
   return post.h1 ?? post.title;
 }
 
+/** Index-card label. Published titles stay on the guide itself. */
+export function blogIndexLabel(title: string): string {
+  if (title === "How to Use TradeUpBot to Find Profitable Trade-Ups") {
+    return "How to Use TradeUpBot for Expected-Value Trade-Ups";
+  }
+  return title;
+}
+
 export const blogPosts: BlogPost[] = [
   {
     slug: "how-cs2-trade-ups-work",
@@ -644,7 +652,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
   {
     slug: "cs2-trade-up-calculator-guide",
     title: "CS2 Trade Up Calculator Guide: Profits, Floats & Fees",
-    excerpt: "Use this CS2 trade up calculator guide to test floats, odds, and fees before buying inputs. Start calculating smarter contracts today.",
+    excerpt: "Use this CS2 trade up calculator guide to test floats, expected value, and fees before buying inputs. Start calculating smarter contracts today.",
     publishedAt: "2026-05-12",
     readTime: "8 min read",
     author: "TradeUpBot Team",

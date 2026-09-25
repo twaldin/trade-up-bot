@@ -14,7 +14,8 @@ const handler = indexSource.slice(start, end);
 
 describe("plan 025: float-exact best-profit summary on /collections/:slug", () => {
   it("renders a server-side 'best profitable trade-up right now' summary", () => {
-    expect(handler).toContain("Best expected P/L ");
+    expect(handler).toContain("Top ");
+    expect(handler).toContain("trade-up right now by expected P/L:");
     // Claim must be always-true (real-listing), NOT an unconditional float-exact claim —
     // output pricing can fall back to condition-level reference pricing for some contracts.
     expect(handler).toContain("built from real, currently-listed marketplace inputs");

@@ -387,7 +387,7 @@ export function TradeUpSharePage() {
 
           {inputsRedacted && (
             <div className="flex items-center justify-between px-4 py-3 mb-4 bg-yellow-950/40 border border-yellow-500/30 rounded-lg text-sm text-yellow-200">
-              <span>This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</span>
+              <span>This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</span>
               <a href="/pricing" className="font-medium text-yellow-400 hover:text-yellow-300 whitespace-nowrap ml-4">View Plans →</a>
             </div>
           )}

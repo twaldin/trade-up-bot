@@ -25,7 +25,6 @@ export function PreviewShell({
 }) {
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="dashboard" className="preview-console-root">
-      <title>TradeUpBot — console</title>
       <a className="skip-link" href="#main">Skip to content</a>
       <div className="preview-console">
         <aside className="preview-sidebar" aria-label="Console">

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
+import { tradeUpPair } from "../../../shared/copy.js";
+import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import {
@@ -67,6 +69,7 @@ import {
   NOTE_OF_OUTCOMES,
   NOTE_WORST_OUTCOMES,
 } from "../lib/copy.js";
+import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
@@ -582,7 +585,7 @@ export function TradeUpCard({
     >
       {expandable && (
         <button type="button" className="sr-only" aria-expanded={expanded} onClick={(event) => { stop(event); toggle(); }}>
-          {expanded ? "Collapse" : "Expand"} the {rarityLabel(tu.type)} trade-up
+          {expanded ? "Collapse" : "Expand"} the {tradeUpPair(tu.type ?? "", tu.outcomes)} trade-up
         </button>
       )}
 
@@ -601,7 +604,7 @@ export function TradeUpCard({
 
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
-          <p className="preview-note">This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</p>
+          <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
           <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
         </div>
       )}
@@ -833,6 +836,7 @@ export function PreviewBoard({
 
   return (
     <div className={embed ? "preview-board-embed" : "preview-page"}>
+      {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
@@ -877,7 +881,7 @@ export function PreviewBoard({
           <a className="preview-delay__cta" href="/pricing">See Pro</a>
         </div>
       )}
-      {!embed && <FeeLine line={boardFeeLine()} />}
+      {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && <p className="preview-note">Loading trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
       <div className="preview-bento">
@@ -893,6 +897,17 @@ export function PreviewBoard({
       {tradeUps.length > 0 && noticeNode}
       {exhausted && tradeUps.length > 0 && !notice && (
         <p className="preview-note">That is every trade-up matching these filters.</p>
+      )}
+      {!embed && (
+        <section className="preview-panel">
+          <h2>Common questions</h2>
+          {TRADE_UPS_FAQ.map((item) => (
+            <div key={item.q}>
+              <h3>{item.q}</h3>
+              <p>{item.a}</p>
+            </div>
+          ))}
+        </section>
       )}
     </div>
   );

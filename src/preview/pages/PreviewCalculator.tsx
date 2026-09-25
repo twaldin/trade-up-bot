@@ -153,9 +153,10 @@ export function PreviewCalculator() {
 
   return (
     <div className="preview-page">
-      <header className="preview-page__head">
-        <div>
-          <h1>CS2 Trade-Up Calculator</h1>
+<title>Free CS2 Trade-Up Calculator — EV, Float & Fees | TradeUpBot</title>
+        <header className="preview-page__head">
+          <div>
+            <h1>CS2 Trade-Up Calculator</h1>
           <p>Add 10 skins of one rarity, or 5 Coverts for a knife or glove trade-up, then evaluate it.</p>
         </div>
       </header>

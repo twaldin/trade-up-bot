@@ -22,7 +22,7 @@ const ogImageSource = readFileSync(join(__dir, "../../server/og-image.ts"), "utf
 
 describe("SEO crawler cache revision", () => {
   it("versions every crawler key whose HTML or JSON-LD this copy pass changes", () => {
-    expect(serverSource).toContain('const SEO_CRAWLER_CACHE_REV = "v3"');
+    expect(serverSource).toContain('const SEO_CRAWLER_CACHE_REV = "v4"');
     for (const key of [
       "seo_tradeups_list_${SEO_CRAWLER_CACHE_REV}",
       "seo_coll_tu_${SEO_CRAWLER_CACHE_REV}:",
