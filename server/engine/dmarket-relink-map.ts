@@ -3,6 +3,8 @@
  * The fetcher deletes the old listing row when it relinks, so a daemon save
  * that still holds the id it loaded at cycle start can look the live id up
  * here. Rows older than the TTL are ignored and pruned.
+ * The table is created in createTables, not on this path: CREATE INDEX
+ * inside the relink transaction deadlocks overlapping writers.
  */
 
 import type pg from "pg";
@@ -12,22 +14,7 @@ export const DMARKET_RELINK_TTL = "2 hours";
 
 type Queryable = pg.Pool | pg.PoolClient;
 
-export async function ensureDMarketRelinkMap(db: Queryable): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS dmarket_listing_relinks (
-      old_id TEXT PRIMARY KEY,
-      new_id TEXT NOT NULL,
-      relinked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_dmarket_listing_relinks_at
-    ON dmarket_listing_relinks (relinked_at)
-  `);
-}
-
 export async function recordDMarketRelink(db: Queryable, oldId: string, newId: string): Promise<void> {
-  await ensureDMarketRelinkMap(db);
   await db.query(
     `INSERT INTO dmarket_listing_relinks (old_id, new_id, relinked_at)
      VALUES ($1, $2, NOW())
@@ -37,7 +24,6 @@ export async function recordDMarketRelink(db: Queryable, oldId: string, newId: s
 }
 
 export async function pruneDMarketRelinkMap(db: Queryable): Promise<void> {
-  await ensureDMarketRelinkMap(db);
   await db.query(
     `DELETE FROM dmarket_listing_relinks WHERE relinked_at < NOW() - INTERVAL '${DMARKET_RELINK_TTL}'`,
   );
@@ -52,7 +38,6 @@ interface ChainRow {
 export async function lookupDMarketRelinks(db: Queryable, oldIds: readonly string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (oldIds.length === 0) return map;
-  await ensureDMarketRelinkMap(db);
   const { rows } = await db.query<ChainRow>(
     `WITH RECURSIVE chain AS (
        SELECT old_id, new_id, 1 AS depth, ARRAY[old_id] AS path

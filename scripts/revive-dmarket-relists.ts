@@ -553,32 +553,15 @@ async function holdPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<void> {
   }
 }
 
-async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
+/** Create the applied-run table when it is absent. Does not change an existing primary key. */
+export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS trade_up_relist_applied (
       trade_up_id INTEGER NOT NULL,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      run_id TEXT NOT NULL
+      run_id TEXT NOT NULL,
+      PRIMARY KEY (trade_up_id, run_id)
     )
-  `);
-  await pool.query(`
-    DO $$
-    DECLARE
-      cols text;
-    BEGIN
-      SELECT string_agg(a.attname, ',' ORDER BY k.ord)
-      INTO cols
-      FROM pg_constraint c
-      JOIN pg_class t ON t.oid = c.conrelid
-      JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
-      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
-      WHERE t.relname = 'trade_up_relist_applied' AND c.contype = 'p'
-        AND t.relnamespace = current_schema()::regnamespace;
-      IF cols IS DISTINCT FROM 'trade_up_id,run_id' THEN
-        EXECUTE 'ALTER TABLE trade_up_relist_applied DROP CONSTRAINT IF EXISTS trade_up_relist_applied_pkey';
-        EXECUTE 'ALTER TABLE trade_up_relist_applied ADD PRIMARY KEY (trade_up_id, run_id)';
-      END IF;
-    END $$;
   `);
 }
 

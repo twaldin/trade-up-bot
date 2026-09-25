@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { purgeExpiredPreserved } from "../../server/engine.js";
-import { planDMarketRelistRevive, runReviveDMarketRelists } from "../../scripts/revive-dmarket-relists.js";
+import { ensureAppliedTable, planDMarketRelistRevive, runReviveDMarketRelists } from "../../scripts/revive-dmarket-relists.js";
 
 let ctx: TestContext;
 
@@ -21,6 +21,39 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await ctx.cleanup();
+});
+
+async function appliedPrimaryKey(): Promise<string | null> {
+  const { rows } = await ctx.pool.query<{ cols: string | null }>(`
+    SELECT string_agg(a.attname, ',' ORDER BY k.ord) AS cols
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+    WHERE t.relname = 'trade_up_relist_applied' AND c.contype = 'p'
+      AND t.relnamespace = current_schema()::regnamespace
+  `);
+  return rows[0]?.cols ?? null;
+}
+
+describe("relist applied table", () => {
+  it("creates the table when missing and leaves an existing primary key alone", async () => {
+    await ctx.pool.query(`
+      CREATE TABLE trade_up_relist_applied (
+        trade_up_id INTEGER PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        run_id TEXT NOT NULL
+      )
+    `);
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id");
+
+    await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+  });
 });
 
 describe("relist hold", () => {

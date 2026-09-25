@@ -59,7 +59,7 @@ export { findStaircaseTradeUps } from "./engine/staircase.js";
 
 // === DB Operations ===
 export {
-  ensureDMarketRelinkMap, recordDMarketRelink, pruneDMarketRelinkMap, lookupDMarketRelinks, retargetDMarketTradeUps,
+  recordDMarketRelink, pruneDMarketRelinkMap, lookupDMarketRelinks, retargetDMarketTradeUps,
 } from "./engine/dmarket-relink-map.js";
 export {
   saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,

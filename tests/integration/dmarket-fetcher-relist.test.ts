@@ -52,6 +52,29 @@ async function seedTradeUp(oldId: string, rawPrice: number): Promise<number> {
 }
 
 describe("DMarket fetcher relist reconcile", () => {
+  it("applies two relinks at once without a deadlock", async () => {
+    await seedTradeUp("dmarket:old-conc-a", 554);
+    await seedTradeUp("dmarket:old-conc-b", 600);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:new-conc-a', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket'),
+              ('dmarket:new-conc-b', 'skin-mp7', 580, 0.1523456789, 412, 'dmarket')`,
+    );
+    const [left, right] = await Promise.all([
+      applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-conc-a", newId: "dmarket:new-conc-a", priceCents: 538 }]),
+      applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-conc-b", newId: "dmarket:new-conc-b", priceCents: 580 }]),
+    ]);
+    expect(left.failedIds).toEqual([]);
+    expect(right.failedIds).toEqual([]);
+    expect(left.applied).toBe(1);
+    expect(right.applied).toBe(1);
+    const { rows } = await ctx.pool.query(
+      `SELECT listing_id FROM trade_up_inputs WHERE listing_id = ANY($1) ORDER BY listing_id`,
+      [["dmarket:new-conc-a", "dmarket:new-conc-b"]],
+    );
+    expect(rows.map(row => row.listing_id)).toEqual(["dmarket:new-conc-a", "dmarket:new-conc-b"]);
+  });
+
   it("repoints a relist and leaves the trade-up active", async () => {
     const tradeUpId = await seedTradeUp("dmarket:old-match", 554);
     await ctx.pool.query(
