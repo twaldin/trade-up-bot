@@ -83,6 +83,7 @@ export function PreviewCollectionTradeUps() {
           exhausted={board.exhausted}
           endKind={board.endKind}
           throttle={board.throttle}
+          pagingThrottle={board.pagingThrottle}
           retryReady={board.retryReady}
           failed={board.failed}
           refreshing={board.refreshing}

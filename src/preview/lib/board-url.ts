@@ -109,6 +109,11 @@ export function boardSearchFromState(state: BoardUrlState, currentSearch = ""): 
   return params.toString();
 }
 
+/** Search string after clamp, alias, and param-order normalization. Unknown keys stay. */
+export function canonicalBoardSearch(current: string): string {
+  return boardSearchFromState(stateFromBoardSearch(current), current);
+}
+
 export interface HistoryLike {
   state: unknown;
   replaceState: (data: unknown, unused: string, url?: string | URL | null) => void;

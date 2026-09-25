@@ -145,7 +145,18 @@ describe("console cutover", () => {
     expect(index).toContain("Too many requests, please try again later.");
     expect(index).toContain("skip: (req) => !usesSharedApiBucket(req.path)");
     expect(index).toContain("SHARED_API_MAX");
+    expect(index).toContain("CACHEABLE_READ_MAX");
     expect(index).toMatch(/max:\s*10/);
+    expect(index).toMatch(/\/api\/subscribe", rateLimit\(\{ windowMs: 60_000, max: 5/);
+    const buckets = readFileSync(resolve(testDir, "../../server/rate-limit-buckets.ts"), "utf8");
+    expect(buckets).toContain("export const SHARED_API_MAX = 120");
+    expect(buckets).toContain("export const CACHEABLE_READ_MAX = 600");
+    expect(buckets).toContain("export const RATE_WINDOW_MS = 60_000");
+    const claims = readFileSync(resolve(testDir, "../../server/routes/claims.ts"), "utf8");
+    expect(claims).toContain("const claimMax = 10");
+    expect(claims).toContain("const claimWindow = 3600");
+    const tradeUps = readFileSync(resolve(testDir, "../../server/routes/trade-ups.ts"), "utf8");
+    expect(tradeUps).toContain("const verifyMax = 20");
     const helper = readFileSync(resolve(testDir, "../../src/preview/lib/page-fetch.ts"), "utf8");
     expect(helper).toContain("Too many requests, please try again later.");
     expect(helper).toContain("canLoadMore");

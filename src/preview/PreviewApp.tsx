@@ -44,6 +44,7 @@ function BoardRoute() {
       exhausted={state.exhausted}
       endKind={state.endKind}
       throttle={state.throttle}
+      pagingThrottle={state.pagingThrottle}
       retryReady={state.retryReady}
       failed={state.failed}
       refreshing={state.refreshing}

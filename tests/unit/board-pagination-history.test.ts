@@ -43,6 +43,12 @@ function limited(retryAfter = "0") {
   };
 }
 
+function ScopeHarness({ collection, onReady }: { collection: string; onReady: (api: Api) => void }) {
+  const next = usePreviewTradeUps({ collection, perPage: 12 });
+  onReady(next);
+  return null;
+}
+
 function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
   const api = usePreviewTradeUps({ perPage: 12 });
   onReady(api);
@@ -61,6 +67,7 @@ function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
     exhausted: api.exhausted,
     endKind: api.endKind,
     throttle: api.throttle,
+    pagingThrottle: api.pagingThrottle,
     retryReady: api.retryReady,
     failed: api.failed,
     onRetry: api.retry,
@@ -256,5 +263,104 @@ describe("board pagination and history", () => {
     expect(api.query.maxCost).toBe("50");
     expect(api.query.sort).toBe("profit");
     expect(urls.some((url) => url.includes("min_chance=80") && url.includes("sort=profit"))).toBe(true);
+  });
+
+  async function leavesOnOneBack(url: string) {
+    if (root) act(() => { root.unmount(); });
+    host?.remove();
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36)));
+    window.history.replaceState({}, "", "/elsewhere");
+    window.history.pushState({}, "", url);
+    const length = window.history.length;
+    await mount();
+    expect(window.history.length).toBe(length);
+    window.history.back();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    paint();
+    expect(window.location.pathname).toBe("/elsewhere");
+  }
+
+  it("replaces a non-canonical landing URL so one Back leaves", async () => {
+    await leavesOnOneBack("/trade-ups?sort=profit&utm_source=google");
+    expect(window.location.pathname).toBe("/elsewhere");
+  });
+
+  it("replaces param-order, sort alias, and clamped chance without a history entry", async () => {
+    await leavesOnOneBack("/trade-ups?sort=profit&min_chance=80");
+    await leavesOnOneBack("/trade-ups?sort=score");
+    await leavesOnOneBack("/trade-ups?min_chance=150");
+    await leavesOnOneBack("/collections/kilowatt?sort=profit&min_chance=80");
+  });
+
+  it("hides Load more during the first page load and a filter refresh", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    paint();
+    expect(host.textContent).toContain("Loading trade-ups…");
+    expect(host.textContent).not.toContain("Load more");
+    act(() => {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: [row(1)] as Api["tradeUps"],
+        loading: true,
+        loadingMore: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => {},
+      })));
+    });
+    expect(host.textContent).not.toContain("Load more");
+  });
+
+  it("puts a later-page 429 in the bottom status and not a second notice", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return limited("30");
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const statuses = [...host.querySelectorAll("[role='status']")];
+    const withCopy = statuses.filter((node) => node.textContent?.includes(RATE_LIMIT_MANUAL_COPY) || node.textContent?.includes("Too many requests"));
+    expect(withCopy).toHaveLength(1);
+    expect(withCopy[0]?.classList.contains("preview-sentinel")).toBe(true);
+    expect(host.querySelector(".preview-sentinel")?.textContent).toContain("Too many requests");
+  });
+
+  it("pushes a later edit of the same field after the debounce burst", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "8" }); });
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "80" }); });
+    const lengthAtBurst = window.history.length;
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "81" }); });
+    expect(window.history.length).toBe(lengthAtBurst + 1);
+    expect(window.location.search).toContain("min_chance=81");
+  });
+
+  it("reloads filters from the URL when the collection scope changes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/collections/kilowatt?min_chance=80");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(ScopeHarness, { collection: "Kilowatt", onReady: (next) => { api = next; } }));
+    });
+    expect(api.query.minChance).toBe("80");
+    window.history.pushState({}, "", "/collections/gallery");
+    await act(async () => {
+      root.render(createElement(ScopeHarness, { collection: "Gallery", onReady: (next) => { api = next; } }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(api.query.minChance).toBe("");
+    expect(window.location.pathname).toBe("/collections/gallery");
+    expect(window.location.search).not.toContain("min_chance");
   });
 });

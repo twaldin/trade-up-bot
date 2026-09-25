@@ -51,6 +51,7 @@ import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY } from "../lib/board-notice.js";
 import {
+  canonicalBoardSearch,
   historyAction,
   isBoardFilterPath,
   pushBoardUrl,
@@ -795,6 +796,7 @@ export function PreviewBoard({
   failed,
   refreshing = false,
   loadingMore = false,
+  pagingThrottle = null,
   onRetry,
   onClearFilters,
   heading = "Live trade-ups",
@@ -825,6 +827,8 @@ export function PreviewBoard({
   refreshing?: boolean;
   /** A later page is in flight. The sentinel stays quiet until then. */
   loadingMore?: boolean;
+  /** List 429 on a page after the first. Rendered in the bottom slot only. */
+  pagingThrottle?: string | null;
   onRetry?: () => void;
   onClearFilters?: () => void;
   heading?: string;
@@ -851,10 +855,11 @@ export function PreviewBoard({
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const cardsThrottled = tradeUps.some((tu) => tu.hydrateThrottled === true);
+  const topThrottle = pagingThrottle ? null : throttle;
   const notice = boardNotice({
     loading,
     rows: tradeUps.length,
-    throttled: Boolean(throttle) || cardsThrottled,
+    throttled: Boolean(topThrottle) || cardsThrottled,
     failed: Boolean(failed),
     filtered,
   });
@@ -867,7 +872,11 @@ export function PreviewBoard({
     skin: lockedSkin,
   });
   const held = useBrowseHeld();
-  const showRetry = !held && (notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled)));
+  const showRetry = !held && (
+    notice === "error"
+    || (notice === "throttled" && (retryReady || cardsThrottled))
+    || (Boolean(pagingThrottle) && retryReady)
+  );
   const noticeNode = (
     <BoardNotice
       notice={notice}
@@ -878,7 +887,7 @@ export function PreviewBoard({
         onQuery(suggestion.query);
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
-      message={throttle ?? undefined}
+      message={topThrottle ?? undefined}
       detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results." : undefined}
     />
   );
@@ -954,23 +963,34 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
-      {loadMore && !exhausted && !notice && (
-        <div className="preview-sentinel" ref={sentinel}>
-          {loadingMore
-            ? <span className="preview-note">Loading more trade-ups…</span>
-            : (
-              <button type="button" className="preview-btn preview-btn--quiet" onClick={loadMore}>
-                Load more
+      <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">
+        {pagingThrottle && (
+          <p className="preview-note">
+            {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
+            {showRetry && onRetry && (
+              <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
+                Retry
               </button>
             )}
-        </div>
-      )}
-      {exhausted && tradeUps.length > 0 && !notice && endKind !== "capped" && (
-        <p className="preview-note">{END_OF_LIST_COPY}</p>
-      )}
-      {exhausted && tradeUps.length > 0 && !notice && endKind === "capped" && (
-        <p className="preview-note">{LIST_CAP_COPY}</p>
-      )}
+          </p>
+        )}
+        {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
+          <button
+            type="button"
+            className="preview-btn preview-btn--quiet"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Loading more trade-ups…" : "Load more"}
+          </button>
+        )}
+        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped" && (
+          <p className="preview-note">{END_OF_LIST_COPY}</p>
+        )}
+        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
+          <p className="preview-note">{LIST_CAP_COPY}</p>
+        )}
+      </div>
       {!embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
@@ -1024,6 +1044,8 @@ export function usePreviewTradeUps(options: {
   const attemptRef = useRef(0);
   const rowsRef = useRef<HydratedTradeUp[]>([]);
   const openField = useRef<string | null>(null);
+  const burstAt = useRef(0);
+  const fromPop = useRef(false);
   rowsRef.current = tradeUps;
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
@@ -1034,9 +1056,19 @@ export function usePreviewTradeUps(options: {
     const state = { query, text: search };
     const next = boardSearchFromState(state, window.location.search);
     const current = searchString(window.location.search);
+    const afterPop = fromPop.current;
+    fromPop.current = false;
     if (next === current) return;
-    const decision = historyAction(openField.current, current, next);
+    // Clamp, alias, param order, and unknown keys are a rewrite of this entry.
+    if (afterPop || canonicalBoardSearch(current) === next) {
+      openField.current = null;
+      replaceBoardUrl(state, window.location, window.history);
+      return;
+    }
+    const inBurst = Date.now() - burstAt.current <= FILTER_SETTLE_MS;
+    const decision = historyAction(inBurst ? openField.current : null, current, next);
     openField.current = decision.field;
+    burstAt.current = Date.now();
     if (decision.action === "push") pushBoardUrl(state, window.location, window.history);
     else replaceBoardUrl(state, window.location, window.history);
   }, [query, search]);
@@ -1046,6 +1078,7 @@ export function usePreviewTradeUps(options: {
     const onPop = () => {
       if (!isBoardFilterPath(window.location.pathname)) return;
       const next = readBoardLocation(window.location);
+      fromPop.current = true;
       openField.current = null;
       setQuery(next.query);
       setSearch(next.text);
@@ -1079,6 +1112,14 @@ export function usePreviewTradeUps(options: {
   useLayoutEffect(() => {
     if (scopeRef.current === scope) return;
     scopeRef.current = scope;
+    if (typeof window !== "undefined") {
+      const next = readBoardLocation(window.location);
+      openField.current = null;
+      replaceBoardUrl(next, window.location, window.history);
+      setQuery(next.query);
+      setSearch(next.text);
+      setParsed(parseQuery(next.text));
+    }
     setTradeUps([]);
     setLoading(enabled);
     setThrottle(null);
@@ -1190,6 +1231,7 @@ export function usePreviewTradeUps(options: {
 
   const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== settledKey;
   const loadingMore = loading && page > 1;
+  const pagingThrottle = page > 1 && throttle ? throttle : null;
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -1233,10 +1275,10 @@ export function usePreviewTradeUps(options: {
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
-      loadMore, exhausted, endKind, throttle, retryReady,
+      loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, faceTick, total, totalProfitable, loadingMore, endKind],
+      clearFilters, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
   );
 }

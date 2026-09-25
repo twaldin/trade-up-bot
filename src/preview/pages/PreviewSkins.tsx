@@ -619,6 +619,7 @@ export function PreviewSkinPage() {
             exhausted={board.exhausted}
             endKind={board.endKind}
             throttle={board.throttle}
+            pagingThrottle={board.pagingThrottle}
             retryReady={board.retryReady}
             failed={board.failed}
             refreshing={board.refreshing}
@@ -1013,6 +1014,7 @@ export function PreviewCollectionPage() {
           exhausted={board.exhausted}
           endKind={board.endKind}
           throttle={board.throttle}
+          pagingThrottle={board.pagingThrottle}
           retryReady={board.retryReady}
           failed={board.failed}
           refreshing={board.refreshing}
