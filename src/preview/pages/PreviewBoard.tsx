@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
@@ -57,8 +57,10 @@ import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
-  SLOW_DOWN_COPY,
   applyRateLimit,
+  RATE_LIMIT_MANUAL_COPY,
+  noteRateLimited,
+  rateLimitCopy,
   canLoadMore,
   pageIsShort,
   reachedTotal,
@@ -76,9 +78,13 @@ import {
 import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
-import { createFaceCache, faceFor, hydrateOutcomesIfNeeded, loadFaces } from "../lib/skin-images.js";
+import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { createFaceCache, faceFor, loadFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
+
+/** Filter and sort edits wait this long so a burst becomes one list request. */
+export const FILTER_SETTLE_MS = 350;
 
 /** Shared with the my-trade-ups page so claim cards and table faces share one cache. */
 export function warmBoardFaces(names: string[]): Promise<void> {
@@ -545,7 +551,7 @@ export function TradeUpCard({
   onExpand,
   expandable = true,
 }: {
-  tu: TradeUp;
+  tu: HydratedTradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
   /** False for teaser cards that share expand state with another card they must not disturb. */
@@ -755,6 +761,11 @@ export function TradeUpCard({
   );
 }
 
+function rankedMeta(throttled: boolean, count: number): string {
+  if (throttled && count === 0) return "—";
+  return `${count} ranked`;
+}
+
 export function PreviewBoard({
   tradeUps,
   loading,
@@ -769,6 +780,7 @@ export function PreviewBoard({
   loadMore,
   exhausted,
   throttle,
+  retryReady = false,
   failed,
   refreshing = false,
   onRetry,
@@ -779,7 +791,7 @@ export function PreviewBoard({
   lockedSkin,
   embed = false,
 }: {
-  tradeUps: TradeUp[];
+  tradeUps: HydratedTradeUp[];
   loading: boolean;
   isFree: boolean;
   expandedId: number | null;
@@ -792,6 +804,8 @@ export function PreviewBoard({
   loadMore?: () => void;
   exhausted?: boolean;
   throttle?: string | null;
+  /** True once the automatic 429 retry has been spent. Shows the Retry button. */
+  retryReady?: boolean;
   failed?: boolean;
   /** Page-1 filter change still showing the previous rows. */
   refreshing?: boolean;
@@ -820,10 +834,11 @@ export function PreviewBoard({
   useEffect(() => () => window.clearTimeout(typingTimer.current), []);
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
+  const cardsThrottled = tradeUps.some((tu) => tu.hydrateThrottled === true);
   const notice = boardNotice({
     loading,
     rows: tradeUps.length,
-    throttled: Boolean(throttle),
+    throttled: Boolean(throttle) || cardsThrottled,
     failed: Boolean(failed),
     filtered,
   });
@@ -835,16 +850,19 @@ export function PreviewBoard({
     collection,
     skin: lockedSkin,
   });
+  const showRetry = notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled));
   const noticeNode = (
     <BoardNotice
       notice={notice}
       onClearFilters={clearFilters}
-      onRetry={onRetry}
+      onRetry={showRetry ? onRetry : undefined}
       suggestion={suggestion}
       onApplySuggestion={suggestion && onQuery ? () => {
         onQuery(suggestion.query);
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
+      message={throttle ?? undefined}
+      detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results." : undefined}
     />
   );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
@@ -875,7 +893,7 @@ export function PreviewBoard({
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
-          <span className="preview-panel__meta">{tradeUps.length} ranked</span>
+          <span className="preview-panel__meta">{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
         </header>
       ) : (
         <header className="preview-page__head">
@@ -884,7 +902,7 @@ export function PreviewBoard({
             <p>{lede}</p>
           </div>
           <div className="preview-page__meta">
-            <span>{tradeUps.length} ranked</span>
+            <span>{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
             <i />
             <span>{cols}-column</span>
           </div>
@@ -919,9 +937,9 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && notice !== "throttled" && <p className="preview-note">Loading trade-ups…</p>}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
-      {tradeUps.length === 0 && noticeNode}
+      {noticeNode}
       <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={refreshing || undefined}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
@@ -932,7 +950,6 @@ export function PreviewBoard({
           <span className="preview-note">Loading more trade-ups…</span>
         </div>
       )}
-      {tradeUps.length > 0 && noticeNode}
       {exhausted && tradeUps.length > 0 && !notice && (
         <p className="preview-note">That is every trade-up matching these filters.</p>
       )}
@@ -951,18 +968,6 @@ export function PreviewBoard({
   );
 }
 
-async function hydrateInputsIfNeeded(tu: TradeUp): Promise<TradeUp> {
-  if (tu.inputs.length > 0) return tu;
-  try {
-    const res = await fetch(`/api/trade-up/${tu.id}/inputs`, { credentials: "include" });
-    if (!res.ok) return tu;
-    const data = await res.json() as { inputs?: TradeUpInput[] };
-    return { ...tu, inputs: data.inputs ?? [] };
-  } catch {
-    return tu;
-  }
-}
-
 function skinNames(rows: TradeUp[]): string[] {
   return rows.flatMap((tu) => [
     ...tu.inputs.map((row) => row.skin_name),
@@ -977,7 +982,7 @@ export function usePreviewTradeUps(options: {
   enabled?: boolean;
 } = {}) {
   const { collection, skin, perPage = 12, enabled = true } = options;
-  const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
+  const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -992,6 +997,7 @@ export function usePreviewTradeUps(options: {
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [rowsKey, setRowsKey] = useState<string | null>(null);
+  const [retryReady, setRetryReady] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
@@ -1013,19 +1019,40 @@ export function usePreviewTradeUps(options: {
   if (collection) params.set("collection", collection);
   if (skin) params.set("skin", skin);
   const key = params.toString();
-  const page = cursor.key === key ? cursor.page : 1;
-  const exhausted = endKey === key;
+  const scope = `${collection ?? ""}\0${skin ?? ""}`;
+  // Only filter/sort edits settle. A new scope (collection/skin resolved or changed) applies at once.
+  const [settled, setSettled] = useState({ key, scope });
+  const settledKey = settled.scope === scope ? settled.key : key;
+  useEffect(() => {
+    if (settled.key === key && settled.scope === scope) return;
+    if (settled.scope !== scope) { setSettled({ key, scope }); return; }
+    const handle = window.setTimeout(() => setSettled({ key, scope }), FILTER_SETTLE_MS);
+    return () => window.clearTimeout(handle);
+  }, [key, scope, settled]);
+  const page = cursor.key === settledKey ? cursor.page : 1;
+  const exhausted = endKey === settledKey;
+  const scopeRef = useRef(scope);
+  useLayoutEffect(() => {
+    if (scopeRef.current === scope) return;
+    scopeRef.current = scope;
+    setTradeUps([]);
+    setLoading(enabled);
+    setThrottle(null);
+    setRetryReady(false);
+    setBackoffUntil(0);
+    attemptRef.current = 0;
+  }, [scope, enabled]);
 
   // A filter change starts a new list at page 1. The cursor must be rewritten,
   // not only read as page 1 while its key mismatches: otherwise clearing back
   // to the previous key revives the page number from before the filter.
   useEffect(() => {
-    setCursor({ key, page: 1 });
+    setCursor({ key: settledKey, page: 1 });
     setEndKey(null);
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
-  }, [key]);
+  }, [settledKey]);
 
   useEffect(() => {
     if (!enabled) {
@@ -1034,13 +1061,17 @@ export function usePreviewTradeUps(options: {
       return;
     }
     let live = true;
+    const controller = new AbortController();
     inFlightRef.current = true;
     setFailed(false);
     void loadBoardRows<TradeUp>({
       append: page > 1,
-      isLive: () => live,
+      isLive: () => live && !controller.signal.aborted,
       fetchRows: async () => {
-        const res = await fetch(boardListUrl(key, page), { credentials: "include" });
+        const res = await fetch(boardListUrl(settledKey, page), {
+          credentials: "include",
+          signal: controller.signal,
+        });
         const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number }>(res);
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
@@ -1048,36 +1079,49 @@ export function usePreviewTradeUps(options: {
         }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
-      hydrate: async (tu) => hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(tu)),
+      hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
       emit: {
         rows: (next) => {
           if (!live) return;
-          setTradeUps(next as TradeUp[]);
-          if (page === 1) setRowsKey(key);
+          attemptRef.current = 0;
+          setRetryReady(false);
+          setTradeUps(next as HydratedTradeUp[]);
+          if (page === 1) setRowsKey(settledKey);
         },
         isFree: setIsFree,
         loading: setLoading,
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(key);
+          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(settledKey);
         },
-        rateLimited: () => {
+        rateLimited: (retryAfterMs) => {
           if (!live) return;
-          const next = applyRateLimit(attemptRef.current, Date.now());
+          noteRateLimited(retryAfterMs);
+          // One automatic retry. A second 429 stays on the notice until Retry.
+          if (attemptRef.current >= 1) {
+            setThrottle(RATE_LIMIT_MANUAL_COPY);
+            setRetryReady(true);
+            return;
+          }
+          setThrottle(rateLimitCopy(retryAfterMs));
+          setRetryReady(false);
+          const next = applyRateLimit(attemptRef.current, Date.now(), { retryAfterMs });
           attemptRef.current = next.attempt;
           setBackoffUntil(next.backoffUntil);
-          setThrottle(SLOW_DOWN_COPY);
         },
         failed: () => { if (live) setFailed(true); },
       },
     }).finally(() => {
       if (live) inFlightRef.current = false;
     });
-    return () => { live = false; };
-  }, [key, page, perPage, enabled, reloadTick]);
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [settledKey, page, perPage, enabled, reloadTick]);
 
   useEffect(() => {
     cacheNames(tradeUps.flatMap((tu) => skinNames([tu]).map((name) => ({ name }))));
@@ -1095,7 +1139,7 @@ export function usePreviewTradeUps(options: {
     return () => window.clearTimeout(handle);
   }, [backoffUntil]);
 
-  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== key;
+  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== settledKey;
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -1105,11 +1149,14 @@ export function usePreviewTradeUps(options: {
       now: Date.now(),
     })) return;
     inFlightRef.current = true;
-    setCursor({ key, page: page + 1 });
-  }, [loading, exhausted, failed, backoffUntil, key, page]);
+    setCursor({ key: settledKey, page: page + 1 });
+  }, [loading, exhausted, failed, backoffUntil, settledKey, page]);
 
   const retry = useCallback(() => {
     setFailed(false);
+    setThrottle(null);
+    setRetryReady(false);
+    attemptRef.current = 0;
     setReloadTick((tick) => tick + 1);
   }, []);
 
@@ -1124,7 +1171,7 @@ export function usePreviewTradeUps(options: {
     if (id == null) return;
     const current = tradeUps.find((t) => t.id === id);
     if (!current) return;
-    const withInputs = await hydrateInputsIfNeeded(await hydrateOutcomesIfNeeded(current));
+    const withInputs = await hydrateBoardCard(current);
     setTradeUps((prev) => prev.map((tu) => (tu.id === id ? withInputs : tu)));
     void loadFaces(skinNames([withInputs]), FACE_CACHE)
       .then(() => setFaceTick((tick) => tick + 1));
@@ -1136,10 +1183,10 @@ export function usePreviewTradeUps(options: {
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
-      loadMore, exhausted, throttle,
+      loadMore, exhausted, throttle, retryReady,
       failed, retry, clearFilters,
     }),
-    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
+    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
       clearFilters, faceTick, total, totalProfitable],
   );
 }

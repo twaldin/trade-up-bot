@@ -6,10 +6,11 @@
  */
 
 import type { TradeUp } from "../../shared/types.js";
+export { rateLimitCopy } from "../preview/lib/page-fetch.js";
 
 export const RATE_LIMIT_MESSAGE = "Too many requests, please try again later.";
 export const EMPTY_FILTER_COPY = "No trade-ups match these filters.";
-export const RATE_LIMIT_COPY = "Rate limited — retrying shortly.";
+export const RATE_LIMIT_COPY = "Too many requests right now. Retrying shortly.";
 export const LOAD_ERROR_COPY = "Couldn't load trade-ups. Retry.";
 
 const BACKOFF_MS = 2_000;
@@ -160,6 +161,17 @@ export function emptyStateCopy(kind: BoardEmptyKind): string | null {
   if (kind === "rate_limited") return RATE_LIMIT_COPY;
   if (kind === "error") return LOAD_ERROR_COPY;
   return null;
+}
+
+export const COLLECTION_EMPTY_COPY = "No trade-ups found involving this collection.";
+
+/** CollectionViewer's notice: a throttle says so, even over last-good rows. */
+export function collectionTradeUpsCopy(opts: { loading: boolean; snapshot: BoardSnapshot }): string | null {
+  const { loading, snapshot } = opts;
+  if (snapshot.loadKind === "rate_limited") return RATE_LIMIT_COPY;
+  if (loading) return null;
+  if (snapshot.loadKind === "error") return snapshot.tradeUps.length > 0 ? null : LOAD_ERROR_COPY;
+  return snapshot.tradeUps.length === 0 ? COLLECTION_EMPTY_COPY : null;
 }
 
 export function backoffMs(attempt: number): number {

@@ -5,7 +5,7 @@ import {
   UNFILTERED_EMPTY_COPY,
   type BoardNoticeKind,
 } from "../lib/board-notice.js";
-import { SLOW_DOWN_COPY } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY } from "../lib/page-fetch.js";
 
 export function BoardNotice({
   notice,
@@ -13,16 +13,33 @@ export function BoardNotice({
   onRetry,
   suggestion,
   onApplySuggestion,
+  detail,
+  message,
 }: {
   notice: BoardNoticeKind | null;
   onClearFilters?: () => void;
   onRetry?: () => void;
   suggestion?: { label: string } | null;
   onApplySuggestion?: () => void;
+  /** Extra sentence when the rows on screen are from the previous request. */
+  detail?: string;
+  /** List throttle copy. Card throttles never auto-retry, so they use the manual line. */
+  message?: string;
 }) {
+  const throttleCopy = message || RATE_LIMIT_MANUAL_COPY;
   switch (notice) {
     case "throttled":
-      return <p className="preview-note" role="status">{SLOW_DOWN_COPY}</p>;
+      return (
+        <div className="preview-notice" role="status">
+          <p className="preview-note">{detail ? `${throttleCopy} ${detail}` : throttleCopy}</p>
+          {onRetry && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
+              <RotateCw size={11} aria-hidden />
+              Retry
+            </button>
+          )}
+        </div>
+      );
     case "error":
       return (
         <div className="preview-notice" role="alert">

@@ -139,7 +139,7 @@ describe("board rate limit", () => {
       throttle: SLOW_DOWN_COPY,
     }));
     expect(html).toContain("preview-note");
-    expect(html).toContain("Slow down — try again in a moment.");
+    expect(html).toContain(SLOW_DOWN_COPY);
     expect(html).not.toContain("Loading more trade-ups");
   });
 });

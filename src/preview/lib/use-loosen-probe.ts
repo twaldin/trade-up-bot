@@ -11,6 +11,7 @@ import {
   probesAllowed,
   type LoosenSuggestion,
 } from "./empty-suggestions.js";
+import { browseHeldUntil, noteRateLimited, parseRetryAfter, waitForBrowseHold } from "./page-fetch.js";
 
 export function useLoosenProbe(opts: {
   enabled: boolean;
@@ -36,6 +37,14 @@ export function useLoosenProbe(opts: {
     const handle = window.setTimeout(() => {
       void firstReturningStep(candidates, async (step) => {
         if (!live || controller.signal.aborted) return "stop";
+        if (browseHeldUntil() > Date.now()) {
+          try {
+            await waitForBrowseHold(controller.signal);
+          } catch {
+            return "stop";
+          }
+        }
+        if (!live || controller.signal.aborted || browseHeldUntil() > Date.now()) return "stop";
         try {
           const res = await fetchFn(loosenProbePath(step, { collection, skin }), {
             credentials: "include",
@@ -43,6 +52,7 @@ export function useLoosenProbe(opts: {
           });
           if (res.status === 429) {
             noteProbeRateLimit();
+            noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
             return "stop";
           }
           if (!res.ok) return "miss";

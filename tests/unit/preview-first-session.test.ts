@@ -94,11 +94,11 @@ describe("calculator first session", () => {
     const load = calc.slice(calc.indexOf("const loadExample"), calc.indexOf("const calculate"));
     expect(load).toContain("readPagedJson");
     expect(load).toContain("isRateLimitError(err)");
-    expect(load).toContain("SLOW_DOWN_COPY");
+    expect(load).toContain("RATE_LIMIT_MANUAL_COPY");
     expect(load).not.toContain("res.json()");
     const evaluate = calc.slice(calc.indexOf("const evaluate"), calc.indexOf("const loadExample"));
     expect(evaluate).toContain("readEvaluationBody(res)");
-    expect(evaluate).toContain("SLOW_DOWN_COPY");
+    expect(evaluate).toContain("RATE_LIMIT_MANUAL_COPY");
     expect(evaluate).not.toContain("res.json()");
   });
 

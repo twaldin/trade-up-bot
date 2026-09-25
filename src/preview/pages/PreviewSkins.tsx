@@ -3,7 +3,7 @@
  * `/api/skin-by-slug`, `/api/collections` and `/api/trade-ups` routes production
  * uses, rendered on the Outlay kit instead of the old chrome.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
@@ -32,13 +32,22 @@ import {
 } from "../lib/collection-skins.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
 import {
+  RATE_LIMIT_MANUAL_COPY,
   SLOW_DOWN_COPY,
   applyRateLimit,
+  browseErrorKind,
   canLoadMore,
-  pageIsShort,
-  readPagedJson,
+  cursorFor,
+  fetchBrowseJson,
+  isAbortError,
   isRateLimitError,
+  pageIsShort,
+  retryAfterOf,
+  retryDelayMs,
+  startCursor,
+  type PageCursor,
 } from "../lib/page-fetch.js";
+import { useBrowseHeld, useBrowseJson } from "../lib/use-browse-json.js";
 
 const FACE_CACHE = createFaceCache();
 
@@ -161,10 +170,13 @@ function SkinCard({ row }: { row: SkinRow }) {
 /** Matches `/api/skin-data` default limit. Do not send `limit=` — the cache key omits it. */
 const SKIN_INDEX_PAGE_SIZE = 100;
 
+const SKIN_INDEX_TTL_MS = 5 * 60_000;
+const SKIN_SEARCH_DEBOUNCE_MS = 200;
+
 export function PreviewSkinsPage() {
-  const [pages, setPages] = useState<SkinRow[][]>([]);
-  const [page, setPage] = useState(1);
-  const [exhausted, setExhausted] = useState(false);
+  // Pages are tagged with the key they belong to, so a new search keeps showing
+  // the last good grid until its own first page lands.
+  const [pages, setPages] = useState<{ key: string; pages: SkinRow[][] }>({ key: "", pages: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [parsed, setParsed] = useState<ParsedQuery>({ chips: [], rest: [] });
@@ -176,11 +188,11 @@ export function PreviewSkinsPage() {
 
   const filters = useMemo(() => chipsToSkinParams(parsed.chips, parsed.rest), [parsed]);
   const key = `${filters.rarity ?? "all"}|${filters.search ?? ""}`;
+  const [cursorState, setCursor] = useState<PageCursor>(() => startCursor(key));
+  const { page, exhausted, retry } = cursorFor(cursorState, key);
+  const mountedKey = useRef(key);
 
   useEffect(() => {
-    setPage(1);
-    setExhausted(false);
-    setPages([]);
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
@@ -188,62 +200,78 @@ export function PreviewSkinsPage() {
 
   useEffect(() => {
     let live = true;
+    const controller = new AbortController();
     inFlightRef.current = true;
     setLoading(true);
     const handle = window.setTimeout(() => {
       const params = new URLSearchParams({ rarity: filters.rarity ?? "all", page: String(page) });
       if ((filters.search ?? "").length > 1) params.set("search", filters.search as string);
-      fetch(`/api/skin-data?${params.toString()}`, { credentials: "include" })
-        .then((res) => readPagedJson<SkinRow[] | { skins?: SkinRow[] }>(res))
+      fetchBrowseJson<SkinRow[] | { skins?: SkinRow[] }>(`/api/skin-data?${params.toString()}`, {
+        signal: controller.signal,
+        ttlMs: SKIN_INDEX_TTL_MS,
+      })
         .then((data) => {
           if (!live) return;
           const rows = Array.isArray(data) ? data : data.skins ?? [];
           setPages((previous) => {
-            const next = [...previous];
+            const next = previous.key === key ? [...previous.pages] : [];
             next[page - 1] = rows;
-            return next;
+            return { key, pages: next };
           });
-          if (pageIsShort(rows.length, SKIN_INDEX_PAGE_SIZE)) setExhausted(true);
+          if (pageIsShort(rows.length, SKIN_INDEX_PAGE_SIZE)) {
+            setCursor((previous) => ({ ...cursorFor(previous, key), exhausted: true }));
+          }
           attemptRef.current = 0;
           setThrottle(null);
           cacheNames(rows.map((row) => ({ name: row.name, rarity: row.rarity })));
         })
         .catch((err: unknown) => {
-          if (!live) return;
+          if (!live || isAbortError(err)) return;
           if (isRateLimitError(err)) {
-            const next = applyRateLimit(attemptRef.current, Date.now());
+            const next = applyRateLimit(attemptRef.current, Date.now(), { retryAfterMs: retryAfterOf(err), random: Math.random });
             attemptRef.current = next.attempt;
             setBackoffUntil(next.backoffUntil);
             setThrottle(SLOW_DOWN_COPY);
             return;
           }
-          setExhausted(true);
+          setCursor((previous) => ({ ...cursorFor(previous, key), exhausted: true }));
         })
         .finally(() => {
+          if (!live) return;
           inFlightRef.current = false;
-          if (live) setLoading(false);
+          setLoading(false);
         });
-    }, 200);
-    return () => { live = false; window.clearTimeout(handle); };
-  }, [key, page, filters.rarity, filters.search]);
+    }, page === 1 && key !== mountedKey.current ? SKIN_SEARCH_DEBOUNCE_MS : 0);
+    return () => {
+      live = false;
+      window.clearTimeout(handle);
+      controller.abort();
+      inFlightRef.current = false;
+    };
+  }, [key, page, retry, filters.rarity, filters.search]);
 
   const rows = useMemo(() => {
-    const flat = pages.flat().filter(Boolean);
+    const flat = pages.pages.flat().filter(Boolean);
     return flat.filter((row) => {
       if (filters.maxPriceCents !== undefined && (row.min_price ?? Infinity) > filters.maxPriceCents) return false;
       return true;
     });
   }, [pages, filters.maxPriceCents]);
 
+  // Once the wait is over, ask for the throttled page again rather than skipping it.
   useEffect(() => {
     if (!backoffUntil) return;
     const wait = Math.max(0, backoffUntil - Date.now());
     const handle = window.setTimeout(() => {
       setThrottle(null);
       setBackoffUntil(0);
+      setCursor((previous) => {
+        const current = cursorFor(previous, key);
+        return { ...current, retry: current.retry + 1 };
+      });
     }, wait);
     return () => window.clearTimeout(handle);
-  }, [backoffUntil]);
+  }, [backoffUntil, key]);
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -253,12 +281,18 @@ export function PreviewSkinsPage() {
       now: Date.now(),
     })) return;
     inFlightRef.current = true;
-    setPage((value) => value + 1);
-  }, [loading, exhausted, backoffUntil]);
+    setCursor((previous) => {
+      const current = cursorFor(previous, key);
+      return { ...current, page: current.page + 1 };
+    });
+  }, [loading, exhausted, backoffUntil, key]);
+
+  const held = useBrowseHeld();
+  const notice = throttle ?? (held ? SLOW_DOWN_COPY : null);
 
   useEffect(() => {
     const node = sentinel.current;
-    if (!node || exhausted || throttle) return;
+    if (!node || exhausted || notice) return;
     let root: HTMLElement | null = node.parentElement;
     while (root) {
       const overflow = getComputedStyle(root).overflowY;
@@ -270,7 +304,7 @@ export function PreviewSkinsPage() {
     }, { root, rootMargin: "500px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [exhausted, loadMore, throttle]);
+  }, [exhausted, loadMore, notice]);
 
   // The API's page size is not fixed (a warmed cache can hand page 1 back with
   // 200 rows), so ask for exactly what the grid renders, in the order it renders.
@@ -299,14 +333,14 @@ export function PreviewSkinsPage() {
         {rows.map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
       </div>
       {loading && rows.length === 0 && <p className="preview-note">Loading skins…</p>}
-      {!loading && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
+      {!loading && !notice && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
 
-      {!exhausted && !throttle && (
+      {!exhausted && !notice && (
         <div className="preview-sentinel" ref={sentinel}>
           <span className="preview-note">Loading more skins…</span>
         </div>
       )}
-      {throttle && <p className="preview-note">{throttle}</p>}
+      {notice && <p className="preview-note">{notice}</p>}
     </div>
   );
 }
@@ -314,11 +348,17 @@ export function PreviewSkinsPage() {
 /* ---------------------------------------------------- shared skin stats card */
 
 const LISTING_PAGE = 40;
+/** Matches the server's 60s `skin_detail:` cache, so a revisit inside it is free. */
+const SKIN_DETAIL_TTL_MS = 60_000;
+const SKIN_SLUG_TTL_MS = 10 * 60_000;
+
+function skinDetailUrl(name: string): string {
+  return `/api/skin-data/${encodeURIComponent(name)}`;
+}
 
 /** The skin page body. Collection rails click through here; they do not embed it. */
 export function SkinStats({ name, board }: { name: string; board?: ReactNode }) {
-  const [detail, setDetail] = useState<SkinDetail | null>(null);
-  const [error, setError] = useState(false);
+  const { data: detail, error, throttled } = useBrowseJson<SkinDetail>(skinDetailUrl(name), SKIN_DETAIL_TTL_MS);
   const [listingQuery, setListingQuery] = useState("");
   const [listingVisible, setListingVisible] = useState(LISTING_PAGE);
   const [pane, setPane] = useState<"listings" | "tradeups">("listings");
@@ -327,16 +367,8 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
   const panesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let live = true;
-    setDetail(null);
-    setError(false);
     setListingQuery("");
     setListingVisible(LISTING_PAGE);
-    fetch(`/api/skin-data/${encodeURIComponent(name)}`, { credentials: "include" })
-      .then((res) => res.json())
-      .then((data: SkinDetail) => { if (live) setDetail(data); })
-      .catch(() => { if (live) setError(true); });
-    return () => { live = false; };
   }, [name]);
 
   useFaceNames(useMemo(() => [name], [name]));
@@ -368,7 +400,7 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
   }, [listingVisible, filteredListings.length]);
 
   if (error) return <p className="preview-note">Could not load {name}.</p>;
-  if (!detail?.skin) return <p className="preview-note">Loading {name}…</p>;
+  if (!detail?.skin) return <p className="preview-note">{throttled ? SLOW_DOWN_COPY : `Loading ${name}…`}</p>;
 
   const { skin, listings, stats } = detail;
   const { weapon, finish } = splitSkinName(skin.name);
@@ -530,30 +562,15 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
 
 export function PreviewSkinPage() {
   const { slug = "" } = useParams();
-  const [name, setName] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ rarity: string; collection: string | null } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const bySlug = useBrowseJson<{ name: string }>(`/api/skin-by-slug/${encodeURIComponent(slug)}`, SKIN_SLUG_TTL_MS);
+  const name = bySlug.data?.name ?? null;
+  // Same URL SkinStats reads, so the header and the stats card share one request.
+  const detail = useBrowseJson<SkinDetail>(name ? skinDetailUrl(name) : null, SKIN_DETAIL_TTL_MS);
+  const meta = detail.data?.skin
+    ? { rarity: detail.data.skin.rarity, collection: detail.data.skin.collection_name }
+    : null;
+  const error = bySlug.error ? "That skin is not in the live dataset." : null;
   const board = usePreviewTradeUps({ skin: name ?? undefined, perPage: 6, enabled: Boolean(name) });
-
-  useEffect(() => {
-    let live = true;
-    setName(null);
-    setMeta(null);
-    setError(null);
-    fetch(`/api/skin-by-slug/${encodeURIComponent(slug)}`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("not found"))))
-      .then(async (data: { name: string }) => {
-        if (!live) return;
-        setName(data.name);
-        const res = await fetch(`/api/skin-data/${encodeURIComponent(data.name)}`, { credentials: "include" });
-        const detail = await res.json() as SkinDetail;
-        if (live && detail?.skin) {
-          setMeta({ rarity: detail.skin.rarity, collection: detail.skin.collection_name });
-        }
-      })
-      .catch(() => { if (live) setError("That skin is not in the live dataset."); });
-    return () => { live = false; };
-  }, [slug]);
 
   if (error) {
     return (
@@ -563,7 +580,9 @@ export function PreviewSkinPage() {
       </div>
     );
   }
-  if (!name) return <div className="preview-page"><p className="preview-note">Loading skin…</p></div>;
+  if (!name) {
+    return <div className="preview-page"><p className="preview-note">{bySlug.throttled ? SLOW_DOWN_COPY : "Loading skin…"}</p></div>;
+  }
 
   const { weapon, finish } = splitSkinName(name);
   return (
@@ -598,7 +617,9 @@ export function PreviewSkinPage() {
             loadMore={board.loadMore}
             exhausted={board.exhausted}
             throttle={board.throttle}
+            retryReady={board.retryReady}
             failed={board.failed}
+            refreshing={board.refreshing}
             onRetry={board.retry}
             heading="Trade-ups using this skin"
             lede="Ranked the same way as the board, filtered to this skin as an input or an output."
@@ -624,20 +645,33 @@ interface CollectionRow {
 
 const RARITY_ORDER = ["Covert", "Classified", "Restricted", "Mil-Spec Grade", "Industrial Grade", "Consumer Grade"];
 const COLLECTION_SKIN_LIMIT = 200;
-const COLLECTION_FETCH_CONCURRENCY = 6;
+/** Visible cards are queued first; knife/glove tallies for the table trail behind them. */
+const COLLECTION_FETCH_CONCURRENCY = 3;
+const COLLECTION_TTL_MS = 10 * 60_000;
+const COLLECTIONS_TTL_MS = 5 * 60_000;
+/** Faces for collections that land close together go out as one batch. */
+const COLLECTION_FACE_FLUSH_MS = 150;
+const NO_COLLECTIONS: CollectionRow[] = [];
 
 function parseSkinRows(data: SkinRow[] | { skins?: SkinRow[] }): SkinRow[] {
   return Array.isArray(data) ? data : data.skins ?? [];
 }
 
-async function fetchCollectionSkins(name: string): Promise<SkinRow[]> {
+async function fetchCollectionSkins(name: string, signal?: AbortSignal): Promise<SkinRow[]> {
   const params = new URLSearchParams({
     rarity: "all",
     collection: name,
     limit: String(COLLECTION_SKIN_LIMIT),
   });
-  const res = await fetch(`/api/skin-data?${params.toString()}`, { credentials: "include" });
-  return parseSkinRows(await res.json() as SkinRow[] | { skins?: SkinRow[] });
+  return parseSkinRows(await fetchBrowseJson<SkinRow[] | { skins?: SkinRow[] }>(`/api/skin-data?${params.toString()}`, {
+    signal,
+    ttlMs: COLLECTION_TTL_MS,
+  }));
+}
+
+function useCollectionsIndex(): { rows: CollectionRow[]; throttled: boolean } {
+  const { data, throttled } = useBrowseJson<CollectionRow[]>("/api/collections", COLLECTIONS_TTL_MS);
+  return { rows: Array.isArray(data) ? data : NO_COLLECTIONS, throttled };
 }
 
 async function mapPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -658,10 +692,28 @@ function useCollectionSkins(names: string[]) {
   const [byCollection, setByCollection] = useState<Record<string, CollectionSkinBundle>>({});
   const fetched = useRef(new Set<string>());
   const mounted = useRef(true);
+  const pendingFaces = useRef(new Set<string>());
+  const faceTimer = useRef(0);
   const key = names.join("\u0000");
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      window.clearTimeout(faceTimer.current);
+      faceTimer.current = 0;
+    };
+  }, []);
+  const queueFaces = useCallback((faceNames: string[]) => {
+    for (const faceName of faceNames) pendingFaces.current.add(faceName);
+    if (faceTimer.current) return;
+    faceTimer.current = window.setTimeout(() => {
+      faceTimer.current = 0;
+      const batch = [...pendingFaces.current];
+      pendingFaces.current.clear();
+      void loadFaces(batch, FACE_CACHE).then(() => {
+        if (mounted.current) setByCollection((prev) => ({ ...prev }));
+      });
+    }, COLLECTION_FACE_FLUSH_MS);
   }, []);
   useEffect(() => {
     const list = key.split("\u0000").filter((name) => name && !fetched.current.has(name));
@@ -669,6 +721,10 @@ function useCollectionSkins(names: string[]) {
     for (const name of list) fetched.current.add(name);
     void mapPool(list, COLLECTION_FETCH_CONCURRENCY, async (name) => {
       try {
+        if (!mounted.current) {
+          fetched.current.delete(name);
+          return;
+        }
         const rows = await fetchCollectionSkins(name);
         const tally = tallyCollectionSkins(rows);
         const faces = [...rows]
@@ -679,35 +735,24 @@ function useCollectionSkins(names: string[]) {
           return;
         }
         setByCollection((prev) => ({ ...prev, [name]: { faces, tally } }));
-        await loadFaces(faces.map((row) => row.name), FACE_CACHE);
-        if (mounted.current) setByCollection((prev) => ({ ...prev }));
+        queueFaces(faces.map((row) => row.name));
       } catch {
         fetched.current.delete(name);
       }
     });
-  }, [key]);
+  }, [key, queueFaces]);
   return byCollection;
 }
 
 export function PreviewCollectionsPage() {
-  const [rows, setRows] = useState<CollectionRow[]>([]);
+  const { rows, throttled: indexThrottled } = useCollectionsIndex();
   const [search, setSearch] = useState("");
   const [visible, setVisible] = useState(12);
   const sentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let live = true;
-    fetch("/api/collections", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data: CollectionRow[]) => {
-        if (!live) return;
-        const list = Array.isArray(data) ? data : [];
-        setRows(list);
-        cacheNames(list.map((row) => ({ name: row.name, kind: "collection" as const })));
-      })
-      .catch(() => { if (live) setRows([]); });
-    return () => { live = false; };
-  }, []);
+    cacheNames(rows.map((row) => ({ name: row.name, kind: "collection" as const })));
+  }, [rows]);
 
   const term = search.trim().toLowerCase();
   const filtered = useMemo(
@@ -808,7 +853,9 @@ export function PreviewCollectionsPage() {
             </span>
           </Link>
         ))}
-        {shown.length === 0 && <p className="preview-note">Loading collections…</p>}
+        {shown.length === 0 && (
+          <p className="preview-note">{indexThrottled ? SLOW_DOWN_COPY : "Loading collections…"}</p>
+        )}
       </div>
 
       <section className="preview-panel">
@@ -837,34 +884,75 @@ export function PreviewCollectionsPage() {
 
 export function PreviewCollectionPage() {
   const { name = "" } = useParams();
-  const [title, setTitle] = useState<string | null>(null);
+  const index = useCollectionsIndex();
+  const title = index.rows.find((row) => previewCollectionHref(row.name).endsWith(`/${name}`))?.name ?? null;
   const [skins, setSkins] = useState<SkinRow[]>([]);
+  const [skinsStatus, setSkinsStatus] = useState<"loading" | "ok" | "throttled" | "failed">("loading");
+  const [skinsRetry, setSkinsRetry] = useState(0);
+  const [skinsScheduled, setSkinsScheduled] = useState(false);
+  const skinsAttempts = useRef(0);
+
+  const skinsScope = useRef(title);
+  useLayoutEffect(() => {
+    if (skinsScope.current === title) return;
+    skinsScope.current = title;
+    skinsAttempts.current = 0;
+    setSkinsScheduled(false);
+    setSkins([]);
+    setSkinsStatus("loading");
+  }, [title]);
 
   useEffect(() => {
-    let live = true;
-    fetch("/api/collections", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data: CollectionRow[]) => {
-        const match = (Array.isArray(data) ? data : []).find(
-          (row) => previewCollectionHref(row.name).endsWith(`/${name}`),
-        );
-        if (!live || !match) return null;
-        setTitle(match.name);
-        return fetchCollectionSkins(match.name);
-      })
+    if (!title) return;
+    const controller = new AbortController();
+    let timer = 0;
+    fetchCollectionSkins(title, controller.signal)
       .then((rows) => {
-        if (!live || !rows) return;
+        skinsAttempts.current = 0;
+        setSkinsScheduled(false);
         setSkins([...rows].sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity)));
+        setSkinsStatus("ok");
       })
-      .catch(() => { if (live) setSkins([]); });
-    return () => { live = false; };
-  }, [name]);
+      .catch((err: unknown) => {
+        const kind = browseErrorKind(err);
+        if (kind === "aborted") return;
+        if (kind === "throttled") {
+          setSkinsStatus("throttled");
+          if (skinsAttempts.current >= 1) {
+            setSkinsScheduled(false);
+            return;
+          }
+          skinsAttempts.current += 1;
+          setSkinsScheduled(true);
+          timer = window.setTimeout(() => setSkinsRetry((n) => n + 1), retryDelayMs());
+          return;
+        }
+        setSkinsStatus("failed");
+      });
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [title, skinsRetry]);
+
+  const unknown = !title && index.rows.length > 0;
+  const waitingOnIndex = !title && !unknown;
+  const skinsCopy = (() => {
+    if (waitingOnIndex && index.throttled) return SLOW_DOWN_COPY;
+    if (unknown) return "That collection is not in the live dataset.";
+    if (skinsStatus === "ok") return formatCollectionSkinCopy(tallyCollectionSkins(skins));
+    if (skinsStatus === "throttled") return skinsScheduled ? SLOW_DOWN_COPY : RATE_LIMIT_MANUAL_COPY;
+    if (skinsStatus === "failed") return "Couldn't load this collection's skins.";
+    return "Loading skins…";
+  })();
+  const heading = title ?? (unknown ? "Collection not found" : "Loading collection…");
 
   // Every skin in the collection, not a six-tile strip.
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
-  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6 });
+  const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6, enabled: Boolean(title) });
+  const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
 
   return (
     <div className="preview-page">
@@ -874,12 +962,16 @@ export function PreviewCollectionPage() {
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to={collectionsHref()}>Collections</Link>
             <span aria-hidden>/</span>
-            <span>{title ?? "Collection"}</span>
+            <span>{heading}</span>
           </nav>
-          <h1>{title ?? "Collection"}</h1>
-          <p>{formatCollectionSkinCopy(tallyCollectionSkins(skins))} · every skin in the collection, and the trade-ups the loop found inside it.</p>
+          <h1>{heading}</h1>
+          <p>
+            {unknown || (waitingOnIndex && index.throttled) || skinsStatus === "throttled" || skinsStatus === "failed"
+              ? skinsCopy
+              : `${skinsCopy} · every skin in the collection, and the trade-ups the loop found inside it.`}
+          </p>
         </div>
-        <div className="preview-page__meta"><span>{board.tradeUps.length} trade-ups</span></div>
+        <div className="preview-page__meta"><span>{tradeUpCount}</span></div>
       </header>
 
       {skins.length > 0 && (
@@ -917,7 +1009,9 @@ export function PreviewCollectionPage() {
           loadMore={board.loadMore}
           exhausted={board.exhausted}
           throttle={board.throttle}
+          retryReady={board.retryReady}
           failed={board.failed}
+          refreshing={board.refreshing}
           onRetry={board.retry}
           collection={title}
           heading="Trade-ups from this collection"

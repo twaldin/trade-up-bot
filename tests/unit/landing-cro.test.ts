@@ -266,7 +266,7 @@ describe("How it works stays the signed 4-step pipeline", () => {
 describe("landing list fetch uses the shared include", () => {
   it("loads trade-ups through the board hook, which asks for outcomes and inputs", () => {
     expect(landing).toContain("usePreviewTradeUps({ perPage: 3 })");
-    expect(board).toContain("boardListUrl(key, page)");
+    expect(board).toContain("boardListUrl(settledKey, page)");
     expect(boardLoad).toContain(`include=${"${BOARD_LIST_INCLUDE}"}`);
     expect(BOARD_LIST_INCLUDE).toBe("outcomes,inputs");
   });

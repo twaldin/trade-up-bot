@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import { LOOSEN_PROBE_DEBOUNCE_MS, probeCoolingDown, resetProbeCooldown } from "../../src/preview/lib/empty-suggestions.js";
+import { browseHeldUntil, holdBrowse, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { useLoosenProbe } from "../../src/preview/lib/use-loosen-probe.js";
 
 function QueryHarness({
@@ -54,8 +55,33 @@ describe("useLoosenProbe", () => {
 
   afterEach(() => {
     resetProbeCooldown();
+    resetBrowseFetchState();
     act(() => { root?.unmount(); });
     host?.remove();
+  });
+
+  it("waits out a browse hold before probing, and a 429 holds browse", async () => {
+    holdBrowse(Date.now() + LOOSEN_PROBE_DEBOUNCE_MS + 250);
+    const fetchFn = vi.fn(async () => new Response("{}", {
+      status: 429,
+      headers: { "retry-after": "2" },
+    }));
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(Harness, {
+        typing: false,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        onReady: () => {},
+      }));
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, LOOSEN_PROBE_DEBOUNCE_MS + 40)); });
+    expect(fetchFn).not.toHaveBeenCalled();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(probeCoolingDown()).toBe(true);
+    expect(browseHeldUntil()).toBeGreaterThan(Date.now());
   });
 
   it("does not fetch while typing, then probes once after the debounce", async () => {
