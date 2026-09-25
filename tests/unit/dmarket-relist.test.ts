@@ -6,7 +6,7 @@ import {
   type RelistCandidate,
   type RelistIdentity,
 } from "../../server/dmarket-relist.js";
-import { dedupeRelistPlans, parseReviveArgs, postRepointListingSig, type RelistPlan } from "../../scripts/revive-dmarket-relists.js";
+import { dedupeRelistPlans, inputUpdateOk, parseReviveArgs, postRepointListingSig, retryDecision, type RelistPlan } from "../../scripts/revive-dmarket-relists.js";
 
 const missing: RelistIdentity = {
   skinName: "MP7 | Abyssal Apparition",
@@ -120,6 +120,24 @@ describe("dedupeRelistPlans", () => {
       [{ oldListingId: "dmarket:old", newListingId: "dmarket:new" }],
     );
     expect(sig).toBe("csfloat:keep,dmarket:new");
+  });
+});
+
+describe("apply guards", () => {
+  it("rolls back a plan unless the input update changes exactly one row", () => {
+    expect(inputUpdateOk(1)).toBe(true);
+    expect(inputUpdateOk(0)).toBe(false);
+    expect(inputUpdateOk(2)).toBe(false);
+    expect(inputUpdateOk(null)).toBe(false);
+  });
+
+  it("retries deadlock, lock timeout, and statement timeout, then skips the batch", () => {
+    for (const code of ["40P01", "55P03", "57014"]) {
+      expect(retryDecision(code, 0)).toBe("retry");
+      expect(retryDecision(code, 2)).toBe("retry");
+      expect(retryDecision(code, 3)).toBe("skip");
+    }
+    expect(retryDecision("23505", 0)).toBe("throw");
   });
 });
 

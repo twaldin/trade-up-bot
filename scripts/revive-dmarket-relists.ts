@@ -28,12 +28,21 @@
  * another non-theoretical trade-up, or an earlier plan in this run, is skipped
  * (left partial, not held). Within-run collisions keep the highest score.
  *
- * Revert an apply (replace YYYYMMDD). The score trigger recomputes trade_up_score
- * from the restored cost columns:
+ * Revert an apply (replace YYYYMMDD). Only ids this run recorded in
+ * trade_up_relist_applied, and only rows that still exist in trade_ups.
  *   BEGIN;
- *   DELETE FROM trade_up_inputs
- *     WHERE trade_up_id IN (SELECT id FROM trade_ups_bak_relist_YYYYMMDD);
- *   INSERT INTO trade_up_inputs SELECT * FROM trade_up_inputs_bak_relist_YYYYMMDD;
+ *   DELETE FROM trade_up_inputs tui
+ *   WHERE tui.trade_up_id IN (
+ *     SELECT a.trade_up_id
+ *     FROM trade_up_relist_applied a
+ *     JOIN trade_ups t ON t.id = a.trade_up_id
+ *     JOIN trade_ups_bak_relist_YYYYMMDD b ON b.id = a.trade_up_id
+ *   );
+ *   INSERT INTO trade_up_inputs
+ *   SELECT i.*
+ *   FROM trade_up_inputs_bak_relist_YYYYMMDD i
+ *   JOIN trade_up_relist_applied a ON a.trade_up_id = i.trade_up_id
+ *   JOIN trade_ups t ON t.id = i.trade_up_id;
  *   UPDATE trade_ups t SET
  *     total_cost_cents = b.total_cost_cents,
  *     expected_value_cents = b.expected_value_cents,
@@ -44,8 +53,12 @@
  *     worst_case_cents = b.worst_case_cents,
  *     listing_status = b.listing_status,
  *     preserved_at = b.preserved_at,
- *     input_sources = b.input_sources
+ *     input_sources = b.input_sources,
+ *     outcomes_json = b.outcomes_json,
+ *     output_repriced_at = b.output_repriced_at,
+ *     trade_up_score = b.trade_up_score
  *   FROM trade_ups_bak_relist_YYYYMMDD b
+ *   JOIN trade_up_relist_applied a ON a.trade_up_id = b.id
  *   WHERE t.id = b.id;
  *   COMMIT;
  */
@@ -70,9 +83,9 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const BATCH = 200;
+const BATCH = 50;
 const LOCK_RETRIES = 3;
-const LOCK_CODES = new Set(["40P01", "55P03"]);
+const LOCK_CODES = new Set(["40P01", "55P03", "57014"]);
 const KNOWN_FLAGS = new Set(["--apply", "--dry-run", "--hold", "--hours"]);
 
 export interface ReviveArgs {
@@ -165,7 +178,6 @@ export function formatReviveReport(report: ReviveReport, mode: string): string {
     `score>=10: ${report.scoreGe10}`,
     `by type: ${types}`,
     `dup-existing: ${report.skipped["dup-existing"] ?? 0}`,
-    `dup-within-run: ${report.skipped["dup-within-run"] ?? 0}`,
     `skipped: ${skipped}`,
   ].join("\n");
 }
@@ -217,6 +229,20 @@ function pgCode(err: unknown): string {
   return typeof err.code === "string" ? err.code : "";
 }
 
+/** One input row must move. Anything else means the row changed since planning. */
+export function inputUpdateOk(rowCount: number | null | undefined): boolean {
+  return rowCount === 1;
+}
+
+export type RetryDecision = "retry" | "skip" | "throw";
+
+/** Deadlock, lock timeout, and statement timeout are retried, then the batch is skipped. */
+export function retryDecision(code: string, attempt: number): RetryDecision {
+  if (!LOCK_CODES.has(code)) return "throw";
+  if (attempt >= LOCK_RETRIES) return "skip";
+  return "retry";
+}
+
 async function withLockRetry(label: string, fn: () => Promise<void>): Promise<boolean> {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -224,12 +250,11 @@ async function withLockRetry(label: string, fn: () => Promise<void>): Promise<bo
       return true;
     } catch (err) {
       const code = pgCode(err);
-      if (!LOCK_CODES.has(code) || attempt >= LOCK_RETRIES) {
-        if (LOCK_CODES.has(code)) {
-          console.warn(`${label}: ${code} after ${LOCK_RETRIES} retries, skipping batch`);
-          return false;
-        }
-        throw err;
+      const decision = retryDecision(code, attempt);
+      if (decision === "throw") throw err;
+      if (decision === "skip") {
+        console.warn(`${label}: ${code} after ${LOCK_RETRIES} retries, skipping batch`);
+        return false;
       }
       const wait = 50 * 2 ** attempt;
       console.warn(`${label}: ${code}, retry ${attempt + 1} in ${wait}ms`);
@@ -484,7 +509,18 @@ async function holdPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<void> {
   }
 }
 
-async function applyPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<{ applied: number; restoredIds: number[]; scoreGe10: number }> {
+async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trade_up_relist_applied (
+      trade_up_id INTEGER PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      run_id TEXT NOT NULL
+    )
+  `);
+}
+
+async function applyPlans(pool: pg.Pool, plans: RelistPlan[], runId: string): Promise<{ applied: number; restoredIds: number[]; scoreGe10: number }> {
+  await ensureAppliedTable(pool);
   let applied = 0;
   const restoredIds: number[] = [];
   let scoreGe10 = 0;
@@ -513,7 +549,7 @@ async function applyPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<{ applied
              WHERE trade_up_id = $4 AND listing_id = $5`,
             [repoint.newListingId, price, repoint.source, plan.tradeUpId, repoint.oldListingId],
           );
-          if ((updated.rowCount ?? 0) !== 1) {
+          if (!inputUpdateOk(updated.rowCount)) {
             mismatch = true;
             break;
           }
@@ -547,6 +583,11 @@ async function applyPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<{ applied
           batch.restoredIds.push(plan.tradeUpId);
         }
         if ((row?.score ?? plan.score) >= 10) batch.scoreGe10++;
+        await client.query(
+          `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES ($1, $2)
+           ON CONFLICT (trade_up_id) DO NOTHING`,
+          [plan.tradeUpId, runId],
+        );
         batch.applied++;
       }
       await client.query("COMMIT");
@@ -579,7 +620,7 @@ export async function runReviveDMarketRelists(pool: pg.Pool, args: ReviveArgs, n
     return report;
   }
   await holdPlans(pool, plans);
-  const applied = await applyPlans(pool, plans);
+  const applied = await applyPlans(pool, plans, now.toISOString());
   report.revivable = applied.applied;
   report.restored = applied.restoredIds.length;
   report.scoreGe10 = applied.scoreGe10;
