@@ -243,7 +243,8 @@ export function DaemonModal({ onClose }: { onClose: () => void }) {
 
   const fetchLog = useCallback(async () => {
     try {
-      const res = await fetch("/api/daemon-log");
+      const res = await fetch("/api/daemon-log", { credentials: "include" });
+      if (!res.ok) return;
       const data: DaemonLogData = await res.json();
       setLogData(data);
     } catch {}

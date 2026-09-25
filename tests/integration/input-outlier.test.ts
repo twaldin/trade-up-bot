@@ -9,7 +9,7 @@ import { recalcTradeUpCosts } from "../../server/engine/db-stats.js";
 import { applyListedResult } from "../../server/sync/listings.js";
 import { reviveStaleGunTradeUps } from "../../server/engine/db-revive.js";
 import { cascadeTradeUpStatuses } from "../../server/engine/db-status.js";
-import { phase1Housekeeping } from "../../server/daemon/phases/housekeeping.js";
+import { phase1Housekeeping, markTradeUpsCostOver20xEv } from "../../server/daemon/phases/housekeeping.js";
 import { loadDiscoveryData, clearDiscoveryCache, getListingsForRarity } from "../../server/engine/data-load.js";
 import { refPriceCache, skinportMedianCache } from "../../server/engine/pricing.js";
 import {
@@ -395,6 +395,23 @@ describe("input price outlier guard", () => {
       expect((await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [exact])).rows[0].listing_status).toBe("active");
       expect((await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [partial])).rows[0].listing_status).toBe("partial");
       expect((await ctx.pool.query("SELECT id FROM trade_ups WHERE id = $1", [zero])).rows).toHaveLength(0);
+    });
+
+    it("rechecks strictly above 20x EV without deleting the row or touching exactly 20x", async () => {
+      const over = (await ctx.pool.query(
+        `INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, type, listing_status)
+         VALUES (21, 1, -20, -95, 'classified_covert', 'active') RETURNING id`,
+      )).rows[0].id;
+      const exact = (await ctx.pool.query(
+        `INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, type, listing_status)
+         VALUES (20, 1, -19, -95, 'classified_covert', 'active') RETURNING id`,
+      )).rows[0].id;
+
+      const marked = await markTradeUpsCostOver20xEv(ctx.pool);
+      expect(marked).toBeGreaterThanOrEqual(1);
+      expect((await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [over])).rows[0].listing_status).toBe("stale");
+      expect((await ctx.pool.query("SELECT id FROM trade_ups WHERE id = $1", [over])).rows).toHaveLength(1);
+      expect((await ctx.pool.query("SELECT listing_status FROM trade_ups WHERE id = $1", [exact])).rows[0].listing_status).toBe("active");
     });
   });
 

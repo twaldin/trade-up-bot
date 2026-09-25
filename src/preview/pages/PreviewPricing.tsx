@@ -6,6 +6,7 @@ import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInte
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { trackPricingView } from "../../lib/conversions.js";
+import { fetchPricingSession } from "../lib/auth-state.js";
 import { hasProAccess } from "../lib/billing.js";
 import { runCheckout } from "../lib/checkout.js";
 import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
@@ -88,10 +89,11 @@ export function PreviewPricing() {
   useEffect(() => { trackPricingView(); }, []);
 
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "include" })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data: { steam_id?: string; tier?: string; lifetime?: boolean } | null) => setUser(data?.steam_id ? { tier: data.tier ?? "free", lifetime: data.lifetime, steam_id: data.steam_id } : null))
-      .catch(() => setUser(null));
+    let cancelled = false;
+    void fetchPricingSession().then((session) => {
+      if (!cancelled) setUser(session);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   return (

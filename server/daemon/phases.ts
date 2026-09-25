@@ -7,6 +7,6 @@
  * Phase 4.5: Verify profitable inputs (individual lookup pool)
  */
 
-export { phase1Housekeeping } from "./phases/housekeeping.js";
+export { phase1Housekeeping, markTradeUpsCostOver20xEv } from "./phases/housekeeping.js";
 export { phase3ApiProbe, phase4DataFetch } from "./phases/data-fetch.js";
 export { phase5cStaircase } from "./phases/classified-calc.js";

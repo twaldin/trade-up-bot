@@ -5,6 +5,7 @@ import { getSyncMeta } from "../db.js";
 import { cachedRoute, cacheGet, cacheSet } from "../redis.js";
 import { loadActiveTradeUpCounts } from "./active-trade-up-counts.js";
 import { buildStatusData } from "./status-helpers.js";
+import { requireAdmin } from "../auth.js";
 
 /** Seconds browsers may reuse /api/global-stats; the numbers only move per daemon cycle. */
 export const GLOBAL_STATS_BROWSER_MAX_AGE = 60;
@@ -83,7 +84,7 @@ export function statusRouter(pool: pg.Pool): Router {
     }
   });
 
-  router.get("/api/daemon-log", cachedRoute("daemon_log", 60, async (_req, res) => {
+  router.get("/api/daemon-log", requireAdmin, cachedRoute("daemon_log", 60, async (_req, res) => {
     const logPath = "/tmp/daemon.log";
     const MAX_LINES = 500;
 
