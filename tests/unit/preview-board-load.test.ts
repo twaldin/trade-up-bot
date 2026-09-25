@@ -503,6 +503,21 @@ describe("preview board notice", () => {
     expect(onClearFilters).toHaveBeenCalledTimes(1);
   });
 
+  it("renders a one-click suggestion that loosens the active filter", () => {
+    const onApply = vi.fn();
+    const tree = BoardNotice({
+      notice: "filtered-empty",
+      onClearFilters: vi.fn(),
+      suggestion: { label: "Raise max cost to $40" },
+      onApplySuggestion: onApply,
+    });
+    const html = markup(tree);
+    expect(html).toContain("Raise max cost to $40");
+    expect(html).toContain(FILTERED_EMPTY_COPY);
+    findButton(tree, "Raise max cost to $40")?.props.onClick?.();
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the unfiltered empty copy with no buttons", () => {
     const html = markup(BoardNotice({ notice: "empty" }));
     expect(UNFILTERED_EMPTY_COPY).toBe("No live trade-ups right now. Check back after the next scan.");

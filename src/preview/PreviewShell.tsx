@@ -14,6 +14,11 @@ const NAV = [
   { to: "/my-trade-ups", label: "My trade-ups", icon: UserRound, end: true },
 ] as const;
 
+function keepBoardFilters(to: string, event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; button: number }): void {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  if (to === "/trade-ups" && window.location.pathname === "/trade-ups") event.preventDefault();
+}
+
 export function PreviewShell({
   children,
   mode,
@@ -36,7 +41,7 @@ export function PreviewShell({
             <div className="preview-sidebar__group">
               <p className="o-kicker">Console</p>
               {NAV.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={to} end={end} className="o-nav-item">
+                <NavLink key={to} to={to} end={end} className="o-nav-item" onClick={(event) => keepBoardFilters(to, event)}>
                   <Icon className="size-[13px] shrink-0" aria-hidden />
                   {label}
                 </NavLink>
@@ -48,7 +53,7 @@ export function PreviewShell({
           <header className="preview-console__bar">
             <nav className="preview-console__mobile" aria-label="Console pages">
               {NAV.map(({ to, label }) => (
-                <NavLink key={to} to={to} end className="preview-btn preview-btn--quiet">{label}</NavLink>
+                <NavLink key={to} to={to} end className="preview-btn preview-btn--quiet" onClick={(event) => keepBoardFilters(to, event)}>{label}</NavLink>
               ))}
             </nav>
             <div className="preview-bar__actions">

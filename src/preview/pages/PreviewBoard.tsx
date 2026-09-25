@@ -48,9 +48,13 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
+import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice } from "../lib/board-notice.js";
+import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
+import { TYPING_IDLE_MS } from "../lib/empty-suggestions.js";
+import { useLoosenProbe } from "../lib/use-loosen-probe.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
-import { chipsToBoardParams, type ParsedQuery } from "../lib/query-parse.js";
+import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
   SLOW_DOWN_COPY,
@@ -642,7 +646,7 @@ export function TradeUpCard({
         <p className="preview-cardline">
           Cost <b>{formatDollars(inputCostCents(tu))}</b>
           <i />
-          <b className={signClass(tu.profit_cents)}>
+          <b className={signClass(tu.profit_cents)} title={EXPECTED_PL_TOOLTIP}>
             {signedDollars(tu.profit_cents)} / {tu.roi_percentage >= 0 ? "+" : ""}{tu.roi_percentage.toFixed(1)}%
           </b>
           {chance !== null && (
@@ -696,6 +700,7 @@ export function TradeUpCard({
                   <Readout label="Best case" value={best === null ? "—" : signedDollars(best)} note="highest outcome" tone={best === null ? "" : signClass(best)} />
                   <Readout label="P10 tail" value={tail === null ? "—" : signedDollars(tail)} note={NOTE_WORST_OUTCOMES} tone={tail === null ? "" : signClass(tail)} />
                 </div>
+                {showExpectedPlHelp(evPnL, chance) && <ExpectedPlHelp />}
                 <FeeLine line={boardFeeLine(tu.inputs.map((row) => row.source))} className="preview-fees--strip" />
                 <div className="preview-viz-grid">
                   <div className="preview-subpanel">
@@ -765,6 +770,7 @@ export function PreviewBoard({
   exhausted,
   throttle,
   failed,
+  refreshing = false,
   onRetry,
   onClearFilters,
   heading = "Live trade-ups",
@@ -787,6 +793,8 @@ export function PreviewBoard({
   exhausted?: boolean;
   throttle?: string | null;
   failed?: boolean;
+  /** Page-1 filter change still showing the previous rows. */
+  refreshing?: boolean;
   onRetry?: () => void;
   onClearFilters?: () => void;
   heading?: string;
@@ -802,6 +810,14 @@ export function PreviewBoard({
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const cols = bentoColumns(width);
+  const [typing, setTyping] = useState(false);
+  const typingTimer = useRef(0);
+  const onKeystroke = useCallback(() => {
+    setTyping(true);
+    window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(typingTimer.current), []);
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const notice = boardNotice({
@@ -811,7 +827,26 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const noticeNode = <BoardNotice notice={notice} onClearFilters={clearFilters} onRetry={onRetry} />;
+  const suggestion = useLoosenProbe({
+    enabled: notice === "filtered-empty",
+    typing,
+    query,
+    text: search ?? "",
+    collection,
+    skin: lockedSkin,
+  });
+  const noticeNode = (
+    <BoardNotice
+      notice={notice}
+      onClearFilters={clearFilters}
+      onRetry={onRetry}
+      suggestion={suggestion}
+      onApplySuggestion={suggestion && onQuery ? () => {
+        onQuery(suggestion.query);
+        if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
+      } : undefined}
+    />
+  );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
   const ordered = expandedIndex >= 0 ? reorderForExpanded(tradeUps, expandedIndex, cols) : tradeUps;
 
@@ -860,6 +895,7 @@ export function PreviewBoard({
           value={search ?? ""}
           onChange={onSearch}
           onParsed={onParsed}
+          onKeyDown={onKeystroke}
           placeholder="Search trade-ups…"
           examples={["covert <0.03 <$700", "ak nightwish", "classified <$50", "dreams nightmares"]}
         />
@@ -872,6 +908,7 @@ export function PreviewBoard({
           canClear={filtered}
           collection={collection}
           lockedSkin={lockedSkin}
+          onKeyDown={onKeystroke}
         />
       )}
       {isFree && (
@@ -882,9 +919,10 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && <p className="preview-note">Loading trade-ups…</p>}
+      {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {tradeUps.length === 0 && noticeNode}
-      <div className="preview-bento">
+      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={refreshing || undefined}>
         {ordered.map((tu) => (
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
@@ -943,9 +981,9 @@ export function usePreviewTradeUps(options: {
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [query, setQuery] = useState<BoardQuery>(DEFAULT_QUERY);
-  const [search, setSearch] = useState("");
-  const [parsed, setParsed] = useState<ParsedQuery>({ chips: [], rest: [] });
+  const [query, setQuery] = useState<BoardQuery>(() => readBoardLocation(typeof window === "undefined" ? null : window.location).query);
+  const [search, setSearch] = useState(() => readBoardLocation(typeof window === "undefined" ? null : window.location).text);
+  const [parsed, setParsed] = useState<ParsedQuery>(() => parseQuery(readBoardLocation(typeof window === "undefined" ? null : window.location).text));
   // Page and end-of-list belong to one filter key, so a new key reads page 1 on
   // the same render and never requests the previous filter's page number.
   const [cursor, setCursor] = useState({ key: "", page: 1 });
@@ -953,6 +991,7 @@ export function usePreviewTradeUps(options: {
   const [backoffUntil, setBackoffUntil] = useState(0);
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [rowsKey, setRowsKey] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
@@ -960,6 +999,11 @@ export function usePreviewTradeUps(options: {
   const attemptRef = useRef(0);
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
+
+  useEffect(() => {
+    if (collection || skin || typeof window === "undefined") return;
+    replaceBoardUrl({ query, text: search }, window.location, window.history);
+  }, [query, search, collection, skin]);
 
   const semantic = useMemo(() => chipsToBoardParams(parsed.chips, parsed.rest), [parsed]);
   const params = new URLSearchParams(boardQueryString(query, perPage));
@@ -1008,7 +1052,11 @@ export function usePreviewTradeUps(options: {
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
       emit: {
-        rows: (next) => { if (live) setTradeUps(next as TradeUp[]); },
+        rows: (next) => {
+          if (!live) return;
+          setTradeUps(next as TradeUp[]);
+          if (page === 1) setRowsKey(key);
+        },
         isFree: setIsFree,
         loading: setLoading,
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
@@ -1047,6 +1095,8 @@ export function usePreviewTradeUps(options: {
     return () => window.clearTimeout(handle);
   }, [backoffUntil]);
 
+  const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== key;
+
   const loadMore = useCallback(() => {
     if (!canLoadMore({
       inFlight: inFlightRef.current || loading,
@@ -1082,14 +1132,14 @@ export function usePreviewTradeUps(options: {
 
   return useMemo(
     () => ({
-      tradeUps, loading, isFree, expandedId, onExpand,
+      tradeUps, loading, refreshing, isFree, expandedId, onExpand,
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
       loadMore, exhausted, throttle,
       failed, retry, clearFilters,
     }),
-    [tradeUps, loading, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
+    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, failed, retry,
       clearFilters, faceTick, total, totalProfitable],
   );
 }

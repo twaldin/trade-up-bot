@@ -45,12 +45,14 @@ export function PreviewSearch({
   value,
   onChange,
   onParsed,
+  onKeyDown,
   placeholder = "Search trade-ups…",
   examples,
 }: {
   value: string;
   onChange: (next: string) => void;
   onParsed?: (parsed: ParsedQuery) => void;
+  onKeyDown?: () => void;
   placeholder?: string;
   examples?: string[];
 }) {
@@ -126,6 +128,7 @@ export function PreviewSearch({
           placeholder={placeholder}
           onChange={(event) => { onChange(event.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
           aria-label="Search"
         />
         {value && (

@@ -1143,6 +1143,10 @@
   align-items: start;
 }
 
+.preview-bento--stale {
+  opacity: 0.45;
+}
+
 @media (min-width: 720px) {
   .preview-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1706,6 +1710,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.preview-pl-help {
+  margin-top: 6px;
 }
 
 .preview-viz-grid {

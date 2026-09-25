@@ -35,7 +35,7 @@ export const BOARD_SORTS: [string, string][] = [
   ["created", "Newest"],
 ];
 
-const TYPES = [
+export const BOARD_TYPES = [
   "consumer_industrial",
   "industrial_milspec",
   "milspec_restricted",
@@ -71,6 +71,7 @@ export function PreviewFilters({
   canClear,
   collection,
   lockedSkin,
+  onKeyDown,
 }: {
   query: BoardQuery;
   onChange: (next: BoardQuery) => void;
@@ -79,6 +80,7 @@ export function PreviewFilters({
   canClear?: boolean;
   collection?: string;
   lockedSkin?: string;
+  onKeyDown?: () => void;
 }) {
   const set = <K extends keyof BoardQuery>(key: K, value: BoardQuery[K]) =>
     onChange({ ...query, [key]: value });
@@ -93,6 +95,7 @@ export function PreviewFilters({
             value={query.skin}
             placeholder={collection ? `Search in ${collection}` : "Search a skin"}
             onChange={(event) => set("skin", event.target.value)}
+            onKeyDown={onKeyDown}
           />
         </label>
       )}
@@ -101,7 +104,7 @@ export function PreviewFilters({
         <span>Tier</span>
         <select className="preview-field__select" value={query.type} onChange={(event) => set("type", event.target.value)}>
           <option value="">All</option>
-          {TYPES.map((type) => (
+          {BOARD_TYPES.map((type) => (
             <option key={type} value={type}>{rarityLabel(type)}</option>
           ))}
         </select>
@@ -133,6 +136,7 @@ export function PreviewFilters({
           value={query.minProfit}
           placeholder="0"
           onChange={(event) => set("minProfit", event.target.value.replace(/[^\d.]/g, ""))}
+          onKeyDown={onKeyDown}
         />
       </label>
 
@@ -144,6 +148,7 @@ export function PreviewFilters({
           value={query.minChance}
           placeholder="0"
           onChange={(event) => set("minChance", event.target.value.replace(/[^\d]/g, ""))}
+          onKeyDown={onKeyDown}
         />
       </label>
 
@@ -155,6 +160,7 @@ export function PreviewFilters({
           value={query.maxCost}
           placeholder="∞"
           onChange={(event) => set("maxCost", event.target.value.replace(/[^\d.]/g, ""))}
+          onKeyDown={onKeyDown}
         />
       </label>
 
