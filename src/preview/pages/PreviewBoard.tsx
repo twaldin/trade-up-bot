@@ -963,7 +963,12 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
-      <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">
+      <div
+        className="preview-sentinel"
+        ref={sentinel}
+        role={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "status" : undefined}
+        aria-live={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "polite" : undefined}
+      >
         {pagingThrottle && (
           <p className="preview-note">
             {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
