@@ -3,10 +3,11 @@
  * fetcher deletes the old row and cascades trade-ups to partial.
  *
  * v2 offers identify a listing by offerId, which changes on relist. There is
- * no separate asset id on DMarketV2Offer. An inspect URI (`A<assetId>D`) is
- * the only stable per-item id in that payload; prefer it when both sides
- * have one. Otherwise match skin, float within 1e-7, and paint seed when
- * both are known.
+ * no separate asset id on DMarketV2Offer. The fetcher stores the inspect URI
+ * asset id (`A<assetId>D`) on listings.marketplace_id. Prefer that when both
+ * the stored row and the incoming offer have one. Otherwise match skin, float
+ * within 1e-7, and paint seed when both are known. A contested incoming offer
+ * is not assigned to any stored row.
  */
 
 import type pg from "pg";
@@ -64,6 +65,7 @@ export function planDMarketRelinks(
   const incomingIds = new Set(incoming.map(item => item.id));
   const missing = stored.filter(row => !incomingIds.has(row.id));
   const chosen = new Map<string, DMarketRelink>();
+  const contested = new Set<string>();
   const deleteIds: string[] = [];
 
   for (const row of missing) {
@@ -78,8 +80,13 @@ export function planDMarketRelinks(
       deleteIds.push(row.id);
       continue;
     }
+    if (contested.has(match.id)) {
+      deleteIds.push(row.id);
+      continue;
+    }
     const previous = [...chosen.entries()].find(([, relink]) => relink.newId === match.id);
     if (previous) {
+      contested.add(match.id);
       deleteIds.push(previous[0], row.id);
       chosen.delete(previous[0]);
       continue;
@@ -97,13 +104,23 @@ export function planDMarketRelinks(
 export async function applyDMarketRelinks(pool: pg.Pool, relinks: readonly DMarketRelink[]): Promise<number> {
   let applied = 0;
   for (const relink of relinks) {
-    await pool.query(
-      `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
-      [relink.newId, relink.oldId],
-    );
-    await applyListingPriceToInputs(pool, relink.newId, relink.priceCents, "dmarket");
-    await pool.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
-    applied++;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
+        [relink.newId, relink.oldId],
+      );
+      await applyListingPriceToInputs(client, relink.newId, relink.priceCents, "dmarket");
+      await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
+      await client.query("COMMIT");
+      applied++;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   }
   return applied;
 }

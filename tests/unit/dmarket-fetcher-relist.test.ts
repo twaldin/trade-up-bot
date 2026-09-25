@@ -60,6 +60,17 @@ describe("planDMarketRelinks", () => {
     expect(plan.relinks).toEqual([{ oldId: "dmarket:old", newId: "dmarket:new", priceCents: 500 }]);
   });
 
+  it("does not assign a contested offer to a later claimant", () => {
+    const incoming = side({ id: "dmarket:new", priceCents: 500 });
+    const plan = planDMarketRelinks([
+      side({ id: "dmarket:a" }),
+      side({ id: "dmarket:b" }),
+      side({ id: "dmarket:c" }),
+    ], [incoming]);
+    expect(plan.relinks).toEqual([]);
+    expect(plan.deleteIds.sort()).toEqual(["dmarket:a", "dmarket:b", "dmarket:c"]);
+  });
+
   it("does not relink two stored rows onto one incoming offer", () => {
     const incoming = side({ id: "dmarket:new", priceCents: 500 });
     const plan = planDMarketRelinks([

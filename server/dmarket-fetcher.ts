@@ -187,7 +187,6 @@ async function main() {
 
       try {
         const items = await fetchAllDMarketListings(skinName);
-        const activeIds = new Set<string>();
         const incomingSides: DMarketRelistSide[] = [];
 
         // Upsert active listings
@@ -210,25 +209,26 @@ async function main() {
             if (cleanTitle !== skinName) continue;
 
             const dmId = `dmarket:${item.itemId}`;
-            activeIds.add(dmId);
             const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
             const targetSkin = isStatTrak ? stSkin : skin;
             if (!targetSkin) continue;
+            const assetId = assetIdFromInspect(item.extra.inspectInGame);
             await pool.query(`
-              INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
-              VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW())
+              INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at, marketplace_id)
+              VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW(), $8)
               ON CONFLICT (id) DO UPDATE SET
                 skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7,
                 price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
-                staleness_checked_at = NOW()
-            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null]);
+                staleness_checked_at = NOW(),
+                marketplace_id = COALESCE(EXCLUDED.marketplace_id, listings.marketplace_id)
+            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null, assetId]);
             if (!isStatTrak) {
               incomingSides.push({
                 id: dmId,
                 skinName,
                 floatValue: item.extra.floatValue,
                 paintSeed: item.extra.paintSeed ?? null,
-                assetId: assetIdFromInspect(item.extra.inspectInGame),
+                assetId,
                 priceCents,
               });
             }

@@ -130,4 +130,42 @@ describe("DMarket fetcher relist reconcile", () => {
     );
     expect(rows[0].listing_status).toBe("partial");
   });
+
+  it("rolls back the repoint when deleting the old listing fails", async () => {
+    const tradeUpId = await seedTradeUp("dmarket:old-rollback", 554);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:new-rollback', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    await ctx.pool.query(`
+      CREATE FUNCTION fail_relist_delete() RETURNS trigger AS $$
+      BEGIN
+        IF OLD.id = 'dmarket:old-rollback' THEN
+          RAISE EXCEPTION 'forced rollback';
+        END IF;
+        RETURN OLD;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await ctx.pool.query(`
+      CREATE TRIGGER fail_relist_delete_trg
+      BEFORE DELETE ON listings
+      FOR EACH ROW EXECUTE FUNCTION fail_relist_delete()
+    `);
+    await expect(applyDMarketRelinks(ctx.pool, [{
+      oldId: "dmarket:old-rollback",
+      newId: "dmarket:new-rollback",
+      priceCents: 538,
+    }])).rejects.toThrow(/forced rollback/);
+    const { rows } = await ctx.pool.query(
+      `SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1`,
+      [tradeUpId],
+    );
+    expect(rows[0].listing_id).toBe("dmarket:old-rollback");
+    const { rows: oldListing } = await ctx.pool.query(
+      `SELECT id FROM listings WHERE id = 'dmarket:old-rollback'`,
+    );
+    expect(oldListing).toHaveLength(1);
+    await ctx.pool.query(`DROP TRIGGER fail_relist_delete_trg ON listings`);
+  });
 });
