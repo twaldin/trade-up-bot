@@ -15,6 +15,24 @@ import {
 
 import { timestamp, setDaemonStatus } from "../utils.js";
 
+/**
+ * Mark active trade-ups whose cost is strictly above 20× EV.
+ * Does not delete. `purgeExpiredPreserved(..., 1)` removes them after 24h.
+ */
+export async function markTradeUpsCostOver20xEv(pool: pg.Pool): Promise<number> {
+  const { rowCount } = await pool.query(`
+    UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW())
+    WHERE is_theoretical = false AND listing_status = 'active'
+      AND total_cost_cents > 20 * GREATEST(expected_value_cents, 1)
+  `);
+  const count = rowCount ?? 0;
+  if (count > 0) {
+    const { cacheInvalidatePrefix } = await import("../../redis.js");
+    await cacheInvalidatePrefix("tu:");
+  }
+  return count;
+}
+
 export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   console.log(`\n[${timestamp()}] Phase 1: Housekeeping`);
   await setDaemonStatus(pool, "fetching", "Phase 1: Housekeeping");
@@ -80,16 +98,12 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
     console.log(`  Cleaned ${cleanedCount} corrupt trade-ups`);
   }
 
-  // Cost far above EV is not a real contract. Mark stale only — never delete.
-  const { rowCount: outlierCostCount } = await pool.query(`
-    UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW())
-    WHERE is_theoretical = false AND listing_status = 'active'
-      AND total_cost_cents > 20 * GREATEST(expected_value_cents, 1)
-  `);
-  if ((outlierCostCount ?? 0) > 0) {
+  // Cost far above EV is not a real contract. Mark active rows stale when cost is
+  // strictly above 20× EV. Share pages render those rows noindex,follow until the
+  // 24h preserved purge below deletes them; after that the share URL is 404.
+  const outlierCostCount = await markTradeUpsCostOver20xEv(pool);
+  if (outlierCostCount > 0) {
     console.log(`  Marked ${outlierCostCount} trade-ups stale (cost > 20x EV)`);
-    const { cacheInvalidatePrefix } = await import("../../redis.js");
-    await cacheInvalidatePrefix("tu:");
   }
 
   // Listing statuses now maintained by cascadeTradeUpStatuses() on every listing

@@ -343,11 +343,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   });
 
   // Admin: set any user's tier (protected by ADMIN_STEAM_ID)
-  app.post("/api/admin/set-tier", async (req, res) => {
-    if (!req.user || !isAdmin(req.user as User)) {
-      res.status(403).json({ error: "Admin only" });
-      return;
-    }
+  app.post("/api/admin/set-tier", requireAdmin, async (req, res) => {
     const { steam_id, tier } = req.body as { steam_id?: string; tier?: string };
     if (!tier || !["free", "pro"].includes(tier)) {
       res.status(400).json({ error: "Invalid tier. Use 'free' or 'pro'." });
@@ -366,6 +362,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.user) return next();
   res.status(401).json({ error: "Login required" });
+}
+
+/** Same gate as POST /api/admin/set-tier: missing or non-admin sessions get 403 JSON. */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.user || !isAdmin(req.user as User)) {
+    res.status(403).json({ error: "Admin only" });
+    return;
+  }
+  next();
 }
 
 /** Pro tier or a verified lifetime purchase. Lifetime counts while the tier column still says free. */

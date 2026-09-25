@@ -81,6 +81,7 @@ export function isRestartQueued(): boolean {
 }
 import {
   phase1Housekeeping,
+  markTradeUpsCostOver20xEv,
   phase3ApiProbe,
   phase4DataFetch,
   phase5cStaircase,
@@ -410,6 +411,11 @@ export async function main() {
         console.error(`  Phase 4c: abandoned (${msg}) — continuing cycle`);
       }
     }
+
+    // Output reprice can push cost above 20× EV. Housekeeping already ran, so
+    // re-check now instead of leaving those rows active until the next cycle.
+    const markedOver20x = await markTradeUpsCostOver20xEv(pool);
+    console.log(`  Marked ${markedOver20x} trade-ups stale (cost > 20x EV)`);
 
     // --- Phase 5: Time-Bounded Discovery Engine ---
     const engineEnd = cycleStarted + TARGET_CYCLE_MS - 30_000; // 30s reserved for post-engine work

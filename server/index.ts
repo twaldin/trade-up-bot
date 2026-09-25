@@ -25,6 +25,7 @@ import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
+import { unknownApiJson404 } from "./unknown-api.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { TRADE_UP_TYPE_LABELS } from "../shared/types.js";
@@ -975,6 +976,10 @@ registerCanonicalRedirectRoutes(app);
       }
     } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
+
+  // Unmatched /api/* must be JSON 404. Without this, the SPA catch-all below
+  // returns 200 HTML for unknown API GETs.
+  app.use(unknownApiJson404);
 
   // Serve built frontend in production (Vite handles this in dev via proxy)
   const distPath = path.join(__dirname, "..", "dist");
