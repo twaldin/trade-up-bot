@@ -11,7 +11,7 @@ export const END_OF_LIST_COPY = "That's the end of this list.";
 /** Shown when the list hits the 10,001 count cap with full pages still coming. Copy pending sign-off. */
 export const LIST_CAP_COPY = "This list stops at 10,000 matches. Narrow the filters to see the rest.";
 /** Shown after several pages of a very large board. Suggests narrowing; does not block paging. */
-export const NARROW_FILTERS_HINT = "This list is long. Narrow it with min chance, max cost, or a collection.";
+export const NARROW_FILTERS_HINT = "This list is long. Narrow it with Max cost or Min above cost %.";
 export const NARROW_HINT_MIN_PAGES = 5;
 export const NARROW_HINT_MIN_TOTAL = 1000;
 

@@ -1149,8 +1149,13 @@
 
 .preview-note--hint {
   margin-top: 8px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
+}
+
+.preview-note--end:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .preview-note b {

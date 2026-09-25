@@ -40,9 +40,9 @@ describe("collection page SEO crawler HTML", () => {
 
   it("allows collection set icons from raw.githubusercontent.com in img-src only", () => {
     const helmet = serverSource.slice(serverSource.indexOf("contentSecurityPolicy"), serverSource.indexOf("Stripe webhook"));
-    expect(helmet).toContain('"https://raw.githubusercontent.com"');
+    expect(helmet).toContain('"https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/"');
     const imgLine = helmet.split("\n").find((line) => line.includes("imgSrc"));
-    expect(imgLine).toContain("https://raw.githubusercontent.com");
+    expect(imgLine).toContain("https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/");
     expect(helmet.split("\n").filter((line) => line.includes("raw.githubusercontent.com"))).toHaveLength(1);
   });
 
@@ -50,7 +50,7 @@ describe("collection page SEO crawler HTML", () => {
     const page = readFileSync(join(__dir, "../../src/preview/pages/PreviewSkins.tsx"), "utf-8");
     const start = page.indexOf("export function PreviewCollectionPage");
     const body = page.slice(start);
-    expect(body).not.toContain("rel=\"canonical\"");
+    expect(body).not.toMatch(/<link[^>]*rel="canonical"/);
   });
 
   it("includes long-form collection body copy for crawler indexing", () => {

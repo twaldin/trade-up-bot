@@ -627,6 +627,8 @@ export function PreviewSkinPage() {
             onFilterBlur={board.onFilterBlur}
             page={board.page}
             total={board.total}
+            landedPage={board.landedPage}
+            shownStatus={board.shownStatus}
             heading="Trade-ups using this skin"
             lede="Ranked the same way as the board, filtered to this skin as an input or an output."
             lockedSkin={name}
@@ -958,6 +960,19 @@ export function PreviewCollectionPage() {
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6, enabled: Boolean(title) });
+  useEffect(() => {
+    const links = [...document.querySelectorAll("link[rel='canonical']")];
+    if (unknown) {
+      for (const link of links) link.remove();
+      return;
+    }
+    if (!title) return;
+    const href = `https://tradeupbot.app/collections/${name}`;
+    const first = links[0];
+    if (!(first instanceof HTMLLinkElement)) return;
+    first.href = href;
+    for (const extra of links.slice(1)) extra.remove();
+  }, [title, name, unknown]);
   const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
 
   return (
@@ -1025,6 +1040,8 @@ export function PreviewCollectionPage() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          landedPage={board.landedPage}
+          shownStatus={board.shownStatus}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."

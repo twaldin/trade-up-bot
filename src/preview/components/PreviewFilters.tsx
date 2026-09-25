@@ -55,7 +55,8 @@ export function boardQueryString(query: BoardQuery, perPage = 12): string {
   if (query.type) params.set("type", query.type);
   if (query.skin.trim()) params.set("skin", query.skin.trim());
   if (query.minProfit) params.set("min_profit", String(Math.round(Number(query.minProfit) * 100)));
-  if (query.minChance) params.set("min_chance", query.minChance);
+  const chance = commitMinChance(query.minChance);
+  if (chance && chance !== "0") params.set("min_chance", chance);
   if (query.maxCost) params.set("max_cost", String(Math.round(Number(query.maxCost) * 100)));
   return params.toString();
 }
@@ -153,8 +154,14 @@ export function PreviewFilters({
           inputMode="numeric"
           value={query.minChance}
           placeholder="0"
-          onChange={(event) => set("minChance", event.target.value.replace(/[^\d]/g, ""))}
-          onKeyDown={onKeyDown}
+          onChange={(event) => set("minChance", commitMinChance(event.target.value.replace(/[^\d]/g, "")))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              const next = commitMinChance(query.minChance);
+              if (next !== query.minChance) set("minChance", next);
+            }
+            onKeyDown?.();
+          }}
           onBlur={() => {
             const next = commitMinChance(query.minChance);
             if (next !== query.minChance) set("minChance", next);

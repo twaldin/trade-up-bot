@@ -800,8 +800,9 @@ export function PreviewBoard({
   onRetry,
   onClearFilters,
   onFilterBlur,
-  page = 1,
   total = null,
+  landedPage = 1,
+  shownStatus = "",
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
@@ -840,6 +841,10 @@ export function PreviewBoard({
   page?: number;
   /** Server total for this filter. The narrow hint only appears above a large set. */
   total?: number | null;
+  /** Highest page whose rows have actually landed. */
+  landedPage?: number;
+  /** Set only after a later page lands. Empty on 429, failure, and filter change. */
+  shownStatus?: string;
   heading?: string;
   lede?: string;
   collection?: string;
@@ -909,19 +914,35 @@ export function PreviewBoard({
   // and the sentinel is checked against both that panel and the window.
   const sentinel = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLParagraphElement>(null);
-  const wasExhausted = useRef(false);
+  const throttleRef = useRef<HTMLParagraphElement>(null);
+  const loadMoreBtn = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<null | "more" | "return">(null);
   const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
-  const endFromPaging = atEnd && page > 1;
   useEffect(() => {
-    if (endFromPaging && !wasExhausted.current) endRef.current?.focus();
-    wasExhausted.current = endFromPaging;
-  }, [endFromPaging]);
-  const pageStatus = loadingMore
-    ? "Loading more trade-ups…"
-    : !atEnd && page > 1
-      ? `Loaded page ${page}.`
-      : "";
-  const showNarrowHint = page >= NARROW_HINT_MIN_PAGES && (total ?? 0) > NARROW_HINT_MIN_TOTAL && !exhausted;
+    if (pendingFocus.current == null) return;
+    if (pagingThrottle && pendingFocus.current === "more") {
+      throttleRef.current?.focus();
+      pendingFocus.current = "return";
+      return;
+    }
+    if (pendingFocus.current === "return") {
+      if (loadMoreBtn.current && !pagingThrottle) {
+        loadMoreBtn.current.focus();
+        pendingFocus.current = null;
+      }
+      return;
+    }
+    if (pendingFocus.current === "more" && !loadingMore) {
+      if (atEnd) endRef.current?.focus();
+      pendingFocus.current = null;
+    }
+  }, [pagingThrottle, loadingMore, atEnd]);
+  const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
+    && (total ?? 0) > NARROW_HINT_MIN_TOTAL
+    && !exhausted
+    && !pagingThrottle
+    && !notice
+    && !failed;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -990,7 +1011,7 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
-      <span className="sr-only" role="status" aria-live="polite">{pageStatus}</span>
+      <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
       <div
         className="preview-sentinel"
         ref={sentinel}
@@ -998,7 +1019,7 @@ export function PreviewBoard({
         aria-live="polite"
       >
         {pagingThrottle && (
-          <p className="preview-note">
+          <p className="preview-note" ref={throttleRef} tabIndex={-1}>
             {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
             {showRetry && onRetry && (
               <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
@@ -1007,20 +1028,22 @@ export function PreviewBoard({
             )}
           </p>
         )}
-        {atEnd && (
-          <p className="preview-note" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
-        )}
         {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
           <p className="preview-note">{LIST_CAP_COPY}</p>
         )}
       </div>
+      {atEnd && (
+        <p className="preview-note preview-note--end" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
+      )}
       {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
         <button
           type="button"
           className="preview-btn preview-btn--quiet"
+          ref={loadMoreBtn}
           aria-disabled={loadingMore || undefined}
           onClick={() => {
             if (loadingMore) return;
+            if (document.activeElement === loadMoreBtn.current) pendingFocus.current = "more";
             loadMore();
           }}
         >
@@ -1079,6 +1102,8 @@ export function usePreviewTradeUps(options: {
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [landedPage, setLandedPage] = useState(1);
+  const [shownStatus, setShownStatus] = useState("");
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
   const rowsRef = useRef<HydratedTradeUp[]>([]);
@@ -1189,6 +1214,8 @@ export function usePreviewTradeUps(options: {
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
+    setLandedPage(1);
+    setShownStatus("");
   }, [settledKey]);
 
   useEffect(() => {
@@ -1226,7 +1253,11 @@ export function usePreviewTradeUps(options: {
           if (!live) return;
           attemptRef.current = 0;
           setRetryReady(false);
-          setTradeUps(next as HydratedTradeUp[]);
+          const rows = typeof next === "function" ? next(rowsRef.current) : next;
+          rowsRef.current = rows;
+          setTradeUps(rows);
+          setLandedPage(page);
+          setShownStatus(page > 1 ? `Showing ${rows.length} trade-ups.` : "");
           if (page === 1) setRowsKey(settledKey);
         },
         isFree: setIsFree,
@@ -1240,6 +1271,7 @@ export function usePreviewTradeUps(options: {
         },
         rateLimited: (retryAfterMs) => {
           if (!live) return;
+          setShownStatus("");
           noteRateLimited(retryAfterMs);
           // One automatic retry. A second 429 stays on the notice until Retry.
           if (attemptRef.current >= 1) {
@@ -1253,7 +1285,7 @@ export function usePreviewTradeUps(options: {
           attemptRef.current = next.attempt;
           setBackoffUntil(next.backoffUntil);
         },
-        failed: () => { if (live) setFailed(true); },
+        failed: () => { if (live) { setShownStatus(""); setFailed(true); } },
       },
     }).finally(() => {
       if (live) inFlightRef.current = false;
@@ -1332,9 +1364,9 @@ export function usePreviewTradeUps(options: {
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
-      failed, retry, clearFilters, loadingMore, page,
+      failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

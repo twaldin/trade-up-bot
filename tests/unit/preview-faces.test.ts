@@ -25,23 +25,41 @@ describe("preview faces lookup", () => {
 
   it("resolves Doppler and Gamma Doppler phases to the base finish image", () => {
     expect(dopplerBaseName("★ Karambit | Doppler Phase 2")).toBe("★ Karambit | Doppler");
-    expect(dopplerBaseName("★ Karambit | Doppler Ruby")).toBe("★ Karambit | Doppler");
-    expect(dopplerBaseName("★ Karambit | Doppler Sapphire")).toBe("★ Karambit | Doppler");
-    expect(dopplerBaseName("★ Karambit | Doppler Black Pearl")).toBe("★ Karambit | Doppler");
-    expect(dopplerBaseName("★ M9 Bayonet | Gamma Doppler Emerald")).toBe("★ M9 Bayonet | Gamma Doppler");
     expect(dopplerBaseName("★ M9 Bayonet | Gamma Doppler Phase 1")).toBe("★ M9 Bayonet | Gamma Doppler");
+    expect(dopplerBaseName("★ Karambit | Doppler Phase 4")).toBe("★ Karambit | Doppler");
     expect(dopplerBaseName("★ Karambit | Doppler")).toBeNull();
     const base = "https://community.fastly.steamstatic.com/economy/image/doppler";
     const gamma = "https://community.fastly.steamstatic.com/economy/image/gamma";
     const faces = withDopplerFaces(
-      ["★ Karambit | Doppler Phase 2", "★ Karambit | Doppler Ruby", "★ M9 Bayonet | Gamma Doppler Emerald"],
+      ["★ Karambit | Doppler Phase 2", "★ M9 Bayonet | Gamma Doppler Phase 4"],
       {
         "★ Karambit | Doppler": base,
         "★ M9 Bayonet | Gamma Doppler": gamma,
       },
     );
     expect(faces["★ Karambit | Doppler Phase 2"]).toBe(base);
-    expect(faces["★ Karambit | Doppler Ruby"]).toBe(base);
-    expect(faces["★ M9 Bayonet | Gamma Doppler Emerald"]).toBe(gamma);
+    expect(faces["★ M9 Bayonet | Gamma Doppler Phase 4"]).toBe(gamma);
+  });
+
+  it("does not fall back gem finishes to the base Doppler image", () => {
+    for (const gem of ["Ruby", "Sapphire", "Black Pearl", "Emerald"]) {
+      const doppler = gem === "Emerald" ? "Gamma Doppler" : "Doppler";
+      const name = `★ Karambit | ${doppler} ${gem}`;
+      expect(dopplerBaseName(name)).toBeNull();
+    }
+    const base = "https://community.fastly.steamstatic.com/economy/image/doppler";
+    const faces = withDopplerFaces(
+      [
+        "★ Karambit | Doppler Ruby",
+        "★ Karambit | Doppler Sapphire",
+        "★ Karambit | Doppler Black Pearl",
+        "★ Karambit | Gamma Doppler Emerald",
+      ],
+      { "★ Karambit | Doppler": base, "★ Karambit | Gamma Doppler": base },
+    );
+    expect(faces["★ Karambit | Doppler Ruby"]).toBeUndefined();
+    expect(faces["★ Karambit | Doppler Sapphire"]).toBeUndefined();
+    expect(faces["★ Karambit | Doppler Black Pearl"]).toBeUndefined();
+    expect(faces["★ Karambit | Gamma Doppler Emerald"]).toBeUndefined();
   });
 });

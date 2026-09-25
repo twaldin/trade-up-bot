@@ -2,11 +2,8 @@
  * Doppler and Gamma Doppler phases share the base finish image when the
  * catalog has no phase-specific art. Phase names stay the lookup key.
  */
-const PHASE_SUFFIX = "(?:Phase [1-4]|Ruby|Sapphire|Black Pearl|Emerald)";
-
-const DOPPLER_PHASE_NAME = new RegExp(
-  `^(.*\\| (?:Gamma Doppler|Doppler)) ${PHASE_SUFFIX}$`,
-);
+/** Phase 1–4 only. Gems (Ruby, Sapphire, Black Pearl, Emerald) keep a placeholder. */
+const DOPPLER_PHASE_NAME = /^(.*\| (?:Gamma Doppler|Doppler)) Phase [1-4]$/;
 
 /** Base finish name for a phase or gem, or null when the name is not one. */
 export function dopplerBaseName(name: string): string | null {

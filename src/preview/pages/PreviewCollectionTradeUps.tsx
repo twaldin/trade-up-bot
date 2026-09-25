@@ -91,6 +91,8 @@ export function PreviewCollectionTradeUps() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          landedPage={board.landedPage}
+          shownStatus={board.shownStatus}
           collection={title}
           heading={`${display} Trade-Ups`}
           lede={description}
