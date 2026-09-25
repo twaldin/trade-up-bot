@@ -110,6 +110,31 @@ describe("board filter bursts", () => {
     expect(urls.filter((url) => url.includes("min_chance=50"))).toHaveLength(1);
   });
 
+  it("sends one list request for a settled min-chance of 80, after the warm first page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return listBody(2);
+    }));
+    await mount(createElement(Harness));
+    const lists = () => urls.filter((url) => url.includes("/api/trade-ups?") && url.includes("per_page=12"));
+    expect(lists()[0]).toBe("/api/trade-ups?per_page=12&sort=trade_up_score&order=desc&page=1&include=outcomes,inputs");
+    const before = lists().length;
+
+    await act(async () => {
+      api.onQuery({ ...DEFAULT_QUERY, minChance: "8" });
+      api.onQuery({ ...DEFAULT_QUERY, minChance: "80" });
+    });
+    expect(lists().length - before).toBe(0);
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await act(async () => { await Promise.resolve(); });
+    const settled = lists().slice(before);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toContain("min_chance=80");
+    expect(settled[0]).toContain("per_page=12");
+    expect(settled[0]).toContain("include=outcomes,inputs");
+  });
+
   it("renders the slow-down notice after a 429 instead of the loading spinner", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       urls.push(String(url));
