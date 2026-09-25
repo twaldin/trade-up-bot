@@ -317,7 +317,7 @@
 
 @media (max-width: 399px) {
   .preview-hero { padding-left: 16px; padding-right: 16px; }
-  .preview-hero .preview-btn--lg { padding: 0 10px; font-size: 12px; }
+  .preview-hero .preview-btn--lg { min-height: 44px; padding: 0 10px; font-size: 12px; }
 }
 
 .preview-hero__note {
