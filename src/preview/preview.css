@@ -428,6 +428,15 @@
 
 .preview-proof .preview-listing { height: 26px; }
 
+.preview-chip--placeholder {
+  color: var(--text-muted);
+  background: var(--nest-2);
+}
+
+.preview-listing--placeholder .preview-listing__price {
+  color: var(--text-muted);
+}
+
 .preview-proof__outs {
   display: flex;
   flex-direction: column;

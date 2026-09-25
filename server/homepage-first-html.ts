@@ -46,6 +46,8 @@ function asGlobal(value: unknown): LandingStatCounts | null {
   return {
     total_trade_ups: readNumber(value, "total_trade_ups"),
     profitable_trade_ups: readNumber(value, "profitable_trade_ups"),
+    active_trade_ups: readNumber(value, "active_trade_ups"),
+    active_profitable_trade_ups: readNumber(value, "active_profitable_trade_ups"),
     total_data_points: readNumber(value, "total_data_points"),
     total_cycles: readNumber(value, "total_cycles"),
   };

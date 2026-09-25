@@ -7,7 +7,7 @@ import { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import { injectLandingStats, landingStatsFromSources } from "../../src/preview/lib/landing-stats.js";
-import { writeHomepageFirstHtmlFile } from "../../server/homepage-first-html.js";
+import { fetchLiveHomepageStats, materializeHomepageFirstHtml, writeHomepageFirstHtmlFile } from "../../server/homepage-first-html.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -156,6 +156,50 @@ describe("prod-like path: rewrite the file nginx serves", () => {
     expect(html).toContain("<b>7</b>");
     expect(html).not.toMatch(/<b>0<\/b>/);
     expect(html).not.toContain("data points");
+  });
+});
+
+describe("build bakes active hero counts from global-stats", () => {
+  it("bakes active_* when the payload has them, and falls back to totals only when they are absent", async () => {
+    const html = `<section class="preview-hero"><div class="preview-toolbar"><a href="/trade-ups">Go</a></div></section>`;
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      const body = url.includes("global-stats")
+        ? {
+          total_trade_ups: 744031,
+          profitable_trade_ups: 66368,
+          active_trade_ups: 629512,
+          active_profitable_trade_ups: 24718,
+          total_data_points: 4_534_582,
+          total_cycles: 7_718,
+        }
+        : {};
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const active = await fetchLiveHomepageStats({
+      globalUrl: "https://tradeupbot.test/api/global-stats",
+      boardUrl: "https://tradeupbot.test/api/trade-ups",
+      fetchImpl,
+    });
+    const baked = materializeHomepageFirstHtml(html, active);
+    expect(baked).toContain("629,512");
+    expect(baked).toContain("24,718");
+    expect(baked).not.toContain("744,031");
+    expect(baked).not.toContain("66,368");
+
+    const totalsOnly: typeof fetch = async (input) => {
+      const url = String(input);
+      const body = url.includes("global-stats")
+        ? { total_trade_ups: 1842, profitable_trade_ups: 311, total_data_points: 10, total_cycles: 2 }
+        : {};
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const fallback = await fetchLiveHomepageStats({
+      globalUrl: "https://tradeupbot.test/api/global-stats",
+      boardUrl: "https://tradeupbot.test/api/trade-ups",
+      fetchImpl: totalsOnly,
+    });
+    expect(materializeHomepageFirstHtml(html, fallback)).toContain("1,842");
   });
 });
 

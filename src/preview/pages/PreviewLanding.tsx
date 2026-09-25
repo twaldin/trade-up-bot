@@ -231,9 +231,20 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
           <p className="preview-note preview-proof__status">Loading the top trade-up on the board…</p>
         </>
       ) : (
-        <p className="preview-note preview-proof__status">
-          The board is refreshing. <Link to="/trade-ups">Open the board</Link>.
-        </p>
+        <>
+          <div className="preview-listings preview-listings--story">
+            <div className="preview-listing preview-listing--placeholder">
+              <span className="preview-listing__n">—</span>
+              <span className="preview-listing__name"><b>—</b></span>
+              <span className="preview-chip preview-chip--placeholder">—</span>
+              <span className="preview-listing__float">—</span>
+              <span className="preview-listing__price">—</span>
+            </div>
+          </div>
+          <p className="preview-note preview-proof__status">
+            The board is refreshing. <Link to="/trade-ups">Open the board</Link>.
+          </p>
+        </>
       )}
     </aside>
   );

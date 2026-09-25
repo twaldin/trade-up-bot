@@ -37,8 +37,19 @@ export interface HeroProof {
   chance: number | null;
 }
 
+function hiddenForViewer(tu: TradeUp): boolean {
+  return tu.inputs_redacted === true || tu.inputs.some((row) => row.listing_id === "hidden");
+}
+
 function buyable(tu: TradeUp | null | undefined): tu is TradeUp {
-  return Boolean(tu && !tu.is_theoretical && tu.inputs.length > 0 && tu.outcomes.length > 0);
+  return Boolean(
+    tu
+    && !tu.is_theoretical
+    && tu.listing_status !== "stale"
+    && !hiddenForViewer(tu)
+    && tu.inputs.length > 0
+    && tu.outcomes.length > 0,
+  );
 }
 
 export function pickHeroTradeUp(rows: readonly TradeUp[]): TradeUp | null {
