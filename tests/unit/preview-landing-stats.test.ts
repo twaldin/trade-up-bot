@@ -168,6 +168,32 @@ describe("wiring: hero reads live counts, prerender does not bake zeros", () => 
     expect(landing).toContain("live.total");
   });
 
+  it("treats active 0 as present and hides the tiles instead of baking lifetime totals", () => {
+    const stats = landingStatsFromSources({
+      global: {
+        total_trade_ups: 744031,
+        profitable_trade_ups: 66368,
+        active_trade_ups: 0,
+        active_profitable_trade_ups: 0,
+      },
+      board: { total: 744031, total_profitable: 66368, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.total_trade_ups).toBe(0);
+    expect(stats.profitable_trade_ups).toBe(0);
+    const html = renderLandingStatsHtml(stats);
+    expect(html).toBe("");
+    expect(html).not.toContain("744,031");
+    expect(html).not.toContain("66,368");
+    expect(html).not.toMatch(/<b>0<\/b>/);
+    expect(visibleLandingStatTiles(stats)).toEqual([]);
+    expect(publishedTradeUpCounts({
+      total_trade_ups: 744031,
+      profitable_trade_ups: 66368,
+      active_trade_ups: 0,
+      active_profitable_trade_ups: 0,
+    })).toEqual({ total: 0, profitable: 0 });
+  });
+
   it("hero tiles use the active-only counts when global-stats provides them", () => {
     const stats = {
       total_trade_ups: 744031,

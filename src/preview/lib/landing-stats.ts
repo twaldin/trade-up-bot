@@ -43,14 +43,20 @@ export function positiveCount(value: unknown): number | undefined {
   return Math.trunc(value);
 }
 
+/** A present number, including 0. Missing, null, and non-numeric stay absent. */
+function finiteCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.trunc(value);
+}
+
 /** Trade-up totals the hero tiles and the /trade-ups meta description both publish. */
 export function publishedTradeUpCounts(stats: LandingStatCounts | null | undefined): {
   total: number;
   profitable: number;
 } {
   return {
-    total: positiveCount(stats?.active_trade_ups) ?? positiveCount(stats?.total_trade_ups) ?? 0,
-    profitable: positiveCount(stats?.active_profitable_trade_ups) ?? positiveCount(stats?.profitable_trade_ups) ?? 0,
+    total: finiteCount(stats?.active_trade_ups) ?? positiveCount(stats?.total_trade_ups) ?? 0,
+    profitable: finiteCount(stats?.active_profitable_trade_ups) ?? positiveCount(stats?.profitable_trade_ups) ?? 0,
   };
 }
 
@@ -63,12 +69,13 @@ export function landingStatsFromSources(sources: {
     ?? (Array.isArray(boardRows) && boardRows.length > 0 ? boardRows.length : undefined);
   const boardProfitable = positiveCount(sources.board?.total_profitable);
 
-  const published = publishedTradeUpCounts(sources.global);
+  const activeTotal = finiteCount(sources.global?.active_trade_ups);
+  const activeProfitable = finiteCount(sources.global?.active_profitable_trade_ups);
   return {
-    total_trade_ups: (sources.global?.active_trade_ups != null ? published.total : undefined)
+    total_trade_ups: activeTotal
       ?? positiveCount(sources.global?.total_trade_ups)
       ?? boardTotal,
-    profitable_trade_ups: (sources.global?.active_profitable_trade_ups != null ? published.profitable : undefined)
+    profitable_trade_ups: activeProfitable
       ?? positiveCount(sources.global?.profitable_trade_ups)
       ?? boardProfitable,
     total_data_points: positiveCount(sources.global?.total_data_points),
