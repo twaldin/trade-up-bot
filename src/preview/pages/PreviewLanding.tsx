@@ -249,7 +249,7 @@ export function PreviewLanding({
   onBoardCounts?: (counts: BoardCountSource) => void;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
-  const live = usePreviewTradeUps({ perPage: 5 });
+  const live = usePreviewTradeUps({ perPage: 3 });
 
   useEffect(() => {
     if (!onBoardCounts || live.total == null) return;
