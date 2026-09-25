@@ -156,7 +156,9 @@ describe("frontend review changes on the first screen", () => {
     expect(PREVIEW_CTA_CALCULATOR).toBe("Try the calculator");
     const at = heroSection().indexOf("preview-toolbar");
     const toolbar = heroSection().slice(at, heroSection().indexOf("</div>", at));
-    expect(toolbar).toMatch(/<Link to="\/calculator" className="preview-btn preview-btn--lg">\s*\{PREVIEW_CTA_CALCULATOR\}/);
+    expect(toolbar).toMatch(/<Link to="\/calculator" className="preview-btn preview-btn--lg" onClick=\{\(\) => trackCtaClick\("home_hero_calculator"\)\}>\s*\{PREVIEW_CTA_CALCULATOR\}/);
+    expect(landing).toContain('trackCtaClick("home_hero_calculator")');
+    expect(landing).not.toContain('trackDiscordCta("home")');
     expect(landing).not.toContain("PREVIEW_DISCORD_HREF");
     expect(landing).not.toContain("trackDiscordCta");
     expect(landing).not.toContain("PREVIEW_CTA_DISCORD");

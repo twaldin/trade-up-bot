@@ -1,6 +1,6 @@
 // Browser conversion events, fanned out to GA4 and the Meta Pixel.
 // GA4 key events to mark in admin: begin_checkout, purchase, sign_up, and calculator_complete.
-// view_item, login, and verify_click are measured but are not key events. Never checkout_start.
+// view_item, login, verify_click, and cta_click are measured but are not key events. Never checkout_start.
 // While GA4_MEASUREMENT_ID is unset the existing GA4 events fire exactly as before
 // (begin_checkout, tradeup_view, legacy purchase); once set, the spec event replaces the
 // legacy one at the same hook, so nothing is double-counted.
@@ -91,6 +91,13 @@ export function trackVerifyClick(surface: VerifySurface): void {
   const params = { page_path: pagePath(), surface };
   sendGa4("verify_click", params);
   pixelEvent("verify_click", params, newEventId("verify"));
+}
+
+export type CtaId = "home_hero_calculator";
+
+/** Landing CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
+export function trackCtaClick(cta: CtaId): void {
+  sendGa4("cta_click", { cta, page_path: pagePath() });
 }
 
 /** /pricing rendered. */

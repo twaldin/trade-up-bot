@@ -41,6 +41,7 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../lib/copy.js";
+import { trackCtaClick } from "../../lib/conversions.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
@@ -290,7 +291,7 @@ export function PreviewLanding({
             <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
               {PREVIEW_CTA_PRIMARY}
             </Link>
-            <Link to="/calculator" className="preview-btn preview-btn--lg">
+            <Link to="/calculator" className="preview-btn preview-btn--lg" onClick={() => trackCtaClick("home_hero_calculator")}>
               {PREVIEW_CTA_CALCULATOR}
             </Link>
             <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
