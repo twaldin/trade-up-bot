@@ -28,6 +28,25 @@ export function clearsTradeUpLists(prefix: string): boolean {
   return prefix.startsWith("tu:");
 }
 
+/** Daemon and API processes publish this after a `tu:` delete. The API is the only subscriber. */
+export const BOARD_FLUSH_CHANNEL = "tu:flushed";
+
+/** Collapse a burst of flushes into one warm. The pump still backs off if that warm throws. */
+const FLUSH_DEBOUNCE_MS = 250;
+
+type FlushPublisher = {
+  publish(channel: string, message: string): Promise<number>;
+};
+
+type FlushSubscriber = {
+  subscribe(channel: string): Promise<unknown>;
+  on(event: "message", cb: (channel: string, message: string) => void): void;
+  on(event: "ready", cb: () => void): void;
+};
+
+let flushDebounceMs = FLUSH_DEBOUNCE_MS;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
 type Warmer = () => Promise<void>;
 
 let warmer: Warmer | null = null;
@@ -45,6 +64,10 @@ export function setBoardWarmDelayForTests(fn: (ms: number) => Promise<void>): vo
   delay = fn;
 }
 
+export function setBoardFlushDebounceForTests(ms: number): void {
+  flushDebounceMs = ms;
+}
+
 export function resetBoardWarmerForTests(): void {
   warmer = null;
   warming = false;
@@ -52,6 +75,49 @@ export function resetBoardWarmerForTests(): void {
   warmedThrough = 0;
   failures = 0;
   delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  flushDebounceMs = FLUSH_DEBOUNCE_MS;
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+}
+
+/** First-page warm when the API process starts listening, before any daemon flush. */
+export function warmPublicBoardOnStartup(): void {
+  requestBoardWarm();
+}
+
+function scheduleBoardWarmFromFlush(): void {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    requestBoardWarm();
+  }, flushDebounceMs);
+}
+
+/** API side of a daemon (or local) `tu:` flush. Other channels are ignored. */
+export function handleBoardFlushMessage(channel: string): void {
+  if (channel !== BOARD_FLUSH_CHANNEL) return;
+  scheduleBoardWarmFromFlush();
+}
+
+/** Publish after the `tu:*` keys are gone so the warm cannot refill a key the delete then removes. */
+export async function notifyBoardListFlushed(redis: FlushPublisher | null): Promise<void> {
+  if (!redis) return;
+  await redis.publish(BOARD_FLUSH_CHANNEL, "1").catch(() => undefined);
+}
+
+/**
+ * Separate subscriber connection. `ready` fires on the first connect and on
+ * every reconnect, so the channel is subscribed again after Redis comes back.
+ */
+export function bindBoardFlushSubscriber(sub: FlushSubscriber): void {
+  const subscribe = () => {
+    void sub.subscribe(BOARD_FLUSH_CHANNEL).catch(() => undefined);
+  };
+  sub.on("message", (channel) => {
+    handleBoardFlushMessage(channel);
+  });
+  sub.on("ready", subscribe);
+  subscribe();
 }
 
 export function requestBoardWarm(): void {
