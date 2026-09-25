@@ -28,8 +28,9 @@
  * another non-theoretical trade-up, or an earlier plan in this run, is skipped
  * (left partial, not held). Within-run collisions keep the highest score.
  *
- * Revert an apply (replace YYYYMMDD). Only ids this run recorded in
- * trade_up_relist_applied, and only rows that still exist in trade_ups.
+ * Revert an apply (replace YYYYMMDD and RUN_ID). Only ids this run recorded in
+ * trade_up_relist_applied for that run_id, and only rows that still exist in trade_ups.
+ * relistRevertSql(day, runId) builds the same statements.
  *   BEGIN;
  *   DELETE FROM trade_up_inputs tui
  *   WHERE tui.trade_up_id IN (
@@ -37,11 +38,12 @@
  *     FROM trade_up_relist_applied a
  *     JOIN trade_ups t ON t.id = a.trade_up_id
  *     JOIN trade_ups_bak_relist_YYYYMMDD b ON b.id = a.trade_up_id
+ *     WHERE a.run_id = 'RUN_ID'
  *   );
  *   INSERT INTO trade_up_inputs
  *   SELECT i.*
  *   FROM trade_up_inputs_bak_relist_YYYYMMDD i
- *   JOIN trade_up_relist_applied a ON a.trade_up_id = i.trade_up_id
+ *   JOIN trade_up_relist_applied a ON a.trade_up_id = i.trade_up_id AND a.run_id = 'RUN_ID'
  *   JOIN trade_ups t ON t.id = i.trade_up_id;
  *   UPDATE trade_ups t SET
  *     total_cost_cents = b.total_cost_cents,
@@ -58,7 +60,7 @@
  *     output_repriced_at = b.output_repriced_at,
  *     trade_up_score = b.trade_up_score
  *   FROM trade_ups_bak_relist_YYYYMMDD b
- *   JOIN trade_up_relist_applied a ON a.trade_up_id = b.id
+ *   JOIN trade_up_relist_applied a ON a.trade_up_id = b.id AND a.run_id = 'RUN_ID'
  *   WHERE t.id = b.id;
  *   COMMIT;
  */
@@ -157,6 +159,48 @@ export interface ReviveReport {
   scoreGe10: number;
   byType: Record<string, number>;
   skipped: Record<string, number>;
+}
+
+/** Statements that restore only the backup rows recorded for one run_id. */
+export function relistRevertSql(backupDay: string, runId: string): string {
+  if (!/^\d{8}$/.test(backupDay)) throw new Error("backup day must be YYYYMMDD");
+  if (runId.length === 0 || runId.includes("'")) throw new Error("run id must be a non-empty string without quotes");
+  const tradeUps = `trade_ups_bak_relist_${backupDay}`;
+  const inputs = `trade_up_inputs_bak_relist_${backupDay}`;
+  return [
+    "BEGIN;",
+    `DELETE FROM trade_up_inputs tui
+   WHERE tui.trade_up_id IN (
+     SELECT a.trade_up_id
+     FROM trade_up_relist_applied a
+     JOIN trade_ups t ON t.id = a.trade_up_id
+     JOIN ${tradeUps} b ON b.id = a.trade_up_id
+     WHERE a.run_id = '${runId}'
+   );`,
+    `INSERT INTO trade_up_inputs
+   SELECT i.*
+   FROM ${inputs} i
+   JOIN trade_up_relist_applied a ON a.trade_up_id = i.trade_up_id AND a.run_id = '${runId}'
+   JOIN trade_ups t ON t.id = i.trade_up_id;`,
+    `UPDATE trade_ups t SET
+     total_cost_cents = b.total_cost_cents,
+     expected_value_cents = b.expected_value_cents,
+     profit_cents = b.profit_cents,
+     roi_percentage = b.roi_percentage,
+     chance_to_profit = b.chance_to_profit,
+     best_case_cents = b.best_case_cents,
+     worst_case_cents = b.worst_case_cents,
+     listing_status = b.listing_status,
+     preserved_at = b.preserved_at,
+     input_sources = b.input_sources,
+     outcomes_json = b.outcomes_json,
+     output_repriced_at = b.output_repriced_at,
+     trade_up_score = b.trade_up_score
+   FROM ${tradeUps} b
+   JOIN trade_up_relist_applied a ON a.trade_up_id = b.id AND a.run_id = '${runId}'
+   WHERE t.id = b.id;`,
+    "COMMIT;",
+  ].join("\n");
 }
 
 export function emptyReport(): ReviveReport {
@@ -509,14 +553,58 @@ async function holdPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<void> {
   }
 }
 
-async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
+const APPLIED_PK_OLD = "trade_up_id";
+
+/**
+ * Fresh tables are created with PRIMARY KEY (trade_up_id, run_id).
+ * A table that still has the old PRIMARY KEY (trade_up_id) is migrated once,
+ * and only when (trade_up_id, run_id) is already unique. Any other key is left alone.
+ */
+export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS trade_up_relist_applied (
-      trade_up_id INTEGER PRIMARY KEY,
+      trade_up_id INTEGER NOT NULL,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      run_id TEXT NOT NULL
+      run_id TEXT NOT NULL,
+      PRIMARY KEY (trade_up_id, run_id)
     )
   `);
+  const { rows } = await pool.query<{ name: string; cols: string | null }>(`
+    SELECT c.conname AS name, string_agg(a.attname, ',' ORDER BY k.ord) AS cols
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+    WHERE t.relname = 'trade_up_relist_applied' AND c.contype = 'p'
+      AND t.relnamespace = current_schema()::regnamespace
+    GROUP BY c.conname
+  `);
+  const pk = rows[0];
+  if (!pk || pk.cols !== APPLIED_PK_OLD) return;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(pk.name)) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: dupes } = await client.query(
+      `SELECT 1 FROM trade_up_relist_applied
+       GROUP BY trade_up_id, run_id
+       HAVING COUNT(*) > 1
+       LIMIT 1`,
+    );
+    if (dupes.length > 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    await client.query(`ALTER TABLE trade_up_relist_applied DROP CONSTRAINT ${client.escapeIdentifier(pk.name)}`);
+    await client.query(`ALTER TABLE trade_up_relist_applied ADD PRIMARY KEY (trade_up_id, run_id)`);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function applyPlans(pool: pg.Pool, plans: RelistPlan[], runId: string): Promise<{ applied: number; restoredIds: number[]; scoreGe10: number }> {
@@ -585,7 +673,7 @@ async function applyPlans(pool: pg.Pool, plans: RelistPlan[], runId: string): Pr
         if ((row?.score ?? plan.score) >= 10) batch.scoreGe10++;
         await client.query(
           `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES ($1, $2)
-           ON CONFLICT (trade_up_id) DO NOTHING`,
+           ON CONFLICT (trade_up_id, run_id) DO NOTHING`,
           [plan.tradeUpId, runId],
         );
         batch.applied++;

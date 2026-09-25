@@ -45,7 +45,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-07-01.1";
+export const SCHEMA_VERSION = "2026-09-25.1";
 
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts).
@@ -496,6 +496,19 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       actual_profit_cents INTEGER,
       UNIQUE(user_id, trade_up_id)
     );
+  `);
+
+  // Old DMarket offer id → live id. Created once at startup. CREATE INDEX
+  // inside a relink transaction holds ShareLock until commit and deadlocks
+  // when the fetcher and the daemon relink at the same time.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dmarket_listing_relinks (
+      old_id TEXT PRIMARY KEY,
+      new_id TEXT NOT NULL,
+      relinked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_dmarket_listing_relinks_at
+      ON dmarket_listing_relinks (relinked_at);
   `);
 
   // Create indexes

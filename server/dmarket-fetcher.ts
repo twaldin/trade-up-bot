@@ -21,7 +21,7 @@ import {
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
-import { applyDMarketRelinks, assetIdFromInspect, planDMarketRelinks, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
+import { applyDMarketRelinks, assetIdFromInspect, listingIdsToDelete, planDMarketRelinks, referencePricesAllowDeletes, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
 const { Pool } = pg;
 
@@ -176,6 +176,8 @@ async function main() {
       continue;
     }
     log(`\nCycle ${stats.cycleCount}: ${queue.length} skins to fetch`);
+    const allowDeletes = await referencePricesAllowDeletes(pool);
+    if (!allowDeletes) log("  reference-price load failed — deletes skipped for this cycle");
     try { await writeStatus(pool); } catch { /* non-critical */ }
 
     let cycleInserted = 0;
@@ -262,7 +264,9 @@ async function main() {
         }));
         const plan = planDMarketRelinks(storedSides, incomingSides);
         const applied = await applyDMarketRelinks(pool, plan.relinks);
-        const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
+        const deleteIds = allowDeletes && !applied.referenceLoadFailed
+          ? listingIdsToDelete(plan, applied)
+          : [];
         if (deleteIds.length > 0) {
           await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
           await cascadeTradeUpStatuses(pool, deleteIds);

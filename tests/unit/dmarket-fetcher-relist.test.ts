@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   assetIdFromInspect,
+  listingIdsToDelete,
   planDMarketRelinks,
+  type DMarketRelinkPlan,
   type DMarketRelistSide,
+  type RelinkApplyResult,
 } from "../../server/dmarket-fetcher-relist.js";
+import { formatDMarketStalenessLog } from "../../server/sync/dmarket.js";
 
 function side(overrides: Partial<DMarketRelistSide> = {}): DMarketRelistSide {
   return {
@@ -125,9 +129,55 @@ describe("assetIdFromInspect", () => {
     expect(assetIdFromInspect(classic)).toBe("40000000000");
   });
 
+  it("does not read an asset id that is not at the start of the inspect argument", () => {
+    const embedded = "steam://run/730//+csgo_econ_action_preview%2000S76561198000000000A40000000000D1234567890123456789";
+    expect(assetIdFromInspect(embedded)).toBeNull();
+  });
+
   it("returns null for Valve's hex preview link instead of a junk digit", () => {
     const hex = "steam://run/730//+csgo_econ_action_preview%20001C0C5A1B2D3E4F5A6B7C8D9E0F112233445566778899AABBCCDDEEFF001122";
     expect(assetIdFromInspect(hex)).toBeNull();
     expect(assetIdFromInspect("steam://run/730//+csgo_econ_action_preview%200018000000000000000000000000000000000000000000000000000000000000")).toBeNull();
+  });
+});
+
+describe("listingIdsToDelete", () => {
+  const plan: DMarketRelinkPlan = {
+    relinks: [],
+    deleteIds: ["dmarket:gone"],
+    contested: 0,
+  };
+  const applied: RelinkApplyResult = {
+    applied: 0,
+    failedIds: ["dmarket:failed"],
+    skipped: [{ oldId: "dmarket:skip", reason: "claimed_target" }],
+    referenceLoadFailed: false,
+  };
+
+  it("includes unmatched, failed, and skipped ids", () => {
+    expect(listingIdsToDelete(plan, applied).sort()).toEqual([
+      "dmarket:failed",
+      "dmarket:gone",
+      "dmarket:skip",
+    ]);
+  });
+
+  it("deletes nothing when the reference-price load failed", () => {
+    expect(listingIdsToDelete(plan, { ...applied, referenceLoadFailed: true })).toEqual([]);
+  });
+});
+
+describe("formatDMarketStalenessLog", () => {
+  it("counts relinked, deleted, contested, and failed with skip reasons", () => {
+    expect(formatDMarketStalenessLog({
+      checked: 5,
+      relinked: 2,
+      deleted: 3,
+      contested: 1,
+      failed: 1,
+      reasons: ["claimed_target", "new_id_already_input"],
+    })).toBe(
+      "    DMarket staleness: 5 checked, relinked 2 deleted 3 contested 1 failed 1 (claimed_target,new_id_already_input)",
+    );
   });
 });
