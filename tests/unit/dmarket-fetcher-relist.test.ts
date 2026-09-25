@@ -129,6 +129,11 @@ describe("assetIdFromInspect", () => {
     expect(assetIdFromInspect(classic)).toBe("40000000000");
   });
 
+  it("does not read an asset id that is not at the start of the inspect argument", () => {
+    const embedded = "steam://run/730//+csgo_econ_action_preview%2000S76561198000000000A40000000000D1234567890123456789";
+    expect(assetIdFromInspect(embedded)).toBeNull();
+  });
+
   it("returns null for Valve's hex preview link instead of a junk digit", () => {
     const hex = "steam://run/730//+csgo_econ_action_preview%20001C0C5A1B2D3E4F5A6B7C8D9E0F112233445566778899AABBCCDDEEFF001122";
     expect(assetIdFromInspect(hex)).toBeNull();

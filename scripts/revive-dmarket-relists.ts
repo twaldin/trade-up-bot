@@ -553,7 +553,13 @@ async function holdPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<void> {
   }
 }
 
-/** Create the applied-run table when it is absent. Does not change an existing primary key. */
+const APPLIED_PK_OLD = "trade_up_id";
+
+/**
+ * Fresh tables are created with PRIMARY KEY (trade_up_id, run_id).
+ * A table that still has the old PRIMARY KEY (trade_up_id) is migrated once,
+ * and only when (trade_up_id, run_id) is already unique. Any other key is left alone.
+ */
 export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS trade_up_relist_applied (
@@ -563,6 +569,42 @@ export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
       PRIMARY KEY (trade_up_id, run_id)
     )
   `);
+  const { rows } = await pool.query<{ name: string; cols: string | null }>(`
+    SELECT c.conname AS name, string_agg(a.attname, ',' ORDER BY k.ord) AS cols
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+    WHERE t.relname = 'trade_up_relist_applied' AND c.contype = 'p'
+      AND t.relnamespace = current_schema()::regnamespace
+    GROUP BY c.conname
+  `);
+  const pk = rows[0];
+  if (!pk || pk.cols !== APPLIED_PK_OLD) return;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(pk.name)) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: dupes } = await client.query(
+      `SELECT 1 FROM trade_up_relist_applied
+       GROUP BY trade_up_id, run_id
+       HAVING COUNT(*) > 1
+       LIMIT 1`,
+    );
+    if (dupes.length > 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    await client.query(`ALTER TABLE trade_up_relist_applied DROP CONSTRAINT ${client.escapeIdentifier(pk.name)}`);
+    await client.query(`ALTER TABLE trade_up_relist_applied ADD PRIMARY KEY (trade_up_id, run_id)`);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function applyPlans(pool: pg.Pool, plans: RelistPlan[], runId: string): Promise<{ applied: number; restoredIds: number[]; scoreGe10: number }> {

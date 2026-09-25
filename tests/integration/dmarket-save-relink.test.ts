@@ -107,6 +107,24 @@ describe("daemon save after a DMarket relink", () => {
     expect(rows.map(row => row.profit_cents)).toEqual([100, 200]);
   });
 
+  it("does not retarget onto a claimed listing", async () => {
+    await insertListing("dmarket:claim-target");
+    await ctx.pool.query(
+      `UPDATE listings SET claimed_by = 'buyer', claimed_at = NOW() WHERE id = 'dmarket:claim-target'`,
+    );
+    await insertListing("csfloat:claim-keep");
+    await recordDMarketRelink(ctx.pool, "dmarket:claim-old", "dmarket:claim-target");
+    const discovered = dmTradeUp(["dmarket:claim-old", "csfloat:claim-keep"], 3333);
+    await mergeTradeUps(ctx.pool, [discovered], "save_relink_claimed");
+    const { rows } = await ctx.pool.query(
+      `SELECT tui.listing_id, t.listing_status
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.type = 'save_relink_claimed'`,
+    );
+    expect(rows).toHaveLength(0);
+  });
+
   it("skips a trade-up whose inputs would collapse onto one listing", async () => {
     await insertListing("dmarket:collapse-new");
     await recordDMarketRelink(ctx.pool, "dmarket:collapse-a", "dmarket:collapse-new");

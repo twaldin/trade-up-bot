@@ -1060,6 +1060,23 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           continue;
         }
         const liveId = dmarketLiveId(input.listing_id, activeSet, dmRelinks);
+        if (liveId && liveId !== input.listing_id) {
+          const { rows: claimRows } = await pool.query<{ claimed_by: string | null }>(
+            `SELECT claimed_by FROM listings WHERE id = $1`,
+            [liveId],
+          );
+          if (claimRows[0]?.claimed_by) {
+            await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
+            deletedListingIds.push(input.listing_id);
+            results.push({
+              listing_id: input.listing_id,
+              skin_name: input.skin_name,
+              status: "delisted",
+              original_price: input.price_cents,
+            });
+            continue;
+          }
+        }
         // Two inputs landing on one offer: do not rewrite either row. The
         // delisted result is the same partial/stale path as a missing offer.
         // A listing that is still the live offer stays, so other trade-ups can use it.

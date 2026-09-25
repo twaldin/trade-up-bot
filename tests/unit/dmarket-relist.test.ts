@@ -172,6 +172,11 @@ describe("assetIdFromInspect", () => {
     expect(assetIdFromInspect("steam://run/730")).toBeNull();
   });
 
+  it("does not read an asset id that is not at the start of the inspect argument", () => {
+    const embedded = "steam://run/730//+csgo_econ_action_preview%2000S76561198000000000A40000000000D1234567890123456789";
+    expect(assetIdFromInspect(embedded)).toBeNull();
+  });
+
   it("does not read an asset id out of a hex preview link", () => {
     expect(assetIdFromInspect(
       "steam://run/730//+csgo_econ_action_preview%200018000000000000000000000000000000000000000000000000000000000000",

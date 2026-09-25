@@ -68,8 +68,9 @@ function isDMarketInput(input: TradeUpInput): boolean {
 /**
  * Rewrite DMarket inputs to the live offer id. A trade-up is dropped when a
  * DMarket input is gone and has no fresh relink, or when two of its inputs
- * would land on the same listing. Prices and scores are left as discovered.
- * The same listing may still appear on different trade-ups.
+ * would land on the same listing. A claimed target is not a live id: the input
+ * stays on the old listing id and the trade-up is dropped. Prices and scores
+ * are left as discovered. The same listing may still appear on different trade-ups.
  */
 export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly TradeUp[]): Promise<TradeUp[]> {
   const oldIds = new Set<string>();
@@ -84,7 +85,7 @@ export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly 
   const candidates = new Set<string>(oldIds);
   for (const next of relinks.values()) candidates.add(next);
   const { rows } = await db.query<{ id: string }>(
-    `SELECT id FROM listings WHERE id = ANY($1::text[])`,
+    `SELECT id FROM listings WHERE id = ANY($1::text[]) AND claimed_by IS NULL`,
     [[...candidates]],
   );
   const live = new Set(rows.map(row => row.id));

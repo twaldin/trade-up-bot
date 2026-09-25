@@ -36,8 +36,27 @@ async function appliedPrimaryKey(): Promise<string | null> {
   return rows[0]?.cols ?? null;
 }
 
+async function appliedPrimaryKeyOid(): Promise<string | null> {
+  const { rows } = await ctx.pool.query<{ oid: string | null }>(`
+    SELECT c.oid::text AS oid
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    WHERE t.relname = 'trade_up_relist_applied' AND c.contype = 'p'
+      AND t.relnamespace = current_schema()::regnamespace
+  `);
+  return rows[0]?.oid ?? null;
+}
+
 describe("relist applied table", () => {
-  it("creates the table when missing and leaves an existing primary key alone", async () => {
+  it("creates a fresh table, migrates the old key once, and leaves the new key alone", async () => {
+    await ctx.pool.query(`DROP TABLE IF EXISTS trade_up_relist_applied`);
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    const freshOid = await appliedPrimaryKeyOid();
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKeyOid()).toBe(freshOid);
+
+    await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
     await ctx.pool.query(`
       CREATE TABLE trade_up_relist_applied (
         trade_up_id INTEGER PRIMARY KEY,
@@ -45,14 +64,26 @@ describe("relist applied table", () => {
         run_id TEXT NOT NULL
       )
     `);
-    await ensureAppliedTable(ctx.pool);
-    expect(await appliedPrimaryKey()).toBe("trade_up_id");
-
-    await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
-    await ensureAppliedTable(ctx.pool);
-    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    await ctx.pool.query(
+      `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES (11, 'run-a'), (12, 'run-b')`,
+    );
     await ensureAppliedTable(ctx.pool);
     expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    const { rows: kept } = await ctx.pool.query(
+      `SELECT trade_up_id, run_id FROM trade_up_relist_applied ORDER BY trade_up_id`,
+    );
+    expect(kept).toEqual([
+      { trade_up_id: 11, run_id: "run-a" },
+      { trade_up_id: 12, run_id: "run-b" },
+    ]);
+    const migratedOid = await appliedPrimaryKeyOid();
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    expect(await appliedPrimaryKeyOid()).toBe(migratedOid);
+    const { rows: still } = await ctx.pool.query(
+      `SELECT trade_up_id, run_id FROM trade_up_relist_applied ORDER BY trade_up_id`,
+    );
+    expect(still).toEqual(kept);
   });
 });
 

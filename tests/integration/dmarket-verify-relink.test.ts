@@ -150,6 +150,36 @@ describe("Verify follows a DMarket relink", () => {
     expect(live.rows).toHaveLength(1);
   });
 
+  it("does not rewrite a relink onto a claimed listing", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      dmSeed(OLD, 1000, 0.15),
+      { listingId: CSF, source: "csfloat", raw: 1000, stored: storedInputCost(1000, "csfloat"), float: 0.17 },
+    ]);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, source, claimed_by)
+       VALUES ($1, 'skin-classified-1', 1000, 0.21, 'dmarket', 'other-user')`,
+      [LIVE],
+    );
+    await recordDMarketRelink(ctx.pool, OLD, LIVE);
+    market.dmarket.set(LIVE, 1200);
+    market.csfloat.set(CSF, 1000);
+
+    const body = await verify(ctx, id);
+
+    const byId = new Map(body.inputs.map(row => [row.listing_id, row.status]));
+    expect(byId.get(LIVE)).toBeUndefined();
+    expect(byId.get(OLD)).toBe("delisted");
+    expect(byId.get(CSF)).toBe("active");
+    expect(body.all_active).toBe(false);
+    expect(await inputIds(ctx, id)).toEqual([CSF, OLD].sort());
+    expect(await listingStatus(ctx, id)).toBe("partial");
+    const claim = await ctx.pool.query<{ claimed_by: string }>(
+      `SELECT claimed_by FROM listings WHERE id = $1`,
+      [LIVE],
+    );
+    expect(claim.rows[0].claimed_by).toBe("other-user");
+  });
+
   it("leaves a shared live listing in place when one input already holds it", async () => {
     const colliding = await seedFeeTradeUp(ctx.pool, [
       dmSeed(SHARED, 1000, 0.15),

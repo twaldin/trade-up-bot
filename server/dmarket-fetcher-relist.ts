@@ -52,14 +52,17 @@ export interface RelinkApplyResult {
   referenceLoadFailed: boolean;
 }
 
-/** Classic Steam inspect URI only. Hex preview links return null. */
-const CLASSIC_INSPECT_ASSET = /[SM]\d+A(\d+)D/;
+/** S or M must start the inspect argument. A later copy of the token is not an asset id. */
+const CLASSIC_INSPECT_ASSET = /^[SM]\d+A(\d+)D/;
+const INSPECT_MARKER = "csgo_econ_action_preview";
 
 export function assetIdFromInspect(inspect: string | null | undefined): string | null {
   if (!inspect) return null;
   let decoded = inspect;
   try { decoded = decodeURIComponent(inspect); } catch { decoded = inspect; }
-  const match = CLASSIC_INSPECT_ASSET.exec(decoded);
+  const at = decoded.lastIndexOf(INSPECT_MARKER);
+  const payload = (at === -1 ? decoded : decoded.slice(at + INSPECT_MARKER.length)).trim();
+  const match = CLASSIC_INSPECT_ASSET.exec(payload);
   return match ? match[1] : null;
 }
 
