@@ -21,6 +21,33 @@
  * repricedInputCost + recomputeTradeUpCost (the reprice path; the score trigger
  * fires on that update). Status returns to active only when every input listing
  * is live and unclaimed.
+ *
+ * Paint seed is not compared: trade_up_inputs has no seed column and the deleted
+ * listing row is gone, so the match is exact float plus skin name. Phased
+ * (Doppler) listings are not candidates. A post-repoint input set that matches
+ * another non-theoretical trade-up, or an earlier plan in this run, is skipped
+ * (left partial, not held). Within-run collisions keep the highest score.
+ *
+ * Revert an apply (replace YYYYMMDD). The score trigger recomputes trade_up_score
+ * from the restored cost columns:
+ *   BEGIN;
+ *   DELETE FROM trade_up_inputs
+ *     WHERE trade_up_id IN (SELECT id FROM trade_ups_bak_relist_YYYYMMDD);
+ *   INSERT INTO trade_up_inputs SELECT * FROM trade_up_inputs_bak_relist_YYYYMMDD;
+ *   UPDATE trade_ups t SET
+ *     total_cost_cents = b.total_cost_cents,
+ *     expected_value_cents = b.expected_value_cents,
+ *     profit_cents = b.profit_cents,
+ *     roi_percentage = b.roi_percentage,
+ *     chance_to_profit = b.chance_to_profit,
+ *     best_case_cents = b.best_case_cents,
+ *     worst_case_cents = b.worst_case_cents,
+ *     listing_status = b.listing_status,
+ *     preserved_at = b.preserved_at,
+ *     input_sources = b.input_sources
+ *   FROM trade_ups_bak_relist_YYYYMMDD b
+ *   WHERE t.id = b.id;
+ *   COMMIT;
  */
 
 import fs from "fs";
@@ -28,7 +55,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
 import { pickDMarketRelist, type RelistCandidate } from "../server/dmarket-relist.js";
-import { recomputeTradeUpCost, repricedInputCost } from "../server/engine.js";
+import { listingSig, parseSig, recomputeTradeUpCost, repricedInputCost } from "../server/engine.js";
 
 const { Pool } = pg;
 
@@ -44,6 +71,8 @@ if (fs.existsSync(envPath)) {
 }
 
 const BATCH = 200;
+const LOCK_RETRIES = 3;
+const LOCK_CODES = new Set(["40P01", "55P03"]);
 const KNOWN_FLAGS = new Set(["--apply", "--dry-run", "--hold", "--hours"]);
 
 export interface ReviveArgs {
@@ -135,8 +164,78 @@ export function formatReviveReport(report: ReviveReport, mode: string): string {
     `would_restore_active: ${report.restored}`,
     `score>=10: ${report.scoreGe10}`,
     `by type: ${types}`,
+    `dup-existing: ${report.skipped["dup-existing"] ?? 0}`,
+    `dup-within-run: ${report.skipped["dup-within-run"] ?? 0}`,
     `skipped: ${skipped}`,
   ].join("\n");
+}
+
+/** Same identity discovery stores: sorted listing ids (`listingSig` / db-save). */
+export function postRepointListingSig(
+  listingIds: readonly string[],
+  repoints: readonly { oldListingId: string; newListingId: string }[],
+): string {
+  const next = new Map(repoints.map(repoint => [repoint.oldListingId, repoint.newListingId]));
+  return listingSig(listingIds.map(id => next.get(id) ?? id));
+}
+
+export interface SigPlan {
+  plan: RelistPlan;
+  sig: string;
+  allLive: boolean;
+}
+
+/** Drop sets that already exist. Within this run, keep the highest score. */
+export function dedupeRelistPlans(plans: readonly SigPlan[], existingSigs: ReadonlySet<string>): {
+  kept: SigPlan[];
+  dupExisting: number;
+  dupWithinRun: number;
+} {
+  let dupExisting = 0;
+  const fresh: SigPlan[] = [];
+  for (const plan of plans) {
+    if (existingSigs.has(plan.sig)) dupExisting++;
+    else fresh.push(plan);
+  }
+  fresh.sort((a, b) => b.plan.score - a.plan.score || a.plan.tradeUpId - b.plan.tradeUpId);
+  const seen = new Set<string>();
+  const kept: SigPlan[] = [];
+  let dupWithinRun = 0;
+  for (const plan of fresh) {
+    if (seen.has(plan.sig)) {
+      dupWithinRun++;
+      continue;
+    }
+    seen.add(plan.sig);
+    kept.push(plan);
+  }
+  return { kept, dupExisting, dupWithinRun };
+}
+
+function pgCode(err: unknown): string {
+  if (typeof err !== "object" || err === null || !("code" in err)) return "";
+  return typeof err.code === "string" ? err.code : "";
+}
+
+async function withLockRetry(label: string, fn: () => Promise<void>): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fn();
+      return true;
+    } catch (err) {
+      const code = pgCode(err);
+      if (!LOCK_CODES.has(code) || attempt >= LOCK_RETRIES) {
+        if (LOCK_CODES.has(code)) {
+          console.warn(`${label}: ${code} after ${LOCK_RETRIES} retries, skipping batch`);
+          return false;
+        }
+        throw err;
+      }
+      const wait = 50 * 2 ** attempt;
+      console.warn(`${label}: ${code}, retry ${attempt + 1} in ${wait}ms`);
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+  }
 }
 
 const PRIOR_STATUS = "active";
@@ -189,13 +288,16 @@ export async function planDMarketRelistRevive(pool: pg.Pool, hours: number): Pro
   for (const row of distinct.values()) {
     let listings = listingsBySkin.get(row.skinName);
     if (!listings) {
+      const stattrak = row.skinName.startsWith("StatTrak™");
       const { rows } = await pool.query<ListingRow>(`
         SELECT l.id, s.name AS "skinName", l.float_value AS "floatValue",
                l.paint_seed AS "paintSeed", l.price_cents AS "priceCents"
         FROM listings l
         JOIN skins s ON s.id = l.skin_id
         WHERE s.name = $1 AND l.source = 'dmarket' AND l.id LIKE 'dmarket:%'
-      `, [row.skinName]);
+          AND l.stattrak = $2
+          AND (l.phase IS NULL OR l.phase = '')
+      `, [row.skinName, stattrak]);
       listings = rows;
       listingsBySkin.set(row.skinName, listings);
     }
@@ -225,7 +327,7 @@ export async function planDMarketRelistRevive(pool: pg.Pool, hours: number): Pro
     });
   }
 
-  const plans: RelistPlan[] = [];
+  const rawPlans: SigPlan[] = [];
   const tradeUpIds = [...byTradeUp.keys()];
   const liveByTradeUp = new Map<number, LiveInput[]>();
   for (let i = 0; i < tradeUpIds.length; i += 500) {
@@ -275,14 +377,40 @@ export async function planDMarketRelistRevive(pool: pg.Pool, hours: number): Pro
       bump(report.skipped, "new_id_already_input");
       continue;
     }
-    const plan: RelistPlan = { tradeUpId, type: sample.type, score: sample.score, repoints };
-    plans.push(plan);
-    bump(report.byType, sample.type);
-    report.revivable++;
-    if (sample.score >= 10) report.scoreGe10++;
+    const listingIds = (liveByTradeUp.get(tradeUpId) ?? []).map(row => row.listingId);
     const replaced = new Set(repoints.map(r => r.oldListingId));
     const allLive = (liveByTradeUp.get(tradeUpId) ?? []).every(row => replaced.has(row.listingId) || row.live);
-    if (allLive) report.restored++;
+    rawPlans.push({
+      plan: { tradeUpId, type: sample.type, score: sample.score, repoints },
+      sig: postRepointListingSig(listingIds, repoints),
+      allLive,
+    });
+  }
+
+  const newIds = [...new Set(rawPlans.flatMap(item => item.plan.repoints.map(repoint => repoint.newListingId)))];
+  const existingSigs = new Set<string>();
+  for (let i = 0; i < newIds.length; i += 500) {
+    const chunk = newIds.slice(i, i + 500);
+    const { rows } = await pool.query<{ ids: string }>(`
+      SELECT STRING_AGG(tui.listing_id::text, ',') AS ids
+      FROM trade_ups t
+      JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+      WHERE t.is_theoretical = false
+        AND t.id IN (SELECT trade_up_id FROM trade_up_inputs WHERE listing_id = ANY($1))
+      GROUP BY t.id
+    `, [chunk]);
+    for (const row of rows) if (row.ids) existingSigs.add(parseSig(row.ids));
+  }
+  const deduped = dedupeRelistPlans(rawPlans, existingSigs);
+  if (deduped.dupExisting > 0) bump(report.skipped, "dup-existing", deduped.dupExisting);
+  if (deduped.dupWithinRun > 0) bump(report.skipped, "dup-within-run", deduped.dupWithinRun);
+  const plans: RelistPlan[] = [];
+  for (const item of deduped.kept) {
+    plans.push(item.plan);
+    bump(report.byType, item.plan.type);
+    report.revivable++;
+    if (item.plan.score >= 10) report.scoreGe10++;
+    if (item.allLive) report.restored++;
   }
 
   return { plans, report };
@@ -297,37 +425,41 @@ export function backupDay(now = new Date()): string {
   return now.toISOString().slice(0, 10).replace(/-/g, "");
 }
 
-async function backupTouched(pool: pg.Pool, plans: RelistPlan[], day: string): Promise<void> {
+async function backupTouched(pool: pg.Pool, plans: RelistPlan[], day: string): Promise<boolean> {
   const tuName = backupName("trade_ups", day);
   const inName = backupName("trade_up_inputs", day);
   const ids = plans.map(p => p.tradeUpId);
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(`CREATE TABLE IF NOT EXISTS ${tuName} (LIKE trade_ups INCLUDING DEFAULTS)`);
-    await client.query(`CREATE TABLE IF NOT EXISTS ${inName} (LIKE trade_up_inputs INCLUDING DEFAULTS)`);
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const chunk = ids.slice(i, i + BATCH);
-      await client.query(
-        `INSERT INTO ${tuName} SELECT * FROM trade_ups tu WHERE tu.id = ANY($1)
-         AND NOT EXISTS (SELECT 1 FROM ${tuName} b WHERE b.id = tu.id)`,
-        [chunk],
-      );
-      await client.query(
-        `INSERT INTO ${inName} SELECT * FROM trade_up_inputs tui WHERE tui.trade_up_id = ANY($1)
-         AND NOT EXISTS (
-           SELECT 1 FROM ${inName} b WHERE b.trade_up_id = tui.trade_up_id AND b.listing_id = tui.listing_id
-         )`,
-        [chunk],
-      );
+  return withLockRetry("backup", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '5s'");
+      await client.query("SET LOCAL statement_timeout = '60s'");
+      await client.query(`CREATE TABLE IF NOT EXISTS ${tuName} (LIKE trade_ups INCLUDING DEFAULTS)`);
+      await client.query(`CREATE TABLE IF NOT EXISTS ${inName} (LIKE trade_up_inputs INCLUDING DEFAULTS)`);
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        await client.query(
+          `INSERT INTO ${tuName} SELECT * FROM trade_ups tu WHERE tu.id = ANY($1)
+           AND NOT EXISTS (SELECT 1 FROM ${tuName} b WHERE b.id = tu.id)`,
+          [chunk],
+        );
+        await client.query(
+          `INSERT INTO ${inName} SELECT * FROM trade_up_inputs tui WHERE tui.trade_up_id = ANY($1)
+           AND NOT EXISTS (
+             SELECT 1 FROM ${inName} b WHERE b.trade_up_id = tui.trade_up_id AND b.listing_id = tui.listing_id
+           )`,
+          [chunk],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 async function ensureHoldTable(pool: pg.Pool): Promise<void> {
@@ -358,18 +490,38 @@ async function applyPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<{ applied
   let scoreGe10 = 0;
   for (let i = 0; i < plans.length; i += BATCH) {
     const chunk = plans.slice(i, i + BATCH);
-    const client = await pool.connect();
-    try {
+    const batch = { applied: 0, restoredIds: [] as number[], scoreGe10: 0 };
+    const ok = await withLockRetry(`apply offset ${i}`, async () => {
+      batch.applied = 0;
+      batch.restoredIds = [];
+      batch.scoreGe10 = 0;
+      const client = await pool.connect();
+      try {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '5s'");
+      await client.query("SET LOCAL statement_timeout = '60s'");
+      let savepoint = 0;
       for (const plan of chunk) {
+        const sp = `relist_sp_${savepoint++}`;
+        await client.query(`SAVEPOINT ${sp}`);
+        let mismatch = false;
         for (const repoint of plan.repoints) {
           const price = repricedInputCost(repoint.rawPriceCents, repoint.source);
-          await client.query(
+          const updated = await client.query(
             `UPDATE trade_up_inputs
              SET listing_id = $1, price_cents = $2, source = $3
              WHERE trade_up_id = $4 AND listing_id = $5`,
             [repoint.newListingId, price, repoint.source, plan.tradeUpId, repoint.oldListingId],
           );
+          if ((updated.rowCount ?? 0) !== 1) {
+            mismatch = true;
+            break;
+          }
+        }
+        if (mismatch) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+          console.warn(`skip trade-up ${plan.tradeUpId}: input update rowCount was not 1`);
+          continue;
         }
         await recomputeTradeUpCost(client, plan.tradeUpId);
         const { rows } = await client.query<{ live: number; total: number; score: number }>(`
@@ -392,18 +544,23 @@ async function applyPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<{ applied
              WHERE id = $1 AND listing_status = 'partial'`,
             [plan.tradeUpId, PRIOR_STATUS],
           );
-          restoredIds.push(plan.tradeUpId);
+          batch.restoredIds.push(plan.tradeUpId);
         }
-        if ((row?.score ?? plan.score) >= 10) scoreGe10++;
-        applied++;
+        if ((row?.score ?? plan.score) >= 10) batch.scoreGe10++;
+        batch.applied++;
       }
       await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    });
+    if (!ok) continue;
+    applied += batch.applied;
+    restoredIds.push(...batch.restoredIds);
+    scoreGe10 += batch.scoreGe10;
   }
   return { applied, restoredIds, scoreGe10 };
 }
@@ -416,7 +573,11 @@ export async function runReviveDMarketRelists(pool: pg.Pool, args: ReviveArgs, n
     await holdPlans(pool, plans);
     return report;
   }
-  await backupTouched(pool, plans, backupDay(now));
+  const backedUp = await backupTouched(pool, plans, backupDay(now));
+  if (!backedUp) {
+    console.warn("backup did not commit; apply skipped");
+    return report;
+  }
   await holdPlans(pool, plans);
   const applied = await applyPlans(pool, plans);
   report.revivable = applied.applied;

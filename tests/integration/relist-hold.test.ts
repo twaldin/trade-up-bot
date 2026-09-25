@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { purgeExpiredPreserved } from "../../server/engine.js";
-import { runReviveDMarketRelists } from "../../scripts/revive-dmarket-relists.js";
+import { planDMarketRelistRevive, runReviveDMarketRelists } from "../../scripts/revive-dmarket-relists.js";
 
 let ctx: TestContext;
 
@@ -76,5 +76,43 @@ describe("relist hold", () => {
       [tradeUpId],
     );
     expect(status[0].listing_status).toBe("partial");
+  });
+
+  it("skips a plan whose post-repoint inputs duplicate an existing trade-up", async () => {
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source) VALUES
+         ('dmarket:dup-keep', 'skin-hold', 400, 0.2, 9, 'dmarket'),
+         ('dmarket:dup-new', 'skin-hold', 538, 0.1811111111, 77, 'dmarket')`,
+    );
+    const insertTu = async (status: string, listingIds: string[]) => {
+      const { rows } = await ctx.pool.query(
+        `INSERT INTO trade_ups (
+           total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+           chance_to_profit, best_case_cents, worst_case_cents, listing_status, preserved_at, outcomes_json, trade_up_score
+         ) VALUES (900, 2000, 1100, 10, 0.5, 100, -50, $1, NOW(), '[]', 30)
+         RETURNING id`,
+        [status],
+      );
+      const id = Number(rows[0].id);
+      for (const listingId of listingIds) {
+        await ctx.pool.query(
+          `INSERT INTO trade_up_inputs (
+             trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+           ) VALUES ($1, $2, 'skin-hold', 'MP7 | Abyssal Apparition', 'Test', 400, 0.2, 'Field-Tested', 'dmarket')`,
+          [id, listingId],
+        );
+      }
+      return id;
+    };
+    await insertTu("active", ["dmarket:dup-keep", "dmarket:dup-new"]);
+    const partialId = await insertTu("partial", ["dmarket:dup-keep", "dmarket:dup-missing"]);
+    await ctx.pool.query(
+      `UPDATE trade_up_inputs SET float_value = 0.1811111111 WHERE trade_up_id = $1 AND listing_id = 'dmarket:dup-missing'`,
+      [partialId],
+    );
+
+    const { plans, report } = await planDMarketRelistRevive(ctx.pool, 36);
+    expect(report.skipped["dup-existing"]).toBeGreaterThanOrEqual(1);
+    expect(plans.some(plan => plan.tradeUpId === partialId)).toBe(false);
   });
 });

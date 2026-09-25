@@ -6,7 +6,7 @@ import {
   type RelistCandidate,
   type RelistIdentity,
 } from "../../server/dmarket-relist.js";
-import { parseReviveArgs } from "../../scripts/revive-dmarket-relists.js";
+import { dedupeRelistPlans, parseReviveArgs, postRepointListingSig, type RelistPlan } from "../../scripts/revive-dmarket-relists.js";
 
 const missing: RelistIdentity = {
   skinName: "MP7 | Abyssal Apparition",
@@ -89,6 +89,37 @@ describe("pickDMarketRelist", () => {
     ]);
     expect(picked.ok).toBe(true);
     if (picked.ok) expect(picked.match.id).toBe("dmarket:b");
+  });
+});
+
+function plan(id: number, score: number, sigIds: string[]): { plan: RelistPlan; sig: string; allLive: boolean } {
+  return {
+    plan: { tradeUpId: id, type: "classified_covert", score, repoints: [] },
+    sig: postRepointListingSig(sigIds, []),
+    allLive: true,
+  };
+}
+
+describe("dedupeRelistPlans", () => {
+  it("skips a set that already exists and keeps the highest score within the run", () => {
+    const existing = new Set([postRepointListingSig(["dmarket:a", "dmarket:b"], [])]);
+    const result = dedupeRelistPlans([
+      plan(1, 4, ["dmarket:a", "dmarket:b"]),
+      plan(2, 12, ["dmarket:c", "dmarket:d"]),
+      plan(3, 40, ["dmarket:c", "dmarket:d"]),
+      plan(4, 9, ["dmarket:e"]),
+    ], existing);
+    expect(result.dupExisting).toBe(1);
+    expect(result.dupWithinRun).toBe(1);
+    expect(result.kept.map(item => item.plan.tradeUpId)).toEqual([3, 4]);
+  });
+
+  it("builds the same sorted listing signature discovery uses", () => {
+    const sig = postRepointListingSig(
+      ["dmarket:old", "csfloat:keep"],
+      [{ oldListingId: "dmarket:old", newListingId: "dmarket:new" }],
+    );
+    expect(sig).toBe("csfloat:keep,dmarket:new");
   });
 });
 
