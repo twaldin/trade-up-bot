@@ -1147,6 +1147,17 @@
   gap: 10px;
 }
 
+.preview-note--hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-note--end:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .preview-note b {
   font-weight: 600;
   color: var(--text);
@@ -2730,9 +2741,13 @@
   min-height: 60px;
 }
 
-.preview-sentinel > .preview-btn--quiet {
+.preview-sentinel > .preview-btn--quiet,
+.preview-loadmore {
   min-height: 44px;
 }
+
+.preview-sentinel:empty { min-height: 0; }
+.preview-loadmore, .preview-note--end { align-self: center; }
 
 /* ------------------------------------------- every skin in a collection */
 

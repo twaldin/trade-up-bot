@@ -51,6 +51,10 @@ function BoardRoute() {
       onRetry={state.retry}
       onClearFilters={state.clearFilters}
       onFilterBlur={state.onFilterBlur}
+      page={state.page}
+      total={state.total}
+      landedPage={state.landedPage}
+      shownStatus={state.shownStatus}
     />
   );
 }

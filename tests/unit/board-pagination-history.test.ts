@@ -1,15 +1,16 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
+import { makeTradeUp } from "../helpers/fixtures.js";
 import { END_OF_LIST_COPY, LIST_CAP_COPY } from "../../src/preview/lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
-import { PreviewCollectionPage } from "../../src/preview/pages/PreviewSkins.js";
+import { PreviewCollectionPage, PreviewCollectionsPage } from "../../src/preview/pages/PreviewSkins.js";
 
 type Api = ReturnType<typeof usePreviewTradeUps>;
 
@@ -69,6 +70,10 @@ function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
     endKind: api.endKind,
     throttle: api.throttle,
     pagingThrottle: api.pagingThrottle,
+    page: api.page,
+    total: api.total,
+    landedPage: api.landedPage,
+    shownStatus: api.shownStatus,
     retryReady: api.retryReady,
     failed: api.failed,
     onRetry: api.retry,
@@ -88,6 +93,7 @@ describe("board pagination and history", () => {
     vi.unstubAllGlobals();
     urls.length = 0;
     window.history.replaceState({}, "", "/");
+    for (const link of document.querySelectorAll("link[rel='canonical']")) link.remove();
   });
 
   async function mount() {
@@ -251,6 +257,36 @@ describe("board pagination and history", () => {
     act(() => { paintKind("capped"); });
     expect(host.textContent).toContain(LIST_CAP_COPY);
     expect(host.textContent).not.toContain(END_OF_LIST_COPY);
+    const cap = [...host.querySelectorAll("p")].find((node) => node.textContent === LIST_CAP_COPY);
+    expect(host.querySelector(".preview-sentinel")?.contains(cap ?? null)).toBe(false);
+  });
+
+  it("moves focus to the cap line outside the live region", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    function Harness() {
+      const [capped, setCapped] = useState(false);
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => setCapped(true),
+        exhausted: capped,
+        endKind: capped ? "capped" : "more",
+      }));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { root.render(createElement(Harness)); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    const cap = [...host.querySelectorAll("p")].find((node) => node.textContent === LIST_CAP_COPY);
+    expect(cap instanceof HTMLParagraphElement).toBe(true);
+    expect(host.querySelector(".preview-sentinel")?.contains(cap ?? null)).toBe(false);
+    expect(document.activeElement).toBe(cap);
   });
 
   it("reads collection filters from the URL on a fresh tab", async () => {
@@ -509,8 +545,481 @@ describe("board pagination and history", () => {
     expect((chance?.querySelector("input") as HTMLInputElement | null)?.value).toBe("80");
     const sort = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Sort"));
     expect((sort?.querySelector("select") as HTMLSelectElement | null)?.value).toBe("profit");
-    const canonical = document.querySelector("link[rel='canonical']")?.getAttribute("href");
-    expect(canonical).toBe("https://tradeupbot.app/collections/kilowatt");
-    expect(canonical).not.toContain("?");
+    const canonical = document.querySelector("link[rel='canonical']");
+    expect(canonical?.getAttribute("href")).toBe("https://tradeupbot.app/collections/kilowatt");
+    canonical?.remove();
+  });
+
+  it("keeps the status slot and hides the top notice on a page-2 429", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return limited("60");
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const notice = host.querySelector(".preview-notice");
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(notice).toBeNull();
+    expect(sentinel?.getAttribute("role")).toBe("status");
+    expect(sentinel?.getAttribute("aria-live")).toBe("polite");
+    expect(sentinel?.textContent).toContain("Too many requests right now.");
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Load more") || node.textContent?.includes("Loading more"));
+    expect(sentinel?.contains(button ?? null)).toBe(false);
+    expect(host.querySelector(".sr-only[role='status']")?.textContent).toBe("");
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps.map((tu) => ({ ...tu, hydrateThrottled: true })),
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        pagingThrottle: api.pagingThrottle,
+        failed: false,
+        total: 2400,
+        landedPage: 5,
+      })));
+    });
+    expect(host.querySelector(".preview-notice")).toBeNull();
+    expect(host.querySelector(".preview-sentinel")?.getAttribute("role")).toBe("status");
+    expect(host.querySelector(".preview-sentinel")?.textContent).toContain("Too many requests right now.");
+    expect(host.textContent).not.toContain("This list is long.");
+  });
+
+  it("announces a loaded page from a hidden status and focuses the end line", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(sentinel?.contains(button ?? null)).toBe(false);
+    button?.focus();
+    await act(async () => { button?.click(); });
+    paint();
+    expect(host.querySelector(".sr-only[role='status']")?.textContent).toBe("");
+    await act(async () => { release(ok([13], 13)); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const status = host.querySelector(".sr-only[role='status']");
+    expect(status?.textContent).toBe("Showing 13 trade-ups.");
+    const end = [...host.querySelectorAll("p")].find((node) => node.textContent === END_OF_LIST_COPY);
+    expect(end?.tabIndex).toBe(-1);
+    expect(sentinel?.contains(end ?? null)).toBe(false);
+    expect(document.activeElement).toBe(end);
+  });
+
+  it("clamps a typed min chance on blur and writes it to the URL", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return ok([1], 1);
+    }));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    paint();
+    paint();
+    const chance = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Min above cost"));
+    const input = chance?.querySelector("input") as HTMLInputElement | null;
+    const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    await act(async () => {
+      proto?.set?.call(input, "150");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    paint();
+    const after = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Min above cost"));
+    expect((after?.querySelector("input") as HTMLInputElement | null)?.value).toBe("100");
+    expect(window.location.search).toContain("min_chance=100");
+    expect(window.location.search).not.toContain("150");
+    const urlsBefore = urls.length;
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(urls.filter((url) => url.includes("min_chance=")).slice(urlsBefore).every((url) => url.includes("min_chance=100"))).toBe(true);
+  });
+
+  it("hints to narrow filters only after five pages of a large list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = Number(new URL(String(url), "http://local").searchParams.get("page") ?? "1");
+      const start = (page - 1) * 12 + 1;
+      return ok(Array.from({ length: 12 }, (_, i) => start + i), 2400);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    expect(host.textContent).not.toContain("This list is long.");
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    expect(api.page).toBe(2);
+    expect(host.textContent).not.toContain("This list is long.");
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => { api.loadMore(); });
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    }
+    paint();
+    expect(api.page).toBe(5);
+    expect(api.landedPage).toBe(5);
+    expect(host.textContent).toContain("This list is long. Narrow it with Max cost or Min above cost %.");
+  });
+
+  it("does not show the long-list hint while page 5 is still in flight", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = Number(new URL(String(url), "http://local").searchParams.get("page") ?? "1");
+      if (page === 5) return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      const start = (page - 1) * 12 + 1;
+      return ok(Array.from({ length: 12 }, (_, i) => start + i), 2400);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => { api.loadMore(); });
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    }
+    paint();
+    expect(api.landedPage).toBe(4);
+    await act(async () => { api.loadMore(); });
+    paint();
+    expect(api.page).toBe(5);
+    expect(host.textContent).not.toContain("This list is long.");
+    await act(async () => { release(ok(Array.from({ length: 12 }, (_, i) => 49 + i), 2400)); });
+    await act(async () => { await Promise.resolve(); });
+    paint();
+    expect(host.textContent).toContain("This list is long. Narrow it with Max cost or Min above cost %.");
+  });
+
+  it("updates a stale collection canonical instead of adding another", async () => {
+    const link = document.createElement("link");
+    link.rel = "canonical";
+    link.href = "https://tradeupbot.app/collections";
+    document.head.appendChild(link);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("/api/collections")) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => [{ name: "The Kilowatt Collection", skin_count: 1, listing_count: 1, covert_count: 0, has_knives: false, has_gloves: false }],
+        };
+      }
+      if (href.includes("/api/skin-data")) {
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+      }
+      return ok([1], 1);
+    }));
+    window.history.replaceState({}, "", "/collections/kilowatt");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/collections/kilowatt"] },
+        createElement(Routes, null,
+          createElement(Route, { path: "/collections/:name", element: createElement(PreviewCollectionPage) }),
+        )));
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const tags = [...document.querySelectorAll("link[rel='canonical']")];
+    expect(tags).toHaveLength(1);
+    expect(tags[0]).toBe(link);
+    expect(link.href).toBe("https://tradeupbot.app/collections/kilowatt");
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/collections"] },
+        createElement(PreviewCollectionsPage),
+      ));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const after = [...document.querySelectorAll("link[rel='canonical']")];
+    expect(after).toHaveLength(1);
+    expect(after[0]?.getAttribute("href")).toBe("https://tradeupbot.app/collections");
+    after[0]?.remove();
+  });
+
+  it("leaves one /trade-ups canonical when leaving the collections hub", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("/api/collections")) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => [{ name: "The Kilowatt Collection", skin_count: 1, listing_count: 1, covert_count: 0, has_knives: false, has_gloves: false }],
+        };
+      }
+      if (href.includes("/api/skin-data")) {
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+      }
+      return ok([1], 1);
+    }));
+    window.history.replaceState({}, "", "/collections");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/collections"] }, createElement(PreviewCollectionsPage)));
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(document.querySelector("link[rel='canonical']")?.getAttribute("href")).toBe("https://tradeupbot.app/collections");
+    window.history.replaceState({}, "", "/trade-ups");
+    await act(async () => {
+      root.render(createElement(BoardHarness, { onReady: (next) => { api = next; } }));
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const tags = [...document.querySelectorAll("link[rel='canonical']")];
+    expect(tags).toHaveLength(1);
+    expect(tags[0]?.getAttribute("href")).toBe("https://tradeupbot.app/trade-ups");
+    tags[0]?.remove();
+  });
+
+  it("creates a canonical when a known collection follows an unknown one", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("/api/collections")) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => [{ name: "The Kilowatt Collection", skin_count: 1, listing_count: 1, covert_count: 0, has_knives: false, has_gloves: false }],
+        };
+      }
+      if (href.includes("/api/skin-data")) {
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+      }
+      return ok([1], 1);
+    }));
+    const page = (name: string) => createElement(MemoryRouter, { key: name, initialEntries: [`/collections/${name}`] },
+      createElement(Routes, null,
+        createElement(Route, { path: "/collections/:name", element: createElement(PreviewCollectionPage) }),
+      ));
+    window.history.replaceState({}, "", "/collections/missing");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { root.render(page("missing")); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(document.querySelector("link[rel='canonical']")).toBeNull();
+    window.history.replaceState({}, "", "/collections/kilowatt");
+    await act(async () => { root.render(page("kilowatt")); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const tags = [...document.querySelectorAll("link[rel='canonical']")];
+    expect(tags).toHaveLength(1);
+    expect(tags[0]?.getAttribute("href")).toBe("https://tradeupbot.app/collections/kilowatt");
+    tags[0]?.remove();
+  });
+
+  it("moves focus to the throttle note after a focused Load more, then back", async () => {
+    function Harness() {
+      const [mode, setMode] = useState<"idle" | "throttled" | "back">("idle");
+      const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => setMode("throttled"),
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        onRetry: () => setMode("back"),
+        total: 40,
+      }));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { root.render(createElement(Harness)); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    const note = host.querySelector(".preview-sentinel p");
+    expect(note instanceof HTMLParagraphElement).toBe(true);
+    if (!(note instanceof HTMLParagraphElement)) return;
+    expect(note.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(note);
+    const retry = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Retry"));
+    await act(async () => { retry?.click(); });
+    const again = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    expect(document.activeElement).toBe(again);
+  });
+
+  it("keeps focus on a card through the retry after a 429", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    let mode: "idle" | "throttled" | "loading" = "idle";
+    function draw() {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: mode === "loading",
+        loadingMore: mode === "loading",
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => { mode = "throttled"; },
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        total: 40,
+      })));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { draw(); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); mode = "throttled"; draw(); });
+    const card = document.createElement("button");
+    card.textContent = "Card";
+    host.appendChild(card);
+    card.focus();
+    mode = "loading";
+    await act(async () => { draw(); });
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("lands focus on the throttle note for two page-2 429s and tabs to Retry", async () => {
+    let page2 = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") {
+        page2 += 1;
+        return limited("0");
+      }
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const note = () => host.querySelector(".preview-sentinel p");
+    expect(document.activeElement).toBe(note());
+    const deadline = Date.now() + 4000;
+    let again: Element | null = null;
+    while (Date.now() < deadline) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+      paint();
+      again = note();
+      if (page2 >= 2 && again?.textContent?.includes("Retry")) break;
+    }
+    expect(page2).toBeGreaterThanOrEqual(2);
+    expect(again instanceof HTMLParagraphElement).toBe(true);
+    expect(document.activeElement).toBe(again);
+    const tabbable = [...host.querySelectorAll("button, a, input, select, textarea")].filter((el) => el instanceof HTMLElement && el.tabIndex >= 0);
+    const next = tabbable.find((el) => again instanceof HTMLElement && (again.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    expect(next?.textContent).toContain("Retry");
+  }, 12000);
+
+  it("keeps a card focused when the last page lands without a 429", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    const card = host.querySelector(".preview-bento a");
+    expect(card instanceof HTMLAnchorElement).toBe(true);
+    if (!(card instanceof HTMLAnchorElement)) return;
+    card.focus();
+    await act(async () => { release(ok([13], 13)); });
+    await act(async () => { await Promise.resolve(); });
+    paint();
+    expect(host.textContent).toContain(END_OF_LIST_COPY);
+    expect(document.activeElement).toBe(card);
+  });
+
+  async function focusCardDuringRetry(second: () => ReturnType<typeof ok> | ReturnType<typeof limited>) {
+    let page2 = 0;
+    let release: (value: ReturnType<typeof ok> | ReturnType<typeof limited>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") {
+        page2 += 1;
+        if (page2 === 1) return limited("0");
+        return new Promise<ReturnType<typeof ok> | ReturnType<typeof limited>>((resolve) => { release = resolve; });
+      }
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const deadline = Date.now() + 4000;
+    let more: HTMLButtonElement | undefined;
+    while (Date.now() < deadline) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+      paint();
+      more = [...host.querySelectorAll("button")].find((node) => /Load more|Loading more/.test(node.textContent ?? ""));
+      if (page2 >= 2 && more && document.activeElement === more) break;
+    }
+    expect(page2).toBeGreaterThanOrEqual(2);
+    expect(document.activeElement).toBe(more);
+    const card = host.querySelector(".preview-bento a");
+    expect(card instanceof HTMLAnchorElement).toBe(true);
+    if (!(card instanceof HTMLAnchorElement)) return card;
+    card.focus();
+    await act(async () => { release(second()); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    return card;
+  }
+
+  it("keeps a card focused when the retry after a 429 reaches the end", async () => {
+    const card = await focusCardDuringRetry(() => ok([13], 13));
+    expect(host.textContent).toContain(END_OF_LIST_COPY);
+    expect(document.activeElement).toBe(card);
+  }, 12000);
+
+  it("keeps a card focused when the retry after a 429 is throttled again", async () => {
+    const card = await focusCardDuringRetry(() => limited("0"));
+    expect(host.querySelector(".preview-sentinel p")?.textContent).toContain("Too many requests right now.");
+    expect(document.activeElement).toBe(card);
+  }, 12000);
+
+  it("drops a pending focus return when the filters change", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    let mode: "idle" | "throttled" | "back" = "idle";
+    let query = { ...DEFAULT_QUERY };
+    function draw() {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        query,
+        onQuery: () => {},
+        loadMore: () => { mode = "throttled"; },
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        total: 40,
+      })));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { draw(); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); mode = "throttled"; draw(); });
+    const note = host.querySelector(".preview-sentinel p");
+    expect(document.activeElement).toBe(note);
+    query = { ...DEFAULT_QUERY, minChance: "80" };
+    mode = "back";
+    await act(async () => { draw(); });
+    const again = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    expect(again).toBeTruthy();
+    expect(document.activeElement).not.toBe(again);
   });
 });

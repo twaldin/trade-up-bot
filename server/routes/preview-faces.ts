@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type pg from "pg";
+import { dopplerBaseName, withDopplerFaces } from "../../shared/doppler-face.js";
 
 const MAX_NAMES = 80;
 
@@ -30,11 +31,15 @@ export function faceNamesOnPage(rows: ReadonlyArray<{ inputs?: ReadonlyArray<{ s
 export async function loadFaceMap(pool: pg.Pool, names: readonly string[]): Promise<Record<string, string | null>> {
   const unique = [...new Set(names.filter(Boolean))].slice(0, 500);
   if (unique.length === 0) return {};
+  const lookup = [...new Set([
+    ...unique,
+    ...unique.map((name) => dopplerBaseName(name)).filter((name): name is string => name != null),
+  ])].slice(0, 500);
   const { rows } = await pool.query<{ name: string; image_url: string | null }>(
     `SELECT name, image_url FROM skins WHERE name = ANY($1::text[])`,
-    [unique],
+    [lookup],
   );
-  return facesFromRows(rows);
+  return withDopplerFaces(unique, facesFromRows(rows));
 }
 
 export function previewFacesRouter(pool: pg.Pool): Router {
@@ -47,12 +52,16 @@ export function previewFacesRouter(pool: pg.Pool): Router {
       return;
     }
     try {
+      const lookup = [...new Set([
+        ...names,
+        ...names.map((name) => dopplerBaseName(name)).filter((name): name is string => name != null),
+      ])];
       const { rows } = await pool.query<{ name: string; image_url: string | null }>(
         `SELECT name, image_url FROM skins WHERE name = ANY($1::text[])`,
-        [names],
+        [lookup],
       );
       res.setHeader("Cache-Control", "public, max-age=3600");
-      res.json({ faces: facesFromRows(rows) });
+      res.json({ faces: withDopplerFaces(names, facesFromRows(rows)) });
     } catch {
       res.json({ faces: {} });
     }

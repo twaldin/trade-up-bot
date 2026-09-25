@@ -48,8 +48,9 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
+import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY } from "../lib/board-notice.js";
+import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
 import {
   canonicalBoardSearch,
   historyAction,
@@ -800,6 +801,9 @@ export function PreviewBoard({
   onRetry,
   onClearFilters,
   onFilterBlur,
+  total = null,
+  landedPage = 1,
+  shownStatus = "",
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
@@ -834,6 +838,14 @@ export function PreviewBoard({
   onClearFilters?: () => void;
   /** Clears the history typing burst so the next edit pushes. */
   onFilterBlur?: () => void;
+  /** Page currently on screen. Used for the load announcement and the long-list hint. */
+  page?: number;
+  /** Server total for this filter. The narrow hint only appears above a large set. */
+  total?: number | null;
+  /** Highest page whose rows have actually landed. */
+  landedPage?: number;
+  /** Set only after a later page lands. Empty on 429, failure, and filter change. */
+  shownStatus?: string;
   heading?: string;
   lede?: string;
   collection?: string;
@@ -902,6 +914,58 @@ export function PreviewBoard({
   // Wheel, keys, and touch outside the inner scroller are forwarded into it,
   // and the sentinel is checked against both that panel and the window.
   const sentinel = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLParagraphElement>(null);
+  const capRef = useRef<HTMLParagraphElement>(null);
+  const throttleRef = useRef<HTMLParagraphElement>(null);
+  const loadMoreBtn = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<null | "more" | "return">(null);
+  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
+  const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
+  const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
+  useEffect(() => {
+    pendingFocus.current = null;
+  }, [query, search]);
+  useEffect(() => {
+    if (pendingFocus.current == null) return;
+    const active = document.activeElement;
+    const untouched = active == null || active === document.body || active === loadMoreBtn.current;
+    if (pagingThrottle && pendingFocus.current === "more") {
+      if (!untouched) {
+        pendingFocus.current = null;
+        return;
+      }
+      throttleRef.current?.focus({ preventScroll: true });
+      pendingFocus.current = "return";
+      return;
+    }
+    if (pendingFocus.current === "return") {
+      if (loadMoreBtn.current && !pagingThrottle) {
+        const note = throttleRef.current;
+        const retry = note?.querySelector("button") ?? null;
+        const stillThere = active == null || active === document.body || active === note || active === retry;
+        if (!stillThere) {
+          pendingFocus.current = null;
+          return;
+        }
+        loadMoreBtn.current.focus({ preventScroll: true });
+        pendingFocus.current = "more";
+      }
+      return;
+    }
+    if (pendingFocus.current === "more" && !loadingMore) {
+      if (untouched) {
+        if (atEnd) endRef.current?.focus({ preventScroll: true });
+        else if (atCap) capRef.current?.focus({ preventScroll: true });
+      }
+      pendingFocus.current = null;
+    }
+  }, [pagingThrottle, loadingMore, atEnd, atCap]);
+  const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
+    && (total ?? 0) > NARROW_HINT_MIN_TOTAL
+    && !exhausted
+    && !pagingThrottle
+    && !notice
+    && !failed;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -913,6 +977,7 @@ export function PreviewBoard({
   return (
     <div className={embed ? "preview-board-embed" : "preview-page"}>
       {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
+      {!embed && emitCanonical && <link rel="canonical" href="https://tradeupbot.app/trade-ups" />}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
@@ -970,14 +1035,9 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
-      <div
-        className="preview-sentinel"
-        ref={sentinel}
-        role="status"
-        aria-live="polite"
-      >
-        {pagingThrottle && (
-          <p className="preview-note">
+      <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
+      <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">{pagingThrottle ? (
+          <p className="preview-note" ref={throttleRef} tabIndex={-1}>
             {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
             {showRetry && onRetry && (
               <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
@@ -985,27 +1045,31 @@ export function PreviewBoard({
               </button>
             )}
           </p>
-        )}
-        {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
-          <button
-            type="button"
-            className="preview-btn preview-btn--quiet"
-            aria-disabled={loadingMore || undefined}
-            onClick={() => {
-              if (loadingMore) return;
-              loadMore();
-            }}
-          >
-            {loadingMore ? "Loading more trade-ups…" : "Load more"}
-          </button>
-        )}
-        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped" && (
-          <p className="preview-note">{END_OF_LIST_COPY}</p>
-        )}
-        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
-          <p className="preview-note">{LIST_CAP_COPY}</p>
-        )}
-      </div>
+        ) : null}</div>
+      {atCap && (
+        <p className="preview-note preview-note--end" ref={capRef} tabIndex={-1}>{LIST_CAP_COPY}</p>
+      )}
+      {atEnd && (
+        <p className="preview-note preview-note--end" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
+      )}
+      {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
+        <button
+          type="button"
+          className="preview-btn preview-btn--quiet preview-loadmore"
+          ref={loadMoreBtn}
+          aria-disabled={loadingMore || undefined}
+          onClick={() => {
+            if (loadingMore) return;
+            if (document.activeElement === loadMoreBtn.current) pendingFocus.current = "more";
+            loadMore();
+          }}
+        >
+          {loadingMore ? "Loading more trade-ups…" : "Load more"}
+        </button>
+      )}
+      {showNarrowHint && (
+        <p className="preview-note preview-note--hint">{NARROW_FILTERS_HINT}</p>
+      )}
       {!embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
@@ -1055,6 +1119,8 @@ export function usePreviewTradeUps(options: {
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [landedPage, setLandedPage] = useState(1);
+  const [shownStatus, setShownStatus] = useState("");
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
   const rowsRef = useRef<HydratedTradeUp[]>([]);
@@ -1116,8 +1182,8 @@ export function usePreviewTradeUps(options: {
   const [settled, setSettled] = useState({ key, scope });
   const settledKey = settled.scope === scope ? settled.key : key;
   const listedRef = useRef({ key, scope });
-  listedRef.current = { key, scope };
   useEffect(() => {
+    listedRef.current = { key, scope };
     if (settled.key === key && settled.scope === scope) return;
     // A new collection or skin applies at once. Filter edits wait out the burst.
     if (settled.scope !== scope) { setSettled({ key, scope }); return; }
@@ -1165,6 +1231,8 @@ export function usePreviewTradeUps(options: {
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
+    setLandedPage(1);
+    setShownStatus("");
   }, [settledKey]);
 
   useEffect(() => {
@@ -1202,7 +1270,11 @@ export function usePreviewTradeUps(options: {
           if (!live) return;
           attemptRef.current = 0;
           setRetryReady(false);
-          setTradeUps(next as HydratedTradeUp[]);
+          const rows = typeof next === "function" ? next(rowsRef.current) : next;
+          rowsRef.current = rows;
+          setTradeUps(rows);
+          setLandedPage(page);
+          setShownStatus(page > 1 ? `Showing ${rows.length} trade-ups.` : "");
           if (page === 1) setRowsKey(settledKey);
         },
         isFree: setIsFree,
@@ -1216,6 +1288,7 @@ export function usePreviewTradeUps(options: {
         },
         rateLimited: (retryAfterMs) => {
           if (!live) return;
+          setShownStatus("");
           noteRateLimited(retryAfterMs);
           // One automatic retry. A second 429 stays on the notice until Retry.
           if (attemptRef.current >= 1) {
@@ -1229,7 +1302,7 @@ export function usePreviewTradeUps(options: {
           attemptRef.current = next.attempt;
           setBackoffUntil(next.backoffUntil);
         },
-        failed: () => { if (live) setFailed(true); },
+        failed: () => { if (live) { setShownStatus(""); setFailed(true); } },
       },
     }).finally(() => {
       if (live) inFlightRef.current = false;
@@ -1308,9 +1381,9 @@ export function usePreviewTradeUps(options: {
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
-      failed, retry, clearFilters, loadingMore,
+      failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

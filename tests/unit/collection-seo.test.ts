@@ -33,6 +33,25 @@ describe("collection page SEO crawler HTML", () => {
     expect(handler).toContain("url: `https://tradeupbot.app/collections/${req.params.slug}`");
     expect(handler).not.toContain("req.query");
     expect(handler).not.toContain("collections/${req.params.slug}?");
+    const unknown = handler.slice(handler.indexOf("if (!collectionName)"), handler.indexOf("const displayName"));
+    expect(unknown).toContain('res.status(404).send("Collection not found")');
+    expect(unknown).not.toContain("canonical");
+  });
+
+  it("allows collection set icons from raw.githubusercontent.com in img-src only", () => {
+    const helmet = serverSource.slice(serverSource.indexOf("contentSecurityPolicy"), serverSource.indexOf("Stripe webhook"));
+    expect(helmet).toContain('"https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/"');
+    const imgLine = helmet.split("\n").find((line) => line.includes("imgSrc"));
+    expect(imgLine).toContain("https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/");
+    expect(imgLine).toContain("https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/");
+    expect(helmet.split("\n").filter((line) => line.includes("raw.githubusercontent.com") || line.includes("set_icons"))).toHaveLength(1);
+  });
+
+  it("does not inject a second client canonical on the collection page", () => {
+    const page = readFileSync(join(__dir, "../../src/preview/pages/PreviewSkins.tsx"), "utf-8");
+    const start = page.indexOf("export function PreviewCollectionPage");
+    const body = page.slice(start);
+    expect(body).not.toMatch(/<link[^>]*rel="canonical"/);
   });
 
   it("includes long-form collection body copy for crawler indexing", () => {

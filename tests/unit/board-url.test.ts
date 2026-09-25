@@ -10,6 +10,7 @@ import {
   type BoardUrlState,
 } from "../../src/preview/lib/board-url.js";
 import { formatSuggestionDollars, loosenCandidates } from "../../src/preview/lib/empty-suggestions.js";
+import { commitMinChance } from "../../src/preview/lib/min-chance.js";
 import { EXPECTED_PL_HELP, EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../../src/preview/components/ExpectedPlHelp.js";
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -19,6 +20,16 @@ function roundTrip(state: BoardUrlState): BoardUrlState {
 }
 
 describe("board URL", () => {
+  it("clamps a typed min chance to 0–100 on commit", () => {
+    expect(commitMinChance("150")).toBe("100");
+    expect(commitMinChance("-4")).toBe("0");
+    expect(commitMinChance("")).toBe("");
+    expect(commitMinChance("80")).toBe("80");
+    const written = boardSearchFromState({ query: { ...DEFAULT_QUERY, minChance: commitMinChance("150") }, text: "" });
+    expect(written).toContain("min_chance=100");
+    expect(written).not.toContain("150");
+  });
+
   it("round-trips filter and sort state through the list API param names", () => {
     const state: BoardUrlState = {
       query: {
