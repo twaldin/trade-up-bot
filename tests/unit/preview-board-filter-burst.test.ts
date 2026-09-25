@@ -7,7 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import { UNFILTERED_EMPTY_COPY } from "../../src/preview/lib/board-notice.js";
-import { rateLimitCopy, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, rateLimitCopy, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
 
 const urls: string[] = [];
@@ -167,6 +167,8 @@ describe("board filter bursts", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
     expect(lists, "list requests before the Retry button").toBe(2);
     expect(host.textContent).toContain("Retry");
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(host.textContent).not.toContain("Retrying");
     expect(host.textContent).not.toContain("Loading trade-ups…");
 
     const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Retry"));

@@ -10,7 +10,7 @@ import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { hasProAccess } from "../lib/billing.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
-import { SLOW_DOWN_COPY, parseRetryAfter } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, parseRetryAfter } from "../lib/page-fetch.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import {
   ACCOUNT_EMPTY,
@@ -149,6 +149,10 @@ export function PreviewAccount() {
         return;
       }
       if (res.status === 429) {
+        if (claimAttempts.current >= 1) {
+          setNote(RATE_LIMIT_MANUAL_COPY);
+          return;
+        }
         setNote(SLOW_DOWN_COPY);
         if (claimAttempts.current < 1) {
           claimAttempts.current += 1;
@@ -226,11 +230,12 @@ export function PreviewAccount() {
       .then(async (res) => {
         if (!live) return;
         if (res.status === 429) {
-          setSessionHold(SLOW_DOWN_COPY);
           if (sessionAttempts.current >= 1) {
+            setSessionHold(RATE_LIMIT_MANUAL_COPY);
             setSessionSpent(true);
             return;
           }
+          setSessionHold(SLOW_DOWN_COPY);
           sessionAttempts.current += 1;
           const wait = parseRetryAfter(res.headers.get("retry-after")) ?? 2000;
           timer = window.setTimeout(() => {

@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
 import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
 
 function json(status: number, body: unknown, retryAfter?: string) {
@@ -47,11 +47,14 @@ describe("account 429", () => {
       return json(200, {});
     }));
     await mount();
-    expect(host.textContent).toContain(SLOW_DOWN_COPY);
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(host.textContent).not.toContain("Retrying");
     expect(host.textContent).not.toContain("Sign in with Steam");
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(authHits).toBe(2);
     expect(host.textContent).toContain("Retry");
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(host.textContent).not.toContain("Retrying");
     expect(host.textContent).not.toContain("Sign in with Steam");
   });
 
@@ -67,5 +70,20 @@ describe("account 429", () => {
     expect(host.textContent).toContain(SLOW_DOWN_COPY);
     expect(host.textContent).not.toContain("No active claims.");
     expect(host.textContent).toContain("Ada");
+  });
+
+  it("uses the manual copy after the claims retry is spent", async () => {
+    const user = { steam_id: "1", display_name: "Ada", avatar_url: "", tier: "pro", is_admin: false };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, user);
+      if (path.includes("my_claims=true")) return json(429, null, "0");
+      return json(200, { trade_ups: [] });
+    }));
+    await mount();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(host.textContent).not.toContain("Retrying");
+    expect(host.textContent).not.toContain("No active claims.");
   });
 });

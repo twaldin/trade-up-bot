@@ -6,17 +6,11 @@
  */
 
 import type { TradeUp } from "../../shared/types.js";
+export { rateLimitCopy } from "../preview/lib/page-fetch.js";
 
 export const RATE_LIMIT_MESSAGE = "Too many requests, please try again later.";
 export const EMPTY_FILTER_COPY = "No trade-ups match these filters.";
 export const RATE_LIMIT_COPY = "Too many requests right now. Retrying shortly.";
-
-/** Seconds from a Retry-After duration, when the server sent one. */
-export function rateLimitCopy(retryAfterMs: number | null | undefined): string {
-  if (retryAfterMs == null || !Number.isFinite(retryAfterMs)) return RATE_LIMIT_COPY;
-  const seconds = Math.max(0, Math.ceil(retryAfterMs / 1000));
-  return `Too many requests right now. Retrying in ${seconds}s.`;
-}
 export const LOAD_ERROR_COPY = "Couldn't load trade-ups. Retry.";
 
 const BACKOFF_MS = 2_000;

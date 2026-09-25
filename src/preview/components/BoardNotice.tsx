@@ -5,7 +5,7 @@ import {
   UNFILTERED_EMPTY_COPY,
   type BoardNoticeKind,
 } from "../lib/board-notice.js";
-import { SLOW_DOWN_COPY } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY } from "../lib/page-fetch.js";
 
 export function BoardNotice({
   notice,
@@ -26,7 +26,7 @@ export function BoardNotice({
   /** List throttle copy. Card-only throttles keep the shared fallback. */
   message?: string;
 }) {
-  const throttleCopy = message || SLOW_DOWN_COPY;
+  const throttleCopy = message || (onRetry ? RATE_LIMIT_MANUAL_COPY : SLOW_DOWN_COPY);
   switch (notice) {
     case "throttled":
       return (

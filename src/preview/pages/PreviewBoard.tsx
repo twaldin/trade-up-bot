@@ -58,6 +58,7 @@ import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-p
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
 import {
   applyRateLimit,
+  RATE_LIMIT_MANUAL_COPY,
   noteRateLimited,
   rateLimitCopy,
   canLoadMore,
@@ -760,6 +761,11 @@ export function TradeUpCard({
   );
 }
 
+function rankedMeta(throttled: boolean, count: number): string {
+  if (throttled && count === 0) return "—";
+  return `${count} ranked`;
+}
+
 export function PreviewBoard({
   tradeUps,
   loading,
@@ -887,7 +893,7 @@ export function PreviewBoard({
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
-          <span className="preview-panel__meta">{tradeUps.length} ranked</span>
+          <span className="preview-panel__meta">{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
         </header>
       ) : (
         <header className="preview-page__head">
@@ -896,7 +902,7 @@ export function PreviewBoard({
             <p>{lede}</p>
           </div>
           <div className="preview-page__meta">
-            <span>{tradeUps.length} ranked</span>
+            <span>{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
             <i />
             <span>{cols}-column</span>
           </div>
@@ -1094,12 +1100,13 @@ export function usePreviewTradeUps(options: {
         rateLimited: (retryAfterMs) => {
           if (!live) return;
           noteRateLimited(retryAfterMs);
-          setThrottle(rateLimitCopy(retryAfterMs));
           // One automatic retry. A second 429 stays on the notice until Retry.
           if (attemptRef.current >= 1) {
+            setThrottle(RATE_LIMIT_MANUAL_COPY);
             setRetryReady(true);
             return;
           }
+          setThrottle(rateLimitCopy(retryAfterMs));
           setRetryReady(false);
           const next = applyRateLimit(attemptRef.current, Date.now(), { retryAfterMs });
           attemptRef.current = next.attempt;

@@ -12,7 +12,7 @@ import {
   NOTE_OF_OUTCOMES,
 } from "../lib/copy.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
-import { SLOW_DOWN_COPY, browseErrorKind, fetchBrowseJson, isRateLimitError, readEvaluationBody, readPagedJson, retryDelayMs } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseErrorKind, fetchBrowseJson, isRateLimitError, readEvaluationBody, readPagedJson, retryDelayMs } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
@@ -131,7 +131,7 @@ export function PreviewCalculator() {
       });
       const read = await readEvaluationBody(res);
       if (read.rateLimited) {
-        setError(SLOW_DOWN_COPY);
+        setError(RATE_LIMIT_MANUAL_COPY);
         return;
       }
       const data = read.data as { error?: string; errors?: string[]; trade_up?: TradeUp; stats?: CalculatorStats } | null;
@@ -167,7 +167,7 @@ export function PreviewCalculator() {
       setIsExample(true);
       await evaluate(data.inputs, "example");
     } catch (err) {
-      setError(isRateLimitError(err) ? SLOW_DOWN_COPY : EXAMPLE_UNAVAILABLE);
+      setError(isRateLimitError(err) ? RATE_LIMIT_MANUAL_COPY : EXAMPLE_UNAVAILABLE);
       setLoading(false);
     }
   };
