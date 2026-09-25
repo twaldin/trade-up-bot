@@ -77,6 +77,7 @@ describe("board filter bursts", () => {
     vi.unstubAllGlobals();
     resetBrowseFetchState();
     urls.length = 0;
+    window.history.replaceState({}, "", "/trade-ups");
   });
 
   async function mount(node: ReturnType<typeof createElement>) {
@@ -107,10 +108,67 @@ describe("board filter bursts", () => {
 
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
     await act(async () => { await Promise.resolve(); });
-    const after = urls.filter((url) => url.includes("/api/trade-ups?")).length - before;
-    expect(after).toBeGreaterThanOrEqual(1);
-    expect(after).toBeLessThanOrEqual(2);
-    expect(urls.filter((url) => url.includes("min_chance=50"))).toHaveLength(1);
+    const added = urls.filter((url) => url.includes("/api/trade-ups?")).slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toContain("min_chance=50");
+    expect(added.some((url) => url.includes("min_chance=") && !url.includes("min_chance=50"))).toBe(false);
+  });
+
+  it("sends one list request for a burst on the collection page too", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return listBody(1);
+    }));
+    window.history.replaceState({}, "", "/collections/kilowatt");
+    function CollectionHarness() {
+      api = usePreviewTradeUps({ collection: "The Kilowatt Collection", perPage: 6 });
+      return null;
+    }
+    await mount(createElement(CollectionHarness));
+    const lists = () => urls.filter((url) => url.includes("/api/trade-ups?"));
+    const before = lists().length;
+    await act(async () => {
+      for (const value of ["10", "20", "30", "80", "90", "100"]) {
+        api.onQuery({ ...DEFAULT_QUERY, minChance: value });
+      }
+    });
+    expect(lists().length - before).toBe(0);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await act(async () => { await Promise.resolve(); });
+    const added = lists().slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toContain("min_chance=100");
+    expect(added[0]).toContain("collection=");
+    expect(window.location.pathname).toBe("/collections/kilowatt");
+    expect(window.location.search).toContain("min_chance=100");
+  });
+
+  it("aborts an in-flight list request once a later filter settles", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      urls.push(String(url));
+      if (init?.signal) signals.push(init.signal);
+      if (String(url).includes("min_chance=10")) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          });
+        });
+      }
+      return listBody(1);
+    }));
+    await mount(createElement(Harness));
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "10" }); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    const first = signals.at(-1);
+    expect(first?.aborted).toBe(false);
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "80" }); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await act(async () => { await Promise.resolve(); });
+    expect(first?.aborted).toBe(true);
+    const chanceUrls = urls.filter((url) => url.includes("min_chance="));
+    expect(chanceUrls.filter((url) => url.includes("min_chance=80"))).toHaveLength(1);
+    expect(chanceUrls.filter((url) => url.includes("min_chance=10"))).toHaveLength(1);
   });
 
   it("sends one list request for a settled min-chance of 80, after the warm first page", async () => {

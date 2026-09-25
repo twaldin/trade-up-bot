@@ -624,6 +624,7 @@ export function PreviewSkinPage() {
             failed={board.failed}
             refreshing={board.refreshing}
             onRetry={board.retry}
+            onFilterBlur={board.onFilterBlur}
             heading="Trade-ups using this skin"
             lede="Ranked the same way as the board, filtered to this skin as an input or an output."
             lockedSkin={name}
@@ -960,6 +961,7 @@ export function PreviewCollectionPage() {
   return (
     <div className="preview-page">
       <title>{title ? `${title.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot` : "CS2 Collections | TradeUpBot"}</title>
+      <link rel="canonical" href={`https://tradeupbot.app/collections/${name}`} />
       <header className="preview-page__head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
@@ -1019,6 +1021,7 @@ export function PreviewCollectionPage() {
           failed={board.failed}
           refreshing={board.refreshing}
           onRetry={board.retry}
+          onFilterBlur={board.onFilterBlur}
           collection={title}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."

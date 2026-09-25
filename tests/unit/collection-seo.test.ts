@@ -26,6 +26,15 @@ describe("collection page SEO crawler HTML", () => {
     expect(serverSource).toContain('name: `${displayName} Collection`');
   });
 
+  it("keeps the bare collection canonical query-free and ignores filter queries", () => {
+    const start = serverSource.indexOf('app.get("/collections/:slug"');
+    const end = serverSource.indexOf('app.get("/skins/:slug"');
+    const handler = serverSource.slice(start, end);
+    expect(handler).toContain("url: `https://tradeupbot.app/collections/${req.params.slug}`");
+    expect(handler).not.toContain("req.query");
+    expect(handler).not.toContain("collections/${req.params.slug}?");
+  });
+
   it("includes long-form collection body copy for crawler indexing", () => {
     expect(serverSource).toContain("collectionOverviewHtml");
     expect(serverSource).toContain("Collection trade-up research");

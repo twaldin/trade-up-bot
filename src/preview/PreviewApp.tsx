@@ -50,6 +50,7 @@ function BoardRoute() {
       refreshing={state.refreshing}
       onRetry={state.retry}
       onClearFilters={state.clearFilters}
+      onFilterBlur={state.onFilterBlur}
     />
   );
 }

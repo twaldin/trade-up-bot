@@ -166,6 +166,7 @@ describe("console cutover", () => {
     expect(claims).toContain("const claimWindow = 3600");
     const tradeUps = readFileSync(resolve(testDir, "../../server/routes/trade-ups.ts"), "utf8");
     expect(tradeUps).toContain("const verifyMax = 20");
+    expect(tradeUps).toContain('checkRL(userId, "verify", verifyMax, 3600)');
     const helper = readFileSync(resolve(testDir, "../../src/preview/lib/page-fetch.ts"), "utf8");
     expect(helper).toContain("Too many requests, please try again later.");
     expect(helper).toContain("canLoadMore");

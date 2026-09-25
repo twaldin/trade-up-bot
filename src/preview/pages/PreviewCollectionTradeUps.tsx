@@ -88,6 +88,7 @@ export function PreviewCollectionTradeUps() {
           failed={board.failed}
           refreshing={board.refreshing}
           onRetry={board.retry}
+          onFilterBlur={board.onFilterBlur}
           collection={title}
           heading={`${display} Trade-Ups`}
           lede={description}

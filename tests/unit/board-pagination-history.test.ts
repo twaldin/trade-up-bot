@@ -3,12 +3,13 @@
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import { END_OF_LIST_COPY, LIST_CAP_COPY } from "../../src/preview/lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
+import { PreviewCollectionPage } from "../../src/preview/pages/PreviewSkins.js";
 
 type Api = ReturnType<typeof usePreviewTradeUps>;
 
@@ -338,7 +339,7 @@ describe("board pagination and history", () => {
     await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "8" }); });
     await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "80" }); });
     const lengthAtBurst = window.history.length;
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1300)); });
     await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "81" }); });
     expect(window.history.length).toBe(lengthAtBurst + 1);
     expect(window.location.search).toContain("min_chance=81");
@@ -362,5 +363,154 @@ describe("board pagination and history", () => {
     expect(api.query.minChance).toBe("");
     expect(window.location.pathname).toBe("/collections/gallery");
     expect(window.location.search).not.toContain("min_chance");
+  });
+
+  it("pushes collection-page filter edits and restores them on Back", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/collections/kilowatt");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(ScopeHarness, { collection: "The Kilowatt Collection", onReady: (next) => { api = next; } }));
+    });
+    const lengthAtStart = window.history.length;
+    await act(async () => {
+      api.onQuery({ ...DEFAULT_QUERY, minChance: "80", maxCost: "50", sort: "profit" });
+    });
+    expect(window.location.pathname).toBe("/collections/kilowatt");
+    expect(window.location.search).toContain("min_chance=80");
+    expect(window.location.search).toContain("max_cost=5000");
+    expect(window.location.search).toContain("sort=profit");
+    expect(window.history.length).toBe(lengthAtStart + 1);
+    window.history.back();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(api.query.minChance).toBe("");
+    expect(api.query.sort).toBe("trade_up_score");
+    expect(window.location.search).toBe("");
+    window.history.forward();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(api.query.minChance).toBe("80");
+    expect(api.query.maxCost).toBe("50");
+    expect(api.query.sort).toBe("profit");
+  });
+
+  it("keeps a deep-linked collection filter when the collection name resolves", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/collections/kilowatt?min_chance=80&max_cost=5000&sort=profit");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    function Harness({ collection }: { collection?: string }) {
+      const next = usePreviewTradeUps({ collection, perPage: 6, enabled: Boolean(collection) });
+      api = next;
+      return null;
+    }
+    await act(async () => {
+      root.render(createElement(Harness, {}));
+    });
+    expect(api.query.minChance).toBe("80");
+    await act(async () => {
+      root.render(createElement(Harness, { collection: "The Kilowatt Collection" }));
+    });
+    expect(api.query.minChance).toBe("80");
+    expect(api.query.maxCost).toBe("50");
+    expect(api.query.sort).toBe("profit");
+    expect(window.location.search).toContain("min_chance=80");
+    expect(window.history.length).toBeGreaterThan(0);
+  });
+
+  it("resets the typing-history burst on blur", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "8" }); });
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "80" }); });
+    const lengthAtBurst = window.history.length;
+    await act(async () => { api.onFilterBlur(); });
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "81" }); });
+    expect(window.history.length).toBe(lengthAtBurst + 1);
+  });
+
+  it("keeps Load more focusable while a page is in flight", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    expect(button).toBeTruthy();
+    expect(button?.getAttribute("disabled")).toBeNull();
+    button?.focus();
+    await act(async () => { button?.click(); });
+    paint();
+    const loading = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Loading more"));
+    expect(loading?.getAttribute("aria-disabled")).toBe("true");
+    expect(loading?.getAttribute("disabled")).toBeNull();
+    expect(document.activeElement).toBe(loading);
+    expect(host.querySelector(".preview-bento")?.getAttribute("aria-busy")).toBe("true");
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(sentinel?.getAttribute("role")).toBe("status");
+    expect(sentinel?.getAttribute("aria-live")).toBe("polite");
+    await act(async () => { loading?.click(); });
+    await act(async () => { release(ok([13], 36)); });
+  });
+
+  it("renders the bottom status slot before it has anything to say", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    paint();
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(sentinel?.getAttribute("role")).toBe("status");
+    expect(sentinel?.getAttribute("aria-live")).toBe("polite");
+    expect(sentinel?.textContent?.trim()).toBe("");
+  });
+
+  it("restores collection filters from the address bar on the collection page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("/api/collections")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => [{
+            name: "The Kilowatt Collection",
+            skin_count: 1,
+            listing_count: 1,
+            covert_count: 0,
+            has_knives: false,
+            has_gloves: false,
+          }],
+        };
+      }
+      if (href.includes("/api/skin-data")) {
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+      }
+      return ok([1], 1);
+    }));
+    window.history.replaceState({}, "", "/collections/kilowatt?min_chance=80&max_cost=5000&sort=profit");
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/collections/kilowatt?min_chance=80&max_cost=5000&sort=profit"] },
+        createElement(Routes, null,
+          createElement(Route, { path: "/collections/:name", element: createElement(PreviewCollectionPage) }),
+        )));
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const chance = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Min above cost"));
+    expect((chance?.querySelector("input") as HTMLInputElement | null)?.value).toBe("80");
+    const sort = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Sort"));
+    expect((sort?.querySelector("select") as HTMLSelectElement | null)?.value).toBe("profit");
+    const canonical = document.querySelector("link[rel='canonical']")?.getAttribute("href");
+    expect(canonical).toBe("https://tradeupbot.app/collections/kilowatt");
+    expect(canonical).not.toContain("?");
   });
 });
