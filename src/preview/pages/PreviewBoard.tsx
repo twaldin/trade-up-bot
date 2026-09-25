@@ -48,6 +48,7 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
+import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
 import {
@@ -914,10 +915,13 @@ export function PreviewBoard({
   // and the sentinel is checked against both that panel and the window.
   const sentinel = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLParagraphElement>(null);
+  const capRef = useRef<HTMLParagraphElement>(null);
   const throttleRef = useRef<HTMLParagraphElement>(null);
   const loadMoreBtn = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<null | "more" | "return">(null);
   const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
+  const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
+  const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
   useEffect(() => {
     pendingFocus.current = null;
   }, [query, search]);
@@ -939,15 +943,16 @@ export function PreviewBoard({
           return;
         }
         loadMoreBtn.current.focus({ preventScroll: true });
-        pendingFocus.current = loadingMore ? "more" : null;
+        pendingFocus.current = "more";
       }
       return;
     }
     if (pendingFocus.current === "more" && !loadingMore) {
       if (atEnd) endRef.current?.focus({ preventScroll: true });
+      else if (atCap) capRef.current?.focus({ preventScroll: true });
       pendingFocus.current = null;
     }
-  }, [pagingThrottle, loadingMore, atEnd]);
+  }, [pagingThrottle, loadingMore, atEnd, atCap]);
   const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
     && (total ?? 0) > NARROW_HINT_MIN_TOTAL
     && !exhausted
@@ -965,6 +970,7 @@ export function PreviewBoard({
   return (
     <div className={embed ? "preview-board-embed" : "preview-page"}>
       {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
+      {!embed && emitCanonical && <link rel="canonical" href="https://tradeupbot.app/trade-ups" />}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
@@ -1039,10 +1045,10 @@ export function PreviewBoard({
             )}
           </p>
         )}
-        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
-          <p className="preview-note">{LIST_CAP_COPY}</p>
-        )}
       </div>
+      {atCap && (
+        <p className="preview-note preview-note--end" ref={capRef} tabIndex={-1}>{LIST_CAP_COPY}</p>
+      )}
       {atEnd && (
         <p className="preview-note preview-note--end" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
       )}

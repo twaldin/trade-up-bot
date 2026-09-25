@@ -972,8 +972,13 @@ export function PreviewCollectionPage() {
       return;
     }
     if (!title) return;
-    const first = links[0];
-    if (!(first instanceof HTMLLinkElement)) return;
+    let first = links[0];
+    if (!(first instanceof HTMLLinkElement)) {
+      const created = document.createElement("link");
+      created.rel = "canonical";
+      document.head.appendChild(created);
+      first = created;
+    }
     if (canonicalNode.current !== first) canonicalHref.current = first.getAttribute("href");
     canonicalNode.current = first;
     first.href = `https://tradeupbot.app/collections/${name}`;

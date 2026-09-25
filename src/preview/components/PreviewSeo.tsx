@@ -7,8 +7,14 @@ export function useCanonicalSlot(href: string): boolean {
   });
   useEffect(() => {
     if (!href) return;
-    const link = document.querySelector("link[rel='canonical']");
-    if (link instanceof HTMLLinkElement) link.setAttribute("href", href);
+    let link = document.querySelector("link[rel='canonical']");
+    if (!(link instanceof HTMLLinkElement)) {
+      const created = document.createElement("link");
+      created.rel = "canonical";
+      document.head.appendChild(created);
+      link = created;
+    }
+    link.setAttribute("href", href);
   }, [href]);
   return emit;
 }
