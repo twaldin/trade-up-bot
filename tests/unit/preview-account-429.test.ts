@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, holdBrowse, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
 
 function json(status: number, body: unknown, retryAfter?: string) {
@@ -111,8 +111,69 @@ describe("account 429", () => {
     }));
     await mount();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2500)); });
+    await act(async () => {
+      const deadline = Date.now() + 4000;
+      while (browseHeldUntil() > Date.now() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
     expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
     expect([...host.querySelectorAll("button")].some((node) => node.textContent?.trim() === "Retry")).toBe(true);
     expect(host.textContent).not.toContain("Retrying");
+  }, 10000);
+
+  it("hides claim-card Retry during a hold so extra clicks do not refetch", async () => {
+    const user = { steam_id: "1", display_name: "Ada", avatar_url: "", tier: "pro", is_admin: false };
+    const claim = {
+      id: 7,
+      type: "classified_covert",
+      inputs: [],
+      outcomes: [{
+        skin_id: "out-1",
+        skin_name: "AK-47 | Fire Serpent",
+        collection_name: "Test",
+        probability: 1,
+        predicted_float: 0.15,
+        predicted_condition: "Field-Tested",
+        estimated_price_cents: 12000,
+      }],
+      total_cost_cents: 1000,
+      expected_value_cents: 1800,
+      profit_cents: 800,
+      roi_percentage: 10,
+      chance_to_profit: 1,
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    let claims = 0;
+    let details = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, user);
+      if (path.includes("/inputs")) {
+        details += 1;
+        return json(429, null, "0");
+      }
+      if (path.includes("my_claims=true")) {
+        claims += 1;
+        return json(200, { trade_ups: [claim], tier: "pro" });
+      }
+      return json(200, { trade_ups: [], stats: {} });
+    }));
+    await mount();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2200)); });
+    const claimsAtHold = claims;
+    const detailsAtHold = details;
+    await act(async () => { holdBrowse(Date.now() + 30_000); });
+    const retry = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Retry");
+    expect(retry == null || (retry as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      for (let i = 0; i < 5; i += 1) retry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(claims).toBe(claimsAtHold);
+    expect(details).toBe(detailsAtHold);
+    expect(claims).toBeLessThanOrEqual(1);
+    expect(details).toBeLessThanOrEqual(2);
   }, 10000);
 });

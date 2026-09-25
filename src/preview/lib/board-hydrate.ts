@@ -5,7 +5,7 @@
  */
 
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
-import { noteRateLimited, parseRetryAfter, rateLimitWaitMs } from "./page-fetch.js";
+import { noteRateLimited, parseRetryAfter, rateLimitWaitMs, waitForBrowseHold } from "./page-fetch.js";
 
 export interface HydratedTradeUp extends TradeUp {
   /** Set when an inputs or outcomes fetch stayed 429 after one retry. */
@@ -31,6 +31,7 @@ async function readDetail(
     }
   };
 
+  await waitForBrowseHold();
   const first = await load();
   if (!first) return { throttled: false, data: null };
   if (first.status !== 429) {

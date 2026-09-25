@@ -32,6 +32,7 @@ import {
 } from "../lib/collection-skins.js";
 import { PreviewBoard, usePreviewTradeUps } from "./PreviewBoard.js";
 import {
+  RATE_LIMIT_MANUAL_COPY,
   SLOW_DOWN_COPY,
   applyRateLimit,
   browseErrorKind,
@@ -888,11 +889,15 @@ export function PreviewCollectionPage() {
   const [skins, setSkins] = useState<SkinRow[]>([]);
   const [skinsStatus, setSkinsStatus] = useState<"loading" | "ok" | "throttled" | "failed">("loading");
   const [skinsRetry, setSkinsRetry] = useState(0);
+  const [skinsScheduled, setSkinsScheduled] = useState(false);
+  const skinsAttempts = useRef(0);
 
   const skinsScope = useRef(title);
   useLayoutEffect(() => {
     if (skinsScope.current === title) return;
     skinsScope.current = title;
+    skinsAttempts.current = 0;
+    setSkinsScheduled(false);
     setSkins([]);
     setSkinsStatus("loading");
   }, [title]);
@@ -903,6 +908,8 @@ export function PreviewCollectionPage() {
     let timer = 0;
     fetchCollectionSkins(title, controller.signal)
       .then((rows) => {
+        skinsAttempts.current = 0;
+        setSkinsScheduled(false);
         setSkins([...rows].sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity)));
         setSkinsStatus("ok");
       })
@@ -911,6 +918,12 @@ export function PreviewCollectionPage() {
         if (kind === "aborted") return;
         if (kind === "throttled") {
           setSkinsStatus("throttled");
+          if (skinsAttempts.current >= 1) {
+            setSkinsScheduled(false);
+            return;
+          }
+          skinsAttempts.current += 1;
+          setSkinsScheduled(true);
           timer = window.setTimeout(() => setSkinsRetry((n) => n + 1), retryDelayMs());
           return;
         }
@@ -928,7 +941,7 @@ export function PreviewCollectionPage() {
     if (waitingOnIndex && index.throttled) return SLOW_DOWN_COPY;
     if (unknown) return "That collection is not in the live dataset.";
     if (skinsStatus === "ok") return formatCollectionSkinCopy(tallyCollectionSkins(skins));
-    if (skinsStatus === "throttled") return SLOW_DOWN_COPY;
+    if (skinsStatus === "throttled") return skinsScheduled ? SLOW_DOWN_COPY : RATE_LIMIT_MANUAL_COPY;
     if (skinsStatus === "failed") return "Couldn't load this collection's skins.";
     return "Loading skins…";
   })();

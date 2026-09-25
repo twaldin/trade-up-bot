@@ -10,7 +10,8 @@ import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { hasProAccess } from "../lib/billing.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
-import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, parseRetryAfter } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, parseRetryAfter, waitForBrowseHold } from "../lib/page-fetch.js";
+import { useBrowseHeld } from "../lib/use-browse-json.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import {
   ACCOUNT_EMPTY,
@@ -100,6 +101,8 @@ export function PreviewAccount() {
   const [sessionRetry, setSessionRetry] = useState(0);
   const sessionAttempts = useRef(0);
   const claimAttempts = useRef(0);
+  const claimsInFlight = useRef(false);
+  const held = useBrowseHeld();
   const [activeTab, setActiveTab] = useState<(typeof ACCOUNT_TABS)[number]["key"]>("claims");
   const [claimTradeUps, setClaimTradeUps] = useState<HydratedTradeUp[]>([]);
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
@@ -124,9 +127,12 @@ export function PreviewAccount() {
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     if (!user) return;
+    if (claimsInFlight.current) return;
+    claimsInFlight.current = true;
     setLoading(true);
     setNote(null);
     try {
+      await waitForBrowseHold(signal);
       const mainReq = activeTab === "claims"
         ? fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
         : fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
@@ -219,9 +225,15 @@ export function PreviewAccount() {
       console.error("Failed to fetch my trade-ups", error);
       setNote("Could not load trade-ups.");
     } finally {
+      claimsInFlight.current = false;
       if (!signal?.aborted) setLoading(false);
     }
   }, [activeTab, user]);
+
+  const retryClaims = useCallback(() => {
+    if (browseHeldUntil() > Date.now() || claimsInFlight.current) return;
+    void fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     let live = true;
@@ -671,7 +683,7 @@ export function PreviewAccount() {
       )}
 
       {user && activeTab === "claims" && claimTradeUps.some((tu) => tu.hydrateThrottled) && (
-        <BoardNotice notice="throttled" onRetry={() => { void fetchData(); }} />
+        <BoardNotice notice="throttled" onRetry={held ? undefined : retryClaims} />
       )}
 
       {user && activeTab === "claims" && claimTradeUps.length > 0 && (

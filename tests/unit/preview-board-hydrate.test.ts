@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrateBoardCard } from "../../src/preview/lib/board-hydrate.js";
-import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, holdBrowse, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
@@ -92,6 +92,19 @@ describe("board card hydration 429", () => {
     expect(card.outcomes).toHaveLength(1);
     expect(card.inputs).toHaveLength(1);
     expect(card.hydrateThrottled).toBeUndefined();
+  });
+
+  it("waits for an active browse hold before the first detail fetch", async () => {
+    holdBrowse(Date.now() + 180);
+    const started = Date.now();
+    let firstAt = 0;
+    const fetchFn = vi.fn(async () => {
+      if (firstAt === 0) firstAt = Date.now();
+      return jsonResponse({ outcomes: [], inputs: [] });
+    });
+    await hydrateBoardCard(bareCard(), fetchFn as unknown as typeof fetch, async () => {});
+    expect(firstAt - started).toBeGreaterThanOrEqual(150);
+    expect(fetchFn).toHaveBeenCalled();
   });
 
   it("does not retry a non-429 failure and does not invent a slow-down", async () => {
