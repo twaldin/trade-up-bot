@@ -7,6 +7,7 @@ import Redis from "ioredis";
 import type { Request, Response, NextFunction } from "express";
 
 let _redis: Redis | null = null;
+let _flushSub: Redis | null = null;
 let _available = false;
 let _connect: Promise<void> = Promise.resolve();
 
@@ -66,11 +67,38 @@ export function redisConnected(): Promise<void> {
 export async function closeRedis(): Promise<void> {
   await _connect.catch(() => undefined);
   const client = _redis;
+  const sub = _flushSub;
   _redis = null;
+  _flushSub = null;
   _available = false;
   _connect = Promise.resolve();
+  if (sub) await sub.quit().catch(() => undefined);
   if (!client) return;
   await client.quit().catch(() => undefined);
+}
+
+/**
+ * API-only. A second connection subscribes to `tu:flushed` so daemon-process
+ * cache clears (heal, housekeeping, end of cycle) run the board warmer here.
+ * Retry never stops: a blip must not leave the subscriber dead.
+ */
+export function startBoardFlushSubscriber(): void {
+  if (_flushSub) return;
+  const retryStrategy = (times: number) => Math.min(times * 200, 3000);
+  const shared = {
+    maxRetriesPerRequest: null,
+    retryStrategy,
+    enableReadyCheck: true,
+  };
+  const url = process.env.REDIS_URL;
+  const sub = url
+    ? new Redis(url, shared)
+    : new Redis({ host: "127.0.0.1", port: 6379, ...shared });
+  _flushSub = sub;
+  sub.on("error", () => { /* reconnect is the retry strategy */ });
+  void import("./routes/board-warm.js").then(({ bindBoardFlushSubscriber }) => {
+    bindBoardFlushSubscriber(sub);
+  });
 }
 
 export function getRedis(): Redis | null {
@@ -103,10 +131,6 @@ export async function cacheSet(key: string, data: unknown, ttlSeconds: number): 
 
 /** Delete keys matching a prefix pattern. Uses SCAN to avoid blocking. */
 export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
-  if (prefix.startsWith("tu:")) {
-    const { requestBoardWarm } = await import("./routes/board-warm.js");
-    requestBoardWarm();
-  }
   if (!_available || !_redis) return 0;
   try {
     let cursor = "0";
@@ -118,6 +142,10 @@ export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
         total += await _redis.del(...keys);
       }
     } while (cursor !== "0");
+    if (prefix.startsWith("tu:")) {
+      const { notifyBoardListFlushed } = await import("./routes/board-warm.js");
+      await notifyBoardListFlushed(_redis);
+    }
     return total;
   } catch (e) {
     console.error("Cache invalidation failed:", e instanceof Error ? e.message : e);

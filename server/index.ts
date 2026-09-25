@@ -5,11 +5,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
 import { initDb, createTables } from "./db.js";
-import { initRedis } from "./redis.js";
+import { initRedis, startBoardFlushSubscriber } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
-import { publicBoardWarmPaths, registerBoardWarmer } from "./routes/board-warm.js";
+import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
 import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "./routes/active-trade-up-counts.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { registerTradeUpShareSeo } from "./trade-up-share-seo.js";
@@ -1322,11 +1322,13 @@ registerCanonicalRedirectRoutes(app);
       await fetch(`http://127.0.0.1:${PORT}${path}`).then((res) => res.arrayBuffer(), () => undefined);
     }
   });
+  startBoardFlushSubscriber();
 
   // Start listening
   const server = app.listen(PORT, () => {
     process.send?.("ready"); // signal PM2 wait_ready when configured
     console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+    warmPublicBoardOnStartup();
     void materializeStaticHomepage();
 
     // Background cache warming: pre-populate Redis with heavy COUNT queries

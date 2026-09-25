@@ -1,13 +1,22 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  BOARD_FLUSH_CHANNEL,
   PUBLIC_BOARD_SORTS,
+  bindBoardFlushSubscriber,
   boardWarmBackoffMs,
   clearsTradeUpLists,
+  handleBoardFlushMessage,
+  notifyBoardListFlushed,
   publicBoardWarmPaths,
   registerBoardWarmer,
   requestBoardWarm,
   resetBoardWarmerForTests,
+  setBoardFlushDebounceForTests,
   setBoardWarmDelayForTests,
+  warmPublicBoardOnStartup,
 } from "../../server/routes/board-warm.js";
 
 describe("public board warm", () => {
@@ -80,5 +89,71 @@ describe("public board warm", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(runs).toBe(2);
     expect(waits).toEqual([1000]);
+  });
+
+  it("warms once when the API boots", async () => {
+    let runs = 0;
+    registerBoardWarmer(async () => {
+      runs += 1;
+    });
+    warmPublicBoardOnStartup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runs).toBe(1);
+  });
+
+  it("a daemon flush signal warms once for a burst, and the subscriber resubscribes", async () => {
+    setBoardFlushDebounceForTests(20);
+    let runs = 0;
+    registerBoardWarmer(async () => {
+      runs += 1;
+    });
+
+    const published: string[] = [];
+    await notifyBoardListFlushed({
+      publish: async (channel) => {
+        published.push(channel);
+        handleBoardFlushMessage(channel);
+        handleBoardFlushMessage(channel);
+        return 1;
+      },
+    });
+    expect(published).toEqual([BOARD_FLUSH_CHANNEL]);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(runs).toBe(1);
+
+    const subs: string[] = [];
+    const handlers = new Map<string, Array<(...args: string[]) => void>>();
+    const sub = {
+      subscribe: (channel: string) => {
+        subs.push(channel);
+        return Promise.resolve();
+      },
+      on: (event: string, cb: (...args: string[]) => void) => {
+        const list = handlers.get(event) ?? [];
+        list.push(cb);
+        handlers.set(event, list);
+      },
+    };
+    bindBoardFlushSubscriber(sub);
+    expect(subs).toEqual([BOARD_FLUSH_CHANNEL]);
+    for (const cb of handlers.get("ready") ?? []) cb();
+    expect(subs).toEqual([BOARD_FLUSH_CHANNEL, BOARD_FLUSH_CHANNEL]);
+    for (const cb of handlers.get("message") ?? []) cb(BOARD_FLUSH_CHANNEL, "1");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(runs).toBe(2);
+  });
+
+  it("wires the API subscriber and startup warm, and publishes after the tu: delete", () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const index = fs.readFileSync(path.join(root, "server/index.ts"), "utf8");
+    const redis = fs.readFileSync(path.join(root, "server/redis.ts"), "utf8");
+    expect(index).toContain("startBoardFlushSubscriber(");
+    expect(index).toContain("warmPublicBoardOnStartup(");
+    const flush = redis.slice(redis.indexOf("export async function cacheInvalidatePrefix"));
+    const body = flush.slice(0, flush.indexOf("\nexport "));
+    expect(body).toContain("notifyBoardListFlushed(");
+    expect(body).not.toContain("requestBoardWarm(");
+    expect(body.indexOf("del(")).toBeLessThan(body.indexOf("notifyBoardListFlushed("));
   });
 });
