@@ -143,8 +143,9 @@ describe("console cutover", () => {
   it("backs off the Express per-IP limiter, not CSFloat", () => {
     const index = readFileSync(resolve(testDir, "../../server/index.ts"), "utf8");
     expect(index).toContain("Too many requests, please try again later.");
-    expect(index).toContain('skip: (req) => !req.path.startsWith("/api")');
-    expect(index).toMatch(/max:\s*120/);
+    expect(index).toContain("skip: (req) => !usesSharedApiBucket(req.path)");
+    expect(index).toContain("SHARED_API_MAX");
+    expect(index).toMatch(/max:\s*10/);
     const helper = readFileSync(resolve(testDir, "../../src/preview/lib/page-fetch.ts"), "utf8");
     expect(helper).toContain("Too many requests, please try again later.");
     expect(helper).toContain("canLoadMore");
