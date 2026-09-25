@@ -42,6 +42,7 @@ function BoardRoute() {
       loadMore={state.loadMore}
       loadingMore={state.loadingMore}
       exhausted={state.exhausted}
+      endKind={state.endKind}
       throttle={state.throttle}
       retryReady={state.retryReady}
       failed={state.failed}

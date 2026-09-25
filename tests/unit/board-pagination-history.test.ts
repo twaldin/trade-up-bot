@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
-import { END_OF_LIST_COPY } from "../../src/preview/lib/board-notice.js";
+import { END_OF_LIST_COPY, LIST_CAP_COPY } from "../../src/preview/lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
 
@@ -59,6 +59,7 @@ function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
     onSearch: api.onSearch,
     loadMore: api.loadMore,
     exhausted: api.exhausted,
+    endKind: api.endKind,
     throttle: api.throttle,
     retryReady: api.retryReady,
     failed: api.failed,
@@ -193,6 +194,55 @@ describe("board pagination and history", () => {
     paint();
     expect(api.query.minChance).toBe("81");
     expect(window.location.search).toContain("min_chance=81");
+  });
+
+  it("shows Load more while idle and the loading line only while page 2 is in flight", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    expect(host.textContent).toContain("Load more");
+    expect(host.textContent).not.toMatch(/Loading more trade-ups/);
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    await act(async () => { button?.click(); });
+    paint();
+    expect(host.textContent).toMatch(/Loading more trade-ups/);
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent?.trim() === "Load more")).toBe(false);
+    await act(async () => { release(ok([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], 36)); });
+    await act(async () => { await Promise.resolve(); });
+    paint();
+    expect(api.tradeUps).toHaveLength(24);
+    expect(host.textContent).toContain("Load more");
+  });
+
+  it("uses the cap line when a full page reaches the count ceiling, and the end line on a short page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    const sample = api.tradeUps[0];
+    const paintKind = (endKind: "end" | "capped") => {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: sample ? [sample] : [],
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => {},
+        exhausted: true,
+        endKind,
+      })));
+    };
+    act(() => { paintKind("end"); });
+    expect(host.textContent).toContain(END_OF_LIST_COPY);
+    expect(host.textContent).not.toContain(LIST_CAP_COPY);
+    act(() => { paintKind("capped"); });
+    expect(host.textContent).toContain(LIST_CAP_COPY);
+    expect(host.textContent).not.toContain(END_OF_LIST_COPY);
   });
 
   it("reads collection filters from the URL on a fresh tab", async () => {

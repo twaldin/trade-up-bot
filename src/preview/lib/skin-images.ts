@@ -1,7 +1,7 @@
 /** Cached name → Steam / stored image_url. Never fetches ByMykel JSON. */
 
 import { toSlug } from "../../../shared/slugs.js";
-import { noteRateLimited, parseRetryAfter, waitForBrowseHold } from "./page-fetch.js";
+import { parseRetryAfter, waitForBrowseHold } from "./page-fetch.js";
 
 export const BYMYKEL_URL_RE = /bymykel|CSGO-API/i;
 
@@ -154,21 +154,37 @@ function inflightFor(cache: FaceMap): Map<string, Promise<void>> {
  */
 type FaceBatchOutcome = "ok" | "missing" | "throttled";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+async function readFaceResponse(res: Response, cache: FaceMap): Promise<FaceBatchOutcome> {
+  if (res.status === 429) return "throttled";
+  const type = res.headers.get("content-type") ?? "";
+  if (res.status === 404 || type.includes("text/html")) return "missing";
+  if (res.ok) {
+    const data = (await res.json()) as { faces?: Record<string, string | null> };
+    if (data.faces) rememberFaces(cache, data.faces);
+  }
+  return "ok";
+}
+
+/**
+ * One retry after Retry-After. A faces 429 does not take the shared browse
+ * hold: that hold is what painted the list throttle notice for a decoration
+ * request. Cards keep their placeholder until a face actually arrives.
+ */
 async function fillFaceBatch(batch: string[], cache: FaceMap, fetchFn: typeof fetch): Promise<FaceBatchOutcome> {
   try {
     await waitForBrowseHold();
-    const res = await fetchFn(facesRequestUrl(batch), { credentials: "include" });
+    const url = facesRequestUrl(batch);
+    let res = await fetchFn(url, { credentials: "include" });
     if (res.status === 429) {
-      noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
-      return "throttled";
+      const wait = parseRetryAfter(res.headers.get("retry-after")) ?? 1000;
+      await sleep(wait);
+      res = await fetchFn(url, { credentials: "include" });
     }
-    const type = res.headers.get("content-type") ?? "";
-    if (res.status === 404 || type.includes("text/html")) return "missing";
-    if (res.ok) {
-      const data = (await res.json()) as { faces?: Record<string, string | null> };
-      if (data.faces) rememberFaces(cache, data.faces);
-    }
-    return "ok";
+    return await readFaceResponse(res, cache);
   } catch {
     return "missing";
   }

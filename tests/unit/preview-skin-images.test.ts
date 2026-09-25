@@ -126,21 +126,45 @@ describe("preview face loading is bounded", () => {
 });
 
 describe("preview faces under the rate limit", () => {
-  it("treats a 429 as rate-limited, not as a missing faces route: no /__face/ fan-out", async () => {
+  it("retries a faces 429 once and does not take the list hold", async () => {
     const { browseHeldUntil, resetBrowseFetchState } = await import("../../src/preview/lib/page-fetch.js");
     resetBrowseFetchState();
     const cache = createFaceCache();
-    const names = Array.from({ length: 60 }, (_, i) => `AK-47 | Skin ${i}`);
-    // express-rate-limit's default 429 body is a string, served as text/html.
+    let calls = 0;
+    const fetchFn = vi.fn(async (_input: RequestInfo | URL) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("Too many requests, please try again later.", {
+          status: 429,
+          headers: { "content-type": "text/html; charset=utf-8", "retry-after": "0" },
+        });
+      }
+      return new Response(JSON.stringify({ faces: { "AK-47 | Redline": "https://community.fastly.steamstatic.com/economy/image/abc" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    await loadFaces(["AK-47 | Redline"], cache, fetchFn as unknown as typeof fetch, 2000);
+    expect(calls).toBe(2);
+    expect(fetchFn.mock.calls.every(([url]) => String(url).startsWith("/api/preview/faces"))).toBe(true);
+    expect(browseHeldUntil()).toBe(0);
+    expect(faceFor(cache, "AK-47 | Redline")).toContain("steamstatic");
+    resetBrowseFetchState();
+  });
+
+  it("keeps the card placeholder when the faces retry is also limited", async () => {
+    const { browseHeldUntil, resetBrowseFetchState } = await import("../../src/preview/lib/page-fetch.js");
+    resetBrowseFetchState();
+    const cache = createFaceCache();
     const fetchFn = vi.fn(async (_input: RequestInfo | URL) => new Response("Too many requests, please try again later.", {
       status: 429,
-      headers: { "content-type": "text/html; charset=utf-8", "retry-after": "20" },
+      headers: { "content-type": "text/html; charset=utf-8", "retry-after": "0" },
     }));
-    const before = Date.now();
-    await loadFaces(names, cache, fetchFn as unknown as typeof fetch, 200);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    await loadFaces(["AK-47 | Redline"], cache, fetchFn as unknown as typeof fetch, 2000);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(fetchFn.mock.calls.every(([url]) => String(url).startsWith("/api/preview/faces"))).toBe(true);
-    expect(browseHeldUntil()).toBeGreaterThanOrEqual(before + 20_000);
+    expect(faceFor(cache, "AK-47 | Redline")).toBeNull();
+    expect(browseHeldUntil()).toBe(0);
     resetBrowseFetchState();
   });
 

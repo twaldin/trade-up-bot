@@ -81,6 +81,7 @@ export function PreviewCollectionTradeUps() {
           loadMore={board.loadMore}
           loadingMore={board.loadingMore}
           exhausted={board.exhausted}
+          endKind={board.endKind}
           throttle={board.throttle}
           retryReady={board.retryReady}
           failed={board.failed}

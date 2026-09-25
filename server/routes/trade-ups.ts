@@ -22,6 +22,7 @@ import {
   type RankSnapshotStore,
 } from "./trade-ups-page.js";
 import { floatToCondition, type TradeUp, type TradeUpOutcome } from "../../shared/types.js";
+import { faceNamesOnPage, loadFaceMap } from "./preview-faces.js";
 
 function canonicalListingStatus(
   rawStatus: TradeUp["listing_status"] | null | undefined,
@@ -720,6 +721,15 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       claim_limit: effectiveTier === "pro" ? await getRateLimit(userId, "claim", 10) : null,
       verify_limit: effectiveTier === "free" ? null : await getRateLimit(userId, "verify", 20),
     };
+    if (includes.outcomes || includes.inputs) {
+      try {
+        const faces = await loadFaceMap(pool, faceNamesOnPage(filteredTradeUps));
+        res.json({ ...result, faces });
+        return;
+      } catch {
+        // Faces are decoration. The list still ships without them.
+      }
+    }
     res.json(result);
   }, presentList));
 
