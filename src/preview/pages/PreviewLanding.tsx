@@ -113,7 +113,7 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
   );
 }
 
-const SKELETON_ROWS = Array.from({ length: 10 }, (_, index) => index);
+const SKELETON_ROWS = Array.from({ length: 6 }, (_, index) => index);
 
 export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boolean; isFree: boolean }) {
   const proof = heroProof(tu);
@@ -232,7 +232,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
         </>
       ) : (
         <>
-          <div className="preview-listings preview-listings--story">
+          <div className="preview-listings preview-listings--story preview-proof__placeholder">
             <div className="preview-listing preview-listing--placeholder">
               <span className="preview-listing__n">—</span>
               <span className="preview-listing__name"><b>—</b></span>

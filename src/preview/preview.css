@@ -394,6 +394,9 @@
   width: 100%;
   max-width: 640px;
   min-width: 0;
+  /* Real hero is ~501px. Reserve that so skeleton, placeholder, and the
+     loaded panel share one box. Phones stack the KPI row, so they need more. */
+  min-height: 501px;
   padding: 14px;
   border: 1px solid var(--line-hard);
   border-radius: var(--r-panel);
@@ -424,6 +427,10 @@
 .preview-proof .preview-listings--story {
   margin: 0;
   padding: 6px;
+}
+
+.preview-proof__placeholder {
+  flex: 1 1 auto;
 }
 
 .preview-proof .preview-listing { height: 26px; }
@@ -512,6 +519,7 @@
 /* Phones: the four headline numbers sit under the panel header, not ten
    listing rows below the fold. */
 @media (max-width: 519px) {
+  .preview-proof { min-height: 603px; }
   .preview-proof > * { order: 2; }
   .preview-proof__head { order: 0; }
 

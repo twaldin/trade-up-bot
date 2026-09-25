@@ -41,6 +41,10 @@ function hiddenForViewer(tu: TradeUp): boolean {
   return tu.inputs_redacted === true || tu.inputs.some((row) => row.listing_id === "hidden");
 }
 
+function priced(tu: TradeUp): boolean {
+  return tu.inputs.every((row) => typeof row.price_cents === "number" && row.price_cents > 0);
+}
+
 function buyable(tu: TradeUp | null | undefined): tu is TradeUp {
   return Boolean(
     tu
@@ -48,7 +52,8 @@ function buyable(tu: TradeUp | null | undefined): tu is TradeUp {
     && tu.listing_status !== "stale"
     && !hiddenForViewer(tu)
     && tu.inputs.length > 0
-    && tu.outcomes.length > 0,
+    && tu.outcomes.length > 0
+    && priced(tu),
   );
 }
 

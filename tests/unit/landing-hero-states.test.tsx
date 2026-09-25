@@ -46,6 +46,12 @@ describe("hero proof panel states", () => {
     const eligible = makeTradeUp({ id: 4 });
     expect(pickHeroTradeUp([hidden, redacted, stale, eligible])?.id).toBe(4);
     expect(pickHeroTradeUp([hidden, redacted, stale])).toBeNull();
+    const zeroPrice = makeTradeUp({
+      id: 5,
+      inputs: makeTradeUp().inputs.map((row, index) => index === 0 ? { ...row, price_cents: 0 } : row),
+    });
+    expect(pickHeroTradeUp([zeroPrice, eligible])?.id).toBe(4);
+    expect(pickHeroTradeUp([zeroPrice])).toBeNull();
 
     const skipped = render({ tu: pickHeroTradeUp([hidden, redacted, stale]), loading: false, isFree: true });
     expect(skipped).toContain("preview-chip--placeholder");
