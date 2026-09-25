@@ -101,6 +101,24 @@ describe("board scroll reaches page 2", () => {
     stop();
   });
 
+  it("does not scroll the panel when a touchmove was already cancelled", () => {
+    const stop = mount();
+    const outside = document.createElement("aside");
+    document.body.appendChild(outside);
+    const start = new Event("touchstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(start, "touches", { value: [{ clientY: 200 }] });
+    outside.dispatchEvent(start);
+    const cancel = (event: Event) => event.preventDefault();
+    window.addEventListener("touchmove", cancel, { capture: true });
+    const move = new Event("touchmove", { bubbles: true, cancelable: true });
+    Object.defineProperty(move, "touches", { value: [{ clientY: 20 }] });
+    outside.dispatchEvent(move);
+    expect(scroller.scrollTop).toBe(0);
+    window.removeEventListener("touchmove", cancel, { capture: true });
+    outside.remove();
+    stop();
+  });
+
   it("does not steal Space from a focused button, link, or dialog", () => {
     const stop = mount();
     const button = document.createElement("button");

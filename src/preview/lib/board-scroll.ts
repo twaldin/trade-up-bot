@@ -133,6 +133,7 @@ export function bindBoardScroll(
     touchY = event.touches[0]?.clientY ?? null;
   };
   const onTouchMove = (event: TouchEvent) => {
+    if (event.defaultPrevented) return;
     if (event.touches.length > 1) { touchY = null; return; }
     if (touchY === null) return;
     const y = event.touches[0]?.clientY;

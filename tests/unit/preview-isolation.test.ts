@@ -144,10 +144,10 @@ describe("console cutover", () => {
   it("backs off the Express per-IP limiter, not CSFloat", () => {
     const index = readFileSync(resolve(testDir, "../../server/index.ts"), "utf8");
     expect(index).toContain("Too many requests, please try again later.");
-    expect(index).toContain("skip: (req) => !usesSharedApiBucket(req.path)");
+    expect(index).toContain("skip: (req) => !usesSharedApiBucket(req.path, req.method)");
     const sharedLimiter = index.slice(
       index.indexOf("app.use(rateLimit({"),
-      index.indexOf("skip: (req) => !usesSharedApiBucket(req.path)") + "skip: (req) => !usesSharedApiBucket(req.path)".length,
+      index.indexOf("skip: (req) => !usesSharedApiBucket(req.path, req.method)") + "skip: (req) => !usesSharedApiBucket(req.path, req.method)".length,
     );
     expect(sharedLimiter).toContain("max: SHARED_API_MAX");
     expect(sharedLimiter).toContain("windowMs: RATE_WINDOW_MS");
@@ -182,6 +182,18 @@ describe("console cutover", () => {
     expect(SHARED_API_MAX).toBe(120);
     expect(CACHEABLE_READ_MAX).toBe(600);
     expect(RATE_WINDOW_MS).toBe(60_000);
+  });
+
+  it("sends POST on face and stats paths to the shared 120 bucket", () => {
+    const paths = ["/api/global-stats", "/api/preview/faces", "/api/outcome-stats"];
+    for (const path of paths) {
+      expect(isCacheableRead(path, "POST")).toBe(false);
+      expect(usesSharedApiBucket(path, "POST")).toBe(true);
+      expect(isCacheableRead(path, "GET")).toBe(true);
+      expect(usesSharedApiBucket(path, "GET")).toBe(false);
+      expect(isCacheableRead(path, "HEAD")).toBe(true);
+      expect(usesSharedApiBucket(path, "HEAD")).toBe(false);
+    }
   });
 
   it("does not iframe production chrome", () => {

@@ -124,7 +124,7 @@ app.use(rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rlKey,
-  skip: (req) => !usesSharedApiBucket(req.path),
+  skip: (req) => !usesSharedApiBucket(req.path, req.method),
   message: "Too many requests, please try again later.",
 }));
 app.use(rateLimit({
@@ -133,7 +133,7 @@ app.use(rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rlKey,
-  skip: (req) => !isCacheableRead(req.path),
+  skip: (req) => !isCacheableRead(req.path, req.method),
   message: "Too many requests, please try again later.",
 }));
 app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));
