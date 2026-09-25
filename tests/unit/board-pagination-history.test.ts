@@ -10,7 +10,7 @@ import { makeTradeUp } from "../helpers/fixtures.js";
 import { END_OF_LIST_COPY, LIST_CAP_COPY } from "../../src/preview/lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
-import { PreviewCollectionPage } from "../../src/preview/pages/PreviewSkins.js";
+import { PreviewCollectionPage, PreviewCollectionsPage } from "../../src/preview/pages/PreviewSkins.js";
 
 type Api = ReturnType<typeof usePreviewTradeUps>;
 
@@ -694,7 +694,16 @@ describe("board pagination and history", () => {
     expect(tags).toHaveLength(1);
     expect(tags[0]).toBe(link);
     expect(link.href).toBe("https://tradeupbot.app/collections/kilowatt");
-    link.remove();
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/collections"] },
+        createElement(PreviewCollectionsPage),
+      ));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const after = [...document.querySelectorAll("link[rel='canonical']")];
+    expect(after).toHaveLength(1);
+    expect(after[0]?.getAttribute("href")).toBe("https://tradeupbot.app/collections");
+    after[0]?.remove();
   });
 
   it("moves focus to the throttle note after a focused Load more, then back", async () => {
@@ -730,5 +739,113 @@ describe("board pagination and history", () => {
     await act(async () => { retry?.click(); });
     const again = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
     expect(document.activeElement).toBe(again);
+  });
+
+  it("keeps focus on a card through the retry after a 429", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    let mode: "idle" | "throttled" | "loading" = "idle";
+    function draw() {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: mode === "loading",
+        loadingMore: mode === "loading",
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => { mode = "throttled"; },
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        total: 40,
+      })));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { draw(); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); mode = "throttled"; draw(); });
+    const card = document.createElement("button");
+    card.textContent = "Card";
+    host.appendChild(card);
+    card.focus();
+    mode = "loading";
+    await act(async () => { draw(); });
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("lands focus on the throttle note for two 429s and tabs to Retry", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    let mode: "idle" | "throttled" | "loading" = "idle";
+    function draw() {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: mode === "loading",
+        loadingMore: mode === "loading",
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => { mode = "throttled"; },
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        onRetry: () => {},
+        total: 40,
+      })));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { draw(); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); mode = "throttled"; draw(); });
+    const note = () => host.querySelector(".preview-sentinel p");
+    expect(document.activeElement).toBe(note());
+    mode = "loading";
+    await act(async () => { draw(); });
+    mode = "throttled";
+    await act(async () => { draw(); });
+    const again = note();
+    expect(again instanceof HTMLParagraphElement).toBe(true);
+    expect(document.activeElement).toBe(again);
+    const tabbable = [...host.querySelectorAll("button, a, input, select, textarea")].filter((el) => el instanceof HTMLElement && el.tabIndex >= 0);
+    const next = tabbable.find((el) => again instanceof HTMLElement && (again.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    expect(next?.textContent).toContain("Retry");
+  });
+
+  it("drops a pending focus return when the filters change", async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
+    let mode: "idle" | "throttled" | "back" = "idle";
+    let query = { ...DEFAULT_QUERY };
+    function draw() {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        query,
+        onQuery: () => {},
+        loadMore: () => { mode = "throttled"; },
+        pagingThrottle: mode === "throttled" ? "Too many requests right now." : null,
+        retryReady: mode === "throttled",
+        total: 40,
+      })));
+    }
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { draw(); });
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); mode = "throttled"; draw(); });
+    const note = host.querySelector(".preview-sentinel p");
+    expect(document.activeElement).toBe(note);
+    query = { ...DEFAULT_QUERY, minChance: "80" };
+    mode = "back";
+    await act(async () => { draw(); });
+    const again = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    expect(again).toBeTruthy();
+    expect(document.activeElement).not.toBe(again);
   });
 });

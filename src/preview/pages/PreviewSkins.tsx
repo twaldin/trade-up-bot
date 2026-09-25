@@ -9,6 +9,7 @@ import { Link, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
+import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import {
   collectionsHref,
@@ -757,6 +758,7 @@ export function PreviewCollectionsPage() {
   const [search, setSearch] = useState("");
   const [visible, setVisible] = useState(12);
   const sentinel = useRef<HTMLDivElement>(null);
+  const emitCanonical = useCanonicalSlot("https://tradeupbot.app/collections");
 
   useEffect(() => {
     cacheNames(rows.map((row) => ({ name: row.name, kind: "collection" as const })));
@@ -827,7 +829,7 @@ export function PreviewCollectionsPage() {
       <title>CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot</title>
       <meta name="description" content="Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection." />
       <meta name="robots" content="index, follow" />
-      <link rel="canonical" href="https://tradeupbot.app/collections" />
+      {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/collections" />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildCollectionsHubJsonLd([])) }} />
       <header className="preview-page__head">
         <div>
@@ -960,19 +962,29 @@ export function PreviewCollectionPage() {
   useEffect(() => { cacheNames(skins.map((row) => ({ name: row.name, rarity: row.rarity }))); }, [skins]);
 
   const board = usePreviewTradeUps({ collection: title ?? undefined, perPage: 6, enabled: Boolean(title) });
+  const canonicalNode = useRef<HTMLLinkElement | null>(null);
+  const canonicalHref = useRef<string | null>(null);
   useEffect(() => {
     const links = [...document.querySelectorAll("link[rel='canonical']")];
     if (unknown) {
       for (const link of links) link.remove();
+      canonicalNode.current = null;
       return;
     }
     if (!title) return;
-    const href = `https://tradeupbot.app/collections/${name}`;
     const first = links[0];
     if (!(first instanceof HTMLLinkElement)) return;
-    first.href = href;
+    if (canonicalNode.current !== first) canonicalHref.current = first.getAttribute("href");
+    canonicalNode.current = first;
+    first.href = `https://tradeupbot.app/collections/${name}`;
     for (const extra of links.slice(1)) extra.remove();
   }, [title, name, unknown]);
+  useEffect(() => () => {
+    const node = canonicalNode.current;
+    const original = canonicalHref.current;
+    canonicalNode.current = null;
+    if (node?.isConnected && original != null) node.setAttribute("href", original);
+  }, []);
   const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
 
   return (

@@ -919,21 +919,32 @@ export function PreviewBoard({
   const pendingFocus = useRef<null | "more" | "return">(null);
   const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
   useEffect(() => {
+    pendingFocus.current = null;
+  }, [query, search]);
+  useEffect(() => {
     if (pendingFocus.current == null) return;
     if (pagingThrottle && pendingFocus.current === "more") {
-      throttleRef.current?.focus();
+      throttleRef.current?.focus({ preventScroll: true });
       pendingFocus.current = "return";
       return;
     }
     if (pendingFocus.current === "return") {
       if (loadMoreBtn.current && !pagingThrottle) {
-        loadMoreBtn.current.focus();
-        pendingFocus.current = null;
+        const active = document.activeElement;
+        const note = throttleRef.current;
+        const retry = note?.querySelector("button") ?? null;
+        const stillThere = active == null || active === document.body || active === note || active === retry;
+        if (!stillThere) {
+          pendingFocus.current = null;
+          return;
+        }
+        loadMoreBtn.current.focus({ preventScroll: true });
+        pendingFocus.current = loadingMore ? "more" : null;
       }
       return;
     }
     if (pendingFocus.current === "more" && !loadingMore) {
-      if (atEnd) endRef.current?.focus();
+      if (atEnd) endRef.current?.focus({ preventScroll: true });
       pendingFocus.current = null;
     }
   }, [pagingThrottle, loadingMore, atEnd]);

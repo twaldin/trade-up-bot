@@ -1,4 +1,17 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+export function useCanonicalSlot(href: string): boolean {
+  const [emit] = useState(() => {
+    if (typeof document === "undefined") return true;
+    return document.querySelector("link[rel='canonical']") == null;
+  });
+  useEffect(() => {
+    if (!href) return;
+    const link = document.querySelector("link[rel='canonical']");
+    if (link instanceof HTMLLinkElement) link.setAttribute("href", href);
+  }, [href]);
+  return emit;
+}
 
 export function PreviewSeo({
   title,
@@ -15,12 +28,13 @@ export function PreviewSeo({
   jsonLd?: unknown;
   children?: ReactNode;
 }) {
+  const emitCanonical = useCanonicalSlot(canonical);
   return (
     <>
       <title>{title}</title>
       <meta name="description" content={description} />
       <meta name="robots" content={robots} />
-      <link rel="canonical" href={canonical} />
+      {emitCanonical && <link rel="canonical" href={canonical} />}
       {jsonLd != null && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       )}

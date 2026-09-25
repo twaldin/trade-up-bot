@@ -43,7 +43,8 @@ describe("collection page SEO crawler HTML", () => {
     expect(helmet).toContain('"https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/"');
     const imgLine = helmet.split("\n").find((line) => line.includes("imgSrc"));
     expect(imgLine).toContain("https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/");
-    expect(helmet.split("\n").filter((line) => line.includes("raw.githubusercontent.com"))).toHaveLength(1);
+    expect(imgLine).toContain("https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/");
+    expect(helmet.split("\n").filter((line) => line.includes("raw.githubusercontent.com") || line.includes("set_icons"))).toHaveLength(1);
   });
 
   it("does not inject a second client canonical on the collection page", () => {
