@@ -49,7 +49,7 @@ import {
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY } from "../lib/board-notice.js";
+import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
 import {
   canonicalBoardSearch,
   historyAction,
@@ -800,6 +800,8 @@ export function PreviewBoard({
   onRetry,
   onClearFilters,
   onFilterBlur,
+  page = 1,
+  total = null,
   heading = "Live trade-ups",
   lede = "Built from listings you can buy right now on CSFloat, DMarket, Skinport, and Buff.",
   collection,
@@ -834,6 +836,10 @@ export function PreviewBoard({
   onClearFilters?: () => void;
   /** Clears the history typing burst so the next edit pushes. */
   onFilterBlur?: () => void;
+  /** Page currently on screen. Used for the load announcement and the long-list hint. */
+  page?: number;
+  /** Server total for this filter. The narrow hint only appears above a large set. */
+  total?: number | null;
   heading?: string;
   lede?: string;
   collection?: string;
@@ -902,6 +908,20 @@ export function PreviewBoard({
   // Wheel, keys, and touch outside the inner scroller are forwarded into it,
   // and the sentinel is checked against both that panel and the window.
   const sentinel = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLParagraphElement>(null);
+  const wasExhausted = useRef(false);
+  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
+  const endFromPaging = atEnd && page > 1;
+  useEffect(() => {
+    if (endFromPaging && !wasExhausted.current) endRef.current?.focus();
+    wasExhausted.current = endFromPaging;
+  }, [endFromPaging]);
+  const pageStatus = loadingMore
+    ? "Loading more trade-ups…"
+    : !atEnd && page > 1
+      ? `Loaded page ${page}.`
+      : "";
+  const showNarrowHint = page >= NARROW_HINT_MIN_PAGES && (total ?? 0) > NARROW_HINT_MIN_TOTAL && !exhausted;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -970,6 +990,7 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
+      <span className="sr-only" role="status" aria-live="polite">{pageStatus}</span>
       <div
         className="preview-sentinel"
         ref={sentinel}
@@ -986,26 +1007,29 @@ export function PreviewBoard({
             )}
           </p>
         )}
-        {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
-          <button
-            type="button"
-            className="preview-btn preview-btn--quiet"
-            aria-disabled={loadingMore || undefined}
-            onClick={() => {
-              if (loadingMore) return;
-              loadMore();
-            }}
-          >
-            {loadingMore ? "Loading more trade-ups…" : "Load more"}
-          </button>
-        )}
-        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped" && (
-          <p className="preview-note">{END_OF_LIST_COPY}</p>
+        {atEnd && (
+          <p className="preview-note" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
         )}
         {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
           <p className="preview-note">{LIST_CAP_COPY}</p>
         )}
       </div>
+      {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
+        <button
+          type="button"
+          className="preview-btn preview-btn--quiet"
+          aria-disabled={loadingMore || undefined}
+          onClick={() => {
+            if (loadingMore) return;
+            loadMore();
+          }}
+        >
+          {loadingMore ? "Loading more trade-ups…" : "Load more"}
+        </button>
+      )}
+      {showNarrowHint && (
+        <p className="preview-note preview-note--hint">{NARROW_FILTERS_HINT}</p>
+      )}
       {!embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
@@ -1116,8 +1140,8 @@ export function usePreviewTradeUps(options: {
   const [settled, setSettled] = useState({ key, scope });
   const settledKey = settled.scope === scope ? settled.key : key;
   const listedRef = useRef({ key, scope });
-  listedRef.current = { key, scope };
   useEffect(() => {
+    listedRef.current = { key, scope };
     if (settled.key === key && settled.scope === scope) return;
     // A new collection or skin applies at once. Filter edits wait out the burst.
     if (settled.scope !== scope) { setSettled({ key, scope }); return; }
@@ -1308,9 +1332,9 @@ export function usePreviewTradeUps(options: {
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
-      failed, retry, clearFilters, loadingMore,
+      failed, retry, clearFilters, loadingMore, page,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page],
   );
 }

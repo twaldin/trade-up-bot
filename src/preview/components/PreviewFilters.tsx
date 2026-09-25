@@ -4,6 +4,7 @@
  */
 import { Search, X } from "lucide-react";
 import { rarityLabel } from "../lib/board.js";
+import { commitMinChance } from "../lib/min-chance.js";
 import { LABEL_ABOVE_COST_PCT, LABEL_EXPECTED_PL, LABEL_MIN_ABOVE_COST } from "../lib/copy.js";
 
 export interface BoardQuery {
@@ -154,7 +155,11 @@ export function PreviewFilters({
           placeholder="0"
           onChange={(event) => set("minChance", event.target.value.replace(/[^\d]/g, ""))}
           onKeyDown={onKeyDown}
-          onBlur={onBlur}
+          onBlur={() => {
+            const next = commitMinChance(query.minChance);
+            if (next !== query.minChance) set("minChance", next);
+            onBlur?.();
+          }}
         />
       </label>
 

@@ -89,6 +89,8 @@ export function PreviewCollectionTradeUps() {
           refreshing={board.refreshing}
           onRetry={board.retry}
           onFilterBlur={board.onFilterBlur}
+          page={board.page}
+          total={board.total}
           collection={title}
           heading={`${display} Trade-Ups`}
           lede={description}

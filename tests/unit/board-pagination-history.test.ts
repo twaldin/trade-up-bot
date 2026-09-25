@@ -69,6 +69,8 @@ function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
     endKind: api.endKind,
     throttle: api.throttle,
     pagingThrottle: api.pagingThrottle,
+    page: api.page,
+    total: api.total,
     retryReady: api.retryReady,
     failed: api.failed,
     onRetry: api.retry,
@@ -509,8 +511,91 @@ describe("board pagination and history", () => {
     expect((chance?.querySelector("input") as HTMLInputElement | null)?.value).toBe("80");
     const sort = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Sort"));
     expect((sort?.querySelector("select") as HTMLSelectElement | null)?.value).toBe("profit");
-    const canonical = document.querySelector("link[rel='canonical']")?.getAttribute("href");
-    expect(canonical).toBe("https://tradeupbot.app/collections/kilowatt");
-    expect(canonical).not.toContain("?");
+    expect(document.querySelector("link[rel='canonical']")).toBeNull();
+  });
+
+  it("keeps the status slot and hides the top notice on a page-2 429", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return limited("60");
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 36);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const notice = host.querySelector(".preview-notice");
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(notice).toBeNull();
+    expect(sentinel?.getAttribute("role")).toBe("status");
+    expect(sentinel?.getAttribute("aria-live")).toBe("polite");
+    expect(sentinel?.textContent).toContain("Too many requests right now.");
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Load more") || node.textContent?.includes("Loading more"));
+    expect(sentinel?.contains(button ?? null)).toBe(false);
+  });
+
+  it("announces a loaded page from a hidden status and focuses the end line", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return ok([13], 13);
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    const sentinel = host.querySelector(".preview-sentinel");
+    expect(sentinel?.contains(button ?? null)).toBe(false);
+    await act(async () => { button?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const status = host.querySelector(".sr-only[role='status']");
+    expect(status?.textContent).toBe("");
+    const end = [...host.querySelectorAll("p")].find((node) => node.textContent === END_OF_LIST_COPY);
+    expect(end?.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(end);
+  });
+
+  it("clamps a typed min chance on blur and writes it to the URL", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok([1], 1)));
+    window.history.replaceState({}, "", "/trade-ups");
+    await mount();
+    paint();
+    await act(async () => { api.onQuery({ ...DEFAULT_QUERY, minChance: "150" }); });
+    paint();
+    const chance = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Min above cost"));
+    const input = chance?.querySelector("input") as HTMLInputElement | null;
+    expect(input?.value).toBe("150");
+    await act(async () => { input?.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); });
+    paint();
+    const after = [...host.querySelectorAll("label")].find((node) => node.textContent?.includes("Min above cost"));
+    expect((after?.querySelector("input") as HTMLInputElement | null)?.value).toBe("100");
+    expect(window.location.search).toContain("min_chance=100");
+    expect(window.location.search).not.toContain("150");
+  });
+
+  it("hints to narrow filters only after five pages of a large list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = Number(new URL(String(url), "http://local").searchParams.get("page") ?? "1");
+      const start = (page - 1) * 12 + 1;
+      return ok(Array.from({ length: 12 }, (_, i) => start + i), 2400);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    expect(host.textContent).not.toContain("This list is long.");
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    expect(api.page).toBe(2);
+    expect(host.textContent).not.toContain("This list is long.");
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => { api.loadMore(); });
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    }
+    paint();
+    expect(api.page).toBe(5);
+    expect(host.textContent).toContain("This list is long.");
   });
 });

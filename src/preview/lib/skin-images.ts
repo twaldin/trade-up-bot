@@ -1,5 +1,6 @@
 /** Cached name → Steam / stored image_url. Never fetches ByMykel JSON. */
 
+import { dopplerBaseName } from "../../../shared/doppler-face.js";
 import { toSlug } from "../../../shared/slugs.js";
 import { parseRetryAfter, waitForBrowseHold } from "./page-fetch.js";
 
@@ -21,7 +22,10 @@ export function rememberFaces(cache: FaceMap, entries: Record<string, string | n
 }
 
 export function faceFor(cache: FaceMap, name: string): string | null {
-  return cache.get(name) ?? null;
+  const direct = cache.get(name);
+  if (direct) return direct;
+  const base = dopplerBaseName(name);
+  return base ? cache.get(base) ?? null : null;
 }
 
 export function isBlockedCatalogUrl(url: string): boolean {
