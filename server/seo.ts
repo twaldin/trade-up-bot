@@ -1,8 +1,6 @@
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
-import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
-import { detailTypeLabel, tradeUpDetailJsonLd } from "../shared/types.js";
-export { tradeUpDetailJsonLd } from "../shared/types.js";
-import type { Pool } from "pg";
+import { tradeUpH1, tradeUpPair } from "../shared/copy.js";
+import { detailTypeLabel } from "../shared/types.js";
 import { formatOdds } from "../src/preview/lib/board.js";
 import { FOOTER_AGE, FOOTER_NOT_VALVE } from "../src/preview/lib/copy.js";
 import { TRADE_UPS_FAQ } from "../shared/trade-ups-faq.js";
@@ -263,63 +261,6 @@ export function deletedTradeUpStatus(id: string): 404 | 410 {
   return /^\d+$/.test(id) ? 410 : 404;
 }
 
-export async function loadTradeUpDetailPage(pool: Pool, id: string): Promise<{ status: 404 | 410 } | { status: 200; meta: SeoMeta }> {
-  const { rows: [row] } = await pool.query(
-    "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json FROM trade_ups WHERE id = $1",
-    [id],
-  );
-  if (!row) return { status: deletedTradeUpStatus(id) };
-
-  const isStale = row.listing_status === "stale"
-    || (row.preserved_at && Date.now() - new Date(row.preserved_at).getTime() > 7 * 24 * 60 * 60 * 1000);
-
-  const { rows: inputs } = await pool.query(
-    "SELECT skin_name, condition, collection_name, price_cents FROM trade_up_inputs WHERE trade_up_id = $1",
-    [row.id],
-  );
-  const outcomes = JSON.parse(row.outcomes_json || "[]") as Array<{
-    skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
-  }>;
-  const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
-  const related = [
-    ...collections.map((c: string) => ({
-      label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
-      url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
-    })).slice(0, 2),
-    { label: "All CS2 Trade-Ups", url: "/trade-ups" },
-    { label: "Browse CS2 Collections", url: "/collections" },
-  ];
-  const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name);
-  const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
-
-  return {
-    status: 200,
-    meta: {
-      title: tradeUpDocumentTitle(row.type, outcomes, collectionNames),
-      ogTitle: tradeUpOgTitle(row.type, row.profit_cents, outcomes),
-      description: tradeUpDescription({
-        type: row.type,
-        profitCents: row.profit_cents,
-        costCents: row.total_cost_cents,
-        chanceToProfit: row.chance_to_profit ?? 0,
-        outcomes,
-        inputNames,
-      }),
-      url: `https://tradeupbot.app/trade-ups/${id}`,
-      ogImage: `https://tradeupbot.app/og/trade-ups/${id}.png`,
-      robots: isStale ? "noindex, follow" : "index, follow",
-      includeLegal: true,
-      jsonLd: tradeUpDetailJsonLd(id, tradeUpPair(row.type, outcomes)),
-      bodyHtml: renderTradeUpDetail(
-        { id: row.id, type: row.type, total_cost_cents: row.total_cost_cents, profit_cents: row.profit_cents, roi_percentage: row.roi_percentage, chance_to_profit: row.chance_to_profit },
-        inputs,
-        outcomes,
-        related,
-      ),
-    },
-  };
-}
-
 export interface CollectionHubLink {
   name: string;
   slug: string;
@@ -460,7 +401,7 @@ export function renderTradeUpDetail(
   const e = escapeHtml;
   const cost = formatDollars(tradeUp.total_cost_cents);
   const chance = formatOdds(tradeUp.chance_to_profit ?? 0);
-const pair = tradeUpPair(tradeUp.type, outcomes);
+  const pair = tradeUpPair(tradeUp.type, outcomes);
   const hideInputCommercials = opts?.hideInputCommercials === true;
   const heading = tradeUpH1(tradeUp.type, tradeUp.profit_cents, tradeUp.roi_percentage, outcomes);
 

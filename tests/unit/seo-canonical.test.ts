@@ -48,11 +48,10 @@ describe("canonical and robots SEO helpers", () => {
 });
 
 describe("server route canonical/noindex/404 behavior", () => {
-const source = [
+  const source = [
     readFileSync(join(__dir, "../../server/index.ts"), "utf-8"),
     readFileSync(join(__dir, "../../server/trade-up-share-seo.ts"), "utf-8"),
   ].join("\n");
-  const detailSource = readFileSync(join(__dir, "../../server/seo.ts"), "utf-8");
 
   it("dynamic collection, skin, and trade-up routes return 404/410 instead of falling through to SPA", () => {
     expect(source).toContain('res.status(404).send("Collection trade-up page not found")');
@@ -75,7 +74,7 @@ const source = [
 
   it("noindex remains limited to low-listing skins and stale trade-up details", () => {
     expect(source).toContain('const robots = listingCount < 5 ? "noindex, follow" : "index, follow"');
-    expect(detailSource).toContain('robots: isStale ? "noindex, follow" : "index, follow"');
-    expect(countMatches(source + detailSource, /noindex, follow/g)).toBe(3);
+    expect(source).toContain('robots: isStale ? "noindex, follow" : "index, follow"');
+    expect(countMatches(source, /noindex, follow/g)).toBe(2);
   });
 });

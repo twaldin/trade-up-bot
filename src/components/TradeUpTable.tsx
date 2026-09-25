@@ -324,7 +324,7 @@ export function TradeUpTable({ tradeUps, sort, order, onSort, onNavigateSkin, on
     <div className="bg-card">
         {redactedInputIds.has(tu.id) && (
           <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 bg-yellow-950/40 border border-yellow-500/30 rounded-md text-xs text-yellow-200">
-            <span>This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</span>
+            <span>This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</span>
             <a href="/pricing" className="font-medium text-yellow-400 hover:text-yellow-300 whitespace-nowrap">View Plans →</a>
           </div>
         )}

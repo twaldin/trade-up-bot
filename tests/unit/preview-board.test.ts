@@ -280,7 +280,7 @@ describe("preview board numbers", () => {
       null,
       createElement(TradeUpCard, { tu, expanded: true, onExpand: () => {} }),
     ));
-    expect(html).toContain("inside the free delay");
+    expect(html).toContain("inside the 3-hour free delay");
     expect(html).toContain('href="/pricing"');
     expect(html).toContain("$100.00");
     expect(html).not.toContain("csfloat.com");
@@ -298,7 +298,7 @@ describe("preview board numbers", () => {
       createElement(TradeUpCard, { tu, expanded: true, onExpand: () => {} }),
     ));
     expect(html).toContain("https://csfloat.com/item/abc");
-    expect(html).not.toContain("inside the free delay");
+    expect(html).not.toContain("inside the 3-hour free delay");
   });
 
   it("reports blocked popups after the first listing so the card can expand", () => {

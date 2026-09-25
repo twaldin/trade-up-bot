@@ -604,7 +604,7 @@ export function TradeUpCard({
 
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
-          <p className="preview-note">This trade-up is inside the free delay. Upgrade to Pro to see listing links and exact floats.</p>
+          <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
           <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
         </div>
       )}

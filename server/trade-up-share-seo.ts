@@ -5,12 +5,8 @@ import { tradeUpDetailJsonLd } from "../shared/types.js";
 import { inputsAreRedacted } from "./routes/trade-ups.js";
 import { buildSeoHtml, deletedTradeUpStatus, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
 
-export interface TradeUpDetailRouteOpts {
-  shellHtml?: string;
-}
-
 /** Crawler and SPA-shell HTML for /trade-ups/:id. Fresh rows hide per-input price and source. */
-export function registerTradeUpDetailRoute(app: Express, pool: pg.Pool, _opts?: TradeUpDetailRouteOpts): void {
+export function registerTradeUpDetailRoute(app: Express, pool: pg.Pool): void {
   app.get("/trade-ups/:id", (req, res, next) => {
     void handleTradeUpShareSeo(pool, req, res, next);
   });
