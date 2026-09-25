@@ -1036,13 +1036,7 @@ export function PreviewBoard({
         ))}
       </div>
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
-      <div
-        className="preview-sentinel"
-        ref={sentinel}
-        role="status"
-        aria-live="polite"
-      >
-        {pagingThrottle && (
+      <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">{pagingThrottle ? (
           <p className="preview-note" ref={throttleRef} tabIndex={-1}>
             {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
             {showRetry && onRetry && (
@@ -1051,8 +1045,7 @@ export function PreviewBoard({
               </button>
             )}
           </p>
-        )}
-      </div>
+        ) : null}</div>
       {atCap && (
         <p className="preview-note preview-note--end" ref={capRef} tabIndex={-1}>{LIST_CAP_COPY}</p>
       )}

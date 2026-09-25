@@ -2746,6 +2746,9 @@
   min-height: 44px;
 }
 
+.preview-sentinel:empty { min-height: 0; }
+.preview-loadmore, .preview-note--end { align-self: center; }
+
 /* ------------------------------------------- every skin in a collection */
 
 .preview-allskins {
