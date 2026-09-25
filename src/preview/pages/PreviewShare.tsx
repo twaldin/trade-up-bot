@@ -5,6 +5,7 @@ import { TRADE_UP_TYPE_LABELS } from "../../../shared/types.js";
 import { formatDollars } from "../../utils/format.js";
 import { formatOdds } from "../lib/board.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -93,7 +94,7 @@ export function PreviewShare() {
         };
         setTu(next);
         setExpandedId(next.id);
-        trackEvent("tradeup_view", { tradeup_id: String(data.id) });
+        trackTradeUpDetailOpen({ collectionSlug: null, legacyTradeUpId: data.id });
       })
       .catch((err: Error) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -125,6 +126,7 @@ export function PreviewShare() {
   };
 
   async function handleVerify(tuId: number) {
+    trackVerifyClick("pro");
     setVerifying(true);
     setActionError(null);
     try {
@@ -234,6 +236,11 @@ export function PreviewShare() {
           <div className="preview-page__meta">
             <span>{typeLabel}</span>
             <i />
+            {(panel === "sign-in" || panel === "upgrade") && (
+              <a className="preview-btn preview-btn--quiet"
+                 href={panel === "sign-in" ? "#share-verify" : "/pricing"}
+                 onClick={() => trackVerifyClick("share_bar")}>Verify</a>
+            )}
             <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
               void navigator.clipboard.writeText(window.location.href);
               setCopied(true);
@@ -254,7 +261,7 @@ export function PreviewShare() {
       )}
 
       {tu && panel === "sign-in" && (
-        <section className="preview-panel">
+        <section className="preview-panel" id="share-verify">
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <button
             type="button"

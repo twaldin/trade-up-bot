@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
+import { trackCalculatorComplete } from "../../lib/conversions.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import {
   LABEL_AFTER_FEES,
@@ -76,7 +77,7 @@ export function PreviewCalculator() {
     setResults([]);
   };
 
-  const evaluate = async (source: CalculatorExampleSlot[]) => {
+  const evaluate = async (source: CalculatorExampleSlot[], origin: "example" | "custom") => {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -107,6 +108,7 @@ export function PreviewCalculator() {
       const tradeUp = data.trade_up;
       setResult(tradeUp);
       setStats(data.stats ?? null);
+      trackCalculatorComplete(origin);
       void warmBoardFaces(tradeUp.outcomes.map((outcome) => outcome.skin_name))
         .then(() => setFaceTick((tick) => tick + 1));
     } catch {
@@ -129,14 +131,14 @@ export function PreviewCalculator() {
       }
       setSlots(data.inputs);
       setIsExample(true);
-      await evaluate(data.inputs);
+      await evaluate(data.inputs, "example");
     } catch (err) {
       setError(isRateLimitError(err) ? SLOW_DOWN_COPY : EXAMPLE_UNAVAILABLE);
       setLoading(false);
     }
   };
 
-  const calculate = () => evaluate(slots);
+  const calculate = () => evaluate(slots, "custom");
 
   const clear = () => {
     setSlots(emptyCalculatorSlots());

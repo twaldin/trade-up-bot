@@ -1,4 +1,5 @@
 import { trackEvent } from "../../lib/analytics.js";
+import { trackSteamContinue } from "../../lib/conversions.js";
 import { proPriceLine, type BillingInterval } from "./pro-pricing.js";
 
 export type InterstitialContext =
@@ -85,6 +86,7 @@ export function createInterstitialTracker(track: Track = trackEvent): Interstiti
       if (!current || settled) return;
       settled = true;
       track("steam_continue", withBilling(current));
+      trackSteamContinue();
       track("sign_up_start", { location: SIGN_UP_LOCATION[current.surface] });
     },
     dismiss(method) {

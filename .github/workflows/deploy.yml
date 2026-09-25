@@ -104,6 +104,8 @@ jobs:
         if: hashFiles('frontend/package-lock.json') != ''
 
       - name: Build (Vite + prerender)
+        env:
+          GA4_MEASUREMENT_ID: ${{ vars.GA4_MEASUREMENT_ID || 'G-2474G4P5QE' }}
         run: npm run build
 
       - name: Setup SSH

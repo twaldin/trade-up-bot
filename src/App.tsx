@@ -13,6 +13,8 @@ import { Button } from "../shared/components/ui/button.js";
 import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
+import { trackAuthReturn } from "./lib/conversions.js";
+import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
@@ -509,6 +511,30 @@ export default function App() {
       next.delete("session_id");
       setSearchParams(next, { replace: true });
     });
+  }, [searchParams, setSearchParams]);
+
+  // Steam callback return. The server adds auth=new|return only when a tracker id is set.
+  // The CompleteRegistration event id is hashed here from /api/auth/me, never put in the URL.
+  useEffect(() => {
+    const auth = searchParams.get("auth");
+    if (auth !== "new" && auth !== "return") return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("auth");
+    next.delete("eid");
+    setSearchParams(next, { replace: true });
+    if (auth === "return") {
+      trackAuthReturn("login", null);
+      return;
+    }
+    void fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
+      .then(async (me) => {
+        const eventId = me?.steam_id ? await registrationEventIdFromSteamId(me.steam_id) : null;
+        trackAuthReturn("sign_up", eventId);
+      })
+      .catch(() => {
+        trackAuthReturn("sign_up", null);
+      });
   }, [searchParams, setSearchParams]);
 
   return (

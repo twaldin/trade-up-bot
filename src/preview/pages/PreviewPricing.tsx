@@ -5,6 +5,7 @@ import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
+import { trackPricingView } from "../../lib/conversions.js";
 import { hasProAccess } from "../lib/billing.js";
 import { runCheckout } from "../lib/checkout.js";
 import { PLAN_FOR, PRO_FEATURES, PRO_PRICE, type BillingInterval } from "../lib/pro-pricing.js";
@@ -83,6 +84,8 @@ export function PreviewPricing() {
   const [billing, setBilling] = useState<BillingInterval>("monthly");
   const [checkoutError, setCheckoutError] = useState<{ message: string; manage: boolean } | null>(null);
   const interstitial = useSteamInterstitial();
+
+  useEffect(() => { trackPricingView(); }, []);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })

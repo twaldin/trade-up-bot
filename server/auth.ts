@@ -10,6 +10,7 @@ import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
+import { authReturnLocation, trackCompleteRegistration } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -251,11 +252,13 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           avatar_url = EXCLUDED.avatar_url,
           is_admin = GREATEST(users.is_admin, EXCLUDED.is_admin),
           last_login_at = NOW()
+        RETURNING (xmax = 0) AS inserted
       `, [steamId, displayName, avatar, isAdminUser])
-        .then(() => pool.query("SELECT * FROM users WHERE steam_id = $1", [steamId]))
-        .then(({ rows }) => {
-          done(null, rows[0] as User);
-        })
+        .then((inserted) => pool.query("SELECT * FROM users WHERE steam_id = $1", [steamId]).then(({ rows }) => {
+          const user = rows[0] as User & { just_created?: boolean };
+          user.just_created = inserted.rows[0]?.inserted === true;
+          done(null, user);
+        }))
         .catch((err: Error) => {
           console.error("User upsert failed:", err.message);
           done(err);
@@ -299,7 +302,17 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           }
           const returnTo = req.session.returnTo || "/";
           delete req.session.returnTo;
-          res.redirect(returnTo);
+          const created = user.just_created === true;
+          if (created) {
+            const ipHeader = req.headers["x-real-ip"];
+            void trackCompleteRegistration({
+              steamId: user.steam_id,
+              ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
+              userAgent: req.headers["user-agent"] ?? null,
+              cookieHeader: req.headers.cookie,
+            });
+          }
+          res.redirect(authReturnLocation(returnTo, created, process.env));
         });
       })(req, res, next);
     });

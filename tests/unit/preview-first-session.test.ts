@@ -7,6 +7,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const board = read("../../src/preview/pages/PreviewBoard.tsx");
+const share = read("../../src/preview/pages/PreviewShare.tsx");
 const calc = read("../../src/preview/pages/PreviewCalculator.tsx");
 const copy = read("../../src/preview/lib/copy.ts");
 const css = read("../../src/preview/preview.css");
@@ -26,7 +27,8 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(line).toContain("preview-cardline__verify");
     expect(line).toContain("verifyClaimHref(tu.id)");
     expect(line).toMatch(/target="_blank"/);
-    expect(line).toContain("onClick={stop}");
+    expect(line).toContain('trackVerifyClick("board_card")');
+    expect(line).toContain("stop(event)");
   });
 
   it("does not bring back a header band or a visible expand button", () => {
@@ -45,7 +47,7 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(board).toContain("expandable = true");
     expect(board).toMatch(/\{expandable && \(\s*<span className="preview-cardline__open"/);
     expect(board).toMatch(/const toggle = \(\) => \{\s*if \(!expandable\) return;/);
-    expect(board).toMatch(/const open = \(\) => \{\s*if \(expandable\) onExpand\(tu\.id\);/);
+    expect(board).toMatch(/const open = \(\) => \{\s*if \(!expandable\) return;/);
     expect(board).toContain("onNeedExpand={open}");
   });
 
@@ -64,6 +66,17 @@ describe("collapsed board cards invite open and Verify", () => {
   });
 });
 
+describe("share-bar Verify", () => {
+  it("sends logged-out users to the sign-in panel and free users to pricing, and hides the button for Pro", () => {
+    expect(share).toContain('panel === "sign-in" || panel === "upgrade"');
+    expect(share).toContain('href={panel === "sign-in" ? "#share-verify" : "/pricing"}');
+    expect(share).toContain("SIGN_IN_TO_CLAIM");
+    expect(share).toContain('trackVerifyClick("share_bar")');
+    expect(share).toContain('id="share-verify"');
+    expect(share).not.toContain("verifyClaimHref");
+  });
+});
+
 describe("calculator first session", () => {
   it("offers Load example as the lime call to action in the empty state", () => {
     const empty = calc.slice(calc.indexOf("preview-calc-empty"));
@@ -74,7 +87,7 @@ describe("calculator first session", () => {
   it("evaluates the example straight away so the payoff shows on one click", () => {
     const load = calc.slice(calc.indexOf("const loadExample"), calc.indexOf("const calculate"));
     expect(load).toContain("/api/calculator/example");
-    expect(load).toContain("await evaluate(data.inputs)");
+    expect(load).toContain('await evaluate(data.inputs, "example")');
   });
 
   it("reads the example through the kit rate-limit path instead of a bare res.json()", () => {

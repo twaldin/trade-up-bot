@@ -2,7 +2,9 @@
 // so call sites never need to guard. `gtag` is a global defined by the gtag.js snippet in
 // index.html, so we reference the global binding directly.
 
-type GtagParams = Record<string, string | number | boolean>;
+export type GtagItem = { item_id: string; item_name: string; price: number; quantity: number };
+type GtagParam = string | number | boolean | GtagItem[];
+type GtagParams = Record<string, GtagParam>;
 
 declare global {
   // eslint-disable-next-line no-var

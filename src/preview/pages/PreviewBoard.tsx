@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
+import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -560,12 +561,18 @@ export function TradeUpCard({
   const totals = listingTotals(tu.inputs);
   const orderedInputs = [...tu.inputs].sort((a, b) => a.skin_name.localeCompare(b.skin_name));
   const inputsRedacted = tu.inputs_redacted === true || tu.inputs.some((row) => row.listing_id === "hidden");
+  const reportOpen = () => {
+    trackTradeUpDetailOpen({ collectionSlug: collectionSlugFromPath(window.location.pathname) });
+  };
   const toggle = () => {
     if (!expandable) return;
+    if (!expanded) reportOpen();
     onExpand(expanded ? null : tu.id);
   };
   const open = () => {
-    if (expandable) onExpand(tu.id);
+    if (!expandable) return;
+    if (!expanded) reportOpen();
+    onExpand(tu.id);
   };
 
   return (
@@ -655,7 +662,7 @@ export function TradeUpCard({
               rel="noopener noreferrer"
               title="Open this trade-up to re-check that its listings are still live"
               aria-label="Verify trade-up (opens in new tab)"
-              onClick={stop}
+              onClick={(event) => { trackVerifyClick("board_card"); stop(event); }}
             >
               Verify
               <ExternalLink size={10} aria-hidden />
@@ -726,7 +733,7 @@ export function TradeUpCard({
                   href={verifyClaimHref(tu.id)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={stop}
+                  onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
                 >
                   Verify / Claim trade-up
                 </a>
