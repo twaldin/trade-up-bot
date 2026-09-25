@@ -1,0 +1,9 @@
+node_modules/
+
+# Render output (MP4 / PNG) — never committed; copied to the artifacts folder instead.
+out/
+
+# Captured live-site footage, screenshots and the captured-figures file.
+# Regenerate with `npm run capture`.
+public/captures/
+.explore/
