@@ -7,9 +7,9 @@
  * 05:34 PT on 2026-09-26. This script does not wait on the 1000/cycle revive cap.
  *
  * Dry-run is the default and writes nothing. --hold inserts revivable ids into
- * trade_up_relist_hold so purgeExpiredPreserved skips them, but only after this
- * build is deployed and the daemon is restarted. Until then, --apply is the
- * protection.
+ * trade_up_relist_hold so purgeExpiredPreserved skips them for 48 hours, but
+ * only after this build is deployed and the daemon is restarted. Until then,
+ * --apply is the protection. --apply drops holds for plans it does not restore.
  *
  *   npx tsx scripts/revive-dmarket-relists.ts
  *   npx tsx scripts/revive-dmarket-relists.ts --hours 36
@@ -422,6 +422,11 @@ export async function runReviveDMarketRelists(pool: pg.Pool, args: ReviveArgs, n
   report.revivable = applied.applied;
   report.restored = applied.restoredIds.length;
   report.scoreGe10 = applied.scoreGe10;
+  const restored = new Set(applied.restoredIds);
+  const unrestored = plans.map(plan => plan.tradeUpId).filter(id => !restored.has(id));
+  if (unrestored.length > 0) {
+    await pool.query(`DELETE FROM trade_up_relist_hold WHERE trade_up_id = ANY($1)`, [unrestored]);
+  }
   if (applied.restoredIds.length > 0) {
     await pool.query(`DELETE FROM trade_up_relist_hold WHERE trade_up_id = ANY($1)`, [applied.restoredIds]);
   }

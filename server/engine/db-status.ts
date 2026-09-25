@@ -241,16 +241,15 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
 
 /**
  * Rows the one-time relist revive script flagged in `trade_up_relist_hold`.
- * Absent table (every database that has not run the script) keeps today's purge.
- * The hold only works after this build is deployed; run the script before the
- * 24h purge if the daemon is still on the previous build.
+ * Absent table keeps today's purge. Holds older than 48 hours are ignored so a
+ * partial that was not restored cannot skip purge forever.
  */
 async function relistHoldExclusion(pool: pg.Pool): Promise<string> {
   const { rows } = await pool.query<{ rel: string | null }>(
-    "SELECT to_regclass('public.trade_up_relist_hold') AS rel",
+    "SELECT to_regclass('trade_up_relist_hold') AS rel",
   );
   if (!rows[0]?.rel) return "";
-  return "AND id NOT IN (SELECT trade_up_id FROM trade_up_relist_hold)";
+  return "AND id NOT IN (SELECT trade_up_id FROM trade_up_relist_hold WHERE flagged_at > NOW() - INTERVAL '48 hours')";
 }
 
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
