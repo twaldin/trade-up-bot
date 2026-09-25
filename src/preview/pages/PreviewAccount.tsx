@@ -671,7 +671,7 @@ export function PreviewAccount() {
       )}
 
       {user && activeTab === "claims" && claimTradeUps.some((tu) => tu.hydrateThrottled) && (
-        <BoardNotice notice="throttled" />
+        <BoardNotice notice="throttled" onRetry={() => { void fetchData(); }} />
       )}
 
       {user && activeTab === "claims" && claimTradeUps.length > 0 && (

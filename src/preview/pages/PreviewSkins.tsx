@@ -953,7 +953,7 @@ export function PreviewCollectionPage() {
           </nav>
           <h1>{heading}</h1>
           <p>
-            {unknown || (waitingOnIndex && index.throttled)
+            {unknown || (waitingOnIndex && index.throttled) || skinsStatus === "throttled" || skinsStatus === "failed"
               ? skinsCopy
               : `${skinsCopy} · every skin in the collection, and the trade-ups the loop found inside it.`}
           </p>

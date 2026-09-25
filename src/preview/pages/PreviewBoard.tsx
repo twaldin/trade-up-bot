@@ -862,7 +862,7 @@ export function PreviewBoard({
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
       message={throttle ?? undefined}
-      detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results until it loads." : undefined}
+      detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results." : undefined}
     />
   );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);

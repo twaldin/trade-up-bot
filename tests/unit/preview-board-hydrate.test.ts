@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrateBoardCard } from "../../src/preview/lib/board-hydrate.js";
-import { SLOW_DOWN_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
@@ -117,7 +117,8 @@ describe("board card hydration 429", () => {
         onExpand: () => {},
       }));
     });
-    expect(host.textContent).toContain(SLOW_DOWN_COPY);
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect(host.textContent).not.toContain("Retrying");
     expect(host.querySelectorAll("[role='status']")).toHaveLength(1);
     await act(async () => { root?.unmount(); });
     host.remove();

@@ -5,7 +5,7 @@ import {
   UNFILTERED_EMPTY_COPY,
   type BoardNoticeKind,
 } from "../lib/board-notice.js";
-import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY } from "../lib/page-fetch.js";
 
 export function BoardNotice({
   notice,
@@ -23,10 +23,10 @@ export function BoardNotice({
   onApplySuggestion?: () => void;
   /** Extra sentence when the rows on screen are from the previous request. */
   detail?: string;
-  /** List throttle copy. Card-only throttles keep the shared fallback. */
+  /** List throttle copy. Card throttles never auto-retry, so they use the manual line. */
   message?: string;
 }) {
-  const throttleCopy = message || (onRetry ? RATE_LIMIT_MANUAL_COPY : SLOW_DOWN_COPY);
+  const throttleCopy = message || RATE_LIMIT_MANUAL_COPY;
   switch (notice) {
     case "throttled":
       return (

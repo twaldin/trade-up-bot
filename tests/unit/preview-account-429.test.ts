@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
 
 function json(status: number, body: unknown, retryAfter?: string) {
@@ -24,6 +24,7 @@ describe("account 429", () => {
   afterEach(() => {
     act(() => root.unmount());
     host.remove();
+    resetBrowseFetchState();
     vi.unstubAllGlobals();
   });
 
@@ -86,4 +87,32 @@ describe("account 429", () => {
     expect(host.textContent).not.toContain("Retrying");
     expect(host.textContent).not.toContain("No active claims.");
   });
+
+  it("offers Retry with the manual copy when claim card details stay throttled", async () => {
+    const user = { steam_id: "1", display_name: "Ada", avatar_url: "", tier: "pro", is_admin: false };
+    const claim = {
+      id: 7,
+      type: "classified_covert",
+      inputs: [],
+      outcomes: [],
+      total_cost_cents: 1000,
+      expected_value_cents: 1800,
+      profit_cents: 800,
+      roi_percentage: 10,
+      chance_to_profit: 1,
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, user);
+      if (path.includes("/outcomes") || path.includes("/inputs")) return json(429, null, "0");
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [claim], tier: "pro" });
+      return json(200, { trade_ups: [], stats: {} });
+    }));
+    await mount();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2500)); });
+    expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent?.trim() === "Retry")).toBe(true);
+    expect(host.textContent).not.toContain("Retrying");
+  }, 10000);
 });

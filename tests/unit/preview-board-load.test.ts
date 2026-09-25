@@ -21,7 +21,7 @@ import {
   LOAD_ERROR_COPY,
   UNFILTERED_EMPTY_COPY,
 } from "../../src/preview/lib/board-notice.js";
-import { reachedTotal, SLOW_DOWN_COPY } from "../../src/preview/lib/page-fetch.js";
+import { reachedTotal } from "../../src/preview/lib/page-fetch.js";
 import { sortRows } from "../../src/preview/components/PreviewTable.js";
 import {
   groupBySeries,
@@ -540,7 +540,8 @@ describe("preview board notice", () => {
 
   it("renders only the slow-down copy on a 429", () => {
     const html = markup(BoardNotice({ notice: "throttled" }));
-    expect(html).toContain(SLOW_DOWN_COPY);
+    expect(html).toContain("Too many requests right now. Try again in a moment.");
+    expect(html).not.toContain("Retrying");
     expect(html).not.toContain(FILTERED_EMPTY_COPY);
     expect(html).not.toContain(UNFILTERED_EMPTY_COPY);
     expect(html).not.toContain("<button");
