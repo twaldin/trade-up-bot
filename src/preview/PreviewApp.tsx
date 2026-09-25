@@ -40,6 +40,7 @@ function BoardRoute() {
       onSearch={state.onSearch}
       onParsed={state.onParsed}
       loadMore={state.loadMore}
+      loadingMore={state.loadingMore}
       exhausted={state.exhausted}
       throttle={state.throttle}
       retryReady={state.retryReady}

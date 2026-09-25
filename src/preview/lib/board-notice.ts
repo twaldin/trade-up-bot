@@ -6,6 +6,8 @@
 export const FILTERED_EMPTY_COPY = "No trade-ups match these filters.";
 export const UNFILTERED_EMPTY_COPY = "No live trade-ups right now. Check back after the next scan.";
 export const LOAD_ERROR_COPY = "Couldn't load trade-ups.";
+/** Shown once the server has no further page. Copy pending sign-off. */
+export const END_OF_LIST_COPY = "That's every trade-up that matches these filters.";
 
 export type BoardNoticeKind = "throttled" | "error" | "filtered-empty" | "empty";
 

@@ -49,10 +49,19 @@ import {
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice } from "../lib/board-notice.js";
-import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
+import { boardNotice, END_OF_LIST_COPY } from "../lib/board-notice.js";
+import {
+  historyAction,
+  isBoardFilterPath,
+  pushBoardUrl,
+  readBoardLocation,
+  replaceBoardUrl,
+  searchString,
+  boardSearchFromState,
+} from "../lib/board-url.js";
 import { TYPING_IDLE_MS } from "../lib/empty-suggestions.js";
 import { useLoosenProbe } from "../lib/use-loosen-probe.js";
+import { useBrowseHeld } from "../lib/use-browse-json.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
@@ -62,8 +71,7 @@ import {
   noteRateLimited,
   rateLimitCopy,
   canLoadMore,
-  pageIsShort,
-  reachedTotal,
+  isExhausted,
   readPagedJson,
 } from "../lib/page-fetch.js";
 import {
@@ -783,6 +791,7 @@ export function PreviewBoard({
   retryReady = false,
   failed,
   refreshing = false,
+  loadingMore = false,
   onRetry,
   onClearFilters,
   heading = "Live trade-ups",
@@ -809,6 +818,8 @@ export function PreviewBoard({
   failed?: boolean;
   /** Page-1 filter change still showing the previous rows. */
   refreshing?: boolean;
+  /** A later page is in flight. The sentinel stays quiet until then. */
+  loadingMore?: boolean;
   onRetry?: () => void;
   onClearFilters?: () => void;
   heading?: string;
@@ -850,7 +861,8 @@ export function PreviewBoard({
     collection,
     skin: lockedSkin,
   });
-  const showRetry = notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled));
+  const held = useBrowseHeld();
+  const showRetry = !held && (notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled)));
   const noticeNode = (
     <BoardNotice
       notice={notice}
@@ -947,11 +959,11 @@ export function PreviewBoard({
       </div>
       {loadMore && !exhausted && !notice && (
         <div className="preview-sentinel" ref={sentinel}>
-          <span className="preview-note">Loading more trade-ups…</span>
+          {loadingMore && <span className="preview-note">Loading more trade-ups…</span>}
         </div>
       )}
       {exhausted && tradeUps.length > 0 && !notice && (
-        <p className="preview-note">That is every trade-up matching these filters.</p>
+        <p className="preview-note">{END_OF_LIST_COPY}</p>
       )}
       {!embed && (
         <section className="preview-panel">
@@ -1003,13 +1015,38 @@ export function usePreviewTradeUps(options: {
   const [totalProfitable, setTotalProfitable] = useState(0);
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
+  const rowsRef = useRef<HydratedTradeUp[]>([]);
+  const openField = useRef<string | null>(null);
+  rowsRef.current = tradeUps;
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
 
   useEffect(() => {
-    if (collection || skin || typeof window === "undefined") return;
-    replaceBoardUrl({ query, text: search }, window.location, window.history);
-  }, [query, search, collection, skin]);
+    if (typeof window === "undefined") return;
+    if (!isBoardFilterPath(window.location.pathname)) return;
+    const state = { query, text: search };
+    const next = boardSearchFromState(state, window.location.search);
+    const current = searchString(window.location.search);
+    if (next === current) return;
+    const decision = historyAction(openField.current, current, next);
+    openField.current = decision.field;
+    if (decision.action === "push") pushBoardUrl(state, window.location, window.history);
+    else replaceBoardUrl(state, window.location, window.history);
+  }, [query, search]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      if (!isBoardFilterPath(window.location.pathname)) return;
+      const next = readBoardLocation(window.location);
+      openField.current = null;
+      setQuery(next.query);
+      setSearch(next.text);
+      setParsed(parseQuery(next.text));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const semantic = useMemo(() => chipsToBoardParams(parsed.chips, parsed.rest), [parsed]);
   const params = new URLSearchParams(boardQueryString(query, perPage));
@@ -1079,6 +1116,7 @@ export function usePreviewTradeUps(options: {
         }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
+      alreadyHave: (row) => rowsRef.current.some((have) => have.id === row.id),
       hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
@@ -1095,7 +1133,7 @@ export function usePreviewTradeUps(options: {
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(settledKey);
+          if (isExhausted({ received: count, pageSize: perPage, page, total })) setEndKey(settledKey);
         },
         rateLimited: (retryAfterMs) => {
           if (!live) return;
@@ -1140,6 +1178,7 @@ export function usePreviewTradeUps(options: {
   }, [backoffUntil]);
 
   const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== settledKey;
+  const loadingMore = loading && page > 1;
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -1184,9 +1223,9 @@ export function usePreviewTradeUps(options: {
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
       loadMore, exhausted, throttle, retryReady,
-      failed, retry, clearFilters,
+      failed, retry, clearFilters, loadingMore,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, faceTick, total, totalProfitable],
+      clearFilters, faceTick, total, totalProfitable, loadingMore],
   );
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import {
   boardSearchFromState,
+  historyAction,
+  pushBoardUrl,
   readBoardLocation,
   replaceBoardUrl,
   stateFromBoardSearch,
@@ -95,6 +97,28 @@ describe("board URL", () => {
       text: "",
     }, { pathname: "/collections", search: "" }, history);
     expect(calls).toHaveLength(1);
+  });
+
+  it("round-trips collection and skin filters with the same param names", () => {
+    const state = stateFromBoardSearch("?min_chance=80&max_cost=5000&sort=profit");
+    expect(readBoardLocation({ pathname: "/collections/kilowatt", search: "?min_chance=80&max_cost=5000&sort=profit" })).toEqual(state);
+    expect(readBoardLocation({ pathname: "/skins/ak-47-redline", search: "?min_chance=150&sort=nope" }).query).toEqual({
+      ...DEFAULT_QUERY,
+      minChance: "100",
+    });
+    const pushed: string[] = [];
+    pushBoardUrl(state, { pathname: "/collections/kilowatt", search: "" }, {
+      state: null,
+      replaceState: () => { throw new Error("replace"); },
+      pushState: (_data, _unused, url) => { pushed.push(String(url)); },
+    });
+    expect(pushed).toEqual(["/collections/kilowatt?min_chance=80&max_cost=5000&sort=profit"]);
+  });
+
+  it("pushes a committed change and replaces further keystrokes in that field", () => {
+    expect(historyAction(null, "", "min_chance=8")).toEqual({ action: "push", field: "min_chance" });
+    expect(historyAction("min_chance", "min_chance=8", "min_chance=80")).toEqual({ action: "replace", field: "min_chance" });
+    expect(historyAction("min_chance", "min_chance=80", "min_chance=80&sort=profit")).toEqual({ action: "push", field: null });
   });
 
 });

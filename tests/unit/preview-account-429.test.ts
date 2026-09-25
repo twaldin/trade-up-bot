@@ -82,10 +82,19 @@ describe("account 429", () => {
       return json(200, { trade_ups: [] });
     }));
     await mount();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(host.textContent).toContain(SLOW_DOWN_COPY);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2500)); });
     expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
     expect(host.textContent).not.toContain("Retrying");
     expect(host.textContent).not.toContain("No active claims.");
+    const retry = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Retry");
+    expect(retry).toBeTruthy();
+    const userFetch = vi.mocked(fetch);
+    const prior = userFetch.mock.calls.length;
+    await act(async () => { holdBrowse(Date.now() + 30_000); });
+    await act(async () => { retry?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(userFetch.mock.calls.length).toBe(prior);
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent?.trim() === "Retry")).toBe(false);
   });
 
   it("offers Retry with the manual copy when claim card details stay throttled", async () => {
