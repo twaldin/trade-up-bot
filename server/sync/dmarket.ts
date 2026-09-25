@@ -12,6 +12,12 @@
 import pg from "pg";
 import nacl from "tweetnacl";
 import { deleteListings } from "../engine.js";
+import {
+  applyDMarketRelinks,
+  assetIdFromInspect,
+  planDMarketRelinks,
+  type DMarketRelistSide,
+} from "../dmarket-fetcher-relist.js";
 
 const DMARKET_API = "https://api.dmarket.com";
 const GAME_ID = "a8db"; // CS2
@@ -351,7 +357,7 @@ export async function checkDMarketStaleness(
     maxChecks?: number;
     onProgress?: (msg: string) => void;
   } = {}
-): Promise<{ checked: number; removed: number }> {
+): Promise<{ checked: number; removed: number; relinked: number }> {
   const maxChecks = options.maxChecks ?? 20;
 
   // Get skin names that have DMarket listings, oldest-checked first
@@ -367,26 +373,14 @@ export async function checkDMarketStaleness(
 
   let checked = 0;
   let removed = 0;
+  let relinked = 0;
 
   for (const skinRow of skinRows) {
     try {
       const items = await fetchAllDMarketListings(skinRow.name);
-      const activeIds = new Set(items.map(i => `dmarket:${i.itemId}`));
+      const incomingSides: DMarketRelistSide[] = [];
 
-      // Get our stored DMarket listings for this skin
-      const { rows: stored } = await pool.query(`
-        SELECT l.id FROM listings l
-        JOIN skins s ON l.skin_id = s.id
-        WHERE s.name = $1 AND l.source = 'dmarket'
-      `, [skinRow.name]) as { rows: { id: string }[] };
-
-      const toRemove = stored.filter(s => !activeIds.has(s.id));
-      if (toRemove.length > 0) {
-        await deleteListings(pool, toRemove.map(r => r.id));
-        removed += toRemove.length;
-      }
-
-      // Also insert any new listings we didn't have
+      // Insert new offers first so a relist id exists before we drop the old one.
       const { rows: skinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1", [skinRow.name]);
       const { rows: stSkinIdRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = true LIMIT 1", [`StatTrak™ ${skinRow.name}`]);
       const skinId = skinIdRows[0] as { id: string } | undefined;
@@ -402,23 +396,73 @@ export async function checkDMarketStaleness(
           const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
           const targetSkin = isStatTrak ? stSkinId : skinId;
           if (!targetSkin) continue;
+          const dmId = `dmarket:${item.itemId}`;
+          const assetId = assetIdFromInspect(item.extra.inspectInGame);
+          if (!isStatTrak) {
+            incomingSides.push({
+              id: dmId,
+              skinName: skinRow.name,
+              floatValue: item.extra.floatValue,
+              paintSeed: item.extra.paintSeed ?? null,
+              assetId,
+              priceCents,
+              phase: item.extra.phase ?? null,
+            });
+          }
           await pool.query(`
-            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at, price_updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW(), NOW())
+            INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, staleness_checked_at, price_updated_at, marketplace_id)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW(), NOW(), $8)
             ON CONFLICT (id) DO UPDATE SET
               skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7, staleness_checked_at = NOW(),
-              price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END
+              price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
+              marketplace_id = COALESCE(EXCLUDED.marketplace_id, listings.marketplace_id)
           `, [
-            `dmarket:${item.itemId}`,
+            dmId,
             targetSkin.id,
             priceCents,
             item.extra.floatValue,
             item.extra.paintSeed ?? null,
             isStatTrak,
             item.extra.phase ?? null,
+            assetId,
           ]);
         }
       }
+
+      const { rows: stored } = await pool.query<{
+        id: string; float_value: number; paint_seed: number | null; price_cents: number; marketplace_id: string | null; phase: string | null;
+      }>(
+        `SELECT l.id, l.float_value, l.paint_seed, l.price_cents, l.marketplace_id, l.phase
+         FROM listings l JOIN skins s ON l.skin_id = s.id
+         WHERE s.name = $1 AND l.source = 'dmarket' AND l.stattrak = false`,
+        [skinRow.name],
+      );
+      const storedSides: DMarketRelistSide[] = stored.map(row => ({
+        id: row.id,
+        skinName: skinRow.name,
+        floatValue: Number(row.float_value),
+        paintSeed: row.paint_seed == null ? null : Number(row.paint_seed),
+        assetId: row.marketplace_id,
+        priceCents: Number(row.price_cents),
+        phase: row.phase,
+      }));
+      const plan = planDMarketRelinks(storedSides, incomingSides);
+      const applied = await applyDMarketRelinks(pool, plan.relinks);
+      const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
+      const activeIds = new Set(items.map(item => `dmarket:${item.itemId}`));
+      const { rows: statTrakStored } = await pool.query<{ id: string }>(
+        `SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id
+         WHERE s.name = $1 AND l.source = 'dmarket' AND l.stattrak = true`,
+        [skinRow.name],
+      );
+      for (const row of statTrakStored) {
+        if (!activeIds.has(row.id)) deleteIds.push(row.id);
+      }
+      if (deleteIds.length > 0) {
+        await deleteListings(pool, deleteIds);
+        removed += deleteIds.length;
+      }
+      relinked += applied.applied;
 
       // Mark all this skin's DMarket listings as checked
       await pool.query(`
@@ -432,7 +476,7 @@ export async function checkDMarketStaleness(
     }
   }
 
-  return { checked, removed };
+  return { checked, removed, relinked };
 }
 
 export interface DMarketBuyResult {

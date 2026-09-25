@@ -21,6 +21,7 @@ import {
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
+import { applyDMarketRelinks, assetIdFromInspect, planDMarketRelinks, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
 const { Pool } = pg;
 
@@ -180,13 +181,17 @@ async function main() {
     let cycleInserted = 0;
     let cycleCalls = 0;
     let cycleErrors = 0;
+    let cycleRelinked = 0;
+    let cycleDeleted = 0;
+    let cycleContested = 0;
+    let cycleFailed = 0;
 
     for (const skinName of queue) {
       if (!running) break;
 
       try {
         const items = await fetchAllDMarketListings(skinName);
-        const activeIds = new Set<string>();
+        const incomingSides: DMarketRelistSide[] = [];
 
         // Upsert active listings
         const { rows: skinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1", [skinName]);
@@ -208,39 +213,67 @@ async function main() {
             if (cleanTitle !== skinName) continue;
 
             const dmId = `dmarket:${item.itemId}`;
-            activeIds.add(dmId);
             const isStatTrak = item.title.includes("StatTrak") || item.extra?.category === "stattrak™";
             const targetSkin = isStatTrak ? stSkin : skin;
             if (!targetSkin) continue;
+            const assetId = assetIdFromInspect(item.extra.inspectInGame);
             await pool.query(`
-              INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at)
-              VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW())
+              INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, stattrak, created_at, source, listing_type, phase, price_updated_at, marketplace_id)
+              VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'dmarket', 'buy_now', $7, NOW(), $8)
               ON CONFLICT (id) DO UPDATE SET
                 skin_id = $2, price_cents = $3, float_value = $4, paint_seed = $5, stattrak = $6, created_at = NOW(), source = 'dmarket', listing_type = 'buy_now', phase = $7,
                 price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
-                staleness_checked_at = NOW()
-            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null]);
+                staleness_checked_at = NOW(),
+                marketplace_id = COALESCE(EXCLUDED.marketplace_id, listings.marketplace_id)
+            `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null, assetId]);
+            if (!isStatTrak) {
+              incomingSides.push({
+                id: dmId,
+                skinName,
+                floatValue: item.extra.floatValue,
+                paintSeed: item.extra.paintSeed ?? null,
+                assetId,
+                priceCents,
+                phase: item.extra.phase ?? null,
+              });
+            }
             inserted++;
           }
         }
 
-        // Staleness: remove DB listings not in the full API response
-        const { rows: stored } = await pool.query(
-          "SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = $1 AND l.source = 'dmarket'",
+        // Staleness: relist same skin/float/seed under a new offer id in place.
+        // Unmatched ids still delete and cascade to partial.
+        const { rows: stored } = await pool.query<{
+          id: string; float_value: number; paint_seed: number | null; price_cents: number; marketplace_id: string | null; phase: string | null;
+        }>(
+          `SELECT l.id, l.float_value, l.paint_seed, l.price_cents, l.marketplace_id, l.phase
+           FROM listings l JOIN skins s ON l.skin_id = s.id
+           WHERE s.name = $1 AND l.source = 'dmarket' AND l.stattrak = false`,
           [skinName]
         );
-        let removed = 0;
-        const deletedIds: string[] = [];
-        for (const s of stored) {
-          if (!activeIds.has(s.id)) {
-            await pool.query("DELETE FROM listings WHERE id = $1", [s.id]);
-            deletedIds.push(s.id);
-            removed++;
-          }
+        const storedSides: DMarketRelistSide[] = stored.map(row => ({
+          id: row.id,
+          skinName,
+          floatValue: Number(row.float_value),
+          paintSeed: row.paint_seed == null ? null : Number(row.paint_seed),
+          assetId: row.marketplace_id,
+          priceCents: Number(row.price_cents),
+          phase: row.phase,
+        }));
+        const plan = planDMarketRelinks(storedSides, incomingSides);
+        const applied = await applyDMarketRelinks(pool, plan.relinks);
+        const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
+        if (deleteIds.length > 0) {
+          await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
+          await cascadeTradeUpStatuses(pool, deleteIds);
         }
-        if (deletedIds.length > 0) {
-          await cascadeTradeUpStatuses(pool, deletedIds);
+        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0 || applied.skipped.length > 0) {
+          log(relinkLogLine(skinName, plan, applied));
         }
+        cycleRelinked += applied.applied;
+        cycleDeleted += deleteIds.length;
+        cycleContested += plan.contested + applied.skipped.length;
+        cycleFailed += applied.failedIds.length;
 
         stats.totalCalls++;
         stats.totalInserted += inserted;
@@ -270,7 +303,7 @@ async function main() {
       }
     }
 
-    log(`Cycle ${stats.cycleCount} complete: ${cycleCalls} API calls, ${cycleInserted} listings, ${cycleErrors} errors`);
+    log(`Cycle ${stats.cycleCount} complete: ${cycleCalls} API calls, ${cycleInserted} listings, ${cycleErrors} errors, relinked ${cycleRelinked} deleted ${cycleDeleted} contested ${cycleContested} failed ${cycleFailed}`);
     try { await writeStatus(pool); } catch { /* non-critical */ }
 
     if (running) {
