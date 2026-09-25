@@ -927,14 +927,19 @@ export function PreviewBoard({
   }, [query, search]);
   useEffect(() => {
     if (pendingFocus.current == null) return;
+    const active = document.activeElement;
+    const untouched = active == null || active === document.body || active === loadMoreBtn.current;
     if (pagingThrottle && pendingFocus.current === "more") {
+      if (!untouched) {
+        pendingFocus.current = null;
+        return;
+      }
       throttleRef.current?.focus({ preventScroll: true });
       pendingFocus.current = "return";
       return;
     }
     if (pendingFocus.current === "return") {
       if (loadMoreBtn.current && !pagingThrottle) {
-        const active = document.activeElement;
         const note = throttleRef.current;
         const retry = note?.querySelector("button") ?? null;
         const stillThere = active == null || active === document.body || active === note || active === retry;
@@ -948,8 +953,10 @@ export function PreviewBoard({
       return;
     }
     if (pendingFocus.current === "more" && !loadingMore) {
-      if (atEnd) endRef.current?.focus({ preventScroll: true });
-      else if (atCap) capRef.current?.focus({ preventScroll: true });
+      if (untouched) {
+        if (atEnd) endRef.current?.focus({ preventScroll: true });
+        else if (atCap) capRef.current?.focus({ preventScroll: true });
+      }
       pendingFocus.current = null;
     }
   }, [pagingThrottle, loadingMore, atEnd, atCap]);

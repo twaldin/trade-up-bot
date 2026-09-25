@@ -911,6 +911,82 @@ describe("board pagination and history", () => {
     expect(next?.textContent).toContain("Retry");
   }, 12000);
 
+  it("keeps a card focused when the last page lands without a 429", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") return new Promise<ReturnType<typeof ok>>((resolve) => { release = resolve; });
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    const card = host.querySelector(".preview-bento a");
+    expect(card instanceof HTMLAnchorElement).toBe(true);
+    if (!(card instanceof HTMLAnchorElement)) return;
+    card.focus();
+    await act(async () => { release(ok([13], 13)); });
+    await act(async () => { await Promise.resolve(); });
+    paint();
+    expect(host.textContent).toContain(END_OF_LIST_COPY);
+    expect(document.activeElement).toBe(card);
+  });
+
+  async function focusCardDuringRetry(second: () => ReturnType<typeof ok> | ReturnType<typeof limited>) {
+    let page2 = 0;
+    let release: (value: ReturnType<typeof ok> | ReturnType<typeof limited>) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      if (page === "2") {
+        page2 += 1;
+        if (page2 === 1) return limited("0");
+        return new Promise<ReturnType<typeof ok> | ReturnType<typeof limited>>((resolve) => { release = resolve; });
+      }
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 13);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    paint();
+    const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
+    button?.focus();
+    await act(async () => { button?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    const deadline = Date.now() + 4000;
+    let more: HTMLButtonElement | undefined;
+    while (Date.now() < deadline) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+      paint();
+      more = [...host.querySelectorAll("button")].find((node) => /Load more|Loading more/.test(node.textContent ?? ""));
+      if (page2 >= 2 && more && document.activeElement === more) break;
+    }
+    expect(page2).toBeGreaterThanOrEqual(2);
+    expect(document.activeElement).toBe(more);
+    const card = host.querySelector(".preview-bento a");
+    expect(card instanceof HTMLAnchorElement).toBe(true);
+    if (!(card instanceof HTMLAnchorElement)) return card;
+    card.focus();
+    await act(async () => { release(second()); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    return card;
+  }
+
+  it("keeps a card focused when the retry after a 429 reaches the end", async () => {
+    const card = await focusCardDuringRetry(() => ok([13], 13));
+    expect(host.textContent).toContain(END_OF_LIST_COPY);
+    expect(document.activeElement).toBe(card);
+  }, 12000);
+
+  it("keeps a card focused when the retry after a 429 is throttled again", async () => {
+    const card = await focusCardDuringRetry(() => limited("0"));
+    expect(host.querySelector(".preview-sentinel p")?.textContent).toContain("Too many requests right now.");
+    expect(document.activeElement).toBe(card);
+  }, 12000);
+
   it("drops a pending focus return when the filters change", async () => {
     const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((id) => makeTradeUp({ id }));
     let mode: "idle" | "throttled" | "back" = "idle";
