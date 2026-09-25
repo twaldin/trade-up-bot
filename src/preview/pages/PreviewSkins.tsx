@@ -972,12 +972,13 @@ export function PreviewCollectionPage() {
       return;
     }
     if (!title) return;
-    let first = links[0];
-    if (!(first instanceof HTMLLinkElement)) {
-      const created = document.createElement("link");
-      created.rel = "canonical";
-      document.head.appendChild(created);
-      first = created;
+    const existing = links[0];
+    let first: HTMLLinkElement;
+    if (existing instanceof HTMLLinkElement) first = existing;
+    else {
+      first = document.createElement("link");
+      first.rel = "canonical";
+      document.head.appendChild(first);
     }
     if (canonicalNode.current !== first) canonicalHref.current = first.getAttribute("href");
     canonicalNode.current = first;
