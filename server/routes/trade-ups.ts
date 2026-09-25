@@ -169,6 +169,41 @@ function redactInputRow<T extends InputRow>(row: T): T {
   return copy;
 }
 
+/** Live DMarket offer for a stored input, or null when the offer is gone. */
+function dmarketLiveId(
+  listingId: string,
+  activeSet: Set<string> | undefined,
+  relinks: Map<string, string>,
+): string | null {
+  if (!activeSet) return null;
+  if (activeSet.has(listingId)) return listingId;
+  const relinkedId = relinks.get(listingId);
+  return relinkedId && activeSet.has(relinkedId) ? relinkedId : null;
+}
+
+/**
+ * Live ids claimed by more than one input of this trade-up.
+ * Rewriting both rows would store the same listing twice.
+ */
+function collidingDMarketLiveIds(
+  inputs: readonly { listing_id: string; skin_name: string }[],
+  activeBySkin: Map<string, Set<string>>,
+  relinks: Map<string, string>,
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const input of inputs) {
+    if (!input.listing_id.startsWith("dmarket:")) continue;
+    const liveId = dmarketLiveId(input.listing_id, activeBySkin.get(input.skin_name), relinks);
+    if (!liveId) continue;
+    counts.set(liveId, (counts.get(liveId) ?? 0) + 1);
+  }
+  const colliding = new Set<string>();
+  for (const [id, count] of counts) {
+    if (count > 1) colliding.add(id);
+  }
+  return colliding;
+}
+
 function setTierCacheHeaders(res: { setHeader(name: string, value: string): void }): void {
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("Vary", "Cookie, Authorization");
@@ -890,6 +925,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       pool,
       inputs.filter(input => input.listing_id.startsWith("dmarket:")).map(input => input.listing_id),
     );
+    const collidingDmLiveIds = collidingDMarketLiveIds(inputs, dmActiveIds, dmRelinks);
 
     // Pre-fetch Buff listings by goods_id (match by float value since Buff has no stable listing IDs across fetches)
     const buffInputsByGoodsId = new Map<string, typeof inputs>();
@@ -1023,10 +1059,23 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           });
           continue;
         }
-        const relinkedId = dmRelinks.get(input.listing_id);
-        const liveId = activeSet.has(input.listing_id)
-          ? input.listing_id
-          : (relinkedId && activeSet.has(relinkedId) ? relinkedId : null);
+        const liveId = dmarketLiveId(input.listing_id, activeSet, dmRelinks);
+        // Two inputs landing on one offer: do not rewrite either row. The
+        // delisted result is the same partial/stale path as a missing offer.
+        // A listing that is still the live offer stays, so other trade-ups can use it.
+        if (liveId && collidingDmLiveIds.has(liveId)) {
+          if (input.listing_id !== liveId) {
+            await pool.query("DELETE FROM listings WHERE id = $1", [input.listing_id]);
+            deletedListingIds.push(input.listing_id);
+          }
+          results.push({
+            listing_id: input.listing_id,
+            skin_name: input.skin_name,
+            status: "delisted",
+            original_price: input.price_cents,
+          });
+          continue;
+        }
         if (liveId) {
           if (liveId !== input.listing_id) {
             await pool.query(
@@ -1053,7 +1102,10 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
             }
             await pool.query("UPDATE listings SET staleness_checked_at = NOW() WHERE id = $1", [liveId]);
           }
-          const { expected, drift, outlier } = repriceInput(input, currentPrice ?? input.listing_price_cents);
+          const { expected, drift, outlier } = repriceInput(
+            { ...input, listing_id: liveId },
+            currentPrice ?? input.listing_price_cents,
+          );
           results.push({
             listing_id: liveId,
             skin_name: input.skin_name,
