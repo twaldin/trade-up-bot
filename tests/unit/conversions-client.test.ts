@@ -10,6 +10,7 @@ import {
   trackPurchaseComplete,
   trackTradeUpDetailOpen,
   trackVerifyClick,
+  trackCtaClick,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -55,6 +56,7 @@ describe("with every tracking env var unset (production today)", () => {
     trackTradeUpDetailOpen({ collectionSlug: "dreams-nightmares" });
     trackCalculatorComplete("custom");
     trackVerifyClick("pro");
+    trackCtaClick("home_hero_calculator");
     expect(gtag).not.toHaveBeenCalled();
   });
 
@@ -208,6 +210,24 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
       ["event", "sign_up", { method: "steam", page_path: "/trade-ups/42", send_to: GA4 }],
       ["event", "login", { method: "steam", page_path: "/trade-ups/42", send_to: GA4 }],
     ]);
+  });
+
+  it("cta_click names the hero calculator and carries no prices or ids", () => {
+    installBrowser({ pathname: "/" });
+    trackCtaClick("home_hero_calculator");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "home_hero_calculator", page_path: "/", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("listing_id");
+    expect(params).not.toHaveProperty("price");
+  });
+
+  it("cta_click no-ops when gtag has not loaded", () => {
+    globalThis.gtag = undefined;
+    installBrowser({ pathname: "/" });
+    expect(() => trackCtaClick("home_hero_calculator")).not.toThrow();
   });
 
   it("does not throw when gtag is blocked", () => {

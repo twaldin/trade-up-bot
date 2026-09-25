@@ -55,7 +55,7 @@ describe("collapsed board cards invite open and Verify", () => {
     const landing = read("../../src/preview/pages/PreviewLanding.tsx");
     const peek = landing.slice(landing.indexOf("{peek.map("), landing.indexOf("preview-peek__graph"));
     expect(peek).toContain("expandable={false}");
-    const companion = landing.slice(landing.indexOf("preview-live__hero"), landing.indexOf("Stacked from the live inputs"));
+    const companion = landing.slice(landing.indexOf("preview-live__hero"), landing.indexOf('id="how"'));
     expect(companion.match(/expandable=\{false\}/g)?.length).toBe(1);
   });
 

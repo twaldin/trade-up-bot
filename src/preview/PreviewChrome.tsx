@@ -55,11 +55,13 @@ export function PreviewChrome({
           ))}
         </nav>
         <div className="preview-bar__actions">
-          <button type="button" className="preview-btn" onClick={onMode}>
-            {mode === "dark" ? "Light" : "Dark"}
-          </button>
-          <PreviewCurrency />
-          <Link className="preview-btn preview-btn--lime" to="/trade-ups">{PREVIEW_CTA_PRIMARY}</Link>
+          <div className="preview-nav__prefs">
+            <button type="button" className="preview-btn" onClick={onMode}>
+              {mode === "dark" ? "Light" : "Dark"}
+            </button>
+            <PreviewCurrency />
+          </div>
+          <Link className="preview-btn preview-btn--lime preview-nav__cta" to="/trade-ups">{PREVIEW_CTA_PRIMARY}</Link>
         </div>
       </header>
       {children}

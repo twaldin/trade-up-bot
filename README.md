@@ -203,7 +203,7 @@ Every tracker is off, and adds nothing to the page, until its env var is set. Se
 
 | Var | Read at | Enables |
 |-----|---------|---------|
-| `GA4_MEASUREMENT_ID` | build (`npm run build`) + API runtime | Browser GA4 events. Mark `begin_checkout`, `purchase`, `sign_up`, and `calculator_complete` as key events. Do not mark `view_item`, `login`, or `verify_click`. |
+| `GA4_MEASUREMENT_ID` | build (`npm run build`) + API runtime | Browser GA4 events. Mark `begin_checkout`, `purchase`, `sign_up`, and `calculator_complete` as key events. Do not mark `view_item`, `login`, `verify_click`, or `cta_click`. |
 | `GA4_API_SECRET` | API runtime | GA4 `purchase` via Measurement Protocol from the Stripe webhook (with `GA4_MEASUREMENT_ID`) |
 | `META_PIXEL_ID` | build + API runtime | Meta Pixel base code (PageView) and the conversion events |
 | `META_CAPI_TOKEN` | API runtime | Meta Conversions API `Purchase` from the Stripe webhook (with `META_PIXEL_ID`) |

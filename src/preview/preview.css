@@ -67,7 +67,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 56px;
+  min-height: 56px;
   padding: 0 24px;
   border-bottom: 1px solid var(--line-soft);
   background: var(--bg);
@@ -136,6 +136,58 @@
   gap: 8px;
 }
 
+.preview-nav__prefs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-nav__cta {
+  white-space: nowrap;
+}
+
+/* Phones: brand + CTA own the sticky first row; product links and the view
+   prefs drop to a second row instead of squeezing the CTA to three lines and
+   hiding Pricing. The zero-height ::after is the forced line break. */
+@media (max-width: 799px) {
+  .preview-nav {
+    flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 8px 16px;
+  }
+
+  .preview-nav::after {
+    content: "";
+    order: 1;
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .preview-bar__actions { display: contents; }
+
+  .preview-nav__cta {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .preview-nav__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    order: 2;
+    margin-top: 8px;
+  }
+
+  .preview-nav__links .preview-btn--quiet { padding-inline: 7px; }
+
+  .preview-nav__prefs {
+    order: 3;
+    margin: 8px 0 0 auto;
+  }
+
+  .preview-nav .preview-currency__trigger > span:not(.preview-currency__code) { display: none; }
+}
+
 .preview-btn {
   display: inline-flex;
   align-items: center;
@@ -199,38 +251,54 @@
 
 /* ================================================================ landing */
 
+/* The first screen is copy on the left and one real trade-up on the right:
+   the claim and its receipt side by side, so the proof is above the fold
+   instead of behind a scroll. */
 .preview-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 56px 24px 56px;
+}
+
+@media (min-width: 1080px) {
+  .preview-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+    gap: 56px;
+    padding-top: 72px;
+    padding-bottom: 72px;
+  }
+
+  /* Top-aligned, not centred: the panel's height depends on live data, and a
+     centred column would jump when it lands. */
+  .preview-hero__copy { padding-top: 40px; }
+}
+
+.preview-hero__copy {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 80px 24px 40px;
+  gap: 20px;
+  min-width: 0;
 }
 
-.preview-hero h1 {
-  max-width: 18ch;
+[data-system="outlay"] .preview-hero h1 {
+  max-width: 14ch;
   margin: 0;
-  font-size: clamp(2.5rem, 6vw, 4.4rem);
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
   font-weight: 400;
-  letter-spacing: -0.03em;
-  line-height: 1.02;
+  letter-spacing: -0.032em;
+  line-height: 1;
 }
 
 .preview-hero__lede {
-  max-width: 44rem;
+  max-width: 34rem;
   margin: 0;
   font-size: 15px;
-  line-height: 1.6;
-  color: var(--text);
-}
-
-.preview-hero__sub {
-  max-width: 44rem;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--text-muted);
 }
 
@@ -238,6 +306,23 @@
   min-height: 38px;
   padding: 0 16px;
   font-size: 13px;
+}
+
+/* The hero CTA is a full phrase. Nowrap keeps "Find Real Tradeups ->" on one
+   line; the narrow rule shrinks padding so it still fits beside the calculator
+   at 360px. */
+.preview-hero .preview-btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 399px) {
+  .preview-hero { padding-left: 16px; padding-right: 16px; }
+  .preview-hero .preview-btn--lg { min-height: 44px; padding: 0 10px; font-size: 12px; }
+}
+
+.preview-hero__note {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .preview-stats {
@@ -269,6 +354,206 @@
   color: var(--text-muted);
   font-size: 11px;
 }
+
+/* Site counts are context, not the pitch: one hairline-topped mono line. */
+.preview-hero .preview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  align-self: stretch;
+  margin: 4px 0 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: none;
+  overflow: visible;
+}
+
+.preview-hero .preview-stats > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  background: none;
+}
+
+.preview-hero .preview-stats b {
+  display: inline;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------ hero proof panel */
+
+.preview-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--r-panel);
+  background: var(--panel);
+}
+
+.preview-proof__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-proof__caption {
+  margin: -6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.preview-proof__label {
+  margin: 0 0 4px;
+  padding: 0 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-proof .preview-listings--story {
+  margin: 0;
+  padding: 6px;
+}
+
+.preview-proof .preview-listing { height: 26px; }
+
+.preview-proof__outs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-proof__out {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 36px 56px 58px;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 3px 5px;
+  border-radius: var(--r-control);
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.preview-proof__out:hover { background: var(--row-hover); }
+
+.preview-proof__art {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 26px;
+  border-bottom: 2px solid var(--skin-tint);
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--skin-tint) 16%, transparent);
+  overflow: hidden;
+}
+
+.preview-proof__art img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-proof__art .preview-skin__ph { width: 100%; height: 100%; }
+
+.preview-proof__odds,
+.preview-proof__delta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preview-proof__odds { color: var(--text-muted); }
+.preview-proof__delta.is-plus { color: var(--profit-ink); }
+.preview-proof__delta.is-minus { color: var(--loss); }
+
+.preview-proof__kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-control);
+}
+
+@media (min-width: 520px) {
+  .preview-proof__kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Hero only. Board readouts keep nowrap + ellipsis. A two-line label
+   reserves the same height in every cell so the values share one baseline. */
+.preview-proof__kpis .preview-readout em {
+  white-space: normal;
+  line-height: 1.2;
+  min-height: 2.4em;
+}
+
+.preview-proof__kpis .preview-readout { border-top: 0; }
+
+/* Phones: the four headline numbers sit under the panel header, not ten
+   listing rows below the fold. */
+@media (max-width: 519px) {
+  .preview-proof > * { order: 2; }
+  .preview-proof__head { order: 0; }
+
+  .preview-proof__kpis,
+  .preview-proof__skeleton--kpis { order: 1; }
+
+  .preview-proof > .preview-fees { order: 1; }
+
+  .preview-proof__kpis .preview-readout:nth-child(3) { border-left: 0; }
+  .preview-proof__kpis .preview-readout:nth-child(n + 3) { border-top: 1px solid var(--line-soft); }
+}
+
+.preview-proof__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.preview-proof__foot .preview-note { flex: 1 1 14rem; }
+
+.preview-proof__foot .preview-note a,
+.preview-proof__status a { color: var(--text); }
+
+.preview-proof__status { min-height: 28px; }
+
+.preview-proof__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--panel-rule);
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-proof__skeleton span {
+  height: 22px;
+  border-radius: var(--r-control);
+  background: var(--row-hover);
+}
+
+.preview-proof__skeleton--outs,
+.preview-proof__skeleton--kpis {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+.preview-proof__skeleton--outs span { height: 34px; }
+.preview-proof__skeleton--kpis span { height: 58px; }
 
 .preview-laptop { display: none; padding: 0 24px; }
 .preview-phone { display: block; padding: 0 24px; }
@@ -409,6 +694,10 @@
   grid-template-columns: 18px minmax(0, 1fr) auto 48px 50px;
 }
 
+.preview-live__next {
+  margin-top: 16px;
+}
+
 .preview-live {
   display: flex;
   flex-direction: column;
@@ -421,82 +710,6 @@
   border: 1px solid var(--panel-rule);
   border-radius: var(--r-panel);
   background: var(--nest-2);
-}
-
-.preview-floatdeck {
-  --progress: 0;
-  position: relative;
-  isolation: isolate;
-  min-height: 188px;
-  margin-top: 28px;
-  perspective: 1100px;
-  transform-style: preserve-3d;
-}
-
-.preview-floatcard {
-  --skin-tint: var(--text-muted);
-  position: absolute;
-  left: calc(18% + (var(--i, 0) * 48px));
-  top: calc(22px + (var(--i, 0) * 8px) + ((var(--progress) - 0.5) * (var(--i, 0) * -16px)));
-  z-index: calc(8 - var(--i, 0));
-  width: 108px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--skin-tint) 28%, var(--panel-rule));
-  border-radius: var(--r-panel);
-  background:
-    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--skin-tint) 22%, transparent), transparent 70%),
-    var(--nest-3);
-  color: inherit;
-  text-decoration: none;
-  transform:
-    rotateY(calc((var(--tilt-x, 0) * -10deg) + ((var(--i, 0) - 2) * 7deg)))
-    rotateX(calc(var(--tilt-y, 0) * 7deg))
-    translateZ(calc((2 - var(--i, 0)) * 18px))
-    scale(calc(1 - (var(--i, 0) * 0.035)));
-}
-
-.preview-floatcard__art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 52px;
-}
-
-.preview-floatcard__art img,
-.preview-floatcard__art .preview-skin__ph {
-  max-width: 100%;
-  max-height: 52px;
-  object-fit: contain;
-}
-
-.preview-floatcard__meta {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 6px;
-  min-width: 0;
-}
-
-.preview-floatcard__meta em {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-floatcard__meta b {
-  overflow: hidden;
-  color: color-mix(in srgb, var(--skin-tint) 70%, var(--text));
-  font-size: 11px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .preview-floatcard { transform: none; top: calc(12px + (var(--i, 0) * 10px)); }
 }
 
 .preview-peek {
@@ -534,6 +747,29 @@
   border-color: var(--line-hard);
   background: var(--nest-3);
 }
+
+.preview-tile--plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-tile--plan .preview-plan__price {
+  margin: 0;
+  font-size: 28px;
+  color: var(--text);
+}
+
+.preview-tile--plan .preview-plan__list {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.preview-tile--plan.preview-tile--pro .preview-plan__list { color: var(--text); }
+
+.preview-tile--plan svg { flex-shrink: 0; }
+
+.preview-tile--plan .preview-btn--block { margin-top: auto; }
 
 .preview-posts--tease {
   margin-top: 20px;

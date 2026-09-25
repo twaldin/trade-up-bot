@@ -16,6 +16,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const landing = read("../../src/preview/pages/PreviewLanding.tsx");
+const heroProofLib = read("../../src/preview/lib/hero-proof.ts");
 const css = read("../../src/preview/preview.css");
 const copy = read("../../src/preview/lib/copy.ts");
 const app = read("../../src/preview/PreviewApp.tsx");
@@ -43,15 +44,13 @@ describe("preview landing depth", () => {
     expect(landing).not.toContain("DemoAnimation");
   });
 
-  it("tints stacked faces from the real skin rarity, never a rainbow or lime rarity", () => {
-    expect(landing).toContain("inputRarityColor");
+  it("cuts the stacked skin deck; remaining faces take the real output rarity, never a rainbow or lime", () => {
     expect(landing).toContain("outputRarityColor");
     expect(landing).toContain("boardFaceFor");
-    expect(landing).toContain("preview-floatdeck");
+    expect(landing).not.toContain("preview-floatdeck");
     expect(landing).not.toContain("rarityTint(\"Extraordinary\")");
     expect(landing).not.toMatch(/#d7fe52/);
-    expect(css).toContain(".preview-floatdeck");
-    expect(css).toContain("perspective:");
+    expect(css).not.toContain(".preview-floatdeck");
     expect(css).not.toContain(".preview-strip");
   });
 
@@ -69,7 +68,7 @@ describe("preview landing depth", () => {
     expect(landing).toContain('to="/faq"');
     expect(landing).toContain('to="/blog"');
     expect(landing).toContain('to="/pricing"');
-    expect(landing).toContain("$6.99");
+    expect(landing).toContain('proPriceLine("monthly")');
     expect(landing).toContain("Free");
     expect(faqQuestions.length).toBeGreaterThan(5);
     expect(PREVIEW_FAQ).toHaveLength(5);
@@ -93,7 +92,8 @@ describe("preview landing depth", () => {
   });
 
   it("renders every card input on the story rail, not a tease of 8", () => {
-    expect(landing).toContain("storyRailInputs");
+    expect(heroProofLib).toContain("listings: storyRailInputs(tu)");
+    expect(landing).toContain("proof.listings.map(");
     expect(landing).not.toContain("slice(0, 8)");
     expect(landing).toContain("preview-listings--story");
   });

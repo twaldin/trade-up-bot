@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
-import { authHref } from "../../lib/ref.js";
-import { trackEvent } from "../../lib/analytics.js";
 import { trackPricingView } from "../../lib/conversions.js";
 import { fetchPricingSession } from "../lib/auth-state.js";
 import { hasProAccess } from "../lib/billing.js";
@@ -26,11 +24,6 @@ const IconX = () => (
     <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
-
-const login = () => {
-  trackEvent("sign_up_start", { location: "pricing" });
-  window.location.href = authHref(window.location.pathname);
-};
 
 const COMPARE = [
   { feature: "Trade-ups visible", free: "Unlimited", pro: "Unlimited" },
@@ -138,7 +131,7 @@ export function PreviewPricing() {
             <li className="is-off"><IconX /> No verification</li>
             <li className="is-off"><IconX /> No claims</li>
           </ul>
-          <button type="button" className="preview-btn preview-btn--block" onClick={login}>Get started</button>
+          <Link className="preview-btn preview-btn--block" to="/trade-ups">Browse free — no account needed</Link>
         </section>
 
         <section className="preview-panel preview-plan preview-plan--pro">
