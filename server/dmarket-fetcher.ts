@@ -181,6 +181,10 @@ async function main() {
     let cycleInserted = 0;
     let cycleCalls = 0;
     let cycleErrors = 0;
+    let cycleRelinked = 0;
+    let cycleDeleted = 0;
+    let cycleContested = 0;
+    let cycleFailed = 0;
 
     for (const skinName of queue) {
       if (!running) break;
@@ -230,6 +234,7 @@ async function main() {
                 paintSeed: item.extra.paintSeed ?? null,
                 assetId,
                 priceCents,
+                phase: item.extra.phase ?? null,
               });
             }
             inserted++;
@@ -239,11 +244,11 @@ async function main() {
         // Staleness: relist same skin/float/seed under a new offer id in place.
         // Unmatched ids still delete and cascade to partial.
         const { rows: stored } = await pool.query<{
-          id: string; float_value: number; paint_seed: number | null; price_cents: number; marketplace_id: string | null;
+          id: string; float_value: number; paint_seed: number | null; price_cents: number; marketplace_id: string | null; phase: string | null;
         }>(
-          `SELECT l.id, l.float_value, l.paint_seed, l.price_cents, l.marketplace_id
+          `SELECT l.id, l.float_value, l.paint_seed, l.price_cents, l.marketplace_id, l.phase
            FROM listings l JOIN skins s ON l.skin_id = s.id
-           WHERE s.name = $1 AND l.source = 'dmarket'`,
+           WHERE s.name = $1 AND l.source = 'dmarket' AND l.stattrak = false`,
           [skinName]
         );
         const storedSides: DMarketRelistSide[] = stored.map(row => ({
@@ -253,13 +258,22 @@ async function main() {
           paintSeed: row.paint_seed == null ? null : Number(row.paint_seed),
           assetId: row.marketplace_id,
           priceCents: Number(row.price_cents),
+          phase: row.phase,
         }));
-        const { relinks, deleteIds } = planDMarketRelinks(storedSides, incomingSides);
-        if (relinks.length > 0) await applyDMarketRelinks(pool, relinks);
+        const plan = planDMarketRelinks(storedSides, incomingSides);
+        const applied = await applyDMarketRelinks(pool, plan.relinks);
+        const deleteIds = [...plan.deleteIds, ...applied.failedIds];
         if (deleteIds.length > 0) {
           await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
           await cascadeTradeUpStatuses(pool, deleteIds);
         }
+        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0) {
+          log(`  ${skinName}: relinked ${applied.applied} deleted ${deleteIds.length} contested ${plan.contested} failed ${applied.failedIds.length}`);
+        }
+        cycleRelinked += applied.applied;
+        cycleDeleted += deleteIds.length;
+        cycleContested += plan.contested;
+        cycleFailed += applied.failedIds.length;
 
         stats.totalCalls++;
         stats.totalInserted += inserted;
@@ -289,7 +303,7 @@ async function main() {
       }
     }
 
-    log(`Cycle ${stats.cycleCount} complete: ${cycleCalls} API calls, ${cycleInserted} listings, ${cycleErrors} errors`);
+    log(`Cycle ${stats.cycleCount} complete: ${cycleCalls} API calls, ${cycleInserted} listings, ${cycleErrors} errors, relinked ${cycleRelinked} deleted ${cycleDeleted} contested ${cycleContested} failed ${cycleFailed}`);
     try { await writeStatus(pool); } catch { /* non-critical */ }
 
     if (running) {

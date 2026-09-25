@@ -152,11 +152,12 @@ describe("DMarket fetcher relist reconcile", () => {
       BEFORE DELETE ON listings
       FOR EACH ROW EXECUTE FUNCTION fail_relist_delete()
     `);
-    await expect(applyDMarketRelinks(ctx.pool, [{
+    const result = await applyDMarketRelinks(ctx.pool, [{
       oldId: "dmarket:old-rollback",
       newId: "dmarket:new-rollback",
       priceCents: 538,
-    }])).rejects.toThrow(/forced rollback/);
+    }]);
+    expect(result).toEqual({ applied: 0, failedIds: ["dmarket:old-rollback"] });
     const { rows } = await ctx.pool.query(
       `SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1`,
       [tradeUpId],

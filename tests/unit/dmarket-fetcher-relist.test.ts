@@ -24,12 +24,13 @@ describe("planDMarketRelinks", () => {
     expect(planDMarketRelinks([stored], [incoming])).toEqual({
       relinks: [{ oldId: "dmarket:old", newId: "dmarket:new", priceCents: 538 }],
       deleteIds: [],
+      contested: 0,
     });
   });
 
   it("keeps a still-present offer and does not relink it", () => {
     const stored = side();
-    expect(planDMarketRelinks([stored], [stored])).toEqual({ relinks: [], deleteIds: [] });
+    expect(planDMarketRelinks([stored], [stored])).toEqual({ relinks: [], deleteIds: [], contested: 0 });
   });
 
   it("deletes a missing offer that has no relist", () => {
@@ -38,6 +39,7 @@ describe("planDMarketRelinks", () => {
     expect(planDMarketRelinks([stored], [other])).toEqual({
       relinks: [],
       deleteIds: ["dmarket:old"],
+      contested: 0,
     });
   });
 
@@ -47,17 +49,48 @@ describe("planDMarketRelinks", () => {
     expect(planDMarketRelinks([stored], [incoming]).deleteIds).toEqual(["dmarket:old"]);
   });
 
-  it("prefers a shared inspect asset id when the payload has one", () => {
-    const stored = side({ assetId: "40000000000", floatValue: 0.2 });
+  it("does not relink a different float just because both inspect links parsed the same asset id", () => {
+    const stored = side({ assetId: "0", floatValue: 0.21 });
     const incoming = side({
       id: "dmarket:new",
-      assetId: "40000000000",
-      floatValue: 0.9,
-      paintSeed: 1,
+      assetId: "0",
+      floatValue: 0.87,
+      paintSeed: stored.paintSeed,
       priceCents: 500,
     });
     const plan = planDMarketRelinks([stored], [incoming]);
-    expect(plan.relinks).toEqual([{ oldId: "dmarket:old", newId: "dmarket:new", priceCents: 500 }]);
+    expect(plan.relinks).toEqual([]);
+    expect(plan.deleteIds).toEqual(["dmarket:old"]);
+  });
+
+  it("uses a classic asset id only to break a float-and-seed tie", () => {
+    const stored = side({ assetId: "40000000000" });
+    const plan = planDMarketRelinks([stored], [
+      side({ id: "dmarket:other", assetId: "111", priceCents: 400 }),
+      side({ id: "dmarket:same", assetId: "40000000000", priceCents: 500 }),
+    ]);
+    expect(plan.relinks).toEqual([{ oldId: "dmarket:old", newId: "dmarket:same", priceCents: 500 }]);
+  });
+
+  it("does not match float 0 or paint seed 0", () => {
+    const zeroFloat = planDMarketRelinks(
+      [side({ floatValue: 0 })],
+      [side({ id: "dmarket:new", floatValue: 0 })],
+    );
+    const zeroSeed = planDMarketRelinks(
+      [side({ paintSeed: 0 })],
+      [side({ id: "dmarket:new", paintSeed: 0 })],
+    );
+    expect(zeroFloat.relinks).toEqual([]);
+    expect(zeroSeed.relinks).toEqual([]);
+  });
+
+  it("does not relink across Doppler phases when both sides have one", () => {
+    const plan = planDMarketRelinks(
+      [side({ phase: "Phase 1" })],
+      [side({ id: "dmarket:new", phase: "Phase 2" })],
+    );
+    expect(plan.relinks).toEqual([]);
   });
 
   it("does not assign a contested offer to a later claimant", () => {
@@ -85,5 +118,16 @@ describe("planDMarketRelinks", () => {
 describe("assetIdFromInspect", () => {
   it("returns null when the offer has no inspect asset id", () => {
     expect(assetIdFromInspect(undefined)).toBeNull();
+  });
+
+  it("reads the asset id from a classic Steam inspect link", () => {
+    const classic = "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20S76561198000000000A40000000000D1234567890123456789";
+    expect(assetIdFromInspect(classic)).toBe("40000000000");
+  });
+
+  it("returns null for Valve's hex preview link instead of a junk digit", () => {
+    const hex = "steam://run/730//+csgo_econ_action_preview%20001C0C5A1B2D3E4F5A6B7C8D9E0F112233445566778899AABBCCDDEEFF001122";
+    expect(assetIdFromInspect(hex)).toBeNull();
+    expect(assetIdFromInspect("steam://run/730//+csgo_econ_action_preview%200018000000000000000000000000000000000000000000000000000000000000")).toBeNull();
   });
 });

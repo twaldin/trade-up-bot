@@ -742,9 +742,9 @@ export async function main() {
             onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
           });
           totalDmarketChecked += dmResult.checked;
-          if (dmResult.removed > 0) {
+          if (dmResult.removed > 0 || dmResult.relinked > 0) {
             freshness.markListingsChanged();
-            console.log(`    DMarket staleness: ${dmResult.checked} checked, ${dmResult.removed} removed`);
+            console.log(`    DMarket staleness: ${dmResult.checked} checked, ${dmResult.removed} removed, ${dmResult.relinked} relinked`);
           }
         } catch {
           // DMarket errors don't block engine loop
