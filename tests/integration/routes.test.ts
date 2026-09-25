@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import pg from "pg";
+import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "../../server/routes/active-trade-up-counts.js";
 import { statusRouter } from "../../server/routes/status.js";
 import { collectionsRouter } from "../../server/routes/collections.js";
 import { createExpandedApp, createTestApp, seedTestData, type TestContext } from "./setup.js";
@@ -191,6 +192,12 @@ describe("Status route integration tests", () => {
     // Stale TUs also have positive profit, so profitable = 5 + 2 = 7
     expect(stats.total_trade_ups).toBe(10);
     expect(stats.profitable_trade_ups).toBe(7);
+    const active = await loadActiveTradeUpCounts(ctx.pool);
+    expect(stats.active_trade_ups).toBe(active.total);
+    expect(stats.active_profitable_trade_ups).toBe(active.profitable);
+    expect(active.total).toBeLessThan(stats.total_trade_ups);
+    expect(tradeUpsHubDescription(active)).toContain(active.total.toLocaleString("en-US"));
+    expect(tradeUpsHubDescription(active)).toContain(active.profitable.toLocaleString("en-US"));
 
     // Listings > 0
     expect(stats.listings).toBeGreaterThan(0);

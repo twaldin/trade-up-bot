@@ -557,14 +557,37 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       : null;
     if (snapshotKey) {
       const snapshot = await loadRankSnapshot(snapshotKey, rankStore, async () => {
-        const [{ rows: idRows }, { rows: [countRow] }] = await Promise.all([
-          pool.query<{ id: number }>(
-            `SELECT t.id ${diversitySql.fromWhere} ${orderBy} LIMIT $${limitParam}`,
-            [...params, RANK_SNAPSHOT_SIZE]
-          ),
-          pool.query(cappedCountSql, params),
-        ]);
-        return { ids: idRows.map((r) => Number(r.id)), total: parseInt(countRow?.c) || 0 };
+        // One window sort produces both the top ids and the capped total.
+        // A second count query sorts the same rows again and, run beside this
+        // one, was the cold-page regression (two external merges contending).
+        const capParam = limitParam - 1;
+        const { rows: rankRows } = await pool.query<{ id: number; total: number }>(
+          `WITH ranked AS MATERIALIZED (
+             SELECT id, sort_value FROM (
+               SELECT t.id, ${sortCol} AS sort_value,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY t.collection_names
+                   ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
+                 ) AS combo_rank
+               FROM trade_ups t
+               ${where}
+             ) scanned
+             WHERE combo_rank <= $${capParam}
+           )
+           SELECT id, total FROM (
+             SELECT id,
+               row_number() OVER (ORDER BY sort_value ${sortOrder} NULLS LAST, id DESC) AS ord,
+               LEAST(COUNT(*) OVER (), 10001)::int AS total
+             FROM ranked
+           ) numbered
+           WHERE ord <= $${limitParam}
+           ORDER BY ord`,
+          [...params, RANK_SNAPSHOT_SIZE]
+        );
+        return {
+          ids: rankRows.map((r) => Number(r.id)),
+          total: rankRows.length > 0 ? Number(rankRows[0].total) : 0,
+        };
       });
       const pageIds = snapshot.ids.slice(offset, offset + perPage);
       const { rows: byId } = pageIds.length === 0

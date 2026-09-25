@@ -6,12 +6,12 @@ import { makeTradeUp } from "../helpers/fixtures.js";
 import {
   injectLandingStats,
   landingStatsFromSources,
+  publishedTradeUpCounts,
   renderLandingStatsHtml,
   visibleLandingStatTiles,
 } from "../../src/preview/lib/landing-stats.js";
 import { renderHomepageSeoBody } from "../../server/static-seo-pages.js";
 import { HOMEPAGE_SEO } from "../../server/static-seo-pages.js";
-import { boardQueryString, DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -158,15 +158,26 @@ describe("wiring: hero reads live counts, prerender does not bake zeros", () => 
     expect(landing).not.toMatch(/total_trade_ups\.toLocaleString\(\)/);
   });
 
-  it("loads counts from the same trade-ups query the board uses, plus global-stats", () => {
-    const boardQs = boardQueryString(DEFAULT_QUERY, 1);
+  it("loads hero counts from global-stats and the landing teaser, not a second per_page=1 query", () => {
     expect(app).toContain("/api/global-stats");
-    expect(app).toContain("/api/trade-ups");
-    expect(app).toContain("boardQueryString");
-    expect(app).toContain("DEFAULT_QUERY");
+    expect(app).not.toContain("/api/trade-ups");
+    expect(app).toContain("onBoardCounts");
     expect(app).toContain("landingStatsFromSources");
-    expect(boardQs).toContain("sort=trade_up_score");
-    expect(boardQs).toContain("per_page=1");
+    expect(landing).toContain("usePreviewTradeUps({ perPage: 3 })");
+    expect(landing).toContain("onBoardCounts");
+    expect(landing).toContain("live.total");
+  });
+
+  it("hero tiles use the active-only counts when global-stats provides them", () => {
+    const stats = {
+      total_trade_ups: 744031,
+      profitable_trade_ups: 66368,
+      active_trade_ups: 629512,
+      active_profitable_trade_ups: 24718,
+    };
+    expect(publishedTradeUpCounts(stats)).toEqual({ total: 629512, profitable: 24718 });
+    const tiles = visibleLandingStatTiles(landingStatsFromSources({ global: stats }));
+    expect(tiles.map((tile) => tile.value)).toEqual([629512, 24718]);
   });
 
   it("server injects live stats into human and Googlebot first HTML", () => {

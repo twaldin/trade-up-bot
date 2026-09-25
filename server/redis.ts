@@ -103,6 +103,10 @@ export async function cacheSet(key: string, data: unknown, ttlSeconds: number): 
 
 /** Delete keys matching a prefix pattern. Uses SCAN to avoid blocking. */
 export async function cacheInvalidatePrefix(prefix: string): Promise<number> {
+  if (prefix.startsWith("tu:")) {
+    const { requestBoardWarm } = await import("./routes/board-warm.js");
+    requestBoardWarm();
+  }
   if (!_available || !_redis) return 0;
   try {
     let cursor = "0";

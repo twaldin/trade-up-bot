@@ -822,9 +822,13 @@ export async function main() {
           (SELECT COUNT(*) FROM price_data WHERE source = 'csfloat_ref') as refs,
           (SELECT COUNT(*) FROM daemon_cycle_stats) as cycles
       `);
+      const { loadActiveTradeUpCounts } = await import("../routes/active-trade-up-counts.js");
+      const activeCounts = await loadActiveTradeUpCounts(pool);
       await cacheSet("global_stats", {
         total_trade_ups: Number(stats.total_tu),
         profitable_trade_ups: Number(stats.profitable_tu ?? 0),
+        active_trade_ups: activeCounts.total,
+        active_profitable_trade_ups: activeCounts.profitable,
         total_data_points: Number(stats.listings) + Number(stats.sale_obs) + Number(stats.sale_hist) + Number(stats.refs),
         listings: Number(stats.listings),
         sale_observations: Number(stats.sale_obs),

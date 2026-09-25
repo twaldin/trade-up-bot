@@ -8,6 +8,9 @@
 export interface LandingStatCounts {
   total_trade_ups?: number;
   profitable_trade_ups?: number;
+  /** Active, non-theoretical rows. The hero tiles use these, matching /trade-ups meta. */
+  active_trade_ups?: number;
+  active_profitable_trade_ups?: number;
   total_data_points?: number;
   total_cycles?: number;
 }
@@ -40,6 +43,17 @@ export function positiveCount(value: unknown): number | undefined {
   return Math.trunc(value);
 }
 
+/** Trade-up totals the hero tiles and the /trade-ups meta description both publish. */
+export function publishedTradeUpCounts(stats: LandingStatCounts | null | undefined): {
+  total: number;
+  profitable: number;
+} {
+  return {
+    total: positiveCount(stats?.active_trade_ups) ?? positiveCount(stats?.total_trade_ups) ?? 0,
+    profitable: positiveCount(stats?.active_profitable_trade_ups) ?? positiveCount(stats?.profitable_trade_ups) ?? 0,
+  };
+}
+
 export function landingStatsFromSources(sources: {
   board?: BoardCountSource | null;
   global?: LandingStatCounts | null;
@@ -49,9 +63,14 @@ export function landingStatsFromSources(sources: {
     ?? (Array.isArray(boardRows) && boardRows.length > 0 ? boardRows.length : undefined);
   const boardProfitable = positiveCount(sources.board?.total_profitable);
 
+  const published = publishedTradeUpCounts(sources.global);
   return {
-    total_trade_ups: positiveCount(sources.global?.total_trade_ups) ?? boardTotal,
-    profitable_trade_ups: positiveCount(sources.global?.profitable_trade_ups) ?? boardProfitable,
+    total_trade_ups: (sources.global?.active_trade_ups != null ? published.total : undefined)
+      ?? positiveCount(sources.global?.total_trade_ups)
+      ?? boardTotal,
+    profitable_trade_ups: (sources.global?.active_profitable_trade_ups != null ? published.profitable : undefined)
+      ?? positiveCount(sources.global?.profitable_trade_ups)
+      ?? boardProfitable,
     total_data_points: positiveCount(sources.global?.total_data_points),
     total_cycles: positiveCount(sources.global?.total_cycles),
   };
