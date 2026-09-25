@@ -120,6 +120,27 @@ export function pageIsShort(received: number, pageSize: number): boolean {
   return received < pageSize;
 }
 
+/**
+ * GET /api/trade-ups stops the COUNT at 10001 (`LIMIT 10001`). A full page
+ * that has walked that far is the cap, not proof the filters are exhausted.
+ */
+export const LIST_TOTAL_CAP = 10_001;
+
+export type ListEndState = "more" | "end" | "capped";
+
+/** Short page: real end. Full pages that only hit the count cap: ask to narrow. */
+export function listEndState(page: { received: number; pageSize: number; page: number; total?: number }): ListEndState {
+  const covered = page.page * page.pageSize;
+  const total = page.total;
+  const knownTotal = typeof total === "number" && Number.isFinite(total);
+  if (knownTotal && total >= LIST_TOTAL_CAP && covered >= LIST_TOTAL_CAP && page.received >= page.pageSize) return "capped";
+  if (page.received < page.pageSize) {
+    if (!knownTotal || covered >= total || page.received === 0) return "end";
+    return "more";
+  }
+  return "more";
+}
+
 /** Full pages can still be the last one: stop once the pages asked for cover the API total. */
 export function reachedTotal(page: number, pageSize: number, total: number | undefined): boolean {
   return typeof total === "number" && Number.isFinite(total) && page * pageSize >= total;

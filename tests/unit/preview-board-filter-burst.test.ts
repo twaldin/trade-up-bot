@@ -75,6 +75,7 @@ describe("board filter bursts", () => {
     act(() => root.unmount());
     host.remove();
     vi.unstubAllGlobals();
+    resetBrowseFetchState();
     urls.length = 0;
   });
 
@@ -164,8 +165,9 @@ describe("board filter bursts", () => {
       };
     }));
     await mount(createElement(BoardHarness));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1600)); });
     expect(lists, "list requests before the Retry button").toBe(2);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1600)); });
     expect(host.textContent).toContain("Retry");
     expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
     expect(host.textContent).not.toContain("Retrying");
@@ -178,7 +180,7 @@ describe("board filter bursts", () => {
     expect(afterClick).toBe(3);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
     expect(lists).toBeGreaterThan(afterClick);
-  });
+  }, 15000);
 });
 
 describe("scoped board does not paint the global list", () => {

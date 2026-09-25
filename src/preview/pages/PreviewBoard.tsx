@@ -49,22 +49,33 @@ import {
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice } from "../lib/board-notice.js";
-import { readBoardLocation, replaceBoardUrl } from "../lib/board-url.js";
+import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY } from "../lib/board-notice.js";
+import {
+  canonicalBoardSearch,
+  historyAction,
+  isBoardFilterPath,
+  pushBoardUrl,
+  readBoardLocation,
+  replaceBoardUrl,
+  searchString,
+  boardSearchFromState,
+} from "../lib/board-url.js";
 import { TYPING_IDLE_MS } from "../lib/empty-suggestions.js";
 import { useLoosenProbe } from "../lib/use-loosen-probe.js";
+import { useBrowseHeld } from "../lib/use-browse-json.js";
 import { cacheNames, PreviewSearch } from "../components/PreviewSearch.js";
 import { chipsToBoardParams, parseQuery, type ParsedQuery } from "../lib/query-parse.js";
 import { boardListUrl, loadBoardRows } from "../lib/board-load.js";
+import { bindBoardScroll } from "../lib/board-scroll.js";
 import {
   applyRateLimit,
   RATE_LIMIT_MANUAL_COPY,
   noteRateLimited,
   rateLimitCopy,
   canLoadMore,
-  pageIsShort,
-  reachedTotal,
+  listEndState,
   readPagedJson,
+  type ListEndState,
 } from "../lib/page-fetch.js";
 import {
   DELAY_BANNER,
@@ -79,7 +90,7 @@ import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
-import { createFaceCache, faceFor, loadFaces } from "../lib/skin-images.js";
+import { createFaceCache, faceFor, loadFaces, rememberFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
 
@@ -779,10 +790,13 @@ export function PreviewBoard({
   onParsed,
   loadMore,
   exhausted,
+  endKind = "more",
   throttle,
   retryReady = false,
   failed,
   refreshing = false,
+  loadingMore = false,
+  pagingThrottle = null,
   onRetry,
   onClearFilters,
   heading = "Live trade-ups",
@@ -803,12 +817,18 @@ export function PreviewBoard({
   onParsed?: (parsed: ParsedQuery) => void;
   loadMore?: () => void;
   exhausted?: boolean;
+  /** Why paging stopped. "capped" is the 10,001 count ceiling, not a short page. */
+  endKind?: ListEndState;
   throttle?: string | null;
   /** True once the automatic 429 retry has been spent. Shows the Retry button. */
   retryReady?: boolean;
   failed?: boolean;
   /** Page-1 filter change still showing the previous rows. */
   refreshing?: boolean;
+  /** A later page is in flight. The sentinel stays quiet until then. */
+  loadingMore?: boolean;
+  /** List 429 on a page after the first. Rendered in the bottom slot only. */
+  pagingThrottle?: string | null;
   onRetry?: () => void;
   onClearFilters?: () => void;
   heading?: string;
@@ -835,10 +855,11 @@ export function PreviewBoard({
   const filtered = Boolean(query && !isDefaultQuery(query)) || Boolean(search?.trim());
   const clearFilters = onClearFilters ?? (onQuery ? () => onQuery(DEFAULT_QUERY) : undefined);
   const cardsThrottled = tradeUps.some((tu) => tu.hydrateThrottled === true);
+  const topThrottle = pagingThrottle ? null : throttle;
   const notice = boardNotice({
     loading,
     rows: tradeUps.length,
-    throttled: Boolean(throttle) || cardsThrottled,
+    throttled: Boolean(topThrottle) || cardsThrottled,
     failed: Boolean(failed),
     filtered,
   });
@@ -850,7 +871,12 @@ export function PreviewBoard({
     collection,
     skin: lockedSkin,
   });
-  const showRetry = notice === "error" || (notice === "throttled" && (retryReady || cardsThrottled));
+  const held = useBrowseHeld();
+  const showRetry = !held && (
+    notice === "error"
+    || (notice === "throttled" && (retryReady || cardsThrottled))
+    || (Boolean(pagingThrottle) && retryReady)
+  );
   const noticeNode = (
     <BoardNotice
       notice={notice}
@@ -861,30 +887,22 @@ export function PreviewBoard({
         onQuery(suggestion.query);
         if (suggestion.text !== (search ?? "")) onSearch?.(suggestion.text);
       } : undefined}
-      message={throttle ?? undefined}
+      message={topThrottle ?? undefined}
       detail={notice === "throttled" && Boolean(throttle) && tradeUps.length > 0 ? "Showing the previous results." : undefined}
     />
   );
   const expandedIndex = tradeUps.findIndex((tu) => tu.id === expandedId);
   const ordered = expandedIndex >= 0 ? reorderForExpanded(tradeUps, expandedIndex, cols) : tradeUps;
 
-  // Page in as the sentinel comes into view. The console shell is the scroller,
-  // not the window, so the observer has to be rooted on it.
+  // Wheel, keys, and touch outside the inner scroller are forwarded into it,
+  // and the sentinel is checked against both that panel and the window.
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
-    let root: HTMLElement | null = node.parentElement;
-    while (root) {
-      const overflow = getComputedStyle(root).overflowY;
-      if (overflow === "auto" || overflow === "scroll") break;
-      root = root.parentElement;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) loadMore();
-    }, { root, rootMargin: "600px" });
-    observer.observe(node);
-    return () => observer.disconnect();
+    const scroller = node.closest(".preview-console__main");
+    const panel = scroller instanceof HTMLElement ? scroller : document.documentElement;
+    return bindBoardScroll(panel, node, loadMore);
   }, [loadMore]);
 
   return (
@@ -945,14 +963,39 @@ export function PreviewBoard({
           <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
         ))}
       </div>
-      {loadMore && !exhausted && !notice && (
-        <div className="preview-sentinel" ref={sentinel}>
-          <span className="preview-note">Loading more trade-ups…</span>
-        </div>
-      )}
-      {exhausted && tradeUps.length > 0 && !notice && (
-        <p className="preview-note">That is every trade-up matching these filters.</p>
-      )}
+      <div
+        className="preview-sentinel"
+        ref={sentinel}
+        role={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "status" : undefined}
+        aria-live={pagingThrottle || loadingMore || (exhausted && tradeUps.length > 0 && !notice) ? "polite" : undefined}
+      >
+        {pagingThrottle && (
+          <p className="preview-note">
+            {tradeUps.length > 0 ? `${pagingThrottle} Showing the previous results.` : pagingThrottle}
+            {showRetry && onRetry && (
+              <button type="button" className="preview-btn preview-btn--quiet" onClick={onRetry}>
+                Retry
+              </button>
+            )}
+          </p>
+        )}
+        {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
+          <button
+            type="button"
+            className="preview-btn preview-btn--quiet"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Loading more trade-ups…" : "Load more"}
+          </button>
+        )}
+        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped" && (
+          <p className="preview-note">{END_OF_LIST_COPY}</p>
+        )}
+        {exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped" && (
+          <p className="preview-note">{LIST_CAP_COPY}</p>
+        )}
+      </div>
       {!embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
@@ -993,6 +1036,7 @@ export function usePreviewTradeUps(options: {
   // the same render and never requests the previous filter's page number.
   const [cursor, setCursor] = useState({ key: "", page: 1 });
   const [endKey, setEndKey] = useState<string | null>(null);
+  const [endKind, setEndKind] = useState<ListEndState>("more");
   const [backoffUntil, setBackoffUntil] = useState(0);
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -1003,13 +1047,51 @@ export function usePreviewTradeUps(options: {
   const [totalProfitable, setTotalProfitable] = useState(0);
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
+  const rowsRef = useRef<HydratedTradeUp[]>([]);
+  const openField = useRef<string | null>(null);
+  const burstAt = useRef(0);
+  const fromPop = useRef(false);
+  rowsRef.current = tradeUps;
   // Faces land in a module-level cache, so a bump is what repaints the art.
   const [faceTick, setFaceTick] = useState(0);
 
   useEffect(() => {
-    if (collection || skin || typeof window === "undefined") return;
-    replaceBoardUrl({ query, text: search }, window.location, window.history);
-  }, [query, search, collection, skin]);
+    if (typeof window === "undefined") return;
+    if (!isBoardFilterPath(window.location.pathname)) return;
+    const state = { query, text: search };
+    const next = boardSearchFromState(state, window.location.search);
+    const current = searchString(window.location.search);
+    const afterPop = fromPop.current;
+    fromPop.current = false;
+    if (next === current) return;
+    // Clamp, alias, param order, and unknown keys are a rewrite of this entry.
+    if (afterPop || canonicalBoardSearch(current) === next) {
+      openField.current = null;
+      replaceBoardUrl(state, window.location, window.history);
+      return;
+    }
+    const inBurst = Date.now() - burstAt.current <= FILTER_SETTLE_MS;
+    const decision = historyAction(inBurst ? openField.current : null, current, next);
+    openField.current = decision.field;
+    burstAt.current = Date.now();
+    if (decision.action === "push") pushBoardUrl(state, window.location, window.history);
+    else replaceBoardUrl(state, window.location, window.history);
+  }, [query, search]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      if (!isBoardFilterPath(window.location.pathname)) return;
+      const next = readBoardLocation(window.location);
+      fromPop.current = true;
+      openField.current = null;
+      setQuery(next.query);
+      setSearch(next.text);
+      setParsed(parseQuery(next.text));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const semantic = useMemo(() => chipsToBoardParams(parsed.chips, parsed.rest), [parsed]);
   const params = new URLSearchParams(boardQueryString(query, perPage));
@@ -1035,6 +1117,14 @@ export function usePreviewTradeUps(options: {
   useLayoutEffect(() => {
     if (scopeRef.current === scope) return;
     scopeRef.current = scope;
+    if (typeof window !== "undefined") {
+      const next = readBoardLocation(window.location);
+      openField.current = null;
+      replaceBoardUrl(next, window.location, window.history);
+      setQuery(next.query);
+      setSearch(next.text);
+      setParsed(parseQuery(next.text));
+    }
     setTradeUps([]);
     setLoading(enabled);
     setThrottle(null);
@@ -1049,6 +1139,7 @@ export function usePreviewTradeUps(options: {
   useEffect(() => {
     setCursor({ key: settledKey, page: 1 });
     setEndKey(null);
+    setEndKind("more");
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
@@ -1072,13 +1163,15 @@ export function usePreviewTradeUps(options: {
           credentials: "include",
           signal: controller.signal,
         });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number }>(res);
+        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number; faces?: Record<string, string | null> }>(res);
+        if (data.faces) rememberFaces(FACE_CACHE, data.faces);
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
           setTotalProfitable(typeof data.total_profitable === "number" ? data.total_profitable : 0);
         }
         return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
       },
+      alreadyHave: (row) => rowsRef.current.some((have) => have.id === row.id),
       hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
       namesOf: skinNames,
       warmFaces: (names) => loadFaces(names, FACE_CACHE),
@@ -1095,7 +1188,9 @@ export function usePreviewTradeUps(options: {
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          if (pageIsShort(count, perPage) || reachedTotal(page, perPage, total)) setEndKey(settledKey);
+          const kind = listEndState({ received: count, pageSize: perPage, page, total });
+          setEndKind(kind);
+          if (kind !== "more") setEndKey(settledKey);
         },
         rateLimited: (retryAfterMs) => {
           if (!live) return;
@@ -1140,6 +1235,8 @@ export function usePreviewTradeUps(options: {
   }, [backoffUntil]);
 
   const refreshing = loading && page === 1 && tradeUps.length > 0 && rowsKey !== settledKey;
+  const loadingMore = loading && page > 1;
+  const pagingThrottle = page > 1 && throttle ? throttle : null;
 
   const loadMore = useCallback(() => {
     if (!canLoadMore({
@@ -1183,10 +1280,10 @@ export function usePreviewTradeUps(options: {
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed,
-      loadMore, exhausted, throttle, retryReady,
-      failed, retry, clearFilters,
+      loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
+      failed, retry, clearFilters, loadingMore,
     }),
     [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, faceTick, total, totalProfitable],
+      clearFilters, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle],
   );
 }

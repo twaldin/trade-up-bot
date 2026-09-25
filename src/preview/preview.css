@@ -2730,6 +2730,10 @@
   min-height: 60px;
 }
 
+.preview-sentinel > .preview-btn--quiet {
+  min-height: 44px;
+}
+
 /* ------------------------------------------- every skin in a collection */
 
 .preview-allskins {

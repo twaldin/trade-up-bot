@@ -28,6 +28,8 @@ export interface BoardLoadPorts<T> {
   warmFaces: (names: string[]) => Promise<unknown>;
   /** True while paging in: rows are appended instead of replacing the board. */
   append?: boolean;
+  /** True when this row is already on the board. A full page of overlaps is the end, not a stall. */
+  alreadyHave?: (row: T) => boolean;
   /**
    * False once a newer load owns the board (a filter change, the next page, or
    * StrictMode's discarded first effect). A stale run that still cleared
@@ -69,9 +71,12 @@ export async function loadBoardRows<T>(ports: BoardLoadPorts<T>): Promise<void> 
     const { rows, isFree, total } = await ports.fetchRows();
     if (!live()) return;
     emit.isFree(isFree);
-    emit.pageSize?.(rows.length, total);
-    put(rows);
-    painted = rows;
+    const fresh = ports.alreadyHave ? rows.filter((row) => !ports.alreadyHave!(row)) : rows;
+    // A later page that repeats the cursor (same ids) cannot grow the list. Stop.
+    if (append && rows.length > 0 && fresh.length === 0) emit.pageSize?.(0, total);
+    else emit.pageSize?.(rows.length, total);
+    put(fresh);
+    painted = fresh;
   } catch (err) {
     if (!live() || isAbortError(err)) return;
     // A 429 keeps whatever was already on screen. Clearing it is what left the

@@ -7,6 +7,7 @@ import { CONSOLE_BASE, previewSkinHref } from "../../src/preview/lib/board.js";
 import { consoleTargetFor, pageFor } from "../../src/preview/lib/console-routes.js";
 import { ROBOTS_TXT, buildStaticSitemap } from "../../server/routes/sitemap.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "../../src/preview/lib/copy.js";
+import { CACHEABLE_READ_MAX, RATE_WINDOW_MS, SHARED_API_MAX, isCacheableRead, usesSharedApiBucket } from "../../server/rate-limit-buckets.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(resolve(testDir, "../../src/App.tsx"), "utf8");
@@ -143,11 +144,56 @@ describe("console cutover", () => {
   it("backs off the Express per-IP limiter, not CSFloat", () => {
     const index = readFileSync(resolve(testDir, "../../server/index.ts"), "utf8");
     expect(index).toContain("Too many requests, please try again later.");
-    expect(index).toContain('skip: (req) => !req.path.startsWith("/api")');
-    expect(index).toMatch(/max:\s*120/);
+    expect(index).toContain("skip: (req) => !usesSharedApiBucket(req.path, req.method)");
+    const sharedLimiter = index.slice(
+      index.indexOf("app.use(rateLimit({"),
+      index.indexOf("skip: (req) => !usesSharedApiBucket(req.path, req.method)") + "skip: (req) => !usesSharedApiBucket(req.path, req.method)".length,
+    );
+    expect(sharedLimiter).toContain("max: SHARED_API_MAX");
+    expect(sharedLimiter).toContain("windowMs: RATE_WINDOW_MS");
+    expect(sharedLimiter).not.toMatch(/max:\s*10/);
+    expect(sharedLimiter).not.toContain("CACHEABLE_READ_MAX");
+    expect(SHARED_API_MAX).toBe(120);
+    expect(RATE_WINDOW_MS).toBe(60_000);
+    expect(index).toMatch(/app\.use\("\/auth", rateLimit\(\{ windowMs: 60_000, max: 10/);
+    expect(index).toMatch(/\/api\/subscribe", rateLimit\(\{ windowMs: 60_000, max: 5/);
+    const buckets = readFileSync(resolve(testDir, "../../server/rate-limit-buckets.ts"), "utf8");
+    expect(buckets).toContain("export const SHARED_API_MAX = 120");
+    expect(buckets).toContain("export const CACHEABLE_READ_MAX = 600");
+    expect(buckets).toContain("export const RATE_WINDOW_MS = 60_000");
+    const claims = readFileSync(resolve(testDir, "../../server/routes/claims.ts"), "utf8");
+    expect(claims).toContain("const claimMax = 10");
+    expect(claims).toContain("const claimWindow = 3600");
+    const tradeUps = readFileSync(resolve(testDir, "../../server/routes/trade-ups.ts"), "utf8");
+    expect(tradeUps).toContain("const verifyMax = 20");
     const helper = readFileSync(resolve(testDir, "../../src/preview/lib/page-fetch.ts"), "utf8");
     expect(helper).toContain("Too many requests, please try again later.");
     expect(helper).toContain("canLoadMore");
+  });
+
+  it("counts trade-up list, pagination, and inputs on the shared 120 bucket", () => {
+    const listPaths = ["/api/trade-ups", "/api/trade-ups?page=2&per_page=12", "/api/trade-ups/42/inputs"];
+    for (const path of listPaths) {
+      expect(usesSharedApiBucket(path)).toBe(true);
+      expect(isCacheableRead(path)).toBe(false);
+    }
+    expect(usesSharedApiBucket("/api/preview/faces")).toBe(false);
+    expect(isCacheableRead("/api/preview/faces")).toBe(true);
+    expect(SHARED_API_MAX).toBe(120);
+    expect(CACHEABLE_READ_MAX).toBe(600);
+    expect(RATE_WINDOW_MS).toBe(60_000);
+  });
+
+  it("sends POST on face and stats paths to the shared 120 bucket", () => {
+    const paths = ["/api/global-stats", "/api/preview/faces", "/api/outcome-stats"];
+    for (const path of paths) {
+      expect(isCacheableRead(path, "POST")).toBe(false);
+      expect(usesSharedApiBucket(path, "POST")).toBe(true);
+      expect(isCacheableRead(path, "GET")).toBe(true);
+      expect(usesSharedApiBucket(path, "GET")).toBe(false);
+      expect(isCacheableRead(path, "HEAD")).toBe(true);
+      expect(usesSharedApiBucket(path, "HEAD")).toBe(false);
+    }
   });
 
   it("does not iframe production chrome", () => {

@@ -98,6 +98,7 @@ import { injectLandingStats, landingStatsFromSources } from "../src/preview/lib/
 import { HOMEPAGE_SEO, STATIC_SEO_PAGES, renderHomepageSeoBody } from "./static-seo-pages.js";
 import { writeHomepageFirstHtmlFile } from "./homepage-first-html.js";
 import { trackingCspSources } from "./tracking.js";
+import { CACHEABLE_READ_MAX, isCacheableRead, RATE_WINDOW_MS, SHARED_API_MAX, usesSharedApiBucket } from "./rate-limit-buckets.js";
 
 const app = express();
 const PORT = 3001;
@@ -118,12 +119,21 @@ const rlKey = (req: express.Request) => (req.headers["x-real-ip"] as string) || 
 // Tim hit live: "Too many requests, please try again later." Static assets
 // must not share that budget; the buggy collection sentinel was burning it.
 app.use(rateLimit({
-  windowMs: 60_000,
-  max: 120,
+  windowMs: RATE_WINDOW_MS,
+  max: SHARED_API_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rlKey,
-  skip: (req) => !req.path.startsWith("/api") && !req.path.startsWith("/auth"),
+  skip: (req) => !usesSharedApiBucket(req.path, req.method),
+  message: "Too many requests, please try again later.",
+}));
+app.use(rateLimit({
+  windowMs: RATE_WINDOW_MS,
+  max: CACHEABLE_READ_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: rlKey,
+  skip: (req) => !isCacheableRead(req.path, req.method),
   message: "Too many requests, please try again later.",
 }));
 app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));

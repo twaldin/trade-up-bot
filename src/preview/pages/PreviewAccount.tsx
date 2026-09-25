@@ -10,7 +10,7 @@ import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { hasProAccess } from "../lib/billing.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
-import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, parseRetryAfter, waitForBrowseHold } from "../lib/page-fetch.js";
+import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, noteRateLimited, parseRetryAfter, waitForBrowseHold } from "../lib/page-fetch.js";
 import { useBrowseHeld } from "../lib/use-browse-json.js";
 import { BoardNotice } from "../components/BoardNotice.js";
 import {
@@ -130,7 +130,7 @@ export function PreviewAccount() {
     if (claimsInFlight.current) return;
     claimsInFlight.current = true;
     setLoading(true);
-    setNote(null);
+    if (claimAttempts.current === 0) setNote(null);
     try {
       await waitForBrowseHold(signal);
       const mainReq = activeTab === "claims"
@@ -155,6 +155,7 @@ export function PreviewAccount() {
         return;
       }
       if (res.status === 429) {
+        noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
         if (claimAttempts.current >= 1) {
           setNote(RATE_LIMIT_MANUAL_COPY);
           return;
@@ -232,6 +233,7 @@ export function PreviewAccount() {
 
   const retryClaims = useCallback(() => {
     if (browseHeldUntil() > Date.now() || claimsInFlight.current) return;
+    claimAttempts.current = 0;
     void fetchData();
   }, [fetchData]);
 
@@ -671,7 +673,16 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {note && <p className="preview-note">{note}</p>}
+      {note && (
+        <div className="preview-notice" role="status">
+          <p className="preview-note">{note}</p>
+          {note === RATE_LIMIT_MANUAL_COPY && !held && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={retryClaims}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
       {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
       {user && loading && <p className="preview-note">Loading…</p>}
 

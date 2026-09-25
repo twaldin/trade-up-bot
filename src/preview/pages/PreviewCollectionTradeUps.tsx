@@ -79,8 +79,11 @@ export function PreviewCollectionTradeUps() {
           query={board.query}
           onQuery={board.onQuery}
           loadMore={board.loadMore}
+          loadingMore={board.loadingMore}
           exhausted={board.exhausted}
+          endKind={board.endKind}
           throttle={board.throttle}
+          pagingThrottle={board.pagingThrottle}
           retryReady={board.retryReady}
           failed={board.failed}
           refreshing={board.refreshing}
