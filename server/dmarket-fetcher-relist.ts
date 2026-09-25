@@ -37,6 +37,19 @@ export interface DMarketRelinkPlan {
   contested: number;
 }
 
+export type RelinkSkipReason = "new_id_already_input" | "claimed_target";
+
+export interface RelinkSkip {
+  oldId: string;
+  reason: RelinkSkipReason;
+}
+
+export interface RelinkApplyResult {
+  applied: number;
+  failedIds: string[];
+  skipped: RelinkSkip[];
+}
+
 /** Classic Steam inspect URI only. Hex preview links return null. */
 const CLASSIC_INSPECT_ASSET = /[SM]\d+A(\d+)D/;
 
@@ -121,12 +134,25 @@ export function planDMarketRelinks(
  * and delete the old listing. A failed relink is rolled back and returned in
  * `failedIds` so the caller can delete that one listing and cascade it.
  */
+export function relinkLogLine(
+  skinName: string,
+  plan: DMarketRelinkPlan,
+  applied: RelinkApplyResult,
+): string {
+  const contested = plan.contested + applied.skipped.length;
+  const deleted = plan.deleteIds.length + applied.failedIds.length + applied.skipped.length;
+  const reasons = applied.skipped.map(skip => skip.reason).join(",");
+  const reason = reasons ? ` (${reasons})` : "";
+  return `  ${skinName}: relinked ${applied.applied} deleted ${deleted} contested ${contested} failed ${applied.failedIds.length}${reason}`;
+}
+
 export async function applyDMarketRelinks(
   pool: pg.Pool,
   relinks: readonly DMarketRelink[],
-): Promise<{ applied: number; failedIds: string[] }> {
+): Promise<RelinkApplyResult> {
   const failedIds: string[] = [];
-  if (relinks.length === 0) return { applied: 0, failedIds };
+  const skipped: RelinkSkip[] = [];
+  if (relinks.length === 0) return { applied: 0, failedIds, skipped };
   const refLookup = await ensureInputReferences(pool);
   let applied = 0;
   for (const relink of relinks) {
@@ -135,6 +161,24 @@ export async function applyDMarketRelinks(
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
       await client.query("SET LOCAL statement_timeout = '60s'");
+      const { rows: used } = await client.query(
+        `SELECT 1 FROM trade_up_inputs WHERE listing_id = $1 LIMIT 1`,
+        [relink.newId],
+      );
+      if (used.length > 0) {
+        await client.query("ROLLBACK");
+        skipped.push({ oldId: relink.oldId, reason: "new_id_already_input" });
+        continue;
+      }
+      const { rows: claimRows } = await client.query<{ claimed_by: string | null }>(
+        `SELECT claimed_by FROM listings WHERE id = $1`,
+        [relink.newId],
+      );
+      if (claimRows[0]?.claimed_by) {
+        await client.query("ROLLBACK");
+        skipped.push({ oldId: relink.oldId, reason: "claimed_target" });
+        continue;
+      }
       await client.query(
         `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
         [relink.newId, relink.oldId],
@@ -166,5 +210,5 @@ export async function applyDMarketRelinks(
   if (applied > 0) {
     try { await cacheInvalidatePrefix("tu:"); } catch { /* non-critical */ }
   }
-  return { applied, failedIds };
+  return { applied, failedIds, skipped };
 }

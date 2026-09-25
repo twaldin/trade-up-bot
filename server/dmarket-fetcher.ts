@@ -21,7 +21,7 @@ import {
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
-import { applyDMarketRelinks, assetIdFromInspect, planDMarketRelinks, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
+import { applyDMarketRelinks, assetIdFromInspect, planDMarketRelinks, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
 const { Pool } = pg;
 
@@ -262,17 +262,17 @@ async function main() {
         }));
         const plan = planDMarketRelinks(storedSides, incomingSides);
         const applied = await applyDMarketRelinks(pool, plan.relinks);
-        const deleteIds = [...plan.deleteIds, ...applied.failedIds];
+        const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
         if (deleteIds.length > 0) {
           await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
           await cascadeTradeUpStatuses(pool, deleteIds);
         }
-        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0) {
-          log(`  ${skinName}: relinked ${applied.applied} deleted ${deleteIds.length} contested ${plan.contested} failed ${applied.failedIds.length}`);
+        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0 || applied.skipped.length > 0) {
+          log(relinkLogLine(skinName, plan, applied));
         }
         cycleRelinked += applied.applied;
         cycleDeleted += deleteIds.length;
-        cycleContested += plan.contested;
+        cycleContested += plan.contested + applied.skipped.length;
         cycleFailed += applied.failedIds.length;
 
         stats.totalCalls++;

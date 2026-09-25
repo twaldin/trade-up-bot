@@ -448,7 +448,7 @@ export async function checkDMarketStaleness(
       }));
       const plan = planDMarketRelinks(storedSides, incomingSides);
       const applied = await applyDMarketRelinks(pool, plan.relinks);
-      const deleteIds = [...plan.deleteIds, ...applied.failedIds];
+      const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
       const activeIds = new Set(items.map(item => `dmarket:${item.itemId}`));
       const { rows: statTrakStored } = await pool.query<{ id: string }>(
         `SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id
