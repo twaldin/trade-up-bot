@@ -21,6 +21,7 @@ import {
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
+import { applyDMarketRelinks, assetIdFromInspect, planDMarketRelinks, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
 const { Pool } = pg;
 
@@ -187,6 +188,7 @@ async function main() {
       try {
         const items = await fetchAllDMarketListings(skinName);
         const activeIds = new Set<string>();
+        const incomingSides: DMarketRelistSide[] = [];
 
         // Upsert active listings
         const { rows: skinRows } = await pool.query("SELECT id FROM skins WHERE name = $1 AND stattrak = false LIMIT 1", [skinName]);
@@ -220,26 +222,43 @@ async function main() {
                 price_updated_at = CASE WHEN listings.price_cents != EXCLUDED.price_cents THEN NOW() ELSE listings.price_updated_at END,
                 staleness_checked_at = NOW()
             `, [dmId, targetSkin.id, priceCents, item.extra.floatValue, item.extra.paintSeed ?? null, isStatTrak, item.extra.phase ?? null]);
+            if (!isStatTrak) {
+              incomingSides.push({
+                id: dmId,
+                skinName,
+                floatValue: item.extra.floatValue,
+                paintSeed: item.extra.paintSeed ?? null,
+                assetId: assetIdFromInspect(item.extra.inspectInGame),
+                priceCents,
+              });
+            }
             inserted++;
           }
         }
 
-        // Staleness: remove DB listings not in the full API response
-        const { rows: stored } = await pool.query(
-          "SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id WHERE s.name = $1 AND l.source = 'dmarket'",
+        // Staleness: relist same skin/float/seed under a new offer id in place.
+        // Unmatched ids still delete and cascade to partial.
+        const { rows: stored } = await pool.query<{
+          id: string; float_value: number; paint_seed: number | null; price_cents: number; marketplace_id: string | null;
+        }>(
+          `SELECT l.id, l.float_value, l.paint_seed, l.price_cents, l.marketplace_id
+           FROM listings l JOIN skins s ON l.skin_id = s.id
+           WHERE s.name = $1 AND l.source = 'dmarket'`,
           [skinName]
         );
-        let removed = 0;
-        const deletedIds: string[] = [];
-        for (const s of stored) {
-          if (!activeIds.has(s.id)) {
-            await pool.query("DELETE FROM listings WHERE id = $1", [s.id]);
-            deletedIds.push(s.id);
-            removed++;
-          }
-        }
-        if (deletedIds.length > 0) {
-          await cascadeTradeUpStatuses(pool, deletedIds);
+        const storedSides: DMarketRelistSide[] = stored.map(row => ({
+          id: row.id,
+          skinName,
+          floatValue: Number(row.float_value),
+          paintSeed: row.paint_seed == null ? null : Number(row.paint_seed),
+          assetId: row.marketplace_id,
+          priceCents: Number(row.price_cents),
+        }));
+        const { relinks, deleteIds } = planDMarketRelinks(storedSides, incomingSides);
+        if (relinks.length > 0) await applyDMarketRelinks(pool, relinks);
+        if (deleteIds.length > 0) {
+          await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
+          await cascadeTradeUpStatuses(pool, deleteIds);
         }
 
         stats.totalCalls++;

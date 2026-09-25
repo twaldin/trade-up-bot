@@ -1,0 +1,133 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createTestApp, type TestContext } from "./setup.js";
+import { applyDMarketRelinks, planDMarketRelinks, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
+import { cascadeTradeUpStatuses, repricedInputCost } from "../../server/engine.js";
+
+let ctx: TestContext;
+
+beforeAll(async () => {
+  ctx = await createTestApp();
+  await ctx.pool.query(
+    `INSERT INTO skins (id, name, weapon, rarity) VALUES ('skin-mp7', 'MP7 | Abyssal Apparition', 'MP7', 'Classified')`,
+  );
+});
+
+afterAll(async () => {
+  await ctx.cleanup();
+});
+
+function side(id: string, priceCents: number, floatValue = 0.1523456789): DMarketRelistSide {
+  return {
+    id,
+    skinName: "MP7 | Abyssal Apparition",
+    floatValue,
+    paintSeed: 412,
+    assetId: null,
+    priceCents,
+  };
+}
+
+async function seedTradeUp(oldId: string, rawPrice: number): Promise<number> {
+  await ctx.pool.query(
+    `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+     VALUES ($1, 'skin-mp7', $2, 0.1523456789, 412, 'dmarket')`,
+    [oldId, rawPrice],
+  );
+  const { rows } = await ctx.pool.query(
+    `INSERT INTO trade_ups (
+       total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+       chance_to_profit, best_case_cents, worst_case_cents, outcomes_json, listing_status
+     ) VALUES ($1, 2000, $2, 1, 0.5, 500, -100, $3, 'active')
+     RETURNING id`,
+    [rawPrice, 2000 - rawPrice, JSON.stringify([{ estimated_price_cents: 2000, probability: 1 }])],
+  );
+  const tradeUpId = Number(rows[0].id);
+  await ctx.pool.query(
+    `INSERT INTO trade_up_inputs (
+       trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+     ) VALUES ($1, $2, 'skin-mp7', 'MP7 | Abyssal Apparition', 'Test', $3, 0.1523456789, 'Minimal Wear', 'dmarket')`,
+    [tradeUpId, oldId, repricedInputCost(rawPrice, "dmarket")],
+  );
+  return tradeUpId;
+}
+
+describe("DMarket fetcher relist reconcile", () => {
+  it("repoints a relist and leaves the trade-up active", async () => {
+    const tradeUpId = await seedTradeUp("dmarket:old-match", 554);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:new-match', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    const plan = planDMarketRelinks(
+      [side("dmarket:old-match", 554)],
+      [side("dmarket:new-match", 538)],
+    );
+    expect(plan.deleteIds).toEqual([]);
+    await applyDMarketRelinks(ctx.pool, plan.relinks);
+
+    const { rows: inputs } = await ctx.pool.query(
+      `SELECT listing_id, price_cents, source FROM trade_up_inputs WHERE trade_up_id = $1`,
+      [tradeUpId],
+    );
+    expect(inputs[0].listing_id).toBe("dmarket:new-match");
+    expect(inputs[0].price_cents).toBe(repricedInputCost(538, "dmarket"));
+    expect(inputs[0].source).toBe("dmarket");
+    const { rows: status } = await ctx.pool.query(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [tradeUpId],
+    );
+    expect(status[0].listing_status).toBe("active");
+    const { rows: oldListing } = await ctx.pool.query(`SELECT id FROM listings WHERE id = 'dmarket:old-match'`);
+    expect(oldListing).toHaveLength(0);
+  });
+
+  it("writes the new raw price through the reprice path when the relist is cheaper", async () => {
+    const tradeUpId = await seedTradeUp("dmarket:old-price", 1000);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:new-price', 'skin-mp7', 700, 0.1523456789, 412, 'dmarket')`,
+    );
+    const plan = planDMarketRelinks(
+      [side("dmarket:old-price", 1000)],
+      [side("dmarket:new-price", 700)],
+    );
+    await applyDMarketRelinks(ctx.pool, plan.relinks);
+    const { rows } = await ctx.pool.query(
+      `SELECT tui.price_cents, tu.total_cost_cents, tu.listing_status
+       FROM trade_up_inputs tui JOIN trade_ups tu ON tu.id = tui.trade_up_id
+       WHERE tui.trade_up_id = $1`,
+      [tradeUpId],
+    );
+    const expected = repricedInputCost(700, "dmarket");
+    expect(rows[0].price_cents).toBe(expected);
+    expect(rows[0].total_cost_cents).toBe(expected);
+    expect(rows[0].listing_status).toBe("active");
+  });
+
+  it("deletes and cascades when nothing matches", async () => {
+    const tradeUpId = await seedTradeUp("dmarket:gone", 554);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:keeper', 'skin-mp7', 400, 0.2, 9, 'dmarket')`,
+    );
+    await ctx.pool.query(
+      `INSERT INTO trade_up_inputs (
+         trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+       ) VALUES ($1, 'dmarket:keeper', 'skin-mp7', 'MP7 | Abyssal Apparition', 'Test', 400, 0.2, 'Field-Tested', 'dmarket')`,
+      [tradeUpId],
+    );
+    const plan = planDMarketRelinks(
+      [side("dmarket:gone", 554)],
+      [side("dmarket:unrelated", 100, 0.01)],
+    );
+    expect(plan.relinks).toEqual([]);
+    expect(plan.deleteIds).toEqual(["dmarket:gone"]);
+    await ctx.pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [plan.deleteIds]);
+    await cascadeTradeUpStatuses(ctx.pool, plan.deleteIds);
+    const { rows } = await ctx.pool.query(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [tradeUpId],
+    );
+    expect(rows[0].listing_status).toBe("partial");
+  });
+});
