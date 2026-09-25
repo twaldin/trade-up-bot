@@ -2741,7 +2741,8 @@
   min-height: 60px;
 }
 
-.preview-sentinel > .preview-btn--quiet {
+.preview-sentinel > .preview-btn--quiet,
+.preview-loadmore {
   min-height: 44px;
 }
 

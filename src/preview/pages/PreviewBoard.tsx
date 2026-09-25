@@ -1062,7 +1062,7 @@ export function PreviewBoard({
       {loadMore && !exhausted && !pagingThrottle && !notice && tradeUps.length > 0 && !(loading && !loadingMore) && (
         <button
           type="button"
-          className="preview-btn preview-btn--quiet"
+          className="preview-btn preview-btn--quiet preview-loadmore"
           ref={loadMoreBtn}
           aria-disabled={loadingMore || undefined}
           onClick={() => {
