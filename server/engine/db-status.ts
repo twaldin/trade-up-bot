@@ -240,14 +240,26 @@ export async function refreshListingStatuses(pool: pg.Pool): Promise<{ active: n
 }
 
 /**
- * Purge preserved trade-ups older than maxDays.
+ * Rows the one-time relist revive script flagged in `trade_up_relist_hold`.
+ * Absent table (every database that has not run the script) keeps today's purge.
+ * The hold only works after this build is deployed; run the script before the
+ * 24h purge if the daemon is still on the previous build.
  */
+async function relistHoldExclusion(pool: pg.Pool): Promise<string> {
+  const { rows } = await pool.query<{ rel: string | null }>(
+    "SELECT to_regclass('public.trade_up_relist_hold') AS rel",
+  );
+  if (!rows[0]?.rel) return "";
+  return "AND id NOT IN (SELECT trade_up_id FROM trade_up_relist_hold)";
+}
+
 export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise<number> {
   // Use listing_status IN + preserved_at range to leverage composite index
   // idx_trade_ups_listing_status(listing_status, preserved_at) instead of EXTRACT() function scan.
   // Both 'partial' (cascadeTradeUpStatuses) and 'stale' (refreshListingStatuses, claims) can have
   // preserved_at set and must be purged together.
-  const condition = "listing_status IN ('partial', 'stale') AND preserved_at < NOW() - ($1 * INTERVAL '1 day')";
+  const hold = await relistHoldExclusion(pool);
+  const condition = `listing_status IN ('partial', 'stale') AND preserved_at < NOW() - ($1 * INTERVAL '1 day') ${hold}`;
 
   // Delete inputs first (trade_up_inputs.trade_up_id FK has ON DELETE CASCADE but explicit
   // batch delete is faster than row-by-row trigger for large counts), then trade-ups.
