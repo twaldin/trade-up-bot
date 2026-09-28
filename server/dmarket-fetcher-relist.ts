@@ -195,15 +195,8 @@ export async function applyDMarketRelinks(
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
       await client.query("SET LOCAL statement_timeout = '60s'");
-      const { rows: used } = await client.query(
-        `SELECT 1 FROM trade_up_inputs WHERE listing_id = $1 LIMIT 1`,
-        [relink.newId],
-      );
-      if (used.length > 0) {
-        await client.query("ROLLBACK");
-        skipped.push({ oldId: relink.oldId, reason: "new_id_already_input" });
-        continue;
-      }
+      // Lock the target before the input-use check. Two relinks of the same
+      // new id otherwise both see it unused, then both rewrite onto it.
       const { rows: claimRows } = await client.query<{ claimed_by: string | null }>(
         `SELECT claimed_by FROM listings WHERE id = $1 FOR UPDATE`,
         [relink.newId],
@@ -211,6 +204,15 @@ export async function applyDMarketRelinks(
       if (claimRows[0]?.claimed_by) {
         await client.query("ROLLBACK");
         skipped.push({ oldId: relink.oldId, reason: "claimed_target" });
+        continue;
+      }
+      const { rows: used } = await client.query(
+        `SELECT 1 FROM trade_up_inputs WHERE listing_id = $1 LIMIT 1`,
+        [relink.newId],
+      );
+      if (used.length > 0) {
+        await client.query("ROLLBACK");
+        skipped.push({ oldId: relink.oldId, reason: "new_id_already_input" });
         continue;
       }
       await client.query(

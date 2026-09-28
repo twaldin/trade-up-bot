@@ -21,6 +21,7 @@ import {
   isDMarketConfigured,
 } from "./sync/dmarket.js";
 import { cascadeTradeUpStatuses } from "./engine.js";
+import { createTables } from "./db.js";
 import { applyDMarketRelinks, assetIdFromInspect, listingIdsToDelete, planDMarketRelinks, referencePricesAllowDeletes, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
 const { Pool } = pg;
@@ -159,6 +160,12 @@ async function main() {
   log(`  DB: PostgreSQL (${connectionString.replace(/:[^@]*@/, ':***@')})`);
   log(`  Log: ${LOG_PATH}`);
   log(`  Rate limit: 2 RPS (550ms interval)`);
+
+  // This process owns its pool and does not share the API startup. Relink
+  // writes assume dmarket_listing_relinks already exists; a missing table
+  // fails the relink and the old id is then deleted.
+  await createTables(pool);
+  log("  schema ready");
 
   // Graceful shutdown
   let running = true;

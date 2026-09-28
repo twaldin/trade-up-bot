@@ -198,6 +198,56 @@ describe("DMarket fetcher relist reconcile", () => {
     await ctx.pool.query(`DROP TRIGGER fail_relist_delete_trg ON listings`);
   });
 
+  it("lets only one of two concurrent relinks take the same new listing", async () => {
+    const first = await seedTradeUp("dmarket:old-race-a", 554);
+    const second = await seedTradeUp("dmarket:old-race-b", 600);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:new-race', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    const holder = await ctx.pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query(`SELECT claimed_by FROM listings WHERE id = 'dmarket:new-race' FOR UPDATE`);
+      const pending = Promise.all([
+        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-race-a", newId: "dmarket:new-race", priceCents: 538 }]),
+        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-race-b", newId: "dmarket:new-race", priceCents: 580 }]),
+      ]);
+      const deadline = Date.now() + 4000;
+      let waiting = 0;
+      while (Date.now() < deadline) {
+        const { rows } = await ctx.pool.query<{ n: number }>(`
+          SELECT COUNT(*)::int AS n
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+            AND state = 'active'
+            AND pid <> pg_backend_pid()
+        `);
+        waiting = rows[0].n;
+        if (waiting >= 2) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      await holder.query("COMMIT");
+      const results = await pending;
+      expect(waiting).toBeGreaterThanOrEqual(2);
+      expect(results.reduce((sum, result) => sum + result.applied, 0)).toBe(1);
+      expect(results.reduce((sum, result) => sum + result.failedIds.length, 0)).toBe(0);
+      expect(results.flatMap(result => result.skipped)).toEqual([
+        { oldId: expect.stringMatching(/^dmarket:old-race-[ab]$/), reason: "new_id_already_input" },
+      ]);
+      const { rows } = await ctx.pool.query<{ trade_up_id: number; listing_id: string }>(
+        `SELECT trade_up_id, listing_id FROM trade_up_inputs WHERE trade_up_id = ANY($1) ORDER BY trade_up_id`,
+        [[first, second]],
+      );
+      expect(rows.filter(row => row.listing_id === "dmarket:new-race")).toHaveLength(1);
+      expect(rows.filter(row => row.listing_id.startsWith("dmarket:old-race-"))).toHaveLength(1);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+  });
+
   it("does not relink onto a listing that is already a trade-up input", async () => {
     const oldId = await seedTradeUp("dmarket:old-used", 554);
     const keptId = await seedTradeUp("dmarket:au-new", 538);
