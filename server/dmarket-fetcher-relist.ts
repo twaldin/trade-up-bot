@@ -264,6 +264,8 @@ export async function applyDMarketRelinks(
       await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
       await client.query("COMMIT");
       applied++;
+      client.release();
+      released = true;
       try {
         if (hooks?.beforeStragglerSweep) await hooks.beforeStragglerSweep();
         await sweepRelinkedInputs(pool, relink.oldId, relink.newId);

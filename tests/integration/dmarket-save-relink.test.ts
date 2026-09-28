@@ -179,6 +179,86 @@ describe("daemon save after a DMarket relink", () => {
     );
     expect(stale).toHaveLength(0);
   });
+
+  it("retries the insert when the share lock times out and still saves the live listing", async () => {
+    await insertListing("dmarket:lock-timeout");
+    await insertListing("csfloat:lock-timeout-keep");
+    const holder = await ctx.pool.connect();
+    await holder.query("BEGIN");
+    await holder.query(`SELECT id FROM listings WHERE id = 'dmarket:lock-timeout' FOR UPDATE`);
+    let released = false;
+    const releaseHolder = (async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 6000));
+        await holder.query("COMMIT");
+        released = true;
+      } catch (err) {
+        await holder.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        holder.release();
+      }
+    })();
+    try {
+      await mergeTradeUps(ctx.pool, [dmTradeUp(["dmarket:lock-timeout", "csfloat:lock-timeout-keep"], 2222)], "save_relink_lock_timeout");
+    } finally {
+      await releaseHolder;
+    }
+    expect(released).toBe(true);
+    const { rows } = await ctx.pool.query(
+      `SELECT t.listing_status, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.type = 'save_relink_lock_timeout' AND tui.listing_id LIKE 'dmarket:%'`,
+    );
+    expect(rows).toEqual([{ listing_status: "active", listing_id: "dmarket:lock-timeout" }]);
+  }, 20_000);
+
+  it("leaves no active trade-up on a deleted DMarket listing across parallel merges", async () => {
+    const rounds = [20, 50, 50, 50];
+    let passes = 0;
+    for (let round = 0; round < rounds.length; round++) {
+      const width = rounds[round];
+      const seeded: { oldId: string; newId: string; keepId: string }[] = [];
+      for (let i = 0; i < width; i++) {
+        const oldId = `dmarket:par-old-r${round}n${i}`;
+        const newId = `dmarket:par-new-r${round}n${i}`;
+        const keepId = `csfloat:par-keep-r${round}n${i}`;
+        seeded.push({ oldId, newId, keepId });
+      }
+      await ctx.pool.query(
+        `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+         SELECT id, 'skin-save', 500, 0.15, 412, CASE WHEN id LIKE 'dmarket:%' THEN 'dmarket' ELSE 'csfloat' END
+         FROM UNNEST($1::text[]) AS t(id)`,
+        [seeded.flatMap(row => [row.oldId, row.newId, row.keepId])],
+      );
+      await Promise.all(seeded.map(row => Promise.all([
+        mergeTradeUps(
+          ctx.pool,
+          [dmTradeUp([row.oldId, row.keepId], 1500)],
+          "save_relink_conc",
+        ),
+        applyDMarketRelinks(ctx.pool, [{ oldId: row.oldId, newId: row.newId, priceCents: 480 }]),
+      ])));
+      passes += width;
+    }
+
+    const { rows: activeOnDeleted } = await ctx.pool.query(
+      `SELECT t.id, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE t.type = 'save_relink_conc'
+         AND t.listing_status = 'active'
+         AND tui.listing_id LIKE 'dmarket:%'
+         AND l.id IS NULL`,
+    );
+    expect(activeOnDeleted).toEqual([]);
+    const { rows: saved } = await ctx.pool.query(
+      `SELECT COUNT(*)::int AS n FROM trade_ups WHERE type = 'save_relink_conc'`,
+    );
+    expect(saved[0].n).toBe(passes);
+  }, 180_000);
 });
 
 describe("daemon relink map", () => {

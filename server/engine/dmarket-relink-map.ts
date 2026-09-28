@@ -72,6 +72,54 @@ function isDMarketInput(input: TradeUpInput): boolean {
  * stays on the old listing id and the trade-up is dropped. Prices and scores
  * are left as discovered. The same listing may still appear on different trade-ups.
  */
+interface ResolvedInput {
+  old_id: string;
+  next_id: string;
+  live: boolean;
+}
+
+/**
+ * Map and listing visibility in one statement. Two queries can straddle a
+ * relink commit: the map lookup misses the new id, then the listing read sees
+ * the old row gone, and a trade-up that has a live offer is dropped.
+ */
+async function resolveDMarketInputs(db: Queryable, oldIds: readonly string[]): Promise<Map<string, ResolvedInput>> {
+  const { rows } = await db.query<ResolvedInput>(
+    `WITH RECURSIVE wanted AS (
+       SELECT UNNEST($1::text[]) AS old_id
+     ),
+     chain AS (
+       SELECT w.old_id, r.new_id, 1 AS depth, ARRAY[w.old_id] AS path
+       FROM wanted w
+       JOIN dmarket_listing_relinks r ON r.old_id = w.old_id
+         AND r.relinked_at > NOW() - INTERVAL '${DMARKET_RELINK_TTL}'
+       UNION ALL
+       SELECT c.old_id, r.new_id, c.depth + 1, c.path || r.old_id
+       FROM chain c
+       JOIN dmarket_listing_relinks r ON r.old_id = c.new_id
+       WHERE c.depth < 4
+         AND NOT r.old_id = ANY(c.path)
+         AND r.relinked_at > NOW() - INTERVAL '${DMARKET_RELINK_TTL}'
+     ),
+     latest AS (
+       SELECT DISTINCT ON (old_id) old_id, new_id
+       FROM chain
+       ORDER BY old_id, depth DESC
+     )
+     SELECT w.old_id,
+            COALESCE(l.new_id, w.old_id) AS next_id,
+            EXISTS (
+              SELECT 1 FROM listings li
+              WHERE li.id = COALESCE(l.new_id, w.old_id)
+                AND li.claimed_by IS NULL
+            ) AS live
+     FROM wanted w
+     LEFT JOIN latest l ON l.old_id = w.old_id`,
+    [oldIds],
+  );
+  return new Map(rows.map(row => [row.old_id, row]));
+}
+
 export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly TradeUp[]): Promise<TradeUp[]> {
   const oldIds = new Set<string>();
   for (const tu of tradeUps) {
@@ -81,14 +129,7 @@ export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly 
   }
   if (oldIds.size === 0) return [...tradeUps];
 
-  const relinks = await lookupDMarketRelinks(db, [...oldIds]);
-  const candidates = new Set<string>(oldIds);
-  for (const next of relinks.values()) candidates.add(next);
-  const { rows } = await db.query<{ id: string }>(
-    `SELECT id FROM listings WHERE id = ANY($1::text[]) AND claimed_by IS NULL`,
-    [[...candidates]],
-  );
-  const live = new Set(rows.map(row => row.id));
+  const resolved = await resolveDMarketInputs(db, [...oldIds]);
 
   const kept: TradeUp[] = [];
   for (const tu of tradeUps) {
@@ -96,8 +137,9 @@ export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly 
     let remapped = false;
     const inputs = tu.inputs.map(input => {
       if (!isDMarketInput(input)) return input;
-      const next = relinks.get(input.listing_id) ?? input.listing_id;
-      if (!live.has(next)) {
+      const row = resolved.get(input.listing_id);
+      const next = row?.next_id ?? input.listing_id;
+      if (!row?.live) {
         missing = true;
         return input;
       }

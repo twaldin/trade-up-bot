@@ -85,6 +85,42 @@ describe("relist applied table", () => {
     );
     expect(still).toEqual(kept);
   });
+
+  it("adds the composite key to a keyless table when pairs are unique", async () => {
+    await ctx.pool.query(`DROP TABLE IF EXISTS trade_up_relist_applied`);
+    await ctx.pool.query(`
+      CREATE TABLE trade_up_relist_applied (
+        trade_up_id INTEGER NOT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        run_id TEXT NOT NULL
+      )
+    `);
+    await ctx.pool.query(
+      `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES (21, 'run-a'), (22, 'run-b')`,
+    );
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBe("trade_up_id,run_id");
+    const oid = await appliedPrimaryKeyOid();
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKeyOid()).toBe(oid);
+
+    await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
+    await ctx.pool.query(`
+      CREATE TABLE trade_up_relist_applied (
+        trade_up_id INTEGER NOT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        run_id TEXT NOT NULL
+      )
+    `);
+    await ctx.pool.query(
+      `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES (31, 'run-a'), (31, 'run-a')`,
+    );
+    await ensureAppliedTable(ctx.pool);
+    expect(await appliedPrimaryKey()).toBeNull();
+
+    await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
+    await ensureAppliedTable(ctx.pool);
+  });
 });
 
 describe("relist hold", () => {

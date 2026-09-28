@@ -555,10 +555,13 @@ async function holdPlans(pool: pg.Pool, plans: RelistPlan[]): Promise<void> {
 
 const APPLIED_PK_OLD = "trade_up_id";
 
+const APPLIED_PK_NEW = "trade_up_id,run_id";
+
 /**
  * Fresh tables are created with PRIMARY KEY (trade_up_id, run_id).
- * A table that still has the old PRIMARY KEY (trade_up_id) is migrated once,
- * and only when (trade_up_id, run_id) is already unique. Any other key is left alone.
+ * A table that still has the old PRIMARY KEY (trade_up_id), or no primary key,
+ * gets that composite key once, and only when (trade_up_id, run_id) is already
+ * unique. Any other key is left alone.
  */
 export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
   await pool.query(`
@@ -580,8 +583,9 @@ export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
     GROUP BY c.conname
   `);
   const pk = rows[0];
-  if (!pk || pk.cols !== APPLIED_PK_OLD) return;
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(pk.name)) return;
+  if (pk?.cols === APPLIED_PK_NEW) return;
+  if (pk && pk.cols !== APPLIED_PK_OLD) return;
+  if (pk && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(pk.name)) return;
 
   const client = await pool.connect();
   try {
@@ -596,7 +600,9 @@ export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
       await client.query("ROLLBACK");
       return;
     }
-    await client.query(`ALTER TABLE trade_up_relist_applied DROP CONSTRAINT ${client.escapeIdentifier(pk.name)}`);
+    if (pk) {
+      await client.query(`ALTER TABLE trade_up_relist_applied DROP CONSTRAINT ${client.escapeIdentifier(pk.name)}`);
+    }
     await client.query(`ALTER TABLE trade_up_relist_applied ADD PRIMARY KEY (trade_up_id, run_id)`);
     await client.query("COMMIT");
   } catch (err) {
