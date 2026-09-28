@@ -53,6 +53,8 @@ export interface RelinkApplyResult {
 }
 
 export interface ApplyDMarketRelinkHooks {
+  /** Test barrier after BEGIN and before the listing locks. */
+  beforeListingLock?: () => Promise<void>;
   /** Test barrier after the relink commits and before straggler inputs are moved. */
   beforeStragglerSweep?: () => Promise<void>;
 }
@@ -218,19 +220,21 @@ export async function applyDMarketRelinks(
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
       await client.query("SET LOCAL statement_timeout = '60s'");
-      // Lock one listing at a time, sorted by id, before rewriting inputs.
+      if (hooks?.beforeListingLock) await hooks.beforeListingLock();
+      // Lock one listing at a time, sorted by id, before reading claimed_by.
       // A merge holding FOR KEY SHARE on an earlier id blocks here; the input
       // UPDATE then sees the rows that merge committed. One statement with
-      // ORDER BY does not acquire the row locks in that order.
-      const claimedBy = new Map<string, string | null>();
+      // ORDER BY does not acquire the row locks in that order. The claim copy
+      // uses the values read under these locks, not a later unlocked read.
+      const locked = new Map<string, { claimed_by: string | null; claimed_at: Date | null }>();
       for (const id of [...new Set([relink.oldId, relink.newId])].sort()) {
-        const { rows } = await client.query<{ id: string; claimed_by: string | null }>(
-          `SELECT id, claimed_by FROM listings WHERE id = $1 FOR UPDATE`,
+        const { rows } = await client.query<{ id: string; claimed_by: string | null; claimed_at: Date | null }>(
+          `SELECT id, claimed_by, claimed_at FROM listings WHERE id = $1 FOR UPDATE`,
           [id],
         );
-        if (rows[0]) claimedBy.set(rows[0].id, rows[0].claimed_by);
+        if (rows[0]) locked.set(rows[0].id, { claimed_by: rows[0].claimed_by, claimed_at: rows[0].claimed_at });
       }
-      if (claimedBy.get(relink.newId)) {
+      if (locked.get(relink.newId)?.claimed_by) {
         await client.query("ROLLBACK");
         skipped.push({ oldId: relink.oldId, reason: "claimed_target" });
         continue;
@@ -249,13 +253,13 @@ export async function applyDMarketRelinks(
         [relink.newId, relink.oldId],
       );
       await applyListingPriceToInputs(client, relink.newId, relink.priceCents, "dmarket", refLookup);
-      await client.query(
-        `UPDATE listings AS fresh
-         SET claimed_by = old.claimed_by, claimed_at = old.claimed_at
-         FROM listings AS old
-         WHERE fresh.id = $1 AND old.id = $2 AND old.claimed_by IS NOT NULL`,
-        [relink.newId, relink.oldId],
-      );
+      const oldClaim = locked.get(relink.oldId);
+      if (oldClaim?.claimed_by) {
+        await client.query(
+          `UPDATE listings SET claimed_by = $2, claimed_at = $3 WHERE id = $1`,
+          [relink.newId, oldClaim.claimed_by, oldClaim.claimed_at],
+        );
+      }
       await recordDMarketRelink(client, relink.oldId, relink.newId);
       await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
       await client.query("COMMIT");

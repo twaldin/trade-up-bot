@@ -230,7 +230,7 @@ describe("DMarket fetcher relist reconcile", () => {
                 AND pid <> $1
                 AND wait_event_type = 'Lock'
                 AND state = 'active'
-                AND query = 'SELECT id, claimed_by FROM listings WHERE id = $1 FOR UPDATE') AS waiting,
+                AND query = 'SELECT id, claimed_by, claimed_at FROM listings WHERE id = $1 FOR UPDATE') AS waiting,
             (SELECT COUNT(*)::int FROM listings l
               JOIN pg_stat_activity a ON a.backend_xid::text = l.xmax::text
               WHERE l.id IN ('dmarket:a-old-race-a', 'dmarket:a-old-race-b')
@@ -407,5 +407,37 @@ describe("DMarket fetcher relist reconcile", () => {
       `SELECT claimed_by FROM listings WHERE id = 'dmarket:claimed-new'`,
     );
     expect(claim[0].claimed_by).toBe("other-user");
+  });
+
+  it("keeps a claim that commits on the old listing before the relink reads it", async () => {
+    const tradeUpId = await seedTradeUp("dmarket:a-claim-old", 554);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:b-claim-new', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    const result = await applyDMarketRelinks(ctx.pool, [{
+      oldId: "dmarket:a-claim-old",
+      newId: "dmarket:b-claim-new",
+      priceCents: 538,
+    }], {
+      beforeListingLock: async () => {
+        await ctx.pool.query(
+          `UPDATE listings SET claimed_by = 'buyer-1', claimed_at = NOW() WHERE id = 'dmarket:a-claim-old'`,
+        );
+      },
+    });
+    expect(result.applied).toBe(1);
+    expect(result.failedIds).toEqual([]);
+    const { rows: listings } = await ctx.pool.query<{ id: string; claimed_by: string | null }>(
+      `SELECT id, claimed_by FROM listings
+       WHERE id IN ('dmarket:a-claim-old', 'dmarket:b-claim-new')
+       ORDER BY id`,
+    );
+    expect(listings).toEqual([{ id: "dmarket:b-claim-new", claimed_by: "buyer-1" }]);
+    const { rows: inputs } = await ctx.pool.query(
+      `SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1`,
+      [tradeUpId],
+    );
+    expect(inputs).toEqual([{ listing_id: "dmarket:b-claim-new" }]);
   });
 });

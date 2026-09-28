@@ -47,6 +47,19 @@ export function initDb(): pg.Pool {
 // production will skip the migration on the next deploy.
 export const SCHEMA_VERSION = "2026-09-25.1";
 
+const MIGRATION_LOCK_TIMEOUT = "30s";
+
+async function schemaVersionOn(client: pg.PoolClient): Promise<string | null> {
+  try {
+    const { rows } = await client.query<{ value: string }>(
+      "SELECT value FROM sync_meta WHERE key = 'schema_version'",
+    );
+    return rows[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips if tables already exist (fast path for normal restarts).
  *  Short-circuits entirely when the DB schema_version matches SCHEMA_VERSION. */
@@ -60,7 +73,21 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   // processes start simultaneously. Session advisory lock is released in finally.
   const lockClient = await pool.connect();
   try {
+    // Bound the wait. A second startup must fail instead of sitting on this lock forever.
+    await lockClient.query("SELECT set_config('lock_timeout', $1, false)", [MIGRATION_LOCK_TIMEOUT]);
     await lockClient.query("SELECT pg_advisory_lock(1)");
+    // The waiter may have blocked while the holder finished the migration.
+    if (await schemaVersionOn(lockClient) === SCHEMA_VERSION) return;
+    // Migration statements run on this session, so the same lock_timeout covers them.
+    pool = new Proxy(pool, {
+      get(target, prop, receiver) {
+        if (prop === "query") {
+          return (text: string, values?: unknown[]) => lockClient.query(text, values);
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   // Fast check: if trade_ups table exists in the current schema, it's already set up — skip CREATE but still run migrations
   const { rows } = await pool.query(
     "SELECT 1 FROM information_schema.tables WHERE table_name = 'trade_ups' AND table_schema = current_schema() LIMIT 1"
@@ -726,7 +753,8 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   await setSyncMeta(pool, "schema_version", SCHEMA_VERSION);
 
   } finally {
-    await lockClient.query("SELECT pg_advisory_unlock(1)");
+    await lockClient.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
+    await lockClient.query("SELECT pg_advisory_unlock(1)").catch(() => {});
     lockClient.release();
   }
 }
