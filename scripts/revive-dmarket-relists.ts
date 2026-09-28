@@ -597,6 +597,9 @@ export async function ensureAppliedTable(pool: pg.Pool): Promise<void> {
        LIMIT 1`,
     );
     if (dupes.length > 0) {
+      if (!pk) {
+        console.warn("trade_up_relist_applied has duplicate (trade_up_id, run_id) pairs; leaving it without a primary key");
+      }
       await client.query("ROLLBACK");
       return;
     }

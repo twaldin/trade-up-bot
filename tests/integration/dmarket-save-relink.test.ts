@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
-import { mergeTradeUps } from "../../server/engine/db-save.js";
+import { mergeTradeUps, saveTradeUps } from "../../server/engine/db-save.js";
 import { applyDMarketRelinks, planDMarketRelinks, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
 import { assertDMarketRelinkMap, recordDMarketRelink } from "../../server/engine/dmarket-relink-map.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
@@ -179,6 +179,91 @@ describe("daemon save after a DMarket relink", () => {
     );
     expect(stale).toHaveLength(0);
   });
+
+  it("does not save an active trade-up on a listing a relink deleted after the staircase retarget", async () => {
+    await insertListing("dmarket:save-barrier-old");
+    await insertListing("dmarket:save-barrier-new");
+    await insertListing("csfloat:save-barrier-keep");
+    const discovered = dmTradeUp(["dmarket:save-barrier-old", "csfloat:save-barrier-keep"], 4321);
+    let relinkCommitted = false;
+
+    await saveTradeUps(ctx.pool, [discovered], false, "save_barrier", false, "discovery", {
+      beforeWrite: async () => {
+        const applied = await applyDMarketRelinks(ctx.pool, [{
+          oldId: "dmarket:save-barrier-old",
+          newId: "dmarket:save-barrier-new",
+          priceCents: 480,
+        }]);
+        expect(applied.applied).toBe(1);
+        const { rows: gone } = await ctx.pool.query(
+          `SELECT id FROM listings WHERE id = 'dmarket:save-barrier-old'`,
+        );
+        expect(gone).toHaveLength(0);
+        relinkCommitted = true;
+      },
+    });
+
+    expect(relinkCommitted).toBe(true);
+    const { rows } = await ctx.pool.query(
+      `SELECT t.profit_cents, t.total_cost_cents, t.listing_status, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.type = 'save_barrier'
+       ORDER BY tui.listing_id`,
+    );
+    expect(rows.map(row => row.listing_id)).toEqual(["csfloat:save-barrier-keep", "dmarket:save-barrier-new"]);
+    expect(rows[0].profit_cents).toBe(4321);
+    expect(rows[0].total_cost_cents).toBe(5000);
+    expect(rows[0].listing_status).toBe("active");
+    const { rows: stale } = await ctx.pool.query(
+      `SELECT t.listing_status FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE tui.listing_id = 'dmarket:save-barrier-old'`,
+    );
+    expect(stale).toHaveLength(0);
+  });
+
+  it("leaves no active staircase save on a deleted DMarket listing across parallel saves", async () => {
+    const rounds = [20, 50];
+    let passes = 0;
+    for (let round = 0; round < rounds.length; round++) {
+      const width = rounds[round];
+      const seeded: { oldId: string; newId: string; keepId: string; type: string }[] = [];
+      for (let i = 0; i < width; i++) {
+        const oldId = `dmarket:save-old-r${round}n${i}`;
+        const newId = `dmarket:save-new-r${round}n${i}`;
+        const keepId = `csfloat:save-keep-r${round}n${i}`;
+        seeded.push({ oldId, newId, keepId, type: `save_race_r${round}n${i}` });
+      }
+      await ctx.pool.query(
+        `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+         SELECT t.id, 'skin-save', 500, 0.15, 412, CASE WHEN t.id LIKE 'dmarket:%' THEN 'dmarket' ELSE 'csfloat' END
+         FROM UNNEST($1::text[]) AS t(id)`,
+        [seeded.flatMap(row => [row.oldId, row.newId, row.keepId])],
+      );
+      await Promise.all(seeded.map(row => Promise.all([
+        saveTradeUps(ctx.pool, [dmTradeUp([row.oldId, row.keepId], 1500)], false, row.type, false, "discovery"),
+        applyDMarketRelinks(ctx.pool, [{ oldId: row.oldId, newId: row.newId, priceCents: 480 }]),
+      ])));
+      passes += width;
+    }
+
+    const { rows: activeOnDeleted } = await ctx.pool.query(
+      `SELECT t.id, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       LEFT JOIN listings l ON l.id = tui.listing_id
+       WHERE t.type LIKE 'save_race_%'
+         AND t.listing_status = 'active'
+         AND tui.listing_id LIKE 'dmarket:%'
+         AND l.id IS NULL`,
+    );
+    expect(activeOnDeleted).toEqual([]);
+    const { rows: saved } = await ctx.pool.query(
+      `SELECT COUNT(*)::int AS n FROM trade_ups WHERE type LIKE 'save_race_%'`,
+    );
+    expect(saved[0].n).toBe(passes);
+  }, 180_000);
 
   it("retries the insert when the share lock times out and still saves the live listing", async () => {
     await insertListing("dmarket:lock-timeout");

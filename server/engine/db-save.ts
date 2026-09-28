@@ -20,6 +20,11 @@ export interface MergeTradeUpHooks {
   beforeInsert?: () => Promise<void>;
 }
 
+export interface SaveTradeUpHooks {
+  /** After the pre-transaction retarget, before the write. Tests commit a relink here. */
+  beforeWrite?: () => Promise<void>;
+}
+
 function dmarketListingIds(tradeUps: readonly TradeUp[]): string[] {
   const ids = new Set<string>();
   for (const tu of tradeUps) {
@@ -155,23 +160,28 @@ async function insertMergeBatchOnce(pool: pg.Pool, batch: readonly TradeUp[], ty
   }
 }
 
-/** 40P01/55P03: retry, then skip the batch. Same policy as the relist lock retry. */
-async function insertMergeBatch(pool: pg.Pool, batch: readonly TradeUp[], type: string): Promise<TradeUp[]> {
+/** 40P01/55P03: retry, then skip. Same policy as the relist lock retry. null means skipped. */
+async function withShareLockRetry<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await withRetry(() => insertMergeBatchOnce(pool, batch, type), 3, "mergeTradeUps-insert");
+      return await withRetry(fn, 3, label);
     } catch (err) {
       const code = pgErrorCode(err);
       if (!MERGE_LOCK_CODES.has(code)) throw err;
       if (attempt >= MERGE_LOCK_RETRIES) {
-        console.warn(`mergeTradeUps-insert: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch`);
-        return [];
+        console.warn(`${label}: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch`);
+        return null;
       }
       const wait = 50 * 2 ** attempt;
-      console.warn(`mergeTradeUps-insert: ${code}, retry ${attempt + 1} in ${wait}ms`);
+      console.warn(`${label}: ${code}, retry ${attempt + 1} in ${wait}ms`);
       await new Promise(resolve => setTimeout(resolve, wait));
     }
   }
+}
+
+async function insertMergeBatch(pool: pg.Pool, batch: readonly TradeUp[], type: string): Promise<TradeUp[]> {
+  const inserted = await withShareLockRetry("mergeTradeUps-insert", () => insertMergeBatchOnce(pool, batch, type));
+  return inserted ?? [];
 }
 
 /**
@@ -253,61 +263,88 @@ export async function getProfitableCombosForWantedList(pool: pg.Pool): Promise<{
   return rows;
 }
 
-export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
-  const toSave = await retargetDMarketTradeUps(pool, tradeUps);
-  await withRetry(async () => {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+async function saveTradeUpsOnce(
+  pool: pg.Pool,
+  tradeUps: readonly TradeUp[],
+  clearFirst: boolean,
+  type: string,
+  isTheoretical: boolean,
+  source: string,
+): Promise<TradeUp[]> {
+  const client = await pool.connect();
+  try {
+    await beginMergeInsert(client);
+    // Resolve before any other write. A lock restart rolls this transaction back.
+    const resolved = await resolveDMarketInputsForInsert(client, tradeUps);
 
-      if (clearFirst) {
-        // Preserve materialized results when discovery clears — they're found by a different process
-        const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
-        await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical]);
-        await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
-      }
-
-      for (const tu of toSave) {
-        const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
-        const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
-        const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
-        const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
-        const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
-
-        const { rows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, discovered_via)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-          RETURNING id
-        `, [
-          tu.total_cost_cents,
-          tu.expected_value_cents,
-          tu.profit_cents,
-          tu.roi_percentage,
-          chanceToProfit,
-          type,
-          bestCase,
-          worstCase,
-          isTheoretical,
-          source,
-          JSON.stringify(tu.outcomes),
-          inputSources,
-          outputSkinNames,
-          collectionNames,
-          tu.discovered_via ?? null,
-        ]);
-        const tradeUpId = rows[0].id;
-
-        await insertInputsBatch(client, tradeUpId, tu.inputs);
-      }
-
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    if (clearFirst) {
+      // Preserve materialized results when discovery clears — they're found by a different process
+      const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
+      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical]);
+      await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
     }
-  }, 3, "saveTradeUps");
+
+    for (const tu of resolved) {
+      const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+      const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
+      const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+      const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
+
+      const { rows } = await client.query(`
+        INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, discovered_via)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [
+        tu.total_cost_cents,
+        tu.expected_value_cents,
+        tu.profit_cents,
+        tu.roi_percentage,
+        chanceToProfit,
+        type,
+        bestCase,
+        worstCase,
+        isTheoretical,
+        source,
+        JSON.stringify(tu.outcomes),
+        inputSources,
+        outputSkinNames,
+        collectionNames,
+        tu.discovered_via ?? null,
+      ]);
+      const tradeUpId = rows[0].id;
+
+      await insertInputsBatch(client, tradeUpId, tu.inputs);
+    }
+
+    await client.query("COMMIT");
+    return resolved;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveTradeUps(
+  pool: pg.Pool,
+  tradeUps: TradeUp[],
+  clearFirst: boolean = true,
+  type: string = "classified_covert",
+  isTheoretical: boolean = false,
+  source: string = "discovery",
+  hooks?: SaveTradeUpHooks,
+) {
+  // The pre-transaction read can keep a pre-relink id. beforeWrite lets a test
+  // commit the relink in that window. The write below resolves again.
+  await retargetDMarketTradeUps(pool, tradeUps);
+  if (hooks?.beforeWrite) await hooks.beforeWrite();
+  const inserted = await withShareLockRetry(
+    "saveTradeUps",
+    () => saveTradeUpsOnce(pool, tradeUps, clearFirst, type, isTheoretical, source),
+  );
+  if (inserted && inserted.length > 0) await cascadeDeletedDMarketInputs(pool, inserted);
 
   await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 }

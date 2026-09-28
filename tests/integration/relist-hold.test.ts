@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { purgeExpiredPreserved } from "../../server/engine.js";
 import { ensureAppliedTable, planDMarketRelistRevive, runReviveDMarketRelists } from "../../scripts/revive-dmarket-relists.js";
@@ -115,8 +115,11 @@ describe("relist applied table", () => {
     await ctx.pool.query(
       `INSERT INTO trade_up_relist_applied (trade_up_id, run_id) VALUES (31, 'run-a'), (31, 'run-a')`,
     );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await ensureAppliedTable(ctx.pool);
     expect(await appliedPrimaryKey()).toBeNull();
+    expect(warn.mock.calls.some(args => String(args[0]).includes("duplicate (trade_up_id, run_id)"))).toBe(true);
+    warn.mockRestore();
 
     await ctx.pool.query(`DROP TABLE trade_up_relist_applied`);
     await ensureAppliedTable(ctx.pool);

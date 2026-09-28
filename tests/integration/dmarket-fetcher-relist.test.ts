@@ -317,6 +317,56 @@ describe("DMarket fetcher relist reconcile", () => {
     }
   });
 
+  it("restores active after a cascade marked the trade-up partial on the old id", async () => {
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:partial-old', 'skin-mp7', 554, 0.1523456789, 412, 'dmarket'),
+              ('dmarket:partial-new', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket'),
+              ('csfloat:partial-keep', 'skin-mp7', 400, 0.2, 9, 'csfloat')`,
+    );
+    const { rows: created } = await ctx.pool.query(
+      `INSERT INTO trade_ups (
+         total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+         chance_to_profit, best_case_cents, worst_case_cents, outcomes_json, listing_status
+       ) VALUES (1000, 2000, 1000, 1, 0.5, 500, -100, $1, 'active')
+       RETURNING id`,
+      [JSON.stringify([{ estimated_price_cents: 2000, probability: 1 }])],
+    );
+    const tradeUpId = Number(created[0].id);
+    await ctx.pool.query(
+      `INSERT INTO trade_up_inputs (
+         trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+       ) VALUES
+         ($1, 'dmarket:partial-old', 'skin-mp7', 'MP7 | Abyssal Apparition', 'Test', 554, 0.1523456789, 'Minimal Wear', 'dmarket'),
+         ($1, 'csfloat:partial-keep', 'skin-mp7', 'MP7 | Abyssal Apparition', 'Test', 400, 0.2, 'Field-Tested', 'csfloat')`,
+      [tradeUpId],
+    );
+    await ctx.pool.query(`DELETE FROM listings WHERE id = 'dmarket:partial-old'`);
+    await cascadeTradeUpStatuses(ctx.pool, ["dmarket:partial-old"]);
+    const { rows: before } = await ctx.pool.query(
+      `SELECT listing_status FROM trade_ups WHERE id = $1`,
+      [tradeUpId],
+    );
+    expect(before[0].listing_status).toBe("partial");
+
+    const applied = await applyDMarketRelinks(ctx.pool, [{
+      oldId: "dmarket:partial-old",
+      newId: "dmarket:partial-new",
+      priceCents: 538,
+    }]);
+    expect(applied.applied).toBe(1);
+    const { rows } = await ctx.pool.query(
+      `SELECT t.listing_status, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.id = $1
+       ORDER BY tui.listing_id`,
+      [tradeUpId],
+    );
+    expect(rows.map(row => row.listing_id)).toEqual(["csfloat:partial-keep", "dmarket:partial-new"]);
+    expect(rows[0].listing_status).toBe("active");
+  });
+
   it("does not relink onto a listing that is already a trade-up input", async () => {
     const oldId = await seedTradeUp("dmarket:old-used", 554);
     const keptId = await seedTradeUp("dmarket:au-new", 538);

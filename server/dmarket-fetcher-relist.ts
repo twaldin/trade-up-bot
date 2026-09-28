@@ -171,7 +171,13 @@ export function relinkLogLine(
   return `  ${skinName}: relinked ${applied.applied} deleted ${deleted} contested ${contested} failed ${applied.failedIds.length}${reason}`;
 }
 
-/** Move inputs still on the old id, including rows inserted after the relink write. */
+/**
+ * Move inputs still on the old id, including rows inserted after the relink write.
+ * A cascade that already ran while the input named the deleted id left the
+ * trade-up partial. Re-evaluate on the live id after the move so a fully live
+ * trade-up is active again. If the live row is missing or claimed, cascade the
+ * old id instead of pointing inputs at it.
+ */
 async function sweepRelinkedInputs(pool: pg.Pool, oldId: string, newId: string): Promise<void> {
   const { rows } = await pool.query<{ claimed_by: string | null }>(
     `SELECT claimed_by FROM listings WHERE id = $1`,
@@ -182,6 +188,7 @@ async function sweepRelinkedInputs(pool: pg.Pool, oldId: string, newId: string):
       `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
       [newId, oldId],
     );
+    await cascadeTradeUpStatuses(pool, [newId]);
     return;
   }
   await cascadeTradeUpStatuses(pool, [oldId]);

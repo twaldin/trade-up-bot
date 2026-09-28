@@ -105,6 +105,25 @@ describe("Verify follows a DMarket relink", () => {
     expect(stored).not.toBe(next);
   });
 
+  it("ends active when a verify 200 follows every input to a live relink", async () => {
+    const id = await seedFeeTradeUp(ctx.pool, [
+      dmSeed(OLD, 1000, 0.15),
+      { listingId: CSF, source: "csfloat", raw: 1000, stored: storedInputCost(1000, "csfloat"), float: 0.17 },
+    ]);
+    await recordDMarketRelink(ctx.pool, OLD, LIVE);
+    market.dmarket.set(LIVE, 1000);
+    market.csfloat.set(CSF, 1000);
+
+    const body = await verify(ctx, id);
+
+    expect(body.all_active).toBe(true);
+    expect(body.any_unavailable).toBe(false);
+    expect(await inputIds(ctx, id)).toEqual([CSF, LIVE].sort());
+    expect(await listingStatus(ctx, id)).toBe("active");
+    const live = await ctx.pool.query(`SELECT id FROM listings WHERE id = $1`, [LIVE]);
+    expect(live.rows).toHaveLength(1);
+  });
+
   it("keeps the stored fee price when the relinked offer price is unchanged", async () => {
     const stored = storedInputCost(1000, "dmarket");
     const id = await seedFeeTradeUp(ctx.pool, [dmSeed(OLD, 1000, 0.15)]);
