@@ -744,7 +744,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     } catch {
       // Lock/statement timeout or deadlock — skip; run explicitly during maintenance.
     } finally {
-      await pool.query("SET lock_timeout = '0'").catch(() => {});
+      await pool.query("RESET lock_timeout").catch(() => {});
       await pool.query("SET statement_timeout = '0'").catch(() => {});
     }
   }
@@ -753,7 +753,7 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   await setSyncMeta(pool, "schema_version", SCHEMA_VERSION);
 
   } finally {
-    await lockClient.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
+    await lockClient.query("RESET lock_timeout").catch(() => {});
     await lockClient.query("SELECT pg_advisory_unlock(1)").catch(() => {});
     lockClient.release();
   }

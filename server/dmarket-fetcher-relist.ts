@@ -47,6 +47,11 @@ export interface RelinkSkip {
 export interface RelinkApplyResult {
   applied: number;
   failedIds: string[];
+  /**
+   * 55P03/40P01. Rolled back and left in the database so the next cycle
+   * plans the relink again. Not a delete.
+   */
+  deferredIds: string[];
   skipped: RelinkSkip[];
   /** True when reference prices could not be loaded. Callers must not delete. */
   referenceLoadFailed: boolean;
@@ -153,7 +158,7 @@ export async function referencePricesAllowDeletes(pool: pg.Pool): Promise<boolea
   }
 }
 
-/** Ids the caller may delete. Empty when the reference-price load failed. */
+/** Ids the caller may delete. Empty when the reference-price load failed. Deferred ids stay. */
 export function listingIdsToDelete(plan: DMarketRelinkPlan, applied: RelinkApplyResult): string[] {
   if (applied.referenceLoadFailed) return [];
   return [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
@@ -168,7 +173,8 @@ export function relinkLogLine(
   const deleted = plan.deleteIds.length + applied.failedIds.length + applied.skipped.length;
   const reasons = applied.skipped.map(skip => skip.reason).join(",");
   const reason = reasons ? ` (${reasons})` : "";
-  return `  ${skinName}: relinked ${applied.applied} deleted ${deleted} contested ${contested} failed ${applied.failedIds.length}${reason}`;
+  const deferred = applied.deferredIds.length > 0 ? ` deferred ${applied.deferredIds.length}` : "";
+  return `  ${skinName}: relinked ${applied.applied} deleted ${deleted} contested ${contested} failed ${applied.failedIds.length}${deferred}${reason}`;
 }
 
 /**
@@ -199,25 +205,35 @@ async function sweepRelinkedInputs(pool: pg.Pool, oldId: string, newId: string):
  * and delete the old listing. Records old id → new id so a later save can
  * follow the relink. A failed relink is rolled back and returned in
  * `failedIds` so the caller can delete that one listing and cascade it.
+ * A lock timeout or deadlock (55P03, 40P01) is rolled back into `deferredIds`
+ * instead: the old listing stays, and the next cycle plans the relink again.
  * When the reference-price load throws, nothing is applied and
  * `referenceLoadFailed` is set so the caller skips deletes for the cycle.
  * After commit, inputs that landed on the old id are retargeted or cascaded.
  */
+
+const RELINK_DEFER_CODES = new Set(["55P03", "40P01"]);
+
+function pgErrorCode(err: unknown): string {
+  if (typeof err !== "object" || err === null || !("code" in err)) return "";
+  return typeof err.code === "string" ? err.code : "";
+}
 export async function applyDMarketRelinks(
   pool: pg.Pool,
   relinks: readonly DMarketRelink[],
   hooks?: ApplyDMarketRelinkHooks,
 ): Promise<RelinkApplyResult> {
   const failedIds: string[] = [];
+  const deferredIds: string[] = [];
   const skipped: RelinkSkip[] = [];
-  if (relinks.length === 0) return { applied: 0, failedIds, skipped, referenceLoadFailed: false };
+  if (relinks.length === 0) return { applied: 0, failedIds, deferredIds, skipped, referenceLoadFailed: false };
   let refLookup;
   try {
     refLookup = await ensureInputReferences(pool);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`DMarket relink skipped; reference-price load failed: ${reason}`);
-    return { applied: 0, failedIds, skipped, referenceLoadFailed: true };
+    return { applied: 0, failedIds, deferredIds, skipped, referenceLoadFailed: true };
   }
   let applied = 0;
   for (const relink of relinks) {
@@ -288,10 +304,19 @@ export async function applyDMarketRelinks(
         const rollback = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
         console.warn(`DMarket relink rollback failed after ${original}: ${rollback}`);
       }
+      const code = pgErrorCode(err);
       const reason = err instanceof Error ? err.message : String(err);
-      console.warn(`DMarket relink failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
-      failedIds.push(relink.oldId);
-      client.release(err instanceof Error ? err : new Error(reason));
+      if (RELINK_DEFER_CODES.has(code)) {
+        console.error(
+          `DMarket relink deferred ${relink.oldId} -> ${relink.newId}: ${code} ${reason}; listing kept for the next cycle`,
+        );
+        deferredIds.push(relink.oldId);
+        client.release();
+      } else {
+        console.warn(`DMarket relink failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
+        failedIds.push(relink.oldId);
+        client.release(err instanceof Error ? err : new Error(reason));
+      }
       released = true;
     } finally {
       if (!released) client.release();
@@ -301,5 +326,5 @@ export async function applyDMarketRelinks(
     try { await pruneDMarketRelinkMap(pool); } catch { /* non-critical */ }
     try { await cacheInvalidatePrefix("tu:"); } catch { /* non-critical */ }
   }
-  return { applied, failedIds, skipped, referenceLoadFailed: false };
+  return { applied, failedIds, deferredIds, skipped, referenceLoadFailed: false };
 }

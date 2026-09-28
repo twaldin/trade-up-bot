@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
-import { applyDMarketRelinks, planDMarketRelinks, relinkLogLine, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
+import { applyDMarketRelinks, listingIdsToDelete, planDMarketRelinks, relinkLogLine, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
 import { cascadeTradeUpStatuses, repricedInputCost } from "../../server/engine.js";
 
 let ctx: TestContext;
@@ -183,6 +183,7 @@ describe("DMarket fetcher relist reconcile", () => {
     expect(result).toEqual({
       applied: 0,
       failedIds: ["dmarket:old-rollback"],
+      deferredIds: [],
       skipped: [],
       referenceLoadFailed: false,
     });
@@ -197,6 +198,50 @@ describe("DMarket fetcher relist reconcile", () => {
     expect(oldListing).toHaveLength(1);
     await ctx.pool.query(`DROP TRIGGER fail_relist_delete_trg ON listings`);
   });
+
+  it("defers a relink while a merge holds FOR KEY SHARE past lock_timeout", async () => {
+    await seedTradeUp("dmarket:defer-old", 554);
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:defer-new', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    const holder = await ctx.pool.connect();
+    await holder.query("BEGIN");
+    await holder.query(`SELECT id FROM listings WHERE id = 'dmarket:defer-old' FOR KEY SHARE`);
+    const started = Date.now();
+    let first;
+    try {
+      first = await applyDMarketRelinks(ctx.pool, [{
+        oldId: "dmarket:defer-old",
+        newId: "dmarket:defer-new",
+        priceCents: 538,
+      }]);
+    } finally {
+      await holder.query("COMMIT");
+      holder.release();
+    }
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5000);
+    expect(first.applied).toBe(0);
+    expect(first.failedIds).not.toContain("dmarket:defer-old");
+    expect(first.deferredIds).toEqual(["dmarket:defer-old"]);
+    expect(listingIdsToDelete({ relinks: [], deleteIds: [], contested: 0 }, first)).not.toContain("dmarket:defer-old");
+    const { rows: kept } = await ctx.pool.query(`SELECT id FROM listings WHERE id = 'dmarket:defer-old'`);
+    expect(kept).toHaveLength(1);
+    const second = await applyDMarketRelinks(ctx.pool, [{
+      oldId: "dmarket:defer-old",
+      newId: "dmarket:defer-new",
+      priceCents: 538,
+    }]);
+    expect(second.applied).toBe(1);
+    expect(second.failedIds).toEqual([]);
+    expect(second.deferredIds).toEqual([]);
+    const { rows: moved } = await ctx.pool.query(
+      `SELECT listing_id FROM trade_up_inputs WHERE listing_id = 'dmarket:defer-new'`,
+    );
+    expect(moved).toHaveLength(1);
+    const { rows: gone } = await ctx.pool.query(`SELECT id FROM listings WHERE id = 'dmarket:defer-old'`);
+    expect(gone).toHaveLength(0);
+  }, 20_000);
 
   it("lets only one of two concurrent relinks take the same new listing", async () => {
     const first = await seedTradeUp("dmarket:a-old-race-a", 554);

@@ -15,6 +15,34 @@ const MERGE_LOCK_TIMEOUT = "5s";
 const MERGE_LOCK_CODES = new Set(["40P01", "55P03"]);
 const MERGE_LOCK_RETRIES = 3;
 
+/** Insert batches that lost the share lock. The next mergeTradeUps of that type tries them again. */
+const queuedMergeBatches: { type: string; tradeUps: TradeUp[] }[] = [];
+let skippedShareLockBatches = 0;
+
+export interface SkippedShareLockStats {
+  skippedBatches: number;
+  queuedTradeUps: number;
+}
+
+export function skippedShareLockStats(): SkippedShareLockStats {
+  return {
+    skippedBatches: skippedShareLockBatches,
+    queuedTradeUps: queuedMergeBatches.reduce((count, batch) => count + batch.tradeUps.length, 0),
+  };
+}
+
+function takeQueuedMerge(type: string): TradeUp[] {
+  const kept: { type: string; tradeUps: TradeUp[] }[] = [];
+  const taken: TradeUp[] = [];
+  for (const batch of queuedMergeBatches) {
+    if (batch.type === type) taken.push(...batch.tradeUps);
+    else kept.push(batch);
+  }
+  queuedMergeBatches.length = 0;
+  queuedMergeBatches.push(...kept);
+  return taken;
+}
+
 export interface MergeTradeUpHooks {
   /** After signature matching, before insert transactions. Tests commit a relink here. */
   beforeInsert?: () => Promise<void>;
@@ -160,8 +188,17 @@ async function insertMergeBatchOnce(pool: pg.Pool, batch: readonly TradeUp[], ty
   }
 }
 
-/** 40P01/55P03: retry, then skip. Same policy as the relist lock retry. null means skipped. */
-async function withShareLockRetry<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+/**
+ * 40P01/55P03: retry, then skip. null means this cycle did not insert the batch.
+ * Merge inserts are re-queued for the next mergeTradeUps of the same type.
+ * saveTradeUps is only counted: the next staircase pass rebuilds that set.
+ */
+async function withShareLockRetry<T>(
+  label: string,
+  batchSize: number,
+  fn: () => Promise<T>,
+  onSkip?: () => void,
+): Promise<T | null> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await withRetry(fn, 3, label);
@@ -169,7 +206,10 @@ async function withShareLockRetry<T>(label: string, fn: () => Promise<T>): Promi
       const code = pgErrorCode(err);
       if (!MERGE_LOCK_CODES.has(code)) throw err;
       if (attempt >= MERGE_LOCK_RETRIES) {
-        console.warn(`${label}: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch`);
+        skippedShareLockBatches++;
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`${label}: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch of ${batchSize}: ${reason}`);
+        onSkip?.();
         return null;
       }
       const wait = 50 * 2 ** attempt;
@@ -180,7 +220,15 @@ async function withShareLockRetry<T>(label: string, fn: () => Promise<T>): Promi
 }
 
 async function insertMergeBatch(pool: pg.Pool, batch: readonly TradeUp[], type: string): Promise<TradeUp[]> {
-  const inserted = await withShareLockRetry("mergeTradeUps-insert", () => insertMergeBatchOnce(pool, batch, type));
+  const inserted = await withShareLockRetry(
+    "mergeTradeUps-insert",
+    batch.length,
+    () => insertMergeBatchOnce(pool, batch, type),
+    () => {
+      queuedMergeBatches.push({ type, tradeUps: batch.slice() });
+      console.error(`mergeTradeUps-insert: re-queued ${batch.length} trade-ups for the next merge cycle`);
+    },
+  );
   return inserted ?? [];
 }
 
@@ -342,6 +390,7 @@ export async function saveTradeUps(
   if (hooks?.beforeWrite) await hooks.beforeWrite();
   const inserted = await withShareLockRetry(
     "saveTradeUps",
+    tradeUps.length,
     () => saveTradeUpsOnce(pool, tradeUps, clearFirst, type, isTheoretical, source),
   );
   if (inserted && inserted.length > 0) await cascadeDeletedDMarketInputs(pool, inserted);
@@ -356,6 +405,9 @@ export async function mergeTradeUps(
   hooks?: MergeTradeUpHooks,
 ) {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
+  // A batch skipped after share-lock retries is tried again on this type's next merge.
+  const carried = takeQueuedMerge(type);
+  if (carried.length > 0) tradeUps = [...carried, ...tradeUps];
   // Retarget first so a relink that landed during the cycle matches the live signature.
   const liveTradeUps = await retargetDMarketTradeUps(pool, tradeUps);
 

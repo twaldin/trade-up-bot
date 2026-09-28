@@ -150,6 +150,7 @@ describe("listingIdsToDelete", () => {
   const applied: RelinkApplyResult = {
     applied: 0,
     failedIds: ["dmarket:failed"],
+    deferredIds: [],
     skipped: [{ oldId: "dmarket:skip", reason: "claimed_target" }],
     referenceLoadFailed: false,
   };
@@ -164,6 +165,10 @@ describe("listingIdsToDelete", () => {
 
   it("deletes nothing when the reference-price load failed", () => {
     expect(listingIdsToDelete(plan, { ...applied, referenceLoadFailed: true })).toEqual([]);
+  });
+
+  it("keeps a deferred relink out of the delete list", () => {
+    expect(listingIdsToDelete(plan, { ...applied, deferredIds: ["dmarket:deferred"] })).not.toContain("dmarket:deferred");
   });
 });
 

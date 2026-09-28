@@ -278,7 +278,7 @@ async function main() {
           await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
           await cascadeTradeUpStatuses(pool, deleteIds);
         }
-        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0 || applied.skipped.length > 0) {
+        if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0 || applied.skipped.length > 0 || applied.deferredIds.length > 0) {
           log(relinkLogLine(skinName, plan, applied));
         }
         cycleRelinked += applied.applied;

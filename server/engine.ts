@@ -63,7 +63,7 @@ export {
   assertDMarketRelinkMap,
 } from "./engine/dmarket-relink-map.js";
 export {
-  saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
+  saveTradeUps, mergeTradeUps, skippedShareLockStats, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
   cascadeTradeUpStatuses, deleteListings,
   recomputeTradeUpCost, applyListingPriceToInputs, computeTradeUpCostStats,

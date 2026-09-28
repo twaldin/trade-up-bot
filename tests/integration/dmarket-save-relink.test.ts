@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
-import { mergeTradeUps, saveTradeUps } from "../../server/engine/db-save.js";
+import { mergeTradeUps, saveTradeUps, skippedShareLockStats } from "../../server/engine/db-save.js";
 import { applyDMarketRelinks, planDMarketRelinks, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
 import { assertDMarketRelinkMap, recordDMarketRelink } from "../../server/engine/dmarket-relink-map.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
@@ -298,6 +298,48 @@ describe("daemon save after a DMarket relink", () => {
     );
     expect(rows).toEqual([{ listing_status: "active", listing_id: "dmarket:lock-timeout" }]);
   }, 20_000);
+
+  it("re-queues a merge batch after share-lock retries instead of dropping it", async () => {
+    await insertListing("dmarket:skip-batch");
+    await insertListing("csfloat:skip-batch-keep");
+    const holder = await ctx.pool.connect();
+    await holder.query("BEGIN");
+    await holder.query(`SELECT id FROM listings WHERE id = 'dmarket:skip-batch' FOR UPDATE`);
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args.map(arg => String(arg)).join(" "));
+    };
+    const before = skippedShareLockStats().skippedBatches;
+    try {
+      await mergeTradeUps(
+        ctx.pool,
+        [dmTradeUp(["dmarket:skip-batch", "csfloat:skip-batch-keep"], 3333)],
+        "save_relink_skip_batch",
+      );
+    } finally {
+      console.error = orig;
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+    const afterSkip = skippedShareLockStats();
+    expect(afterSkip.skippedBatches).toBe(before + 1);
+    expect(afterSkip.queuedTradeUps).toBeGreaterThanOrEqual(1);
+    expect(errors.some(line => line.includes("skipping batch of 1") && line.includes("55P03"))).toBe(true);
+    const { rows: none } = await ctx.pool.query(
+      `SELECT id FROM trade_ups WHERE type = 'save_relink_skip_batch'`,
+    );
+    expect(none).toHaveLength(0);
+    await mergeTradeUps(ctx.pool, [], "save_relink_skip_batch");
+    const { rows } = await ctx.pool.query(
+      `SELECT t.listing_status, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.type = 'save_relink_skip_batch' AND tui.listing_id LIKE 'dmarket:%'`,
+    );
+    expect(rows).toEqual([{ listing_status: "active", listing_id: "dmarket:skip-batch" }]);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(0);
+  }, 45_000);
 
   it("leaves no active trade-up on a deleted DMarket listing across parallel merges", async () => {
     const rounds = [20, 50, 50, 50];

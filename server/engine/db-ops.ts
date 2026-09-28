@@ -4,7 +4,8 @@
 
 export { cascadeTradeUpStatuses, deleteListings, refreshListingStatuses, purgeExpiredPreserved } from "./db-status.js";
 export type { CascadeTradeUpStatusOptions } from "./db-status.js";
-export { recordProfitableCombo, getProfitableCombosForWantedList, saveTradeUps, mergeTradeUps, trimGlobalExcess } from "./db-save.js";
+export { recordProfitableCombo, getProfitableCombosForWantedList, saveTradeUps, mergeTradeUps, trimGlobalExcess, skippedShareLockStats } from "./db-save.js";
+export type { SkippedShareLockStats } from "./db-save.js";
 export { reviveStaleTradeUps, reviveStaleGunTradeUps } from "./db-revive.js";
 export {
   updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs,

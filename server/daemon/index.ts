@@ -26,7 +26,7 @@ import {
   checkDMarketStaleness, formatDMarketStalenessLog,
 } from "../sync.js";
 import {
-  mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
+  mergeTradeUps, skippedShareLockStats, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
   cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap,
@@ -955,6 +955,11 @@ export async function main() {
     const spStats = getSkinportStats();
     if (spStats.totalSaleObservations > 0) {
       console.log(`  Skinport WS: ${spStats.connected ? "connected" : "disconnected"}, ${spStats.totalSaleObservations} sale observations / ${spStats.totalReceived} events`);
+    }
+
+    const lockSkips = skippedShareLockStats();
+    if (lockSkips.skippedBatches > 0) {
+      console.error(`  Share-lock batches skipped: ${lockSkips.skippedBatches} (${lockSkips.queuedTradeUps} trade-ups queued for the next merge)`);
     }
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);
