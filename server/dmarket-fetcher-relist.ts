@@ -10,7 +10,7 @@
  */
 
 import type pg from "pg";
-import { applyListingPriceToInputs, ensureInputReferences, pruneDMarketRelinkMap, recordDMarketRelink } from "./engine.js";
+import { applyListingPriceToInputs, cascadeTradeUpStatuses, ensureInputReferences, pruneDMarketRelinkMap, recordDMarketRelink } from "./engine.js";
 import { cacheInvalidatePrefix } from "./redis.js";
 
 export const RELIST_FLOAT_EPSILON = 1e-7;
@@ -50,6 +50,11 @@ export interface RelinkApplyResult {
   skipped: RelinkSkip[];
   /** True when reference prices could not be loaded. Callers must not delete. */
   referenceLoadFailed: boolean;
+}
+
+export interface ApplyDMarketRelinkHooks {
+  /** Test barrier after the relink commits and before straggler inputs are moved. */
+  beforeStragglerSweep?: () => Promise<void>;
 }
 
 /** S or M must start the inspect argument. A later copy of the token is not an asset id. */
@@ -164,6 +169,22 @@ export function relinkLogLine(
   return `  ${skinName}: relinked ${applied.applied} deleted ${deleted} contested ${contested} failed ${applied.failedIds.length}${reason}`;
 }
 
+/** Move inputs still on the old id, including rows inserted after the relink write. */
+async function sweepRelinkedInputs(pool: pg.Pool, oldId: string, newId: string): Promise<void> {
+  const { rows } = await pool.query<{ claimed_by: string | null }>(
+    `SELECT claimed_by FROM listings WHERE id = $1`,
+    [newId],
+  );
+  if (rows[0] && rows[0].claimed_by == null) {
+    await pool.query(
+      `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
+      [newId, oldId],
+    );
+    return;
+  }
+  await cascadeTradeUpStatuses(pool, [oldId]);
+}
+
 /**
  * Point trade-up inputs at the new offer, reprice through applyListingPriceToInputs,
  * and delete the old listing. Records old id → new id so a later save can
@@ -171,10 +192,12 @@ export function relinkLogLine(
  * `failedIds` so the caller can delete that one listing and cascade it.
  * When the reference-price load throws, nothing is applied and
  * `referenceLoadFailed` is set so the caller skips deletes for the cycle.
+ * After commit, inputs that landed on the old id are retargeted or cascaded.
  */
 export async function applyDMarketRelinks(
   pool: pg.Pool,
   relinks: readonly DMarketRelink[],
+  hooks?: ApplyDMarketRelinkHooks,
 ): Promise<RelinkApplyResult> {
   const failedIds: string[] = [];
   const skipped: RelinkSkip[] = [];
@@ -195,13 +218,19 @@ export async function applyDMarketRelinks(
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
       await client.query("SET LOCAL statement_timeout = '60s'");
-      // Lock the target before the input-use check. Two relinks of the same
-      // new id otherwise both see it unused, then both rewrite onto it.
-      const { rows: claimRows } = await client.query<{ claimed_by: string | null }>(
-        `SELECT claimed_by FROM listings WHERE id = $1 FOR UPDATE`,
-        [relink.newId],
-      );
-      if (claimRows[0]?.claimed_by) {
+      // Lock one listing at a time, sorted by id, before rewriting inputs.
+      // A merge holding FOR KEY SHARE on an earlier id blocks here; the input
+      // UPDATE then sees the rows that merge committed. One statement with
+      // ORDER BY does not acquire the row locks in that order.
+      const claimedBy = new Map<string, string | null>();
+      for (const id of [...new Set([relink.oldId, relink.newId])].sort()) {
+        const { rows } = await client.query<{ id: string; claimed_by: string | null }>(
+          `SELECT id, claimed_by FROM listings WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        if (rows[0]) claimedBy.set(rows[0].id, rows[0].claimed_by);
+      }
+      if (claimedBy.get(relink.newId)) {
         await client.query("ROLLBACK");
         skipped.push({ oldId: relink.oldId, reason: "claimed_target" });
         continue;
@@ -231,6 +260,13 @@ export async function applyDMarketRelinks(
       await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
       await client.query("COMMIT");
       applied++;
+      try {
+        if (hooks?.beforeStragglerSweep) await hooks.beforeStragglerSweep();
+        await sweepRelinkedInputs(pool, relink.oldId, relink.newId);
+      } catch (sweepErr) {
+        const reason = sweepErr instanceof Error ? sweepErr.message : String(sweepErr);
+        console.warn(`DMarket relink sweep failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
+      }
     } catch (err) {
       try {
         await client.query("ROLLBACK");

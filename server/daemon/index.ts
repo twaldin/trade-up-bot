@@ -29,7 +29,7 @@ import {
   mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
-  cascadeTradeUpStatuses, withRetry,
+  cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap,
   type FinishData,
 } from "../engine.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
@@ -263,6 +263,12 @@ export async function main() {
 
   const pool = initDb();
   initRedis();
+  try {
+    await assertDMarketRelinkMap(pool);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
   const freshness = new FreshnessTracker();
   const daemonStartedAt = new Date().toISOString();
 

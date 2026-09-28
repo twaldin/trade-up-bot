@@ -199,49 +199,118 @@ describe("DMarket fetcher relist reconcile", () => {
   });
 
   it("lets only one of two concurrent relinks take the same new listing", async () => {
-    const first = await seedTradeUp("dmarket:old-race-a", 554);
-    const second = await seedTradeUp("dmarket:old-race-b", 600);
+    const first = await seedTradeUp("dmarket:a-old-race-a", 554);
+    const second = await seedTradeUp("dmarket:a-old-race-b", 600);
     await ctx.pool.query(
       `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
-       VALUES ('dmarket:new-race', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+       VALUES ('dmarket:b-new-race', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
     );
     const holder = await ctx.pool.connect();
     try {
       await holder.query("BEGIN");
-      await holder.query(`SELECT claimed_by FROM listings WHERE id = 'dmarket:new-race' FOR UPDATE`);
+      const { rows: pidRows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      const holderPid = Number(pidRows[0].pid);
+      await holder.query(`SELECT claimed_by FROM listings WHERE id = 'dmarket:b-new-race' FOR UPDATE`);
       const pending = Promise.all([
-        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-race-a", newId: "dmarket:new-race", priceCents: 538 }]),
-        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:old-race-b", newId: "dmarket:new-race", priceCents: 580 }]),
+        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:a-old-race-a", newId: "dmarket:b-new-race", priceCents: 538 }]),
+        applyDMarketRelinks(ctx.pool, [{ oldId: "dmarket:a-old-race-b", newId: "dmarket:b-new-race", priceCents: 580 }]),
       ]);
       const deadline = Date.now() + 4000;
       let waiting = 0;
+      let holding = 0;
       while (Date.now() < deadline) {
-        const { rows } = await ctx.pool.query<{ n: number }>(`
-          SELECT COUNT(*)::int AS n
-          FROM pg_stat_activity
-          WHERE datname = current_database()
-            AND wait_event_type = 'Lock'
-            AND state = 'active'
-            AND pid <> pg_backend_pid()
-        `);
-        waiting = rows[0].n;
-        if (waiting >= 2) break;
+        // Held row locks stay on the tuple (xmax) and do not show in pg_locks
+        // until that backend waits. Both old rows must be locked by sessions
+        // that are themselves still waiting, before either relink commits.
+        const { rows } = await ctx.pool.query<{ waiting: number; holding: number }>(`
+          SELECT
+            (SELECT COUNT(*)::int FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND pid <> pg_backend_pid()
+                AND pid <> $1
+                AND wait_event_type = 'Lock'
+                AND state = 'active'
+                AND query = 'SELECT id, claimed_by FROM listings WHERE id = $1 FOR UPDATE') AS waiting,
+            (SELECT COUNT(*)::int FROM listings l
+              JOIN pg_stat_activity a ON a.backend_xid::text = l.xmax::text
+              WHERE l.id IN ('dmarket:a-old-race-a', 'dmarket:a-old-race-b')
+                AND a.wait_event_type = 'Lock'
+                AND a.pid <> $1) AS holding
+        `, [holderPid]);
+        waiting = rows[0].waiting;
+        holding = rows[0].holding;
+        if (waiting >= 2 && holding >= 2) break;
         await new Promise(resolve => setTimeout(resolve, 25));
       }
+      expect(waiting).toBeGreaterThanOrEqual(2);
+      expect(holding).toBeGreaterThanOrEqual(2);
       await holder.query("COMMIT");
       const results = await pending;
-      expect(waiting).toBeGreaterThanOrEqual(2);
       expect(results.reduce((sum, result) => sum + result.applied, 0)).toBe(1);
       expect(results.reduce((sum, result) => sum + result.failedIds.length, 0)).toBe(0);
       expect(results.flatMap(result => result.skipped)).toEqual([
-        { oldId: expect.stringMatching(/^dmarket:old-race-[ab]$/), reason: "new_id_already_input" },
+        { oldId: expect.stringMatching(/^dmarket:a-old-race-[ab]$/), reason: "new_id_already_input" },
       ]);
       const { rows } = await ctx.pool.query<{ trade_up_id: number; listing_id: string }>(
         `SELECT trade_up_id, listing_id FROM trade_up_inputs WHERE trade_up_id = ANY($1) ORDER BY trade_up_id`,
         [[first, second]],
       );
-      expect(rows.filter(row => row.listing_id === "dmarket:new-race")).toHaveLength(1);
-      expect(rows.filter(row => row.listing_id.startsWith("dmarket:old-race-"))).toHaveLength(1);
+      expect(rows.filter(row => row.listing_id === "dmarket:b-new-race")).toHaveLength(1);
+      expect(rows.filter(row => row.listing_id.startsWith("dmarket:a-old-race-"))).toHaveLength(1);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+  });
+
+  it("retargets inputs that commit after the relink write and before the sweep", async () => {
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, paint_seed, source)
+       VALUES ('dmarket:sweep-old', 'skin-mp7', 554, 0.1523456789, 412, 'dmarket'),
+              ('dmarket:sweep-new', 'skin-mp7', 538, 0.1523456789, 412, 'dmarket')`,
+    );
+    const holder = await ctx.pool.connect();
+    try {
+      await holder.query("BEGIN");
+      const { rows: created } = await holder.query(
+        `INSERT INTO trade_ups (
+           total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+           chance_to_profit, best_case_cents, worst_case_cents, outcomes_json, listing_status
+         ) VALUES (4242, 2000, 100, 1, 0.5, 500, -100, $1, 'active')
+         RETURNING id`,
+        [JSON.stringify([{ estimated_price_cents: 2000, probability: 1 }])],
+      );
+      const tradeUpId = Number(created[0].id);
+      await holder.query(
+        `INSERT INTO trade_up_inputs (
+           trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
+         ) VALUES ($1, 'dmarket:sweep-old', 'skin-mp7', 'MP7 | Abyssal Apparition', 'Test', 4242, 0.1523456789, 'Minimal Wear', 'dmarket')`,
+        [tradeUpId],
+      );
+      const result = await applyDMarketRelinks(ctx.pool, [{
+        oldId: "dmarket:sweep-old",
+        newId: "dmarket:sweep-new",
+        priceCents: 538,
+      }], {
+        beforeStragglerSweep: async () => {
+          await holder.query("COMMIT");
+        },
+      });
+      expect(result.applied).toBe(1);
+      const { rows } = await ctx.pool.query(
+        `SELECT listing_id, price_cents FROM trade_up_inputs WHERE trade_up_id = $1`,
+        [tradeUpId],
+      );
+      expect(rows).toEqual([{ listing_id: "dmarket:sweep-new", price_cents: 4242 }]);
+      const { rows: status } = await ctx.pool.query(
+        `SELECT listing_status FROM trade_ups WHERE id = $1`,
+        [tradeUpId],
+      );
+      expect(status[0].listing_status).toBe("active");
+      const { rows: oldListing } = await ctx.pool.query(
+        `SELECT id FROM listings WHERE id = 'dmarket:sweep-old'`,
+      );
+      expect(oldListing).toHaveLength(0);
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
       holder.release();

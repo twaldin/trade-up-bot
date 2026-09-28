@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, type TestContext } from "./setup.js";
 import { mergeTradeUps } from "../../server/engine/db-save.js";
 import { applyDMarketRelinks, planDMarketRelinks, type DMarketRelistSide } from "../../server/dmarket-fetcher-relist.js";
-import { recordDMarketRelink } from "../../server/engine/dmarket-relink-map.js";
+import { assertDMarketRelinkMap, recordDMarketRelink } from "../../server/engine/dmarket-relink-map.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import type { TradeUp } from "../../shared/types.js";
 
@@ -135,5 +135,68 @@ describe("daemon save after a DMarket relink", () => {
       `SELECT id FROM trade_ups WHERE type = 'save_relink_collapse'`,
     );
     expect(rows).toHaveLength(0);
+  });
+
+  it("does not save an active trade-up on a listing a relink deleted after retarget", async () => {
+    await insertListing("dmarket:par-old-barrier");
+    await insertListing("dmarket:par-new-barrier");
+    await insertListing("csfloat:par-keep");
+    const discovered = dmTradeUp(["dmarket:par-old-barrier", "csfloat:par-keep"], 4321);
+    let relinkCommitted = false;
+
+    await mergeTradeUps(ctx.pool, [discovered], "save_relink_barrier", {
+      beforeInsert: async () => {
+        const applied = await applyDMarketRelinks(ctx.pool, [{
+          oldId: "dmarket:par-old-barrier",
+          newId: "dmarket:par-new-barrier",
+          priceCents: 480,
+        }]);
+        expect(applied.applied).toBe(1);
+        const { rows: gone } = await ctx.pool.query(
+          `SELECT id FROM listings WHERE id = 'dmarket:par-old-barrier'`,
+        );
+        expect(gone).toHaveLength(0);
+        relinkCommitted = true;
+      },
+    });
+
+    expect(relinkCommitted).toBe(true);
+    const { rows } = await ctx.pool.query(
+      `SELECT t.profit_cents, t.total_cost_cents, t.listing_status, tui.listing_id
+       FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE t.type = 'save_relink_barrier'
+       ORDER BY tui.listing_id`,
+    );
+    expect(rows.map(row => row.listing_id)).toEqual(["csfloat:par-keep", "dmarket:par-new-barrier"]);
+    expect(rows[0].profit_cents).toBe(4321);
+    expect(rows[0].total_cost_cents).toBe(5000);
+    expect(rows[0].listing_status).toBe("active");
+    const { rows: stale } = await ctx.pool.query(
+      `SELECT t.listing_status FROM trade_ups t
+       JOIN trade_up_inputs tui ON tui.trade_up_id = t.id
+       WHERE tui.listing_id = 'dmarket:par-old-barrier'`,
+    );
+    expect(stale).toHaveLength(0);
+  });
+});
+
+describe("daemon relink map", () => {
+  it("accepts a schema that has dmarket_listing_relinks", async () => {
+    await expect(assertDMarketRelinkMap(ctx.pool)).resolves.toBeUndefined();
+  });
+
+  it("rejects a schema where dmarket_listing_relinks is missing", async () => {
+    const client = await ctx.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL search_path TO pg_catalog");
+      await expect(assertDMarketRelinkMap(client)).rejects.toThrow(
+        /dmarket_listing_relinks is missing/,
+      );
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
   });
 });

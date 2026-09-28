@@ -114,3 +114,15 @@ export async function retargetDMarketTradeUps(db: Queryable, tradeUps: readonly 
   }
   return kept;
 }
+
+/** Daemon startup: the fetcher creates this table. Missing means exit, not a later delete. */
+export async function assertDMarketRelinkMap(db: Queryable): Promise<void> {
+  const { rows } = await db.query<{ present: string | null }>(
+    `SELECT to_regclass('dmarket_listing_relinks') AS present`,
+  );
+  if (!rows[0]?.present) {
+    throw new Error(
+      "dmarket_listing_relinks is missing. The DMarket fetcher and API run createTables; start one of them before the daemon.",
+    );
+  }
+}

@@ -8,6 +8,66 @@ import { type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import { withRetry, computeChanceToProfit, computeBestWorstCase, listingSig, parseSig } from "./utils.js";
 import { retargetDMarketTradeUps } from "./dmarket-relink-map.js";
 
+export interface MergeTradeUpHooks {
+  /** After signature matching, before insert transactions. Tests commit a relink here. */
+  beforeInsert?: () => Promise<void>;
+}
+
+function dmarketListingIds(tradeUps: readonly TradeUp[]): string[] {
+  const ids = new Set<string>();
+  for (const tu of tradeUps) {
+    for (const input of tu.inputs) {
+      if (input.source === "dmarket" || input.listing_id.startsWith("dmarket:")) ids.add(input.listing_id);
+    }
+  }
+  return [...ids].sort();
+}
+
+/**
+ * FOR KEY SHARE, one id at a time, in sorted id order. A single ORDER BY
+ * statement does not wait in that order. applyDMarketRelinks uses the same order.
+ */
+async function shareLockListings(client: pg.PoolClient, ids: readonly string[]): Promise<Set<string>> {
+  const held = new Set<string>();
+  for (const id of [...ids].sort()) {
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM listings WHERE id = $1 FOR KEY SHARE`,
+      [id],
+    );
+    if (rows[0]) held.add(rows[0].id);
+  }
+  return held;
+}
+
+/**
+ * Resolve relinks in this transaction, then share-lock the DMarket listings
+ * the insert will reference. The relink DELETE waits on that lock; its input
+ * rewrite runs after this transaction commits and sees the new rows.
+ * If a relink commits before the lock, the id set changes and the transaction
+ * restarts so every id is locked in one sorted pass.
+ */
+async function resolveDMarketInputsForInsert(
+  client: pg.PoolClient,
+  tradeUps: readonly TradeUp[],
+): Promise<TradeUp[]> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resolved = await retargetDMarketTradeUps(client, tradeUps);
+    const ids = dmarketListingIds(resolved);
+    const held = await shareLockListings(client, ids);
+    const confirmed = await retargetDMarketTradeUps(client, tradeUps);
+    const confirmedIds = dmarketListingIds(confirmed);
+    const same = ids.length === confirmedIds.length && ids.every((id, index) => id === confirmedIds[index]);
+    if (same && ids.every(id => held.has(id))) return confirmed;
+    // Nothing else has been written in this transaction. Restart so the next
+    // pass locks the live ids in one sorted order instead of appending locks.
+    await client.query("ROLLBACK");
+    await client.query("BEGIN");
+  }
+  const resolved = await retargetDMarketTradeUps(client, tradeUps);
+  await shareLockListings(client, dmarketListingIds(resolved));
+  return resolved;
+}
+
 /**
  * Insert all inputs for one trade-up in a single multi-row INSERT statement.
  * Replaces the per-input INSERT loop to reduce round-trips per trade-up.
@@ -146,7 +206,12 @@ export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirs
   await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 }
 
-export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: string = "classified_covert") {
+export async function mergeTradeUps(
+  pool: pg.Pool,
+  tradeUps: TradeUp[],
+  type: string = "classified_covert",
+  hooks?: MergeTradeUpHooks,
+) {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
   // Retarget first so a relink that landed during the cycle matches the live signature.
   const liveTradeUps = await retargetDMarketTradeUps(pool, tradeUps);
@@ -251,13 +316,16 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
     toInsert.push(liveTradeUps[idx]);
   }
 
+  if (toInsert.length > 0 && hooks?.beforeInsert) await hooks.beforeInsert();
+
   for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
     const batch = toInsert.slice(i, i + BATCH_SIZE);
     await withRetry(async () => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        for (const tu of batch) {
+        const resolved = await resolveDMarketInputsForInsert(client, batch);
+        for (const tu of resolved) {
           const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
           const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
           const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
