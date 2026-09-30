@@ -15,7 +15,10 @@ import { deleteListings } from "../engine.js";
 import {
   applyDMarketRelinks,
   assetIdFromInspect,
+  listingIdsToDelete,
   planDMarketRelinks,
+  referencePricesAllowDeletes,
+  type DMarketRelinkPlan,
   type DMarketRelistSide,
 } from "../dmarket-fetcher-relist.js";
 
@@ -347,6 +350,42 @@ export async function syncDMarketListingsForRarity(
   return { skinsChecked, listingsInserted };
 }
 
+export interface DMarketStalenessTally {
+  checked: number;
+  relinked: number;
+  deleted: number;
+  contested: number;
+  failed: number;
+  reasons: string[];
+}
+
+export function formatDMarketStalenessLog(tally: DMarketStalenessTally): string {
+  const unique = [...new Set(tally.reasons)];
+  const reason = unique.length > 0 ? ` (${unique.join(",")})` : "";
+  return `    DMarket staleness: ${tally.checked} checked, relinked ${tally.relinked} deleted ${tally.deleted} contested ${tally.contested} failed ${tally.failed}${reason}`;
+}
+
+/**
+ * Apply one relink plan and delete only the ids that are actually gone.
+ * A failed reference-price load, or allowDeletes false, deletes nothing.
+ */
+export async function settleDMarketRelinkPlan(
+  pool: pg.Pool,
+  plan: DMarketRelinkPlan,
+  allowDeletes: boolean,
+): Promise<Pick<DMarketStalenessTally, "relinked" | "deleted" | "contested" | "failed" | "reasons">> {
+  const applied = await applyDMarketRelinks(pool, plan.relinks);
+  const deleteIds = allowDeletes && !applied.referenceLoadFailed ? listingIdsToDelete(plan, applied) : [];
+  if (deleteIds.length > 0) await deleteListings(pool, deleteIds);
+  return {
+    relinked: applied.applied,
+    deleted: deleteIds.length,
+    contested: plan.contested + applied.skipped.length,
+    failed: applied.failedIds.length,
+    reasons: applied.skipped.map(skip => skip.reason),
+  };
+}
+
 /**
  * Check if DMarket listings are still active by re-querying by skin name.
  * Removes listings that no longer appear in search results.
@@ -357,7 +396,7 @@ export async function checkDMarketStaleness(
     maxChecks?: number;
     onProgress?: (msg: string) => void;
   } = {}
-): Promise<{ checked: number; removed: number; relinked: number }> {
+): Promise<DMarketStalenessTally> {
   const maxChecks = options.maxChecks ?? 20;
 
   // Get skin names that have DMarket listings, oldest-checked first
@@ -372,8 +411,13 @@ export async function checkDMarketStaleness(
   `, [maxChecks]) as { rows: { name: string }[] };
 
   let checked = 0;
-  let removed = 0;
-  let relinked = 0;
+  const tally: DMarketStalenessTally = {
+    checked: 0, relinked: 0, deleted: 0, contested: 0, failed: 0, reasons: [],
+  };
+  const allowDeletes = await referencePricesAllowDeletes(pool);
+  if (!allowDeletes) {
+    console.warn("DMarket staleness: reference-price load failed; skipping deletes this cycle");
+  }
 
   for (const skinRow of skinRows) {
     try {
@@ -447,8 +491,6 @@ export async function checkDMarketStaleness(
         phase: row.phase,
       }));
       const plan = planDMarketRelinks(storedSides, incomingSides);
-      const applied = await applyDMarketRelinks(pool, plan.relinks);
-      const deleteIds = [...plan.deleteIds, ...applied.failedIds, ...applied.skipped.map(skip => skip.oldId)];
       const activeIds = new Set(items.map(item => `dmarket:${item.itemId}`));
       const { rows: statTrakStored } = await pool.query<{ id: string }>(
         `SELECT l.id FROM listings l JOIN skins s ON l.skin_id = s.id
@@ -456,13 +498,14 @@ export async function checkDMarketStaleness(
         [skinRow.name],
       );
       for (const row of statTrakStored) {
-        if (!activeIds.has(row.id)) deleteIds.push(row.id);
+        if (!activeIds.has(row.id)) plan.deleteIds.push(row.id);
       }
-      if (deleteIds.length > 0) {
-        await deleteListings(pool, deleteIds);
-        removed += deleteIds.length;
-      }
-      relinked += applied.applied;
+      const settled = await settleDMarketRelinkPlan(pool, plan, allowDeletes);
+      tally.relinked += settled.relinked;
+      tally.deleted += settled.deleted;
+      tally.contested += settled.contested;
+      tally.failed += settled.failed;
+      tally.reasons.push(...settled.reasons);
 
       // Mark all this skin's DMarket listings as checked
       await pool.query(`
@@ -471,12 +514,14 @@ export async function checkDMarketStaleness(
       `, [skinRow.name]);
 
       checked++;
+      tally.checked = checked;
     } catch (err) {
       if (err instanceof Error && err.message.includes("429")) break;
     }
   }
 
-  return { checked, removed, relinked };
+  tally.checked = checked;
+  return tally;
 }
 
 export interface DMarketBuyResult {

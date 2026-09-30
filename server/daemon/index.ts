@@ -23,13 +23,13 @@ import type { TradeUp } from "../../shared/types.js";
 
 import {
   startSkinportListener, getSkinportStats, isDMarketConfigured,
-  checkDMarketStaleness,
+  checkDMarketStaleness, formatDMarketStalenessLog,
 } from "../sync.js";
 import {
-  mergeTradeUps, updateCollectionScores, buildPriceCache, trimGlobalExcess,
+  mergeTradeUps, skippedShareLockStats, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
-  cascadeTradeUpStatuses, withRetry,
+  cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap,
   type FinishData,
 } from "../engine.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
@@ -263,6 +263,12 @@ export async function main() {
 
   const pool = initDb();
   initRedis();
+  try {
+    await assertDMarketRelinkMap(pool);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
   const freshness = new FreshnessTracker();
   const daemonStartedAt = new Date().toISOString();
 
@@ -742,9 +748,9 @@ export async function main() {
             onProgress: (msg) => setDaemonStatus(pool, "fetching", `DMarket: ${msg}`),
           });
           totalDmarketChecked += dmResult.checked;
-          if (dmResult.removed > 0 || dmResult.relinked > 0) {
+          if (dmResult.deleted > 0 || dmResult.relinked > 0 || dmResult.contested > 0 || dmResult.failed > 0) {
             freshness.markListingsChanged();
-            console.log(`    DMarket staleness: ${dmResult.checked} checked, ${dmResult.removed} removed, ${dmResult.relinked} relinked`);
+            console.log(formatDMarketStalenessLog(dmResult));
           }
         } catch {
           // DMarket errors don't block engine loop
@@ -949,6 +955,11 @@ export async function main() {
     const spStats = getSkinportStats();
     if (spStats.totalSaleObservations > 0) {
       console.log(`  Skinport WS: ${spStats.connected ? "connected" : "disconnected"}, ${spStats.totalSaleObservations} sale observations / ${spStats.totalReceived} events`);
+    }
+
+    const lockSkips = skippedShareLockStats();
+    if (lockSkips.skippedBatches > 0) {
+      console.error(`  Share-lock batches skipped: ${lockSkips.skippedBatches} (${lockSkips.queuedTradeUps} trade-ups queued for the next merge)`);
     }
 
     console.log(`\n[${timestamp()}] Cycle ${cycleCount} complete (${(cycleDuration / 60000).toFixed(1)} min)`);

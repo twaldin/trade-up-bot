@@ -59,7 +59,11 @@ export { findStaircaseTradeUps } from "./engine/staircase.js";
 
 // === DB Operations ===
 export {
-  saveTradeUps, mergeTradeUps, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
+  recordDMarketRelink, pruneDMarketRelinkMap, lookupDMarketRelinks, retargetDMarketTradeUps,
+  assertDMarketRelinkMap,
+} from "./engine/dmarket-relink-map.js";
+export {
+  saveTradeUps, mergeTradeUps, skippedShareLockStats, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
   cascadeTradeUpStatuses, deleteListings,
   recomputeTradeUpCost, applyListingPriceToInputs, computeTradeUpCostStats,

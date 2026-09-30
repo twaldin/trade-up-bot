@@ -26,20 +26,7 @@ export type RelistPick =
   | { ok: true; match: RelistCandidate }
   | { ok: false; reason: "no_relist" | "ambiguous" };
 
-const INSPECT_ASSET = /A(\d+)D/;
-
-/** Asset id embedded in a DMarket/Steam inspect link, if present. */
-export function assetIdFromInspect(inspect: string | null | undefined): string | null {
-  if (!inspect) return null;
-  let decoded = inspect;
-  try {
-    decoded = decodeURIComponent(inspect);
-  } catch {
-    decoded = inspect;
-  }
-  const match = INSPECT_ASSET.exec(decoded);
-  return match ? match[1] : null;
-}
+export { assetIdFromInspect } from "./dmarket-fetcher-relist.js";
 
 export function floatsMatchRelist(a: number, b: number): boolean {
   return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= RELIST_FLOAT_EPSILON;

@@ -247,6 +247,14 @@ async function createSchema(bootstrapPool: pg.Pool) {
       UNIQUE(user_id, trade_up_id)
     );
 
+    CREATE TABLE IF NOT EXISTS dmarket_listing_relinks (
+      old_id TEXT PRIMARY KEY,
+      new_id TEXT NOT NULL,
+      relinked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_dmarket_listing_relinks_at
+      ON dmarket_listing_relinks (relinked_at);
+
     -- Indexes needed by trade-ups router
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_trade ON trade_up_inputs(trade_up_id);
     CREATE INDEX IF NOT EXISTS idx_trade_up_inputs_listing ON trade_up_inputs(listing_id);

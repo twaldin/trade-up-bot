@@ -88,4 +88,43 @@ describe("schema version gate", () => {
     const after = await getSyncMeta(pool, "schema_version");
     expect(after).toBe(SCHEMA_VERSION);
   });
+
+  it("skips the migration when schema_version matches after the advisory lock", async () => {
+    await setSyncMeta(pool, "schema_version", "0");
+    const holder = await pool.connect();
+    try {
+      await holder.query("SET lock_timeout = '15s'");
+      await holder.query("SELECT pg_advisory_lock(1)");
+      const pending = createTables(pool);
+      const deadline = Date.now() + 4000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM pg_stat_activity
+           WHERE datname = current_database()
+             AND pid <> pg_backend_pid()
+             AND wait_event_type = 'Lock'
+             AND query = 'SELECT pg_advisory_lock(1)'`,
+        );
+        if (rows.length > 0) {
+          waiting = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      expect(waiting).toBe(true);
+      await holder.query(
+        "UPDATE sync_meta SET value = $1 WHERE key = 'schema_version'",
+        [SCHEMA_VERSION],
+      );
+      const started = Date.now();
+      await holder.query("SELECT pg_advisory_unlock(1)");
+      await pending;
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(await getSyncMeta(pool, "schema_version")).toBe(SCHEMA_VERSION);
+    } finally {
+      await holder.query("SELECT pg_advisory_unlock(1)").catch(() => undefined);
+      holder.release();
+    }
+  });
 });

@@ -6,6 +6,231 @@ import pg from "pg";
 import { setSyncMeta } from "../db.js";
 import { type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import { withRetry, computeChanceToProfit, computeBestWorstCase, listingSig, parseSig } from "./utils.js";
+import { cascadeTradeUpStatuses } from "./db-status.js";
+import { retargetDMarketTradeUps } from "./dmarket-relink-map.js";
+
+/** Same lock wait as applyDMarketRelinks. A 55P03 retries; it does not insert the stale id. */
+const MERGE_LOCK_TIMEOUT = "5s";
+/** Deadlock and lock_not_available. Matches the relink apply retry, then the batch is skipped. */
+const MERGE_LOCK_CODES = new Set(["40P01", "55P03"]);
+const MERGE_LOCK_RETRIES = 3;
+
+/** Insert batches that lost the share lock. The next mergeTradeUps of that type tries them again. */
+const queuedMergeBatches: { type: string; tradeUps: TradeUp[] }[] = [];
+let skippedShareLockBatches = 0;
+
+export interface SkippedShareLockStats {
+  skippedBatches: number;
+  queuedTradeUps: number;
+}
+
+export function skippedShareLockStats(): SkippedShareLockStats {
+  return {
+    skippedBatches: skippedShareLockBatches,
+    queuedTradeUps: queuedMergeBatches.reduce((count, batch) => count + batch.tradeUps.length, 0),
+  };
+}
+
+function takeQueuedMerge(type: string): TradeUp[] {
+  const kept: { type: string; tradeUps: TradeUp[] }[] = [];
+  const taken: TradeUp[] = [];
+  for (const batch of queuedMergeBatches) {
+    if (batch.type === type) taken.push(...batch.tradeUps);
+    else kept.push(batch);
+  }
+  queuedMergeBatches.length = 0;
+  queuedMergeBatches.push(...kept);
+  return taken;
+}
+
+export interface MergeTradeUpHooks {
+  /** After signature matching, before insert transactions. Tests commit a relink here. */
+  beforeInsert?: () => Promise<void>;
+}
+
+export interface SaveTradeUpHooks {
+  /** After the pre-transaction retarget, before the write. Tests commit a relink here. */
+  beforeWrite?: () => Promise<void>;
+}
+
+function dmarketListingIds(tradeUps: readonly TradeUp[]): string[] {
+  const ids = new Set<string>();
+  for (const tu of tradeUps) {
+    for (const input of tu.inputs) {
+      if (input.source === "dmarket" || input.listing_id.startsWith("dmarket:")) ids.add(input.listing_id);
+    }
+  }
+  return [...ids].sort();
+}
+
+/**
+ * FOR KEY SHARE, one id at a time, in sorted id order. A single ORDER BY
+ * statement does not wait in that order. applyDMarketRelinks uses the same order.
+ */
+async function shareLockListings(client: pg.PoolClient, ids: readonly string[]): Promise<Set<string>> {
+  const held = new Set<string>();
+  for (const id of [...ids].sort()) {
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM listings WHERE id = $1 FOR KEY SHARE`,
+      [id],
+    );
+    if (rows[0]) held.add(rows[0].id);
+  }
+  return held;
+}
+
+function pgErrorCode(err: unknown): string {
+  if (typeof err !== "object" || err === null || !("code" in err)) return "";
+  return typeof err.code === "string" ? err.code : "";
+}
+
+async function beginMergeInsert(client: pg.PoolClient): Promise<void> {
+  await client.query("BEGIN");
+  await client.query(`SET LOCAL lock_timeout = '${MERGE_LOCK_TIMEOUT}'`);
+}
+
+/**
+ * On main, the fetcher deletes a DMarket listing and cascadeTradeUpStatuses
+ * marks a merge row that still references it partial, so none stay active on
+ * a deleted listing. A successful relink updates trade_up_inputs before that
+ * delete, which moves a row that committed first. Save-time retarget runs
+ * before this transaction and can keep the pre-relink id; inserting that id
+ * after the delete leaves listing_status active. Share-lock the live ids
+ * here so the relink waits and rewrites the committed row, or this insert
+ * follows the id the relink already recorded. An id set that changes under
+ * the lock restarts the transaction. A set that never stabilizes is a lock
+ * conflict: the caller retries 40P01/55P03 and does not insert the stale id.
+ */
+async function resolveDMarketInputsForInsert(
+  client: pg.PoolClient,
+  tradeUps: readonly TradeUp[],
+): Promise<TradeUp[]> {
+  for (let attempt = 0; attempt < MERGE_LOCK_RETRIES; attempt++) {
+    const confirmed = await lockResolvedDMarketInputs(client, tradeUps);
+    if (confirmed) return confirmed;
+    // Nothing else has been written in this transaction. Restart so the next
+    // pass locks the live ids in one sorted order instead of appending locks.
+    // SET LOCAL does not survive the rollback.
+    await client.query("ROLLBACK");
+    await beginMergeInsert(client);
+  }
+  const confirmed = await lockResolvedDMarketInputs(client, tradeUps);
+  if (confirmed) return confirmed;
+  const err = new Error("DMarket listing share lock was not stable");
+  throw Object.assign(err, { code: "40P01" });
+}
+
+async function lockResolvedDMarketInputs(
+  client: pg.PoolClient,
+  tradeUps: readonly TradeUp[],
+): Promise<TradeUp[] | null> {
+  const resolved = await retargetDMarketTradeUps(client, tradeUps);
+  const ids = dmarketListingIds(resolved);
+  const held = await shareLockListings(client, ids);
+  const confirmed = await retargetDMarketTradeUps(client, tradeUps);
+  const confirmedIds = dmarketListingIds(confirmed);
+  const same = ids.length === confirmedIds.length && ids.every((id, index) => id === confirmedIds[index]);
+  if (same && ids.every(id => held.has(id))) return confirmed;
+  return null;
+}
+
+/**
+ * Main leaves a merge row partial when its DMarket listing is already gone.
+ * This catches an insert that still referenced that id: partial, or dropped
+ * when every input is gone. Never left active.
+ */
+async function cascadeDeletedDMarketInputs(pool: pg.Pool, tradeUps: readonly TradeUp[]): Promise<void> {
+  const ids = dmarketListingIds(tradeUps);
+  if (ids.length === 0) return;
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM listings WHERE id = ANY($1::text[])`,
+    [ids],
+  );
+  const live = new Set(rows.map(row => row.id));
+  const missing = ids.filter(id => !live.has(id));
+  if (missing.length === 0) return;
+  await cascadeTradeUpStatuses(pool, missing);
+}
+
+async function insertMergeBatchOnce(pool: pg.Pool, batch: readonly TradeUp[], type: string): Promise<TradeUp[]> {
+  const client = await pool.connect();
+  try {
+    await beginMergeInsert(client);
+    const resolved = await resolveDMarketInputsForInsert(client, batch);
+    for (const tu of resolved) {
+      const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+      const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
+      const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+      const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
+      // Fold peak_profit_cents into the INSERT (replaces the post-insert UPDATE).
+      // Semantics: only set when profitable (matches former: UPDATE only ran when profit > 0).
+      const peakProfit = Math.max(tu.profit_cents, 0);
+      const { rows } = await client.query(`
+        INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, peak_profit_cents, discovered_via)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12, $13, $14)
+        RETURNING id
+      `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames, peakProfit, tu.discovered_via ?? null]);
+      const tradeUpId = rows[0].id;
+      if (tu.profit_cents > 0) {
+        const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
+        await recordProfitableCombo(client, tu, comboKey);
+      }
+      await insertInputsBatch(client, tradeUpId, tu.inputs);
+    }
+    await client.query("COMMIT");
+    return resolved;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * 40P01/55P03: retry, then skip. null means this cycle did not insert the batch.
+ * Merge inserts are re-queued for the next mergeTradeUps of the same type.
+ * saveTradeUps is only counted: the next staircase pass rebuilds that set.
+ */
+async function withShareLockRetry<T>(
+  label: string,
+  batchSize: number,
+  fn: () => Promise<T>,
+  onSkip?: () => void,
+): Promise<T | null> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await withRetry(fn, 3, label);
+    } catch (err) {
+      const code = pgErrorCode(err);
+      if (!MERGE_LOCK_CODES.has(code)) throw err;
+      if (attempt >= MERGE_LOCK_RETRIES) {
+        skippedShareLockBatches++;
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`${label}: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch of ${batchSize}: ${reason}`);
+        onSkip?.();
+        return null;
+      }
+      const wait = 50 * 2 ** attempt;
+      console.warn(`${label}: ${code}, retry ${attempt + 1} in ${wait}ms`);
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+  }
+}
+
+async function insertMergeBatch(pool: pg.Pool, batch: readonly TradeUp[], type: string): Promise<TradeUp[]> {
+  const inserted = await withShareLockRetry(
+    "mergeTradeUps-insert",
+    batch.length,
+    () => insertMergeBatchOnce(pool, batch, type),
+    () => {
+      queuedMergeBatches.push({ type, tradeUps: batch.slice() });
+      console.error(`mergeTradeUps-insert: re-queued ${batch.length} trade-ups for the next merge cycle`);
+    },
+  );
+  return inserted ?? [];
+}
 
 /**
  * Insert all inputs for one trade-up in a single multi-row INSERT statement.
@@ -86,70 +311,109 @@ export async function getProfitableCombosForWantedList(pool: pg.Pool): Promise<{
   return rows;
 }
 
-export async function saveTradeUps(pool: pg.Pool, tradeUps: TradeUp[], clearFirst: boolean = true, type: string = "classified_covert", isTheoretical: boolean = false, source: string = "discovery") {
-  await withRetry(async () => {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+async function saveTradeUpsOnce(
+  pool: pg.Pool,
+  tradeUps: readonly TradeUp[],
+  clearFirst: boolean,
+  type: string,
+  isTheoretical: boolean,
+  source: string,
+): Promise<TradeUp[]> {
+  const client = await pool.connect();
+  try {
+    await beginMergeInsert(client);
+    // Resolve before any other write. A lock restart rolls this transaction back.
+    const resolved = await resolveDMarketInputsForInsert(client, tradeUps);
 
-      if (clearFirst) {
-        // Preserve materialized results when discovery clears — they're found by a different process
-        const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
-        await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical]);
-        await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
-      }
-
-      for (const tu of tradeUps) {
-        const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
-        const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
-        const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
-        const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
-        const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
-
-        const { rows } = await client.query(`
-          INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, discovered_via)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-          RETURNING id
-        `, [
-          tu.total_cost_cents,
-          tu.expected_value_cents,
-          tu.profit_cents,
-          tu.roi_percentage,
-          chanceToProfit,
-          type,
-          bestCase,
-          worstCase,
-          isTheoretical,
-          source,
-          JSON.stringify(tu.outcomes),
-          inputSources,
-          outputSkinNames,
-          collectionNames,
-          tu.discovered_via ?? null,
-        ]);
-        const tradeUpId = rows[0].id;
-
-        await insertInputsBatch(client, tradeUpId, tu.inputs);
-      }
-
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    if (clearFirst) {
+      // Preserve materialized results when discovery clears — they're found by a different process
+      const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
+      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical]);
+      await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
     }
-  }, 3, "saveTradeUps");
+
+    for (const tu of resolved) {
+      const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+      const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
+      const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+      const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
+
+      const { rows } = await client.query(`
+        INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, discovered_via)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [
+        tu.total_cost_cents,
+        tu.expected_value_cents,
+        tu.profit_cents,
+        tu.roi_percentage,
+        chanceToProfit,
+        type,
+        bestCase,
+        worstCase,
+        isTheoretical,
+        source,
+        JSON.stringify(tu.outcomes),
+        inputSources,
+        outputSkinNames,
+        collectionNames,
+        tu.discovered_via ?? null,
+      ]);
+      const tradeUpId = rows[0].id;
+
+      await insertInputsBatch(client, tradeUpId, tu.inputs);
+    }
+
+    await client.query("COMMIT");
+    return resolved;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveTradeUps(
+  pool: pg.Pool,
+  tradeUps: TradeUp[],
+  clearFirst: boolean = true,
+  type: string = "classified_covert",
+  isTheoretical: boolean = false,
+  source: string = "discovery",
+  hooks?: SaveTradeUpHooks,
+) {
+  // The pre-transaction read can keep a pre-relink id. beforeWrite lets a test
+  // commit the relink in that window. The write below resolves again.
+  await retargetDMarketTradeUps(pool, tradeUps);
+  if (hooks?.beforeWrite) await hooks.beforeWrite();
+  const inserted = await withShareLockRetry(
+    "saveTradeUps",
+    tradeUps.length,
+    () => saveTradeUpsOnce(pool, tradeUps, clearFirst, type, isTheoretical, source),
+  );
+  if (inserted && inserted.length > 0) await cascadeDeletedDMarketInputs(pool, inserted);
 
   await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 }
 
-export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: string = "classified_covert") {
+export async function mergeTradeUps(
+  pool: pg.Pool,
+  tradeUps: TradeUp[],
+  type: string = "classified_covert",
+  hooks?: MergeTradeUpHooks,
+) {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
+  // A batch skipped after share-lock retries is tried again on this type's next merge.
+  const carried = takeQueuedMerge(type);
+  if (carried.length > 0) tradeUps = [...carried, ...tradeUps];
+  // Retarget first so a relink that landed during the cycle matches the live signature.
+  const liveTradeUps = await retargetDMarketTradeUps(pool, tradeUps);
 
   const newSigs = new Map<string, number>();
-  for (let i = 0; i < tradeUps.length; i++) {
-    const sig = listingSig(tradeUps[i].inputs.map(inp => inp.listing_id));
+  for (let i = 0; i < liveTradeUps.length; i++) {
+    const sig = listingSig(liveTradeUps[i].inputs.map(inp => inp.listing_id));
     newSigs.set(sig, i);
   }
 
@@ -178,7 +442,7 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
   for (const [sig, existId] of existingSigs) {
     const newIdx = newSigs.get(sig);
     if (newIdx !== undefined) {
-      toUpdate.push({ existId, tu: tradeUps[newIdx] });
+      toUpdate.push({ existId, tu: liveTradeUps[newIdx] });
       handled.add(sig);
     }
     // NOTE: We no longer mark missing trade-ups as stale here.
@@ -244,44 +508,17 @@ export async function mergeTradeUps(pool: pg.Pool, tradeUps: TradeUp[], type: st
   const toInsert: TradeUp[] = [];
   for (const [sig, idx] of newSigs) {
     if (handled.has(sig)) continue;
-    toInsert.push(tradeUps[idx]);
+    toInsert.push(liveTradeUps[idx]);
   }
+
+  if (toInsert.length > 0 && hooks?.beforeInsert) await hooks.beforeInsert();
 
   for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
     const batch = toInsert.slice(i, i + BATCH_SIZE);
-    await withRetry(async () => {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const tu of batch) {
-          const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
-          const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
-          const inputSources = [...new Set(tu.inputs.map(i => i.source ?? "csfloat"))].sort();
-          const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
-          const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
-          // Fold peak_profit_cents into the INSERT (replaces the post-insert UPDATE).
-          // Semantics: only set when profitable (matches former: UPDATE only ran when profit > 0).
-          const peakProfit = Math.max(tu.profit_cents, 0);
-          const { rows } = await client.query(`
-            INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, chance_to_profit, type, best_case_cents, worst_case_cents, is_theoretical, source, outcomes_json, input_sources, output_skin_names, collection_names, peak_profit_cents, discovered_via)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'discovery', $9, $10, $11, $12, $13, $14)
-            RETURNING id
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, type, bestCase, worstCase, JSON.stringify(tu.outcomes), inputSources, outputSkinNames, collectionNames, peakProfit, tu.discovered_via ?? null]);
-          const tradeUpId = rows[0].id;
-          if (tu.profit_cents > 0) {
-            const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-            await recordProfitableCombo(client, tu, comboKey);
-          }
-          await insertInputsBatch(client, tradeUpId, tu.inputs);
-        }
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-    }, 3, "mergeTradeUps-insert");
+    const inserted = await insertMergeBatch(pool, batch, type);
+    // A listing deleted after the share lock was released is the main outcome:
+    // partial, not active.
+    await cascadeDeletedDMarketInputs(pool, inserted);
   }
   await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 
