@@ -10,7 +10,7 @@ import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
-import { authReturnLocation, trackCompleteRegistration } from "./tracking.js";
+import { authReturnLocation, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -303,15 +303,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           const returnTo = req.session.returnTo || "/";
           delete req.session.returnTo;
           const created = user.just_created === true;
-          if (created) {
-            const ipHeader = req.headers["x-real-ip"];
-            void trackCompleteRegistration({
-              steamId: user.steam_id,
-              ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
-              userAgent: req.headers["user-agent"] ?? null,
-              cookieHeader: req.headers.cookie,
-            });
-          }
+          const ipHeader = req.headers["x-real-ip"];
+          const authTracking = {
+            steamId: user.steam_id,
+            ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
+            userAgent: req.headers["user-agent"] ?? null,
+            cookieHeader: req.headers.cookie,
+          };
+          if (created) void trackCompleteRegistration(authTracking);
+          else void trackLogin(authTracking);
           res.redirect(authReturnLocation(returnTo, created, process.env));
         });
       })(req, res, next);

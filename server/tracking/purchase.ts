@@ -20,7 +20,7 @@ import {
   type ServerTrackingConfig,
   type TrackingEnv,
 } from "./config.js";
-import { hashEmail, isSha256Hex, sha256Hex } from "./hash.js";
+import { isSha256Hex, sha256Hex } from "./hash.js";
 
 const META_GRAPH_VERSION = "v24.0";
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -44,7 +44,6 @@ export interface PurchaseConversion {
   priceCents: number;
   currency: string;
   eventTimeSec: number;
-  emailHash: string | null;
   externalIdHash: string | null;
   userAgent: string | null;
   ip: string | null;
@@ -67,7 +66,6 @@ export function purchaseConversionFromSession(
     priceCents: PLAN_PRICE_CENTS[opts.plan],
     currency: (session.currency ?? "usd").toUpperCase(),
     eventTimeSec: opts.eventCreatedSec,
-    emailHash: hashEmail(session.customer_details?.email),
     externalIdHash: isSha256Hex(metadata.tub_xid) ? metadata.tub_xid : null,
     userAgent: metadata.tub_ua || null,
     ip: metadata.tub_ip || null,
@@ -117,7 +115,6 @@ export interface MetaEventsBody {
     action_source: "website";
     event_source_url: string;
     user_data: {
-      em?: string[];
       external_id?: string[];
       client_ip_address?: string;
       client_user_agent?: string;
@@ -138,7 +135,6 @@ export interface MetaEventsBody {
 
 export function metaPurchaseRequest(conv: PurchaseConversion, capi: MetaCapiConfig, baseUrl: string): { url: string; body: MetaEventsBody } {
   const userData: MetaEventsBody["data"][number]["user_data"] = {};
-  if (conv.emailHash) userData.em = [conv.emailHash];
   if (conv.externalIdHash) userData.external_id = [conv.externalIdHash];
   if (conv.ip) userData.client_ip_address = conv.ip;
   if (conv.userAgent) userData.client_user_agent = conv.userAgent;

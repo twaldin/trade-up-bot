@@ -157,7 +157,8 @@ describe("purchaseConversionFromSession", () => {
     expect(conv.valueCents).toBe(559);
     expect(conv.priceCents).toBe(699);
     expect(conv.currency).toBe("USD");
-    expect(conv.emailHash).toBe(EMAIL_HASH);
+    expect(JSON.stringify(conv).toLowerCase()).not.toContain("example.com");
+    expect(conv).not.toHaveProperty("emailHash");
   });
 });
 
@@ -192,7 +193,6 @@ describe("metaPurchaseRequest", () => {
         action_source: "website",
         event_source_url: "https://tradeupbot.app/",
         user_data: {
-          em: [EMAIL_HASH],
           external_id: [STEAM_HASH],
           client_ip_address: "203.0.113.7",
           client_user_agent: "Mozilla/5.0 test",
@@ -216,9 +216,14 @@ describe("metaPurchaseRequest", () => {
     });
   });
 
-  it("never sends a raw email", () => {
+  it("never sends email, a name, or a raw Steam ID", () => {
     const req = metaPurchaseRequest(conversion(), serverTrackingConfig(FULL_ENV).metaCapi!, "https://tradeupbot.app");
-    expect(JSON.stringify(req.body).toLowerCase()).not.toContain("test@example.com");
+    const body = JSON.stringify(req.body).toLowerCase();
+    expect(body).not.toContain("test@example.com");
+    expect(body).not.toContain("7656119");
+    expect(req.body.data[0].user_data).not.toHaveProperty("em");
+    expect(req.body.data[0].user_data).not.toHaveProperty("fn");
+    expect(req.body.data[0].user_data).not.toHaveProperty("ln");
   });
 });
 

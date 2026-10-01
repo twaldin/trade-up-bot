@@ -1,6 +1,6 @@
-// New-account CompleteRegistration. Fired from the Steam callback only when the user row
-// was just inserted. Same event_id as the browser Pixel. Never throws.
-import { isValidGa4MeasurementId, isValidMetaPixelId, registrationEventId } from "../../shared/tracking.js";
+// Steam auth conversions. CompleteRegistration when the user row was just inserted, Login
+// on a return visit. Same event_id as the browser Pixel. Never throws. No email, name, or raw Steam ID.
+import { isValidGa4MeasurementId, isValidMetaPixelId, loginEventId, registrationEventId } from "../../shared/tracking.js";
 import { serverTrackingConfig, type TrackingEnv } from "./config.js";
 import { hashExternalId } from "./hash.js";
 
@@ -37,11 +37,11 @@ function cookieValue(header: string | undefined, name: string): string | null {
   return null;
 }
 
-export interface RegistrationSend {
+export interface AuthCapiSend {
   url: string;
   body: {
     data: Array<{
-      event_name: "CompleteRegistration";
+      event_name: "CompleteRegistration" | "Login";
       event_time: number;
       event_id: string;
       action_source: "website";
@@ -58,7 +58,7 @@ export interface RegistrationSend {
   };
 }
 
-export function metaRegistrationRequest(args: {
+export interface AuthCapiRequestArgs {
   externalIdHash: string;
   eventTimeSec: number;
   ip: string | null;
@@ -68,8 +68,14 @@ export function metaRegistrationRequest(args: {
   pixelId: string;
   accessToken: string;
   baseUrl: string;
-}): RegistrationSend {
-  const userData: RegistrationSend["body"]["data"][number]["user_data"] = { external_id: [args.externalIdHash] };
+}
+
+function metaAuthRequest(
+  eventName: "CompleteRegistration" | "Login",
+  eventId: string,
+  args: AuthCapiRequestArgs,
+): AuthCapiSend {
+  const userData: AuthCapiSend["body"]["data"][number]["user_data"] = { external_id: [args.externalIdHash] };
   if (args.ip) userData.client_ip_address = args.ip;
   if (args.userAgent) userData.client_user_agent = args.userAgent;
   if (args.fbc) userData.fbc = args.fbc;
@@ -78,9 +84,9 @@ export function metaRegistrationRequest(args: {
     url: `https://graph.facebook.com/v24.0/${args.pixelId}/events`,
     body: {
       data: [{
-        event_name: "CompleteRegistration",
+        event_name: eventName,
         event_time: args.eventTimeSec,
-        event_id: registrationEventId(args.externalIdHash),
+        event_id: eventId,
         action_source: "website",
         event_source_url: `${args.baseUrl.replace(/\/+$/, "")}/`,
         user_data: userData,
@@ -90,7 +96,15 @@ export function metaRegistrationRequest(args: {
   };
 }
 
-export function trackCompleteRegistration(args: {
+export function metaRegistrationRequest(args: AuthCapiRequestArgs): AuthCapiSend {
+  return metaAuthRequest("CompleteRegistration", registrationEventId(args.externalIdHash), args);
+}
+
+export function metaLoginRequest(args: AuthCapiRequestArgs): AuthCapiSend {
+  return metaAuthRequest("Login", loginEventId(args.externalIdHash), args);
+}
+
+export interface TrackAuthCapiArgs {
   steamId: string;
   ip: string | null;
   userAgent: string | null;
@@ -98,14 +112,20 @@ export function trackCompleteRegistration(args: {
   env?: TrackingEnv;
   fetchImpl?: typeof fetch;
   log?: (message: string) => void;
-}): Promise<void> {
+}
+
+function trackAuthCapi(
+  label: "complete_registration" | "login",
+  build: (args: AuthCapiRequestArgs) => AuthCapiSend,
+  args: TrackAuthCapiArgs,
+): Promise<void> {
   try {
     const env = args.env ?? process.env;
     const config = serverTrackingConfig(env);
     if (!config.metaCapi) return Promise.resolve();
     const externalIdHash = hashExternalId(args.steamId);
     if (!externalIdHash) return Promise.resolve();
-    const req = metaRegistrationRequest({
+    const req = build({
       externalIdHash,
       eventTimeSec: Math.floor(Date.now() / 1000),
       ip: args.ip,
@@ -125,13 +145,21 @@ export function trackCompleteRegistration(args: {
       signal: AbortSignal.timeout(4000),
     }).then(
       (res) => {
-        try { log(`[tracking] complete_registration capi=${res.ok ? "ok" : `http_${res.status}`}`); } catch { /* ignore */ }
+        try { log(`[tracking] ${label} capi=${res.ok ? "ok" : `http_${res.status}`}`); } catch { /* ignore */ }
       },
       () => {
-        try { log("[tracking] complete_registration capi=error"); } catch { /* ignore */ }
+        try { log(`[tracking] ${label} capi=error`); } catch { /* ignore */ }
       },
     );
   } catch {
     return Promise.resolve();
   }
+}
+
+export function trackCompleteRegistration(args: TrackAuthCapiArgs): Promise<void> {
+  return trackAuthCapi("complete_registration", metaRegistrationRequest, args);
+}
+
+export function trackLogin(args: TrackAuthCapiArgs): Promise<void> {
+  return trackAuthCapi("login", metaLoginRequest, args);
 }

@@ -99,6 +99,7 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(legal).toContain("Google Analytics 4");
     expect(legal).toContain("Conversions API");
     expect(legal).toContain("SHA-256");
+    expect(legal).not.toContain("hash of your email");
     expect(legal).toContain("https://tools.google.com/dlpage/gaoptout");
     expect(legal).toContain("https://adssettings.google.com");
     expect(legal).toContain("https://www.facebook.com/ads/preferences");

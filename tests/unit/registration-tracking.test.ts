@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { registrationEventId } from "../../shared/tracking.js";
+import { loginEventId, registrationEventId } from "../../shared/tracking.js";
 import { hashExternalId } from "../../server/tracking.js";
-import { registrationEventIdFromSteamId } from "../../src/lib/registration-id.js";
-import { authReturnLocation, metaRegistrationRequest, trackCompleteRegistration } from "../../server/tracking/registration.js";
+import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "../../src/lib/registration-id.js";
+import { authReturnLocation, metaLoginRequest, metaRegistrationRequest, trackCompleteRegistration, trackLogin } from "../../server/tracking/registration.js";
 
 const HASH = hashExternalId("76561198000000000");
 const ENV_OFF = {};
@@ -54,8 +54,40 @@ describe("CompleteRegistration CAPI", () => {
   });
 });
 
+describe("Login CAPI", () => {
+  it("uses the same event id as the browser and omits email, name, and raw Steam ID", () => {
+    const req = metaLoginRequest({
+      externalIdHash: HASH!,
+      eventTimeSec: 1_700_000_100,
+      ip: "203.0.113.7",
+      userAgent: "Mozilla/5.0 test",
+      fbp: null,
+      fbc: "fb.1.1.9",
+      pixelId: "123456789012345",
+      accessToken: "meta-token-value",
+      baseUrl: "https://tradeupbot.app/",
+    });
+    expect(req.body.data[0].event_name).toBe("Login");
+    expect(req.body.data[0].event_id).toBe(loginEventId(HASH!));
+    expect(req.body.data[0].user_data.external_id).toEqual([HASH]);
+    const body = JSON.stringify(req.body);
+    expect(body).not.toContain("76561198000000000");
+    expect(body.toLowerCase()).not.toContain("email");
+    expect(body.toLowerCase()).not.toContain("display_name");
+  });
+
+  it("does not call the network when CAPI is unset, and never throws when fetch rejects", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => { throw new Error("down"); });
+    await expect(trackLogin({ steamId: "76561198000000000", ip: null, userAgent: null, cookieHeader: undefined, env: ENV_OFF, fetchImpl })).resolves.toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await expect(trackLogin({ steamId: "76561198000000000", ip: "203.0.113.7", userAgent: "Mozilla", cookieHeader: "_fbp=fb.1.1.2", env: ENV_ON, fetchImpl, log: () => {} })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("browser registration event id", () => {
   it("matches the server hash of the Steam ID", async () => {
     await expect(registrationEventIdFromSteamId("  76561198000000000 ")).resolves.toBe(registrationEventId(HASH!));
+    await expect(loginEventIdFromSteamId("76561198000000000")).resolves.toBe(loginEventId(HASH!));
   });
 });
