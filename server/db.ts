@@ -1,7 +1,7 @@
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
-import { ensureStripeCustomerIdUniqueIndex } from "./stripe-customer-index.js";
+import { classifyIndexError, ensureStripeCustomerIdUniqueIndex, schemaVersionAfterIndex, type IndexEnsureResult } from "./stripe-customer-index.js";
 
 const { Pool } = pg;
 
@@ -46,7 +46,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-10-02.2";
+export const SCHEMA_VERSION = "2026-10-02.3";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
 
@@ -750,28 +750,32 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
 
-  // Unique stripe_customer_id. The advisory lock is held on lockClient. CONCURRENTLY
-  // cannot run in a transaction, and lockClient may have session state from the
-  // migration, so this uses a fresh autocommit connection from the real pool.
-  // pool.connect is not proxied onto lockClient. Failure drops an INVALID index
-  // and logs; it does not fail startup.
+  // Unique nonempty stripe_customer_id. The advisory lock is held on lockClient.
+  // CONCURRENTLY cannot run in a transaction, and lockClient may already be in
+  // one, so this uses a fresh autocommit connection. pool.connect is not proxied
+  // onto lockClient. An INVALID index is dropped and rebuilt. Failure logs the
+  // cause (duplicates, lock, timeout, or other) and does not fail startup.
+  // schema_version is recorded only when the index is in place, so the next
+  // boot runs this step again.
+  let indexOutcome: IndexEnsureResult = classifyIndexError(new Error("index connection was not opened"));
   try {
     const indexClient = await pool.connect();
     try {
       await indexClient.query("SET lock_timeout = '30s'");
-      await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
+      indexOutcome = await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
         const result = await indexClient.query(sql, params);
         return { rows: result.rows };
-      });
+      }, (message) => console.warn(message));
     } finally {
       indexClient.release();
     }
-  } catch {
-    console.warn("[tracking] stripe_customer_id unique index skipped");
+  } catch (err) {
+    indexOutcome = classifyIndexError(err);
+    console.warn(indexOutcome.message);
   }
 
-  // Record the schema version so subsequent boots short-circuit.
-  await setSyncMeta(pool, "schema_version", SCHEMA_VERSION);
+  const recordedVersion = schemaVersionAfterIndex(indexOutcome, SCHEMA_VERSION);
+  if (recordedVersion) await setSyncMeta(pool, "schema_version", recordedVersion);
 
   } finally {
     await lockClient.query("RESET lock_timeout").catch(() => {});

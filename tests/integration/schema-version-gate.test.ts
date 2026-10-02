@@ -55,15 +55,18 @@ describe("schema version gate", () => {
     expect(SCHEMA_VERSION.length).toBeGreaterThan(0);
   });
 
-  it("leaves a valid unique index on users.stripe_customer_id", async () => {
-    const { rows } = await pool.query<{ valid: boolean }>(
-      `SELECT i.indisvalid AS valid
+  it("leaves a valid partial unique index on nonempty stripe_customer_id", async () => {
+    const { rows } = await pool.query<{ valid: boolean; predicate: string | null }>(
+      `SELECT i.indisvalid AS valid, pg_get_expr(i.indpred, i.indrelid) AS predicate
        FROM pg_class c
        JOIN pg_index i ON i.indexrelid = c.oid
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE c.relname = 'users_stripe_customer_id_uidx' AND n.nspname = current_schema()`,
     );
-    expect(rows).toEqual([{ valid: true }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.valid).toBe(true);
+    expect(rows[0]?.predicate ?? "").toMatch(/stripe_customer_id IS NOT NULL/i);
+    expect(rows[0]?.predicate ?? "").toMatch(/<>/);
   });
 
   it("createTables writes schema_version into sync_meta", async () => {
