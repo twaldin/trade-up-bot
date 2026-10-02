@@ -83,6 +83,29 @@ describe("Login CAPI", () => {
     await expect(trackLogin({ steamId: "76561198000000000", ip: "203.0.113.7", userAgent: "Mozilla", cookieHeader: "_fbp=fb.1.1.2", env: ENV_ON, fetchImpl, log: () => {} })).resolves.toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("skips Login and CompleteRegistration CAPI for an opted-out external id", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const env = { ...ENV_ON, META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${HASH},not-a-hash` };
+    const args = { steamId: "76561198000000000", ip: "203.0.113.7", userAgent: "Mozilla", cookieHeader: undefined, env, fetchImpl };
+    await trackLogin(args);
+    await trackCompleteRegistration(args);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("still sends Login and CompleteRegistration when the opt-out list names a different id", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const env = { ...ENV_ON, META_CAPI_OPTOUT_EXTERNAL_IDS: "ab".repeat(32) };
+    const args = { steamId: "76561198000000000", ip: null, userAgent: null, cookieHeader: undefined, env, fetchImpl };
+    await trackLogin(args);
+    await trackCompleteRegistration(args);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const names = fetchImpl.mock.calls.map((call) => {
+      const body = JSON.parse(String(call[1]?.body)) as { data: Array<{ event_name: string }> };
+      return body.data[0].event_name;
+    });
+    expect(names.sort()).toEqual(["CompleteRegistration", "Login"]);
+  });
 });
 
 describe("browser registration event id", () => {

@@ -1,7 +1,7 @@
 // Steam auth conversions. CompleteRegistration when the user row was just inserted, Login
 // on a return visit. Same event_id as the browser Pixel. Never throws. No email, name, or raw Steam ID.
 import { isValidGa4MeasurementId, isValidMetaPixelId, loginEventId, registrationEventId } from "../../shared/tracking.js";
-import { serverTrackingConfig, type TrackingEnv } from "./config.js";
+import { isMetaCapiOptedOut, serverTrackingConfig, type TrackingEnv } from "./config.js";
 import { hashExternalId } from "./hash.js";
 
 export function browserTrackingOn(env: TrackingEnv): boolean {
@@ -124,7 +124,7 @@ function trackAuthCapi(
     const config = serverTrackingConfig(env);
     if (!config.metaCapi) return Promise.resolve();
     const externalIdHash = hashExternalId(args.steamId);
-    if (!externalIdHash) return Promise.resolve();
+    if (!externalIdHash || isMetaCapiOptedOut(externalIdHash, config.metaCapi.optOutExternalIds)) return Promise.resolve();
     const req = build({
       externalIdHash,
       eventTimeSec: Math.floor(Date.now() / 1000),

@@ -13,6 +13,7 @@ import {
   type TrackedPlan,
 } from "../../shared/tracking.js";
 import {
+  isMetaCapiOptedOut,
   serverTrackingConfig,
   serverTrackingEnabled,
   type Ga4MpConfig,
@@ -249,8 +250,10 @@ export async function sendPurchaseConversions(
   const send = (req: { url: string; body: object } | null): Promise<SendOutcome> =>
     req ? postJson(req.url, req.body, fetchImpl, timeoutMs) : Promise.resolve("skipped");
   try {
+    const metaConfig = config.metaCapi;
+    const sendMeta = metaConfig !== null && !isMetaCapiOptedOut(conv.externalIdHash, metaConfig.optOutExternalIds);
     const [meta, ga4] = await Promise.all([
-      send(config.metaCapi ? metaPurchaseRequest(conv, config.metaCapi, deps.baseUrl) : null),
+      send(sendMeta && metaConfig ? metaPurchaseRequest(conv, metaConfig, deps.baseUrl) : null),
       send(config.ga4Mp ? ga4PurchaseRequest(conv, config.ga4Mp) : null),
     ]);
     if (meta !== "skipped" || ga4 !== "skipped") {

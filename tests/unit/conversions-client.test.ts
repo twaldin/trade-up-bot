@@ -294,6 +294,13 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
     expect(() => trackBeginCheckout("pro", 6.99)).not.toThrow();
   });
 
+  it("does not fire Login when the event id is null or undefined", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackAuthReturn("login", null);
+    trackAuthReturn("login", undefined);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
   it("sign_up and login share the server event id and omit identity fields", () => {
     installBrowser({ pathname: "/trade-ups" });
     trackAuthReturn("sign_up", "reg_abc");

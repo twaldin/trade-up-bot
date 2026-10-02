@@ -1,7 +1,7 @@
 // Barrel for server-side conversion tracking (GA4 Measurement Protocol + Meta CAPI).
 export { serverTrackingConfig, serverTrackingEnabled } from "./tracking/config.js";
 export type { Ga4MpConfig, MetaCapiConfig, ServerTrackingConfig, TrackingEnv } from "./tracking/config.js";
-export { hashEmail, hashExternalId, sha256Hex } from "./tracking/hash.js";
+export { hashExternalId, sha256Hex } from "./tracking/hash.js";
 export { checkoutSessionTrackingFields, checkoutTrackingMetadata } from "./tracking/checkout.js";
 export {
   ga4PurchaseRequest,

@@ -107,14 +107,14 @@ export function trackPricingView(): void {
   pixelEvent("view_item", { content_name: "pricing", content_type: "product" }, newEventId("pricing"));
 }
 
-/** Steam callback return. New accounts and return visits share an event id with CAPI. */
-export function trackAuthReturn(kind: "sign_up" | "login", eventId: string | null): void {
+/** Steam callback return. Pixel events fire only with the id CAPI already used. */
+export function trackAuthReturn(kind: "sign_up" | "login", eventId?: string | null): void {
   sendGa4(kind, { method: "steam", page_path: pagePath() });
   if (kind === "sign_up") {
     if (eventId) pixelEvent("sign_up", { status: "complete" }, eventId);
     return;
   }
-  pixelEvent("login", { status: "complete" }, eventId && eventId.length > 0 ? eventId : newEventId("login"));
+  if (eventId) pixelEvent("login", { status: "complete" }, eventId);
 }
 
 /**
