@@ -1,6 +1,7 @@
-// Login and signup return values stashed by the head strip script in index.html.
-// The URL no longer has auth, lid, or eid by the time React runs, so this module
+// Values stashed by the head strip script in index.html. The URL no longer has
+// auth, lid, eid, session_id, or upgraded by the time React runs, so this module
 // does not rewrite history (that would send a second page view).
+import { trackAuthReturn } from "./conversions.js";
 import { loginEventIdFromSteamId } from "./registration-id.js";
 
 export interface AuthReturnStash {
@@ -13,9 +14,20 @@ export interface AuthReturn {
   lid: string | null;
 }
 
+export interface CheckoutReturnStash {
+  upgraded?: string | null;
+  sessionId?: string | null;
+}
+
+export interface CheckoutReturn {
+  upgraded: string;
+  sessionId: string;
+}
+
 declare global {
   interface Window {
     __tubAuthReturn?: AuthReturnStash | null;
+    __tubCheckoutReturn?: CheckoutReturnStash | null;
     __tubPageLocation?: string;
   }
 }
@@ -87,4 +99,49 @@ export async function resolveLoginEventId(
   }
   if (!accepted) return null;
   return loginEventIdFromSteamId(steamId, lid);
+}
+
+/**
+ * Return sign-in. GA4 `login` always fires. The Pixel Login fires only when
+ * `eventId` is the accepted nonce hash; a missing or reused lid leaves it null.
+ */
+export async function reportReturnLogin(
+  loadMe: () => Promise<{ steam_id?: string } | null>,
+  lid: string | null,
+  accept?: (lid: string) => Promise<boolean>,
+): Promise<void> {
+  try {
+    const me = await loadMe();
+    const eventId = await resolveLoginEventId(me?.steam_id, lid, accept);
+    trackAuthReturn("login", eventId);
+  } catch {
+    trackAuthReturn("login", null);
+  }
+}
+
+export function parseCheckoutReturn(stash: CheckoutReturnStash | null | undefined): CheckoutReturn | null {
+  if (!stash) return null;
+  if (typeof stash.upgraded !== "string" || stash.upgraded.length === 0) return null;
+  if (typeof stash.sessionId !== "string" || stash.sessionId.length === 0) return null;
+  return { upgraded: stash.upgraded, sessionId: stash.sessionId };
+}
+
+function defaultCheckoutRead(): CheckoutReturnStash | null | undefined {
+  return browserWindow()?.__tubCheckoutReturn;
+}
+
+function defaultCheckoutClear(): void {
+  const current = browserWindow();
+  if (current) current.__tubCheckoutReturn = null;
+}
+
+/** Read the checkout hand-off once. Does not consult location.search. */
+export function consumeCheckoutReturn(
+  read: () => CheckoutReturnStash | null | undefined = defaultCheckoutRead,
+  clear: () => void = defaultCheckoutClear,
+): CheckoutReturn | null {
+  const raw = read();
+  const parsed = parseCheckoutReturn(raw);
+  if (raw) clear();
+  return parsed;
 }

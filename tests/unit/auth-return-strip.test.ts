@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { AUTH_RETURN_STRIP_SOURCE } from "../../shared/auth-return-strip.js";
-import { consumeAuthReturn, resolveLoginEventId, type AuthReturnStash } from "../../src/lib/auth-return.js";
+import { consumeAuthReturn, consumeCheckoutReturn, resolveLoginEventId, type AuthReturnStash } from "../../src/lib/auth-return.js";
 import { injectTrackingHead } from "../../shared/tracking-head.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -13,7 +13,7 @@ const appSource = readFileSync(join(root, "src/App.tsx"), "utf-8");
 const serverSource = readFileSync(join(root, "server/index.ts"), "utf-8");
 const NONCE = "ab".repeat(16);
 
-function runStrip(href: string): { stash: unknown; pageLocation: unknown; replaced: string[] } {
+function runStrip(href: string): { stash: unknown; checkout: unknown; pageLocation: unknown; replaced: string[] } {
   const url = new URL(href);
   const location = {
     href: url.href,
@@ -32,9 +32,9 @@ function runStrip(href: string): { stash: unknown; pageLocation: unknown; replac
       replaced.push(next);
     },
   };
-  const window: { __tubAuthReturn?: unknown; __tubPageLocation?: string } = {};
+  const window: { __tubAuthReturn?: unknown; __tubCheckoutReturn?: unknown; __tubPageLocation?: string } = {};
   vm.runInNewContext(AUTH_RETURN_STRIP_SOURCE, { window, location, history, URLSearchParams });
-  return { stash: window.__tubAuthReturn, pageLocation: window.__tubPageLocation, replaced };
+  return { stash: window.__tubAuthReturn, checkout: window.__tubCheckoutReturn, pageLocation: window.__tubPageLocation, replaced };
 }
 
 describe("auth return strip script", () => {
@@ -53,10 +53,21 @@ describe("auth return strip script", () => {
   });
 
   it("stashes a new account without a nonce and drops a leftover eid", () => {
-    const result = runStrip("https://tradeupbot.app/trade-ups?session_id=cs_test&auth=new&eid=old");
+    const result = runStrip("https://tradeupbot.app/trade-ups?auth=new&eid=old&utm_source=google");
     expect(result.stash).toEqual({ auth: "new", lid: null });
-    expect(result.replaced).toEqual(["/trade-ups?session_id=cs_test"]);
-    expect(result.pageLocation).toBe("https://tradeupbot.app/trade-ups?session_id=cs_test");
+    expect(result.checkout).toBeUndefined();
+    expect(result.replaced).toEqual(["/trade-ups?utm_source=google"]);
+    expect(result.pageLocation).toBe("https://tradeupbot.app/trade-ups?utm_source=google");
+  });
+
+  it("stashes upgraded and session_id and removes them from the URL", () => {
+    const result = runStrip("https://tradeupbot.app/pricing?upgraded=pro&session_id=cs_test_1&utm_source=google#done");
+    expect(result.stash).toBeUndefined();
+    expect(result.checkout).toEqual({ upgraded: "pro", sessionId: "cs_test_1" });
+    expect(result.replaced).toEqual(["/pricing?utm_source=google#done"]);
+    expect(result.pageLocation).toBe("https://tradeupbot.app/pricing?utm_source=google#done");
+    expect(String(result.pageLocation)).not.toContain("session_id");
+    expect(String(result.pageLocation)).not.toContain("upgraded");
   });
 
   it("removes eid even when auth and lid are absent", () => {
@@ -92,10 +103,21 @@ describe("app consumes the stashed lid", () => {
     expect(consumeAuthReturn(() => current, () => { current = null; })).toEqual({ auth: "return", lid: NONCE });
     expect(consumeAuthReturn(() => current, () => { current = null; })).toBeNull();
     expect(appSource).toContain("consumeAuthReturn()");
-    expect(appSource).toContain("resolveLoginEventId(");
+    expect(appSource).toContain("reportReturnLogin(");
+    expect(appSource).toContain("consumeCheckoutReturn()");
     expect(appSource).not.toContain('searchParams.get("lid")');
     expect(appSource).not.toContain('searchParams.get("auth")');
-    expect(appSource).not.toMatch(/delete\(["'](?:lid|auth|eid)["']\)/);
+    expect(appSource).not.toContain('searchParams.get("session_id")');
+    expect(appSource).not.toContain('searchParams.get("upgraded")');
+    expect(appSource).not.toMatch(/delete\(["'](?:lid|auth|eid|session_id|upgraded)["']\)/);
+  });
+
+  it("reads the checkout hand-off once", () => {
+    const stash = { upgraded: "pro", sessionId: "cs_test_1" };
+    let current: typeof stash | null = stash;
+    expect(consumeCheckoutReturn(() => current, () => { current = null; })).toEqual(stash);
+    expect(consumeCheckoutReturn(() => current, () => { current = null; })).toBeNull();
+    expect(consumeCheckoutReturn(() => ({ upgraded: "pro", sessionId: null }), () => {})).toBeNull();
   });
 
   it("derives a Login id once per issued nonce and skips a reused lid", async () => {

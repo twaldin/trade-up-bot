@@ -14,7 +14,7 @@ import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
 import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
-import { consumeAuthReturn, resolveLoginEventId } from "./lib/auth-return.js";
+import { consumeAuthReturn, consumeCheckoutReturn, reportReturnLogin } from "./lib/auth-return.js";
 import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
@@ -494,7 +494,6 @@ function RetiredPreviewPrefixRedirect() {
 }
 
 export default function App() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
   const pageViewPath = useRef<string | null>(null);
 
@@ -510,34 +509,25 @@ export default function App() {
     captureRefFromUrl();
   }, []);
 
-  // Fire one verified GA4 purchase event when returning from Stripe checkout.
+  // Stripe return. The head script already stashed upgraded and session_id and
+  // removed them from the URL, so this must not rewrite history (a second page view).
   useEffect(() => {
-    const upgraded = searchParams.get("upgraded");
-    const sessionId = searchParams.get("session_id");
-    if (!upgraded || !sessionId) return;
-    reportPurchase(upgraded, sessionId).finally(() => {
-      const next = new URLSearchParams(searchParams);
-      next.delete("upgraded");
-      next.delete("session_id");
-      setSearchParams(next, { replace: true });
-    });
-  }, [searchParams, setSearchParams]);
+    const checkout = consumeCheckoutReturn();
+    if (!checkout) return;
+    void reportPurchase(checkout.upgraded, checkout.sessionId);
+  }, []);
 
-  // Steam callback return. The head script already removed auth, lid, and eid, so
-  // this effect must not call history or setSearchParams — a late rewrite is a second page view.
-  // The Login event id is hashed here only after the server accepts the nonce once.
+  // Steam callback return. The head script already removed auth, lid, and eid.
+  // GA4 login always fires. Pixel Login fires only when the nonce is accepted.
   useEffect(() => {
     const stashed = consumeAuthReturn();
     if (!stashed) return;
     if (stashed.auth === "return") {
-      const loginNonce = stashed.lid;
-      void fetch("/api/auth/me", { credentials: "include" })
-        .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
-        .then(async (me) => {
-          const eventId = await resolveLoginEventId(me?.steam_id, loginNonce);
-          if (eventId) trackAuthReturn("login", eventId);
-        })
-        .catch(() => {});
+      void reportReturnLogin(
+        () => fetch("/api/auth/me", { credentials: "include" })
+          .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null)),
+        stashed.lid,
+      );
       return;
     }
     void fetch("/api/auth/me", { credentials: "include" })

@@ -87,7 +87,7 @@ declare module "express-session" {
     returnTo?: string;
     discordState?: string;
     signupRef?: string;
-    pendingLoginNonce?: string;
+    pendingLogin?: { nonce: string; issuedAt: number };
   }
 }
 
@@ -307,7 +307,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
           const loginNonce = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
-          if (loginNonce) req.session.pendingLoginNonce = loginNonce;
+          if (loginNonce) req.session.pendingLogin = { nonce: loginNonce, issuedAt: Date.now() };
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -330,9 +330,9 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   // One-time consume of the login nonce stored on this session. A reused lid is not a Login.
   app.post("/api/auth/login-nonce", (req, res) => {
     const lid = readLoginNonceBody(req.body);
-    const taken = takeIssuedLoginNonce(req.session.pendingLoginNonce, lid);
-    if (taken.next) req.session.pendingLoginNonce = taken.next;
-    else delete req.session.pendingLoginNonce;
+    const taken = takeIssuedLoginNonce(req.session.pendingLogin, lid);
+    if (taken.next) req.session.pendingLogin = taken.next;
+    else delete req.session.pendingLogin;
     res.json({ accepted: taken.accepted });
   });
 

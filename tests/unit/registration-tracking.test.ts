@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { isLoginNonce, loginEventId, registrationEventId } from "../../shared/tracking.js";
 import { hashExternalId } from "../../server/tracking.js";
 import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "../../src/lib/registration-id.js";
-import { authReturnLocation, metaLoginRequest, metaRegistrationRequest, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "../../server/tracking/registration.js";
+import { authReturnLocation, LOGIN_NONCE_TTL_MS, metaLoginRequest, metaRegistrationRequest, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "../../server/tracking/registration.js";
 
 const HASH = hashExternalId("76561198000000000");
 const NONCE = "ab".repeat(16);
@@ -62,12 +62,20 @@ describe("CompleteRegistration CAPI", () => {
 });
 
 describe("issued login nonce", () => {
+  const issuedAt = 1_700_000_000_000;
+  const stored = { nonce: NONCE, issuedAt };
+
   it("accepts the issued lid once and rejects a reuse", () => {
-    const first = takeIssuedLoginNonce(NONCE, NONCE);
+    const first = takeIssuedLoginNonce(stored, NONCE, issuedAt);
     expect(first).toEqual({ accepted: true, next: null });
-    expect(takeIssuedLoginNonce(first.next, NONCE)).toEqual({ accepted: false, next: null });
-    expect(takeIssuedLoginNonce(NONCE, "cd".repeat(16))).toEqual({ accepted: false, next: NONCE });
-    expect(takeIssuedLoginNonce(NONCE, "nope")).toEqual({ accepted: false, next: NONCE });
+    expect(takeIssuedLoginNonce(first.next, NONCE, issuedAt)).toEqual({ accepted: false, next: null });
+    expect(takeIssuedLoginNonce(stored, "cd".repeat(16), issuedAt)).toEqual({ accepted: false, next: stored });
+    expect(takeIssuedLoginNonce(stored, "nope", issuedAt)).toEqual({ accepted: false, next: stored });
+  });
+
+  it("rejects a nonce once it is 10 minutes old", () => {
+    expect(takeIssuedLoginNonce(stored, NONCE, issuedAt + LOGIN_NONCE_TTL_MS - 1).accepted).toBe(true);
+    expect(takeIssuedLoginNonce(stored, NONCE, issuedAt + LOGIN_NONCE_TTL_MS)).toEqual({ accepted: false, next: null });
   });
 });
 

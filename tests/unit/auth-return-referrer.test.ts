@@ -66,7 +66,7 @@ describe("delayed bundle does not leak the login nonce", () => {
   it("strips lid before GA4, the Pixel, and the first /api fetch", async () => {
     const page = await browser.newPage();
     try {
-      const target = `http://127.0.0.1:${port}/pricing?auth=return&lid=${NONCE}&eid=legacy&utm_source=google#plans`;
+      const target = `http://127.0.0.1:${port}/pricing?auth=return&lid=${NONCE}&eid=legacy&session_id=cs_test_123&upgraded=pro&utm_source=google#plans`;
       const apiSeen = page.waitForResponse((res) => res.url().includes("/api/auth/me"), { timeout: 15_000 });
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 15_000 });
       expect(await page.evaluate(() => location.search)).toBe("?utm_source=google");
@@ -77,12 +77,12 @@ describe("delayed bundle does not leak the login nonce", () => {
       expect(tracked.some((hit) => hit.url.startsWith("/tr"))).toBe(true);
       expect(tracked.filter((hit) => hit.url.startsWith("/api/")).length).toBeGreaterThan(0);
       for (const hit of tracked) {
-        expect(hit.url).not.toContain("lid=");
-        expect(hit.url).not.toContain(NONCE);
-        expect(hit.url).not.toContain("eid=");
-        expect(hit.referer).not.toContain("lid=");
-        expect(hit.referer).not.toContain(NONCE);
-        expect(hit.referer).not.toContain("eid=");
+        for (const leaked of ["lid=", "eid=", "auth=", "session_id=", "upgraded=", NONCE, "cs_test_123"]) {
+          expect(hit.url).not.toContain(leaked);
+          expect(hit.referer).not.toContain(leaked);
+          expect(hit.url).not.toContain(encodeURIComponent(leaked));
+          expect(hit.referer).not.toContain(encodeURIComponent(leaked));
+        }
       }
       const api = tracked.filter((hit) => hit.url.startsWith("/api/"));
       expect(api.every((hit) => hit.referer.includes("/pricing"))).toBe(true);

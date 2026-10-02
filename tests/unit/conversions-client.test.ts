@@ -17,6 +17,7 @@ import {
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
 import { purchaseEventId } from "../../shared/tracking.js";
+import { reportReturnLogin } from "../../src/lib/auth-return.js";
 
 const GA4 = "G-NEWPROP123";
 const PIXEL = "123456789012345";
@@ -335,6 +336,41 @@ describe("Meta Pixel with the id unset", () => {
       trackAuthReturn("login", "login_abc");
       trackAuthReturn("sign_up", "reg_abc");
     }).not.toThrow();
+    expect(fbq).not.toHaveBeenCalled();
+  });
+});
+
+describe("return sign-in", () => {
+  const steamId = "76561198000000000";
+  const nonce = "ab".repeat(16);
+
+  it("sends one GA4 login and zero Pixel Logins in a GA4-only build", async () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4 };
+    installBrowser({ pathname: "/pricing" });
+    await reportReturnLogin(async () => ({ steam_id: steamId }), null);
+    expect(gtag.mock.calls.filter((call) => call[1] === "login")).toEqual([
+      ["event", "login", { method: "steam", page_path: "/pricing", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("sends one GA4 login and one Pixel Login when the nonce is accepted", async () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    installBrowser({ pathname: "/pricing" });
+    await reportReturnLogin(async () => ({ steam_id: steamId }), nonce, async () => true);
+    expect(gtag.mock.calls.filter((call) => call[1] === "login")).toHaveLength(1);
+    const pixel = fbq.mock.calls.filter((call) => call[1] === "Login");
+    expect(pixel).toHaveLength(1);
+    expect(pixel[0][0]).toBe("trackCustom");
+    expect(pixel[0][3]?.eventID).toMatch(new RegExp(`^login_[0-9a-f]{64}_${nonce}$`));
+  });
+
+  it("still sends GA4 login when auth fails or the nonce is rejected, and no Pixel Login", async () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    installBrowser({ pathname: "/pricing" });
+    await reportReturnLogin(async () => { throw new Error("down"); }, nonce);
+    await reportReturnLogin(async () => ({ steam_id: steamId }), nonce, async () => false);
+    expect(gtag.mock.calls.filter((call) => call[1] === "login")).toHaveLength(2);
     expect(fbq).not.toHaveBeenCalled();
   });
 });

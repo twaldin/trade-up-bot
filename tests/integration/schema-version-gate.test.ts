@@ -55,6 +55,17 @@ describe("schema version gate", () => {
     expect(SCHEMA_VERSION.length).toBeGreaterThan(0);
   });
 
+  it("leaves a valid unique index on users.stripe_customer_id", async () => {
+    const { rows } = await pool.query<{ valid: boolean }>(
+      `SELECT i.indisvalid AS valid
+       FROM pg_class c
+       JOIN pg_index i ON i.indexrelid = c.oid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relname = 'users_stripe_customer_id_uidx' AND n.nspname = current_schema()`,
+    );
+    expect(rows).toEqual([{ valid: true }]);
+  });
+
   it("createTables writes schema_version into sync_meta", async () => {
     // Force fresh run by deleting the version key
     await pool.query("DELETE FROM sync_meta WHERE key = 'schema_version'");

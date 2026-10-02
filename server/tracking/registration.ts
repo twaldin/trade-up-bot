@@ -31,13 +31,25 @@ export function authReturnLocation(returnTo: string, created: boolean, env: Trac
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-/** True only when this lid is the one the server just issued. Clears it so a replay does not count. */
+/** A login nonce is only valid for about 10 minutes after the server issued it. */
+export const LOGIN_NONCE_TTL_MS = 10 * 60 * 1000;
+
+export interface IssuedLoginNonce {
+  nonce: string;
+  issuedAt: number;
+}
+
+/** True only when this lid is the unexpired nonce the server just issued. Clears it so a replay does not count. */
 export function takeIssuedLoginNonce(
-  stored: string | null | undefined,
+  stored: IssuedLoginNonce | null | undefined,
   lid: string | null | undefined,
-): { accepted: boolean; next: string | null } {
-  const pending = isLoginNonce(stored) ? stored : null;
-  if (!pending || !isLoginNonce(lid) || pending !== lid) return { accepted: false, next: pending };
+  nowMs: number = Date.now(),
+): { accepted: boolean; next: IssuedLoginNonce | null } {
+  if (!stored || !isLoginNonce(stored.nonce) || !Number.isFinite(stored.issuedAt)) {
+    return { accepted: false, next: null };
+  }
+  if (nowMs - stored.issuedAt >= LOGIN_NONCE_TTL_MS) return { accepted: false, next: null };
+  if (!isLoginNonce(lid) || stored.nonce !== lid) return { accepted: false, next: stored };
   return { accepted: true, next: null };
 }
 

@@ -1,6 +1,7 @@
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
+import { ensureStripeCustomerIdUniqueIndex } from "./stripe-customer-index.js";
 
 const { Pool } = pg;
 
@@ -45,7 +46,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-10-02.1";
+export const SCHEMA_VERSION = "2026-10-02.2";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
 
@@ -749,30 +750,24 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
 
-  // One Stripe customer per user, when the existing rows allow it. Multiple NULLs stay allowed.
-  // If duplicates are already stored, skip the index; purchase CAPI then refuses the ambiguous match.
+  // Unique stripe_customer_id. The advisory lock is held on lockClient. CONCURRENTLY
+  // cannot run in a transaction, and lockClient may have session state from the
+  // migration, so this uses a fresh autocommit connection from the real pool.
+  // pool.connect is not proxied onto lockClient. Failure drops an INVALID index
+  // and logs; it does not fail startup.
   try {
-    const indexName = "users_stripe_customer_id_uidx";
-    const { rows: indexes } = await pool.query<{ indexname: string }>(
-      "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1",
-      [indexName],
-    );
-    if (indexes.length === 0) {
-      const { rows: dupes } = await pool.query(
-        `SELECT 1 FROM users
-         WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id <> ''
-         GROUP BY stripe_customer_id
-         HAVING COUNT(*) > 1
-         LIMIT 1`,
-      );
-      if (dupes.length > 0) {
-        console.warn("[tracking] stripe_customer_id has duplicates; unique index skipped. Purchase CAPI skips when more than one user matches.");
-      } else {
-        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON users (stripe_customer_id)`);
-      }
+    const indexClient = await pool.connect();
+    try {
+      await indexClient.query("SET lock_timeout = '30s'");
+      await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
+        const result = await indexClient.query(sql, params);
+        return { rows: result.rows };
+      });
+    } finally {
+      indexClient.release();
     }
   } catch {
-    console.warn("[tracking] stripe_customer_id unique index skipped because existing rows are not unique");
+    console.warn("[tracking] stripe_customer_id unique index skipped");
   }
 
   // Record the schema version so subsequent boots short-circuit.

@@ -1,19 +1,27 @@
 // Inline head script. It runs before every tracker snippet and before the app's
-// first fetch, so auth, lid, and eid never become a page_location or a Referer.
-// The app reads window.__tubAuthReturn. A later history rewrite would send a second page view.
+// first fetch, so auth, lid, eid, session_id, and upgraded never become a
+// page_location or a Referer. The app reads the stashes. A later history rewrite
+// would send a second page view.
 export const AUTH_RETURN_STRIP_SOURCE = `(function () {
         try {
           var params = new URLSearchParams(location.search);
           var auth = params.get("auth");
           var lid = params.get("lid");
+          var upgraded = params.get("upgraded");
+          var sessionId = params.get("session_id");
           var tracked = auth === "new" || auth === "return";
           if (tracked || lid) {
             window.__tubAuthReturn = { auth: tracked ? auth : null, lid: lid };
           }
-          if (tracked || lid || params.has("eid")) {
+          if (upgraded || sessionId) {
+            window.__tubCheckoutReturn = { upgraded: upgraded, sessionId: sessionId };
+          }
+          if (tracked || lid || upgraded || sessionId || params.has("eid")) {
             params.delete("auth");
             params.delete("lid");
             params.delete("eid");
+            params.delete("upgraded");
+            params.delete("session_id");
             var query = params.toString();
             var path = location.pathname + (query ? "?" + query : "") + location.hash;
             history.replaceState(history.state, "", path);
