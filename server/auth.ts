@@ -11,7 +11,8 @@ import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
-import { authReturnLocation, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import { consumeStoredLoginNonce } from "./auth-login-nonce.js";
+import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -51,6 +52,9 @@ class SqliteSessionStore extends session.Store {
       this.sessionDb.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
     } catch { cb?.(); }
+  }
+  consumeLoginNonce(sid: string, lid: string | null): boolean {
+    return consumeStoredLoginNonce(this.sessionDb, sid, lid);
   }
 }
 
@@ -328,12 +332,17 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   });
 
   // One-time consume of the login nonce stored on this session. A reused lid is not a Login.
+  // The UPDATE is the atomic compare-and-delete. Do not assign req.session.pendingLogin:
+  // express-session would save the blob loaded at the start of this request and restore the nonce.
   app.post("/api/auth/login-nonce", (req, res) => {
     const lid = readLoginNonceBody(req.body);
-    const taken = takeIssuedLoginNonce(req.session.pendingLogin, lid);
-    if (taken.next) req.session.pendingLogin = taken.next;
-    else delete req.session.pendingLogin;
-    res.json({ accepted: taken.accepted });
+    let accepted = false;
+    try {
+      accepted = store.consumeLoginNonce(req.sessionID, lid);
+    } catch {
+      console.warn("[tracking] login nonce consume failed");
+    }
+    res.json({ accepted });
   });
 
   // Current user API
