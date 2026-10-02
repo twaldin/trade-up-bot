@@ -13,8 +13,8 @@ import { Button } from "../shared/components/ui/button.js";
 import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
-import { trackAuthReturn } from "./lib/conversions.js";
-import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
+import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
+import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
@@ -494,6 +494,15 @@ function RetiredPreviewPrefixRedirect() {
 
 export default function App() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
+  const pageViewPath = useRef<string | null>(null);
+
+  // The Pixel snippet records the document load. Later client navigations get one PageView each.
+  useEffect(() => {
+    const previous = pageViewPath.current;
+    pageViewPath.current = pathname;
+    if (shouldTrackSpaPageView(previous, pathname)) trackSpaPageView();
+  }, [pathname]);
 
   // Capture creator/campaign ?ref once on load so it survives to the Steam auth redirect.
   useEffect(() => {
@@ -523,7 +532,15 @@ export default function App() {
     next.delete("eid");
     setSearchParams(next, { replace: true });
     if (auth === "return") {
-      trackAuthReturn("login", null);
+      void fetch("/api/auth/me", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
+        .then(async (me) => {
+          const eventId = me?.steam_id ? await loginEventIdFromSteamId(me.steam_id) : null;
+          trackAuthReturn("login", eventId);
+        })
+        .catch(() => {
+          trackAuthReturn("login", null);
+        });
       return;
     }
     void fetch("/api/auth/me", { credentials: "include" })

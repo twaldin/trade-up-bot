@@ -20,6 +20,16 @@ export function pixelEvent(event: KeyEvent, params: FbqParams, eventId: string):
   }
 }
 
+/** One PageView for a client-side navigation. The head snippet already sent the document load. */
+export function pixelPageView(): void {
+  if (!clientTracking().metaPixelId || typeof fbq !== "function") return;
+  try {
+    fbq("track", "PageView");
+  } catch {
+    // Pixel errors must never break the page.
+  }
+}
+
 export function newEventId(prefix: string): string {
   const uuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()

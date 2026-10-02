@@ -1,4 +1,4 @@
-// Meta CAPI customer-information hashing: normalize (trim + lowercase), then SHA-256 hex.
+// Meta CAPI external-id hashing: normalize (trim + lowercase), then SHA-256 hex.
 import { createHash } from "node:crypto";
 
 export function sha256Hex(value: string): string {
@@ -9,11 +9,6 @@ function normalized(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const out = value.trim().toLowerCase();
   return out ? out : null;
-}
-
-export function hashEmail(email: unknown): string | null {
-  const value = normalized(email);
-  return value ? sha256Hex(value) : null;
 }
 
 export function hashExternalId(id: unknown): string | null {

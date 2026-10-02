@@ -35,6 +35,11 @@ export function purchaseEventId(checkoutSessionId: string): string {
   return `purchase_${checkoutSessionId}`;
 }
 
+/** Shared by the browser Pixel and CAPI so a return Steam sign-in is counted once. */
+export function loginEventId(externalIdHash: string): string {
+  return `login_${externalIdHash}`;
+}
+
 export type KeyEvent =
   | "purchase"
   | "begin_checkout"
@@ -43,6 +48,7 @@ export type KeyEvent =
   | "verify_click"
   | "view_item"
   | "sign_up"
+  | "login"
   | "lead";
 
 export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom"; name: string }>> = {
@@ -53,6 +59,7 @@ export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom
   verify_click: { kind: "custom", name: "VerifyClick" },
   view_item: { kind: "standard", name: "ViewContent" },
   sign_up: { kind: "standard", name: "CompleteRegistration" },
+  login: { kind: "custom", name: "Login" },
   lead: { kind: "standard", name: "Lead" },
 };
 

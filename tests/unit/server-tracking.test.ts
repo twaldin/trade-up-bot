@@ -3,7 +3,6 @@ import {
   checkoutSessionTrackingFields,
   checkoutTrackingMetadata,
   ga4PurchaseRequest,
-  hashEmail,
   hashExternalId,
   metaPurchaseRequest,
   purchaseConversionFromSession,
@@ -91,13 +90,7 @@ describe("serverTrackingConfig", () => {
   });
 });
 
-describe("hashing (Meta CAPI customer information spec)", () => {
-  it("normalizes email (trim + lowercase) before SHA-256", () => {
-    expect(hashEmail(" Test@Example.com ")).toBe(EMAIL_HASH);
-    expect(hashEmail("")).toBeNull();
-    expect(hashEmail(null)).toBeNull();
-  });
-
+describe("hashing (Meta CAPI external id)", () => {
   it("hashes external ids with SHA-256 hex", () => {
     expect(hashExternalId("76561198000000000")).toBe(STEAM_HASH);
     expect(hashExternalId("  ")).toBeNull();
@@ -157,7 +150,8 @@ describe("purchaseConversionFromSession", () => {
     expect(conv.valueCents).toBe(559);
     expect(conv.priceCents).toBe(699);
     expect(conv.currency).toBe("USD");
-    expect(conv.emailHash).toBe(EMAIL_HASH);
+    expect(JSON.stringify(conv).toLowerCase()).not.toContain("example.com");
+    expect(conv).not.toHaveProperty("emailHash");
   });
 });
 
@@ -192,7 +186,6 @@ describe("metaPurchaseRequest", () => {
         action_source: "website",
         event_source_url: "https://tradeupbot.app/",
         user_data: {
-          em: [EMAIL_HASH],
           external_id: [STEAM_HASH],
           client_ip_address: "203.0.113.7",
           client_user_agent: "Mozilla/5.0 test",
@@ -216,9 +209,14 @@ describe("metaPurchaseRequest", () => {
     });
   });
 
-  it("never sends a raw email", () => {
+  it("never sends email, a name, or a raw Steam ID", () => {
     const req = metaPurchaseRequest(conversion(), serverTrackingConfig(FULL_ENV).metaCapi!, "https://tradeupbot.app");
-    expect(JSON.stringify(req.body).toLowerCase()).not.toContain("test@example.com");
+    const body = JSON.stringify(req.body).toLowerCase();
+    expect(body).not.toContain("test@example.com");
+    expect(body).not.toContain("7656119");
+    expect(req.body.data[0].user_data).not.toHaveProperty("em");
+    expect(req.body.data[0].user_data).not.toHaveProperty("fn");
+    expect(req.body.data[0].user_data).not.toHaveProperty("ln");
   });
 });
 
@@ -272,6 +270,24 @@ describe("sendPurchaseConversions", () => {
     const result = await sendPurchaseConversions(conversion(), serverTrackingConfig({}), { fetchImpl, baseUrl: "https://tradeupbot.app" });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(result).toEqual({ meta: "skipped", ga4: "skipped" });
+  });
+
+  it("skips Meta purchase CAPI when the hashed external id is opted out, and still sends GA4", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const cfg = serverTrackingConfig({ ...FULL_ENV, META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${STEAM_HASH.toUpperCase()}, not-a-hash ` });
+    const result = await sendPurchaseConversions(conversion(), cfg, { fetchImpl, baseUrl: "https://tradeupbot.app" });
+    expect(result).toEqual({ meta: "skipped", ga4: "ok" });
+    const urls = fetchImpl.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("graph.facebook.com"))).toBe(false);
+    expect(urls.some((u) => u.startsWith("https://www.google-analytics.com/mp/collect"))).toBe(true);
+  });
+
+  it("still sends Meta purchase CAPI when the opt-out list names a different id", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const cfg = serverTrackingConfig({ ...FULL_ENV, META_CAPI_OPTOUT_EXTERNAL_IDS: "ab".repeat(32) });
+    const result = await sendPurchaseConversions(conversion(), cfg, { fetchImpl, baseUrl: "https://tradeupbot.app" });
+    expect(result.meta).toBe("ok");
+    expect(fetchImpl.mock.calls.map(([url]) => String(url)).some((u) => u.includes("graph.facebook.com"))).toBe(true);
   });
 
   it("posts to both endpoints when configured", async () => {

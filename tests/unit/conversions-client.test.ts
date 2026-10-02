@@ -8,6 +8,8 @@ import {
   trackAuthReturn,
   trackSteamContinue,
   trackPurchaseComplete,
+  trackSpaPageView,
+  shouldTrackSpaPageView,
   trackTradeUpDetailOpen,
   trackVerifyClick,
   trackCtaClick,
@@ -290,6 +292,50 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
     globalThis.fbq = undefined;
     installBrowser({ pathname: "/pricing" });
     expect(() => trackBeginCheckout("pro", 6.99)).not.toThrow();
+  });
+
+  it("does not fire Login when the event id is null or undefined", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackAuthReturn("login", null);
+    trackAuthReturn("login", undefined);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("sign_up and login share the server event id and omit identity fields", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackAuthReturn("sign_up", "reg_abc");
+    trackAuthReturn("login", "login_abc");
+    expect(fbq.mock.calls).toEqual([
+      ["track", "CompleteRegistration", { status: "complete" }, { eventID: "reg_abc" }],
+      ["trackCustom", "Login", { status: "complete" }, { eventID: "login_abc" }],
+    ]);
+    expect(JSON.stringify(fbq.mock.calls)).not.toMatch(/steam|email|@|display_name/i);
+  });
+
+  it("fires one PageView per client navigation and does not add a GA4 page_view", () => {
+    installBrowser({ pathname: "/pricing" });
+    expect(shouldTrackSpaPageView(null, "/pricing")).toBe(false);
+    expect(shouldTrackSpaPageView("/pricing", "/pricing")).toBe(false);
+    expect(shouldTrackSpaPageView("/pricing", "/trade-ups")).toBe(true);
+    trackSpaPageView();
+    trackSpaPageView();
+    expect(fbq.mock.calls).toEqual([
+      ["track", "PageView"],
+      ["track", "PageView"],
+    ]);
+    expect(gtag).not.toHaveBeenCalled();
+  });
+});
+
+describe("Meta Pixel with the id unset", () => {
+  it("page view and login do not call fbq and do not throw", () => {
+    installBrowser({ pathname: "/" });
+    expect(() => {
+      trackSpaPageView();
+      trackAuthReturn("login", "login_abc");
+      trackAuthReturn("sign_up", "reg_abc");
+    }).not.toThrow();
+    expect(fbq).not.toHaveBeenCalled();
   });
 });
 

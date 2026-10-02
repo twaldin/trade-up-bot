@@ -14,6 +14,8 @@ export interface MetaCapiConfig {
   pixelId: string;
   accessToken: string;
   testEventCode: string | null;
+  /** SHA-256 external ids excluded from Meta server events. */
+  optOutExternalIds: ReadonlySet<string>;
 }
 
 export interface ServerTrackingConfig {
@@ -26,6 +28,22 @@ function read(env: TrackingEnv, key: string): string | null {
   return value ? value : null;
 }
 
+/** Comma-separated SHA-256 hex ids. Blank entries and anything else are ignored. */
+export function capiOptOutExternalIds(raw: string | undefined): ReadonlySet<string> {
+  const ids = new Set<string>();
+  if (!raw) return ids;
+  for (const part of raw.split(",")) {
+    const id = part.trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/.test(id)) ids.add(id);
+  }
+  return ids;
+}
+
+export function isMetaCapiOptedOut(externalIdHash: string | null | undefined, ids: ReadonlySet<string>): boolean {
+  if (!externalIdHash) return false;
+  return ids.has(externalIdHash.trim().toLowerCase());
+}
+
 export function serverTrackingConfig(env: TrackingEnv = process.env): ServerTrackingConfig {
   const measurementId = read(env, "GA4_MEASUREMENT_ID");
   const apiSecret = read(env, "GA4_API_SECRET");
@@ -36,7 +54,12 @@ export function serverTrackingConfig(env: TrackingEnv = process.env): ServerTrac
       ? { measurementId, apiSecret, debug: read(env, "GA4_DEBUG_MODE") === "1" }
       : null,
     metaCapi: isValidMetaPixelId(pixelId) && accessToken
-      ? { pixelId, accessToken, testEventCode: read(env, "META_TEST_EVENT_CODE") }
+      ? {
+          pixelId,
+          accessToken,
+          testEventCode: read(env, "META_TEST_EVENT_CODE"),
+          optOutExternalIds: capiOptOutExternalIds(env.META_CAPI_OPTOUT_EXTERNAL_IDS),
+        }
       : null,
   };
 }

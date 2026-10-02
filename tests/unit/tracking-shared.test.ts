@@ -10,6 +10,7 @@ import {
   isValidDomainVerification,
   isValidGa4MeasurementId,
   isValidMetaPixelId,
+  loginEventId,
   purchaseEventId,
   sanitizeAttribution,
   trackedPlan,
@@ -67,6 +68,14 @@ describe("purchaseEventId", () => {
   });
 });
 
+describe("loginEventId", () => {
+  it("is deterministic per hashed external id so the Pixel and CAPI share it", () => {
+    expect(loginEventId("abc")).toBe("login_abc");
+    expect(loginEventId("abc")).toBe(loginEventId("abc"));
+    expect(loginEventId("abc")).not.toBe(loginEventId("def"));
+  });
+});
+
 describe("META_EVENTS", () => {
   it("maps standard events and keeps the rest custom", () => {
     expect(META_EVENTS.begin_checkout).toEqual({ kind: "standard", name: "InitiateCheckout" });
@@ -74,6 +83,7 @@ describe("META_EVENTS", () => {
     expect(META_EVENTS.trade_up_detail_open).toEqual({ kind: "standard", name: "ViewContent" });
     expect(META_EVENTS.view_item).toEqual({ kind: "standard", name: "ViewContent" });
     expect(META_EVENTS.sign_up).toEqual({ kind: "standard", name: "CompleteRegistration" });
+    expect(META_EVENTS.login).toEqual({ kind: "custom", name: "Login" });
     expect(META_EVENTS.lead).toEqual({ kind: "standard", name: "Lead" });
     expect(META_EVENTS.calculator_complete.kind).toBe("custom");
     expect(META_EVENTS.verify_click.kind).toBe("custom");

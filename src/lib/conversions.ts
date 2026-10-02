@@ -15,7 +15,7 @@ import {
 } from "../../shared/tracking.js";
 import { trackEvent, trackPurchase, type GtagItem } from "./analytics.js";
 import { checkoutAttribution, storedAttribution } from "./attribution.js";
-import { newEventId, pixelEvent, type FbqParams } from "./meta-pixel.js";
+import { newEventId, pixelEvent, pixelPageView, type FbqParams } from "./meta-pixel.js";
 import { clientTracking } from "./tracking-config.js";
 
 function pagePath(): string {
@@ -107,10 +107,26 @@ export function trackPricingView(): void {
   pixelEvent("view_item", { content_name: "pricing", content_type: "product" }, newEventId("pricing"));
 }
 
-/** Steam callback return. New accounts also fire Meta CompleteRegistration with the server's event id. */
-export function trackAuthReturn(kind: "sign_up" | "login", eventId: string | null): void {
+/** Steam callback return. Pixel events fire only with the id CAPI already used. */
+export function trackAuthReturn(kind: "sign_up" | "login", eventId?: string | null): void {
   sendGa4(kind, { method: "steam", page_path: pagePath() });
-  if (kind === "sign_up" && eventId) pixelEvent("sign_up", { status: "complete" }, eventId);
+  if (kind === "sign_up") {
+    if (eventId) pixelEvent("sign_up", { status: "complete" }, eventId);
+    return;
+  }
+  if (eventId) pixelEvent("login", { status: "complete" }, eventId);
+}
+
+/**
+ * Client-side route change. The gtag config already records each history page view, and the
+ * Pixel base code records the document load, so this only sends Meta PageView — once per path.
+ */
+export function shouldTrackSpaPageView(previousPath: string | null, nextPath: string): boolean {
+  return previousPath !== null && previousPath !== nextPath;
+}
+
+export function trackSpaPageView(): void {
+  pixelPageView();
 }
 
 /**
