@@ -1,6 +1,7 @@
 // Server-side tracker config. Read per call (not at module load) so .env loading order
 // never matters, and each tracker needs both its id and its secret to switch on.
 import { isValidGa4MeasurementId, isValidMetaPixelId } from "../../shared/tracking.js";
+import { hashExternalId } from "./hash.js";
 
 export type TrackingEnv = Readonly<Record<string, string | undefined>>;
 
@@ -28,15 +29,43 @@ function read(env: TrackingEnv, key: string): string | null {
   return value ? value : null;
 }
 
-/** Comma-separated SHA-256 hex ids. Blank entries and anything else are ignored. */
-export function capiOptOutExternalIds(raw: string | undefined): ReadonlySet<string> {
+export interface CapiOptOutParse {
+  ids: ReadonlySet<string>;
+  ignored: readonly string[];
+}
+
+function optOutTokenToHash(token: string): string | null {
+  if (/^\d{17}$/.test(token)) return hashExternalId(token);
+  const lower = token.toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(lower)) return lower;
+  return null;
+}
+
+/** Hashes and 17-digit SteamID64s. Separators are comma, semicolon, or newline. */
+export function parseCapiOptOutExternalIds(raw: string | undefined): CapiOptOutParse {
   const ids = new Set<string>();
-  if (!raw) return ids;
-  for (const part of raw.split(",")) {
-    const id = part.trim().toLowerCase();
-    if (/^[0-9a-f]{64}$/.test(id)) ids.add(id);
+  const ignored: string[] = [];
+  if (!raw) return { ids, ignored };
+  for (const part of raw.split(/[,;\r\n]+/)) {
+    const token = part.trim();
+    if (!token) continue;
+    const hash = optOutTokenToHash(token);
+    if (hash) ids.add(hash);
+    else ignored.push(token);
   }
-  return ids;
+  return { ids, ignored };
+}
+
+export function capiOptOutExternalIds(raw: string | undefined): ReadonlySet<string> {
+  return parseCapiOptOutExternalIds(raw).ids;
+}
+
+/** One warning per ignored entry. Call once at process start, not on each request. */
+export function logCapiOptOutIgnored(env: TrackingEnv = process.env, log: (message: string) => void = console.warn): void {
+  for (const entry of parseCapiOptOutExternalIds(env.META_CAPI_OPTOUT_EXTERNAL_IDS).ignored) {
+    const shown = entry.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80);
+    try { log(`[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: ${shown}`); } catch { /* ignore */ }
+  }
 }
 
 export function isMetaCapiOptedOut(externalIdHash: string | null | undefined, ids: ReadonlySet<string>): boolean {

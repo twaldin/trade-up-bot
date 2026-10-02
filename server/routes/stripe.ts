@@ -312,6 +312,18 @@ export function stripeRouter(pool: pg.Pool): Router {
             const items = await stripe.checkout.sessions.listLineItems(cs.id);
             return items.data.flatMap((item) => (item.price?.id ? [item.price.id] : []));
           },
+          lookupSteamId: async (customerId) => {
+            try {
+              const { rows } = await pool.query<{ steam_id: string }>(
+                "SELECT steam_id FROM users WHERE stripe_customer_id = $1",
+                [customerId],
+              );
+              const steamId = rows[0]?.steam_id;
+              return typeof steamId === "string" && steamId ? steamId : null;
+            } catch {
+              return null;
+            }
+          },
         });
       } catch {
         // Conversion tracking is best-effort; it must never fail the webhook.

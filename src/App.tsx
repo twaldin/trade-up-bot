@@ -527,15 +527,17 @@ export default function App() {
   useEffect(() => {
     const auth = searchParams.get("auth");
     if (auth !== "new" && auth !== "return") return;
+    const loginNonce = searchParams.get("lid");
     const next = new URLSearchParams(searchParams);
     next.delete("auth");
     next.delete("eid");
+    next.delete("lid");
     setSearchParams(next, { replace: true });
     if (auth === "return") {
       void fetch("/api/auth/me", { credentials: "include" })
         .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
         .then(async (me) => {
-          const eventId = me?.steam_id ? await loginEventIdFromSteamId(me.steam_id) : null;
+          const eventId = me?.steam_id && loginNonce ? await loginEventIdFromSteamId(me.steam_id, loginNonce) : null;
           trackAuthReturn("login", eventId);
         })
         .catch(() => {

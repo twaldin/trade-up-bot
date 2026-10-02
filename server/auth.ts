@@ -10,7 +10,7 @@ import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
-import { authReturnLocation, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -304,6 +304,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           delete req.session.returnTo;
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
+          const loginNonce = created ? null : newLoginNonce();
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -311,8 +312,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             cookieHeader: req.headers.cookie,
           };
           if (created) void trackCompleteRegistration(authTracking);
-          else void trackLogin(authTracking);
-          res.redirect(authReturnLocation(returnTo, created, process.env));
+          else if (loginNonce) void trackLogin({ ...authTracking, nonce: loginNonce });
+          res.redirect(authReturnLocation(returnTo, created, process.env, loginNonce));
         });
       })(req, res, next);
     });

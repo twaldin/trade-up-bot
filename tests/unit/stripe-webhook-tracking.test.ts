@@ -103,11 +103,25 @@ describe("Stripe webhook conversion side-effect", () => {
     Object.assign(process.env, TRACKING_ENV);
     const fetchSpy = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
-    const res = await post(checkoutCompleted());
+    const res = await post(checkoutCompleted({
+      metadata: { tub_plan: "pro_monthly", tub_ua: "Mozilla/5.0 test", tub_xid: "a".repeat(64) },
+    }));
     expect(res.status).toBe(200);
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
     const urls = fetchSpy.mock.calls.map(([url]) => String(url));
     expect(urls.filter((u) => u.includes("graph.facebook.com")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
+  });
+
+  it("skips Meta when an older checkout has no tub_xid and the user cannot be resolved", async () => {
+    Object.assign(process.env, TRACKING_ENV);
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const res = await post(checkoutCompleted());
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThan(0));
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((u) => u.includes("graph.facebook.com"))).toEqual([]);
     expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
   });
 

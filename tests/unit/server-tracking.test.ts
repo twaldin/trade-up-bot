@@ -4,6 +4,7 @@ import {
   checkoutTrackingMetadata,
   ga4PurchaseRequest,
   hashExternalId,
+  logCapiOptOutIgnored,
   metaPurchaseRequest,
   purchaseConversionFromSession,
   resolvePurchasePlan,
@@ -87,6 +88,29 @@ describe("serverTrackingConfig", () => {
     const cfg = serverTrackingConfig({ ...FULL_ENV, META_TEST_EVENT_CODE: "TEST123", GA4_DEBUG_MODE: "1" });
     expect(cfg.metaCapi?.testEventCode).toBe("TEST123");
     expect(cfg.ga4Mp?.debug).toBe(true);
+  });
+});
+
+describe("META_CAPI_OPTOUT_EXTERNAL_IDS", () => {
+  it("hashes 17-digit Steam IDs and accepts hashes across comma, semicolon, and newline", () => {
+    const ids = serverTrackingConfig({
+      ...FULL_ENV,
+      META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${STEAM_HASH.toUpperCase()};76561198000000000\n${"ab".repeat(32)} `,
+    }).metaCapi?.optOutExternalIds;
+    expect(ids?.has(STEAM_HASH)).toBe(true);
+    expect(ids?.has("ab".repeat(32))).toBe(true);
+    expect(ids?.size).toBe(2);
+  });
+
+  it("logs one warning per unparseable entry and none for blanks or valid ids", () => {
+    const log = vi.fn();
+    logCapiOptOutIgnored({
+      META_CAPI_OPTOUT_EXTERNAL_IDS: `76561198000000000, not-a-hash;\n\nshort, ${STEAM_HASH}`,
+    }, log);
+    expect(log.mock.calls.map(([message]) => message)).toEqual([
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: not-a-hash",
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: short",
+    ]);
   });
 });
 
@@ -272,6 +296,15 @@ describe("sendPurchaseConversions", () => {
     expect(result).toEqual({ meta: "skipped", ga4: "skipped" });
   });
 
+  it("does not send Meta when the checkout has no external id", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const bare = conversion({ metadata: { tub_plan: "pro_monthly" } });
+    expect(bare.externalIdHash).toBeNull();
+    const result = await sendPurchaseConversions(bare, serverTrackingConfig(FULL_ENV), { fetchImpl, baseUrl: "https://tradeupbot.app" });
+    expect(result).toEqual({ meta: "skipped", ga4: "ok" });
+    expect(fetchImpl.mock.calls.map(([url]) => String(url)).some((u) => u.includes("graph.facebook.com"))).toBe(false);
+  });
+
   it("skips Meta purchase CAPI when the hashed external id is opted out, and still sends GA4", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
     const cfg = serverTrackingConfig({ ...FULL_ENV, META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${STEAM_HASH.toUpperCase()}, not-a-hash ` });
@@ -336,6 +369,54 @@ describe("trackCheckoutCompleted", () => {
     const fetchImpl = vi.fn<typeof fetch>();
     await trackCheckoutCompleted({ session: session({ payment_status: "unpaid" }), eventCreatedSec: 1, listLineItemPriceIds: async () => [], env: FULL_ENV, fetchImpl });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uses the user's hashed Steam ID when the session has no tub_xid", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const lookupSteamId = vi.fn(async () => "76561198000000000");
+    await trackCheckoutCompleted({
+      session: session({ metadata: { tub_plan: "pro_monthly" }, customer: "cus_old" }),
+      eventCreatedSec: 1_700_000_100,
+      listLineItemPriceIds: async () => [],
+      lookupSteamId,
+      env: FULL_ENV,
+      fetchImpl,
+      log: vi.fn(),
+    });
+    expect(lookupSteamId).toHaveBeenCalledWith("cus_old");
+    const metaCall = fetchImpl.mock.calls.find(([url]) => String(url).includes("graph.facebook.com"));
+    const body = JSON.parse(String(metaCall?.[1]?.body)) as { data: Array<{ user_data: { external_id?: string[] } }> };
+    expect(body.data[0].user_data.external_id).toEqual([STEAM_HASH]);
+  });
+
+  it("does not send Meta when no user can be resolved for a checkout without tub_xid", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    await trackCheckoutCompleted({
+      session: session({ metadata: null, customer: { id: "cus_missing" } }),
+      eventCreatedSec: 1,
+      listLineItemPriceIds: async () => [],
+      lookupSteamId: async () => null,
+      env: FULL_ENV,
+      fetchImpl,
+      log: vi.fn(),
+    });
+    const urls = fetchImpl.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("graph.facebook.com"))).toBe(false);
+    expect(urls.some((u) => u.includes("google-analytics.com/mp/collect"))).toBe(true);
+  });
+
+  it("opts out a fallback Steam ID listed as a raw 17-digit id", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    await trackCheckoutCompleted({
+      session: session({ metadata: { tub_plan: "pro_monthly" }, customer: "cus_old" }),
+      eventCreatedSec: 1,
+      listLineItemPriceIds: async () => [],
+      lookupSteamId: async () => "76561198000000000",
+      env: { ...FULL_ENV, META_CAPI_OPTOUT_EXTERNAL_IDS: "76561198000000000" },
+      fetchImpl,
+      log: vi.fn(),
+    });
+    expect(fetchImpl.mock.calls.map(([url]) => String(url)).some((u) => u.includes("graph.facebook.com"))).toBe(false);
   });
 
   it("sends a Purchase with the shared event id when configured", async () => {

@@ -20,6 +20,7 @@ import { snapshotsRouter } from "./routes/snapshots.js";
 import { calculatorRouter } from "./routes/calculator.js";
 import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
+import { logCapiOptOutIgnored } from "./tracking.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
@@ -1342,6 +1343,8 @@ registerCanonicalRedirectRoutes(app);
     }
   });
   startBoardFlushSubscriber();
+
+  logCapiOptOutIgnored();
 
   // Start listening
   const server = app.listen(PORT, () => {
