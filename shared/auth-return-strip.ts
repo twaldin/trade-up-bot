@@ -1,6 +1,6 @@
-// Inline head script. It must run before gtag('config') and the Pixel base code so
-// the login nonce in ?auth=&lid= never becomes a GA4 page_location or a Pixel PageView URL.
-// The app reads window.__tubAuthReturn; analytics reads the replaced location.
+// Inline head script. It runs before every tracker snippet and before the app's
+// first fetch, so auth, lid, and eid never become a page_location or a Referer.
+// The app reads window.__tubAuthReturn. A later history rewrite would send a second page view.
 export const AUTH_RETURN_STRIP_SOURCE = `(function () {
         try {
           var params = new URLSearchParams(location.search);
@@ -9,6 +9,8 @@ export const AUTH_RETURN_STRIP_SOURCE = `(function () {
           var tracked = auth === "new" || auth === "return";
           if (tracked || lid) {
             window.__tubAuthReturn = { auth: tracked ? auth : null, lid: lid };
+          }
+          if (tracked || lid || params.has("eid")) {
             params.delete("auth");
             params.delete("lid");
             params.delete("eid");
@@ -21,3 +23,20 @@ export const AUTH_RETURN_STRIP_SOURCE = `(function () {
           }
         } catch (e) {}
       })();`;
+
+const TRACKER_MARKERS = ["googletagmanager.com/gtag/js", "gtag(", "fbq(", "fbevents.js", "tubTracking"];
+
+/** Insert the strip script before the first tracker snippet. No-op when it is already present. */
+export function prependAuthReturnStrip(html: string): string {
+  if (html.includes("__tubAuthReturn")) return html;
+  const block = `<script>\n      ${AUTH_RETURN_STRIP_SOURCE}\n    </script>\n    `;
+  let at = -1;
+  for (const marker of TRACKER_MARKERS) {
+    const found = html.indexOf(marker);
+    if (found !== -1 && (at === -1 || found < at)) at = found;
+  }
+  if (at === -1) return html.replace(/<head([^>]*)>/i, `<head$1>\n    ${block.trim()}\n    `);
+  const scriptAt = html.slice(0, at).lastIndexOf("<script");
+  const insertAt = scriptAt === -1 ? at : scriptAt;
+  return `${html.slice(0, insertAt)}${block}${html.slice(insertAt)}`;
+}

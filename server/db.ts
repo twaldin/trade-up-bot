@@ -45,7 +45,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-09-25.1";
+export const SCHEMA_VERSION = "2026-10-02.1";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
 
@@ -747,6 +747,32 @@ export async function createTables(pool: pg.Pool): Promise<void> {
       await pool.query("RESET lock_timeout").catch(() => {});
       await pool.query("SET statement_timeout = '0'").catch(() => {});
     }
+  }
+
+  // One Stripe customer per user, when the existing rows allow it. Multiple NULLs stay allowed.
+  // If duplicates are already stored, skip the index; purchase CAPI then refuses the ambiguous match.
+  try {
+    const indexName = "users_stripe_customer_id_uidx";
+    const { rows: indexes } = await pool.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1",
+      [indexName],
+    );
+    if (indexes.length === 0) {
+      const { rows: dupes } = await pool.query(
+        `SELECT 1 FROM users
+         WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id <> ''
+         GROUP BY stripe_customer_id
+         HAVING COUNT(*) > 1
+         LIMIT 1`,
+      );
+      if (dupes.length > 0) {
+        console.warn("[tracking] stripe_customer_id has duplicates; unique index skipped. Purchase CAPI skips when more than one user matches.");
+      } else {
+        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON users (stripe_customer_id)`);
+      }
+    }
+  } catch {
+    console.warn("[tracking] stripe_customer_id unique index skipped because existing rows are not unique");
   }
 
   // Record the schema version so subsequent boots short-circuit.

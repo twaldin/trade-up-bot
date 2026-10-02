@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { isLoginNonce, loginEventId, registrationEventId } from "../../shared/tracking.js";
 import { hashExternalId } from "../../server/tracking.js";
 import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "../../src/lib/registration-id.js";
-import { authReturnLocation, metaLoginRequest, metaRegistrationRequest, newLoginNonce, trackCompleteRegistration, trackLogin } from "../../server/tracking/registration.js";
+import { authReturnLocation, metaLoginRequest, metaRegistrationRequest, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "../../server/tracking/registration.js";
 
 const HASH = hashExternalId("76561198000000000");
 const NONCE = "ab".repeat(16);
@@ -24,6 +24,8 @@ describe("authReturnLocation", () => {
     expect(back).toBe(`/trade-ups?auth=return&lid=${NONCE}`);
     expect(back).not.toContain(HASH);
     expect(authReturnLocation("/trade-ups", false, ENV_OFF, NONCE)).toBe("/trade-ups");
+    expect(authReturnLocation("/trade-ups", false, { GA4_MEASUREMENT_ID: "G-NEWPROP123" }, NONCE)).toBe("/trade-ups?auth=return");
+    expect(authReturnLocation("/pricing", false, { META_PIXEL_ID: "123456789012345" }, NONCE)).toBe(`/pricing?auth=return&lid=${NONCE}`);
   });
 
   it("rejects an off-site return path", () => {
@@ -56,6 +58,16 @@ describe("CompleteRegistration CAPI", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     await expect(trackCompleteRegistration({ steamId: "76561198000000000", ip: "203.0.113.7", userAgent: "Mozilla", cookieHeader: "_fbp=fb.1.1.2", env: ENV_ON, fetchImpl, log: () => {} })).resolves.toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("issued login nonce", () => {
+  it("accepts the issued lid once and rejects a reuse", () => {
+    const first = takeIssuedLoginNonce(NONCE, NONCE);
+    expect(first).toEqual({ accepted: true, next: null });
+    expect(takeIssuedLoginNonce(first.next, NONCE)).toEqual({ accepted: false, next: null });
+    expect(takeIssuedLoginNonce(NONCE, "cd".repeat(16))).toEqual({ accepted: false, next: NONCE });
+    expect(takeIssuedLoginNonce(NONCE, "nope")).toEqual({ accepted: false, next: NONCE });
   });
 });
 

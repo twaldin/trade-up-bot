@@ -25,6 +25,8 @@
           var tracked = auth === "new" || auth === "return";
           if (tracked || lid) {
             window.__tubAuthReturn = { auth: tracked ? auth : null, lid: lid };
+          }
+          if (tracked || lid || params.has("eid")) {
             params.delete("auth");
             params.delete("lid");
             params.delete("eid");

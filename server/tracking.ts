@@ -9,8 +9,9 @@ export {
   purchaseConversionFromSession,
   resolvePurchasePlan,
   sendPurchaseConversions,
+  singleSteamId,
   trackCheckoutCompleted,
 } from "./tracking/purchase.js";
 export type { CheckoutSessionLike, PurchaseConversion, SendOutcome, TrackCheckoutCompletedArgs } from "./tracking/purchase.js";
 export { trackingCspSources } from "./tracking/csp.js";
-export { authReturnLocation, browserTrackingOn, metaLoginRequest, metaRegistrationRequest, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking/registration.js";
+export { authReturnLocation, browserTrackingOn, metaLoginRequest, metaRegistrationRequest, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking/registration.js";

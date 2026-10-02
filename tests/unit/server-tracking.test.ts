@@ -10,6 +10,7 @@ import {
   resolvePurchasePlan,
   sendPurchaseConversions,
   serverTrackingConfig,
+  singleSteamId,
   trackCheckoutCompleted,
   trackingCspSources,
   type CheckoutSessionLike,
@@ -110,8 +111,8 @@ describe("META_CAPI_OPTOUT_EXTERNAL_IDS", () => {
       META_CAPI_OPTOUT_EXTERNAL_IDS: `76561198000000000, not-a-hash;\n\nshort, ${STEAM_HASH}`,
     }, log);
     expect(log.mock.calls.map(([message]) => message)).toEqual([
-      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: not-a-ha (len=10)",
-      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: short (len=5)",
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: not- (len=10)",
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: shor (len=5)",
     ]);
     const logged = JSON.stringify(log.mock.calls);
     expect(logged).not.toContain("not-a-hash");
@@ -393,6 +394,13 @@ describe("trackCheckoutCompleted", () => {
     expect(body.data[0].user_data.external_id).toEqual([STEAM_HASH]);
   });
 
+  it("returns one Steam ID and nothing when the customer is missing or ambiguous", () => {
+    expect(singleSteamId([{ steam_id: "76561198000000000" }])).toBe("76561198000000000");
+    expect(singleSteamId([])).toBeNull();
+    expect(singleSteamId([{ steam_id: "" }])).toBeNull();
+    expect(singleSteamId([{ steam_id: "76561198000000000" }, { steam_id: "76561198000000001" }])).toBeNull();
+  });
+
   it("does not send Meta when no user can be resolved for a checkout without tub_xid", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
     await trackCheckoutCompleted({
@@ -400,6 +408,25 @@ describe("trackCheckoutCompleted", () => {
       eventCreatedSec: 1,
       listLineItemPriceIds: async () => [],
       lookupSteamId: async () => null,
+      env: FULL_ENV,
+      fetchImpl,
+      log: vi.fn(),
+    });
+    const urls = fetchImpl.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("graph.facebook.com"))).toBe(false);
+    expect(urls.some((u) => u.includes("google-analytics.com/mp/collect"))).toBe(true);
+  });
+
+  it("does not send Meta when more than one user matches the Stripe customer", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    await trackCheckoutCompleted({
+      session: session({ metadata: null, customer: "cus_shared" }),
+      eventCreatedSec: 1,
+      listLineItemPriceIds: async () => [],
+      lookupSteamId: async () => singleSteamId([
+        { steam_id: "76561198000000000" },
+        { steam_id: "76561198000000001" },
+      ]),
       env: FULL_ENV,
       fetchImpl,
       log: vi.fn(),

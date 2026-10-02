@@ -10,6 +10,7 @@ import {
   checkoutSessionTrackingFields,
   checkoutTrackingMetadata,
   serverTrackingConfig,
+  singleSteamId,
   trackCheckoutCompleted,
 } from "../tracking.js";
 
@@ -318,8 +319,7 @@ export function stripeRouter(pool: pg.Pool): Router {
                 "SELECT steam_id FROM users WHERE stripe_customer_id = $1",
                 [customerId],
               );
-              const steamId = rows[0]?.steam_id;
-              return typeof steamId === "string" && steamId ? steamId : null;
+              return singleSteamId(rows);
             } catch {
               return null;
             }

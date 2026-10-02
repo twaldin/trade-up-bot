@@ -10,7 +10,8 @@ import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
-import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import { isValidMetaPixelId } from "../shared/tracking.js";
+import { authReturnLocation, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -86,6 +87,7 @@ declare module "express-session" {
     returnTo?: string;
     discordState?: string;
     signupRef?: string;
+    pendingLoginNonce?: string;
   }
 }
 
@@ -304,7 +306,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           delete req.session.returnTo;
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
-          const loginNonce = created ? null : newLoginNonce();
+          const loginNonce = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
+          if (loginNonce) req.session.pendingLoginNonce = loginNonce;
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -322,6 +325,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   // Logout
   app.get("/auth/logout", (req, res) => {
     req.logout(() => res.redirect("/"));
+  });
+
+  // One-time consume of the login nonce stored on this session. A reused lid is not a Login.
+  app.post("/api/auth/login-nonce", (req, res) => {
+    const lid = readLoginNonceBody(req.body);
+    const taken = takeIssuedLoginNonce(req.session.pendingLoginNonce, lid);
+    if (taken.next) req.session.pendingLoginNonce = taken.next;
+    else delete req.session.pendingLoginNonce;
+    res.json({ accepted: taken.accepted });
   });
 
   // Current user API
@@ -357,6 +369,12 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     console.log(`Admin set tier: ${targetId} → ${tier}`);
     res.json({ success: true, steam_id: targetId, tier });
   });
+}
+
+function readLoginNonceBody(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  return typeof record.lid === "string" ? record.lid : null;
 }
 
 // Middleware: require login

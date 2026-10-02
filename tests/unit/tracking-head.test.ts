@@ -81,6 +81,9 @@ describe("injectTrackingHead with GA4_MEASUREMENT_ID", () => {
     expect(html).toContain('<script async src="https://www.googletagmanager.com/gtag/js?id=G-NEWPROP123"></script>');
     expect(html).toContain("function gtag(){dataLayer.push(arguments);}");
     expect(html).toContain("gtag('config','G-NEWPROP123',{page_location:window.__tubPageLocation||location.href})");
+    expect(html.indexOf("__tubAuthReturn")).toBeGreaterThan(-1);
+    expect(html.indexOf("__tubAuthReturn")).toBeLessThan(html.indexOf("googletagmanager.com/gtag/js"));
+    expect(html.indexOf("__tubAuthReturn")).toBeLessThan(html.indexOf("gtag('config'"));
   });
 });
 

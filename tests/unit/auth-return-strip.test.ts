@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { AUTH_RETURN_STRIP_SOURCE } from "../../shared/auth-return-strip.js";
-import { consumeAuthReturn, type AuthReturnStash } from "../../src/lib/auth-return.js";
+import { consumeAuthReturn, resolveLoginEventId, type AuthReturnStash } from "../../src/lib/auth-return.js";
 import { injectTrackingHead } from "../../shared/tracking-head.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -59,6 +59,13 @@ describe("auth return strip script", () => {
     expect(result.pageLocation).toBe("https://tradeupbot.app/trade-ups?session_id=cs_test");
   });
 
+  it("removes eid even when auth and lid are absent", () => {
+    const result = runStrip("https://tradeupbot.app/pricing?eid=legacy&utm_source=google#buy");
+    expect(result.stash).toBeUndefined();
+    expect(result.replaced).toEqual(["/pricing?utm_source=google#buy"]);
+    expect(result.pageLocation).toBe("https://tradeupbot.app/pricing?utm_source=google#buy");
+  });
+
   it("leaves a url without auth or lid unchanged", () => {
     const result = runStrip("https://tradeupbot.app/pricing?utm_source=google#plans");
     expect(result.stash).toBeUndefined();
@@ -85,8 +92,21 @@ describe("app consumes the stashed lid", () => {
     expect(consumeAuthReturn(() => current, () => { current = null; })).toEqual({ auth: "return", lid: NONCE });
     expect(consumeAuthReturn(() => current, () => { current = null; })).toBeNull();
     expect(appSource).toContain("consumeAuthReturn()");
+    expect(appSource).toContain("resolveLoginEventId(");
     expect(appSource).not.toContain('searchParams.get("lid")');
     expect(appSource).not.toContain('searchParams.get("auth")');
+    expect(appSource).not.toMatch(/delete\(["'](?:lid|auth|eid)["']\)/);
+  });
+
+  it("derives a Login id once per issued nonce and skips a reused lid", async () => {
+    const seen: string[] = [];
+    const accept = async (lid: string) => {
+      seen.push(lid);
+      return seen.length === 1;
+    };
+    await expect(resolveLoginEventId("76561198000000000", NONCE, accept)).resolves.toMatch(/^login_[0-9a-f]{64}_[0-9a-f]{32}$/);
+    await expect(resolveLoginEventId("76561198000000000", NONCE, async () => false)).resolves.toBeNull();
+    await expect(resolveLoginEventId("76561198000000000", null, async () => true)).resolves.toBeNull();
   });
 
   it("reads window.__tubAuthReturn by default and then clears it", () => {

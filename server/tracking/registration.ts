@@ -24,8 +24,21 @@ export function authReturnLocation(returnTo: string, created: boolean, env: Trac
   }
   if (url.origin !== "https://tradeupbot.app") return returnTo;
   url.searchParams.set("auth", created ? "new" : "return");
-  if (!created && isLoginNonce(loginNonce)) url.searchParams.set("lid", loginNonce);
+  // lid is only for the Pixel Login event id. GA4 does not need it, and a bare lid leaks into page_location.
+  if (!created && isLoginNonce(loginNonce) && isValidMetaPixelId(env.META_PIXEL_ID?.trim())) {
+    url.searchParams.set("lid", loginNonce);
+  }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** True only when this lid is the one the server just issued. Clears it so a replay does not count. */
+export function takeIssuedLoginNonce(
+  stored: string | null | undefined,
+  lid: string | null | undefined,
+): { accepted: boolean; next: string | null } {
+  const pending = isLoginNonce(stored) ? stored : null;
+  if (!pending || !isLoginNonce(lid) || pending !== lid) return { accepted: false, next: pending };
+  return { accepted: true, next: null };
 }
 
 function cookieValue(header: string | undefined, name: string): string | null {

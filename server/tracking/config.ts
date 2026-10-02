@@ -60,10 +60,10 @@ export function capiOptOutExternalIds(raw: string | undefined): ReadonlySet<stri
   return parseCapiOptOutExternalIds(raw).ids;
 }
 
-/** First 8 visible characters plus the entry length. Never the rest of the value. */
+/** First 4 visible characters plus the entry length. Never the rest of the value. */
 export function capiOptOutIgnoredEcho(entry: string): string {
   const visible = entry.replace(/[\u0000-\u001f\u007f]/g, "");
-  return `${visible.slice(0, 8)} (len=${entry.length})`;
+  return `${visible.slice(0, 4)} (len=${entry.length})`;
 }
 
 /** One warning per ignored entry. Call once at process start, not on each request. */

@@ -14,8 +14,8 @@ import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
 import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
-import { consumeAuthReturn } from "./lib/auth-return.js";
-import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "./lib/registration-id.js";
+import { consumeAuthReturn, resolveLoginEventId } from "./lib/auth-return.js";
+import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
@@ -523,9 +523,9 @@ export default function App() {
     });
   }, [searchParams, setSearchParams]);
 
-  // Steam callback return. The head script stashes auth and lid, then strips them
-  // from the URL before gtag or the Pixel read location. The event id is hashed
-  // here from /api/auth/me and is never put in the URL.
+  // Steam callback return. The head script already removed auth, lid, and eid, so
+  // this effect must not call history or setSearchParams — a late rewrite is a second page view.
+  // The Login event id is hashed here only after the server accepts the nonce once.
   useEffect(() => {
     const stashed = consumeAuthReturn();
     if (!stashed) return;
@@ -534,12 +534,10 @@ export default function App() {
       void fetch("/api/auth/me", { credentials: "include" })
         .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
         .then(async (me) => {
-          const eventId = me?.steam_id && loginNonce ? await loginEventIdFromSteamId(me.steam_id, loginNonce) : null;
-          trackAuthReturn("login", eventId);
+          const eventId = await resolveLoginEventId(me?.steam_id, loginNonce);
+          if (eventId) trackAuthReturn("login", eventId);
         })
-        .catch(() => {
-          trackAuthReturn("login", null);
-        });
+        .catch(() => {});
       return;
     }
     void fetch("/api/auth/me", { credentials: "include" })

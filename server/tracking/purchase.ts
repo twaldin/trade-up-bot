@@ -281,6 +281,13 @@ export interface TrackCheckoutCompletedArgs {
   timeoutMs?: number;
 }
 
+/** One Steam ID, or null when the customer matches nobody or more than one user. */
+export function singleSteamId(rows: readonly { steam_id?: string | null }[]): string | null {
+  if (rows.length !== 1) return null;
+  const steamId = rows[0]?.steam_id;
+  return typeof steamId === "string" && steamId.length > 0 ? steamId : null;
+}
+
 function stripeCustomerId(customer: CheckoutSessionLike["customer"]): string | null {
   if (typeof customer === "string" && customer.length > 0) return customer;
   if (customer && typeof customer === "object" && typeof customer.id === "string" && customer.id.length > 0) return customer.id;
