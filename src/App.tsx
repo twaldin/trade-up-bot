@@ -14,6 +14,7 @@ import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
 import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
+import { consumeAuthReturn } from "./lib/auth-return.js";
 import { loginEventIdFromSteamId, registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
@@ -522,18 +523,14 @@ export default function App() {
     });
   }, [searchParams, setSearchParams]);
 
-  // Steam callback return. The server adds auth=new|return only when a tracker id is set.
-  // The CompleteRegistration event id is hashed here from /api/auth/me, never put in the URL.
+  // Steam callback return. The head script stashes auth and lid, then strips them
+  // from the URL before gtag or the Pixel read location. The event id is hashed
+  // here from /api/auth/me and is never put in the URL.
   useEffect(() => {
-    const auth = searchParams.get("auth");
-    if (auth !== "new" && auth !== "return") return;
-    const loginNonce = searchParams.get("lid");
-    const next = new URLSearchParams(searchParams);
-    next.delete("auth");
-    next.delete("eid");
-    next.delete("lid");
-    setSearchParams(next, { replace: true });
-    if (auth === "return") {
+    const stashed = consumeAuthReturn();
+    if (!stashed) return;
+    if (stashed.auth === "return") {
+      const loginNonce = stashed.lid;
       void fetch("/api/auth/me", { credentials: "include" })
         .then((res) => (res.ok ? res.json() as Promise<{ steam_id?: string } | null> : null))
         .then(async (me) => {
@@ -554,7 +551,7 @@ export default function App() {
       .catch(() => {
         trackAuthReturn("sign_up", null);
       });
-  }, [searchParams, setSearchParams]);
+  }, []);
 
   return (
     <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>

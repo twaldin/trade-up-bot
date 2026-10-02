@@ -144,6 +144,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      // 'unsafe-inline' allows the static gtag snippet and the auth-return strip
+      // script in index.html. Both are inline, neither uses a nonce or hash.
       scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", ...trackingCsp.scriptSrc],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],

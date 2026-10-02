@@ -7,15 +7,18 @@ export const TRACKING_HEAD_ENV_KEYS = ["GA4_MEASUREMENT_ID", "META_PIXEL_ID", "M
 
 export type TrackingHeadEnv = Partial<Record<(typeof TRACKING_HEAD_ENV_KEYS)[number], string | undefined>>;
 
+// Explicit page_location so a late config still sends the URL the strip script cleaned.
+const GA4_PAGE_LOCATION = "{page_location:window.__tubPageLocation||location.href}";
+
 function ga4Tags(html: string, id: string): string[] {
   const alreadyConfigured = new RegExp(`gtag\\(\\s*['"]config['"]\\s*,\\s*['"]${id}['"]`).test(html);
   if (alreadyConfigured) return [];
   if (/googletagmanager\.com\/gtag\/js/.test(html)) {
-    return [`<script>gtag('config','${id}');</script>`];
+    return [`<script>gtag('config','${id}',${GA4_PAGE_LOCATION});</script>`];
   }
   return [
     `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>`,
-    `<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');</script>`,
+    `<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}',${GA4_PAGE_LOCATION});</script>`,
   ];
 }
 
