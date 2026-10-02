@@ -41,12 +41,12 @@ function optOutTokenToHash(token: string): string | null {
   return null;
 }
 
-/** Hashes and 17-digit SteamID64s. Separators are comma, semicolon, or newline. */
+/** Hashes and 17-digit SteamID64s. Separators are comma, semicolon, space, tab, or newline. */
 export function parseCapiOptOutExternalIds(raw: string | undefined): CapiOptOutParse {
   const ids = new Set<string>();
   const ignored: string[] = [];
   if (!raw) return { ids, ignored };
-  for (const part of raw.split(/[,;\r\n]+/)) {
+  for (const part of raw.split(/[,;\s]+/)) {
     const token = part.trim();
     if (!token) continue;
     const hash = optOutTokenToHash(token);
@@ -60,11 +60,16 @@ export function capiOptOutExternalIds(raw: string | undefined): ReadonlySet<stri
   return parseCapiOptOutExternalIds(raw).ids;
 }
 
+/** First 8 visible characters plus the entry length. Never the rest of the value. */
+export function capiOptOutIgnoredEcho(entry: string): string {
+  const visible = entry.replace(/[\u0000-\u001f\u007f]/g, "");
+  return `${visible.slice(0, 8)} (len=${entry.length})`;
+}
+
 /** One warning per ignored entry. Call once at process start, not on each request. */
 export function logCapiOptOutIgnored(env: TrackingEnv = process.env, log: (message: string) => void = console.warn): void {
   for (const entry of parseCapiOptOutExternalIds(env.META_CAPI_OPTOUT_EXTERNAL_IDS).ignored) {
-    const shown = entry.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80);
-    try { log(`[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: ${shown}`); } catch { /* ignore */ }
+    try { log(`[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: ${capiOptOutIgnoredEcho(entry)}`); } catch { /* ignore */ }
   }
 }
 

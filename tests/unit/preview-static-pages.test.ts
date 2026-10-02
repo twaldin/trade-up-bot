@@ -104,6 +104,7 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(legal).toContain("tradeupbot@gmail.com");
     expect(legal).toContain("Steam profile link");
     expect(legal).toContain("utm campaign params");
+    expect(legal).toContain("click ids (<code>gclid</code> and <code>fbclid</code>)");
     expect(legal).toContain("opt-out add-on stops browser Google Analytics only");
     expect(legal).not.toContain("hash of your email");
     expect(legal).toContain("https://tools.google.com/dlpage/gaoptout");

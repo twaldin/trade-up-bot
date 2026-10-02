@@ -92,14 +92,16 @@ describe("serverTrackingConfig", () => {
 });
 
 describe("META_CAPI_OPTOUT_EXTERNAL_IDS", () => {
-  it("hashes 17-digit Steam IDs and accepts hashes across comma, semicolon, and newline", () => {
+  it("hashes 17-digit Steam IDs and accepts hashes across comma, semicolon, newline, space, and tab", () => {
     const ids = serverTrackingConfig({
       ...FULL_ENV,
-      META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${STEAM_HASH.toUpperCase()};76561198000000000\n${"ab".repeat(32)} `,
+      META_CAPI_OPTOUT_EXTERNAL_IDS: ` ${STEAM_HASH.toUpperCase()};76561198000000000\n${"ab".repeat(32)} ${"cd".repeat(32)}\t${"ef".repeat(32)} `,
     }).metaCapi?.optOutExternalIds;
     expect(ids?.has(STEAM_HASH)).toBe(true);
     expect(ids?.has("ab".repeat(32))).toBe(true);
-    expect(ids?.size).toBe(2);
+    expect(ids?.has("cd".repeat(32))).toBe(true);
+    expect(ids?.has("ef".repeat(32))).toBe(true);
+    expect(ids?.size).toBe(4);
   });
 
   it("logs one warning per unparseable entry and none for blanks or valid ids", () => {
@@ -108,9 +110,11 @@ describe("META_CAPI_OPTOUT_EXTERNAL_IDS", () => {
       META_CAPI_OPTOUT_EXTERNAL_IDS: `76561198000000000, not-a-hash;\n\nshort, ${STEAM_HASH}`,
     }, log);
     expect(log.mock.calls.map(([message]) => message)).toEqual([
-      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: not-a-hash",
-      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: short",
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: not-a-ha (len=10)",
+      "[tracking] META_CAPI_OPTOUT_EXTERNAL_IDS ignored unparseable entry: short (len=5)",
     ]);
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).not.toContain("not-a-hash");
   });
 });
 
