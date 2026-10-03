@@ -1,7 +1,7 @@
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
-import { classifyIndexError, ensureStripeCustomerIdUniqueIndex, schemaVersionAfterIndex, type IndexEnsureResult } from "./stripe-customer-index.js";
+import { classifyIndexError, ensureStripeCustomerIdUniqueIndex } from "./stripe-customer-index.js";
 
 const { Pool } = pg;
 
@@ -46,9 +46,12 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-10-02.3";
+export const SCHEMA_VERSION = "2026-10-02.4";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
+// Not the migration lock (key 1). CREATE INDEX CONCURRENTLY must not run while
+// another session is waiting on that lock.
+const STRIPE_CUSTOMER_INDEX_LOCK = 2;
 
 async function schemaVersionOn(client: pg.PoolClient): Promise<string | null> {
   try {
@@ -62,16 +65,26 @@ async function schemaVersionOn(client: pg.PoolClient): Promise<string | null> {
 }
 
 /** Create all tables if they don't exist. Run once at startup.
- *  Skips if tables already exist (fast path for normal restarts).
- *  Short-circuits entirely when the DB schema_version matches SCHEMA_VERSION. */
+ *  Skips the migration body when schema_version matches.
+ *  The stripe customer index runs after that lock is released, and retries on
+ *  the next boot if it did not land. */
 export async function createTables(pool: pg.Pool): Promise<void> {
-  // Fast path: skip the entire migration body if schema is already at this version.
+  try {
+  await migrateTables(pool);
+  } finally {
+    // After the migration lock is gone. Never throws.
+    await ensureStripeCustomerIndex(pool);
+  }
+}
+
+async function migrateTables(pool: pg.Pool): Promise<void> {
+  // Fast path: skip the migration body if schema is already at this version.
   // getSyncMeta may throw if sync_meta doesn't exist yet (fresh DB) — catch and fall through.
   const current = await getSyncMeta(pool, "schema_version").catch(() => null);
   if (current === SCHEMA_VERSION) return;
 
-  // Serialize concurrent startup calls to prevent CREATE INDEX deadlocks when multiple
-  // processes start simultaneously. Session advisory lock is released in finally.
+  // Serialize concurrent startup calls. The stripe customer index is not built
+  // while this lock is held. Session advisory lock is released in finally.
   const lockClient = await pool.connect();
   try {
     // Bound the wait. A second startup must fail instead of sitting on this lock forever.
@@ -750,37 +763,55 @@ export async function createTables(pool: pg.Pool): Promise<void> {
     }
   }
 
-  // Unique nonempty stripe_customer_id. The advisory lock is held on lockClient.
-  // CONCURRENTLY cannot run in a transaction, and lockClient may already be in
-  // one, so this uses a fresh autocommit connection. pool.connect is not proxied
-  // onto lockClient. An INVALID index is dropped and rebuilt. Failure logs the
-  // cause (duplicates, lock, timeout, or other) and does not fail startup.
-  // schema_version is recorded only when the index is in place, so the next
-  // boot runs this step again.
-  let indexOutcome: IndexEnsureResult = classifyIndexError(new Error("index connection was not opened"));
-  try {
-    const indexClient = await pool.connect();
-    try {
-      await indexClient.query("SET lock_timeout = '30s'");
-      indexOutcome = await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
-        const result = await indexClient.query(sql, params);
-        return { rows: result.rows };
-      }, (message) => console.warn(message));
-    } finally {
-      indexClient.release();
-    }
-  } catch (err) {
-    indexOutcome = classifyIndexError(err);
-    console.warn(indexOutcome.message);
-  }
-
-  const recordedVersion = schemaVersionAfterIndex(indexOutcome, SCHEMA_VERSION);
-  if (recordedVersion) await setSyncMeta(pool, "schema_version", recordedVersion);
+  // schema_version is recorded whether or not the customer index exists.
+  // The index is built after this lock is released.
+  await setSyncMeta(pool, "schema_version", SCHEMA_VERSION);
 
   } finally {
     await lockClient.query("RESET lock_timeout").catch(() => {});
     await lockClient.query("SELECT pg_advisory_unlock(1)").catch(() => {});
     lockClient.release();
+  }
+}
+
+/** Partial unique index on nonempty stripe_customer_id. Its own try-lock, never the migration lock.
+ *  A missed lock means another process is building it. Failure is logged and does not throw. */
+async function ensureStripeCustomerIndex(pool: pg.Pool): Promise<void> {
+  let client: pg.PoolClient | undefined;
+  let locked = false;
+  try {
+    client = await pool.connect();
+    await client.query("SET lock_timeout = '30s'");
+    const { rows } = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock($1) AS locked",
+      [STRIPE_CUSTOMER_INDEX_LOCK],
+    );
+    locked = rows[0]?.locked === true;
+    if (!locked) return;
+    const indexClient = client;
+    await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
+      const result = await indexClient.query(sql, params);
+      return { rows: result.rows };
+    }, (message) => console.warn(message));
+  } catch (err) {
+    console.warn(classifyIndexError(err).message);
+  } finally {
+    if (client) {
+      let discard: Error | undefined;
+      if (locked) {
+        try {
+          await client.query("SELECT pg_advisory_unlock($1)", [STRIPE_CUSTOMER_INDEX_LOCK]);
+        } catch (err) {
+          discard = err instanceof Error ? err : new Error("stripe customer index unlock failed");
+        }
+      }
+      try {
+        await client.query("RESET lock_timeout");
+      } catch (err) {
+        discard = discard ?? (err instanceof Error ? err : new Error("stripe customer index lock_timeout reset failed"));
+      }
+      client.release(discard);
+    }
   }
 }
 

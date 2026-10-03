@@ -1,6 +1,6 @@
 // Unique stripe_customer_id for nonempty values. CREATE INDEX CONCURRENTLY
-// cannot run inside a transaction, so callers must use a connection that has
-// not issued BEGIN. The migration advisory lock stays on the other session.
+// cannot run inside a transaction, so callers must use an autocommit connection
+// that is not waiting on, or holding, the migration advisory lock.
 export const STRIPE_CUSTOMER_INDEX = "users_stripe_customer_id_uidx";
 
 /** Rows this index covers. The duplicate pre-check uses the same predicate. */
@@ -23,11 +23,6 @@ export type IndexEnsureResult =
 
 export interface IndexQuery {
   (sql: string, params?: unknown[]): Promise<{ rows: readonly Record<string, unknown>[] }>;
-}
-
-/** Record schema_version only when the index is actually in place, so the next boot retries. */
-export function schemaVersionAfterIndex(outcome: IndexEnsureResult, version: string): string | null {
-  return outcome.ok ? version : null;
 }
 
 function skipped(reason: IndexFailureReason, detail: string): { ok: false; reason: IndexFailureReason; message: string } {

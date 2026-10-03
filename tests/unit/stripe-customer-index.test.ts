@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   classifyIndexError,
   ensureStripeCustomerIdUniqueIndex,
-  schemaVersionAfterIndex,
   STRIPE_CUSTOMER_INDEX,
   STRIPE_CUSTOMER_NONEMPTY,
   type IndexQuery,
@@ -133,11 +132,13 @@ describe("stripe_customer_id unique index", () => {
     expect(String(log.mock.calls[0][0])).toContain("disk full");
   });
 
-  it("does not record the schema version when the index was not created", () => {
-    expect(schemaVersionAfterIndex({ ok: true }, "2026-10-02.3")).toBe("2026-10-02.3");
-    for (const reason of ["duplicates", "lock", "timeout", "other"] as const) {
-      expect(schemaVersionAfterIndex({ ok: false, reason, message: reason }, "2026-10-02.3")).toBeNull();
-    }
+  it("names duplicates only when duplicate rows are the cause", () => {
+    const duplicates = classifyIndexError(Object.assign(new Error("could not create unique index"), { code: "23505" }));
+    expect(duplicates.message).toContain("duplicates");
+    expect(duplicates.message).not.toContain("not unique");
+    const other = classifyIndexError(Object.assign(new Error("disk full"), { code: "53100" }));
+    expect(other.message).not.toContain("not unique");
+    expect(other.message).not.toContain("duplicates");
   });
 
 });
