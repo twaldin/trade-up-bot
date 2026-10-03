@@ -6,19 +6,32 @@ import type Database from "better-sqlite3";
 import { isLoginNonce } from "../shared/tracking.js";
 import { LOGIN_NONCE_TTL_MS } from "./tracking/registration.js";
 
+const MARK_CONSUMED = `json_set(json_remove(sess, '$.pendingLogin'), '$.consumedLoginNonce', json_extract(sess, '$.pendingLogin.nonce'))`;
+
 const CONSUME_SQL = `UPDATE sessions
-  SET sess = json_remove(sess, '$.pendingLogin')
+  SET sess = ${MARK_CONSUMED}
   WHERE sid = ?
     AND json_extract(sess, '$.pendingLogin.nonce') = ?
     AND json_type(sess, '$.pendingLogin.issuedAt') IN ('integer', 'real')
     AND (? - json_extract(sess, '$.pendingLogin.issuedAt')) < ?`;
 
 const CLEAR_EXPIRED_SQL = `UPDATE sessions
-  SET sess = json_remove(sess, '$.pendingLogin')
+  SET sess = ${MARK_CONSUMED}
   WHERE sid = ?
     AND json_extract(sess, '$.pendingLogin.nonce') = ?
     AND json_type(sess, '$.pendingLogin.issuedAt') IN ('integer', 'real')
     AND (? - json_extract(sess, '$.pendingLogin.issuedAt')) >= ?`;
+
+/** A later full-session write must not put a consumed nonce back. */
+export const SESSION_SAVE_SQL = `INSERT INTO sessions (sid, sess, expired) VALUES (?, ?, ?)
+  ON CONFLICT(sid) DO UPDATE SET
+    expired = excluded.expired,
+    sess = CASE
+      WHEN json_extract(sessions.sess, '$.consumedLoginNonce') IS NOT NULL
+       AND json_extract(sessions.sess, '$.consumedLoginNonce') = json_extract(excluded.sess, '$.pendingLogin.nonce')
+      THEN json_set(json_remove(excluded.sess, '$.pendingLogin'), '$.consumedLoginNonce', json_extract(sessions.sess, '$.consumedLoginNonce'))
+      ELSE excluded.sess
+    END`;
 
 /** True only for the first caller that still holds this unexpired nonce. */
 export function consumeStoredLoginNonce(

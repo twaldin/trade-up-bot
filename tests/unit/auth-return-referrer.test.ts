@@ -69,8 +69,6 @@ describe("delayed bundle does not leak the login nonce", () => {
       const target = `http://127.0.0.1:${port}/pricing?auth=return&lid=${NONCE}&eid=legacy&session_id=cs_test_123&upgraded=pro&utm_source=google#plans`;
       const apiSeen = page.waitForResponse((res) => res.url().includes("/api/auth/me"), { timeout: 15_000 });
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 15_000 });
-      expect(await page.evaluate(() => location.search)).toBe("?utm_source=google");
-      expect(await page.evaluate(() => location.hash)).toBe("#plans");
       await apiSeen;
       const tracked = hits.filter((hit) => hit.url.startsWith("/collect") || hit.url.startsWith("/tr") || hit.url.startsWith("/api/"));
       expect(tracked.some((hit) => hit.url.startsWith("/collect"))).toBe(true);
@@ -86,6 +84,8 @@ describe("delayed bundle does not leak the login nonce", () => {
       }
       const api = tracked.filter((hit) => hit.url.startsWith("/api/"));
       expect(api.every((hit) => hit.referer.includes("/pricing"))).toBe(true);
+      expect(await page.evaluate(() => location.search)).toBe("?utm_source=google");
+      expect(await page.evaluate(() => location.hash)).toBe("#plans");
     } finally {
       await page.close();
     }

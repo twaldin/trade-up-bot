@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { consumeStoredLoginNonce } from "../../server/auth-login-nonce.js";
+import { consumeStoredLoginNonce, SESSION_SAVE_SQL } from "../../server/auth-login-nonce.js";
 import { LOGIN_NONCE_TTL_MS } from "../../server/tracking/registration.js";
 
 const NONCE = "ab".repeat(16);
@@ -111,6 +111,23 @@ describe("login nonce consume", () => {
     expect(consumeStoredLoginNonce(check, "sid", NONCE, issuedAt + 1_000)).toBe(false);
     check.close();
   }, 20_000);
+
+  it("does not let a later session save restore a consumed nonce", () => {
+    const db = openMemory();
+    const issuedAt = 1_700_000_000_000;
+    insert(db, "sid", issuedAt);
+    const before = db.prepare("SELECT sess FROM sessions WHERE sid = ?").get("sid") as { sess: string };
+    expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 1_000)).toBe(true);
+    db.prepare(SESSION_SAVE_SQL).run("sid", before.sess, issuedAt + 86_400_000);
+    expect(pending(db, "sid")).toBeNull();
+    const fresh = "cd".repeat(16);
+    db.prepare(SESSION_SAVE_SQL).run(
+      "sid",
+      JSON.stringify({ cookie: { path: "/" }, passport: { user: "76561198000000000" }, pendingLogin: { nonce: fresh, issuedAt } }),
+      issuedAt + 86_400_000,
+    );
+    expect(pending(db, "sid")).toBe(fresh);
+  });
 
   it("does not write the session blob from the login-nonce route", () => {
     const source = readSource();

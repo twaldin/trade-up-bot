@@ -11,7 +11,7 @@ import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
-import { consumeStoredLoginNonce } from "./auth-login-nonce.js";
+import { consumeStoredLoginNonce, SESSION_SAVE_SQL } from "./auth-login-nonce.js";
 import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
@@ -38,7 +38,7 @@ class SqliteSessionStore extends session.Store {
     try {
       const maxAge = sess.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
-      this.sessionDb.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
+      this.sessionDb.prepare(SESSION_SAVE_SQL).run(sid, JSON.stringify(sess), expired);
       cb?.();
     } catch (e) { cb?.(e); }
   }
