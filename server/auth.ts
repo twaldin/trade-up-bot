@@ -11,7 +11,7 @@ import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
-import { consumeStoredLoginNonce, SESSION_SAVE_SQL } from "./auth-login-nonce.js";
+import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce } from "./auth-login-nonce.js";
 import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
@@ -26,6 +26,7 @@ class SqliteSessionStore extends session.Store {
     this.sessionDb.pragma("busy_timeout = 2000");
     this.sessionDb.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
     this.sessionDb.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+    ensureLoginNonceTable(this.sessionDb);
     try { this.sessionDb.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000)); } catch { /* ignore */ }
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
@@ -38,7 +39,7 @@ class SqliteSessionStore extends session.Store {
     try {
       const maxAge = sess.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
       const expired = Math.floor((Date.now() + maxAge) / 1000);
-      this.sessionDb.prepare(SESSION_SAVE_SQL).run(sid, JSON.stringify(sess), expired);
+      this.sessionDb.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(sid, JSON.stringify(sess), expired);
       cb?.();
     } catch (e) { cb?.(e); }
   }
@@ -52,6 +53,9 @@ class SqliteSessionStore extends session.Store {
       this.sessionDb.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
     } catch { cb?.(); }
+  }
+  issueLoginNonce(sid: string, nonce: string): void {
+    issueStoredLoginNonce(this.sessionDb, sid, nonce);
   }
   consumeLoginNonce(sid: string, lid: string | null): boolean {
     return consumeStoredLoginNonce(this.sessionDb, sid, lid);
@@ -91,7 +95,6 @@ declare module "express-session" {
     returnTo?: string;
     discordState?: string;
     signupRef?: string;
-    pendingLogin?: { nonce: string; issuedAt: number };
   }
 }
 
@@ -311,7 +314,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
           const loginNonce = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
-          if (loginNonce) req.session.pendingLogin = { nonce: loginNonce, issuedAt: Date.now() };
+          if (loginNonce) store.issueLoginNonce(req.sessionID, loginNonce);
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -331,9 +334,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     req.logout(() => res.redirect("/"));
   });
 
-  // One-time consume of the login nonce stored on this session. A reused lid is not a Login.
-  // The UPDATE is the atomic compare-and-delete. Do not assign req.session.pendingLogin:
-  // express-session would save the blob loaded at the start of this request and restore the nonce.
+  // One-time consume of the login nonce for this session. A reused lid is not a Login.
+  // The nonce is not in the session blob, so a later session save cannot restore it.
   app.post("/api/auth/login-nonce", (req, res) => {
     const lid = readLoginNonceBody(req.body);
     let accepted = false;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { consumeStoredLoginNonce, SESSION_SAVE_SQL } from "../../server/auth-login-nonce.js";
+import { consumeStoredLoginNonce, issueStoredLoginNonce } from "../../server/auth-login-nonce.js";
 import { LOGIN_NONCE_TTL_MS } from "../../server/tracking/registration.js";
 
 const NONCE = "ab".repeat(16);
@@ -26,19 +26,17 @@ function openMemory(): Database.Database {
   return db;
 }
 
-function insert(db: Database.Database, sid: string, issuedAt: number, nonce: string = NONCE): void {
-  db.prepare("INSERT INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(
+function saveSession(db: Database.Database, sid: string, sess: unknown): void {
+  db.prepare("INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)").run(
     sid,
-    JSON.stringify({ cookie: { path: "/" }, passport: { user: "76561198000000000" }, pendingLogin: { nonce, issuedAt } }),
-    issuedAt + 86_400_000,
+    JSON.stringify(sess),
+    Date.now() + 86_400_000,
   );
 }
 
-function pending(db: Database.Database, sid: string): string | null {
-  const row = db.prepare("SELECT sess FROM sessions WHERE sid = ?").get(sid) as { sess: string };
-  const parsed = JSON.parse(row.sess) as { pendingLogin?: { nonce: string }; passport?: { user: string } };
-  expect(parsed.passport?.user).toBe("76561198000000000");
-  return parsed.pendingLogin?.nonce ?? null;
+function nonceCount(db: Database.Database, nonce: string = NONCE): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM login_nonces WHERE nonce = ?").get(nonce) as { n: number };
+  return row.n;
 }
 
 function consumeInProcess(dbFile: string, sid: string, lid: string, nowMs: number): Promise<string> {
@@ -68,25 +66,40 @@ process.stdout.write(ok ? "yes" : "no");
 }
 
 describe("login nonce consume", () => {
-  it("accepts a fresh nonce once and leaves the rest of the session", () => {
+  it("accepts a fresh nonce once and ignores the session blob", () => {
     const db = openMemory();
     const issuedAt = 1_700_000_000_000;
-    insert(db, "sid", issuedAt);
+    issueStoredLoginNonce(db, "sid", NONCE, issuedAt);
+    saveSession(db, "sid", { passport: { user: "76561198000000000" }, pendingLogin: { nonce: NONCE, issuedAt } });
     expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 1_000)).toBe(true);
     expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 1_000)).toBe(false);
-    expect(pending(db, "sid")).toBeNull();
+    expect(nonceCount(db)).toBe(0);
   });
 
-  it("rejects a mismatched or expired nonce", () => {
+  it("rejects a mismatched, cross-session, or expired nonce", () => {
     const db = openMemory();
     const issuedAt = 1_700_000_000_000;
-    insert(db, "wrong", issuedAt);
-    insert(db, "expired", issuedAt);
-    expect(consumeStoredLoginNonce(db, "wrong", "cd".repeat(16), issuedAt + 1_000)).toBe(false);
-    expect(pending(db, "wrong")).toBe(NONCE);
-    expect(consumeStoredLoginNonce(db, "expired", NONCE, issuedAt + LOGIN_NONCE_TTL_MS)).toBe(false);
-    expect(pending(db, "expired")).toBeNull();
+    issueStoredLoginNonce(db, "sid", NONCE, issuedAt);
+    issueStoredLoginNonce(db, "other", "cd".repeat(16), issuedAt);
+    expect(consumeStoredLoginNonce(db, "sid", "cd".repeat(16), issuedAt + 1_000)).toBe(false);
+    expect(consumeStoredLoginNonce(db, "other", NONCE, issuedAt + 1_000)).toBe(false);
+    expect(nonceCount(db)).toBe(1);
+    expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + LOGIN_NONCE_TTL_MS)).toBe(false);
+    expect(nonceCount(db)).toBe(1);
     expect(consumeStoredLoginNonce(db, "missing", NONCE, issuedAt)).toBe(false);
+  });
+
+  it("does not resurrect a consumed nonce when a stale session is saved", () => {
+    const db = openMemory();
+    const issuedAt = 1_700_000_000_000;
+    issueStoredLoginNonce(db, "sid", NONCE, issuedAt);
+    saveSession(db, "sid", { returnTo: "/pricing", pendingLogin: { nonce: NONCE, issuedAt } });
+    expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 1_000)).toBe(true);
+    saveSession(db, "sid", { returnTo: "/trade-ups", pendingLogin: { nonce: NONCE, issuedAt } });
+    expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 2_000)).toBe(false);
+    expect(nonceCount(db)).toBe(0);
+    const saved = db.prepare("SELECT sess FROM sessions WHERE sid = ?").get("sid") as { sess: string };
+    expect(saved.sess).toContain("returnTo");
   });
 
   it("accepts the nonce from only one of two processes", async () => {
@@ -95,9 +108,8 @@ describe("login nonce consume", () => {
     const dbFile = join(dir, "sessions.db");
     const db = new Database(dbFile);
     db.pragma("journal_mode = WAL");
-    db.exec("CREATE TABLE sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)");
     const issuedAt = Date.now();
-    insert(db, "sid", issuedAt);
+    issueStoredLoginNonce(db, "sid", NONCE, issuedAt);
     db.close();
 
     const [first, second] = await Promise.all([
@@ -107,38 +119,16 @@ describe("login nonce consume", () => {
     expect([first, second].sort()).toEqual(["no", "yes"]);
 
     const check = new Database(dbFile);
-    expect(pending(check, "sid")).toBeNull();
     expect(consumeStoredLoginNonce(check, "sid", NONCE, issuedAt + 1_000)).toBe(false);
+    expect(nonceCount(check)).toBe(0);
     check.close();
   }, 20_000);
 
-  it("does not let a later session save restore a consumed nonce", () => {
-    const db = openMemory();
-    const issuedAt = 1_700_000_000_000;
-    insert(db, "sid", issuedAt);
-    const before = db.prepare("SELECT sess FROM sessions WHERE sid = ?").get("sid") as { sess: string };
-    expect(consumeStoredLoginNonce(db, "sid", NONCE, issuedAt + 1_000)).toBe(true);
-    db.prepare(SESSION_SAVE_SQL).run("sid", before.sess, issuedAt + 86_400_000);
-    expect(pending(db, "sid")).toBeNull();
-    const fresh = "cd".repeat(16);
-    db.prepare(SESSION_SAVE_SQL).run(
-      "sid",
-      JSON.stringify({ cookie: { path: "/" }, passport: { user: "76561198000000000" }, pendingLogin: { nonce: fresh, issuedAt } }),
-      issuedAt + 86_400_000,
-    );
-    expect(pending(db, "sid")).toBe(fresh);
-  });
-
-  it("does not write the session blob from the login-nonce route", () => {
-    const source = readSource();
+  it("does not store the nonce on the session from the login or consume routes", () => {
+    const source = readFileSync(fileURLToPath(new URL("../../server/auth.ts", import.meta.url)), "utf8");
+    expect(source).not.toContain("pendingLogin");
     const start = source.indexOf('app.post("/api/auth/login-nonce"');
     const end = source.indexOf('app.get("/api/auth/me"');
-    const handler = source.slice(start, end);
-    expect(handler).toContain("consumeLoginNonce");
-    expect(handler).not.toContain("pendingLogin");
+    expect(source.slice(start, end)).toContain("consumeLoginNonce");
   });
 });
-
-function readSource(): string {
-  return readFileSync(fileURLToPath(new URL("../../server/auth.ts", import.meta.url)), "utf8");
-}
