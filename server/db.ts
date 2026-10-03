@@ -52,6 +52,8 @@ const MIGRATION_LOCK_TIMEOUT = "30s";
 // Not the migration lock (key 1). CREATE INDEX CONCURRENTLY must not run while
 // another session is waiting on that lock.
 const STRIPE_CUSTOMER_INDEX_LOCK = 2;
+/** Short wait. A long snapshot (pg_dump) must not stall boot for the migration timeout. */
+export const STRIPE_CUSTOMER_INDEX_LOCK_TIMEOUT = "5s";
 
 async function schemaVersionOn(client: pg.PoolClient): Promise<string | null> {
   try {
@@ -64,17 +66,21 @@ async function schemaVersionOn(client: pg.PoolClient): Promise<string | null> {
   }
 }
 
+/** Run the index step only after migration resolves. A thrown migration skips it. */
+export async function indexAfterMigration(migrate: () => Promise<void>, index: () => Promise<void>): Promise<void> {
+  await migrate();
+  await index();
+}
+
 /** Create all tables if they don't exist. Run once at startup.
  *  Skips the migration body when schema_version matches.
- *  The stripe customer index runs after that lock is released, and retries on
- *  the next boot if it did not land. */
+ *  The stripe customer index runs only after that lock is released. A failed
+ *  migration skips it, and the next boot retries. */
 export async function createTables(pool: pg.Pool): Promise<void> {
-  try {
-  await migrateTables(pool);
-  } finally {
-    // After the migration lock is gone. Never throws.
-    await ensureStripeCustomerIndex(pool);
-  }
+  await indexAfterMigration(
+    () => migrateTables(pool),
+    () => ensureStripeCustomerIndex(pool),
+  );
 }
 
 async function migrateTables(pool: pg.Pool): Promise<void> {
@@ -774,27 +780,39 @@ async function migrateTables(pool: pg.Pool): Promise<void> {
   }
 }
 
+export interface StripeIndexSession {
+  query(sql: string, params?: unknown[]): Promise<{ rows: readonly Record<string, unknown>[] }>;
+  release(err?: Error): void;
+}
+
 /** Partial unique index on nonempty stripe_customer_id. Its own try-lock, never the migration lock.
  *  A missed lock means another process is building it. Failure is logged and does not throw. */
-async function ensureStripeCustomerIndex(pool: pg.Pool): Promise<void> {
-  let client: pg.PoolClient | undefined;
+export async function runStripeCustomerIndex(
+  connect: () => Promise<StripeIndexSession>,
+  log: (message: string) => void = (message) => { console.warn(message); },
+  info: (message: string) => void = (message) => { console.info(message); },
+): Promise<void> {
+  let client: StripeIndexSession | undefined;
   let locked = false;
   try {
-    client = await pool.connect();
-    await client.query("SET lock_timeout = '30s'");
-    const { rows } = await client.query<{ locked: boolean }>(
+    client = await connect();
+    await client.query("SELECT set_config('lock_timeout', $1, false)", [STRIPE_CUSTOMER_INDEX_LOCK_TIMEOUT]);
+    const { rows } = await client.query(
       "SELECT pg_try_advisory_lock($1) AS locked",
       [STRIPE_CUSTOMER_INDEX_LOCK],
     );
     locked = rows[0]?.locked === true;
-    if (!locked) return;
+    if (!locked) {
+      try { info("[tracking] stripe_customer_id unique index skipped: lock held"); } catch { /* ignore */ }
+      return;
+    }
     const indexClient = client;
     await ensureStripeCustomerIdUniqueIndex(async (sql, params) => {
       const result = await indexClient.query(sql, params);
       return { rows: result.rows };
-    }, (message) => console.warn(message));
+    }, log);
   } catch (err) {
-    console.warn(classifyIndexError(err).message);
+    try { log(classifyIndexError(err).message); } catch { /* ignore */ }
   } finally {
     if (client) {
       let discard: Error | undefined;
@@ -813,6 +831,10 @@ async function ensureStripeCustomerIndex(pool: pg.Pool): Promise<void> {
       client.release(discard);
     }
   }
+}
+
+async function ensureStripeCustomerIndex(pool: pg.Pool): Promise<void> {
+  await runStripeCustomerIndex(() => pool.connect());
 }
 
 export async function getSyncMeta(pool: pg.Pool, key: string): Promise<string | null> {

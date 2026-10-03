@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   classifyIndexError,
   ensureStripeCustomerIdUniqueIndex,
+  resetStripeCustomerIndexWarningsForTests,
   STRIPE_CUSTOMER_INDEX,
   STRIPE_CUSTOMER_NONEMPTY,
   type IndexQuery,
@@ -23,6 +24,10 @@ function scripted(steps: { rows: Record<string, unknown>[] }[], fail?: { sql: st
 }
 
 describe("stripe_customer_id unique index", () => {
+  beforeEach(() => {
+    resetStripeCustomerIndexWarningsForTests();
+  });
+
   it("leaves a valid partial index alone", async () => {
     const log = vi.fn();
     const { query, sql } = scripted([{ rows: [READY] }]);
@@ -136,6 +141,16 @@ describe("stripe_customer_id unique index", () => {
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.reason).toBe("duplicates");
     expect(sql.some((statement) => statement.startsWith("CREATE"))).toBe(false);
+    expect(String(log.mock.calls[0][0])).toContain("duplicates");
+  });
+
+  it("logs duplicate customer ids once per process", async () => {
+    const log = vi.fn();
+    const first = scripted([{ rows: [] }, { rows: [{ n: 1 }] }]);
+    const second = scripted([{ rows: [] }, { rows: [{ n: 1 }] }]);
+    await ensureStripeCustomerIdUniqueIndex(first.query, log);
+    await ensureStripeCustomerIdUniqueIndex(second.query, log);
+    expect(log).toHaveBeenCalledTimes(1);
     expect(String(log.mock.calls[0][0])).toContain("duplicates");
   });
 

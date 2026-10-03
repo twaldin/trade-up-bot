@@ -88,9 +88,23 @@ async function dropIndex(query: IndexQuery): Promise<void> {
   await query(DROP_INDEX_SQL);
 }
 
-function warn(log: (message: string) => void, failure: { message: string }): { ok: false; reason: IndexFailureReason; message: string } {
+let loggedDuplicateCustomerIds = false;
+
+/** Tests call this so each case sees a fresh process. */
+export function resetStripeCustomerIndexWarningsForTests(): void {
+  loggedDuplicateCustomerIds = false;
+}
+
+function warn(
+  log: (message: string) => void,
+  failure: { ok: false; reason: IndexFailureReason; message: string },
+): { ok: false; reason: IndexFailureReason; message: string } {
+  if (failure.reason === "duplicates") {
+    if (loggedDuplicateCustomerIds) return failure;
+    loggedDuplicateCustomerIds = true;
+  }
   try { log(failure.message); } catch { /* ignore */ }
-  return failure as { ok: false; reason: IndexFailureReason; message: string };
+  return failure;
 }
 
 /** Build or repair the partial unique index. Never throws. Startup continues either way. */
