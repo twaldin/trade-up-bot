@@ -8,7 +8,7 @@ import {
 } from "../../server/stripe-customer-index.js";
 
 const PARTIAL = "(stripe_customer_id IS NOT NULL) AND (stripe_customer_id <> ''::text)";
-const READY = { valid: true, predicate: PARTIAL };
+const READY = { valid: true, is_unique: true, key_definition: "stripe_customer_id", predicate: PARTIAL };
 
 function scripted(steps: { rows: Record<string, unknown>[] }[], fail?: { sql: string; error: unknown }): { query: IndexQuery; sql: string[] } {
   const sql: string[] = [];
@@ -67,6 +67,20 @@ describe("stripe_customer_id unique index", () => {
     ]);
     expect(sql.some((statement) => statement.startsWith("CREATE UNIQUE INDEX CONCURRENTLY"))).toBe(true);
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds a valid index that is not on stripe_customer_id", async () => {
+    const log = vi.fn();
+    const { query, sql } = scripted([
+      { rows: [{ valid: true, is_unique: true, key_definition: "email", predicate: PARTIAL }] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [READY] },
+    ]);
+    const outcome = await ensureStripeCustomerIdUniqueIndex(query, log);
+    expect(outcome).toEqual({ ok: true });
+    expect(sql.some((statement) => statement.startsWith("DROP INDEX CONCURRENTLY"))).toBe(true);
+    expect(sql.some((statement) => statement.startsWith("CREATE UNIQUE INDEX CONCURRENTLY"))).toBe(true);
   });
 
   it("drops a valid index that is not partial and rebuilds it", async () => {

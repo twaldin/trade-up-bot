@@ -9,7 +9,10 @@ export const STRIPE_CUSTOMER_NONEMPTY = "stripe_customer_id IS NOT NULL AND stri
 const CREATE_INDEX_SQL = `CREATE UNIQUE INDEX CONCURRENTLY ${STRIPE_CUSTOMER_INDEX} ON users (stripe_customer_id) WHERE ${STRIPE_CUSTOMER_NONEMPTY}`;
 const DROP_INDEX_SQL = `DROP INDEX CONCURRENTLY IF EXISTS ${STRIPE_CUSTOMER_INDEX}`;
 const DUPLICATE_SQL = `SELECT 1 FROM users WHERE ${STRIPE_CUSTOMER_NONEMPTY} GROUP BY stripe_customer_id HAVING COUNT(*) > 1 LIMIT 1`;
-const LOOKUP_SQL = `SELECT i.indisvalid AS valid, pg_get_expr(i.indpred, i.indrelid) AS predicate
+const LOOKUP_SQL = `SELECT i.indisvalid AS valid,
+       i.indisunique AS is_unique,
+       pg_get_indexdef(i.indexrelid, 1, true) AS key_definition,
+       pg_get_expr(i.indpred, i.indrelid) AS predicate
        FROM pg_class c
        JOIN pg_index i ON i.indexrelid = c.oid
        JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -67,7 +70,11 @@ function predicateMatches(predicate: unknown): boolean {
 }
 
 function isReadyIndex(row: Record<string, unknown> | undefined): boolean {
-  return !!row && row.valid === true && predicateMatches(row.predicate);
+  return !!row
+    && row.valid === true
+    && row.is_unique === true
+    && row.key_definition === "stripe_customer_id"
+    && predicateMatches(row.predicate);
 }
 
 async function lookupIndex(query: IndexQuery): Promise<Record<string, unknown> | undefined> {
