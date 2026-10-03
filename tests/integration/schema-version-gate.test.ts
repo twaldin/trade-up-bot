@@ -55,6 +55,20 @@ describe("schema version gate", () => {
     expect(SCHEMA_VERSION.length).toBeGreaterThan(0);
   });
 
+  it("leaves a valid partial unique index on nonempty stripe_customer_id", async () => {
+    const { rows } = await pool.query<{ valid: boolean; predicate: string | null }>(
+      `SELECT i.indisvalid AS valid, pg_get_expr(i.indpred, i.indrelid) AS predicate
+       FROM pg_class c
+       JOIN pg_index i ON i.indexrelid = c.oid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relname = 'users_stripe_customer_id_uidx' AND n.nspname = current_schema()`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.valid).toBe(true);
+    expect(rows[0]?.predicate ?? "").toMatch(/stripe_customer_id IS NOT NULL/i);
+    expect(rows[0]?.predicate ?? "").toMatch(/<>/);
+  });
+
   it("createTables writes schema_version into sync_meta", async () => {
     // Force fresh run by deleting the version key
     await pool.query("DELETE FROM sync_meta WHERE key = 'schema_version'");
@@ -88,6 +102,30 @@ describe("schema version gate", () => {
     const after = await getSyncMeta(pool, "schema_version");
     expect(after).toBe(SCHEMA_VERSION);
   });
+
+  it("finishes two overlapping createTables calls well under the lock timeout", async () => {
+    await pool.query("DROP INDEX CONCURRENTLY IF EXISTS users_stripe_customer_id_uidx");
+    await setSyncMeta(pool, "schema_version", "0");
+    const other = new Pool({ connectionString, max: 4 });
+    try {
+      const started = Date.now();
+      await Promise.all([createTables(pool), createTables(other)]);
+      expect(Date.now() - started).toBeLessThan(8_000);
+    } finally {
+      await other.end();
+    }
+    const { rows } = await pool.query<{ valid: boolean; predicate: string | null }>(
+      `SELECT i.indisvalid AS valid, pg_get_expr(i.indpred, i.indrelid) AS predicate
+       FROM pg_class c
+       JOIN pg_index i ON i.indexrelid = c.oid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relname = 'users_stripe_customer_id_uidx' AND n.nspname = current_schema()`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.valid).toBe(true);
+    expect(rows[0]?.predicate ?? "").toMatch(/stripe_customer_id IS NOT NULL/i);
+    expect(await getSyncMeta(pool, "schema_version")).toBe(SCHEMA_VERSION);
+  }, 20_000);
 
   it("skips the migration when schema_version matches after the advisory lock", async () => {
     await setSyncMeta(pool, "schema_version", "0");

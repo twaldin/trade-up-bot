@@ -1,6 +1,6 @@
 // Browser auth event ids. Same normalization as server hashExternalId:
 // trim, lowercase, SHA-256 hex, prefixed with reg_ or login_.
-import { loginEventId, registrationEventId } from "../../shared/tracking.js";
+import { isLoginNonce, loginEventId, registrationEventId } from "../../shared/tracking.js";
 
 async function hashSteamId(steamId: string): Promise<string | null> {
   const value = steamId.trim().toLowerCase();
@@ -14,7 +14,8 @@ export async function registrationEventIdFromSteamId(steamId: string): Promise<s
   return hex ? registrationEventId(hex) : null;
 }
 
-export async function loginEventIdFromSteamId(steamId: string): Promise<string | null> {
+export async function loginEventIdFromSteamId(steamId: string, nonce: string): Promise<string | null> {
+  if (!isLoginNonce(nonce)) return null;
   const hex = await hashSteamId(steamId);
-  return hex ? loginEventId(hex) : null;
+  return hex ? loginEventId(hex, nonce) : null;
 }

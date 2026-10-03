@@ -10,7 +10,10 @@ import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
-import { authReturnLocation, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import { isValidMetaPixelId } from "../shared/tracking.js";
+import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce, startLoginNoncePrune } from "./auth-login-nonce.js";
+import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import type { TrackingEnv } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -24,6 +27,8 @@ class SqliteSessionStore extends session.Store {
     this.sessionDb.pragma("busy_timeout = 2000");
     this.sessionDb.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
     this.sessionDb.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
+    ensureLoginNonceTable(this.sessionDb);
+    startLoginNoncePrune(this.sessionDb);
     try { this.sessionDb.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000)); } catch { /* ignore */ }
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
@@ -50,6 +55,12 @@ class SqliteSessionStore extends session.Store {
       this.sessionDb.prepare("UPDATE sessions SET expired = ? WHERE sid = ?").run(expired, sid);
       cb?.();
     } catch { cb?.(); }
+  }
+  issueLoginNonce(sid: string, nonce: string): void {
+    issueStoredLoginNonce(this.sessionDb, sid, nonce);
+  }
+  consumeLoginNonce(sid: string, lid: string | null): boolean {
+    return consumeStoredLoginNonce(this.sessionDb, sid, lid);
   }
 }
 
@@ -87,6 +98,32 @@ declare module "express-session" {
     discordState?: string;
     signupRef?: string;
   }
+}
+
+/** Issue the Pixel nonce, then build the return URL. A locked sessions.db must still redirect. */
+export function redirectAfterSteamLogin(args: {
+  returnTo: string;
+  created: boolean;
+  env: TrackingEnv;
+  sessionId: string;
+  loginNonce: string | null;
+  issueNonce: (sid: string, nonce: string) => void;
+  warn?: (message: string) => void;
+}): { location: string; nonce: string | null } {
+  let nonce = args.loginNonce;
+  if (nonce) {
+    try {
+      args.issueNonce(args.sessionId, nonce);
+    } catch (err) {
+      nonce = null;
+      const detail = err instanceof Error ? err.message.replace(/\s+/g, " ").slice(0, 180) : "unknown error";
+      try { (args.warn ?? console.warn)(`[tracking] login nonce issue failed (${detail})`); } catch { /* ignore */ }
+    }
+  }
+  return {
+    nonce,
+    location: authReturnLocation(args.returnTo, args.created, args.env, nonce),
+  };
 }
 
 export function isAdmin(user: Express.User | User | undefined): boolean {
@@ -304,6 +341,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           delete req.session.returnTo;
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
+          const issued = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
+          const returned = redirectAfterSteamLogin({
+            returnTo,
+            created,
+            env: process.env,
+            sessionId: req.sessionID,
+            loginNonce: issued,
+            issueNonce: (sid, nonce) => store.issueLoginNonce(sid, nonce),
+          });
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -311,8 +357,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             cookieHeader: req.headers.cookie,
           };
           if (created) void trackCompleteRegistration(authTracking);
-          else void trackLogin(authTracking);
-          res.redirect(authReturnLocation(returnTo, created, process.env));
+          else if (returned.nonce) void trackLogin({ ...authTracking, nonce: returned.nonce });
+          res.redirect(returned.location);
         });
       })(req, res, next);
     });
@@ -321,6 +367,19 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   // Logout
   app.get("/auth/logout", (req, res) => {
     req.logout(() => res.redirect("/"));
+  });
+
+  // One-time consume of the login nonce for this session. A reused lid is not a Login.
+  // The nonce is not in the session blob, so a later session save cannot restore it.
+  app.post("/api/auth/login-nonce", (req, res) => {
+    const lid = readLoginNonceBody(req.body);
+    let accepted = false;
+    try {
+      accepted = store.consumeLoginNonce(req.sessionID, lid);
+    } catch {
+      console.warn("[tracking] login nonce consume failed");
+    }
+    res.json({ accepted });
   });
 
   // Current user API
@@ -356,6 +415,12 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
     console.log(`Admin set tier: ${targetId} → ${tier}`);
     res.json({ success: true, steam_id: targetId, tier });
   });
+}
+
+function readLoginNonceBody(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  return typeof record.lid === "string" ? record.lid : null;
 }
 
 // Middleware: require login

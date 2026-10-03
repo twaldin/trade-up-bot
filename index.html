@@ -16,12 +16,43 @@
     <meta name="twitter:title" content="TradeUpBot — CS2 Trade-Up Finder" />
     <meta name="twitter:description" content="CS2 trade-ups built from real, buyable listings, with expected value after fees. Verify availability and claim before anyone else." />
     <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.jpg" />
+    <script>
+      (function () {
+        try {
+          var params = new URLSearchParams(location.search);
+          var auth = params.get("auth");
+          var lid = params.get("lid");
+          var upgraded = params.get("upgraded");
+          var sessionId = params.get("session_id");
+          var tracked = auth === "new" || auth === "return";
+          if (tracked || lid) {
+            window.__tubAuthReturn = { auth: tracked ? auth : null, lid: lid };
+          }
+          if (upgraded || sessionId) {
+            window.__tubCheckoutReturn = { upgraded: upgraded, sessionId: sessionId };
+          }
+          if (tracked || lid || upgraded || sessionId || params.has("eid")) {
+            params.delete("auth");
+            params.delete("lid");
+            params.delete("eid");
+            params.delete("upgraded");
+            params.delete("session_id");
+            var query = params.toString();
+            var path = location.pathname + (query ? "?" + query : "") + location.hash;
+            history.replaceState(history.state, "", path);
+            window.__tubPageLocation = location.origin + path;
+          } else {
+            window.__tubPageLocation = location.href;
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-EKWRB4FE37"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', 'G-EKWRB4FE37');
+      gtag('config', 'G-EKWRB4FE37', { page_location: window.__tubPageLocation || location.href });
     </script>
   </head>
   <body>

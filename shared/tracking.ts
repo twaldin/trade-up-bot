@@ -35,9 +35,14 @@ export function purchaseEventId(checkoutSessionId: string): string {
   return `purchase_${checkoutSessionId}`;
 }
 
-/** Shared by the browser Pixel and CAPI so a return Steam sign-in is counted once. */
-export function loginEventId(externalIdHash: string): string {
-  return `login_${externalIdHash}`;
+/** 16 random bytes, hex. One value per successful return sign-in. */
+export function isLoginNonce(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[a-f0-9]{32}$/.test(value);
+}
+
+/** Shared by the browser Pixel and CAPI for this sign-in. A new nonce is a new event. */
+export function loginEventId(externalIdHash: string, nonce: string): string {
+  return `login_${externalIdHash}_${nonce}`;
 }
 
 export type KeyEvent =

@@ -1,21 +1,25 @@
 // Build-time <head> injection for the env-gated browser trackers. Runs from the Vite
 // `transformIndexHtml` hook, so dist/index.html (served as-is by nginx) and every page
 // prerendered from it carry exactly the tags whose env var was set at build time.
+import { prependAuthReturnStrip } from "./auth-return-strip.js";
 import { isValidDomainVerification, isValidGa4MeasurementId, isValidMetaPixelId } from "./tracking.js";
 
 export const TRACKING_HEAD_ENV_KEYS = ["GA4_MEASUREMENT_ID", "META_PIXEL_ID", "META_DOMAIN_VERIFICATION"] as const;
 
 export type TrackingHeadEnv = Partial<Record<(typeof TRACKING_HEAD_ENV_KEYS)[number], string | undefined>>;
 
+// Explicit page_location so a late config still sends the URL the strip script cleaned.
+const GA4_PAGE_LOCATION = "{page_location:window.__tubPageLocation||location.href}";
+
 function ga4Tags(html: string, id: string): string[] {
   const alreadyConfigured = new RegExp(`gtag\\(\\s*['"]config['"]\\s*,\\s*['"]${id}['"]`).test(html);
   if (alreadyConfigured) return [];
   if (/googletagmanager\.com\/gtag\/js/.test(html)) {
-    return [`<script>gtag('config','${id}');</script>`];
+    return [`<script>gtag('config','${id}',${GA4_PAGE_LOCATION});</script>`];
   }
   return [
     `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>`,
-    `<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');</script>`,
+    `<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}',${GA4_PAGE_LOCATION});</script>`,
   ];
 }
 
@@ -40,6 +44,9 @@ export function injectTrackingHead(html: string, env: TrackingHeadEnv): string {
   if (!ga4 && !pixel && !verification) return html;
   if (!/<\/head>/i.test(html)) return html;
 
+  // Strip auth/lid/eid before any snippet this injects, and before a gtag block already in the page.
+  const doc = ga4 || pixel ? prependAuthReturnStrip(html) : html;
+
   const tags: string[] = [];
   if (verification) tags.push(`<meta name="facebook-domain-verification" content="${verification}" />`);
   if (ga4 || pixel) {
@@ -48,8 +55,8 @@ export function injectTrackingHead(html: string, env: TrackingHeadEnv): string {
     if (pixel) config.metaPixelId = pixel;
     tags.push(`<script>window.tubTracking=${JSON.stringify(config)};</script>`);
   }
-  if (ga4) tags.push(...ga4Tags(html, ga4));
+  if (ga4) tags.push(...ga4Tags(doc, ga4));
   if (pixel) tags.push(pixelTag(pixel));
 
-  return html.replace(/<\/head>/i, `    ${tags.join("\n    ")}\n  </head>`);
+  return doc.replace(/<\/head>/i, `    ${tags.join("\n    ")}\n  </head>`);
 }

@@ -64,14 +64,14 @@ describe("injectTrackingHead with META_DOMAIN_VERIFICATION", () => {
 describe("injectTrackingHead with GA4_MEASUREMENT_ID", () => {
   it("reuses the existing Google tag and only adds a config for a new property", () => {
     const html = injectTrackingHead(indexHtml, { GA4_MEASUREMENT_ID: "G-NEWPROP123" });
-    expect(html).toContain("gtag('config','G-NEWPROP123')");
+    expect(html).toContain("gtag('config','G-NEWPROP123',{page_location:window.__tubPageLocation||location.href})");
     expect(html.match(/googletagmanager\.com\/gtag\/js/g)?.length).toBe(1);
     expect(html).toContain('window.tubTracking={"ga4MeasurementId":"G-NEWPROP123"}');
   });
 
   it("does not configure the same property twice when it matches the hardcoded tag", () => {
     const html = injectTrackingHead(indexHtml, { GA4_MEASUREMENT_ID: "G-EKWRB4FE37" });
-    expect(html.match(/gtag\('config', ?'G-EKWRB4FE37'\)/g)?.length).toBe(1);
+    expect(html.match(/gtag\(\s*'config'\s*,\s*'G-EKWRB4FE37'/g)?.length).toBe(1);
     expect(html).toContain('window.tubTracking={"ga4MeasurementId":"G-EKWRB4FE37"}');
   });
 
@@ -80,7 +80,10 @@ describe("injectTrackingHead with GA4_MEASUREMENT_ID", () => {
     const html = injectTrackingHead(bare, { GA4_MEASUREMENT_ID: "G-NEWPROP123" });
     expect(html).toContain('<script async src="https://www.googletagmanager.com/gtag/js?id=G-NEWPROP123"></script>');
     expect(html).toContain("function gtag(){dataLayer.push(arguments);}");
-    expect(html).toContain("gtag('config','G-NEWPROP123')");
+    expect(html).toContain("gtag('config','G-NEWPROP123',{page_location:window.__tubPageLocation||location.href})");
+    expect(html.indexOf("__tubAuthReturn")).toBeGreaterThan(-1);
+    expect(html.indexOf("__tubAuthReturn")).toBeLessThan(html.indexOf("googletagmanager.com/gtag/js"));
+    expect(html.indexOf("__tubAuthReturn")).toBeLessThan(html.indexOf("gtag('config'"));
   });
 });
 

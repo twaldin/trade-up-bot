@@ -20,6 +20,7 @@ import { snapshotsRouter } from "./routes/snapshots.js";
 import { calculatorRouter } from "./routes/calculator.js";
 import { claimsRouter } from "./routes/claims.js";
 import { stripeRouter } from "./routes/stripe.js";
+import { logCapiOptOutIgnored } from "./tracking.js";
 import { discordRouter } from "./routes/discord.js";
 import myTradeUpsRouter from "./routes/my-trade-ups.js";
 import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
@@ -143,6 +144,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      // 'unsafe-inline' allows the static gtag snippet and the auth-return strip
+      // script in index.html. Both are inline, neither uses a nonce or hash.
       scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", ...trackingCsp.scriptSrc],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
@@ -1342,6 +1345,8 @@ registerCanonicalRedirectRoutes(app);
     }
   });
   startBoardFlushSubscriber();
+
+  logCapiOptOutIgnored();
 
   // Start listening
   const server = app.listen(PORT, () => {

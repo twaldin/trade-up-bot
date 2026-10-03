@@ -21,7 +21,7 @@ import {
   type ServerTrackingConfig,
   type TrackingEnv,
 } from "./config.js";
-import { isSha256Hex, sha256Hex } from "./hash.js";
+import { hashExternalId, isSha256Hex, sha256Hex } from "./hash.js";
 
 const META_GRAPH_VERSION = "v24.0";
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -34,6 +34,7 @@ export interface CheckoutSessionLike {
   payment_status: string;
   mode: string | null;
   metadata: Record<string, string> | null;
+  customer?: string | { id?: string | null } | null;
   customer_details?: { email?: string | null } | null;
 }
 
@@ -251,7 +252,9 @@ export async function sendPurchaseConversions(
     req ? postJson(req.url, req.body, fetchImpl, timeoutMs) : Promise.resolve("skipped");
   try {
     const metaConfig = config.metaCapi;
-    const sendMeta = metaConfig !== null && !isMetaCapiOptedOut(conv.externalIdHash, metaConfig.optOutExternalIds);
+    const sendMeta = metaConfig !== null
+      && conv.externalIdHash !== null
+      && !isMetaCapiOptedOut(conv.externalIdHash, metaConfig.optOutExternalIds);
     const [meta, ga4] = await Promise.all([
       send(sendMeta && metaConfig ? metaPurchaseRequest(conv, metaConfig, deps.baseUrl) : null),
       send(config.ga4Mp ? ga4PurchaseRequest(conv, config.ga4Mp) : null),
@@ -270,10 +273,41 @@ export interface TrackCheckoutCompletedArgs {
   session: CheckoutSessionLike;
   eventCreatedSec: number;
   listLineItemPriceIds: () => Promise<string[]>;
+  /** Steam ID for a checkout that has no tub_xid. Errors resolve as no user. */
+  lookupSteamId?: (stripeCustomerId: string) => Promise<string | null>;
   env?: TrackingEnv;
   fetchImpl?: typeof fetch;
   log?: (message: string) => void;
   timeoutMs?: number;
+}
+
+/** One Steam ID, or null when the customer matches nobody or more than one user. */
+export function singleSteamId(rows: readonly { steam_id?: string | null }[]): string | null {
+  if (rows.length !== 1) return null;
+  const steamId = rows[0]?.steam_id;
+  return typeof steamId === "string" && steamId.length > 0 ? steamId : null;
+}
+
+function stripeCustomerId(customer: CheckoutSessionLike["customer"]): string | null {
+  if (typeof customer === "string" && customer.length > 0) return customer;
+  if (customer && typeof customer === "object" && typeof customer.id === "string" && customer.id.length > 0) return customer.id;
+  return null;
+}
+
+async function externalIdForPurchase(session: CheckoutSessionLike, stored: string | null, args: TrackCheckoutCompletedArgs): Promise<string | null> {
+  if (stored) return stored;
+  const customerId = stripeCustomerId(session.customer);
+  if (!customerId || !args.lookupSteamId) return null;
+  try {
+    const steamId = await withTimeout(
+      Promise.resolve().then(() => args.lookupSteamId!(customerId)),
+      args.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      () => null,
+    );
+    return hashExternalId(steamId);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -289,7 +323,8 @@ export function trackCheckoutCompleted(args: TrackCheckoutCompletedArgs): Promis
       const plan = await resolvePurchasePlan(args.session, args.listLineItemPriceIds, env, args.timeoutMs);
       const conv = purchaseConversionFromSession(args.session, { eventCreatedSec: args.eventCreatedSec, plan });
       if (!conv) return;
-      await sendPurchaseConversions(conv, config, {
+      const externalIdHash = await externalIdForPurchase(args.session, conv.externalIdHash, args);
+      await sendPurchaseConversions({ ...conv, externalIdHash }, config, {
         fetchImpl: args.fetchImpl,
         baseUrl: env.BASE_URL || "https://tradeupbot.app",
         log: args.log,

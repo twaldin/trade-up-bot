@@ -1,6 +1,7 @@
 // Steam auth conversions. CompleteRegistration when the user row was just inserted, Login
 // on a return visit. Same event_id as the browser Pixel. Never throws. No email, name, or raw Steam ID.
-import { isValidGa4MeasurementId, isValidMetaPixelId, loginEventId, registrationEventId } from "../../shared/tracking.js";
+import { randomBytes } from "node:crypto";
+import { isLoginNonce, isValidGa4MeasurementId, isValidMetaPixelId, loginEventId, registrationEventId } from "../../shared/tracking.js";
 import { isMetaCapiOptedOut, serverTrackingConfig, type TrackingEnv } from "./config.js";
 import { hashExternalId } from "./hash.js";
 
@@ -9,7 +10,11 @@ export function browserTrackingOn(env: TrackingEnv): boolean {
 }
 
 /** Redirect target after Steam auth. Unchanged unless a browser tracker is configured. */
-export function authReturnLocation(returnTo: string, created: boolean, env: TrackingEnv): string {
+export function newLoginNonce(): string {
+  return randomBytes(16).toString("hex");
+}
+
+export function authReturnLocation(returnTo: string, created: boolean, env: TrackingEnv, loginNonce?: string | null): string {
   if (!browserTrackingOn(env)) return returnTo;
   let url: URL;
   try {
@@ -19,7 +24,33 @@ export function authReturnLocation(returnTo: string, created: boolean, env: Trac
   }
   if (url.origin !== "https://tradeupbot.app") return returnTo;
   url.searchParams.set("auth", created ? "new" : "return");
+  // lid is only for the Pixel Login event id. GA4 does not need it, and a bare lid leaks into page_location.
+  if (!created && isLoginNonce(loginNonce) && isValidMetaPixelId(env.META_PIXEL_ID?.trim())) {
+    url.searchParams.set("lid", loginNonce);
+  }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** A login nonce is only valid for about 10 minutes after the server issued it. */
+export const LOGIN_NONCE_TTL_MS = 10 * 60 * 1000;
+
+export interface IssuedLoginNonce {
+  nonce: string;
+  issuedAt: number;
+}
+
+/** True only when this lid is the unexpired nonce the server just issued. Clears it so a replay does not count. */
+export function takeIssuedLoginNonce(
+  stored: IssuedLoginNonce | null | undefined,
+  lid: string | null | undefined,
+  nowMs: number = Date.now(),
+): { accepted: boolean; next: IssuedLoginNonce | null } {
+  if (!stored || !isLoginNonce(stored.nonce) || !Number.isFinite(stored.issuedAt)) {
+    return { accepted: false, next: null };
+  }
+  if (nowMs - stored.issuedAt >= LOGIN_NONCE_TTL_MS) return { accepted: false, next: null };
+  if (!isLoginNonce(lid) || stored.nonce !== lid) return { accepted: false, next: stored };
+  return { accepted: true, next: null };
 }
 
 function cookieValue(header: string | undefined, name: string): string | null {
@@ -100,8 +131,8 @@ export function metaRegistrationRequest(args: AuthCapiRequestArgs): AuthCapiSend
   return metaAuthRequest("CompleteRegistration", registrationEventId(args.externalIdHash), args);
 }
 
-export function metaLoginRequest(args: AuthCapiRequestArgs): AuthCapiSend {
-  return metaAuthRequest("Login", loginEventId(args.externalIdHash), args);
+export function metaLoginRequest(args: AuthCapiRequestArgs, nonce: string): AuthCapiSend {
+  return metaAuthRequest("Login", loginEventId(args.externalIdHash, nonce), args);
 }
 
 export interface TrackAuthCapiArgs {
@@ -160,6 +191,7 @@ export function trackCompleteRegistration(args: TrackAuthCapiArgs): Promise<void
   return trackAuthCapi("complete_registration", metaRegistrationRequest, args);
 }
 
-export function trackLogin(args: TrackAuthCapiArgs): Promise<void> {
-  return trackAuthCapi("login", metaLoginRequest, args);
+export function trackLogin(args: TrackAuthCapiArgs & { nonce: string }): Promise<void> {
+  if (!isLoginNonce(args.nonce)) return Promise.resolve();
+  return trackAuthCapi("login", (built) => metaLoginRequest(built, args.nonce), args);
 }

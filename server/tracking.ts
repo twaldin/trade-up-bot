@@ -1,5 +1,5 @@
 // Barrel for server-side conversion tracking (GA4 Measurement Protocol + Meta CAPI).
-export { serverTrackingConfig, serverTrackingEnabled } from "./tracking/config.js";
+export { capiOptOutExternalIds, logCapiOptOutIgnored, parseCapiOptOutExternalIds, serverTrackingConfig, serverTrackingEnabled } from "./tracking/config.js";
 export type { Ga4MpConfig, MetaCapiConfig, ServerTrackingConfig, TrackingEnv } from "./tracking/config.js";
 export { hashExternalId, sha256Hex } from "./tracking/hash.js";
 export { checkoutSessionTrackingFields, checkoutTrackingMetadata } from "./tracking/checkout.js";
@@ -9,8 +9,9 @@ export {
   purchaseConversionFromSession,
   resolvePurchasePlan,
   sendPurchaseConversions,
+  singleSteamId,
   trackCheckoutCompleted,
 } from "./tracking/purchase.js";
 export type { CheckoutSessionLike, PurchaseConversion, SendOutcome, TrackCheckoutCompletedArgs } from "./tracking/purchase.js";
 export { trackingCspSources } from "./tracking/csp.js";
-export { authReturnLocation, browserTrackingOn, metaLoginRequest, metaRegistrationRequest, trackCompleteRegistration, trackLogin } from "./tracking/registration.js";
+export { authReturnLocation, browserTrackingOn, metaLoginRequest, metaRegistrationRequest, newLoginNonce, takeIssuedLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking/registration.js";

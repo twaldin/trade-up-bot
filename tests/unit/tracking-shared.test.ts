@@ -69,10 +69,12 @@ describe("purchaseEventId", () => {
 });
 
 describe("loginEventId", () => {
-  it("is deterministic per hashed external id so the Pixel and CAPI share it", () => {
-    expect(loginEventId("abc")).toBe("login_abc");
-    expect(loginEventId("abc")).toBe(loginEventId("abc"));
-    expect(loginEventId("abc")).not.toBe(loginEventId("def"));
+  const nonce = "ab".repeat(16);
+  it("includes the per-sign-in nonce so a later sign-in is a new event", () => {
+    expect(loginEventId("abc", nonce)).toBe(`login_abc_${nonce}`);
+    expect(loginEventId("abc", nonce)).toBe(loginEventId("abc", nonce));
+    expect(loginEventId("abc", nonce)).not.toBe(loginEventId("abc", "cd".repeat(16)));
+    expect(loginEventId("abc", nonce)).not.toBe(loginEventId("def", nonce));
   });
 });
 

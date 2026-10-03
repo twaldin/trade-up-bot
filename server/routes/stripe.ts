@@ -10,6 +10,7 @@ import {
   checkoutSessionTrackingFields,
   checkoutTrackingMetadata,
   serverTrackingConfig,
+  singleSteamId,
   trackCheckoutCompleted,
 } from "../tracking.js";
 
@@ -311,6 +312,17 @@ export function stripeRouter(pool: pg.Pool): Router {
           listLineItemPriceIds: async () => {
             const items = await stripe.checkout.sessions.listLineItems(cs.id);
             return items.data.flatMap((item) => (item.price?.id ? [item.price.id] : []));
+          },
+          lookupSteamId: async (customerId) => {
+            try {
+              const { rows } = await pool.query<{ steam_id: string }>(
+                "SELECT steam_id FROM users WHERE stripe_customer_id = $1",
+                [customerId],
+              );
+              return singleSteamId(rows);
+            } catch {
+              return null;
+            }
           },
         });
       } catch {

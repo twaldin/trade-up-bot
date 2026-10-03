@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import { consumeCheckoutReturn } from "../../src/lib/auth-return.js";
 import { reportPurchase } from "../../src/lib/purchase.js";
 import { installBrowser, memoryStorage, type MemoryStorage } from "../helpers/browser-stub.js";
 
@@ -27,6 +28,22 @@ afterEach(() => {
 });
 
 describe("reportPurchase", () => {
+  it("fires once from the stashed session id and not again for the same hand-off", async () => {
+    stubCheckoutSession({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" });
+    installBrowser({ pathname: "/pricing" });
+    const holder: { current: { upgraded: string; sessionId: string } | null } = {
+      current: { upgraded: "pro", sessionId: "cs_test_1" },
+    };
+    const checkout = consumeCheckoutReturn(() => holder.current, () => { holder.current = null; });
+    expect(checkout).toEqual({ upgraded: "pro", sessionId: "cs_test_1" });
+    expect(consumeCheckoutReturn(() => holder.current, () => { holder.current = null; })).toBeNull();
+    if (!checkout) throw new Error("missing checkout hand-off");
+    await reportPurchase(checkout.upgraded, checkout.sessionId);
+    await reportPurchase(checkout.upgraded, checkout.sessionId);
+    expect(gtag).toHaveBeenCalledTimes(1);
+    expect(gtag.mock.calls[0][1]).toBe("purchase");
+  });
+
   it("fires the legacy GA4 purchase once per session when nothing is configured", async () => {
     stubCheckoutSession({ transaction_id: "cs_test_1", value: 6.99, currency: "USD" });
     await reportPurchase("pro", "cs_test_1");
