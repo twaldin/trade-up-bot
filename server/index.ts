@@ -150,7 +150,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "https://community.cloudflare.steamstatic.com", "https://community.akamai.steamstatic.com", "https://community.steamstatic.com", "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/", "https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/", "data:", ...trackingCsp.imgSrc],
-      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.googletagmanager.com", "https://open.er-api.com", ...trackingCsp.connectSrc],
+      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.google.com", "https://www.googletagmanager.com", "https://open.er-api.com", ...trackingCsp.connectSrc],
       frameSrc: ["https://checkout.stripe.com"],
     },
   },
