@@ -11,6 +11,7 @@ const DROP_INDEX_SQL = `DROP INDEX CONCURRENTLY IF EXISTS ${STRIPE_CUSTOMER_INDE
 const DUPLICATE_SQL = `SELECT 1 FROM users WHERE ${STRIPE_CUSTOMER_NONEMPTY} GROUP BY stripe_customer_id HAVING COUNT(*) > 1 LIMIT 1`;
 const LOOKUP_SQL = `SELECT i.indisvalid AS valid,
        i.indisunique AS is_unique,
+       i.indnkeyatts AS key_count,
        pg_get_indexdef(i.indexrelid, 1, true) AS key_definition,
        pg_get_expr(i.indpred, i.indrelid) AS predicate
        FROM pg_class c
@@ -73,6 +74,7 @@ function isReadyIndex(row: Record<string, unknown> | undefined): boolean {
   return !!row
     && row.valid === true
     && row.is_unique === true
+    && row.key_count === 1
     && row.key_definition === "stripe_customer_id"
     && predicateMatches(row.predicate);
 }
