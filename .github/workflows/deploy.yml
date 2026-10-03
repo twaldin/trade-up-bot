@@ -126,13 +126,32 @@ jobs:
 
       - name: Smoke check
         run: |
-          sleep 8
           HTTP=$(curl -s -o /tmp/home.html -w "%{http_code}" https://tradeupbot.app/)
           echo "home: $HTTP"
           if [ "$HTTP" != "200" ]; then
             echo "::warning::Homepage returned $HTTP — may be transient pm2 restart window; check manually"
           fi
-          TOTAL=$(curl -s https://tradeupbot.app/api/global-stats | python3 -c "import json,sys; print(int(json.load(sys.stdin).get('total_trade_ups') or 0))")
+          ready=0
+          deadline=$((SECONDS + 90))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            code="$(curl -sS -o /tmp/global-stats.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/global-stats" || true)"
+            if [ "$code" = "200" ] && python3 -c 'import json; json.load(open("/tmp/global-stats.json"))' >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            echo "global-stats not ready (http=${code:-000})"
+            sleep 3
+          done
+          if [ "$ready" != "1" ]; then
+            echo "::error::/api/global-stats did not return HTTP 200 with a JSON body within 90s (last http=${code:-000})"
+            echo "----- pm2 jlist -----"
+            ssh root@178.156.239.58 "pm2 jlist" > /tmp/pm2-jlist.json 2>/tmp/pm2-jlist.err || true
+            python3 -c 'import json,sys; procs=json.load(open("/tmp/pm2-jlist.json")); sys.exit("pm2 jlist was not a JSON list") if not isinstance(procs, list) else [print("name=%s pm_id=%s status=%s restart_time=%s uptime=%s" % (p.get("name"), p.get("pm_id"), (p.get("pm2_env") or {}).get("status"), (p.get("pm2_env") or {}).get("restart_time"), (p.get("pm2_env") or {}).get("pm_uptime"))) for p in procs]' || { echo "failed to summarise pm2 jlist"; cat /tmp/pm2-jlist.json /tmp/pm2-jlist.err || true; }
+            echo "----- pm2 logs api -----"
+            ssh root@178.156.239.58 "pm2 logs api --nostream --lines 80" || true
+            exit 1
+          fi
+          TOTAL=$(python3 -c "import json; print(int(json.load(open('/tmp/global-stats.json')).get('total_trade_ups') or 0))")
           echo "global-stats total_trade_ups=$TOTAL"
           if [ "$TOTAL" -gt 0 ] && ! grep -q 'preview-stats' /tmp/home.html; then
             echo "::error::Homepage first HTML missing .preview-stats while /api/global-stats has live counts (nginx static prerender was not materialized)"
