@@ -145,10 +145,8 @@ jobs:
           if [ "$ready" != "1" ]; then
             echo "::error::/api/global-stats did not return HTTP 200 with a JSON body within 90s (last http=${code:-000})"
             echo "----- pm2 jlist -----"
-            ssh root@178.156.239.58 "pm2 jlist" > /tmp/pm2-jlist.json 2>/tmp/pm2-jlist.err || true
-            python3 -c 'import json,sys; procs=json.load(open("/tmp/pm2-jlist.json")); sys.exit("pm2 jlist was not a JSON list") if not isinstance(procs, list) else [print("name=%s pm_id=%s status=%s restart_time=%s uptime=%s" % (p.get("name"), p.get("pm_id"), (p.get("pm2_env") or {}).get("status"), (p.get("pm2_env") or {}).get("restart_time"), (p.get("pm2_env") or {}).get("pm_uptime"))) for p in procs]' || { echo "failed to summarise pm2 jlist"; cat /tmp/pm2-jlist.json /tmp/pm2-jlist.err || true; }
-            echo "----- pm2 logs api -----"
-            ssh root@178.156.239.58 "pm2 logs api --nostream --lines 80" || true
+            ssh root@178.156.239.58 "pm2 jlist 2>/dev/null | python3 -c 'import json,sys; procs=json.load(sys.stdin); sys.exit(1) if not isinstance(procs, list) else [print(\"name=%s pm_id=%s status=%s restart_time=%s uptime=%s\" % (p.get(\"name\"), p.get(\"pm_id\"), (p.get(\"pm2_env\") or {}).get(\"status\"), (p.get(\"pm2_env\") or {}).get(\"restart_time\"), (p.get(\"pm2_env\") or {}).get(\"pm_uptime\"))) for p in procs]' 2>/dev/null" 2>/dev/null || echo "pm2 summary unavailable"
+            echo "see pm2 logs api on the VPS"
             exit 1
           fi
           TOTAL=$(python3 -c "import json; print(int(json.load(open('/tmp/global-stats.json')).get('total_trade_ups') or 0))")
