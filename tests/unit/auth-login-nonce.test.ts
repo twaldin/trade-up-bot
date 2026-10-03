@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
-import { consumeStoredLoginNonce, issueStoredLoginNonce } from "../../server/auth-login-nonce.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { redirectAfterSteamLogin } from "../../server/auth.js";
+import { consumeStoredLoginNonce, issueStoredLoginNonce, pruneExpiredLoginNonces, startLoginNoncePrune } from "../../server/auth-login-nonce.js";
 import { LOGIN_NONCE_TTL_MS } from "../../server/tracking/registration.js";
 
 const NONCE = "ab".repeat(16);
@@ -130,5 +131,70 @@ describe("login nonce consume", () => {
     const start = source.indexOf('app.post("/api/auth/login-nonce"');
     const end = source.indexOf('app.get("/api/auth/me"');
     expect(source.slice(start, end)).toContain("consumeLoginNonce");
+  });
+
+  it("drops expired nonces when a new one is issued", () => {
+    const db = openMemory();
+    const issuedAt = 1_700_000_000_000;
+    issueStoredLoginNonce(db, "old", NONCE, issuedAt);
+    issueStoredLoginNonce(db, "sid", "cd".repeat(16), issuedAt + LOGIN_NONCE_TTL_MS);
+    expect(nonceCount(db)).toBe(0);
+    expect(nonceCount(db, "cd".repeat(16))).toBe(1);
+  });
+
+  it("keeps issuing when expired-nonce cleanup fails", () => {
+    const db = openMemory();
+    const issuedAt = 1_700_000_000_000;
+    issueStoredLoginNonce(db, "old", NONCE, issuedAt - LOGIN_NONCE_TTL_MS);
+    const realPrepare = db.prepare.bind(db);
+    vi.spyOn(db, "prepare").mockImplementation((sql: string) => {
+      if (sql.includes("expires_at <=")) {
+        const statement = realPrepare(sql);
+        vi.spyOn(statement, "run").mockImplementation(() => {
+          throw new Error("database is locked");
+        });
+        return statement;
+      }
+      return realPrepare(sql);
+    });
+    expect(() => issueStoredLoginNonce(db, "sid", "cd".repeat(16), issuedAt)).not.toThrow();
+    expect(nonceCount(db, "cd".repeat(16))).toBe(1);
+    expect(() => pruneExpiredLoginNonces(db, issuedAt)).not.toThrow();
+  });
+
+  it("drops expired nonces on a timer", () => {
+    vi.useFakeTimers();
+    const issuedAt = 1_700_000_000_000;
+    vi.setSystemTime(issuedAt);
+    const db = openMemory();
+    issueStoredLoginNonce(db, "sid", NONCE, issuedAt);
+    const stop = startLoginNoncePrune(db, 50);
+    try {
+      vi.advanceTimersByTime(50);
+      expect(nonceCount(db)).toBe(1);
+      vi.setSystemTime(issuedAt + LOGIN_NONCE_TTL_MS);
+      vi.advanceTimersByTime(50);
+      expect(nonceCount(db)).toBe(0);
+    } finally {
+      stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("redirects without lid when issuing the nonce throws", () => {
+    const warn = vi.fn();
+    const returned = redirectAfterSteamLogin({
+      returnTo: "/trade-ups",
+      created: false,
+      env: { META_PIXEL_ID: "123456789012345", GA4_MEASUREMENT_ID: "G-NEWPROP123" },
+      sessionId: "sid",
+      loginNonce: NONCE,
+      issueNonce: () => { throw new Error("database is locked"); },
+      warn,
+    });
+    expect(returned.nonce).toBeNull();
+    expect(returned.location).toBe("/trade-ups?auth=return");
+    expect(returned.location).not.toContain("lid");
+    expect(warn).toHaveBeenCalledWith("[tracking] login nonce issue failed (database is locked)");
   });
 });

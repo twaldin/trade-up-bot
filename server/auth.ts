@@ -11,8 +11,9 @@ import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
-import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce } from "./auth-login-nonce.js";
+import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce, startLoginNoncePrune } from "./auth-login-nonce.js";
 import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
+import type { TrackingEnv } from "./tracking.js";
 
 // SQLite session store extending express-session.Store (provides regenerate/save/etc)
 class SqliteSessionStore extends session.Store {
@@ -27,6 +28,7 @@ class SqliteSessionStore extends session.Store {
     this.sessionDb.exec(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, sess TEXT NOT NULL, expired INTEGER NOT NULL)`);
     this.sessionDb.exec("CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired)");
     ensureLoginNonceTable(this.sessionDb);
+    startLoginNoncePrune(this.sessionDb);
     try { this.sessionDb.exec("DELETE FROM sessions WHERE expired < " + Math.floor(Date.now() / 1000)); } catch { /* ignore */ }
   }
   get(sid: string, cb: (err: any, sess?: session.SessionData | null) => void) {
@@ -96,6 +98,32 @@ declare module "express-session" {
     discordState?: string;
     signupRef?: string;
   }
+}
+
+/** Issue the Pixel nonce, then build the return URL. A locked sessions.db must still redirect. */
+export function redirectAfterSteamLogin(args: {
+  returnTo: string;
+  created: boolean;
+  env: TrackingEnv;
+  sessionId: string;
+  loginNonce: string | null;
+  issueNonce: (sid: string, nonce: string) => void;
+  warn?: (message: string) => void;
+}): { location: string; nonce: string | null } {
+  let nonce = args.loginNonce;
+  if (nonce) {
+    try {
+      args.issueNonce(args.sessionId, nonce);
+    } catch (err) {
+      nonce = null;
+      const detail = err instanceof Error ? err.message.replace(/\s+/g, " ").slice(0, 180) : "unknown error";
+      try { (args.warn ?? console.warn)(`[tracking] login nonce issue failed (${detail})`); } catch { /* ignore */ }
+    }
+  }
+  return {
+    nonce,
+    location: authReturnLocation(args.returnTo, args.created, args.env, nonce),
+  };
 }
 
 export function isAdmin(user: Express.User | User | undefined): boolean {
@@ -313,8 +341,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
           delete req.session.returnTo;
           const created = user.just_created === true;
           const ipHeader = req.headers["x-real-ip"];
-          const loginNonce = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
-          if (loginNonce) store.issueLoginNonce(req.sessionID, loginNonce);
+          const issued = !created && isValidMetaPixelId(process.env.META_PIXEL_ID?.trim()) ? newLoginNonce() : null;
+          const returned = redirectAfterSteamLogin({
+            returnTo,
+            created,
+            env: process.env,
+            sessionId: req.sessionID,
+            loginNonce: issued,
+            issueNonce: (sid, nonce) => store.issueLoginNonce(sid, nonce),
+          });
           const authTracking = {
             steamId: user.steam_id,
             ip: typeof ipHeader === "string" ? ipHeader : req.ip ?? null,
@@ -322,8 +357,8 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
             cookieHeader: req.headers.cookie,
           };
           if (created) void trackCompleteRegistration(authTracking);
-          else if (loginNonce) void trackLogin({ ...authTracking, nonce: loginNonce });
-          res.redirect(authReturnLocation(returnTo, created, process.env, loginNonce));
+          else if (returned.nonce) void trackLogin({ ...authTracking, nonce: returned.nonce });
+          res.redirect(returned.location);
         });
       })(req, res, next);
     });

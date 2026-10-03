@@ -11,6 +11,7 @@ export const LOGIN_NONCE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS login_nonces (
 )`;
 
 const INSERT_SQL = `INSERT INTO login_nonces (nonce, sid, expires_at) VALUES (?, ?, ?)`;
+const PRUNE_SQL = `DELETE FROM login_nonces WHERE expires_at <= ?`;
 
 const CONSUME_SQL = `DELETE FROM login_nonces
   WHERE nonce = ? AND sid = ? AND expires_at > ?
@@ -18,6 +19,16 @@ const CONSUME_SQL = `DELETE FROM login_nonces
 
 export function ensureLoginNonceTable(db: Database.Database): void {
   db.exec(LOGIN_NONCE_TABLE_SQL);
+}
+
+/** Drop expired rows. A failure here must not fail the request that called it. */
+export function pruneExpiredLoginNonces(db: Database.Database, nowMs: number = Date.now()): void {
+  try {
+    ensureLoginNonceTable(db);
+    db.prepare(PRUNE_SQL).run(nowMs);
+  } catch {
+    // Opportunistic. The next issue or timer retries.
+  }
 }
 
 /** Bind a fresh nonce to this session. expires_at is issuedAt + 10 minutes. */
@@ -29,7 +40,17 @@ export function issueStoredLoginNonce(
 ): void {
   if (!sid || !isLoginNonce(nonce)) return;
   ensureLoginNonceTable(db);
+  pruneExpiredLoginNonces(db, nowMs);
   db.prepare(INSERT_SQL).run(nonce, sid, nowMs + LOGIN_NONCE_TTL_MS);
+}
+
+/** Light cleanup so abandoned nonces do not wait for the next login. */
+export function startLoginNoncePrune(db: Database.Database, everyMs: number = LOGIN_NONCE_TTL_MS): () => void {
+  const timer = setInterval(() => {
+    pruneExpiredLoginNonces(db);
+  }, everyMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /** True only for the first caller that still holds this unexpired nonce on this session. */
