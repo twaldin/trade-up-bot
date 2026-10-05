@@ -34,6 +34,8 @@ Key facts an assistant can rely on:
 - [All CS2 collections](https://tradeupbot.app/collections): every collection with its
   skins, rarities, and float ranges.
 - [FAQ](https://tradeupbot.app/faq): how trade-ups, floats, and the pricing model work.
+- [Best CS2 trade-ups right now](https://tradeupbot.app/best-cs2-trade-ups): the highest expected P/L on the live board, after fees.
+- [Trade-ups by rarity](https://tradeupbot.app/trade-ups/tiers): how each tier is drawn, from Consumer inputs through knife and glove.
 
 ## Guides
 

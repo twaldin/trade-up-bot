@@ -552,6 +552,9 @@ export default function App() {
         <Route path="/blog" element={<ConsoleApp page="blog" />} />
         <Route path="/blog/:slug/" element={<ConsoleApp page="post" />} />
         <Route path="/blog/:slug" element={<ConsoleApp page="post" />} />
+        <Route path="/best-cs2-trade-ups" element={<ConsoleApp page="intent" />} />
+        <Route path="/trade-ups/tiers" element={<ConsoleApp page="intent" />} />
+        <Route path="/trade-ups/tiers/:slug" element={<ConsoleApp page="intent" />} />
         <Route path="/trade-ups/collection/:slug" element={<ConsoleApp page="collectionTradeUps" />} />
         <Route path="/trade-ups/:id" element={<ConsoleApp page="share" />} />
         {/* The kit shell is the console now: leftover marketing, share, sniper,

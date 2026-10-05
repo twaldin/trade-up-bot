@@ -20,7 +20,8 @@ export type ConsolePage =
   | "privacy"
   | "share"
   | "sniper"
-  | "collectionTradeUps";
+  | "collectionTradeUps"
+  | "intent";
 
 /** The retired `/preview` prefix maps onto the real route. */
 export function consoleTargetFor(pathname: string): string {
@@ -36,6 +37,8 @@ export function needsLandingStats(page: ConsolePage): boolean {
 /** Falls back to reading the page off the path when no page is passed in. */
 export function pageFor(page: ConsolePage | undefined, pathname: string): ConsolePage {
   if (page) return page;
+  if (pathname === "/best-cs2-trade-ups") return "intent";
+  if (/^\/trade-ups\/tiers(\/|$)/.test(pathname)) return "intent";
   if (/^\/trade-ups\/collection\/[^/]+/.test(pathname)) return "collectionTradeUps";
   if (/^\/trade-ups\/\d+/.test(pathname)) return "share";
   if (/^\/trade-ups(\/|$)/.test(pathname)) return "board";
@@ -65,6 +68,7 @@ const MARKETING_PAGES = new Set<ConsolePage>([
   "post",
   "terms",
   "privacy",
+  "intent",
 ]);
 
 /** Product and legal pages render in landing chrome, not the console sidebar. */

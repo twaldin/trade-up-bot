@@ -21,12 +21,15 @@ const NO_TRAILING_SLASH_PATHS = new Set([
   "/skins",
   "/terms",
   "/trade-ups",
+  "/best-cs2-trade-ups",
+  "/trade-ups/tiers",
 ]);
 
 const NO_TRAILING_SLASH_PATTERNS = [
   /^\/collections\/[^/]+$/,
   /^\/skins\/[^/]+$/,
   /^\/trade-ups\/collection\/[^/]+$/,
+  /^\/trade-ups\/tiers\/[^/]+$/,
   /^\/trade-ups\/\d+$/,
 ];
 

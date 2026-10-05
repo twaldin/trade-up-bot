@@ -8,6 +8,7 @@ import { PreviewBlogIndex, PreviewBlogPost } from "./pages/PreviewBlog.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
 import { PreviewCalculator } from "./pages/PreviewCalculator.js";
 import { PreviewCollectionTradeUps } from "./pages/PreviewCollectionTradeUps.js";
+import { PreviewIntent } from "./pages/PreviewIntent.js";
 import { PreviewFaq } from "./pages/PreviewFaq.js";
 import { PreviewFeatures } from "./pages/PreviewFeatures.js";
 import { PreviewLanding } from "./pages/PreviewLanding.js";
@@ -105,6 +106,7 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       case "share": return <PreviewShare />;
       case "sniper": return <PreviewSniper />;
       case "collectionTradeUps": return <PreviewCollectionTradeUps />;
+      case "intent": return <PreviewIntent />;
       case "landing":
       default: return <PreviewLanding stats={stats} mode={mode} onBoardCounts={setBoardCounts} />;
     }

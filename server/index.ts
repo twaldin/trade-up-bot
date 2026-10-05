@@ -13,6 +13,7 @@ import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } f
 import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "./routes/active-trade-up-counts.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
 import { registerTradeUpDetailRoute } from "./trade-up-share-seo.js";
+import { registerIntentRoutes } from "./intent-routes.js";
 import { previewFacesRouter } from "./routes/preview-faces.js";
 import { dataRouter } from "./routes/data.js";
 import { collectionsRouter } from "./routes/collections.js";
@@ -363,6 +364,8 @@ registerCanonicalRedirectRoutes(app);
         + `<li><a href="/collections/${req.params.slug}">Browse all skins in the ${e(displayName)} collection</a></li>`
         + `<li><a href="/trade-ups">All CS2 trade-ups</a></li>`
         + `<li><a href="/collections">All CS2 collections</a></li>`
+        + `<li><a href="/best-cs2-trade-ups">Best CS2 trade-ups right now</a></li>`
+        + `<li><a href="/trade-ups/tiers">Trade-ups by rarity</a></li>`
         + `</ul></nav>`;
       const bodyHtml = collTuBreadcrumb
         + `<h1>${e(displayName)} Trade-Ups</h1>`
@@ -411,6 +414,10 @@ registerCanonicalRedirectRoutes(app);
       res.send(collTuHtml);
     } catch (err) { console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err); next(); }
   });
+
+  // Search landings (/best-cs2-trade-ups, /trade-ups/tiers) must register
+  // before /trade-ups/:id, which 404s any non-numeric segment.
+  registerIntentRoutes(app, pool);
 
   // Dynamic OG tags + SEO for shareable trade-up pages (social/crawler bots)
   registerTradeUpDetailRoute(app, pool);
@@ -549,6 +556,8 @@ registerCanonicalRedirectRoutes(app);
         + `<li><a href="/trade-ups/collection/${req.params.slug}">${e(displayName)} trade-up contracts</a></li>`
         + `<li><a href="/collections">All CS2 collections</a></li>`
         + `<li><a href="/trade-ups">All CS2 trade-ups</a></li>`
+        + `<li><a href="/best-cs2-trade-ups">Best CS2 trade-ups right now</a></li>`
+        + `<li><a href="/trade-ups/tiers/covert">Covert trade-ups</a></li>`
         + `<li><a href="/skins">Browse all CS2 skins</a></li>`
         + `</ul></nav>`;
       const collectionOverviewHtml = `<h2>Collection trade-up research</h2>`
@@ -1235,7 +1244,7 @@ registerCanonicalRedirectRoutes(app);
       const postLinks = blogPosts.map((post) =>
         `<li><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(blogIndexLabel(post.title))}</a><p>${escapeHtml(post.excerpt)}</p></li>`
       ).join("");
-      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, and collection strategy. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live CS2 trade-ups</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p><h2>Latest CS2 Trade-Up Articles</h2><ul>${postLinks}</ul>`;
+      const bodyHtml = `<h1>CS2 Trade-Up Guides & Analysis</h1><p>Read TradeUpBot guides about CS2 trade-up contracts, float values, marketplace fees, output probability, expected value, and collection strategy. These resources explain how 10 input skins become one output skin, why adjusted float determines wear condition, and how marketplace spreads affect real profit.</p><p>Start with the beginner guide, then explore float targeting, marketplace fees, knife collection strategy, and probability analysis. Each article links back to live tools so you can turn trade-up theory into practical contract research.</p><p><a href="/trade-ups">Browse live CS2 trade-ups</a>, <a href="/best-cs2-trade-ups">see the highest expected P/L right now</a>, <a href="/calculator">calculate a contract</a>, or <a href="/skins">research skin prices</a>.</p><h2>Latest CS2 Trade-Up Articles</h2><ul>${postLinks}</ul>`;
       res.setHeader("Content-Type", "text/html");
       if (isCrawler(ua)) {
         res.send(buildSeoHtml({
