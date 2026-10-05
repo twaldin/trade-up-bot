@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { expectedSeoRoutes } from "./seo-html.js";
+import { intentPageForPath } from "../src/preview/lib/intent-landings.js";
 
 const DEFAULT_ROUTES = [
   "/",
@@ -63,6 +64,28 @@ for (const route of routes) {
   if (!h1) failures.push(`${route}: missing h1`);
   if (expectedTitle && title !== expectedTitle.replace(/&/g, "&amp;")) {
     failures.push(`${route}: title mismatch: ${title}`);
+  }
+
+  const intent = intentPageForPath(route);
+  if (intent) {
+    if (title !== intent.title.replace(/&/g, "&amp;")) failures.push(`${route}: intent title mismatch: ${title}`);
+    if (canonical !== `https://tradeupbot.app${intent.path}`) failures.push(`${route}: intent canonical mismatch: ${canonical}`);
+    if (h1 !== intent.h1) failures.push(`${route}: intent h1 mismatch: ${h1}`);
+    if (!html.includes("FAQPage")) failures.push(`${route}: missing FAQPage`);
+    if (html.includes("/assets/")) failures.push(`${route}: homepage bundle leaked into first HTML`);
+
+    const slash = await fetch(new URL(`${intent.path}/`, baseUrl), {
+      headers: {
+        "user-agent": GOOGLEBOT_UA,
+        "accept": "text/html,application/xhtml+xml",
+      },
+      redirect: "manual",
+    });
+    const location = slash.headers.get("location") ?? "";
+    const locationPath = location.startsWith("http") ? new URL(location).pathname : location.split("?")[0];
+    if (slash.status !== 301 || locationPath !== intent.path) {
+      failures.push(`${route}: trailing slash expected 301 to ${intent.path}, got ${slash.status} ${location}`);
+    }
   }
 
   console.log(`${route} ${response.status} title=${title ?? "missing"} canonical=${canonical ?? "missing"}`);
