@@ -22,6 +22,9 @@ describe("buildStaticSitemap", () => {
     expect(xml).toContain("tradeupbot.app/calculator");
     expect(xml).toContain("tradeupbot.app/faq");
     expect(xml).toContain("tradeupbot.app/blog");
+    expect(xml).toContain("https://tradeupbot.app/best-cs2-trade-ups");
+    expect(xml).toContain("https://tradeupbot.app/trade-ups/tiers/covert");
+    expect(xml).toContain("https://tradeupbot.app/trade-ups/tiers/knife");
   });
 
   it("includes the canonical how-cs2-trade-ups-work post and excludes the retired duplicate", () => {

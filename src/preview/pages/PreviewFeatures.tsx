@@ -95,6 +95,10 @@ export function PreviewFeatures() {
       <section className="preview-doc">
         <h2>Collection browser with knife/glove pool info</h2>
         <p>Browse every CS2 collection: which knife and glove finishes are in its pool, how many listings exist per rarity tier, and which collections currently have positive-EV trade-ups. Filter by knives, gloves, or expected profit.</p>
+        <p>
+          <Link className="preview-link" to="/best-cs2-trade-ups">Best trade-ups right now</Link> ranks the board by expected P/L.{" "}
+          <Link className="preview-link" to="/trade-ups/tiers">Trade-ups by rarity</Link> explains the draw for each tier, from Consumer inputs through knife and glove.
+        </p>
       </section>
 
       <section className="preview-doc">

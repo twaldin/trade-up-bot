@@ -22,6 +22,8 @@ export function SiteFooter() {
               <Link to="/skins" className="block text-muted-foreground hover:text-foreground transition-colors">Skin Prices</Link>
               <Link to="/collections" className="block text-muted-foreground hover:text-foreground transition-colors">Collections</Link>
               <Link to="/listing-sniper" className="block text-muted-foreground hover:text-foreground transition-colors">Listing Sniper</Link>
+              <Link to="/best-cs2-trade-ups" className="block text-muted-foreground hover:text-foreground transition-colors">Best right now</Link>
+              <Link to="/trade-ups/tiers" className="block text-muted-foreground hover:text-foreground transition-colors">By rarity</Link>
             </div>
           </div>
           <div>

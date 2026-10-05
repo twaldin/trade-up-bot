@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { toSlug, collectionToSlug } from "../../shared/slugs.js";
+import { intentSitemapEntries } from "../../src/preview/lib/intent-landings.js";
 import { cacheGet, cacheSet } from "../redis.js";
 
 // Blog post slugs inlined to avoid importing from src/ (frontend module boundary)
@@ -59,6 +60,7 @@ export function buildStaticSitemap(base: string, lastmod: string): string {
     { path: "/blog", priority: "0.8", freq: "weekly" },
     { path: "/terms", priority: "0.3", freq: "yearly" },
     { path: "/privacy", priority: "0.3", freq: "yearly" },
+    ...intentSitemapEntries(),
   ];
 
   for (const slug of BLOG_SLUGS) {

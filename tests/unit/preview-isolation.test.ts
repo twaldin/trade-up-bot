@@ -39,6 +39,9 @@ describe("console cutover", () => {
       ["/terms", "terms"],
       ["/privacy", "privacy"],
       ["/trade-ups/:id", "share"],
+      ["/best-cs2-trade-ups", "intent"],
+      ["/trade-ups/tiers", "intent"],
+      ["/trade-ups/tiers/:slug", "intent"],
       ["/trade-ups/collection/:slug", "collectionTradeUps"],
       ["/listing-sniper", "sniper"],
     ];
@@ -80,6 +83,9 @@ describe("console cutover", () => {
     expect(pageFor(undefined, "/privacy")).toBe("privacy");
     expect(pageFor(undefined, "/trade-ups/12345")).toBe("share");
     expect(pageFor(undefined, "/trade-ups/collection/dreams-nightmares")).toBe("collectionTradeUps");
+    expect(pageFor(undefined, "/best-cs2-trade-ups")).toBe("intent");
+    expect(pageFor(undefined, "/trade-ups/tiers")).toBe("intent");
+    expect(pageFor(undefined, "/trade-ups/tiers/covert")).toBe("intent");
     expect(pageFor(undefined, "/listing-sniper")).toBe("sniper");
     expect(pageFor(undefined, "/")).toBe("landing");
     expect(pageFor("board", "/")).toBe("board");

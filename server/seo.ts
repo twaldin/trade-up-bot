@@ -317,7 +317,9 @@ export function renderSeoFooter(): string {
     `<li><a href="/trade-ups">Live CS2 Trade-Ups</a></li>` +
     `<li><a href="/skins">CS2 Skin Prices &amp; Floats</a></li>` +
     `<li><a href="/collections">CS2 Collections</a></li>` +
-    `<li><a href="/listing-sniper">Listing Sniper Alerts</a></li></ul>` +
+    `<li><a href="/listing-sniper">Listing Sniper Alerts</a></li>` +
+    `<li><a href="/best-cs2-trade-ups">Best CS2 trade-ups right now</a></li>` +
+    `<li><a href="/trade-ups/tiers">Trade-ups by rarity</a></li></ul>` +
     `<h2>Top Collections</h2><ul>${collLinks}</ul>` +
     `<h2>Guides</h2><ul>${guideLinks}<li><a href="/blog">All CS2 Trade-Up Guides</a></li></ul>` +
     `</nav>` +
@@ -491,6 +493,8 @@ export function renderTradeUpsHub(args: {
 <h2>Best Live Trade-Ups</h2>
 <p>The table below links to individual trade-up detail pages with inputs, output probabilities, expected profit, ROI, share of outcomes above cost, and float-sensitive pricing. Listings can sell quickly, so always verify availability before purchasing all 10 inputs.</p>
 <table><thead><tr><th>Type</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th></tr></thead><tbody>${tradeRows}</tbody></table>
+<h2>Trade-ups by rarity</h2>
+<p>Gun tiers take 10 skins of one rarity. Knife and glove trade-ups take 5 Covert skins. The collections in the inputs set each outcome's share. <a href="/trade-ups/tiers">See how each tier is drawn</a>, or open <a href="/best-cs2-trade-ups">the highest expected P/L on the board right now</a>.</p>
 <h2>Collection Trade-Up Pages</h2>
 <p>Collection pages narrow the output pool and show which cases or operations currently have positive-EV contracts. They are useful when you want to understand why a rarity tier shows positive EV or compare similar contracts across collections.</p>
 <ul>${collectionLinks}</ul>

@@ -93,6 +93,8 @@ export function PreviewChrome({
             <Link to="/skins">Skins</Link>
             <Link to="/collections">Collections</Link>
             <Link to="/calculator">Calculator</Link>
+            <Link to="/best-cs2-trade-ups">Best right now</Link>
+            <Link to="/trade-ups/tiers">By rarity</Link>
           </div>
           <div>
             <p className="o-kicker">Legal</p>
