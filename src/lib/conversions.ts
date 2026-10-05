@@ -1,6 +1,6 @@
 // Browser conversion events, fanned out to GA4 and the Meta Pixel.
-// GA4 key events to mark in admin: begin_checkout, purchase, sign_up, and calculator_complete.
-// view_item, login, verify_click, and cta_click are measured but are not key events. Never checkout_start.
+// GA4 key events to mark in admin: begin_checkout, purchase, sign_up, calculator_complete, and claim_trade_up.
+// view_item, login, verify_click, verify_complete, and cta_click are measured but are not key events. Never checkout_start.
 // While GA4_MEASUREMENT_ID is unset the existing GA4 events fire exactly as before
 // (begin_checkout, tradeup_view, legacy purchase); once set, the spec event replaces the
 // legacy one at the same hook, so nothing is double-counted.
@@ -91,6 +91,73 @@ export function trackVerifyClick(surface: VerifySurface): void {
   const params = { page_path: pagePath(), surface };
   sendGa4("verify_click", params);
   pixelEvent("verify_click", params, newEventId("verify"));
+}
+
+export type ActivationSurface = "share" | "account";
+export type VerifyCompleteStatus = "all_active" | "partial" | "stale";
+
+/** Verify payload fields the kit already renders. Extra listing and price fields are ignored. */
+export interface ActivationVerifyResult {
+  all_active?: boolean;
+  inputs?: ReadonlyArray<{ status: string }>;
+}
+
+/** Once per event + trade_up_id for this tab. A dropped call (no GA4 id, or gtag blocked) does not consume the slot. */
+const sentActivation = new Set<string>();
+
+/**
+ * Listing outcome for `verify_complete`, from the verify JSON the UI already has.
+ * `all_active` (or every real row still active) → all_active.
+ * Every real row sold or delisted → stale. Anything else (a mix, or errors) → partial.
+ * Theoretical rows are not real listings. Prices are not part of the status.
+ */
+export function verifyCompleteStatus(result: ActivationVerifyResult): VerifyCompleteStatus {
+  if (result.all_active === true) return "all_active";
+  const real = (result.inputs ?? []).filter((row) => row.status !== "theoretical");
+  if (real.length > 0 && real.every((row) => row.status === "active")) return "all_active";
+  if (real.length > 0 && real.every((row) => row.status === "sold" || row.status === "delisted")) return "stale";
+  return "partial";
+}
+
+function sendActivation(
+  event: "claim_trade_up" | "verify_complete",
+  tradeUpId: number | string,
+  surface: ActivationSurface,
+  status?: VerifyCompleteStatus,
+): void {
+  const trade_up_id = String(tradeUpId);
+  const key = `${event}:${trade_up_id}`;
+  if (sentActivation.has(key)) return;
+  const measurementId = clientTracking().ga4MeasurementId;
+  if (!measurementId || typeof globalThis.gtag !== "function") return;
+  sentActivation.add(key);
+  const params: Record<string, string> = { page_path: pagePath(), surface, trade_up_id };
+  if (status) params.status = status;
+  try {
+    trackEvent(event, { ...params, send_to: measurementId });
+  } catch {
+    // gtag failed after a real claim or verify. The UI must still show success.
+  }
+}
+
+/**
+ * Successful Claim (POST 2xx). This is the activation event — mark `claim_trade_up` as a GA4 key event.
+ * No Meta Pixel event. No-op when the GA4 id is unset or gtag has not loaded.
+ */
+export function trackClaimTradeUp(args: { surface: ActivationSurface; tradeUpId: number | string }): void {
+  sendActivation("claim_trade_up", args.tradeUpId, args.surface);
+}
+
+/**
+ * Successful Verify (POST 2xx). Supporting event, not a GA4 key event. `verify_click` is unchanged.
+ * No Meta Pixel event. No-op when the GA4 id is unset or gtag has not loaded.
+ */
+export function trackVerifyComplete(args: {
+  surface: ActivationSurface;
+  tradeUpId: number | string;
+  result: ActivationVerifyResult;
+}): void {
+  sendActivation("verify_complete", args.tradeUpId, args.surface, verifyCompleteStatus(args.result));
 }
 
 export type CtaId = "home_hero_calculator";

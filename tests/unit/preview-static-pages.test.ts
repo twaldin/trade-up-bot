@@ -97,6 +97,7 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(legal).toContain("What We Collect");
     expect(legal).toContain("Steam OpenID");
     expect(legal).toContain("Google Analytics 4");
+    expect(legal).toContain("Verify clicks, successful claims, successful verifies");
     expect(legal).toContain("Conversions API");
     expect(legal).toContain("SHA-256");
     expect(legal).toContain("or your Steam ID in readable form");

@@ -12,6 +12,8 @@ import {
   shouldTrackSpaPageView,
   trackTradeUpDetailOpen,
   trackVerifyClick,
+  trackClaimTradeUp,
+  trackVerifyComplete,
   trackCtaClick,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
@@ -60,7 +62,16 @@ describe("with every tracking env var unset (production today)", () => {
     trackCalculatorComplete("custom");
     trackVerifyClick("pro");
     trackCtaClick("home_hero_calculator");
+    trackClaimTradeUp({ surface: "share", tradeUpId: 1 });
+    const silentResult = {
+      all_active: true,
+      inputs: [{ status: "active", listing_id: "listing-1", current_price: 100, original_price: 90 }],
+      steam_id: "76561198000000000",
+      email: "person@example.com",
+    };
+    trackVerifyComplete({ surface: "account", tradeUpId: 1, result: silentResult });
     expect(gtag).not.toHaveBeenCalled();
+    expect(fbq).not.toHaveBeenCalled();
   });
 
   it("does not keep UTMs or fire calculator_complete while tracking is unset", () => {
@@ -237,6 +248,152 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/calculator" });
     expect(() => trackCalculatorComplete("custom")).not.toThrow();
+    expect(() => {
+      trackClaimTradeUp({ surface: "share", tradeUpId: 8112 });
+      trackVerifyComplete({ surface: "account", tradeUpId: 8112, result: { all_active: true } });
+    }).not.toThrow();
+    globalThis.gtag = () => { throw new Error("blocked"); };
+    expect(() => trackClaimTradeUp({ surface: "share", tradeUpId: 8114 })).not.toThrow();
+  });
+});
+
+describe("claim_trade_up and verify_complete", () => {
+  const forbidden = ["steam_id", "email", "listing_id", "listing_ids", "price", "price_cents", "current_price", "original_price", "value", "skin_name"];
+
+  function expectNoForbiddenFields(): void {
+    for (const call of gtag.mock.calls) {
+      const params = call[2] as Record<string, unknown>;
+      for (const key of forbidden) expect(params).not.toHaveProperty(key);
+    }
+    expect(JSON.stringify(gtag.mock.calls)).not.toMatch(/steam_id|listing_id|@example|current_price|original_price|price_cents/);
+    expect(fbq).not.toHaveBeenCalled();
+  }
+
+  it("fires each success event once with page_path, surface, trade_up_id, and send_to", () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4 };
+    installBrowser({ pathname: "/trade-ups/8101" });
+    trackClaimTradeUp({ surface: "share", tradeUpId: 8101 });
+    installBrowser({ pathname: "/my-trade-ups" });
+    trackVerifyComplete({
+      surface: "account",
+      tradeUpId: "8102",
+      result: { all_active: false, inputs: [{ status: "active" }, { status: "sold" }] },
+    });
+    expect(gtag).toHaveBeenCalledTimes(2);
+    expect(gtag.mock.calls).toEqual([
+      ["event", "claim_trade_up", {
+        page_path: "/trade-ups/8101",
+        surface: "share",
+        trade_up_id: "8101",
+        send_to: GA4,
+      }],
+      ["event", "verify_complete", {
+        page_path: "/my-trade-ups",
+        surface: "account",
+        trade_up_id: "8102",
+        status: "partial",
+        send_to: GA4,
+      }],
+    ]);
+    expectNoForbiddenFields();
+  });
+
+  it("derives all_active and stale from the verify payload and drops listing and price fields", () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    installBrowser({ pathname: "/trade-ups/8103" });
+    const activeWithPrices = {
+      all_active: true,
+      any_price_changed: true,
+      steam_id: "76561198000000000",
+      email: "person@example.com",
+      inputs: [{
+        status: "active",
+        listing_id: "csfloat-99",
+        skin_name: "AK-47 | Redline",
+        current_price: 1234,
+        original_price: 1000,
+      }],
+    };
+    const allGone = {
+      all_active: false,
+      inputs: [
+        { status: "theoretical", listing_id: "theor-1" },
+        { status: "sold", listing_id: "csfloat-1", original_price: 50 },
+        { status: "delisted", listing_id: "csfloat-2", original_price: 75 },
+      ],
+    };
+    const errored = { all_active: false, inputs: [{ status: "error", listing_id: "csfloat-3" }] };
+    trackVerifyComplete({ surface: "share", tradeUpId: 8103, result: activeWithPrices });
+    trackVerifyComplete({ surface: "share", tradeUpId: 8108, result: allGone });
+    trackVerifyComplete({ surface: "account", tradeUpId: 8109, result: errored });
+    expect(gtag.mock.calls.map((call) => [call[1], (call[2] as { status?: string }).status])).toEqual([
+      ["verify_complete", "all_active"],
+      ["verify_complete", "stale"],
+      ["verify_complete", "partial"],
+    ]);
+    expect(Object.keys(gtag.mock.calls[0][2] as object).sort()).toEqual(
+      ["page_path", "send_to", "status", "surface", "trade_up_id"],
+    );
+    expectNoForbiddenFields();
+  });
+
+  it("does not emit a second event for the same event and trade_up_id", () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4 };
+    installBrowser({ pathname: "/trade-ups/8105" });
+    trackClaimTradeUp({ surface: "share", tradeUpId: "8105" });
+    trackClaimTradeUp({ surface: "account", tradeUpId: 8105 });
+    trackVerifyComplete({
+      surface: "share",
+      tradeUpId: 8106,
+      result: { all_active: true, inputs: [{ status: "active" }] },
+    });
+    trackVerifyComplete({
+      surface: "account",
+      tradeUpId: "8106",
+      result: { all_active: false, inputs: [{ status: "sold" }] },
+    });
+    trackClaimTradeUp({ surface: "account", tradeUpId: 8110 });
+    const claims = gtag.mock.calls.filter((call) => call[1] === "claim_trade_up");
+    const verifies = gtag.mock.calls.filter((call) => call[1] === "verify_complete");
+    expect(claims).toHaveLength(2);
+    expect(claims.map((call) => (call[2] as { trade_up_id: string }).trade_up_id)).toEqual(["8105", "8110"]);
+    expect(verifies).toHaveLength(1);
+    expect(verifies[0]?.[2]).toMatchObject({ trade_up_id: "8106", status: "all_active", surface: "share" });
+  });
+
+  it("stays a no-op while GA4 is unset or gtag is missing, then fires once the tracker is available", () => {
+    installBrowser({ pathname: "/trade-ups/8111" });
+    trackClaimTradeUp({ surface: "share", tradeUpId: 8111 });
+    trackVerifyComplete({ surface: "account", tradeUpId: 8111, result: { all_active: true } });
+    expect(gtag).not.toHaveBeenCalled();
+
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    globalThis.gtag = undefined;
+    expect(() => {
+      trackClaimTradeUp({ surface: "share", tradeUpId: 8111 });
+      trackVerifyComplete({ surface: "share", tradeUpId: 8113, result: { all_active: false, inputs: [{ status: "sold" }] } });
+    }).not.toThrow();
+    expect(fbq).not.toHaveBeenCalled();
+
+    globalThis.gtag = gtag;
+    trackClaimTradeUp({ surface: "account", tradeUpId: 8111 });
+    trackVerifyComplete({ surface: "share", tradeUpId: 8113, result: { all_active: false, inputs: [{ status: "sold" }] } });
+    expect(gtag.mock.calls).toEqual([
+      ["event", "claim_trade_up", {
+        page_path: "/trade-ups/8111",
+        surface: "account",
+        trade_up_id: "8111",
+        send_to: GA4,
+      }],
+      ["event", "verify_complete", {
+        page_path: "/trade-ups/8111",
+        surface: "share",
+        trade_up_id: "8113",
+        status: "stale",
+        send_to: GA4,
+      }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
   });
 });
 
