@@ -124,6 +124,10 @@ jobs:
         run: |
           ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && pm2 reload api"
 
+      - name: Proxy /best-cs2-trade-ups to Node
+        run: |
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && python3 scripts/patch-nginx-best-route.py --apply"
+
       - name: Smoke check
         run: |
           HTTP=$(curl -s -o /tmp/home.html -w "%{http_code}" https://tradeupbot.app/ || true)
@@ -162,4 +166,4 @@ jobs:
           fi
 
       - name: Googlebot SEO smoke check
-        run: npm run verify:seo:public -- --routes=/calculator,/faq,/features,/blog/how-cs2-trade-ups-work/
+        run: npm run verify:seo:public -- --routes=/calculator,/faq,/features,/blog/how-cs2-trade-ups-work/,/best-cs2-trade-ups,/trade-ups/tiers/covert
