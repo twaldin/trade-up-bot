@@ -31,6 +31,8 @@ function useBoardRows(type: string | null): { rows: IntentRow[] | null; failed: 
   useEffect(() => {
     if (type === null) return;
     let live = true;
+    setRows(null);
+    setFailed(false);
     const params = new URLSearchParams({
       per_page: "8",
       sort: "profit",
