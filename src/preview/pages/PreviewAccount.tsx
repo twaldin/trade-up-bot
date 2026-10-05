@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
 import { authHref } from "../../lib/ref.js";
-import { trackVerifyClick } from "../../lib/conversions.js";
+import { trackClaimTradeUp, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { ManageSubscription } from "../components/ManageSubscription.js";
@@ -308,6 +308,7 @@ export function PreviewAccount() {
       setClaimExpiries((prev) => new Map(prev).set(id, data.claim!.expires_at!));
     }
     void fetchData();
+    trackClaimTradeUp({ surface: "account", tradeUpId: id });
   }
 
   async function handleVerify(id: number) {
@@ -335,6 +336,7 @@ export function PreviewAccount() {
             : tu
         )));
       }
+      trackVerifyComplete({ surface: "account", tradeUpId: id, result: data });
     } catch {
       setActionError("Failed to verify");
     } finally {

@@ -192,6 +192,23 @@ describe("kit my-trade-ups page", () => {
 
 describe("share page claim and verify hooks", () => {
   const share = read("../../src/preview/pages/PreviewShare.tsx");
+  const account = read("../../src/preview/pages/PreviewAccount.tsx");
+  const board = read("../../src/preview/pages/PreviewBoard.tsx");
+
+  function functionBody(source: string, name: string): string {
+    const start = source.indexOf(`async function ${name}`);
+    expect(start, name).toBeGreaterThan(-1);
+    const next = source.indexOf("\n  async function ", start + 1);
+    return source.slice(start, next === -1 ? source.length : next);
+  }
+
+  function afterOk(body: string): string {
+    const gate = body.indexOf("if (!res.ok)");
+    expect(gate).toBeGreaterThan(-1);
+    const ret = body.indexOf("return;", gate);
+    expect(ret).toBeGreaterThan(gate);
+    return body.slice(ret);
+  }
 
   it("calls the existing verify, claim, confirm, and release endpoints", () => {
     expect(share).toContain("MY_TRADE_UPS_API.verify");
@@ -202,5 +219,28 @@ describe("share page claim and verify hooks", () => {
     expect(share).toContain("Confirm Purchase");
     expect(share).toContain("Release");
     expect(share).not.toContain("onVerify={() => {}}");
+  });
+
+  it("fires claim and verify success events only after a 2xx, on share and account", () => {
+    for (const [source, surface] of [[share, "share"], [account, "account"]] as const) {
+      const claim = functionBody(source, "handleClaim");
+      const verify = functionBody(source, "handleVerify");
+      expect(claim.slice(0, claim.indexOf("if (!res.ok)"))).not.toContain("trackClaimTradeUp");
+      expect(afterOk(claim)).toContain(`trackClaimTradeUp({ surface: "${surface}"`);
+      expect(verify.slice(0, verify.indexOf("if (!res.ok)"))).toContain('trackVerifyClick("pro")');
+      expect(verify.slice(0, verify.indexOf("if (!res.ok)"))).not.toContain("trackVerifyComplete");
+      expect(afterOk(verify)).toContain(`trackVerifyComplete({ surface: "${surface}"`);
+      expect(claim).not.toContain("useEffect");
+      expect(verify).not.toContain("useEffect");
+    }
+    expect(functionBody(share, "handleRelease")).not.toContain("trackClaimTradeUp");
+    expect(functionBody(share, "handleRelease")).not.toContain("trackVerifyComplete");
+    expect(functionBody(share, "handleConfirm")).not.toContain("trackClaimTradeUp");
+    expect(functionBody(share, "handleConfirm")).not.toContain("trackVerifyComplete");
+    expect(functionBody(account, "handleUnclaim")).not.toContain("trackClaimTradeUp");
+    expect(functionBody(account, "handleConfirmPurchased")).not.toContain("trackClaimTradeUp");
+    expect(board).toContain('trackVerifyClick("board_card")');
+    expect(board).not.toContain("trackClaimTradeUp");
+    expect(board).not.toContain("trackVerifyComplete");
   });
 });

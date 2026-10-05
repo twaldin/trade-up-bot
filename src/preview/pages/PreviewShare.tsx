@@ -4,7 +4,7 @@ import type { TradeUp } from "../../../shared/types.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
-import { trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
+import { trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -145,6 +145,7 @@ export function PreviewShare() {
           expected_value_cents: data.updated_trade_up!.expected_value_cents ?? prev.expected_value_cents,
         } : prev);
       }
+      trackVerifyComplete({ surface: "share", tradeUpId: tuId, result: data });
     } catch {
       setActionError("Failed to verify");
     } finally {
@@ -162,6 +163,7 @@ export function PreviewShare() {
     }
     setClaimed(true);
     if (data.claim?.expires_at) setExpiresAt(data.claim.expires_at);
+    trackClaimTradeUp({ surface: "share", tradeUpId: tuId });
   }
 
   async function handleRelease(tuId: number) {
