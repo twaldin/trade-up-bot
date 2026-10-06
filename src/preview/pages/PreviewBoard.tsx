@@ -628,7 +628,7 @@ export function TradeUpCard({
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
           <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
-          <a href="/pricing" className="preview-btn preview-btn--quiet" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</a>
+          <Link to="/pricing" className="preview-btn preview-btn--quiet" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</Link>
         </div>
       )}
 
@@ -1026,7 +1026,7 @@ export function PreviewBoard({
         <div className="preview-delay">
           <span className="preview-delay__label">Free tier</span>
           <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
-          <a className="preview-delay__cta" href="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</a>
+          <Link className="preview-delay__cta" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
