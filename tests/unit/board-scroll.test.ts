@@ -183,6 +183,8 @@ describe("cacheable reads leave the list bucket", () => {
     expect(isCacheableRead("/api/preview/faces")).toBe(true);
     expect(isCacheableRead("/api/global-stats")).toBe(true);
     expect(isCacheableRead("/api/outcome-stats")).toBe(true);
+    expect(isCacheableRead("/api/board-delay")).toBe(true);
+    expect(usesSharedApiBucket("/api/board-delay")).toBe(false);
     expect(usesSharedApiBucket("/api/preview/faces")).toBe(false);
     expect(usesSharedApiBucket("/api/global-stats")).toBe(false);
     expect(usesSharedApiBucket("/api/outcome-stats")).toBe(false);

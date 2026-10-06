@@ -34,7 +34,9 @@ describe("share page auth tri-state", () => {
     expect(shareActionPanel({ steam_id: "1", tier: "free", lifetime: true })).toBe("pro");
     expect(share).toContain('panel === "upgrade"');
     expect(share).toContain("Verify and Claim are Pro features: {proPriceLine(\"monthly\")}.");
-    expect(share).toContain('to="/pricing">See Pro plans');
+    expect(share).toContain('to="/pricing"');
+    expect(share).toContain(">See Pro plans</Link>");
+    expect(share).toContain('trackUpgradeCta("share_upgrade")');
     expect(share).not.toContain("loggedIn: true");
   });
 

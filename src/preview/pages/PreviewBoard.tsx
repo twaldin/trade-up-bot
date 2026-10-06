@@ -7,7 +7,8 @@ import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/type
 import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
-import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
+import { collectionSlugFromPath, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
+import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -627,7 +628,7 @@ export function TradeUpCard({
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
           <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
-          <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
+          <a href="/pricing" className="preview-btn preview-btn--quiet" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</a>
         </div>
       )}
 
@@ -880,6 +881,8 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
+  const delayGap = useBoardDelay(isFree);
+  const delaySentence = boardDelaySentence(delayGap);
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1022,8 +1025,8 @@ export function PreviewBoard({
       {isFree && (
         <div className="preview-delay">
           <span className="preview-delay__label">Free tier</span>
-          <p>{DELAY_BANNER}</p>
-          <a className="preview-delay__cta" href="/pricing">See Pro</a>
+          <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
+          <a className="preview-delay__cta" href="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</a>
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}

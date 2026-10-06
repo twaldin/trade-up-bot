@@ -87,6 +87,7 @@ describe("META_EVENTS", () => {
     expect(META_EVENTS.sign_up).toEqual({ kind: "standard", name: "CompleteRegistration" });
     expect(META_EVENTS.login).toEqual({ kind: "custom", name: "Login" });
     expect(META_EVENTS.lead).toEqual({ kind: "standard", name: "Lead" });
+    expect(META_EVENTS.upgrade_cta_click).toEqual({ kind: "custom", name: "UpgradeCtaClick" });
     expect(META_EVENTS.calculator_complete.kind).toBe("custom");
     expect(META_EVENTS.verify_click.kind).toBe("custom");
   });

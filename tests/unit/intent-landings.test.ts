@@ -102,6 +102,8 @@ describe("intent landing documents", () => {
       expect(html).toContain("Outcome prices are after CSFloat's 2% seller fee.");
       expect(html).toContain("Open the live board");
       expect(html).toContain("Signing in with Steam is free.");
+      expect(html).toContain('href="/pricing">See Pro plans</a>');
+      expect(html).toContain("$6.99/mo");
       expect(html).not.toMatch(BANNED);
       const types = doc.jsonLd.map((block) => block["@type"]);
       expect(types).toContain("BreadcrumbList");

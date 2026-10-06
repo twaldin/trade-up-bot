@@ -6,6 +6,7 @@
 import { formatOdds, rarityLabel } from "./board.js";
 import { boardFeeLine } from "./fees.js";
 import { REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "./copy.js";
+import { proPriceLine } from "./pro-pricing.js";
 import { formatDollars } from "../../utils/format.js";
 
 export const INTENT_ORIGIN = "https://tradeupbot.app";
@@ -446,7 +447,9 @@ export function renderIntentDocument(page: IntentPage, snapshot: IntentSnapshot)
   }
 
   const faqHtml = `<section><h2>Common questions</h2>${faq.map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`).join("")}</section>`;
-  const cta = `<p><a href="${page.tier ? intentBoardHref(page.tier.type) : intentBoardHref()}">Open the live board</a>. ${escapeHtml(SIGN_IN_TO_CLAIM)}</p>`;
+  const boardHref = page.tier ? intentBoardHref(page.tier.type) : intentBoardHref();
+  const cta = `<p><a href="${boardHref}">Open the live board</a>. ${escapeHtml(SIGN_IN_TO_CLAIM)}</p>`
+    + `<p><a href="/pricing">See Pro plans</a>. Pro is ${escapeHtml(proPriceLine("monthly"))}, with the board in real time, Verify (20/hr), and Claim (10/hr, up to 5 active). The free board is delayed 3 hours.</p>`;
   const bodyHtml = `${crumb.html}<h1>${escapeHtml(page.h1)}</h1>${intro}${faqHtml}${cta}${relatedHtml(page)}`;
 
   const itemList = rows.slice(0, 10).map((row, index) => ({

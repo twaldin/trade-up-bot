@@ -20,6 +20,8 @@ import { FeeLine } from "../components/FeeLine.js";
 import { heroProof, pickHeroTradeUp } from "../lib/hero-proof.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { PRO_PRICE, proPriceLine } from "../lib/pro-pricing.js";
+import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { trackUpgradeCta } from "../../lib/conversions.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
@@ -116,6 +118,7 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
 const SKELETON_ROWS = Array.from({ length: 6 }, (_, index) => index);
 
 export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boolean; isFree: boolean }) {
+  const delaySentence = boardDelaySentence(useBoardDelay(isFree));
   const proof = heroProof(tu);
   const outTint = outputRarityColor(tu?.type);
   return (
@@ -211,7 +214,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             <Link to={`/trade-ups/${proof.id}`} className="preview-btn">Open this trade-up</Link>
             {isFree && (
               <p className="preview-note">
-                {DELAY_BANNER} <Link to="/pricing">See Pro</Link>
+                {DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""} <Link to="/pricing" onClick={() => trackUpgradeCta("landing_delay")}>See Pro</Link>
               </p>
             )}
           </footer>

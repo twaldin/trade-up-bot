@@ -4,7 +4,8 @@ import type { TradeUp } from "../../../shared/types.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
-import { trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
+import { trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
+import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -224,6 +225,7 @@ export function PreviewShare() {
     })
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
+  const delaySentence = boardDelaySentence(useBoardDelay(panel === "sign-in" || panel === "upgrade"));
   const realIds = tu ? realListingIds(tu) : [];
 
   return (
@@ -273,6 +275,7 @@ export function PreviewShare() {
 
       {tu && panel === "sign-in" && (
         <section className="preview-panel" id="share-verify">
+          {delaySentence && <p className="preview-note">{delaySentence}</p>}
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <button
             type="button"
@@ -287,7 +290,8 @@ export function PreviewShare() {
       {tu && panel === "upgrade" && (
         <section className="preview-panel">
           <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
-          <Link className="preview-btn" to="/pricing">See Pro plans</Link>
+          {delaySentence && <p className="preview-note">{delaySentence}</p>}
+          <Link className="preview-btn" to="/pricing" onClick={() => trackUpgradeCta("share_upgrade")}>See Pro plans</Link>
         </section>
       )}
 

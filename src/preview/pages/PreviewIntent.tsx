@@ -6,7 +6,8 @@ import { boardFeeLine } from "../lib/fees.js";
 import { REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
-import { trackCtaClick, trackSteamContinue } from "../../lib/conversions.js";
+import { trackCtaClick, trackSteamContinue, trackUpgradeCta } from "../../lib/conversions.js";
+import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
 import { formatDollars } from "../../utils/format.js";
 import {
   INTENT_MIN_PROFIT_CENTS,
@@ -141,11 +142,13 @@ function LiveTable({ rows, failed, showTier }: { rows: IntentRow[] | null; faile
 }
 
 function IntentCta({ location }: { location: string }) {
+  const delaySentence = boardDelaySentence(useBoardDelay());
   return (
     <section className="preview-panel">
       <header className="preview-panel__head">
         <p className="o-kicker">Start free</p>
       </header>
+      {delaySentence && <p className="preview-note">{delaySentence}</p>}
       <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
       <div className="preview-toolbar">
         <a
@@ -159,6 +162,9 @@ function IntentCta({ location }: { location: string }) {
         >
           Sign in with Steam
         </a>
+        <Link className="preview-btn" to="/pricing" onClick={() => trackUpgradeCta("intent_pro")}>
+          See Pro plans
+        </Link>
         <Link className="preview-btn" to="/trade-ups" onClick={() => trackCtaClick("intent_board")}>
           Open the live board
         </Link>

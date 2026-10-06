@@ -18,7 +18,9 @@ export function isCacheableRead(path: string, method = "GET"): boolean {
     || path === "/api/global-stats"
     || path.startsWith("/api/global-stats/")
     || path === "/api/outcome-stats"
-    || path.startsWith("/api/outcome-stats/");
+    || path.startsWith("/api/outcome-stats/")
+    || path === "/api/board-delay"
+    || path.startsWith("/api/board-delay/");
 }
 
 /** True when the request should consume the shared 120/min API bucket. */
