@@ -1231,6 +1231,17 @@
   color: transparent;
 }
 
+/* A guest confirmed after first paint. The list underneath is already the
+   reserved skeleton grid, so the banner pins to that box instead of pushing it. */
+.preview-delay-anchor { position: relative; }
+.preview-delay--cover {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
 .preview-delay p {
   flex: 1;
   min-width: 0;

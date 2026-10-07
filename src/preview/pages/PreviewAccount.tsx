@@ -11,6 +11,7 @@ import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { hasProAccess } from "../lib/billing.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { writeStoredBoardAccount } from "../lib/board-delay.js";
 import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, noteRateLimited, parseRetryAfter, waitForBrowseHold } from "../lib/page-fetch.js";
 import { useBrowseHeld } from "../lib/use-browse-json.js";
 import { BoardNotice } from "../components/BoardNotice.js";
@@ -923,7 +924,7 @@ export function PreviewAccount() {
 
       <div className="preview-toolbar">
         <a className="preview-btn" href="/pricing">Pricing</a>
-        {user && <a className="preview-btn" href="/auth/logout">Sign out</a>}
+        {user && <a className="preview-btn" href="/auth/logout" onClick={() => writeStoredBoardAccount(null)}>Sign out</a>}
       </div>
     </div>
   );

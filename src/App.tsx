@@ -17,6 +17,7 @@ import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib
 import { consumeAuthReturn, consumeCheckoutReturn, reportReturnLogin } from "./lib/auth-return.js";
 import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
+import { writeStoredBoardAccount } from "./preview/lib/board-delay.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
@@ -233,7 +234,7 @@ function UserMenu({ user }: { user: AuthUser }) {
           )}
 
           <div className="border-t border-border mt-1">
-            <a href="/auth/logout" rel="nofollow" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
+            <a href="/auth/logout" rel="nofollow" className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" onClick={() => writeStoredBoardAccount(null)}>
               Sign Out
             </a>
           </div>

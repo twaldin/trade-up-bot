@@ -22,14 +22,14 @@ function tierReq(user: TierUser): Request {
 }
 
 describe("board delay paint", () => {
-  it("treats a missing session cookie as an optimistic guest and a stored paid tier as settled", () => {
+  it("leaves an unknown account unsettled and a stored paid tier settled", () => {
     expect(hasSessionCookie("")).toBe(false);
     expect(hasSessionCookie("other=1")).toBe(false);
     expect(hasSessionCookie("connect.sid=")).toBe(false);
     expect(hasSessionCookie("connect.sid=abc")).toBe(true);
     expect(hasSessionCookie("a=b; connect.sid=abc")).toBe(true);
 
-    expect(accountToPaint("", null)).toEqual({ account: null, settled: false });
+    expect(accountToPaint("", null)).toEqual({ account: undefined, settled: false });
     expect(accountToPaint("connect.sid=abc", null)).toEqual({ account: undefined, settled: false });
     expect(accountToPaint("", JSON.stringify({ tier: "pro" }))).toEqual({
       account: { tier: "pro" },

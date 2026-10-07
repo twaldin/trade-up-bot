@@ -112,7 +112,7 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.textContent).not.toContain("Free tier");
   });
 
-  it("reserves the slot for a guest before the list returns", async () => {
+  it("pins the banner over the reserved list once a guest session resolves", async () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => {
       calls.push(String(url));
       if (String(url).includes("/api/auth/me")) return Promise.resolve(authBody(null));
@@ -136,11 +136,13 @@ describe("board delay fetch waits for the viewer", () => {
     await mount(createElement(Harness));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(delayCalls()).toHaveLength(1);
-    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).not.toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(host.textContent).toContain("Common questions");
     expect(host.textContent).not.toContain(GAP_SENTENCE);
   });
 
-  it("reserves the hold before auth/me when the session cookie is missing, and withholds the skeletons", async () => {
+  it("keeps the skeleton grid and the FAQ while auth is unknown", async () => {
     localStorage.clear();
     document.cookie = "connect.sid=; Max-Age=0";
     vi.stubGlobal("fetch", vi.fn((url: string) => {
@@ -161,9 +163,9 @@ describe("board delay fetch waits for the viewer", () => {
 
     await mount(createElement(Harness));
     expect(delayCalls()).toEqual([]);
-    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
-    expect(host.querySelector(".preview-card--skeleton")).toBeNull();
-    expect(host.textContent).not.toContain("Common questions");
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(host.textContent).toContain("Common questions");
   });
 
   it("does not reserve the hold while a session cookie is present and the tier is unknown", async () => {
@@ -214,7 +216,7 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
   });
 
-  it("drops the optimistic hold when auth returns paid and does not request the gap", async () => {
+  it("does not paint a hold for an unknown account that resolves to paid", async () => {
     localStorage.clear();
     document.cookie = "connect.sid=; Max-Age=0";
     let release: (value: Response) => void = () => {};
@@ -238,8 +240,8 @@ describe("board delay fetch waits for the viewer", () => {
     }
 
     await mount(createElement(Harness));
-    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
-    expect(host.querySelector(".preview-card--skeleton")).toBeNull();
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
 
     await act(async () => {
       release(authBody("pro"));
@@ -251,6 +253,81 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
     expect(delayCalls()).toEqual([]);
     expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
+  });
+
+  it("pins the banner over the skeletons when an unknown account is a guest", async () => {
+    localStorage.clear();
+    let release: (value: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    const before = host.querySelector(".preview-card--skeleton")?.getBoundingClientRect().top ?? null;
+    await act(async () => {
+      release(authBody(null));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector(".preview-delay--cover")).not.toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(host.textContent).toContain("Common questions");
+    expect(host.querySelector(".preview-card--skeleton")?.getBoundingClientRect().top ?? null).toBe(before);
+    expect(localStorage.getItem("tub_board_account")).toBe("null");
+  });
+
+  it("does not insert the hold when a stored pro account gets a 401", async () => {
+    localStorage.setItem("tub_board_account", JSON.stringify({ tier: "pro" }));
+    localStorage.setItem("site_nav_user", JSON.stringify({ tier: "pro", steam_id: "765" }));
+    let release: (value: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    await act(async () => {
+      release(authBody(null));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(delayCalls()).toEqual([]);
+    expect(localStorage.getItem("tub_board_account")).toBe("null");
+    expect(localStorage.getItem("site_nav_user")).toBeNull();
   });
 
   it("loads the gap once the board list reports a free viewer", async () => {

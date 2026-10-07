@@ -177,10 +177,14 @@ describe("free-tier banner reserves its height", () => {
     }
     expect(lifetime).not.toContain("preview-delay");
     // No cookie and no stored tier: the hold is in the first markup, and the list under it is not.
-    expect(unknown).toContain("preview-delay--hold");
-    expect(unknown).not.toContain("preview-card--skeleton");
+    expect(unknown).not.toContain("preview-delay");
+    expect(unknown).toContain("preview-card--skeleton");
+    expect(unknown).toContain("Common questions");
     expect(free).toContain("preview-delay--hold");
+    expect(free).toContain("preview-card--skeleton");
     expect(hold).toContain("preview-delay--hold");
+    expect(hold).toContain("preview-card--skeleton");
+    expect(hold).toContain("Common questions");
     expect(hold).toContain('aria-hidden="true"');
     expect(banner).toContain("Free tier");
     expect(banner).not.toContain("preview-delay--hold");

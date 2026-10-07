@@ -59,15 +59,17 @@ export function parseStoredBoardAccount(raw: string | null): PaintAccount {
 
 /**
  * What to paint before `/api/auth/me`.
- * A stored account is settled. No session cookie is an optimistic guest (hold, nothing under it).
- * A session cookie with no stored tier stays unknown so a paid board does not reserve the slot.
+ * A stored account is settled. Anything else stays unknown: the session cookie is
+ * HttpOnly, so a missing cookie is every first visit, not a confirmed guest.
+ * The hold is not painted for an unknown account, and the list stays mounted.
  */
 export function accountToPaint(cookieHeader: string, storedRaw: string | null, navRaw: string | null = null): PaintDecision {
+  // Readable only in tests. Production never sees connect.sid, so it cannot choose the hold.
+  void hasSessionCookie(cookieHeader);
   const stored = parseStoredBoardAccount(storedRaw);
   if (stored !== undefined) return { account: stored, settled: true };
   const nav = parseStoredBoardAccount(navRaw);
   if (nav !== undefined) return { account: nav, settled: true };
-  if (!hasSessionCookie(cookieHeader)) return { account: null, settled: false };
   return { account: undefined, settled: false };
 }
 
@@ -85,6 +87,8 @@ export function writeStoredBoardAccount(account: { tier?: string; lifetime?: boo
     if (typeof localStorage === "undefined") return;
     if (account === null) {
       localStorage.setItem(BOARD_ACCOUNT_STORAGE_KEY, "null");
+      // A stale nav cache must not paint the next board as paid.
+      localStorage.removeItem(NAV_ACCOUNT_STORAGE_KEY);
       return;
     }
     const tier = typeof account.tier === "string" && account.tier !== "" ? account.tier : "free";

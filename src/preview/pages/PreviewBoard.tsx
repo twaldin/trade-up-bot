@@ -894,9 +894,9 @@ function accountFromAuth(data: unknown): { tier: string; lifetime?: boolean } | 
 
 /**
  * Account for the delay slot. A passed-in user is settled. Otherwise the first
- * paint uses the session cookie and the stored tier: no cookie reserves the
- * hold and leaves the list unmounted until auth answers, so a paid account can
- * drop the hold without moving skeletons.
+ * paint uses the stored tier. An unknown account (no saved tier) does not
+ * paint the hold: the session cookie is HttpOnly, so a first visit cannot
+ * tell a guest from a paid user.
  */
 function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled: boolean } {
   const [loaded, setLoaded] = useState<BoardAccount>(() => given !== undefined ? given : paintAccountFromBrowser().account);
@@ -1110,17 +1110,22 @@ export function PreviewBoard({
   });
   const known = useKnownAccount(user);
   const account = known.account;
-  const accountDelay = known.settled && shouldFetchBoardDelay(account);
+  // First paint decides whether the hold is already in the document. A stored
+  // paid board never gains one later: a 401 must not insert it above the skeletons.
+  const paint = useRef(user !== undefined ? { account: user, settled: true } : paintAccountFromBrowser());
+  const startedPaid = paint.current.settled && !shouldFetchBoardDelay(paint.current.account);
+  const startedGuest = paint.current.settled && shouldFetchBoardDelay(paint.current.account);
+  const accountDelay = !startedPaid && known.settled && shouldFetchBoardDelay(account);
   const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
-  // Guest and free reserve the banner before the list lands. Paid accounts
-  // render nothing, so their board does not jump when the list reports a tier.
-  // An optimistic guest (no session cookie, auth still out) keeps the hold and
-  // mounts nothing under it, so dropping the hold for a paid account does not move the list.
-  const optimisticGuest = !embed && !known.settled && account === null;
+  const viewerGuest = !startedPaid && (isFree || accountDelay);
+  // In flow only when the first paint already reserved it. A later guest pins
+  // the banner over the reserved list so the grid, FAQ, and footer stay put.
+  const delayInFlow = !embed && viewerGuest && startedGuest;
+  const delayCover = !embed && viewerGuest && !startedGuest;
+  const delayEmbed = embed && (isFree || accountDelay);
   const confirmedHold = accountDelay && loading && tradeUps.length === 0 && !isFree;
-  const delayPending = !isFree && (confirmedHold || optimisticGuest);
-  const delayHoldOnly = optimisticGuest && !isFree;
+  const delayPending = delayInFlow && confirmedHold;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1345,45 +1350,54 @@ export function PreviewBoard({
           onBlur={onFilterBlur}
         />
       )}
-      {(isFree || delayPending) && (
+      {(delayInFlow || delayEmbed) && (
         <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined} inert={delayPending ? true : undefined}>
           <span className="preview-delay__label">Free tier</span>
           <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
           <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}
-      {!delayHoldOnly && !embed && <FeeLine line={boardFeeLine()} caveat />}
-      {!delayHoldOnly && loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
+      {!embed && <FeeLine line={boardFeeLine()} caveat />}
+      {loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
         <p className={embed ? "preview-note" : "sr-only"}>Loading trade-ups…</p>
       )}
-      {!delayHoldOnly && refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
-      {!delayHoldOnly && !showStatus && noticeNode}
-      {delayHoldOnly ? null : showSkeletons ? (
-        <div className="preview-bento preview-bento--reserved" aria-busy="true">
-          {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
-        </div>
-      ) : showStatus ? (
-        <div className="preview-board-status">{noticeNode}</div>
-      ) : (
-        <div
-          className={`preview-bento${refreshing ? " preview-bento--stale" : ""}${shortPage ? " preview-bento--floor" : ""}`}
-          aria-busy={loading || refreshing || undefined}
-        >
-          {ordered.map((tu) => (
-            <TradeUpCard
-              key={tu.id}
-              tu={tu}
-              expanded={expandedId === tu.id}
-              onExpand={onExpand}
-              onVerifyClaim={onVerifyClaim}
-              claimStatus={claimStatus}
-              confirming={confirmId === tu.id}
-              onConfirmClaim={onConfirmClaim}
-              onCancelClaim={() => setConfirmId(null)}
-            />
-          ))}
-        </div>
-      )}
+      {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
+      {!showStatus && noticeNode}
+      <div className={delayCover ? "preview-delay-anchor" : undefined}>
+        {delayCover && (
+          <div className="preview-delay preview-delay--cover">
+            <span className="preview-delay__label">Free tier</span>
+            <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
+            <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
+          </div>
+        )}
+        {showSkeletons ? (
+          <div className="preview-bento preview-bento--reserved" aria-busy="true">
+            {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
+          </div>
+        ) : showStatus ? (
+          <div className="preview-board-status">{noticeNode}</div>
+        ) : (
+          <div
+            className={`preview-bento${refreshing ? " preview-bento--stale" : ""}${shortPage ? " preview-bento--floor" : ""}`}
+            aria-busy={loading || refreshing || undefined}
+          >
+            {ordered.map((tu) => (
+              <TradeUpCard
+                key={tu.id}
+                tu={tu}
+                expanded={expandedId === tu.id}
+                onExpand={onExpand}
+                onVerifyClaim={onVerifyClaim}
+                claimStatus={claimStatus}
+                confirming={confirmId === tu.id}
+                onConfirmClaim={onConfirmClaim}
+                onCancelClaim={() => setConfirmId(null)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
       <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">{pagingThrottle ? (
           <p className="preview-note" ref={throttleRef} tabIndex={-1}>
@@ -1422,7 +1436,7 @@ export function PreviewBoard({
       {showNarrowHint && (
         <p className="preview-note preview-note--hint">{NARROW_FILTERS_HINT}</p>
       )}
-      {!delayHoldOnly && !embed && (
+      {!embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
           {TRADE_UPS_FAQ.map((item) => (
