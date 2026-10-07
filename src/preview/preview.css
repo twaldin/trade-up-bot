@@ -1015,8 +1015,8 @@
   align-items: center;
   gap: 8px 10px;
   box-sizing: border-box;
-  /* Tallest painted sentence (999,999 trade-ups, +$999999.99) at desktop width.
-     Hidden copy uses the fallback face, so a reserve string cannot size this. */
+  /* Zero-gap sentence at desktop width. A six-digit count leaves an empty band
+     around the failed and zero-gap lines; hidden text cannot measure this. */
   min-height: 54px;
   padding: 8px 10px;
   border: 1px solid var(--accent);
@@ -1026,27 +1026,31 @@
   font-size: 12px;
 }
 
-/* Narrower last. Each step is the painted long sentence's outer height. */
+/* Narrower last. Each step is the painted zero-gap sentence, border-box.
+   The sidebar at 800px makes that width taller than the phone-less 768px. */
 @media (max-width: 1023px) {
   .preview-delay { min-height: 72px; }
 }
+@media (max-width: 799px) {
+  .preview-delay { min-height: 54px; }
+}
+@media (max-width: 699px) {
+  .preview-delay { min-height: 72px; }
+}
 @media (max-width: 599px) {
-  .preview-delay { min-height: 108px; }
+  .preview-delay { min-height: 90px; }
 }
 @media (max-width: 479px) {
-  .preview-delay { min-height: 126px; }
-}
-@media (max-width: 411px) {
-  .preview-delay { min-height: 144px; }
+  .preview-delay { min-height: 108px; }
 }
 @media (max-width: 389px) {
-  .preview-delay { min-height: 162px; }
+  .preview-delay { min-height: 126px; }
 }
 @media (max-width: 359px) {
-  .preview-delay { min-height: 198px; }
+  .preview-delay { min-height: 144px; }
 }
 @media (max-width: 339px) {
-  .preview-delay { min-height: 216px; }
+  .preview-delay { min-height: 162px; }
 }
 
 /* Present before the list reports a free tier. Ink stays transparent so the

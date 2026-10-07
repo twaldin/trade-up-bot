@@ -68,10 +68,11 @@ describe("board delay fetch waits for the viewer", () => {
     return calls.filter((url) => url.includes("/api/board-delay"));
   }
 
-  it("does not request the gap on the board until the list says the viewer is free", async () => {
+  it("does not reserve or request the gap for a paid account while the list is loading", async () => {
     let release: (value: Response) => void = () => {};
     vi.stubGlobal("fetch", vi.fn((url: string) => {
       calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) return Promise.resolve(authBody("pro"));
       if (String(url).includes("/api/trade-ups")) {
         return new Promise<Response>((resolve) => { release = resolve; });
       }
@@ -92,6 +93,7 @@ describe("board delay fetch waits for the viewer", () => {
     await mount(createElement(Harness));
     expect(delayCalls()).toEqual([]);
     expect(host.textContent).not.toContain(GAP_SENTENCE);
+    expect(host.querySelector(".preview-delay")).toBeNull();
 
     await act(async () => {
       release(json({
@@ -106,6 +108,34 @@ describe("board delay fetch waits for the viewer", () => {
     expect(delayCalls()).toEqual([]);
     expect(host.textContent).not.toContain(GAP_SENTENCE);
     expect(host.textContent).not.toContain("Free tier");
+  });
+
+  it("reserves the slot for a guest before the list returns", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) return Promise.resolve(authBody(null));
+      if (String(url).includes("/api/trade-ups") || String(url).includes("/api/board-delay")) {
+        return new Promise<Response>(() => {});
+      }
+      return Promise.resolve(json(GAP));
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(delayCalls()).toHaveLength(1);
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.textContent).not.toContain(GAP_SENTENCE);
   });
 
   it("loads the gap once the board list reports a free viewer", async () => {

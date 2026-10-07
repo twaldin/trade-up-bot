@@ -200,9 +200,12 @@ describe("preview craft bar", () => {
 
   it("reserves the free-tier banner height before the list reports a tier", () => {
     expect(board).toContain("preview-delay--hold");
-    expect(board).toContain("loading && tradeUps.length === 0 && !isFree");
+    expect(board).toContain("shouldFetchBoardDelay(account)");
+    expect(board).toContain("accountDelay && loading && tradeUps.length === 0 && !isFree");
     expect(css).toMatch(/\.preview-delay\s*\{[^}]*box-sizing:\s*border-box/);
     expect(css).toMatch(/\.preview-delay\s*\{[^}]*min-height:\s*54px/);
+    expect(css).toContain("min-height: 162px");
+    expect(css).not.toContain("min-height: 216px");
     expect(css).toContain(".preview-delay--hold");
   });
 

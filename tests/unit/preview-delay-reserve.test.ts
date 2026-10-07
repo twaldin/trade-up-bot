@@ -21,18 +21,24 @@ const preview = readFileSync(resolve(dir, "../../src/preview/preview.css"), "utf
   .replace('@import "./kit/outlay/theme.css";\n', "");
 const css = `${theme}\n${preview}`;
 
-const LONG_SENTENCE = boardDelaySentence({
-  hidden_profitable: 999_999,
-  best_hidden_profit_cents: 99_999_999,
+const ZERO_SENTENCE = boardDelaySentence({
+  hidden_profitable: 0,
+  best_hidden_profit_cents: null,
 });
 
-function boardHtml(props: { loading: boolean; isFree: boolean; rows: ReturnType<typeof makeTradeUp>[] }) {
+function boardHtml(props: {
+  loading: boolean;
+  isFree: boolean;
+  rows: ReturnType<typeof makeTradeUp>[];
+  user?: { tier?: string; lifetime?: boolean } | null;
+}) {
   return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(PreviewBoard, {
     tradeUps: props.rows,
     loading: props.loading,
     isFree: props.isFree,
     expandedId: null,
     onExpand: () => {},
+    user: props.user,
   })));
 }
 
@@ -75,9 +81,9 @@ async function delayBox(page: Page, width: number, html: string, sentence: strin
 
 describe("free-tier banner reserves its height", () => {
   let browser: Browser;
-  const hold = boardHtml({ loading: true, isFree: false, rows: [] });
-  const banner = boardHtml({ loading: false, isFree: true, rows: [makeTradeUp({ id: 1 })] });
-  const full = `${DELAY_BANNER} ${LONG_SENTENCE ?? ""}`;
+  const hold = boardHtml({ loading: true, isFree: false, rows: [], user: null });
+  const banner = boardHtml({ loading: false, isFree: true, rows: [makeTradeUp({ id: 1 })], user: null });
+  const full = `${DELAY_BANNER} ${ZERO_SENTENCE ?? ""}`;
 
   beforeAll(async () => {
     browser = await puppeteer.launch({
@@ -110,6 +116,7 @@ describe("free-tier banner reserves its height", () => {
     for (const [width, box] of Object.entries(heights)) {
       const label = `${width} hold ${box.heldW}x${box.held} quiet ${box.quietW}x${box.quiet} filled ${box.filledW}x${box.filled}`;
       expect(box.held, label).toBeGreaterThan(40);
+      if (width === "320") expect(box.held, label).toBeLessThan(180);
       expect(box.quietW, label).toBe(box.heldW);
       expect(box.filledW, label).toBe(box.heldW);
       expect(box.quiet, label).toBe(box.held);
@@ -117,9 +124,27 @@ describe("free-tier banner reserves its height", () => {
     }
   }, 60000);
 
-  it("drops the slot once a paid list has loaded", () => {
-    const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })] });
+  it("reserves the slot for a guest and skips it for a paid account", () => {
+    const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });
+    const loadingPaid = ["pro", "basic", "admin"].map((tier) => boardHtml({
+      loading: true,
+      isFree: false,
+      rows: [],
+      user: { tier },
+    }));
+    const lifetime = boardHtml({
+      loading: true,
+      isFree: false,
+      rows: [],
+      user: { tier: "free", lifetime: true },
+    });
+    const unknown = boardHtml({ loading: true, isFree: false, rows: [] });
+    const free = boardHtml({ loading: true, isFree: false, rows: [], user: { tier: "free" } });
     expect(paid).not.toContain("preview-delay");
+    for (const html of loadingPaid) expect(html).not.toContain("preview-delay");
+    expect(lifetime).not.toContain("preview-delay");
+    expect(unknown).not.toContain("preview-delay");
+    expect(free).toContain("preview-delay--hold");
     expect(hold).toContain("preview-delay--hold");
     expect(hold).toContain('aria-hidden="true"');
     expect(banner).toContain("Free tier");

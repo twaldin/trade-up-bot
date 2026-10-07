@@ -8,7 +8,8 @@ import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
-import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { authUserFrom } from "../lib/auth-state.js";
+import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -779,6 +780,27 @@ function rankedMeta(throttled: boolean, count: number): string {
   return `${count} ranked`;
 }
 
+type BoardAccount = { tier?: string; lifetime?: boolean } | null | undefined;
+
+/** Account from `/api/auth/me` when the board was not given one. `undefined` until that returns. */
+function useKnownAccount(given: BoardAccount): BoardAccount {
+  const [loaded, setLoaded] = useState<BoardAccount>(undefined);
+  useEffect(() => {
+    if (given !== undefined) return;
+    let live = true;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (live) setLoaded(authUserFrom(data));
+      })
+      .catch(() => {
+        if (live) setLoaded(null);
+      });
+    return () => { live = false; };
+  }, [given]);
+  return given !== undefined ? given : loaded;
+}
+
 export function PreviewBoard({
   tradeUps,
   loading,
@@ -810,6 +832,7 @@ export function PreviewBoard({
   collection,
   lockedSkin,
   embed = false,
+  user,
 }: {
   tradeUps: HydratedTradeUp[];
   loading: boolean;
@@ -852,6 +875,8 @@ export function PreviewBoard({
   collection?: string;
   lockedSkin?: string;
   embed?: boolean;
+  /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
+  user?: BoardAccount;
 }) {
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
@@ -881,11 +906,13 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const delayGap = useBoardDelay(isFree);
+  const account = useKnownAccount(user);
+  const accountDelay = shouldFetchBoardDelay(account);
+  const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
-  // Tier is unknown until the first page lands. Hold the banner's box so the
-  // free board does not jump when that page, then the delay sentence, arrives.
-  const delayPending = loading && tradeUps.length === 0 && !isFree;
+  // Guest and free reserve the banner before the list lands. Paid accounts
+  // render nothing, so their board does not jump when the list reports a tier.
+  const delayPending = accountDelay && loading && tradeUps.length === 0 && !isFree;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
