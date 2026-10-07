@@ -437,9 +437,7 @@ export default function MyTradeUpsPage() {
           <span className="text-border">|</span>
           <span>Executed: <strong className="text-foreground">{stats.total_executed}</strong></span>
           <span className="text-border">|</span>
-          <span>Win Rate: <strong className="text-foreground">{stats.win_rate}%</strong></span>
-          <span className="text-border">|</span>
-          <span>Avg ROI: <strong className="text-foreground">{stats.avg_roi}%</strong></span>
+          <span>Sold at a profit · <strong className="text-foreground">{stats.win_rate}%</strong> · {stats.avg_roi}% avg ROI</span>
         </div>
       )}
 
