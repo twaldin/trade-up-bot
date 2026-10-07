@@ -17,7 +17,7 @@ export interface ConfirmedCheckoutBody {
 
 export type CheckoutGate =
   | { ok: true; body: ConfirmedCheckoutBody }
-  | { ok: false; status: 403 | 409 };
+  | { ok: false; status: 404 | 409 };
 
 /** Stripe returns `customer` as an id string unless the field was expanded. */
 export function checkoutCustomerId(customer: string | { id: string } | null): string | null {
@@ -28,11 +28,12 @@ export function checkoutCustomerId(customer: string | { id: string } | null): st
 
 /**
  * Paid checkout that belongs to this user's Stripe customer.
- * Anything else stays a non-2xx so the browser does not emit `purchase`.
+ * A session owned by someone else is 404, the same as an unknown id, so callers cannot probe ids.
+ * An owned session that is not paid is 409. Anything non-2xx keeps the browser from emitting `purchase`.
  */
 export function gatePaidCheckout(session: CheckoutOwnershipSession, userCustomerId: string): CheckoutGate {
   const sessionCustomer = checkoutCustomerId(session.customer);
-  if (sessionCustomer !== userCustomerId) return { ok: false, status: 403 };
+  if (sessionCustomer !== userCustomerId) return { ok: false, status: 404 };
   if (session.payment_status !== "paid") return { ok: false, status: 409 };
   return {
     ok: true,

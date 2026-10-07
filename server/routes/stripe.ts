@@ -185,8 +185,8 @@ export function stripeRouter(
       const gated = gatePaidCheckout(cs, customerId);
       if (!gated.ok) {
         switch (gated.status) {
-          case 403:
-            res.status(403).json({ error: "Forbidden" });
+          case 404:
+            res.status(404).json({ error: "Checkout session not found" });
             return;
           case 409:
             res.status(409).json({ error: "Not paid" });

@@ -150,11 +150,15 @@ describe("GET /api/checkout-session/:id", () => {
     expect(stripeMock.retrieve).not.toHaveBeenCalled();
   });
 
-  it("rejects a signed-in user who does not own the session", async () => {
+  it("hides a session the signed-in user does not own with the same 404 as an unknown id", async () => {
+    stripeMock.retrieve.mockRejectedValueOnce(new Error("No such checkout.session"));
+    const unknown = await request(app).get("/api/checkout-session/cs_missing").set("x-test-user", "user_a");
     stripeMock.retrieve.mockResolvedValue(paidSession("cus_a", "cs_fake_anything"));
-    const res = await request(app).get("/api/checkout-session/cs_fake_anything").set("x-test-user", "user_b");
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden" });
+    const unowned = await request(app).get("/api/checkout-session/cs_fake_anything").set("x-test-user", "user_b");
+    expect(unknown.status).toBe(404);
+    expect(unowned.status).toBe(404);
+    expect(unowned.body).toEqual({ error: "Checkout session not found" });
+    expect(unowned.body).toEqual(unknown.body);
   });
 
   it("rejects an owned session that is not paid", async () => {
