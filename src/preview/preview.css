@@ -188,6 +188,22 @@
   .preview-nav .preview-currency__trigger > span:not(.preview-currency__code) { display: none; }
 }
 
+/* Phone tap targets for the remaining upgrade controls. Desktop sizes stay put. */
+@media (max-width: 599px) {
+  .preview-tile--plan .preview-btn--block,
+  .preview-nav__links a[href="/pricing"],
+  .preview-footer__grid a[href="/pricing"],
+  .preview-page__meta a.preview-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .preview-footer__grid a[href="/pricing"] {
+    display: flex;
+    align-items: center;
+  }
+}
+
 .preview-btn {
   display: inline-flex;
   align-items: center;
@@ -379,7 +395,8 @@
 }
 
 .preview-hero .preview-stats b {
-  display: inline;
+  display: inline-block;
+  min-width: 9ch;
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
@@ -1051,6 +1068,11 @@
   gap: 8px;
 }
 
+.preview-toolbar[aria-label="Claim for 30 min?"] > .preview-btn {
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
 .preview-input {
   min-width: 240px;
   height: var(--control);
@@ -1096,6 +1118,17 @@
   align-items: flex-start;
   gap: 8px;
   padding: 10px 2px 4px;
+}
+
+.preview-calc-next {
+  margin: 0;
+}
+
+@media (max-width: 599px) {
+  .preview-calc-next .preview-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 .preview-panel__meta .preview-chip {
@@ -3239,6 +3272,17 @@
 .preview-plan--pro {
   border-color: var(--line-hard);
 }
+
+@media (max-width: 599px) {
+  .preview-plans > .preview-plan--pro { order: -1; }
+  .preview-tabs--billing .o-tab {
+    height: auto;
+    min-height: 44px;
+  }
+}
+
+.preview-plan__delay { color: var(--text-muted); }
+.preview-plan__clock { flex: none; }
 
 .preview-plan__price {
   margin: 0;

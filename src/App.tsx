@@ -25,7 +25,7 @@ const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: 
 // The kit shell is the primary app now, so it is imported directly: as a lazy
 // chunk its CSS preload failed during prerender and "/" captured an empty body.
 import PreviewApp from "./preview/PreviewApp.js";
-import { consoleTargetFor, type ConsolePage } from "./preview/lib/console-routes.js";
+import { consoleTargetFor, resolveConsolePage, type ConsolePage } from "./preview/lib/console-routes.js";
 
 interface GlobalStats {
   total_trade_ups: number;
@@ -484,7 +484,9 @@ function AuthGatedApp() {
 }
 
 function ConsoleApp({ page }: { page: ConsolePage }) {
-  return <PreviewApp page={page} />;
+  const { pathname } = useLocation();
+  const browserPath = typeof window !== "undefined" ? window.location.pathname : pathname;
+  return <PreviewApp page={resolveConsolePage(page, pathname, browserPath)} />;
 }
 
 /** The kit shell used to live behind /preview; that prefix now redirects. */
@@ -557,6 +559,7 @@ export default function App() {
         <Route path="/trade-ups/tiers/:slug" element={<ConsoleApp page="intent" />} />
         <Route path="/trade-ups/collection/:slug" element={<ConsoleApp page="collectionTradeUps" />} />
         <Route path="/trade-ups/:id" element={<ConsoleApp page="share" />} />
+        <Route path="/trade-ups/:id/" element={<ConsoleApp page="share" />} />
         {/* The kit shell is the console now: leftover marketing, share, sniper,
             and collection trade-up URLs join /, /trade-ups, /skins,
             /collections, /calculator and /account. /preview/* still redirects. */}

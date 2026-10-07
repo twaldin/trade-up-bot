@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { makeTradeUp } from "../helpers/fixtures.js";
-import { HeroProof } from "../../src/preview/pages/PreviewLanding.js";
+import { HERO_EMPTY_COPY, HeroProof } from "../../src/preview/pages/PreviewLanding.js";
 import { pickHeroTradeUp } from "../../src/preview/lib/hero-proof.js";
 import type { TradeUp } from "../../shared/types.js";
 
@@ -20,7 +20,7 @@ describe("hero proof panel states", () => {
     expect(html).toContain("preview-proof__skeleton");
     expect(html).not.toContain("Loading the top trade-up on the board");
     expect(html).not.toContain("Loading trade-ups");
-    expect(html).not.toContain("The board is refreshing");
+    expect(html).not.toContain(HERO_EMPTY_COPY);
   });
 
   it("shows a neutral placeholder chip and an em-dash price when nothing is eligible", () => {
@@ -33,7 +33,8 @@ describe("hero proof panel states", () => {
     expect(html).toContain("—");
     expect(html).not.toContain("$0.00");
     expect(html).not.toMatch(/<b>0<\/b>/);
-    expect(html).toContain("The board is refreshing");
+    expect(HERO_EMPTY_COPY).toBe("No trade-ups to show right now.");
+    expect(html).toContain("No trade-ups to show right now.");
     expect(html).toContain('href="/trade-ups"');
   });
 

@@ -213,6 +213,13 @@ describe("SteamInterstitial markup", () => {
     expect(hrefOf(render({ surface: "share_verify" }))).toBe("/auth/steam?return=%2Ftrade-ups%2F776913115");
   });
 
+  it("returns a board visitor to the trade-up they tapped, and ignores an off-site return", () => {
+    stubWindow("/trade-ups");
+    expect(hrefOf(render({ surface: "share_verify", returnTo: "/trade-ups/42" }))).toBe("/auth/steam?return=%2Ftrade-ups%2F42");
+    expect(hrefOf(render({ surface: "share_verify", returnTo: "https://evil.test/phish" }))).toBe("/auth/steam?return=%2Ftrade-ups");
+    expect(hrefOf(render({ surface: "share_verify", returnTo: "//evil.test" }))).toBe("/auth/steam?return=%2Ftrade-ups");
+  });
+
   it("is a labelled modal dialog", () => {
     const html = render({ surface: "pricing_go_pro", billing: "monthly" });
     expect(html).toContain('role="dialog"');
@@ -267,7 +274,8 @@ describe("SteamInterstitial markup", () => {
   });
 
   it("navigates only through the link: no onClick redirect", () => {
-    expect(component).toContain("href={authHref(window.location.pathname)}");
+    expect(component).toContain("href={authHref(continueReturn(context))}");
+    expect(component).toContain("return window.location.pathname");
     expect(component).not.toMatch(/window\.location\.(href|assign|replace)/);
     expect(component).toContain("pageshow");
     expect(component).toContain("persisted");

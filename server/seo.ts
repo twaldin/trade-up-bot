@@ -1,3 +1,4 @@
+import type { Response } from "express";
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
 import { tradeUpH1, tradeUpPair } from "../shared/copy.js";
 import { detailTypeLabel } from "../shared/types.js";
@@ -251,14 +252,23 @@ ${jsonLdTag}
 }
 
 /**
- * HTTP status for a missing trade-up DETAIL (/trade-ups/:id) row.
- * A numeric ID with no row is a trade-up that existed and was deleted/stale-purged — return
- * 410 Gone so Google drops it from the index faster than a bare 404. These IDs only ever come
- * from our own prior sitemap/links. A non-numeric/malformed path was never a valid trade-up — 404.
+ * HTTP status for a trade-up DETAIL that is already known to be deleted or expired.
+ * A missing all-digit id is not that evidence — those requests are 404.
  * Applies ONLY to the SEO detail route, never the API route or collection landing pages.
  */
-export function deletedTradeUpStatus(id: string): 404 | 410 {
-  return /^\d+$/.test(id) ? 410 : 404;
+export function deletedTradeUpStatus(id: string, knownDeletedOrExpired = false): 404 | 410 {
+  if (!knownDeletedOrExpired || !/^\d+$/.test(id)) return 404;
+  return 410;
+}
+
+/** Hard 404 for an unknown skin, collection, or blog slug. Crawlers see noindex in the document and the header. */
+export function slugNotFoundHtml(message: string): string {
+  const safe = escapeHtml(message);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>${safe}</title><meta name="robots" content="noindex" /></head><body><p>${safe}</p></body></html>`;
+}
+
+export function sendSlugNotFound(res: Response, message: string): void {
+  res.status(404).set("X-Robots-Tag", "noindex").type("html").send(slugNotFoundHtml(message));
 }
 
 export interface CollectionHubLink {
@@ -535,7 +545,8 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
     .replace(/<meta\s+name="description"[^>]*\/?>/g, "")
     .replace(/<link\s+rel="canonical"[^>]*\/?>/g, "")
     .replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/g, "")
-    .replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/g, "");
+    .replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/g, "")
+    .replace(/<meta\s+name="robots"[^>]*\/?>/g, "");
 
   // Inject correct tags before </head>
   let jsonLdTag = "";

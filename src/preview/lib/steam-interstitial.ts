@@ -4,7 +4,20 @@ import { proPriceLine, type BillingInterval } from "./pro-pricing.js";
 
 export type InterstitialContext =
   | { surface: "pricing_go_pro"; billing: BillingInterval }
-  | { surface: "share_verify" };
+  | { surface: "share_verify"; returnTo?: string };
+
+/** App-relative path only. A scheme or protocol-relative URL is rejected. */
+export function isSafeAppPath(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  if (value.includes("\\") || value.includes("://") || value.includes("\n") || value.includes("\r")) return false;
+  return true;
+}
+
+/** Where Continue with Steam returns. An explicit safe path wins over the current page. */
+export function interstitialReturnPath(pathname: string, returnTo?: string): string {
+  if (returnTo && isSafeAppPath(returnTo)) return returnTo;
+  return pathname;
+}
 
 export type InterstitialSurface = InterstitialContext["surface"];
 

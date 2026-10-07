@@ -1,5 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+export function useRobotsSlot(content: string): boolean {
+  const [emit] = useState(() => {
+    if (typeof document === "undefined") return true;
+    return document.querySelector("meta[name='robots']") == null;
+  });
+  useEffect(() => {
+    if (!content || typeof document === "undefined") return;
+    const nodes = [...document.querySelectorAll("meta[name='robots']")].filter(
+      (node): node is HTMLMetaElement => node instanceof HTMLMetaElement,
+    );
+    let meta = nodes[0];
+    if (!meta) {
+      const created = document.createElement("meta");
+      created.setAttribute("name", "robots");
+      document.head.appendChild(created);
+      meta = created;
+    }
+    meta.setAttribute("content", content);
+    for (const extra of nodes.slice(1)) extra.remove();
+  }, [content]);
+  return emit;
+}
+
 export function useCanonicalSlot(href: string): boolean {
   const [emit] = useState(() => {
     if (typeof document === "undefined") return true;
@@ -35,11 +58,12 @@ export function PreviewSeo({
   children?: ReactNode;
 }) {
   const emitCanonical = useCanonicalSlot(canonical);
+  const emitRobots = useRobotsSlot(robots);
   return (
     <>
       <title>{title}</title>
       <meta name="description" content={description} />
-      <meta name="robots" content={robots} />
+      {emitRobots && <meta name="robots" content={robots} />}
       {emitCanonical && <link rel="canonical" href={canonical} />}
       {jsonLd != null && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />

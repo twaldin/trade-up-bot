@@ -45,11 +45,13 @@ import {
 } from "../lib/copy.js";
 import { LOAD_ERROR_COPY } from "../lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY } from "../lib/page-fetch.js";
-import { trackCtaClick, trackLandingLoadError } from "../../lib/conversions.js";
+import { trackCtaClick, trackLandingLoadError, trackUpgradeCta } from "../../lib/conversions.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel, timeAgo } from "../../utils/format.js";
 import {
   formatLandingStat,
+  LANDING_STAT_PLACEHOLDER,
+  landingStatPlaceholderTiles,
   visibleLandingStatTiles,
   type BoardCountSource,
   type LandingStatCounts,
@@ -124,6 +126,9 @@ const CARD_SKELETON_ROWS = Array.from({ length: 3 }, (_, index) => index);
 
 /** How long the hero skeleton sits before the honest slow line and Retry. */
 export const HERO_SLOW_AFTER_MS = 8_000;
+
+/** Shown when the board answered and no trade-up is eligible. */
+export const HERO_EMPTY_COPY = "No trade-ups to show right now.";
 
 export type HeroLoadPhase = "ready" | "throttled" | "error" | "slow" | "skeleton" | "empty";
 
@@ -228,7 +233,7 @@ function HeroMobileCard({
           {CARD_SKELETON_ROWS.map((index) => <span key={index} />)}
         </div>
       ) : phase === "empty" ? (
-        <p className="preview-note">The board is refreshing. <Link to="/trade-ups">Open the board</Link>.</p>
+        <p className="preview-note">{HERO_EMPTY_COPY} <Link to="/trade-ups">Open the board</Link>.</p>
       ) : null}
       <HeroLoadNotice phase={phase} onRetry={onRetry} />
     </article>
@@ -381,7 +386,7 @@ export function HeroProof({
             </div>
           </div>
           <p className="preview-note preview-proof__status">
-            The board is refreshing. <Link to="/trade-ups">Open the board</Link>.
+            {HERO_EMPTY_COPY} <Link to="/trade-ups">Open the board</Link>.
           </p>
         </>
       )}
@@ -398,6 +403,7 @@ export function LandingHero({
   throttled = false,
   onRetry,
   statTiles = [],
+  showPlaceholder = false,
 }: {
   tu: TradeUp | null;
   loading: boolean;
@@ -407,6 +413,8 @@ export function LandingHero({
   throttled?: boolean;
   onRetry?: () => void;
   statTiles?: readonly LandingStatTile[];
+  /** Dashes while the real count is unknown. A capped list total is not a count. */
+  showPlaceholder?: boolean;
 }) {
   const phase = heroLoadPhase({ hasTradeUp: Boolean(heroProof(tu)), throttled, failed, loading, slow });
   return (
@@ -429,7 +437,17 @@ export function LandingHero({
           </Link>
           <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
         </div>
-        {statTiles.length > 0 && (
+        {showPlaceholder && (
+          <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties} aria-busy="true" aria-label="Loading trade-up counts">
+            {landingStatPlaceholderTiles().map((tile) => (
+              <div key={tile.key} aria-hidden="true">
+                <b>{LANDING_STAT_PLACEHOLDER}</b>
+                <span>{tile.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {!showPlaceholder && statTiles.length > 0 && (
           <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
             {statTiles.map((tile) => (
               <div key={tile.key}>
@@ -457,11 +475,14 @@ export function PreviewLanding({
   stats,
   mode = "dark",
   onBoardCounts,
+  countsPending = false,
 }: {
   stats: LandingStatCounts | null;
   mode?: "light" | "dark";
   /** Hero trade-up totals come from this teaser response. No second count query. */
   onBoardCounts?: (counts: BoardCountSource) => void;
+  /** True until the real count is known. The cap from the board list is not a count. */
+  countsPending?: boolean;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
   const live = usePreviewTradeUps({ perPage: 3 });
@@ -489,6 +510,7 @@ export function PreviewLanding({
 
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
   const statTiles = visibleLandingStatTiles(stats);
+  const showPlaceholder = countsPending && statTiles.length === 0;
   const boardWaiting = live.loading && !hero && !live.failed && !live.throttle;
   const slow = useHeroSlow(boardWaiting);
   const reportedLoadError = useRef<string | null>(null);
@@ -514,6 +536,7 @@ export function PreviewLanding({
         throttled={Boolean(live.throttle)}
         onRetry={live.retry}
         statTiles={statTiles}
+        showPlaceholder={showPlaceholder}
       />
 
       <div className="preview-laptop">
@@ -661,7 +684,7 @@ export function PreviewLanding({
               ))}
             </ul>
             <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
-            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing">Compare plans</Link>
+            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing" onClick={() => trackUpgradeCta("landing_plan_tile")}>Compare plans</Link>
           </article>
         </div>
       </section>

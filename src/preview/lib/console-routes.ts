@@ -1,3 +1,5 @@
+import { isRepeatedTradeUpSlash } from "../../../shared/trade-up-id.js";
+
 /**
  * Console route vocabulary, kept in its own module so `App.tsx` can import it
  * without eagerly pulling the lazily-loaded console bundle.
@@ -34,12 +36,23 @@ export function needsLandingStats(page: ConsolePage): boolean {
   return page === "landing";
 }
 
+/** An explicit board page still loses to `/trade-ups//`, which is an empty id. */
+export function resolveConsolePage(
+  page: ConsolePage | undefined,
+  routerPathname: string,
+  browserPathname = routerPathname,
+): ConsolePage {
+  if (isRepeatedTradeUpSlash(browserPathname) || isRepeatedTradeUpSlash(routerPathname)) return "share";
+  return pageFor(page, routerPathname);
+}
+
 /** Falls back to reading the page off the path when no page is passed in. */
 export function pageFor(page: ConsolePage | undefined, pathname: string): ConsolePage {
   if (page) return page;
   if (pathname === "/best-cs2-trade-ups") return "intent";
   if (/^\/trade-ups\/tiers(\/|$)/.test(pathname)) return "intent";
   if (/^\/trade-ups\/collection\/[^/]+/.test(pathname)) return "collectionTradeUps";
+  if (isRepeatedTradeUpSlash(pathname)) return "share";
   if (/^\/trade-ups\/\d+/.test(pathname)) return "share";
   if (/^\/trade-ups(\/|$)/.test(pathname)) return "board";
   if (/^\/skins\/[^/]+/.test(pathname)) return "skin";
