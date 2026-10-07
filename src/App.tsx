@@ -1,16 +1,13 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { CurrencyPicker } from "./components/CurrencyPicker.js";
 import { Routes, Route, NavLink, useNavigate, useParams, useSearchParams, useLocation, Navigate } from "react-router-dom";
-import type { SyncStatus } from "../shared/types.js";
 import { collectionToSlug } from "../shared/slugs.js";
 import { useStatus } from "./hooks/useStatus.js";
 const DaemonModal = lazy(() => import("./components/DaemonModal.js").then(m => ({ default: m.DaemonModal })));
-const TradeUpsPage = lazy(() => import("./pages/TradeUpsPage.js").then(m => ({ default: m.TradeUpsPage })));
 const LandingPage = lazy(() => import("./pages/LandingPage.js").then(m => ({ default: m.LandingPage })));
 const MyTradeUpsPage = lazy(() => import("./pages/MyTradeUpsPage.js"));
 import { SiteFooter } from "./components/SiteFooter.js";
 import { Button } from "../shared/components/ui/button.js";
-import { TRADE_UP_TYPE_TABS } from "./utils/rarity.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
 import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
@@ -59,9 +56,6 @@ function GlobalStatBar({ stats }: { stats: GlobalStats | null }) {
     </div>
   );
 }
-
-const TRADE_UP_TYPES = TRADE_UP_TYPE_TABS;
-
 
 function CollectionPage() {
   const { name } = useParams<{ name: string }>();
@@ -123,21 +117,6 @@ function DataPage() {
     </Suspense>
   );
 }
-
-function TradeUpsMainPage({ status, refreshKey }: { status: SyncStatus | null; refreshKey?: number }) {
-  const navigate = useNavigate();
-  return (
-    <TradeUpsPage
-      types={TRADE_UP_TYPES}
-      defaultType="all"
-      status={status}
-      refreshKey={refreshKey}
-      onNavigateSkin={(name) => navigate(`/skins?search=${encodeURIComponent(name)}`)}
-      onNavigateCollection={(name) => navigate(`/collections/${collectionToSlug(name)}`)}
-    />
-  );
-}
-
 
 function UserMenu({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false);
@@ -265,7 +244,6 @@ function AppShell({ user }: { user?: AuthUser | null }) {
   const userIsAdmin = user?.is_admin === true;
   const { status, newDataHint: statusHint, refresh } = useStatus(userIsAdmin);
   const [showDaemonModal, setShowDaemonModal] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
   const prevTotalRef = useRef(0);
   const [globalNewData, setGlobalNewData] = useState(false);
@@ -314,7 +292,7 @@ function AppShell({ user }: { user?: AuthUser | null }) {
             variant={newDataHint ? "default" : "outline"}
             size="sm"
             className="h-8 px-2.5 text-xs"
-            onClick={() => { refresh(); setGlobalNewData(false); setRefreshKey(k => k + 1); }}
+            onClick={() => { refresh(); setGlobalNewData(false); }}
           >
             <span className="hidden sm:inline">{newDataHint ? "Refresh" : "Refresh"}</span>
             <span className="sm:hidden">↻</span>
@@ -383,7 +361,6 @@ function AppShell({ user }: { user?: AuthUser | null }) {
       </nav>
 
       <Routes>
-        <Route path="/trade-ups" element={<TradeUpsMainPage status={status} refreshKey={refreshKey} />} />
         <Route path="/skins/:slug" element={
           <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
             <SkinPage />

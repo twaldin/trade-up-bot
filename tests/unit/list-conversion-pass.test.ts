@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const table = readFileSync(join(__dir, "../../src/components/TradeUpTable.tsx"), "utf-8");
-const page = readFileSync(join(__dir, "../../src/pages/TradeUpsPage.tsx"), "utf-8");
+const board = readFileSync(join(__dir, "../../src/preview/pages/PreviewBoard.tsx"), "utf-8");
 const api = readFileSync(join(__dir, "../../server/routes/trade-ups.ts"), "utf-8");
 
 describe("A: visible Details affordance", () => {
@@ -25,14 +25,16 @@ describe("B: sign-up nudge in the expanded row", () => {
   });
 });
 
-describe("C: free-delay transparency banner above the table", () => {
+describe("C: free-delay transparency banner above the board", () => {
   it("names the concrete delay and links pricing", () => {
-    expect(page).toContain("delayed 3 hours");
+    expect(board).toContain("DELAY_BANNER");
+    expect(board).toContain("boardDelaySentence");
+    expect(board).toContain(">See Pro<");
   });
-  it("renders before the table, not only after it", () => {
-    const bannerIdx = page.indexOf("delayed 3 hours");
-    const tableIdx = page.indexOf("<TradeUpTable");
+  it("renders before the cards, not only after them", () => {
+    const bannerIdx = board.indexOf("preview-delay${");
+    const cardsIdx = board.indexOf('className="preview-bento preview-bento--reserved"');
     expect(bannerIdx).toBeGreaterThan(-1);
-    expect(bannerIdx).toBeLessThan(tableIdx);
+    expect(bannerIdx).toBeLessThan(cardsIdx);
   });
 });
