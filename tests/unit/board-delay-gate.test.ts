@@ -16,7 +16,7 @@ const GAP = {
   hidden_profitable: 2,
   best_hidden_profit_cents: 1840,
 };
-const GAP_SENTENCE = "2 profitable trade-ups found in the last 3 hours are hidden on the free board.";
+const GAP_SENTENCE = "2 profitable listing combos turned up in the last 3 hours. Free sees new finds after a 3-hour delay. The best is +$18.40 expected P/L.";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -517,7 +517,7 @@ describe("board delay fetch waits for the viewer", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(delayCalls()).toEqual([]);
     expect(host.textContent).not.toContain(GAP_SENTENCE);
-    expect(host.textContent).not.toContain("hidden on the free board");
+    expect(host.textContent).not.toContain("listing combos turned up");
   });
 
   it("shows the pricing gap after a free or logged-out session resolves", async () => {

@@ -5,8 +5,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
-import { DISPLAY_CAP_COPY, END_OF_LIST_COPY, LIST_CAP_COPY, UNFILTERED_EMPTY_COPY } from "../../src/preview/lib/board-notice.js";
+import { PreviewBoard, rankedMeta } from "../../src/preview/pages/PreviewBoard.js";
+import { END_OF_LIST_COPY, LIST_CAP_COPY, UNFILTERED_EMPTY_COPY, displayCapCopy } from "../../src/preview/lib/board-notice.js";
 import { TRADE_UPS_FAQ } from "../../shared/trade-ups-faq.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
@@ -89,6 +89,10 @@ describe("trade-up board reserves the first page", () => {
     });
     expect(full).not.toContain("preview-bento--floor");
     expect(full).toContain("12 ranked");
+    expect(rankedMeta(1_000, false)).toBe("1,000 ranked");
+    expect(rankedMeta(10_001, false)).toBe("10,000+ ranked");
+    expect(rankedMeta(10_001, false)).not.toContain("1,000+");
+    expect(rankedMeta(12, true)).toBe("— ranked");
   });
 
   it("renders the cap and end notices after the reserved list", () => {
@@ -102,7 +106,7 @@ describe("trade-up board reserves the first page", () => {
       board({ loading: false, exhausted: true, endKind: "end", tradeUps: rows }),
       board({ loading: false, exhausted: true, endKind: "truncated", total: 1000, tradeUps: rows }),
     ];
-    const copies = [LIST_CAP_COPY, END_OF_LIST_COPY, DISPLAY_CAP_COPY];
+    const copies = [LIST_CAP_COPY, END_OF_LIST_COPY, displayCapCopy(rows.length)];
     for (const [html, copy] of cases.map((html, index) => [html, copies[index]] as const)) {
       const listAt = html.indexOf("preview-bento--floor");
       const copyAt = html.indexOf(copy.replaceAll("'", "&#x27;"));

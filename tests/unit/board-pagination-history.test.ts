@@ -171,7 +171,7 @@ describe("board pagination and history", () => {
     expect(host.textContent).not.toContain(DISPLAY_CAP_COPY);
   });
 
-  it("shows the 1,000 cap line when the deduped list stopped on 1,000 rows", async () => {
+  it("uses the loaded row count when has_more cut a shorter list", async () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -189,7 +189,9 @@ describe("board pagination and history", () => {
         rawTotal: 10001,
       })));
     });
-    expect(host.textContent).toContain(DISPLAY_CAP_COPY);
+    expect(host.textContent).toContain(displayCapCopy(rows.length));
+    expect(host.textContent).toContain("4 ranked");
+    expect(host.textContent).not.toContain(DISPLAY_CAP_COPY);
     expect(host.textContent).not.toContain(END_OF_LIST_COPY);
     expect(host.textContent).not.toContain(LIST_CAP_COPY);
   });

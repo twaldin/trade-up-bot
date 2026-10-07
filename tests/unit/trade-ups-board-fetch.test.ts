@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { makeTradeUp } from "../helpers/fixtures.js";
@@ -17,7 +17,7 @@ import {
 } from "../../src/lib/trade-ups-board.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const page = readFileSync(join(__dir, "../../src/pages/TradeUpsPage.tsx"), "utf-8");
+const app = readFileSync(join(__dir, "../../src/App.tsx"), "utf-8");
 
 const RATE_LIMIT_BODY = { message: RATE_LIMIT_MESSAGE };
 
@@ -270,23 +270,13 @@ describe("429 backoff retry", () => {
   });
 });
 
-describe("TradeUpsPage wiring", () => {
-  it("does not assign data.trade_ups without going through applyBoardFetch", () => {
-    expect(page).not.toMatch(/setTradeUps\(data\.trade_ups\)/);
-    expect(page).toContain("applyBoardFetch");
-    expect(page).toContain("boardEmptyKind");
-    expect(page).toContain("runBoardFetchLoop");
-  });
-
-  it("uses the shared empty-filter copy only for the empty_filter kind", () => {
-    expect(page).toContain("EMPTY_FILTER_COPY");
-    expect(page).toContain("RATE_LIMIT_COPY");
-    expect(page).not.toMatch(/emptyKind === "empty_filter"[\s\S]*RATE_LIMIT_COPY/);
-  });
-
-  it("formats the profitable count through the cap helper and drops it on a deduped list", () => {
-    expect(page).toContain("listProfitableSuffix");
-    expect(page).toContain("formatProfitableCount");
-    expect(page).not.toContain("totalProfitable.toLocaleString");
+describe("legacy TradeUpsPage", () => {
+  it("is not mounted by any route", () => {
+    expect(existsSync(join(__dir, "../../src/pages/TradeUpsPage.tsx"))).toBe(false);
+    expect(app).not.toContain("pages/TradeUpsPage");
+    expect(app).not.toContain("<TradeUpsPage");
+    expect(app).not.toContain("10,001 results");
+    expect(app).not.toContain(">Chance<");
+    expect(app).not.toContain("Best Win");
   });
 });

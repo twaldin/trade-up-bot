@@ -13,7 +13,6 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(resolve(testDir, "../../src/App.tsx"), "utf8");
 const siteNavSource = readFileSync(resolve(testDir, "../../src/components/SiteNav.tsx"), "utf8");
 const landingSource = readFileSync(resolve(testDir, "../../src/pages/LandingPage.tsx"), "utf8");
-const tradeUpsSource = readFileSync(resolve(testDir, "../../src/pages/TradeUpsPage.tsx"), "utf8");
 const calculatorSource = readFileSync(resolve(testDir, "../../src/pages/CalculatorPage.tsx"), "utf8");
 const previewAppSource = readFileSync(resolve(testDir, "../../src/preview/PreviewApp.tsx"), "utf8");
 const shellSource = readFileSync(resolve(testDir, "../../src/preview/PreviewShell.tsx"), "utf8");
@@ -222,11 +221,14 @@ describe("console cutover", () => {
     expect(board).not.toContain("`/trade-ups/");
   });
 
-  it("does not change production landing, trade-ups, or calculator sources", () => {
+  it("does not change production landing or calculator, and no route mounts the legacy trade-ups page", () => {
     expect(landingSource).toContain("CS2 trade-ups built from");
     expect(landingSource).toContain("<DemoAnimation");
-    expect(tradeUpsSource).toContain("TradeUpTable");
     expect(calculatorSource).toContain("export function CalculatorPage");
+    expect(existsSync(resolve(testDir, "../../src/pages/TradeUpsPage.tsx"))).toBe(false);
+    expect(appSource).not.toContain("pages/TradeUpsPage");
+    expect(appSource).not.toContain("<TradeUpsPage");
+    expect(appSource).toContain('path="/trade-ups" element={<ConsoleApp page="board" />}');
   });
 
   it("keeps production headlines and FAQ copy in the preview landing", () => {

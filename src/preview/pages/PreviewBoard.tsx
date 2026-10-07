@@ -61,6 +61,7 @@ import { BoardNotice } from "../components/BoardNotice.js";
 import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice, displayCapCopy, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, showNarrowFiltersHint } from "../lib/board-notice.js";
+import { formatLandingStat } from "../lib/landing-stats.js";
 import {
   canonicalBoardSearch,
   historyAction,
@@ -873,9 +874,9 @@ export function TradeUpCard({
   );
 }
 
-function rankedMeta(count: number, pending: boolean): string {
+export function rankedMeta(count: number, pending: boolean): string {
   if (pending) return "— ranked";
-  return `${count} ranked`;
+  return `${formatLandingStat(count)} ranked`;
 }
 
 type BoardAccount = PaintAccount;
@@ -1179,7 +1180,7 @@ export function PreviewBoard({
   const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
   const atTruncated = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "truncated");
   const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && !atCap && !atTruncated);
-  const truncatedCopy = displayCapCopy(typeof total === "number" && total > 0 ? total : tradeUps.length);
+  const truncatedCopy = displayCapCopy(tradeUps.length);
   const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
   const emitRobots = useRobotsSlot(embed ? "" : "index, follow");
   useEffect(() => {
@@ -1686,7 +1687,7 @@ export function usePreviewTradeUps(options: {
           rowsRef.current = rows;
           setTradeUps(rows);
           setLandedPage(page);
-          setShownStatus(page > 1 ? `Showing ${rows.length} trade-ups.` : "");
+          setShownStatus(page > 1 ? `Showing ${formatLandingStat(rows.length)} trade-ups.` : "");
           if (page === 1) setRowsKey(settledKey);
         },
         isFree: setIsFree,

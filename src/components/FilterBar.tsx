@@ -404,7 +404,7 @@ export function FilterBar({ filters, onFiltersChange }: {
             minVal={filters.minCost} maxVal={filters.maxCost}
             onMinChange={(v) => update({ minCost: v })} onMaxChange={(v) => update({ maxCost: v })}
             onClear={() => update({ minCost: "", maxCost: "" })} />
-          <RangeFilter label="Chance" unit="%" step={5}
+          <RangeFilter label="Outcomes above cost" unit="%" step={5}
             minVal={filters.minChance} maxVal={filters.maxChance}
             onMinChange={(v) => update({ minChance: v })} onMaxChange={(v) => update({ maxChance: v })}
             onClear={() => update({ minChance: "", maxChance: "" })} />
@@ -412,7 +412,7 @@ export function FilterBar({ filters, onFiltersChange }: {
             minVal={filters.maxLoss} maxVal=""
             onMinChange={(v) => update({ maxLoss: v })} onMaxChange={() => {}}
             onClear={() => update({ maxLoss: "" })} />
-          <RangeFilter label="Best Win" unit="$" step={10}
+          <RangeFilter label="Best outcome" unit="$" step={10}
             minVal={filters.minWin} maxVal=""
             onMinChange={(v) => update({ minWin: v })} onMaxChange={() => {}}
             onClear={() => update({ minWin: "" })} />
