@@ -99,7 +99,11 @@ function AccountStats({ stats }: { stats: UserTradeUpStats | null }) {
         <span>Executed</span>
       </div>
       <div>
-        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00%" : `${stats.win_rate}%`}</b>
+        {pending ? (
+          <b className="preview-account__pending" aria-hidden="true">00%</b>
+        ) : (
+          <b>{stats.win_rate}%</b>
+        )}
         {pending ? (
           <span className="preview-account__roi">Sold at a profit · <span className="preview-account__pending" aria-hidden="true">00.0%</span> avg ROI</span>
         ) : (
