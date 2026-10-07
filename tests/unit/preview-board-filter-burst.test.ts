@@ -305,7 +305,7 @@ describe("scoped board does not paint the global list", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(lists().length).toBeGreaterThan(0);
     expect(lists().every((url) => url.includes("skin="))).toBe(true);
-    expect(host.querySelectorAll(".preview-card")).toHaveLength(0);
+    expect(host.querySelectorAll(".preview-card:not(.preview-card--skeleton)")).toHaveLength(0);
     expect(host.textContent).not.toContain("Showing the previous results");
   });
 
@@ -324,7 +324,7 @@ describe("scoped board does not paint the global list", () => {
     await act(async () => { paint(); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(lists().every((url) => url.includes("collection="))).toBe(true);
-    expect(host.querySelectorAll(".preview-card")).toHaveLength(0);
+    expect(host.querySelectorAll(".preview-card:not(.preview-card--skeleton)")).toHaveLength(0);
   });
 
   it("switching collections does not flash the empty board", async () => {
@@ -338,18 +338,18 @@ describe("scoped board does not paint the global list", () => {
     let collection = "Alpha";
     const paint = () => root.render(createElement(ScopeBoard, { collection, enabled: true }));
     await mount(createElement(ScopeBoard, { collection, enabled: true }));
-    expect(host.querySelectorAll(".preview-card").length).toBeGreaterThan(0);
+    expect(host.querySelectorAll(".preview-card:not(.preview-card--skeleton)").length).toBeGreaterThan(0);
 
     collection = "Beta";
     await act(async () => { paint(); });
     expect(host.textContent).not.toContain(UNFILTERED_EMPTY_COPY);
-    expect(host.querySelectorAll(".preview-card")).toHaveLength(0);
+    expect(host.querySelectorAll(".preview-card:not(.preview-card--skeleton)")).toHaveLength(0);
     expect(lists().some((url) => url.includes("collection=Beta"))).toBe(true);
     expect(lists().some((url) => !url.includes("collection="))).toBe(false);
 
     await act(async () => { release(limited()); });
     await act(async () => { await Promise.resolve(); });
-    expect(host.querySelectorAll(".preview-card")).toHaveLength(0);
+    expect(host.querySelectorAll(".preview-card:not(.preview-card--skeleton)")).toHaveLength(0);
     expect(host.textContent).not.toContain(UNFILTERED_EMPTY_COPY);
   });
 });
