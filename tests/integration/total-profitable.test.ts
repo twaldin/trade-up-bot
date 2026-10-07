@@ -124,4 +124,66 @@ describe("total_profitable on /api/trade-ups", () => {
       .set("X-Test-User-Tier", "pro");
     expect(res.body.total_profitable).toBe(0);
   });
+
+  async function bulkInsert(collection: string, n: number, profitCents: number) {
+    await ctx.pool.query(
+      `INSERT INTO trade_ups (
+         total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+         chance_to_profit, type, best_case_cents, worst_case_cents, listing_status,
+         outcomes_json, output_skin_names, collection_names, created_at
+       )
+       SELECT 10000, 10000 + $2, $2, $2 / 100.0, 0.5, 'classified_covert', 0, 0, 'active',
+              '[]', '{}', ARRAY[$1::text], NOW() - interval '5 hours'
+       FROM generate_series(1, $3)`,
+      [collection, profitCents, n],
+    );
+  }
+
+  it("flags total_profitable as capped when the profitable count hits the cap", async () => {
+    await bulkInsert("Coll Big", 10_050, 400);
+    await bulkInsert("Coll Big", 40, -400);
+    const res = await request(ctx.app)
+      .get(`/api/trade-ups?per_page=5&collection=${encodeURIComponent("Coll Big")}&min_profit=1`)
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(10_001);
+    expect(res.body.total_profitable).toBe(10_001);
+    expect(res.body.total_profitable_capped).toBe(true);
+  }, 60_000);
+
+  it("counts profitable rows exactly when total is capped but profitable is not", async () => {
+    // Losing rows first, so an unordered LIMIT 10001 slice would miss the winners.
+    await bulkInsert("Coll Big", 10_050, -400);
+    await bulkInsert("Coll Big", 7, 400);
+    const res = await request(ctx.app)
+      .get(`/api/trade-ups?per_page=5&collection=${encodeURIComponent("Coll Big")}`)
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(10_001);
+    expect(res.body.total_profitable).toBe(7);
+    expect(res.body.total_profitable_capped).toBe(false);
+  }, 60_000);
+
+  it("is not capped on the snapshot path with a small board", async () => {
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?per_page=12")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.body.total_profitable).toBe(6);
+    expect(res.body.total_profitable_capped).toBe(false);
+  });
+
+  it("counts exactly on a diversified page past the snapshot (single-scan path)", async () => {
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?per_page=12&page=100")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups).toHaveLength(0);
+    expect(res.body.total).toBe(8);
+    expect(res.body.total_profitable).toBe(6);
+    expect(res.body.total_profitable_capped).toBe(false);
+  });
 });
