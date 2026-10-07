@@ -2254,6 +2254,18 @@
 
 .preview-listing:hover { background: var(--row-hover); }
 
+.preview-listing--unlisted {
+  grid-template-columns: 18px minmax(0, 1fr) max-content;
+  height: 30px;
+  overflow: hidden;
+}
+
+.preview-listing__unlisted {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .preview-listing__n {
   font-family: var(--font-mono);
   font-size: 10px;

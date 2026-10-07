@@ -480,6 +480,20 @@ export function conditionShort(condition: string | undefined): string {
   }
 }
 
+/** Same CS2 wear boundaries as `wearBand` on the skin page. */
+const WEAR_ABBR: readonly (readonly [string, number, number])[] = [
+  ["FN", 0, 0.07],
+  ["MW", 0.07, 0.15],
+  ["FT", 0.15, 0.38],
+  ["WW", 0.38, 0.45],
+  ["BS", 0.45, 1.01],
+];
+
+export function wearAbbr(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return WEAR_ABBR.find(([, lo, hi]) => value >= lo && value < hi)?.[0] ?? "BS";
+}
+
 export function listingTotals(listings: TradeUpInput[]): ListingTotals {
   if (listings.length === 0) return { count: 0, totalCents: 0, averageCents: 0 };
   const priced = listings.filter((row) => typeof row.price_cents === "number");
