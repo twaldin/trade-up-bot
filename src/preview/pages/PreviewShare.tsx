@@ -250,7 +250,7 @@ export function PreviewShare() {
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
   const delayEnabled = panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user);
-  const delayGap = useBoardDelay(delayEnabled);
+  const delayGap = useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user));
   const delaySentence = boardDelaySentence(delayGap);
   const delayPending = delayEnabled && delayGap === undefined;
   const realIds = tu ? realListingIds(tu) : [];

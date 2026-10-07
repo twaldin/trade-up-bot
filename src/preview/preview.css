@@ -3375,14 +3375,19 @@
   line-height: 1.6;
 }
 
-/* Free-gap sentence. 14px / 1.6 is two lines on the console (3.2em) and three
-   on a phone (4.8em), including a five-digit count. Hold that height only
-   while the paragraph is empty, so a one-line result is not left in a hole
-   and the usual sentence does not move the plans. */
+/* Free-gap sentence at 14px / 1.6. Two lines on the console (3.2em), three
+   on a phone (4.8em). Below 390 the Ubuntu fallback (DejaVu) wraps the same
+   sentence to four lines (6.4em) and Schibsted then settles at three, so the
+   empty slot is the taller of the two. Once the sentence is in, the box is
+   the text. */
 .preview-pricing-gap:empty { min-height: 3.2em; }
 
 @media (max-width: 599px) {
   .preview-pricing-gap:empty { min-height: 4.8em; }
+}
+
+@media (max-width: 389px) {
+  .preview-pricing-gap:empty { min-height: 6.4em; }
 }
 
 .preview-footer {
