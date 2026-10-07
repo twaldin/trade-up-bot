@@ -114,6 +114,24 @@ describe("landing hero copy", () => {
   });
 });
 
+describe("landing hero counts", () => {
+  it("renders the 10001 sentinel as 10,000+ through LandingHero and never prints 10,001", () => {
+    const html = heroHtml({
+      loading: false,
+      statTiles: [
+        { key: "total_trade_ups", label: "trade-ups", value: 10_001 },
+        { key: "profitable_trade_ups", label: "positive EV", value: 90_700 },
+        { key: "total_data_points", label: "data points", value: 2_405_119 },
+      ],
+    });
+    expect(html).toContain("<b>10,000+</b>");
+    expect(html).toContain("<b>90,700</b>");
+    expect(html).toContain("<b>2,405,119</b>");
+    expect(html).not.toContain("10,001");
+    expect(html).not.toContain("10001");
+  });
+});
+
 describe("landing hero behavior", () => {
   let root: Root;
   let host: HTMLDivElement;
