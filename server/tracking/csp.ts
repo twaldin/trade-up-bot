@@ -7,8 +7,9 @@ export function trackingCspSources(env: TrackingEnv = process.env): { scriptSrc:
   const connectSrc: string[] = [];
   const imgSrc: string[] = [];
   if (isValidGa4MeasurementId(env.GA4_MEASUREMENT_ID?.trim())) {
-    connectSrc.push("https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com");
-    imgSrc.push("https://*.google-analytics.com", "https://*.googletagmanager.com");
+    // stats.g.doubleclick.net receives the GA4 Google-signals hit.
+    connectSrc.push("https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://stats.g.doubleclick.net");
+    imgSrc.push("https://*.google-analytics.com", "https://*.googletagmanager.com", "https://stats.g.doubleclick.net");
   }
   if (isValidMetaPixelId(env.META_PIXEL_ID?.trim())) {
     scriptSrc.push("https://connect.facebook.net");
