@@ -298,7 +298,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "5 min read",
     author: "TradeUpBot Team",
     content: `
-<p>TradeUpBot is a CS2 trade-up scanner that finds contracts with positive expected P/L from real CSFloat, DMarket, and Skinport listings, then ranks them by expected P/L after fees, ROI, risk, and Above cost %. Above cost % is the probability-weighted share of outcomes worth more than your total cost. Use it to verify listings, claim opportunities, and compare outcomes before you buy inputs. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
+<p>TradeUpBot is a CS2 trade-up scanner that builds contracts from real CSFloat, DMarket, and Skinport listings and looks for ones with positive expected P/L after fees. The board ranks them by Score, and you can sort by Expected P/L, ROI, Cost, or Above cost %. Above cost % is the probability-weighted share of outcomes worth more than your total cost. Use it to verify listings, claim opportunities, and compare outcomes before you buy inputs. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
 <p>Start with the <a href="/trade-ups">live trade-up board</a>, then check account limits on <a href="/pricing">TradeUpBot pricing</a> before using Verify / Claim trade-up on real listings.</p>
 
@@ -325,7 +325,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Expanding a Trade-Up</h2>
 
-<p>Click a card to expand it. The expanded view shows the readouts, two charts, Top EV drivers, Largest drags, and Listings. The charts are EV contribution (p × P/L) and Probability of clearing a P/L. Listings show each input's skin name, float, condition, price, and marketplace. DMarket links open a filtered search, so they are not direct listing links.</p>
+<p>Click a card to expand it. The expanded view shows the readouts, two charts, Top EV drivers, Largest drags, and Listings. The charts are EV contribution (p × P/L) and Probability of clearing a P/L. Listings show each input's skin name, marketplace, float, and price. DMarket links open a filtered search, so they are not direct listing links.</p>
 
 <h2>Subscription Tiers</h2>
 
