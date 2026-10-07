@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
-import { UNFILTERED_EMPTY_COPY } from "../../src/preview/lib/board-notice.js";
+import { DISPLAY_CAP_COPY, END_OF_LIST_COPY, LIST_CAP_COPY, UNFILTERED_EMPTY_COPY } from "../../src/preview/lib/board-notice.js";
 import { TRADE_UPS_FAQ } from "../../shared/trade-ups-faq.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
@@ -88,6 +88,27 @@ describe("trade-up board reserves the first page", () => {
     });
     expect(full).not.toContain("preview-bento--floor");
     expect(full).toContain("12 ranked");
+  });
+
+  it("renders the cap and end notices after the reserved list", () => {
+    const loading = board({ loading: true, exhausted: true, endKind: "capped" });
+    expect(loading).toContain("preview-card--skeleton");
+    expect(loading).not.toContain(LIST_CAP_COPY);
+
+    const rows = [makeTradeUp()];
+    const cases = [
+      board({ loading: false, exhausted: true, endKind: "capped", tradeUps: rows }),
+      board({ loading: false, exhausted: true, endKind: "end", tradeUps: rows }),
+      board({ loading: false, exhausted: true, endKind: "truncated", total: 1000, tradeUps: rows }),
+    ];
+    const copies = [LIST_CAP_COPY, END_OF_LIST_COPY, DISPLAY_CAP_COPY];
+    for (const [html, copy] of cases.map((html, index) => [html, copies[index]] as const)) {
+      const listAt = html.indexOf("preview-bento--floor");
+      const copyAt = html.indexOf(copy.replaceAll("'", "&#x27;"));
+      expect(listAt).toBeGreaterThan(-1);
+      expect(copyAt).toBeGreaterThan(listAt);
+      expect(html.slice(0, listAt)).not.toContain(copy.replaceAll("'", "&#x27;"));
+    }
   });
 
   it("does not reserve the board page inside an embedded list", () => {
