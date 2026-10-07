@@ -142,7 +142,7 @@ describe("free-tier banner reserves its height", () => {
     expect(wideHold.height).toBeLessThan(144);
   }, 30000);
 
-  it("reserves the slot for a guest and skips it for a paid account", () => {
+  it("reserves the slot while auth is unresolved or the viewer is a guest, and skips it for a paid account", () => {
     const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });
     const loadingPaid = ["pro", "basic", "admin"].map((tier) => boardHtml({
       loading: true,
@@ -164,7 +164,7 @@ describe("free-tier banner reserves its height", () => {
       expect(html).toContain("preview-card--skeleton");
     }
     expect(lifetime).not.toContain("preview-delay");
-    expect(unknown).not.toContain("preview-delay");
+    expect(unknown).toContain("preview-delay--hold");
     expect(free).toContain("preview-delay--hold");
     expect(hold).toContain("preview-delay--hold");
     expect(hold).toContain('aria-hidden="true"');

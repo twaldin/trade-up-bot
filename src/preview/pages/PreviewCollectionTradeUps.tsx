@@ -36,14 +36,16 @@ export function PreviewCollectionTradeUps() {
   const pageTitle = `Best ${display} Trade-Ups — Live CS2 Contracts | TradeUpBot`;
   const description = COLLECTION_TRADEUP_LEDE.replace("${display}", display);
 
+  const listPending = !missing && (!title || (board.loading && board.tradeUps.length === 0));
+
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--fold">
       <PreviewSeo
         title={pageTitle}
         description={description}
         canonical={`https://tradeupbot.app/trade-ups/collection/${slug}`}
       />
-      <header className="preview-page__head">
+      <header className="preview-page__head preview-collection-head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to="/trade-ups">Trade-Ups</Link>
@@ -59,20 +61,22 @@ export function PreviewCollectionTradeUps() {
           <h1>{display} Trade-Ups</h1>
           <p>Ranked the same way as the board, filtered to this collection.</p>
         </div>
-        <div className="preview-page__meta"><span>{board.tradeUps.length} trade-ups</span></div>
+        <div className="preview-page__meta preview-page__meta--count">
+          <span>{listPending ? "— trade-ups" : `${board.tradeUps.length} trade-ups`}</span>
+        </div>
       </header>
 
-      {missing && (
-        <section className="preview-panel">
+      {missing ? (
+        <div className="preview-fold">
           <p className="preview-note">Collection not found.</p>
           <Link className="preview-btn" to="/collections">Browse collections</Link>
-        </section>
-      )}
-
-      {title && (
+        </div>
+      ) : (
         <PreviewBoard
-          tradeUps={board.tradeUps}
-          loading={board.loading}
+          reserve
+          reserveSlots={6}
+          tradeUps={title ? board.tradeUps : []}
+          loading={!title || board.loading}
           isFree={board.isFree}
           signedIn={board.signedIn}
           tier={board.tier}
@@ -96,7 +100,7 @@ export function PreviewCollectionTradeUps() {
           rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
-          collection={title}
+          collection={title ?? undefined}
           heading={`${display} Trade-Ups`}
           lede={description}
           embed

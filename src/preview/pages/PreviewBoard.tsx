@@ -915,7 +915,7 @@ function SkeletonTile({ output = false }: { output?: boolean }) {
   );
 }
 
-function BoardSkeletonCard() {
+export function BoardSkeletonCard() {
   return (
     <article className="preview-card preview-card--static preview-card--skeleton" aria-hidden="true">
       <div className="preview-flow">
@@ -974,6 +974,10 @@ export function PreviewBoard({
   collection,
   lockedSkin,
   embed = false,
+  /** Hold the list height while an embedded board loads. The page FAQ stays on the parent. */
+  reserve = false,
+  /** Skeleton slots for an embedded board. The standalone board always uses its own page size. */
+  reserveSlots = 6,
   user,
 }: {
   tradeUps: HydratedTradeUp[];
@@ -1023,6 +1027,8 @@ export function PreviewBoard({
   collection?: string;
   lockedSkin?: string;
   embed?: boolean;
+  reserve?: boolean;
+  reserveSlots?: number;
   /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
   user?: BoardAccount;
 }) {
@@ -1079,9 +1085,11 @@ export function PreviewBoard({
   const accountDelay = shouldFetchBoardDelay(account);
   const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
-  // Guest and free reserve the banner before the list lands. Paid accounts
-  // render nothing, so their board does not jump when the list reports a tier.
-  const delayPending = accountDelay && loading && tradeUps.length === 0 && !isFree;
+  // Guest and free reserve the banner before the list lands. Auth starts
+  // unresolved, so that same slot is reserved until `/api/auth/me` returns —
+  // otherwise the banner mounts under the header and the list shifts. Paid
+  // accounts render nothing once they are known.
+  const delayPending = (account === undefined || accountDelay) && loading && tradeUps.length === 0 && !isFree;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1247,11 +1255,16 @@ export function PreviewBoard({
   // board swaps them for one fold-height message so the FAQ stays below the
   // fold without a blank page of hidden cards.
   const countPending = tradeUps.length === 0 && (loading || Boolean(failed) || Boolean(throttle));
-  const showSkeletons = !embed && loading && tradeUps.length === 0 && notice == null;
-  const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
+  // Embedded lists skip the hold unless the parent page asks for it. Skeletons
+  // stay only while the first page is in flight; an empty or failed list swaps
+  // them for one fold-height message.
+  const holdList = !embed || reserve;
+  const slots = embed && reserve ? reserveSlots : BOARD_PAGE_CARDS;
+  const showSkeletons = holdList && loading && tradeUps.length === 0 && notice == null;
+  const showStatus = holdList && tradeUps.length === 0 && !showSkeletons;
   // One row of cards ends above the fold at desktop, so a short page would
   // pull the FAQ up into view. The floor holds that list to the viewport.
-  const shortPage = !embed && tradeUps.length > 0 && tradeUps.length < BOARD_PAGE_CARDS;
+  const shortPage = holdList && tradeUps.length > 0 && tradeUps.length < slots;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -1315,13 +1328,13 @@ export function PreviewBoard({
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
-        <p className={embed ? "preview-note" : "sr-only"}>Loading trade-ups…</p>
+        <p className={showSkeletons || !embed ? "sr-only" : "preview-note"}>Loading trade-ups…</p>
       )}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {!showStatus && noticeNode}
       {showSkeletons ? (
         <div className="preview-bento preview-bento--reserved" aria-busy="true">
-          {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
+          {Array.from({ length: slots }, (_, index) => <BoardSkeletonCard key={index} />)}
         </div>
       ) : showStatus ? (
         <div className="preview-board-status">{noticeNode}</div>

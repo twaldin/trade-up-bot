@@ -21,7 +21,20 @@ import {
   type VerifyPayload,
 } from "../lib/my-trade-ups.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
-import { TradeUpCard } from "./PreviewBoard.js";
+import { BoardSkeletonCard, TradeUpCard } from "./PreviewBoard.js";
+
+/** Hidden sizer for the free-tier sentence. Wider than a live count so the note does not grow when the gap arrives. */
+const DELAY_SENTENCE_SIZER = "888,888 profitable trade-ups found in the last 3 hours are hidden on the free board. The best is +$88,888.88 expected P/L.";
+
+function ReservedDelayNote({ sentence, pending }: { sentence: string | null; pending: boolean }) {
+  if (!pending && !sentence) return null;
+  return (
+    <p className="preview-note preview-share-delay" aria-hidden={sentence ? undefined : true}>
+      <span>{sentence ?? ""}</span>
+      <span className="preview-share-delay__sizer" aria-hidden="true">{DELAY_SENTENCE_SIZER}</span>
+    </p>
+  );
+}
 
 function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -249,21 +262,25 @@ export function PreviewShare() {
     })
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
-  const delaySentence = boardDelaySentence(useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user)));
+  const delayGap = useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user));
+  const delaySentence = boardDelaySentence(delayGap);
+  const delayPending = delayGap === undefined;
   const realIds = tu ? realListingIds(tu) : [];
 
   if (tradeUpId === null || (!loading && error === "Trade-up not found")) {
     return <TradeUpNotFound />;
   }
 
+  const bodyHold = loading || Boolean(error) || !tu;
+
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--fold">
       <PreviewSeo
         title={title}
         description={description}
         canonical={id ? `https://tradeupbot.app/trade-ups/${id}` : "https://tradeupbot.app/trade-ups"}
       />
-      <header className="preview-page__head">
+      <header className="preview-page__head preview-share-head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to="/trade-ups">Trade-Ups</Link>
@@ -273,42 +290,52 @@ export function PreviewShare() {
           <h1>{loading ? "Loading trade-up…" : error || !tu ? (error || "Trade-up not found") : h1}</h1>
           <p>Same verify, claim, confirm, and release flow as the live board. Expected value on the card is the probability-weighted output; Expected P/L is that value minus cost.</p>
         </div>
-        {tu && (
-          <div className="preview-page__meta">
-            <span>{pair}</span>
-            <i />
-            {(panel === "sign-in" || panel === "upgrade") && (
-              panel === "upgrade" ? (
-                <Link
-                  className="preview-btn preview-btn--quiet"
-                  to="/pricing"
-                  onClick={() => {
-                    trackVerifyClick("share_bar");
-                    trackUpgradeCta("share_bar");
-                  }}
-                >Verify</Link>
-              ) : (
-                <a
-                  className="preview-btn preview-btn--quiet"
-                  href="#share-verify"
-                  onClick={() => trackVerifyClick("share_bar")}
-                >Verify</a>
-              )
-            )}
-            <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
-              void navigator.clipboard.writeText(window.location.href);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 2000);
-            }}>
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          </div>
-        )}
+        <div className="preview-page__meta preview-page__meta--count preview-share-meta">
+          <span className="preview-share-meta__pair">{tu ? pair : "\u00a0"}</span>
+          <i />
+          {(panel === "sign-in" || panel === "upgrade") ? (
+            panel === "upgrade" ? (
+              <Link
+                className="preview-btn preview-btn--quiet"
+                to="/pricing"
+                onClick={() => {
+                  trackVerifyClick("share_bar");
+                  trackUpgradeCta("share_bar");
+                }}
+              >Verify</Link>
+            ) : (
+              <a
+                className="preview-btn preview-btn--quiet"
+                href="#share-verify"
+                onClick={() => trackVerifyClick("share_bar")}
+              >Verify</a>
+            )
+          ) : panel === "pending" ? (
+            <span className="preview-btn preview-btn--quiet preview-share-meta__hold" aria-hidden="true">Verify</span>
+          ) : null}
+          <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
+            void navigator.clipboard.writeText(window.location.href);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+          }}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
       </header>
 
-      <DetailCollectionLinks names={collections} />
+      <div className={bodyHold ? "preview-fold" : undefined}>
+      {loading ? (
+        <nav className="preview-detail-collections" aria-hidden="true" />
+      ) : (
+        <DetailCollectionLinks names={collections} />
+      )}
 
-      {loading && <p className="preview-note">Loading…</p>}
+      {loading && (
+        <>
+          <p className="sr-only">Loading trade-up…</p>
+          <BoardSkeletonCard />
+        </>
+      )}
       {(error || (!loading && !tu)) && (
         <section className="preview-panel">
           <p className="preview-note">{error || "Trade-up not found"}</p>
@@ -316,9 +343,17 @@ export function PreviewShare() {
         </section>
       )}
 
-      {tu && panel === "sign-in" && (
-        <section className="preview-panel" id="share-verify">
-          {delaySentence && <p className="preview-note">{delaySentence}</p>}
+      {tu && (panel === "pending" || panel === "sign-in") && (
+        <section
+          className={`preview-panel${panel === "pending" ? " preview-share-panel--hold" : ""}`}
+          id="share-verify"
+          aria-hidden={panel === "pending" ? true : undefined}
+          inert={panel === "pending" ? true : undefined}
+        >
+          <ReservedDelayNote
+            sentence={panel === "sign-in" ? delaySentence : null}
+            pending={panel === "pending" || delayPending}
+          />
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <button
             type="button"
@@ -333,7 +368,7 @@ export function PreviewShare() {
       {tu && panel === "upgrade" && (
         <section className="preview-panel">
           <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
-          {delaySentence && <p className="preview-note">{delaySentence}</p>}
+          <ReservedDelayNote sentence={delaySentence} pending={delayPending} />
           <Link className="preview-btn preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("share_upgrade")}>See Pro plans</Link>
         </section>
       )}
@@ -436,6 +471,7 @@ export function PreviewShare() {
       {tu && (
         <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
       )}
+      </div>
 
       <SteamInterstitial {...interstitial.dialog} />
     </div>

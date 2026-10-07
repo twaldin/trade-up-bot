@@ -1062,6 +1062,76 @@
   text-align: end;
 }
 
+/* Count swaps ("— collections" → "92 collections") stay on one line. */
+.preview-page__meta--count {
+  min-width: 16ch;
+  justify-content: flex-end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Detail and collection titles wrap once the real name arrives. The line box
+   is reserved up front so the list under the header does not move. */
+.preview-share-head,
+.preview-collection-head {
+  align-items: flex-start;
+}
+
+.preview-share-head { min-height: 105px; }
+.preview-collection-head h1 { min-height: 30px; }
+.preview-collection-head > div > p { min-height: 18px; }
+
+/* The detail bar sits beside the title and squeezes it once the trade-up
+   lands. The pair and the Verify control keep their loaded width while
+   auth and the trade-up are still in flight. */
+.preview-share-meta__pair {
+  display: inline-block;
+  min-width: 25ch;
+  text-align: end;
+}
+
+.preview-share-meta__hold {
+  visibility: hidden;
+}
+
+/* The free-tier sentence arrives after the sign-in panel. A hidden sizer
+   holds the note at the longest line so the card under it does not move. */
+.preview-share-delay {
+  display: grid;
+}
+
+.preview-share-delay > span {
+  grid-area: 1 / 1;
+}
+
+.preview-share-delay__sizer {
+  visibility: hidden;
+}
+
+/* Auth often lands after the trade-up. The sign-in block is already in the
+   layout, invisible, so revealing it does not push the card. */
+.preview-share-panel--hold {
+  visibility: hidden;
+}
+
+@media (max-width: 719px) {
+  /* The action bar takes the next row, so the title keeps the full width
+     instead of wrapping in a sliver beside Verify and Copy link. */
+  .preview-share-head {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: 0;
+  }
+  .preview-share-head > div { width: 100%; min-width: 0; }
+  .preview-share-head h1 { min-height: 84px; }
+  .preview-share-head > div > p { min-height: 54px; }
+  .preview-share-head .preview-share-meta { width: 100%; min-height: 44px; }
+  .preview-collection-head h1 { min-height: 60px; }
+  .preview-collection-head > div > p { min-height: 72px; }
+  .preview-collection-head .preview-crumb,
+  .preview-share-head .preview-crumb { min-height: 34px; }
+}
+
 .preview-crumb {
   display: flex;
   align-items: center;
@@ -1076,6 +1146,7 @@
   flex-wrap: wrap;
   gap: 8px;
   max-width: 100%;
+  min-height: 44px;
 }
 
 .preview-detail-collections .preview-btn {
@@ -1443,6 +1514,22 @@
    fold so the FAQ does not move up into the viewport. Same floor as the
    empty-board block. */
 .preview-bento--floor {
+  min-height: 100vh;
+  min-height: max(12rem, calc(100dvh - 360px));
+}
+
+/* Browse pages. The page fills the console scrollport (100%) so the footer
+   starts below the fold, and the list uses the same floor as the board.
+   100vh is the fallback when max() or dvh is unsupported. 12rem stops the
+   block collapsing to 0 on a landscape phone. */
+.preview-page--fold {
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: max(12rem, 100%, calc(100dvh - 360px));
+}
+
+.preview-fold {
+  box-sizing: border-box;
   min-height: 100vh;
   min-height: max(12rem, calc(100dvh - 360px));
 }
