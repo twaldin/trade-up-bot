@@ -44,35 +44,35 @@ const example = {
 
 const tradeUp = makeTradeUp({ type: TYPE });
 
-function startVite(): Promise<ChildProcess> {
-  return new Promise((resolveReady, reject) => {
-    const child = spawn(process.execPath, [
-      "node_modules/vite/bin/vite.js",
-      "--host", "127.0.0.1",
-      "--port", String(PORT),
-      "--strictPort",
-    ], {
-      cwd: ROOT,
-      env: { ...process.env, API_PROXY: "", BROWSER: "none" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let buf = "";
-    let settled = false;
-    const finish = (err?: Error) => {
-      if (settled) return;
-      settled = true;
-      if (err) reject(err);
-      else resolveReady(child);
-    };
-    const onData = (chunk: Buffer) => {
-      buf += chunk.toString();
-      if (buf.includes("Local:")) finish();
-    };
-    child.stdout?.on("data", onData);
-    child.stderr?.on("data", onData);
-    child.on("exit", (code) => finish(new Error(`vite exited ${code}: ${buf.slice(-500)}`)));
-    setTimeout(() => finish(new Error(`vite did not listen: ${buf.slice(-500)}`)), 40_000);
+async function startVite(): Promise<ChildProcess> {
+  const child = spawn(process.execPath, [
+    "node_modules/vite/bin/vite.js",
+    "--host", "127.0.0.1",
+    "--port", String(PORT),
+    "--strictPort",
+  ], {
+    cwd: ROOT,
+    env: { ...process.env, API_PROXY: "", BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  let buf = "";
+  child.stdout?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
+  child.stderr?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
+  const deadline = Date.now() + 40_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`vite exited ${child.exitCode}: ${buf.slice(-500)}`);
+    }
+    try {
+      const res = await fetch(BASE);
+      if (res.status < 500) return child;
+    } catch {
+      // The port is not open yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  child.kill("SIGTERM");
+  throw new Error(`vite did not listen: ${buf.slice(-500)}`);
 }
 
 async function stubApis(page: Page): Promise<void> {
