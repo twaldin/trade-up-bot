@@ -15,6 +15,7 @@ import {
   trackClaimTradeUp,
   trackVerifyComplete,
   trackCtaClick,
+  trackUpgradeCta,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -62,6 +63,7 @@ describe("with every tracking env var unset (production today)", () => {
     trackCalculatorComplete("custom");
     trackVerifyClick("pro");
     trackCtaClick("home_hero_calculator");
+    trackUpgradeCta("header_pro");
     trackClaimTradeUp({ surface: "share", tradeUpId: 1 });
     const silentResult = {
       all_active: true,
@@ -236,6 +238,21 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("value");
     expect(params).not.toHaveProperty("listing_id");
     expect(params).not.toHaveProperty("price");
+  });
+
+  it("upgrade_cta_click names the placement and carries no prices or listing ids", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackUpgradeCta("detail_claim");
+    trackUpgradeCta("header_pro");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "detail_claim", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "header_pro", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+    for (const params of gtag.mock.calls.map((call) => call[2] as Record<string, unknown>)) {
+      expect(params).not.toHaveProperty("value");
+      expect(params).not.toHaveProperty("price");
+      expect(params).not.toHaveProperty("listing_id");
+    }
   });
 
   it("cta_click no-ops when gtag has not loaded", () => {
@@ -424,6 +441,18 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
       { value: 6.99, currency: "USD", content_name: "pro_monthly", plan: "pro_monthly", price_usd: 6.99 },
       { eventID: purchaseEventId("cs_test_123") },
     ]]);
+  });
+
+  it("upgrade clicks map to a custom UpgradeCtaClick with no value", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackUpgradeCta("header_pro");
+    expect(fbq).toHaveBeenCalledTimes(1);
+    const [cmd, name, params, options] = fbq.mock.calls[0];
+    expect([cmd, name]).toEqual(["trackCustom", "UpgradeCtaClick"]);
+    expect(params).toEqual({ cta: "header_pro", page_path: "/trade-ups" });
+    expect(params).not.toHaveProperty("value");
+    expect(options?.eventID).toMatch(/^upgrade_/);
+    expect(gtag).not.toHaveBeenCalled();
   });
 
   it("calculator, detail, and verify events reach the Pixel", () => {

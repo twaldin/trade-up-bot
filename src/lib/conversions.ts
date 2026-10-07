@@ -1,6 +1,6 @@
 // Browser conversion events, fanned out to GA4 and the Meta Pixel.
 // GA4 key events to mark in admin: begin_checkout, purchase, sign_up, calculator_complete, and claim_trade_up.
-// view_item, login, verify_click, verify_complete, and cta_click are measured but are not key events. Never checkout_start.
+// view_item, login, verify_click, verify_complete, cta_click, and upgrade_cta_click are measured but are not key events. Never checkout_start.
 // While GA4_MEASUREMENT_ID is unset the existing GA4 events fire exactly as before
 // (begin_checkout, tradeup_view, legacy purchase); once set, the spec event replaces the
 // legacy one at the same hook, so nothing is double-counted.
@@ -161,6 +161,25 @@ export function trackVerifyComplete(args: {
 }
 
 export type CtaId = "home_hero_calculator" | "intent_board";
+
+/** Placement ids for `upgrade_cta_click`. The GA4 param is `cta`. */
+export type UpgradeCtaId = "detail_claim" | "header_pro";
+
+/**
+ * Click on a Pro upgrade control.
+ * GA4 `upgrade_cta_click` and Meta custom `UpgradeCtaClick`. No prices, listing ids, or PII.
+ * Checkout itself stays `begin_checkout`, fired only after /api/subscribe returns 2xx.
+ * No-op until GA4 or the Pixel is configured, same as the other spec events.
+ */
+export function trackUpgradeCta(cta: UpgradeCtaId): void {
+  const params = { cta, page_path: pagePath() };
+  try {
+    sendGa4("upgrade_cta_click", params);
+    pixelEvent("upgrade_cta_click", params, newEventId("upgrade"));
+  } catch {
+    // A blocked tag must not swallow the click.
+  }
+}
 
 /** Landing CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
 export function trackCtaClick(cta: CtaId): void {

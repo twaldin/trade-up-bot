@@ -54,7 +54,8 @@ export type KeyEvent =
   | "view_item"
   | "sign_up"
   | "login"
-  | "lead";
+  | "lead"
+  | "upgrade_cta_click";
 
 export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom"; name: string }>> = {
   purchase: { kind: "standard", name: "Purchase" },
@@ -66,6 +67,7 @@ export const META_EVENTS: Readonly<Record<KeyEvent, { kind: "standard" | "custom
   sign_up: { kind: "standard", name: "CompleteRegistration" },
   login: { kind: "custom", name: "Login" },
   lead: { kind: "standard", name: "Lead" },
+  upgrade_cta_click: { kind: "custom", name: "UpgradeCtaClick" },
 };
 
 /** Shared by the browser Pixel and CAPI so a new Steam account is counted once. */

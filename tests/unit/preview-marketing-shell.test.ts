@@ -31,13 +31,20 @@ const legal = read("../../src/preview/pages/PreviewLegal.tsx");
 const homepageSeo = read("../../server/static-seo-pages.ts");
 
 describe("390 console strip keeps every product dest tappable", () => {
-  it("wraps console dests onto their own rows so Light / USD cannot cover them", () => {
+  it("keeps console dests on one scrolling row so the header does not wrap", () => {
     expect(shell).toContain('aria-label="Console pages"');
     expect(shell).toContain("preview-console__mobile");
     expect(shell).toContain("preview-bar__actions");
-    expect(css).toMatch(/\.preview-console__bar\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(shell).toContain('trackEvent("sign_up_start", { location: "header_sign_in" })');
+    expect(shell).toContain('trackUpgradeCta("header_pro")');
+    expect(shell).toMatch(/>\s*Sign in\s*</);
+    expect(shell).toMatch(/>\s*Pro\s*</);
+    expect(css).toMatch(/\.preview-console__bar\s*\{[^}]*flex-wrap:\s*nowrap/);
     expect(css).toMatch(/\.preview-console__bar\s*\{[^}]*min-height:\s*44px/);
-    expect(css).toMatch(/\.preview-console__mobile\s*\{[^}]*display:\s*contents/);
+    expect(css).toMatch(/\.preview-console__mobile\s*\{[^}]*flex-wrap:\s*nowrap/);
+    expect(css).toMatch(/\.preview-console__mobile\s*\{[^}]*overflow-x:\s*auto/);
+    expect(css).toMatch(/\.preview-btn\.preview-tap\s*\{[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/\.preview-btn\.preview-tap\s*\{[^}]*min-width:\s*44px/);
     expect(css).not.toMatch(/\.preview-console__bar\s*\{[^}]*(?<!min-)height:\s*44px/);
     expect(css).not.toMatch(/\.preview-bar__actions\s*\{[^}]*position:\s*absolute/);
   });

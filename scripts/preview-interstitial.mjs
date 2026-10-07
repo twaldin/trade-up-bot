@@ -39,7 +39,7 @@ const browser = await puppeteer.launch({
 });
 
 /** Open a page as a given session: null = logged out, or a USERS key. */
-async function openPage(path, { user = null, width = 1280, height = 900, mode = "dark", ref = null } = {}) {
+async function openPage(path, { user = null, width = 1280, height = 900, mode = "dark", ref = null, track = false } = {}) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   await page.setViewport({ width, height });
@@ -65,9 +65,10 @@ async function openPage(path, { user = null, width = 1280, height = 900, mode = 
       req.continue();
     }
   });
-  await page.evaluateOnNewDocument((storedRef) => {
+  await page.evaluateOnNewDocument((storedRef, withTracking) => {
     if (storedRef) localStorage.setItem("tub_ref", storedRef);
-  }, ref);
+    if (withTracking) window.tubTracking = { ga4MeasurementId: "G-TESTHEADER1" };
+  }, ref, track);
   await page.goto(`${BASE}${path}`, { waitUntil: "networkidle2", timeout: 90000 });
   if (mode === "light") {
     await page.evaluate(() => {
@@ -272,33 +273,46 @@ try {
   const share = await sharePath();
   {
     const { page } = await openPage(share);
-    await page.waitForSelector(".preview-panel button.preview-btn--lime", { timeout: 60000 });
-    const label = await page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.includes("Verify or claim"))?.textContent?.trim());
-    check(label === "Verify or claim this trade-up", `share: trigger label (${label})`);
-    await page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.includes("Verify or claim"))?.click());
-    await sleep(300);
-    check(await dialogOpen(page), "share: trigger opens the claim modal");
+    await page.waitForSelector("[data-detail-auth=sign-in]", { timeout: 60000 });
+    const gate = await page.$eval("[data-detail-auth=sign-in]", (el) => ({
+      label: el.textContent?.trim(),
+      href: el.getAttribute("href"),
+    }));
+    check(gate.label === "Sign in with Steam (free)", `share: sign-in label (${gate.label})`);
     const expected = `/auth/steam?${new URLSearchParams({ return: share }).toString()}`;
-    check(await continueHref(page) === expected, `share: Continue href ${await continueHref(page)} === ${expected}`);
-    const text = await page.$eval("dialog.preview-sheet", (d) => d.innerText);
-    check(text.includes("Verify and claim this trade-up") && text.includes("$6.99/mo"), "share: claim modal title + $6.99/mo");
-    await page.screenshot({ path: `${OUT}/interstitial-share-desktop-dark.png` });
-    await page.keyboard.press("Escape");
+    check(gate.href === expected, `share: Steam href ${gate.href} === ${expected}`);
+    check(!(await dialogOpen(page)), "share: sign-in does not open the claim modal");
+    const header = await page.$eval("[data-header-auth=sign-in]", (el) => {
+      const rect = el.getBoundingClientRect();
+      return { label: el.textContent?.trim(), h: rect.height, w: rect.width, href: el.getAttribute("href") };
+    });
+    check(header.label === "Sign in" && header.h >= 44 && header.w >= 44 && header.href === expected, `share: header Sign in 44px (${JSON.stringify(header)})`);
+    await page.evaluate(() => {
+      document.querySelector("[data-detail-auth=sign-in]")?.addEventListener("click", (event) => event.preventDefault(), { capture: true });
+    });
+    await page.click("[data-detail-auth=sign-in]");
     await sleep(250);
     const ev = await events(page);
-    const claimEvents = ev.filter(([name]) => name !== "tradeup_view");
-    check(JSON.stringify(claimEvents) === JSON.stringify([
-      ["claim_interstitial_view", { source_surface: "share_verify", intent: "claim", logged_in: false }],
-      ["interstitial_dismiss", { source_surface: "share_verify", intent: "claim", logged_in: false, method: "esc" }],
-    ]), `share: events ${JSON.stringify(claimEvents)}`);
+    const claimEvents = ev.filter(([name]) => name !== "tradeup_view" && name !== "trade_up_detail_open");
+    check(claimEvents.some(([name, params]) => name === "sign_up_start" && params?.location === "detail_sign_in"), `share: sign_up_start detail_sign_in (${JSON.stringify(claimEvents)})`);
+    await page.screenshot({ path: `${OUT}/interstitial-share-desktop-dark.png` });
     await page.close();
 
     const mobile = await openPage(share, { width: 390, height: 844, mode: "light" });
-    await mobile.page.waitForSelector(".preview-panel button.preview-btn--lime", { timeout: 60000 });
-    await mobile.page.evaluate(() => [...document.querySelectorAll(".preview-panel button")].find((b) => b.textContent?.includes("Verify or claim"))?.click());
-    await sleep(300);
-    const noScroll = await mobile.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-    check(noScroll, "share 390: no horizontal scroll");
+    await mobile.page.waitForSelector("[data-detail-auth=sign-in]", { timeout: 60000 });
+    const narrow = await mobile.page.evaluate(() => {
+      const links = [...document.querySelectorAll(".preview-console__mobile a")];
+      const tops = links.map((el) => el.getBoundingClientRect().top);
+      const auth = document.querySelector("[data-header-auth=sign-in]")?.getBoundingClientRect();
+      return {
+        scroll: document.documentElement.scrollWidth <= window.innerWidth,
+        topSpread: tops.length ? Math.max(...tops) - Math.min(...tops) : -1,
+        authH: auth?.height ?? 0,
+      };
+    });
+    check(narrow.scroll, "share 390: no horizontal scroll");
+    check(narrow.topSpread >= 0 && narrow.topSpread < 2, `share 390: nav stays one row (${narrow.topSpread})`);
+    check(narrow.authH >= 44, `share 390: header Sign in is 44px (${narrow.authH})`);
     await mobile.page.screenshot({ path: `${OUT}/interstitial-share-390-light.png` });
     await mobile.page.close();
   }
@@ -318,7 +332,7 @@ try {
     await page.evaluateOnNewDocument(() => {
       window.__sawSignIn = false;
       new MutationObserver(() => {
-        if ([...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Verify or claim this trade-up"))) window.__sawSignIn = true;
+        if ([...document.querySelectorAll(".preview-panel")].some((p) => p.textContent?.includes("Sign in with Steam (free)"))) window.__sawSignIn = true;
       }).observe(document, { childList: true, subtree: true });
     });
     await page.goto(`${BASE}${share}`, { waitUntil: "networkidle2", timeout: 90000 });
@@ -327,28 +341,49 @@ try {
     await page.close();
   }
 
-  // Logged-in Free on a trade-up: upgrade prompt where Verify/Claim would be, opening the interstitial.
+  // Logged-in Free on a trade-up: priced Claim button, plus header Pro. Neither opens Steam.
   {
-    const { page } = await openPage(share, { user: "free" });
-    await page.waitForSelector(".preview-panel", { timeout: 60000 });
+    const { page } = await openPage(share, { user: "free", track: true });
+    await page.waitForSelector("[data-detail-auth=pro]", { timeout: 60000 });
     const prompt = await page.evaluate(() => {
-      const panel = [...document.querySelectorAll(".preview-panel")].find((p) => p.textContent?.includes("Verify and Claim are Pro features: $6.99/mo."));
-      const link = panel?.querySelector("a");
-      return { text: !!panel, href: link?.getAttribute("href"), label: link?.textContent?.trim() };
+      const link = document.querySelector("[data-detail-auth=pro]");
+      const header = document.querySelector("[data-header-auth=pro]");
+      const headerBox = header?.getBoundingClientRect();
+      return {
+        href: link?.getAttribute("href"),
+        label: link?.textContent?.trim(),
+        header: header?.textContent?.trim(),
+        headerH: headerBox?.height ?? 0,
+        headerW: headerBox?.width ?? 0,
+      };
     });
-    check(prompt.text && prompt.href === "/pricing" && prompt.label === "See Pro plans", `free share: See Pro plans links to /pricing (${JSON.stringify(prompt)})`);
-    const before = (await events(page)).filter(([name]) => name !== "tradeup_view");
-    await page.click(".preview-panel a[href='/pricing']");
+    check(prompt.href === "/pricing" && prompt.label === "Claim with Pro · $6.99/mo", `free share: priced claim (${JSON.stringify(prompt)})`);
+    check(prompt.header === "Pro" && prompt.headerH >= 44 && prompt.headerW >= 44, `free share: header Pro 44px (${JSON.stringify(prompt)})`);
+    await page.evaluate(() => {
+      document.querySelector("[data-detail-auth=pro]")?.addEventListener("click", (event) => event.preventDefault(), { capture: true });
+    });
+    await page.click("[data-detail-auth=pro]");
     await sleep(400);
-    const after = (await events(page)).filter(([name]) => name !== "tradeup_view");
-    check(JSON.stringify(after) === JSON.stringify(before), `free share: See Pro plans fires no signup events ${JSON.stringify(after)}`);
-    check(!(await dialogOpen(page)), "free share: See Pro plans does not open the Steam modal");
-    await page.goto(`${BASE}${share}`, { waitUntil: "networkidle2", timeout: 90000 });
-    await page.waitForSelector(".preview-panel a[href='/pricing']", { timeout: 60000 });
+    const after = (await events(page)).filter(([name]) => name !== "tradeup_view" && name !== "trade_up_detail_open");
+    check(after.some(([name, params]) => name === "upgrade_cta_click" && params?.cta === "detail_claim"), `free share: upgrade_cta_click detail_claim (${JSON.stringify(after)})`);
+    check(!after.some(([name]) => name === "sign_up_start" || name === "begin_checkout"), `free share: claim does not start sign-in or checkout (${JSON.stringify(after)})`);
+    check(!(await dialogOpen(page)), "free share: claim does not open the Steam modal");
     await page.screenshot({ path: `${OUT}/upgrade-prompt-free-dark.png` });
     await page.close();
     const light = await openPage(share, { user: "free", mode: "light", width: 390, height: 844 });
-    await light.page.waitForSelector(".preview-panel", { timeout: 60000 });
+    await light.page.waitForSelector("[data-detail-auth=pro]", { timeout: 60000 });
+    const narrowPro = await light.page.evaluate(() => {
+      const links = [...document.querySelectorAll(".preview-console__mobile a")];
+      const tops = links.map((el) => el.getBoundingClientRect().top);
+      const auth = document.querySelector("[data-header-auth=pro]")?.getBoundingClientRect();
+      return {
+        topSpread: tops.length ? Math.max(...tops) - Math.min(...tops) : -1,
+        authH: auth?.height ?? 0,
+        scroll: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+    check(narrowPro.topSpread >= 0 && narrowPro.topSpread < 2, `free share 390: nav stays one row (${narrowPro.topSpread})`);
+    check(narrowPro.authH >= 44 && narrowPro.scroll, `free share 390: Pro is 44px and the page does not scroll sideways (${JSON.stringify(narrowPro)})`);
     await light.page.screenshot({ path: `${OUT}/upgrade-prompt-free-390-light.png` });
     await light.page.close();
   }
