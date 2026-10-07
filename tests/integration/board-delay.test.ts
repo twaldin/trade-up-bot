@@ -35,4 +35,29 @@ describe("GET /api/board-delay", () => {
     expect(res.headers["cache-control"]).toContain("max-age=60");
     expect(JSON.stringify(res.body)).not.toMatch(/listing_id|skin_name/);
   });
+
+  it("keeps unclaimed and expired claims, and drops an active claim from the count and the best", async () => {
+    const active = await ctx.pool.query<{ id: number }>(`
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, type, listing_status, created_at)
+      VALUES (1000, 10000, 9000, 900, 'classified_covert', 'active', NOW())
+      RETURNING id
+    `);
+    const expired = await ctx.pool.query<{ id: number }>(`
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, type, listing_status, created_at)
+      VALUES (1000, 6000, 5000, 500, 'classified_covert', 'active', NOW())
+      RETURNING id
+    `);
+    await ctx.pool.query(
+      `INSERT INTO trade_up_claims (trade_up_id, user_id, expires_at) VALUES
+        ($1, 'claimer-active', NOW() + INTERVAL '30 minutes'),
+        ($2, 'claimer-expired', NOW() - INTERVAL '1 minute')`,
+      [active.rows[0]?.id, expired.rows[0]?.id],
+    );
+
+    const res = await request(ctx.app).get("/api/board-delay");
+    expect(res.status).toBe(200);
+    // Unclaimed 1800 and 500, plus the expired 5000. The active 9000 is out of both aggregates.
+    expect(res.body.hidden_profitable).toBe(3);
+    expect(res.body.best_hidden_profit_cents).toBe(5000);
+  });
 });

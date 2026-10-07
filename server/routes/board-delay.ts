@@ -7,19 +7,27 @@ import {
   parseBoardDelayRow,
   type BoardDelayGap,
 } from "../../shared/board-delay.js";
+import { ACTIVE_CLAIM_PREDICATE } from "./active-claim.js";
 
-export const BOARD_DELAY_CACHE_KEY = "board_delay_gap_v1";
+export const BOARD_DELAY_CACHE_KEY = "board_delay_gap_v2";
 export const BOARD_DELAY_TTL_SEC = 60;
 
 /**
  * Same age cut as the free list (`created_at > now - delay` is hidden) and the
  * same active-row filter as the public counts. `idx_tu_active_created` covers
- * the time range; profit is filtered after that slice.
+ * the time range. Profit and the board's active-claim predicate are applied
+ * in both aggregates, so an active claim drops out of the count and the best.
  */
+const HIDDEN_PROFITABLE_ROW = `profit_cents > 0 AND NOT EXISTS (
+      SELECT 1 FROM trade_up_claims
+      WHERE trade_up_id = trade_ups.id
+        AND ${ACTIVE_CLAIM_PREDICATE}
+    )`;
+
 export const BOARD_DELAY_SQL = `
   SELECT
-    COUNT(*) FILTER (WHERE profit_cents > 0)::int AS hidden_profitable,
-    MAX(profit_cents) FILTER (WHERE profit_cents > 0)::int AS best_hidden_profit_cents
+    COUNT(*) FILTER (WHERE ${HIDDEN_PROFITABLE_ROW})::int AS hidden_profitable,
+    MAX(profit_cents) FILTER (WHERE ${HIDDEN_PROFITABLE_ROW})::int AS best_hidden_profit_cents
   FROM trade_ups
   WHERE is_theoretical = false
     AND listing_status = 'active'

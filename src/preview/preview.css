@@ -1197,8 +1197,10 @@
 @media (max-width: 599px) {
   .preview-delay { min-height: 90px; }
 }
+/* The hidden-count sentence paints 144px at 390. The zero-gap line is shorter,
+   and reserving only that shifted the board when the count arrived. */
 @media (max-width: 479px) {
-  .preview-delay { min-height: 108px; }
+  .preview-delay { min-height: 144px; }
 }
 @media (max-width: 389px) {
   .preview-delay { min-height: 126px; }

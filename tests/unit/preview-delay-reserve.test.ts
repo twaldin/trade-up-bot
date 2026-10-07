@@ -26,6 +26,11 @@ const ZERO_SENTENCE = boardDelaySentence({
   best_hidden_profit_cents: null,
 });
 
+const HIDDEN_COUNT_SENTENCE = `${DELAY_BANNER} ${boardDelaySentence({
+  hidden_profitable: 12,
+  best_hidden_profit_cents: 7600,
+}) ?? ""}`;
+
 function boardHtml(props: {
   loading: boolean;
   isFree: boolean;
@@ -123,6 +128,19 @@ describe("free-tier banner reserves its height", () => {
       expect(box.filled, label).toBe(box.held);
     }
   }, 60000);
+
+  it("reserves 144px at 390 for the hidden-count sentence", async () => {
+    const page = await browser.newPage();
+    const narrowHold = await delayBox(page, 390, boardDocument(hold), null);
+    const narrowFilled = await delayBox(page, 390, boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+    const wideHold = await delayBox(page, 1280, boardDocument(hold), null);
+    const wideFilled = await delayBox(page, 1280, boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+    await page.close();
+    expect(narrowHold.height).toBe(144);
+    expect(narrowFilled.height).toBe(narrowHold.height);
+    expect(wideFilled.height).toBe(wideHold.height);
+    expect(wideHold.height).toBeLessThan(144);
+  }, 30000);
 
   it("reserves the slot for a guest and skips it for a paid account", () => {
     const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });

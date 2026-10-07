@@ -42,7 +42,8 @@ export function parseBoardDelayPayload(body: unknown): BoardDelayGap | null {
 /**
  * One sentence for the free-tier gate. Null while the count is unknown.
  * `hidden_profitable` is active, non-theoretical trade-ups with profit_cents > 0
- * created inside the delay window — the rows the free list query drops.
+ * created inside the delay window — the rows the free list query drops — minus
+ * rows the board still treats as claimed. Expired claims stay in the count.
  */
 export function boardDelaySentence(gap: BoardDelayGap | null | undefined): string | null {
   if (!gap) return null;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Request } from "express";
 import {
@@ -6,6 +7,7 @@ import {
   parseBoardDelayPayload,
   parseBoardDelayRow,
 } from "../../shared/board-delay.js";
+import { ACTIVE_CLAIM_PREDICATE } from "../../server/routes/active-claim.js";
 import { BOARD_DELAY_SQL } from "../../server/routes/board-delay.js";
 import { getTierConfig } from "../../server/auth.js";
 import type { TierUser } from "../../shared/pro-access.js";
@@ -27,6 +29,22 @@ describe("board delay gap", () => {
     expect(BOARD_DELAY_SQL).toContain("is_theoretical = false");
     expect(BOARD_DELAY_SQL).toContain("created_at > NOW()");
     expect(BOARD_DELAY_SQL).not.toMatch(/listing_id|skin_name/);
+  });
+
+  it("uses the board's active-claim predicate on both the count and the best profit", () => {
+    const claims = readFileSync(new URL("../../server/routes/claims.ts", import.meta.url), "utf8");
+    expect(claims).toContain("ACTIVE_CLAIM_PREDICATE");
+    expect(ACTIVE_CLAIM_PREDICATE).toBe("released_at IS NULL AND expires_at > NOW()");
+
+    const filters = [...BOARD_DELAY_SQL.matchAll(/FILTER \(WHERE([\s\S]*?)\)::int/g)].map((match) => match[1] ?? "");
+    expect(filters).toHaveLength(2);
+    for (const filter of filters) {
+      expect(filter).toContain("profit_cents > 0");
+      expect(filter).toContain("trade_up_claims");
+      expect(filter).toContain(ACTIVE_CLAIM_PREDICATE);
+    }
+    const outsideFilters = BOARD_DELAY_SQL.split("FROM trade_ups")[1] ?? "";
+    expect(outsideFilters).not.toContain("trade_up_claims");
   });
 
   it("parses integer cents and drops a fractional best", () => {
