@@ -1022,10 +1022,12 @@
   font-size: 12px;
 }
 
-/* Hidden until the list reports a free tier. Same contents as the live banner,
-   so the row does not move when the sentence fills in. */
+/* Present before the list reports a free tier. Opacity keeps the web font in
+   the layout; visibility:hidden would measure a fallback and the row would
+   jump when the banner appears. */
 .preview-delay--hold {
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .preview-delay__copy {

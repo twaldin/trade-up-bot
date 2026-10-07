@@ -38,7 +38,10 @@ function boardHtml(props: { loading: boolean; isFree: boolean; rows: ReturnType<
 
 function boardDocument(html: string) {
   return `<!doctype html><style>${css}</style>
-    <style>.preview-console { height: auto; overflow: visible; }</style>
+    <style>
+      html, body { margin: 0; overflow: hidden; }
+      .preview-console, .preview-console__main { height: auto !important; overflow: visible !important; }
+    </style>
     <div data-preview data-system="outlay" data-mode="light" data-view="dashboard" class="preview-console-root">
       <div class="preview-console">
         <aside class="preview-sidebar"></aside>
@@ -89,18 +92,28 @@ describe("free-tier banner reserves its height", () => {
 
   it("keeps the slot the same height after the sentence arrives", async () => {
     const page = await browser.newPage();
-    const heights: Record<number, { held: number; quiet: number; filled: number; width: number }> = {};
+    const heights: Record<number, { held: number; quiet: number; filled: number; heldW: number; quietW: number; filledW: number }> = {};
     for (const width of [320, 390, 768, 1280]) {
       const held = await delayBox(page, width, boardDocument(hold), null);
       const quiet = await delayBox(page, width, boardDocument(banner), null);
       const filled = await delayBox(page, width, boardDocument(banner), full);
-      heights[width] = { held: held.height, quiet: quiet.height, filled: filled.height, width: filled.width };
+      heights[width] = {
+        held: held.height,
+        quiet: quiet.height,
+        filled: filled.height,
+        heldW: held.width,
+        quietW: quiet.width,
+        filledW: filled.width,
+      };
     }
     await page.close();
     for (const [width, box] of Object.entries(heights)) {
-      expect(box.held, `${width} wide ${box.width}`).toBeGreaterThan(40);
-      expect(box.quiet, `${width} wide ${box.width}`).toBe(box.held);
-      expect(box.filled, `${width} wide ${box.width}`).toBe(box.held);
+      const label = `${width} hold ${box.heldW}x${box.held} quiet ${box.quietW}x${box.quiet} filled ${box.filledW}x${box.filled}`;
+      expect(box.held, label).toBeGreaterThan(40);
+      expect(box.quietW, label).toBe(box.heldW);
+      expect(box.filledW, label).toBe(box.heldW);
+      expect(box.quiet, label).toBe(box.held);
+      expect(box.filled, label).toBe(box.held);
     }
   }, 60000);
 

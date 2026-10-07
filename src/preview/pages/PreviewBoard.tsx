@@ -1028,7 +1028,7 @@ export function PreviewBoard({
         />
       )}
       {(isFree || delayPending) && (
-        <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined}>
+        <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined} inert={delayPending ? true : undefined}>
           <span className="preview-delay__label">Free tier</span>
           <p className="preview-delay__copy">
             <span>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</span>
