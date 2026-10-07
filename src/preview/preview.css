@@ -3083,7 +3083,139 @@
 
 /* ======================================================== my trade-ups */
 
+/* The signed-in page paints stats, tabs, and the list slot before the
+   payloads arrive. Fixed floors keep those boxes from growing when the
+   numbers and the empty state replace the skeleton, and the fold holds the
+   legal footer below the viewport so it is not pushed into view. */
+.preview-page--account {
+  box-sizing: border-box;
+  min-height: calc(100dvh - 2.5rem);
+}
+
+.preview-page--account .preview-page__meta {
+  flex-wrap: nowrap;
+  min-height: 24px;
+  white-space: nowrap;
+}
+
+.preview-page--account .preview-page__meta > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 10rem;
+}
+
+@media (max-width: 799px) {
+  .preview-page--account .preview-page__head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .preview-page--account .preview-page__head > div:first-child {
+    flex: 1 0 100%;
+  }
+
+  .preview-page--account .preview-page__head p {
+    min-height: 2.6em;
+  }
+
+  .preview-page--account .preview-page__meta {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 .preview-page > .preview-stats { margin: 0; }
+
+.preview-page--account .preview-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 162px;
+}
+
+.preview-page--account .preview-stats b {
+  height: 1.2em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.preview-page--account .preview-stats > div > span {
+  display: block;
+  height: 2.7em;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+.preview-page--account .preview-account__roi {
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-page--account .preview-account__roi .preview-account__pending {
+  display: inline;
+}
+
+@media (min-width: 800px) {
+  .preview-page--account .preview-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 82px;
+  }
+}
+
+.preview-account__pending {
+  color: transparent;
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 100% 0.55em;
+  border-radius: var(--r-chip);
+  user-select: none;
+}
+
+.preview-page--account .preview-tabs {
+  flex-wrap: nowrap;
+  align-items: center;
+  min-height: var(--control);
+}
+
+.preview-account__count {
+  display: inline-block;
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-account__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 420px;
+}
+
+@media (min-width: 1100px) {
+  .preview-account__slot { min-height: 500px; }
+}
+
+.preview-page--account .preview-empty {
+  box-sizing: border-box;
+  flex: 1 0 auto;
+  justify-content: center;
+  min-height: 420px;
+}
+
+@media (min-width: 1100px) {
+  .preview-page--account .preview-empty { min-height: 500px; }
+}
+
+.preview-page--account .preview-empty p {
+  min-height: 1.25em;
+}
+
+.preview-page--account .preview-empty .preview-note {
+  min-height: 2.6em;
+  max-width: 28rem;
+}
+
+.preview-account__fold {
+  flex: 1 0 auto;
+  min-height: 1px;
+}
 
 .preview-stats b.is-plus { color: var(--profit-ink); }
 .preview-stats b.is-minus { color: var(--loss); }

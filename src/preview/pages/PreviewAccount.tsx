@@ -80,6 +80,45 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
   return <span className={`preview-timer ${tick.expired || tick.minutes <= 5 ? "is-minus" : ""}`}>{tick.label}</span>;
 }
 
+function AccountStats({ stats }: { stats: UserTradeUpStats | null }) {
+  const pending = stats == null;
+  return (
+    <div className="preview-stats" aria-busy={pending}>
+      <div>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : stats.total_sold}</b>
+        <span>Sold</span>
+      </div>
+      <div>
+        <b className={pending ? "preview-account__pending" : signClass(stats.all_time_profit_cents)} aria-hidden={pending || undefined}>
+          {pending ? "+$000.00" : signedDollars(stats.all_time_profit_cents)}
+        </b>
+        <span>All-time profit</span>
+      </div>
+      <div>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : stats.total_executed}</b>
+        <span>Executed</span>
+      </div>
+      <div>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00%" : `${stats.win_rate}%`}</b>
+        {pending ? (
+          <span className="preview-account__roi">Sold at a profit · <span className="preview-account__pending" aria-hidden="true">00.0%</span> avg ROI</span>
+        ) : (
+          <span className="preview-account__roi">Sold at a profit · {stats.avg_roi}% avg ROI</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AccountListSkeleton() {
+  return (
+    <div className="preview-empty" aria-busy="true" aria-label="Loading">
+      <p><span className="preview-skel__bar" /></p>
+      <p className="preview-note"><span className="preview-skel__bar" /></p>
+    </div>
+  );
+}
+
 function FaceStack({ names }: { names: string[] }) {
   const shown = names.filter(Boolean).slice(0, 4);
   if (shown.length === 0) return <span className="preview-note">—</span>;
@@ -578,6 +617,8 @@ export function PreviewAccount() {
   const claimCount = claimTradeUps.length;
   const listCount = entries.length;
   const tabCount = activeTab === "claims" ? claimCount : listCount;
+  const showChrome = user !== null && !sessionHold;
+  const listPending = showChrome && (user === undefined || (loading && claimTradeUps.length === 0 && entries.length === 0 && !note));
 
   if (location.pathname === "/account") {
     return (
@@ -589,7 +630,7 @@ export function PreviewAccount() {
   }
 
   return (
-    <div className="preview-page">
+    <div className={showChrome ? "preview-page preview-page--account" : "preview-page"}>
       <title>My Trade-Ups | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
       <header className="preview-page__head">
@@ -597,16 +638,22 @@ export function PreviewAccount() {
           <h1>My trade-ups</h1>
           <p>Claims, purchased rows, and realized P/L from the live APIs.</p>
         </div>
-        {user && (
+        {showChrome && (
           <div className="preview-page__meta">
-            <span>{user.display_name}</span>
-            <i />
-            <span>{user.tier}</span>
-            {hasProAccess(user) && (
+            {user ? (
               <>
+                <span>{user.display_name}</span>
                 <i />
-                <ManageSubscription />
+                <span>{user.tier}</span>
+                {hasProAccess(user) && (
+                  <>
+                    <i />
+                    <ManageSubscription />
+                  </>
+                )}
               </>
+            ) : (
+              <span className="preview-account__pending" aria-hidden="true">Member</span>
             )}
           </div>
         )}
@@ -623,8 +670,6 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {user === undefined && !sessionHold && <p className="preview-note">Checking session…</p>}
-
       {user === null && !sessionHold && (
         <section className="preview-panel">
           <header className="preview-panel__head">
@@ -637,28 +682,9 @@ export function PreviewAccount() {
         </section>
       )}
 
-      {user && stats && (
-        <div className="preview-stats">
-          <div>
-            <b>{stats.total_sold}</b>
-            <span>Sold</span>
-          </div>
-          <div>
-            <b className={signClass(stats.all_time_profit_cents)}>{signedDollars(stats.all_time_profit_cents)}</b>
-            <span>All-time profit</span>
-          </div>
-          <div>
-            <b>{stats.total_executed}</b>
-            <span>Executed</span>
-          </div>
-          <div>
-            <b>{stats.win_rate}%</b>
-            <span>Sold at a profit · {stats.avg_roi}% avg ROI</span>
-          </div>
-        </div>
-      )}
+      {showChrome && <AccountStats stats={user ? stats : null} />}
 
-      {user && (
+      {showChrome && (
         <div className="preview-tabs" role="tablist" aria-label="My trade-ups">
           {ACCOUNT_TABS.map((tab) => (
             <button
@@ -677,7 +703,9 @@ export function PreviewAccount() {
               }}
             >
               {tab.label}
-              {activeTab === tab.key && tabCount > 0 ? ` (${tabCount})` : ""}
+              {activeTab === tab.key ? (
+                <span className="preview-account__count">{tabCount > 0 ? ` (${tabCount})` : ""}</span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -694,7 +722,10 @@ export function PreviewAccount() {
         </div>
       )}
       {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
-      {user && loading && <p className="preview-note">Loading…</p>}
+
+      {showChrome && (
+        <div className="preview-account__slot">
+          {listPending && <AccountListSkeleton />}
 
       {user && !loading && !note && activeTab === "claims" && claimTradeUps.length === 0 && (
         <div className="preview-empty">
@@ -920,11 +951,14 @@ export function PreviewAccount() {
           />
         </section>
       )}
+        </div>
+      )}
 
       <div className="preview-toolbar">
         <a className="preview-btn" href="/pricing">Pricing</a>
-        {user && <a className="preview-btn" href="/auth/logout">Sign out</a>}
+        {showChrome && <a className="preview-btn" href="/auth/logout">Sign out</a>}
       </div>
+      {showChrome && <div className="preview-account__fold" aria-hidden="true" />}
     </div>
   );
 }
