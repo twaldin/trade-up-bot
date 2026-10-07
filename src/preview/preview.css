@@ -1046,6 +1046,22 @@
   background: var(--line-hard);
 }
 
+/* The count swaps in place ("0 ranked" → "12 ranked"). A fixed line box and
+   a reserved count width keep the header from growing or sliding. */
+.preview-page__meta--board {
+  box-sizing: border-box;
+  min-height: 17px;
+  line-height: 17px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-page__meta--board > span:first-child {
+  display: inline-block;
+  min-width: 13ch;
+  text-align: end;
+}
+
 .preview-crumb {
   display: flex;
   align-items: center;
@@ -1314,6 +1330,44 @@
 
 .preview-bento--stale {
   opacity: 0.45;
+}
+
+/* Placeholder cards keep the first page's box. Quiet hides them once an
+   empty or failed board has a message, without giving the space back. */
+.preview-card--skeleton {
+  pointer-events: none;
+  /* Collapsed card box, measured with the live first page in the column.
+     1 col (390) 420.5, 2 col (800) 521, 3 col (1280) 414.2. The empty art
+     box is a few pixels short of a loaded input tile; this floor closes it. */
+  min-height: 420.5px;
+}
+
+@media (min-width: 720px) {
+  .preview-card--skeleton { min-height: 521px; }
+}
+
+@media (min-width: 1180px) {
+  .preview-card--skeleton { min-height: 414.2px; }
+}
+
+.preview-card--skeleton .preview-lane__label {
+  min-height: 15px;
+}
+
+.preview-card--skeleton .preview-cardline {
+  min-height: 46.5px;
+}
+
+.preview-skel__bar {
+  display: block;
+  width: min(220px, 70%);
+  height: 10px;
+  border-radius: var(--r-chip);
+  background: var(--row-hover);
+}
+
+.preview-bento--quiet .preview-card--skeleton {
+  visibility: hidden;
 }
 
 @media (min-width: 720px) {

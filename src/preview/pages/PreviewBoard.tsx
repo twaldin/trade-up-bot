@@ -869,6 +869,54 @@ function rankedMeta(throttled: boolean, count: number): string {
   return `${count} ranked`;
 }
 
+/** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
+const BOARD_PAGE_CARDS = 12;
+/** Tile counts on a collapsed board card, so the placeholder matches its box. */
+const SKELETON_INPUTS = 3;
+const SKELETON_OUTPUTS = 2;
+
+function SkeletonTile({ output = false }: { output?: boolean }) {
+  return (
+    <div className={`preview-skin preview-skin--${output ? "output" : "input"}`}>
+      <button type="button" className="preview-skin__buy" tabIndex={-1}>
+        <span className="preview-skin__art">
+          <span className="preview-skin__ph" />
+        </span>
+      </button>
+      <span className="preview-skin__label">
+        <em>&nbsp;</em>
+        <b>&nbsp;</b>
+        {output ? <span className="preview-skin__delta">&nbsp;</span> : null}
+      </span>
+    </div>
+  );
+}
+
+function BoardSkeletonCard() {
+  return (
+    <article className="preview-card preview-card--static preview-card--skeleton" aria-hidden="true">
+      <div className="preview-flow">
+        <section className="preview-flow__side">
+          <p className="preview-lane__label">&nbsp;<i /></p>
+          <div className="preview-skins preview-skins--in">
+            {Array.from({ length: SKELETON_INPUTS }, (_, index) => <SkeletonTile key={index} />)}
+          </div>
+        </section>
+        <span className="preview-flow__arrow" aria-hidden>
+          <ArrowRight size={14} />
+        </span>
+        <section className="preview-flow__side">
+          <p className="preview-lane__label">&nbsp;<i /></p>
+          <div className="preview-skins preview-skins--out">
+            {Array.from({ length: SKELETON_OUTPUTS }, (_, index) => <SkeletonTile key={index} output />)}
+          </div>
+        </section>
+      </div>
+      <p className="preview-cardline"><span className="preview-skel__bar" /></p>
+    </article>
+  );
+}
+
 export function PreviewBoard({
   tradeUps,
   loading,
@@ -1162,6 +1210,9 @@ export function PreviewBoard({
     failed: Boolean(failed),
     notice: notice != null,
   });
+  // Hold the first page's box while it loads, and on an empty or failed board,
+  // so the FAQ under the list does not jump into that space.
+  const reserveList = !embed && tradeUps.length === 0;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -1186,7 +1237,7 @@ export function PreviewBoard({
             <h1>{heading}</h1>
             <p>{lede}</p>
           </div>
-          <div className="preview-page__meta">
+          <div className="preview-page__meta preview-page__meta--board">
             <span>{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
             <i />
             <span>{cols}-column</span>
@@ -1224,23 +1275,30 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && tradeUps.length === 0 && notice !== "throttled" && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && notice !== "throttled" && (
+        <p className={embed ? "preview-note" : "sr-only"}>Loading trade-ups…</p>
+      )}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {noticeNode}
-      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={loading || refreshing || undefined}>
-        {ordered.map((tu) => (
-          <TradeUpCard
-            key={tu.id}
-            tu={tu}
-            expanded={expandedId === tu.id}
-            onExpand={onExpand}
-            onVerifyClaim={onVerifyClaim}
-            claimStatus={claimStatus}
-            confirming={confirmId === tu.id}
-            onConfirmClaim={onConfirmClaim}
-            onCancelClaim={() => setConfirmId(null)}
-          />
-        ))}
+      <div
+        className={`preview-bento${refreshing ? " preview-bento--stale" : ""}${reserveList ? " preview-bento--reserved" : ""}${reserveList && notice ? " preview-bento--quiet" : ""}`}
+        aria-busy={loading || refreshing || undefined}
+      >
+        {reserveList
+          ? Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)
+          : ordered.map((tu) => (
+            <TradeUpCard
+              key={tu.id}
+              tu={tu}
+              expanded={expandedId === tu.id}
+              onExpand={onExpand}
+              onVerifyClaim={onVerifyClaim}
+              claimStatus={claimStatus}
+              confirming={confirmId === tu.id}
+              onConfirmClaim={onConfirmClaim}
+              onCancelClaim={() => setConfirmId(null)}
+            />
+          ))}
       </div>
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
       <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">{pagingThrottle ? (
