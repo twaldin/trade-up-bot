@@ -5,6 +5,7 @@ import { PRO_FEATURES, proPriceParts } from "../lib/pro-pricing.js";
 import {
   INTERSTITIAL_COPY,
   createInterstitialTracker,
+  interstitialReturnPath,
   type DismissMethod,
   type InterstitialContext,
   type InterstitialTracker,
@@ -32,6 +33,19 @@ const IconClose = () => (
 );
 
 const FOCUSABLE = "a[href], button:not([disabled])";
+
+function continueReturn(context: InterstitialContext): string {
+  switch (context.surface) {
+    case "pricing_go_pro":
+      return window.location.pathname;
+    case "share_verify":
+      return interstitialReturnPath(window.location.pathname, context.returnTo);
+    default: {
+      const unreachable: never = context;
+      return unreachable;
+    }
+  }
+}
 
 export interface SteamInterstitialProps {
   context: InterstitialContext | null;
@@ -190,7 +204,7 @@ export function SteamInterstitial({ context, onContinue, onDismiss, returnFocusT
             <a
               ref={continueRef}
               className="preview-btn preview-btn--lime preview-sheet__go"
-              href={authHref(window.location.pathname)}
+              href={authHref(continueReturn(context))}
               rel="nofollow"
               onClick={onContinue}
               onAuxClick={(event) => {

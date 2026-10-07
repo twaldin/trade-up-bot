@@ -7,7 +7,7 @@ import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/type
 import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
-import { collectionSlugFromPath, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
+import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -35,6 +35,7 @@ import {
   splitSkinName,
   uniqueInputs,
   uniqueOutputs,
+  claimReturnTo,
   verifyClaimHref,
   waterfallBars,
   worstBest,
@@ -90,7 +91,9 @@ import {
 import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { MY_TRADE_UPS_API } from "../lib/my-trade-ups.js";
 import { createFaceCache, faceFor, loadFaces, rememberFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
@@ -119,6 +122,24 @@ function axisPercent(value: number, lo: number, hi: number): number {
 
 function stop(event: { stopPropagation: () => void }) {
   event.stopPropagation();
+}
+
+interface ClaimStatus {
+  id: number;
+  text: string;
+  failed: boolean;
+}
+
+async function readClaimError(res: Response): Promise<string> {
+  try {
+    const data: unknown = await res.json();
+    if (data && typeof data === "object" && "error" in data && typeof data.error === "string" && data.error.length > 0) {
+      return data.error;
+    }
+  } catch {
+    // The claim route returns JSON. A non-JSON body still means the claim did not happen.
+  }
+  return "Could not claim this trade-up";
 }
 
 function SkinFace({ name }: { name: string }) {
@@ -562,12 +583,17 @@ export function TradeUpCard({
   expanded,
   onExpand,
   expandable = true,
+  onVerifyClaim,
+  claimStatus = null,
 }: {
   tu: HydratedTradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
   /** False for teaser cards that share expand state with another card they must not disturb. */
   expandable?: boolean;
+  /** Board claim. Absent on pages that still link out to the trade-up. */
+  onVerifyClaim?: (id: number, trigger: HTMLButtonElement) => void;
+  claimStatus?: ClaimStatus | null;
 }) {
   const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
@@ -685,11 +711,11 @@ export function TradeUpCard({
               href={verifyClaimHref(tu.id)}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open this trade-up to re-check that its listings are still live"
-              aria-label="Verify trade-up (opens in new tab)"
-              onClick={(event) => { trackVerifyClick("board_card"); stop(event); }}
+              title="Open this trade-up"
+              aria-label="Open trade-up details"
+              onClick={stop}
             >
-              Verify
+              Open
               <ExternalLink size={10} aria-hidden />
             </a>
           </span>
@@ -754,16 +780,34 @@ export function TradeUpCard({
                     <dd>{formatDollars(totals.totalCents || inputCostCents(tu))}</dd>
                   </div>
                 </dl>
-                <a
-                  className="preview-btn preview-btn--lime preview-btn--block"
-                  href={verifyClaimHref(tu.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
-                >
-                  Verify / Claim trade-up
-                </a>
-                <p className="preview-note">Opens the live trade-up on tradeupbot.app.</p>
+                {onVerifyClaim ? (
+                  <button
+                    type="button"
+                    className="preview-btn preview-btn--lime preview-btn--block"
+                    disabled={claimStatus?.id === tu.id && (claimStatus.text === "Claiming…" || claimStatus.text === "Claimed")}
+                    onClick={(event) => {
+                      stop(event);
+                      trackVerifyClick("expanded");
+                      onVerifyClaim(tu.id, event.currentTarget);
+                    }}
+                  >
+                    Verify / Claim trade-up
+                  </button>
+                ) : (
+                  <a
+                    className="preview-btn preview-btn--lime preview-btn--block"
+                    href={verifyClaimHref(tu.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
+                  >
+                    Verify / Claim trade-up
+                  </a>
+                )}
+                {onVerifyClaim && claimStatus?.id === tu.id && (
+                  <p className={`preview-note${claimStatus.failed ? " preview-note--loss" : ""}`} role="status">{claimStatus.text}</p>
+                )}
+                {!onVerifyClaim && <p className="preview-note">Opens the live trade-up on tradeupbot.app.</p>}
               </Panel>
             </div>
           </motion.div>
@@ -852,6 +896,10 @@ export function PreviewBoard({
   lockedSkin?: string;
   embed?: boolean;
 }) {
+  const interstitial = useSteamInterstitial();
+  const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
+  const claimedIds = useRef(new Set<number>());
+  const claimingIds = useRef(new Set<number>());
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
@@ -960,6 +1008,35 @@ export function PreviewBoard({
       pendingFocus.current = null;
     }
   }, [pagingThrottle, loadingMore, atEnd, atCap]);
+  async function claimFromBoard(id: number) {
+    if (claimedIds.current.has(id) || claimingIds.current.has(id)) return;
+    claimingIds.current.add(id);
+    setClaimStatus({ id, text: "Claiming…", failed: false });
+    try {
+      const res = await fetch(MY_TRADE_UPS_API.claim(id), { method: "POST", credentials: "include" });
+      if (!res.ok) {
+        setClaimStatus({ id, text: await readClaimError(res), failed: true });
+        return;
+      }
+      await res.json().catch(() => null);
+      claimedIds.current.add(id);
+      setClaimStatus({ id, text: "Claimed", failed: false });
+      trackClaimTradeUp({ surface: "board", tradeUpId: id });
+    } catch {
+      setClaimStatus({ id, text: "Could not claim this trade-up", failed: true });
+    } finally {
+      claimingIds.current.delete(id);
+    }
+  }
+
+  function onVerifyClaim(id: number, trigger: HTMLButtonElement) {
+    if (!isFree) {
+      void claimFromBoard(id);
+      return;
+    }
+    interstitial.open({ surface: "share_verify", returnTo: claimReturnTo(id) }, trigger);
+  }
+
   const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
     && (total ?? 0) > NARROW_HINT_MIN_TOTAL
     && !exhausted
@@ -1032,7 +1109,14 @@ export function PreviewBoard({
       {noticeNode}
       <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={loading || refreshing || undefined}>
         {ordered.map((tu) => (
-          <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
+          <TradeUpCard
+            key={tu.id}
+            tu={tu}
+            expanded={expandedId === tu.id}
+            onExpand={onExpand}
+            onVerifyClaim={onVerifyClaim}
+            claimStatus={claimStatus}
+          />
         ))}
       </div>
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
@@ -1081,6 +1165,7 @@ export function PreviewBoard({
           ))}
         </section>
       )}
+      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }

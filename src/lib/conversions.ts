@@ -93,7 +93,7 @@ export function trackVerifyClick(surface: VerifySurface): void {
   pixelEvent("verify_click", params, newEventId("verify"));
 }
 
-export type ActivationSurface = "share" | "account";
+export type ActivationSurface = "share" | "account" | "board";
 export type VerifyCompleteStatus = "all_active" | "partial" | "stale";
 
 /** Verify payload fields the kit already renders. Extra listing and price fields are ignored. */

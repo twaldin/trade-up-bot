@@ -21,14 +21,17 @@ function collapsedCardline(source: string): string {
 describe("collapsed board cards invite open and Verify", () => {
   const line = collapsedCardline(board);
 
-  it("puts a Details hint and a Verify link on the one stat line", () => {
+  it("puts a Details hint and an Open link on the one stat line", () => {
     expect(line).toContain("preview-cardline__open");
     expect(line).toContain("Details");
     expect(line).toContain("preview-cardline__verify");
+    expect(line).toMatch(/>\s*Open\s*</);
+    expect(line).not.toMatch(/>\s*Verify\s*</);
+    expect(line).toContain('aria-label="Open trade-up details"');
     expect(line).toContain("verifyClaimHref(tu.id)");
     expect(line).toMatch(/target="_blank"/);
-    expect(line).toContain('trackVerifyClick("board_card")');
-    expect(line).toContain("stop(event)");
+    expect(line).not.toContain('trackVerifyClick("board_card")');
+    expect(line).toContain("onClick={stop}");
   });
 
   it("does not bring back a header band or a visible expand button", () => {
@@ -38,8 +41,9 @@ describe("collapsed board cards invite open and Verify", () => {
     expect(buttons).not.toContain("preview-card__expand");
   });
 
-  it("gives Verify a 24px touch target and a new-tab label", () => {
-    expect(line).toContain('aria-label="Verify trade-up (opens in new tab)"');
+  it("gives the Open link a 24px touch target and an honest label", () => {
+    expect(line).toContain('aria-label="Open trade-up details"');
+    expect(line).not.toContain("Verify trade-up");
     expect(css).toMatch(/\.preview-cardline__verify\s*\{[^}]*min-height: 24px/);
   });
 
