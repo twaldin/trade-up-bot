@@ -1,0 +1,8 @@
+ts	phase	decision	why	evidence	result
+2026-10-07T04:30:00Z	frame	One audit run, no product fixes	The fix wave is later small PRs	User instruction for the first pstack pass	Report and skill only
+2026-10-07T04:35:00Z	daemon	Cite the Autoresearch audit, do not redo it	The attached review already covered main d6b21a3	uploads/pstack-autoresearch-audit-2026-10-06.md	Daemon section quotes AR ids
+2026-10-07T04:40:00Z	skill	Homepage shell is not required to emit FAQPage	Googlebot on / is the nginx app shell	crawler.json types WebSite and Organization	Driver records / and does not fail it
+2026-10-07T04:47:00Z	measurement	sign_up is proven by a blocked dataLayer capture	A real collect would pollute G-2474	signup.json signUp 1 then 0, me null	Skill fails until a server flag exists
+2026-10-07T04:52:00Z	qa	Merge the live sweep instead of repeating the 60s hang	QA already measured the 504	qa-pstack-live-sweep-2026-10-06.md F-01	ids command aborts at 8s
+2026-10-07T04:53:00Z	daemon	PR 194 owns the merge deadlock P0	Autoresearch signed it and QA isolation is still open	https://github.com/twaldin/trade-up-bot/pull/194	Wave 1 lists it in flight and adds a follow-up slice
+2026-10-07T04:56:00Z	measurement	Drop F-07	Two Realtime runs showed the interstitial events on G-2474G4P5QE	User note, 9:52 PM PT, counts 2, 2, and 2	No beacon fix in the sign_up slice

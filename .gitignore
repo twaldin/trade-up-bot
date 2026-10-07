@@ -34,12 +34,17 @@ scaling.md
 *.log
 /tmp/
 
+# Verification skill evidence. The driver writes here when /opt/cursor/artifacts is absent.
+.verify-tradeupbot-artifacts/
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Docs
-docs/
+# Docs stay local except the pstack audit record.
+docs/*
+!docs/retro/
+!docs/retro/**
 
 # Content production (raw footage, edited video, screenshots)
 content/raw/

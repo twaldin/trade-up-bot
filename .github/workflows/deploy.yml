@@ -130,7 +130,7 @@ jobs:
 
       - name: Smoke check
         run: |
-          HTTP=$(curl -s -o /tmp/home.html -w "%{http_code}" https://tradeupbot.app/ || true)
+          HTTP=$(curl -s -A "Mozilla/5.0 TradeUpBotVerify" -o /tmp/home.html -w "%{http_code}" https://tradeupbot.app/ || true)
           HTTP=${HTTP:-000}
           echo "home: $HTTP"
           if [ "$HTTP" != "200" ]; then
@@ -139,7 +139,7 @@ jobs:
           ready=0
           deadline=$((SECONDS + 90))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            code="$(curl -sS -o /tmp/global-stats.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/global-stats" || true)"
+            code="$(curl -sS -A "Mozilla/5.0 TradeUpBotVerify" -o /tmp/global-stats.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/global-stats" || true)"
             if [ "$code" = "200" ] && python3 -c 'import json; json.load(open("/tmp/global-stats.json"))' >/dev/null 2>&1; then
               ready=1
               break
