@@ -27,11 +27,15 @@ export {
 /** undefined while the request is in flight, null if it failed, was skipped, or the body was unusable. */
 export function useBoardDelay(enabled = true): BoardDelayGap | null | undefined {
   const [gap, setGap] = useState<BoardDelayGap | null | undefined>(enabled ? undefined : null);
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  // Auth often enables this hook after the first paint. Reset before paint so
+  // callers can tell "not started" (undefined) from "failed" (null).
+  if (enabled !== wasEnabled) {
+    setWasEnabled(enabled);
+    setGap(enabled ? undefined : null);
+  }
   useEffect(() => {
-    if (!enabled) {
-      setGap(null);
-      return;
-    }
+    if (!enabled) return;
     let live = true;
     fetch("/api/board-delay")
       .then((res) => (res.ok ? res.json() : null))
