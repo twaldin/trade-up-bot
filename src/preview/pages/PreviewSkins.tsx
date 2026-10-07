@@ -349,7 +349,7 @@ export function PreviewSkinsPage() {
   const pendingGrid = loading && rows.length === 0 && !filters.search && !filters.rarity;
 
   return (
-    <div className="preview-page preview-page--stable">
+    <div className={`preview-page preview-page--stable${rows.length === 0 ? " preview-page--fold" : ""}`}>
       <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/skins" />}
       <header className="preview-page__head">
@@ -668,12 +668,13 @@ export function PreviewSkinPage() {
   const meta = detail.data?.skin
     ? { rarity: detail.data.skin.rarity, collection: detail.data.skin.collection_name }
     : null;
-  const error = bySlug.error ? "That skin is not in the live dataset." : null;
+  const settledWithoutSkin = !bySlug.pending && !bySlug.throttled && !name;
+  const error = bySlug.error || settledWithoutSkin ? "That skin is not in the live dataset." : null;
   const board = usePreviewTradeUps({ skin: name ?? undefined, perPage: 6, enabled: Boolean(name) });
 
   if (error) {
     return (
-      <div className="preview-page">
+      <div className="preview-page preview-page--stable preview-page--fold">
         {canonicalLink}
         <header className="preview-page__head"><div><h1>Skin</h1><p>{error}</p></div></header>
         <Link className="preview-btn" to={skinsHref()}>Back to skins</Link>
@@ -792,9 +793,14 @@ async function fetchCollectionSkins(name: string, signal?: AbortSignal): Promise
   }));
 }
 
-function useCollectionsIndex(): { rows: CollectionRow[]; throttled: boolean } {
-  const { data, throttled } = useBrowseJson<CollectionRow[]>("/api/collections", COLLECTIONS_TTL_MS);
-  return { rows: Array.isArray(data) ? data : NO_COLLECTIONS, throttled };
+function useCollectionsIndex(): { rows: CollectionRow[]; throttled: boolean; pending: boolean; failed: boolean } {
+  const { data, error, throttled, pending } = useBrowseJson<CollectionRow[]>("/api/collections", COLLECTIONS_TTL_MS);
+  return {
+    rows: Array.isArray(data) ? data : NO_COLLECTIONS,
+    throttled,
+    pending,
+    failed: error,
+  };
 }
 
 async function mapPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -871,9 +877,9 @@ const COLLECTION_CARD_RESERVE = 12;
 /** Rows that keep the hub table under the fold at 1280×1080 until the real list arrives. */
 const COLLECTION_ROW_RESERVE = 16;
 
-function CollectionCardSkeleton() {
+function CollectionCardSkeleton({ hold = false }: { hold?: boolean }) {
   return (
-    <div className="preview-collection preview-collection--skeleton" aria-hidden="true">
+    <div className={`preview-collection ${hold ? "preview-collection--hold" : "preview-collection--skeleton"}`} aria-hidden="true">
       <span className="preview-collection__cluster">
         {Array.from({ length: 4 }, (_, index) => <i key={index}><span className="preview-skin__ph" /></i>)}
       </span>
@@ -904,7 +910,7 @@ function CollectionTableSkeleton() {
 }
 
 export function PreviewCollectionsPage() {
-  const { rows, throttled: indexThrottled } = useCollectionsIndex();
+  const { rows, throttled: indexThrottled, pending } = useCollectionsIndex();
   const [search, setSearch] = useState("");
   const [visible, setVisible] = useState(12);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -974,10 +980,11 @@ export function PreviewCollectionsPage() {
     ) },
   ];
 
-  const indexPending = rows.length === 0 && term.length === 0;
+  const indexPending = pending && term.length === 0;
+  const shortIndex = !pending && rows.length === 0;
 
   return (
-    <div className="preview-page preview-page--stable">
+    <div className={`preview-page preview-page--stable${shortIndex ? " preview-page--fold" : ""}`}>
       <title>CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot</title>
       <meta name="description" content="Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection." />
       <meta name="robots" content="index, follow" />
@@ -1000,6 +1007,12 @@ export function PreviewCollectionsPage() {
 
       <div className="preview-collections" aria-busy={indexPending || undefined}>
         {indexPending && Array.from({ length: COLLECTION_CARD_RESERVE }, (_, index) => <CollectionCardSkeleton key={index} />)}
+        {shortIndex && (
+          <>
+            <p className="preview-note">No collection matches that search.</p>
+            {Array.from({ length: COLLECTION_CARD_RESERVE }, (_, index) => <CollectionCardSkeleton key={index} hold />)}
+          </>
+        )}
         {shown.map((row) => (
           <Link key={row.name} className="preview-collection" to={previewCollectionHref(row.name)}>
             <ClusterFaces faces={skins[row.name]?.faces ?? []} />
@@ -1009,7 +1022,7 @@ export function PreviewCollectionsPage() {
             </span>
           </Link>
         ))}
-        {!indexPending && shown.length === 0 && (
+        {!indexPending && shown.length === 0 && (rows.length > 0 || indexThrottled) && (
           <p className="preview-note">{indexThrottled ? SLOW_DOWN_COPY : "Loading collections…"}</p>
         )}
       </div>
@@ -1094,9 +1107,10 @@ export function PreviewCollectionPage() {
     };
   }, [title, skinsRetry]);
 
-  const unknown = !title && index.rows.length > 0;
-  const waitingOnIndex = !title && !unknown;
+  const unknown = !title && !index.pending && !index.failed && !index.throttled;
+  const waitingOnIndex = !title && !unknown && !index.failed;
   const skinsCopy = (() => {
+    if (index.failed) return "Couldn't load this collection's skins.";
     if (waitingOnIndex && index.throttled) return SLOW_DOWN_COPY;
     if (unknown) return "That collection is not in the live dataset.";
     if (skinsStatus === "ok") return formatCollectionSkinCopy(tallyCollectionSkins(skins));
@@ -1141,10 +1155,11 @@ export function PreviewCollectionPage() {
     if (node?.isConnected && original != null) node.setAttribute("href", original);
   }, []);
   const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
-  const skinsPending = skinsStatus === "loading" && skins.length === 0 && !unknown;
+  const skinsPending = skinsStatus === "loading" && skins.length === 0 && !unknown && !index.failed;
+  const holdFold = skins.length === 0;
 
   return (
-    <div className={`preview-page preview-page--stable${skinsPending ? " preview-page--fold" : ""}`}>
+    <div className={`preview-page preview-page--stable${holdFold ? " preview-page--fold" : ""}`}>
       <title>{title ? `${title.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot` : "CS2 Collections | TradeUpBot"}</title>
       <header className="preview-page__head">
         <div>
@@ -1155,7 +1170,7 @@ export function PreviewCollectionPage() {
           </nav>
           <h1>{heading}</h1>
           <p className="preview-collection-lede">
-            {unknown || (waitingOnIndex && index.throttled) || skinsStatus === "throttled" || skinsStatus === "failed"
+            {unknown || index.failed || (waitingOnIndex && index.throttled) || skinsStatus === "throttled" || skinsStatus === "failed"
               ? skinsCopy
               : `${skinsCopy} · every skin in the collection, and the trade-ups the loop found inside it.`}
           </p>

@@ -34,6 +34,8 @@ export interface BrowseJson<T> {
   error: boolean;
   /** A 429 with nothing cached to fall back on; the hook retries once the hold lifts. */
   throttled: boolean;
+  /** True until this URL's request settles. A cached peek is not pending. */
+  pending: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export interface BrowseJson<T> {
  */
 export function useBrowseJson<T>(url: string | null, ttlMs?: number): BrowseJson<T> {
   const [state, setState] = useState<BrowseJson<T> & { url: string | null }>({
-    url: null, data: null, error: false, throttled: false,
+    url: null, data: null, error: false, throttled: false, pending: false,
   });
   const [retry, setRetry] = useState(0);
 
@@ -52,15 +54,15 @@ export function useBrowseJson<T>(url: string | null, ttlMs?: number): BrowseJson
     const controller = new AbortController();
     let timer = 0;
     fetchBrowseJson<T>(url, { signal: controller.signal, ttlMs })
-      .then((data) => setState({ url, data, error: false, throttled: false }))
+      .then((data) => setState({ url, data, error: false, throttled: false, pending: false }))
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
         if (isRateLimitError(err)) {
-          setState((prev) => ({ url, data: prev.url === url ? prev.data : null, error: false, throttled: true }));
+          setState((prev) => ({ url, data: prev.url === url ? prev.data : null, error: false, throttled: true, pending: false }));
           timer = window.setTimeout(() => setRetry((n) => n + 1), Math.max(1_000, browseHeldUntil() - Date.now()));
           return;
         }
-        setState({ url, data: null, error: true, throttled: false });
+        setState({ url, data: null, error: true, throttled: false, pending: false });
       });
     return () => {
       controller.abort();
@@ -68,7 +70,8 @@ export function useBrowseJson<T>(url: string | null, ttlMs?: number): BrowseJson
     };
   }, [url, ttlMs, retry]);
 
-  if (!url) return { data: null, error: false, throttled: false };
+  if (!url) return { data: null, error: false, throttled: false, pending: false };
   if (state.url === url) return state;
-  return { data: peekBrowseJson<T>(url, ttlMs), error: false, throttled: false };
+  const peeked = peekBrowseJson<T>(url, ttlMs);
+  return { data: peeked, error: false, throttled: false, pending: peeked == null };
 }

@@ -139,7 +139,9 @@ async function startPreview(): Promise<{ child: ChildProcess; origin: string }> 
   return { child, origin };
 }
 
-async function fulfillApi(route: Route, origin: string): Promise<void> {
+type Fixture = { auth?: "anon" | "pro"; status?: "ok" | "error" | "empty" };
+
+async function fulfillApi(route: Route, origin: string, fixture: Fixture = {}): Promise<void> {
   const url = new URL(route.request().url());
   await new Promise((resolvePromise) => setTimeout(resolvePromise, API_DELAY_MS));
   if (url.pathname === "/face.png") {
@@ -149,7 +151,22 @@ async function fulfillApi(route: Route, origin: string): Promise<void> {
   const path = url.pathname;
   let status = 200;
   let body: unknown = {};
-  if (path === "/api/collections") body = COLLECTIONS;
+  const detail = path.startsWith("/api/skin-by-slug/") || /^\/api\/trade-ups\/\d+$/.test(path);
+  if (path === "/api/auth/me") {
+    if (fixture.auth === "pro") body = { steam_id: "765", tier: "pro", lifetime: false };
+    else {
+      status = 401;
+      body = null;
+    }
+  } else if (fixture.status === "error") {
+    status = 500;
+    body = {};
+  } else if (fixture.status === "empty") {
+    if (detail) {
+      status = 404;
+      body = null;
+    } else body = [];
+  } else if (path === "/api/collections") body = COLLECTIONS;
   else if (path === "/api/skin-data") {
     const collection = url.searchParams.get("collection");
     body = collection ? skinsFor(collection) : skinsFor("The Phoenix Collection").slice(0, 100);
@@ -182,16 +199,13 @@ async function fulfillApi(route: Route, origin: string): Promise<void> {
       total_profitable: 6,
       signed_in: false,
     };
-  } else if (path === "/api/auth/me") {
-    status = 401;
-    body = null;
   } else if (path === "/api/board-delay") {
     body = { hidden_profitable: 12, best_hidden_profit_cents: 7600 };
   }
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function open(browser: Browser, origin: string, path: string, viewport = VIEWPORT): Promise<Page> {
+async function open(browser: Browser, origin: string, path: string, viewport = VIEWPORT, fixture: Fixture = {}): Promise<Page> {
   const page = await browser.newPage({ viewport });
   await page.addInitScript(() => {
     const shifts: { value: number; startTime: number; hadRecentInput: boolean }[] = [];
@@ -218,7 +232,7 @@ async function open(browser: Browser, origin: string, path: string, viewport = V
       await route.continue();
       return;
     }
-    await fulfillApi(route, origin);
+    await fulfillApi(route, origin, fixture);
   });
   await page.goto(`${origin}${path}`, { waitUntil: "commit", timeout: 20_000 });
   return page;
@@ -274,13 +288,61 @@ describe("built client first-load CLS", () => {
   it("keeps /pricing under 0.05 at 360, 390, and 1280 while the free-gap sentence is delayed", async () => {
     for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }, VIEWPORT]) {
       const page = await open(browser, origin, "/pricing", viewport);
-      await page.locator(".preview-pricing-gap").waitFor({ timeout: 20_000 });
+      await page.getByText("listing combos").waitFor({ timeout: 20_000 });
       await page.waitForTimeout(API_DELAY_MS * 3);
-      const sentence = await page.locator(".preview-pricing-gap").innerText();
-      expect(sentence).toContain("listing combos");
       expect(await page.locator("h1").innerText()).toBe("TradeUpBot Pricing");
       expect(await readCls(page)).toBeLessThan(0.05);
       await page.close();
     }
   }, 70_000);
+
+  it("keeps /pricing under 0.05 for a Pro session at 360, 375, 390, and 1280", async () => {
+    for (const viewport of [
+      { width: 360, height: 800 },
+      { width: 375, height: 812 },
+      { width: 390, height: 844 },
+      VIEWPORT,
+    ]) {
+      const page = await open(browser, origin, "/pricing", viewport, { auth: "pro" });
+      await page.getByRole("button", { name: "Current plan" }).waitFor({ timeout: 20_000 });
+      await page.waitForTimeout(API_DELAY_MS * 2);
+      expect(await page.getByText("listing combos").count()).toBe(0);
+      expect(await page.locator("h1").innerText()).toBe("TradeUpBot Pricing");
+      expect(await readCls(page)).toBeLessThan(0.05);
+      await page.close();
+    }
+  }, 90_000);
+
+  it("keeps empty and error pages under 0.05 at 390 and 1280", async () => {
+    const widths = [{ width: 390, height: 844 }, VIEWPORT];
+    const cases: { path: string; status: "error" | "empty"; text: string; note?: boolean; share?: boolean }[] = [
+      { path: "/collections", status: "error", text: "No collection matches that search.", note: true },
+      { path: "/collections", status: "empty", text: "No collection matches that search.", note: true },
+      { path: "/collections/phoenix", status: "error", text: "Couldn't load this collection's skins." },
+      { path: "/collections/phoenix", status: "empty", text: "That collection is not in the live dataset." },
+      { path: "/skins", status: "error", text: "No skin matches that search." },
+      { path: "/skins", status: "empty", text: "No skin matches that search." },
+      { path: "/skins/missing-skin", status: "error", text: "That skin is not in the live dataset." },
+      { path: "/skins/missing-skin", status: "empty", text: "That skin is not in the live dataset." },
+      { path: "/trade-ups/123", status: "error", text: "Failed to load", share: true },
+      { path: "/trade-ups/123", status: "empty", text: "Trade-up not found", share: true },
+    ];
+    for (const viewport of widths) {
+      for (const item of cases) {
+        const page = await open(browser, origin, item.path, viewport, { status: item.status });
+        await page.getByText(item.text).first().waitFor({ timeout: 20_000 });
+        await page.waitForTimeout(API_DELAY_MS * 2);
+        expect(await page.locator("[class*='skeleton']").count(), `${item.path} ${item.status} ${viewport.width}`).toBe(0);
+        expect(await page.locator("[aria-busy='true']").count(), `${item.path} ${item.status} ${viewport.width}`).toBe(0);
+        if (item.note) expect(await page.getByText(item.text).first().isVisible()).toBe(true);
+        if (item.share) {
+          expect(await page.locator(".preview-share-verify").count()).toBe(0);
+          expect(await page.getByRole("button", { name: "Copy link" }).count()).toBe(0);
+          expect(await page.getByRole("link", { name: "Verify" }).count()).toBe(0);
+        }
+        expect(await readCls(page), `${item.path} ${item.status} ${viewport.width}`).toBeLessThan(0.05);
+        await page.close();
+      }
+    }
+  }, 240_000);
 });

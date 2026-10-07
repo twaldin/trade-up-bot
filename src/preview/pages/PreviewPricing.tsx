@@ -109,9 +109,7 @@ export function PreviewPricing() {
           <h1>TradeUpBot Pricing</h1>
           <p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
           <p>Free and Pro use the same board and the same filters. On Free, listing links come with delayed trade-ups. Pro adds Verify (20/hr) and Claim (10/hr, up to 5 active).</p>
-          {(user === undefined || showGap) && (
-            <p className="preview-pricing-gap" aria-hidden={delaySentence ? undefined : true}>{delaySentence ?? ""}</p>
-          )}
+          <p className="preview-pricing-gap" aria-hidden={showGap && delaySentence ? undefined : true}>{showGap && delaySentence ? delaySentence : ""}</p>
         </div>
       </header>
 

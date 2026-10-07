@@ -209,6 +209,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   gap: 6px;
   min-height: var(--control);
   padding: 6px 12px;
@@ -986,15 +987,6 @@
   display: contents;
 }
 
-/* At 360 the webfont is a few pixels wider than the fallback, so Sniper falls
-   to the next row only after the font arrives. A 16px inset — the same gutter
-   as the page — makes that wrap happen for both fonts. The product links take
-   the whole row so the view prefs do not hop up when Schibsted replaces DejaVu. */
-@media (max-width: 364px) {
-  .preview-console__bar { padding-inline: 16px; }
-  .preview-nav__links { flex-basis: 100%; }
-}
-
 .preview-console__main {
   position: relative;
   min-width: 0;
@@ -1022,9 +1014,8 @@
    swap and drag the footer back through the viewport. */
 .preview-page--stable { overflow-anchor: none; }
 
-/* Holds the footer under the fold until the real (taller) body replaces it.
-   Removed once that body is in the document, so a short result is not left
-   with an empty band. */
+/* Holds the footer under the fold while a skeleton is up, and on a short
+   empty or error result. Tall results drop the class. */
 .preview-page--fold { min-height: calc(100dvh - 32px); }
 
 .preview-page__head {
@@ -2920,8 +2911,12 @@
   white-space: nowrap;
 }
 
+.preview-collection--hold { visibility: hidden; }
+
 .preview-collection--skeleton b,
-.preview-collection--skeleton .preview-collection__meta {
+.preview-collection--skeleton .preview-collection__meta,
+.preview-collection--hold b,
+.preview-collection--hold .preview-collection__meta {
   height: 16px;
   border-radius: var(--r-chip);
   background: var(--row-hover);
@@ -3378,29 +3373,12 @@
 }
 
 /* Free-gap sentence at 14px / 1.6. Two lines on the console (3.2em), three
-   on a phone (4.8em). Below 390 the Ubuntu fallback (DejaVu) wraps the same
-   sentence to four lines (6.4em) and Schibsted then settles at three, so the
-   empty slot is the taller of the two. Once the sentence is in, the box is
-   the text. */
-.preview-pricing-gap:empty { min-height: 3.2em; }
+   on a phone (4.8em). The paragraph stays mounted for Pro, empty, so auth
+   cannot pull the plans up. The fallback face matches Schibsted's wraps. */
+.preview-pricing-gap { min-height: 3.2em; }
 
 @media (max-width: 599px) {
-  .preview-pricing-gap:empty { min-height: 4.8em; }
-}
-
-@media (max-width: 389px) {
-  .preview-pricing-gap:empty { min-height: 6.4em; }
-}
-
-/* Below 375 Schibsted keeps the free-gap sentence on three lines and DejaVu
-   wraps a fourth. A 300px measure puts both faces on four lines. */
-@media (max-width: 374px) {
-  .preview-market .preview-page__head .preview-pricing-gap { max-width: 280px; }
-}
-
-/* From 380 to 399 the third billing tab fits in Schibsted and wraps in DejaVu. */
-@media (max-width: 399px) {
-  .preview-tabs--billing { max-width: 304px; }
+  .preview-pricing-gap { min-height: 4.8em; }
 }
 
 .preview-footer {

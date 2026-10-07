@@ -35,7 +35,7 @@ function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
 
 function TradeUpNotFound() {
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--stable preview-page--fold">
       <PreviewSeo
         title="Trade-up not found | TradeUpBot"
         description="That trade-up is not on TradeUpBot."
@@ -260,10 +260,10 @@ export function PreviewShare() {
   }
 
   const signInReady = Boolean(tu) && panel === "sign-in" && !delayPending;
-  const showVerifySkeleton = !signInReady && (loading || panel === "pending" || panel === "sign-in");
+  const showVerifySkeleton = !error && tu != null && !signInReady && (loading || panel === "pending" || panel === "sign-in");
 
   return (
-    <div className={`preview-page preview-page--stable${loading ? " preview-page--fold" : ""}`}>
+    <div className={`preview-page preview-page--stable${loading || error || !tu ? " preview-page--fold" : ""}`}>
       <PreviewSeo
         title={title}
         description={description}
@@ -282,7 +282,7 @@ export function PreviewShare() {
         <div className="preview-page__meta">
           {tu && <span>{pair}</span>}
           {tu && <i />}
-          {(panel === "sign-in" || panel === "upgrade") && (
+          {tu && (panel === "sign-in" || panel === "upgrade") && (
             panel === "upgrade" ? (
               <Link
                 className="preview-btn preview-btn--quiet"
@@ -300,13 +300,15 @@ export function PreviewShare() {
               >Verify</a>
             )
           )}
-          <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
-            void navigator.clipboard.writeText(window.location.href);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-          }}>
-            {copied ? "Copied" : "Copy link"}
-          </button>
+          {tu && (
+            <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
+              void navigator.clipboard.writeText(window.location.href);
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 2000);
+            }}>
+              {copied ? "Copied" : "Copy link"}
+            </button>
+          )}
         </div>
       </header>
 
