@@ -281,11 +281,12 @@ describe("entry points open the interstitial instead of going straight to Steam"
     expect(pricing).toContain("<SteamInterstitial");
   });
 
-  it("the share sign-in button opens the claim modal and no longer links to Steam itself", () => {
-    expect(share).toContain('surface: "share_verify"');
-    expect(share).toContain("Verify or claim this trade-up");
-    expect(share).not.toContain("authHref(");
-    expect(share).not.toContain('"sign_up_start"');
-    expect(share).toContain("<SteamInterstitial");
+  it("the share sign-in gate links to Steam and fires sign_up_start", () => {
+    expect(share).toContain("Sign in with Steam (free)");
+    expect(share).toContain('trackEvent("sign_up_start", { location: "detail_sign_in" })');
+    expect(share).toContain("authHref(");
+    expect(share).not.toContain("Verify or claim this trade-up");
+    expect(share).not.toContain('surface: "share_verify"');
+    expect(share).not.toContain("<SteamInterstitial");
   });
 });

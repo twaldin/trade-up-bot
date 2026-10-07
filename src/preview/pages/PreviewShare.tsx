@@ -4,9 +4,9 @@ import type { TradeUp } from "../../../shared/types.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
-import { trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
+import { authHref } from "../../lib/ref.js";
+import { trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
-import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
 import { proPriceLine } from "../lib/pro-pricing.js";
 import {
@@ -19,6 +19,43 @@ import {
 } from "../lib/my-trade-ups.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { TradeUpCard } from "./PreviewBoard.js";
+
+function currentPath(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.location.pathname;
+}
+
+/** Logged-out guests get Steam. Signed-in Free accounts get the priced Pro claim. */
+export function ShareAuthGate({ panel }: { panel: "sign-in" | "upgrade" }) {
+  if (panel === "sign-in") {
+    return (
+      <section className="preview-panel" id="share-verify">
+        <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
+        <a
+          data-detail-auth="sign-in"
+          className="preview-btn preview-btn--lime preview-tap"
+          href={authHref(currentPath())}
+          rel="nofollow"
+          onClick={() => trackEvent("sign_up_start", { location: "detail_sign_in" })}
+        >
+          Sign in with Steam (free)
+        </a>
+      </section>
+    );
+  }
+  return (
+    <section className="preview-panel">
+      <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
+      <Link
+        data-detail-auth="pro"
+        className="preview-btn preview-btn--lime preview-tap"
+        to="/pricing"
+        onClick={() => trackUpgradeCta("detail_claim")}
+      >
+        Claim with Pro · {proPriceLine("monthly")}
+      </Link>
+    </section>
+  );
+}
 
 function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -45,7 +82,6 @@ export function PreviewShare() {
   const [verifyResult, setVerifyResult] = useState<VerifyPayload | undefined>(undefined);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const interstitial = useSteamInterstitial();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -271,25 +307,7 @@ export function PreviewShare() {
         </section>
       )}
 
-      {tu && panel === "sign-in" && (
-        <section className="preview-panel" id="share-verify">
-          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
-          <button
-            type="button"
-            className="preview-btn preview-btn--lime"
-            onClick={(event) => interstitial.open({ surface: "share_verify" }, event.currentTarget)}
-          >
-            Verify or claim this trade-up
-          </button>
-        </section>
-      )}
-
-      {tu && panel === "upgrade" && (
-        <section className="preview-panel">
-          <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
-          <Link className="preview-btn" to="/pricing">See Pro plans</Link>
-        </section>
-      )}
+      {tu && (panel === "sign-in" || panel === "upgrade") && <ShareAuthGate panel={panel} />}
 
       {tu && panel === "pro" && (
         <section className="preview-panel">
@@ -389,8 +407,6 @@ export function PreviewShare() {
       {tu && (
         <TradeUpCard tu={tu} expanded={expandedId === tu.id} onExpand={setExpandedId} />
       )}
-
-      <SteamInterstitial {...interstitial.dialog} />
     </div>
   );
 }

@@ -133,6 +133,7 @@
   margin-left: auto;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 8px;
 }
 
@@ -247,6 +248,13 @@
 .preview-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.preview-btn.preview-tap {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* ================================================================ landing */
@@ -860,9 +868,10 @@
 
 .preview-console__bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 44px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--panel-rule);
@@ -870,7 +879,18 @@
 }
 
 .preview-console__mobile {
-  display: contents;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.preview-console__mobile .preview-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .preview-console__main {
