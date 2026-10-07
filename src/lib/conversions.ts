@@ -175,7 +175,7 @@ export function trackVerifyComplete(args: {
   sendActivation("verify_complete", args.tradeUpId, args.surface, verifyCompleteStatus(args.result));
 }
 
-export type CtaId = "home_hero_calculator" | "intent_board" | "calculator_board" | "detail_collection";
+export type CtaId = "home_hero_calculator" | "home_hero_tradeup" | "intent_board" | "calculator_board" | "detail_collection";
 
 export type UpgradeCtaId = "landing_plan_tile" | "share_bar" | "nav_pricing" | "board_claim";
 
@@ -195,6 +195,11 @@ export function trackUpgradeCta(cta: UpgradeCtaId): void {
 /** In-app CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
 export function trackCtaClick(cta: CtaId): void {
   sendGa4("cta_click", { cta, page_path: pagePath() });
+}
+
+/** Landing board failed or was throttled. GA4 only — the pixel stays off. */
+export function trackLandingLoadError(kind: "error" | "rate_limited"): void {
+  sendGa4("landing_load_error", { kind, page_path: pagePath() });
 }
 
 /** /pricing rendered. */
