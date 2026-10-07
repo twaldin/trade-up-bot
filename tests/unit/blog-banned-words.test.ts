@@ -113,6 +113,15 @@ function scannedText(post: BlogPost): string {
   return text;
 }
 
+function visibleFaq(content: string): { question: string; answer: string }[] {
+  const section = content.split("<h2>FAQ</h2>").at(-1) ?? "";
+  const pairs: { question: string; answer: string }[] = [];
+  for (const match of section.matchAll(/<h3>([\s\S]*?)<\/h3>\s*<p>([\s\S]*?)<\/p>/g)) {
+    pairs.push({ question: match[1], answer: match[2] });
+  }
+  return pairs;
+}
+
 function bannedHits(text: string): string[] {
   const pattern = new RegExp(BANNED.source, BANNED.flags);
   return [...text.matchAll(pattern)].map((match) => {
@@ -270,6 +279,14 @@ describe("blog banned words", () => {
     const disagree = postBySlug("why-cs2-trade-up-calculators-disagree");
     if (sim.content.includes(MARKERS["best-cs2-trade-up-simulator"])) {
       expect(disagree.content).toContain("Every profit figure is an estimate after fees, and a trade-up can lose money.");
+    }
+  });
+
+  it("shows the disagree and output-float FAQs as the same text as the JSON-LD", () => {
+    for (const slug of ["why-cs2-trade-up-calculators-disagree", "cs2-output-float-profit-impact"] as const) {
+      const post = postBySlug(slug);
+      expect(post.faq?.length).toBeGreaterThan(0);
+      expect(visibleFaq(post.content)).toEqual(post.faq);
     }
   });
 });
