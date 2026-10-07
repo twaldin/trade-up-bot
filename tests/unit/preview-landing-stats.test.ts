@@ -219,6 +219,18 @@ describe("landing stats from the board + global-stats", () => {
     expect(globalHtml).not.toContain("56");
   });
 
+  it("does not render a deduped board profitable count of 1", () => {
+    const stats = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 1, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.profitable_trade_ups).toBeUndefined();
+    const html = renderLandingStatsHtml(stats);
+    expect(html).not.toContain("positive EV");
+    expect(html).not.toContain(">1<");
+    expect(html).not.toContain("1 profitable");
+    expect(visibleLandingStatTiles(stats).map((tile) => tile.key)).not.toContain("profitable_trade_ups");
+  });
+
   it("does not present a deduped board total as the tracked trade-up count", () => {
     const missed = landingStatsFromSources({
       board: { total: 1_000, total_profitable: 400, trade_ups: [makeTradeUp()], deduped: true },

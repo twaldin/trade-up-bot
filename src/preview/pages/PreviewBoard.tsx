@@ -1460,8 +1460,10 @@ export function usePreviewTradeUps(options: {
     setEndKey(null);
     setEndKind("more");
     setRawTotal(null);
-    setDeduped(false);
+    setTotal(null);
+    setTotalProfitable(0);
     setTotalProfitableCapped(false);
+    setDeduped(false);
     listMetaRef.current = {};
     attemptRef.current = 0;
     setBackoffUntil(0);

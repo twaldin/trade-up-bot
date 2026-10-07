@@ -28,5 +28,7 @@ describe("total_profitable_capped", () => {
   it("does not present a deduped list's profitable count as the full population", () => {
     expect(listProfitableSuffix({ count: 56, capped: false, deduped: true })).toBeNull();
     expect(listProfitableSuffix({ count: 10001, capped: true, deduped: true })).toBeNull();
+    expect(listProfitableSuffix({ count: 1, deduped: true })).toBeNull();
+    expect(listProfitableSuffix({ count: 1, deduped: false })).toBe("(1 profitable)");
   });
 });
