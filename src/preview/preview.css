@@ -3148,8 +3148,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.preview-page--account .preview-stats .preview-account__pending {
+  color: transparent;
+}
+
 .preview-page--account .preview-account__roi .preview-account__pending {
   display: inline;
+  color: transparent;
 }
 
 @media (min-width: 800px) {
@@ -3190,6 +3195,10 @@
 
 @media (min-width: 1100px) {
   .preview-account__slot { min-height: 500px; }
+}
+
+.preview-account__slot.preview-account__slot--quiet {
+  min-height: 0;
 }
 
 .preview-page--account .preview-empty {

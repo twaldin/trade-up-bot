@@ -69,15 +69,16 @@ function tradeUp(id) {
 
 const VIEWPORTS = [
   { width: 360, height: 844 },
+  { width: 375, height: 844 },
   { width: 390, height: 844 },
   { width: 1280, height: 800 },
 ];
 const DELAYS = (process.env.CLS_DELAYS || "500,2000,5000").split(",").map((value) => Number(value));
-const CASES = (process.env.CLS_CASES || "empty,claims").split(",");
+const CASES = (process.env.CLS_CASES || "empty,claims,error").split(",");
 
-function json(body) {
+function json(body, status = 200) {
   return {
-    status: 200,
+    status,
     contentType: "application/json",
     body: JSON.stringify(body),
   };
@@ -129,12 +130,14 @@ async function measure(browser, { width, height, delay, list }) {
     }
     if (path.startsWith("/api/my-trade-ups/stats")) {
       await new Promise((r) => setTimeout(r, delay));
-      await route.fulfill(json(STATS));
+      await route.fulfill(list === "error" ? json({ error: "nope" }, 500) : json(STATS));
       return;
     }
     if (path.includes("my_claims=true")) {
       await new Promise((r) => setTimeout(r, delay));
-      await route.fulfill(json({ trade_ups: list === "claims" ? [tradeUp(41)] : [], tier: "pro" }));
+      await route.fulfill(list === "error"
+        ? json({ error: "nope" }, 500)
+        : json({ trade_ups: list === "claims" ? [tradeUp(41)] : [], tier: "pro" }));
       return;
     }
     if (path.startsWith("/api/claims")) {
@@ -196,6 +199,7 @@ async function measure(browser, { width, height, delay, list }) {
     const footer = document.querySelector(".preview-console__legal");
     const stats = document.querySelector(".preview-stats");
     const tabs = document.querySelector(".preview-tabs");
+    const slot = document.querySelector(".preview-account__slot");
     const box = (node) => {
       if (!node) return null;
       const rect = node.getBoundingClientRect();
@@ -208,6 +212,9 @@ async function measure(browser, { width, height, delay, list }) {
       footer: box(footer),
       stats: box(stats),
       tabs: box(tabs),
+      slot: box(slot),
+      dash: stats ? (stats.textContent || "").includes("—") : false,
+      error: (document.body.textContent || "").includes("Could not load trade-ups."),
       innerHeight: window.innerHeight,
     };
   });
@@ -223,6 +230,9 @@ async function measure(browser, { width, height, delay, list }) {
     footer: report.footer,
     stats: report.stats,
     tabs: report.tabs,
+    slot: report.slot,
+    dash: report.dash,
+    error: report.error,
     innerHeight: report.innerHeight,
     early,
     hits: [...new Set(hits)],
@@ -249,7 +259,8 @@ try {
           .map((s) => `${s.value.toFixed(3)}@${s.start} ${s.sources.map((src) => `${src.cls || src.name} ${src.prev?.y}/${src.prev?.h}->${src.curr?.y}/${src.curr?.h}`).join(" | ")}`)
           .join(" || ");
         const detail = process.env.CLS_DEBUG ? ` early ${JSON.stringify(row.early)} late stats ${JSON.stringify(row.stats)} ${top}` : "";
-        console.log(`${row.width}x${row.height} ${row.delay}ms ${row.list} sum ${row.cls} session ${row.session}${detail}`);
+        const errorNote = row.list === "error" ? ` slot ${row.slot?.h ?? "?"} dash ${row.dash} msg ${row.error}` : "";
+        console.log(`${row.width}x${row.height} ${row.delay}ms ${row.list} sum ${row.cls} session ${row.session}${errorNote}${detail}`);
       }
     }
   }

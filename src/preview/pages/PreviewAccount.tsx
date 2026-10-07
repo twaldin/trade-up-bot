@@ -80,32 +80,36 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
   return <span className={`preview-timer ${tick.expired || tick.minutes <= 5 ? "is-minus" : ""}`}>{tick.label}</span>;
 }
 
-function AccountStats({ stats }: { stats: UserTradeUpStats | null }) {
-  const pending = stats == null;
+function AccountStats({ stats, failed }: { stats: UserTradeUpStats | null; failed: boolean }) {
+  const pending = !failed && stats == null;
   return (
     <div className="preview-stats" aria-busy={pending}>
       <div>
-        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : stats.total_sold}</b>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : failed || !stats ? "—" : stats.total_sold}</b>
         <span>Sold</span>
       </div>
       <div>
-        <b className={pending ? "preview-account__pending" : signClass(stats.all_time_profit_cents)} aria-hidden={pending || undefined}>
-          {pending ? "+$000.00" : signedDollars(stats.all_time_profit_cents)}
+        <b className={pending ? "preview-account__pending" : failed || !stats ? undefined : signClass(stats.all_time_profit_cents)} aria-hidden={pending || undefined}>
+          {pending ? "+$000.00" : failed || !stats ? "—" : signedDollars(stats.all_time_profit_cents)}
         </b>
         <span>All-time profit</span>
       </div>
       <div>
-        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : stats.total_executed}</b>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : failed || !stats ? "—" : stats.total_executed}</b>
         <span>Executed</span>
       </div>
       <div>
         {pending ? (
           <b className="preview-account__pending" aria-hidden="true">00%</b>
+        ) : failed || !stats ? (
+          <b>—</b>
         ) : (
           <b>{stats.win_rate}%</b>
         )}
         {pending ? (
           <span className="preview-account__roi">Sold at a profit · <span className="preview-account__pending" aria-hidden="true">00.0%</span> avg ROI</span>
+        ) : failed || !stats ? (
+          <span className="preview-account__roi">Sold at a profit · — avg ROI</span>
         ) : (
           <span className="preview-account__roi">Sold at a profit · {stats.avg_roi}% avg ROI</span>
         )}
@@ -152,6 +156,7 @@ export function PreviewAccount() {
   const [claimTradeUps, setClaimTradeUps] = useState<HydratedTradeUp[]>([]);
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
+  const [statsFailed, setStatsFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -176,20 +181,29 @@ export function PreviewAccount() {
     claimsInFlight.current = true;
     setLoading(true);
     if (claimAttempts.current === 0) setNote(null);
+    let statsStarted = false;
     try {
       await waitForBrowseHold(signal);
       const mainReq = activeTab === "claims"
         ? fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
         : fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
+      statsStarted = true;
       const statsReq = fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
-        .then((res) => {
-          if (res.status === 401 || res.status === 403) return null;
-          return res.ok ? res.json() : null;
+        .then(async (res) => {
+          if (signal?.aborted) return;
+          if (res.status === 401 || res.status === 403) return;
+          if (!res.ok) {
+            setStatsFailed(true);
+            return;
+          }
+          const data = await res.json() as UserTradeUpStats;
+          if (signal?.aborted) return;
+          setStats(data);
+          setStatsFailed(false);
         })
-        .then((data: UserTradeUpStats | null) => {
-          if (!signal?.aborted && data) setStats(data);
-        })
-        .catch(() => undefined);
+        .catch(() => {
+          if (!signal?.aborted) setStatsFailed(true);
+        });
 
       const res = await mainReq;
       if (signal?.aborted) return;
@@ -270,6 +284,7 @@ export function PreviewAccount() {
       if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", error);
       setNote("Could not load trade-ups.");
+      if (!statsStarted) setStatsFailed(true);
     } finally {
       claimsInFlight.current = false;
       if (!signal?.aborted) setLoading(false);
@@ -623,6 +638,8 @@ export function PreviewAccount() {
   const tabCount = activeTab === "claims" ? claimCount : listCount;
   const showChrome = user !== null && !sessionHold;
   const listPending = showChrome && (user === undefined || (loading && claimTradeUps.length === 0 && entries.length === 0 && !note));
+  const loadError = note === "Could not load trade-ups.";
+  const slotQuiet = loadError && claimTradeUps.length === 0 && entries.length === 0;
 
   if (location.pathname === "/account") {
     return (
@@ -686,7 +703,7 @@ export function PreviewAccount() {
         </section>
       )}
 
-      {showChrome && <AccountStats stats={user ? stats : null} />}
+      {showChrome && <AccountStats stats={user ? stats : null} failed={user ? statsFailed : false} />}
 
       {showChrome && (
         <div className="preview-tabs" role="tablist" aria-label="My trade-ups">
@@ -715,7 +732,7 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {note && (
+      {note && !loadError && (
         <div className="preview-notice" role="status">
           <p className="preview-note">{note}</p>
           {note === RATE_LIMIT_MANUAL_COPY && !held && (
@@ -728,8 +745,13 @@ export function PreviewAccount() {
       {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
 
       {showChrome && (
-        <div className="preview-account__slot">
+        <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}`}>
           {listPending && <AccountListSkeleton />}
+          {loadError && (
+            <div className="preview-notice" role="status">
+              <p className="preview-note">{note}</p>
+            </div>
+          )}
 
       {user && !loading && !note && activeTab === "claims" && claimTradeUps.length === 0 && (
         <div className="preview-empty">
