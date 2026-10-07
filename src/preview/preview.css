@@ -1022,12 +1022,21 @@
   font-size: 12px;
 }
 
-/* Present before the list reports a free tier. Opacity keeps the web font in
-   the layout; visibility:hidden would measure a fallback and the row would
-   jump when the banner appears. */
+/* Present before the list reports a free tier. The box stays painted so the
+   web font still sizes it; opacity or visibility would fall back to another
+   face and the row would jump when the banner appears. */
 .preview-delay--hold {
-  opacity: 0;
   pointer-events: none;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+}
+
+.preview-delay--hold .preview-delay__label,
+.preview-delay--hold .preview-delay__cta {
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
 }
 
 .preview-delay__copy {

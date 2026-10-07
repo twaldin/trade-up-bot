@@ -52,7 +52,7 @@ function boardDocument(html: string) {
     </div>`;
 }
 
-async function delayBox(page: Page, width: number, html: string, sentence: string | null): Promise<{ height: number; width: number }> {
+async function delayBox(page: Page, width: number, html: string, sentence: string | null): Promise<{ height: number; width: number; font: string }> {
   await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
   await page.setContent(html, { waitUntil: "domcontentloaded" });
   const faceLoaded = await page.evaluate(async () => {
@@ -69,7 +69,9 @@ async function delayBox(page: Page, width: number, html: string, sentence: strin
   }
   return page.$eval(".preview-delay", (node) => {
     const rect = node.getBoundingClientRect();
-    return { height: rect.height, width: rect.width };
+    const reserve = node.querySelector(".preview-delay__reserve");
+    const font = reserve ? getComputedStyle(reserve).fontFamily : "";
+    return { height: rect.height, width: rect.width, font };
   });
 }
 
@@ -92,7 +94,7 @@ describe("free-tier banner reserves its height", () => {
 
   it("keeps the slot the same height after the sentence arrives", async () => {
     const page = await browser.newPage();
-    const heights: Record<number, { held: number; quiet: number; filled: number; heldW: number; quietW: number; filledW: number }> = {};
+    const heights: Record<number, { held: number; quiet: number; filled: number; heldW: number; quietW: number; filledW: number; font: string }> = {};
     for (const width of [320, 390, 768, 1280]) {
       const held = await delayBox(page, width, boardDocument(hold), null);
       const quiet = await delayBox(page, width, boardDocument(banner), null);
@@ -104,11 +106,12 @@ describe("free-tier banner reserves its height", () => {
         heldW: held.width,
         quietW: quiet.width,
         filledW: filled.width,
+        font: `${held.font} / ${quiet.font}`,
       };
     }
     await page.close();
     for (const [width, box] of Object.entries(heights)) {
-      const label = `${width} hold ${box.heldW}x${box.held} quiet ${box.quietW}x${box.quiet} filled ${box.filledW}x${box.filled}`;
+      const label = `${width} hold ${box.heldW}x${box.held} quiet ${box.quietW}x${box.quiet} filled ${box.filledW}x${box.filled} font ${box.font}`;
       expect(box.held, label).toBeGreaterThan(40);
       expect(box.quietW, label).toBe(box.heldW);
       expect(box.filledW, label).toBe(box.heldW);
