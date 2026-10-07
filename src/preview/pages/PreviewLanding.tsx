@@ -41,7 +41,7 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../lib/copy.js";
-import { trackCtaClick } from "../../lib/conversions.js";
+import { trackCtaClick, trackUpgradeCta } from "../../lib/conversions.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
@@ -455,7 +455,7 @@ export function PreviewLanding({
               ))}
             </ul>
             <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
-            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing">Compare plans</Link>
+            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing" onClick={() => trackUpgradeCta("landing_plan_tile")}>Compare plans</Link>
           </article>
         </div>
       </section>

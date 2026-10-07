@@ -4,7 +4,7 @@ import type { TradeUp } from "../../../shared/types.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
-import { trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
+import { trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -248,9 +248,22 @@ export function PreviewShare() {
             <span>{pair}</span>
             <i />
             {(panel === "sign-in" || panel === "upgrade") && (
-              <a className="preview-btn preview-btn--quiet"
-                 href={panel === "sign-in" ? "#share-verify" : "/pricing"}
-                 onClick={() => trackVerifyClick("share_bar")}>Verify</a>
+              panel === "upgrade" ? (
+                <Link
+                  className="preview-btn preview-btn--quiet"
+                  to="/pricing"
+                  onClick={() => {
+                    trackVerifyClick("share_bar");
+                    trackUpgradeCta("share_bar");
+                  }}
+                >Verify</Link>
+              ) : (
+                <a
+                  className="preview-btn preview-btn--quiet"
+                  href="#share-verify"
+                  onClick={() => trackVerifyClick("share_bar")}
+                >Verify</a>
+              )
             )}
             <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
               void navigator.clipboard.writeText(window.location.href);
