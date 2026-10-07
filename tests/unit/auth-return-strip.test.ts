@@ -10,7 +10,7 @@ import { injectTrackingHead } from "../../shared/tracking-head.js";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const indexHtml = readFileSync(join(root, "index.html"), "utf-8");
 const appSource = readFileSync(join(root, "src/App.tsx"), "utf-8");
-const serverSource = readFileSync(join(root, "server/index.ts"), "utf-8");
+const securityHeaders = readFileSync(join(root, "server/security-headers.ts"), "utf-8");
 const NONCE = "ab".repeat(16);
 
 function runStrip(href: string): { stash: unknown; checkout: unknown; pageLocation: unknown; replaced: string[] } {
@@ -147,8 +147,8 @@ describe("app consumes the stashed lid", () => {
 
 describe("inline tracking scripts and CSP", () => {
   it("allows the strip script the same way as the inline gtag snippet", () => {
-    expect(serverSource).toContain(`"'unsafe-inline'"`);
-    expect(serverSource).toMatch(/scriptSrc:\s*\[[^\]]*'unsafe-inline'/);
+    expect(securityHeaders).toContain(`"'unsafe-inline'"`);
+    expect(securityHeaders).toMatch(/scriptSrc:\s*\[[^\]]*'unsafe-inline'/);
     expect(indexHtml).not.toMatch(/<script[^>]*\bnonce=/);
   });
 });

@@ -80,6 +80,7 @@
     "concurrently": "^9.1.0",
     "fast-check": "^4.6.0",
     "happy-dom": "^20.14.5",
+    "playwright-core": "^1.63.0",
     "puppeteer": "^24.40.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

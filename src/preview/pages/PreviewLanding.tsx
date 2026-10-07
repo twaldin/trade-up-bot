@@ -62,6 +62,7 @@ function Face({ name }: { name: string }) {
       <img
         src={src}
         alt=""
+        referrerPolicy={src.startsWith("/") ? "strict-origin" : undefined}
         onError={(event) => {
           event.currentTarget.style.visibility = "hidden";
         }}

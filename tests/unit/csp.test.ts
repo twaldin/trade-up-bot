@@ -1,21 +1,18 @@
-import { readFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
+import { contentSecurityPolicyDirectives, staticHtmlSecurityHeaders } from "../../server/security-headers.js";
 
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../server/index.ts"), "utf-8");
+const GA_ENV = { GA4_MEASUREMENT_ID: "G-2474G4P5QE" };
 
 describe("production CSP", () => {
   it("allows https://www.google.com on connect-src for GA4 /g/collect", () => {
-    const helmet = serverSource.slice(
-      serverSource.indexOf("contentSecurityPolicy"),
-      serverSource.indexOf("Stripe webhook"),
-    );
-    const connectLine = helmet.split("\n").find((line) => line.includes("connectSrc"));
-    expect(connectLine).toContain('"https://www.google.com"');
-    for (const line of helmet.split("\n")) {
-      if (line.includes("connectSrc")) continue;
-      expect(line).not.toContain("www.google.com");
+    const directives = contentSecurityPolicyDirectives(GA_ENV);
+    expect(directives.connectSrc).toContain("https://www.google.com");
+    for (const [name, values] of Object.entries(directives)) {
+      if (name === "connectSrc") continue;
+      expect(values.join(" ")).not.toContain("www.google.com");
     }
+    const header = staticHtmlSecurityHeaders(GA_ENV)["Content-Security-Policy"];
+    expect(header).toContain("connect-src");
+    expect(header).toContain("https://www.google.com");
   });
 });
