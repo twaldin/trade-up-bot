@@ -1312,7 +1312,6 @@ type BoardListPayload = {
   raw_total?: number;
   has_more?: boolean;
   deduped?: boolean;
-  total_profitable_capped?: boolean;
   signed_in?: boolean;
   faces?: Record<string, string | null>;
 };

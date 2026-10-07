@@ -75,7 +75,7 @@ describe("parseTradeUpsResponse", () => {
     });
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") throw new Error("expected ok");
-    expect(result.payload.total_profitable_capped).toBe(false);
+    expect(result.payload.total_profitable_capped).toBeUndefined();
     expect(applyBoardFetch(emptySnapshot(), result).totalProfitableCapped).toBe(false);
   });
 
@@ -87,8 +87,8 @@ describe("parseTradeUpsResponse", () => {
     });
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") throw new Error("expected ok");
-    expect(result.payload.total_profitable_capped).toBe(false);
-    expect(result.payload.deduped).toBe(false);
+    expect(result.payload.total_profitable_capped).toBeUndefined();
+    expect(result.payload.deduped).toBeUndefined();
     const prev = {
       ...emptySnapshot(),
       total: 10001,
