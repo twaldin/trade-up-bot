@@ -3161,6 +3161,17 @@
   border-color: var(--line-hard);
 }
 
+@media (max-width: 599px) {
+  .preview-plans > .preview-plan--pro { order: -1; }
+  .preview-tabs--billing .o-tab {
+    height: auto;
+    min-height: 44px;
+  }
+}
+
+.preview-plan__delay { color: var(--text-muted); }
+.preview-plan__clock { flex: none; }
+
 .preview-plan__price {
   margin: 0;
   font-size: 28px;
