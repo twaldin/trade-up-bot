@@ -75,11 +75,12 @@ describe("account loading and error states", () => {
     await act(async () => {
       root.render(createElement(MemoryRouter, { initialEntries: ["/my-trade-ups"] }, createElement(PreviewAccount)));
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
   }
 
   async function measure(page: Page, width: number, html: string) {

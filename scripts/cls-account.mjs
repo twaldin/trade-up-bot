@@ -12,12 +12,29 @@ const BASE = process.env.CLS_BASE || "http://127.0.0.1:5173";
 const SHOTS = process.argv.includes("--shots");
 const OUT = process.env.CLS_OUT || "/tmp/cls-after";
 
-const USER = {
-  steam_id: "76561198000000001",
-  display_name: "Ada",
-  avatar_url: "",
-  tier: "pro",
-  is_admin: false,
+const USERS = {
+  pro: {
+    steam_id: "76561198000000001",
+    display_name: "Ada",
+    avatar_url: "",
+    tier: "pro",
+    is_admin: false,
+  },
+  free: {
+    steam_id: "76561198000000002",
+    display_name: "Bea",
+    avatar_url: "",
+    tier: "free",
+    is_admin: false,
+  },
+  basic: {
+    steam_id: "76561198000000003",
+    display_name: "Cy",
+    avatar_url: "",
+    tier: "basic",
+    is_admin: false,
+  },
+  signedout: null,
 };
 
 const STATS = {
@@ -74,7 +91,9 @@ const VIEWPORTS = [
   { width: 1280, height: 800 },
 ];
 const DELAYS = (process.env.CLS_DELAYS || "500,2000,5000").split(",").map((value) => Number(value));
+const AUTH_DELAYS = (process.env.CLS_AUTH_DELAYS || process.env.CLS_DELAYS || "500,2000,5000").split(",").map((value) => Number(value));
 const CASES = (process.env.CLS_CASES || "empty,claims,error").split(",");
+const USER_KEYS = (process.env.CLS_USERS || "pro").split(",");
 
 function json(body, status = 200) {
   return {
@@ -84,7 +103,9 @@ function json(body, status = 200) {
   };
 }
 
-async function measure(browser, { width, height, delay, list }) {
+async function measure(browser, { width, height, delay, authDelay, list, userKey }) {
+  const user = USERS[userKey];
+  if (user === undefined) throw new Error(`unknown user ${userKey}`);
   const page = await browser.newPage({ viewport: { width, height } });
   const hits = [];
   await page.addInitScript(() => {
@@ -125,19 +146,24 @@ async function measure(browser, { width, height, delay, list }) {
     }
     hits.push(path.split("?")[0]);
     if (path.startsWith("/api/auth/me")) {
-      await route.fulfill(json(USER));
+      if (authDelay > 0) await new Promise((r) => setTimeout(r, authDelay));
+      await route.fulfill(json(user));
       return;
     }
     if (path.startsWith("/api/my-trade-ups/stats")) {
       await new Promise((r) => setTimeout(r, delay));
-      await route.fulfill(list === "error" ? json({ error: "nope" }, 500) : json(STATS));
+      const denied = userKey === "free" || userKey === "basic" || user == null;
+      await route.fulfill(list === "error" ? json({ error: "nope" }, 500) : denied ? json({ error: "nope" }, 403) : json(STATS));
       return;
     }
     if (path.includes("my_claims=true")) {
       await new Promise((r) => setTimeout(r, delay));
+      const denied = userKey === "free" || userKey === "basic";
       await route.fulfill(list === "error"
         ? json({ error: "nope" }, 500)
-        : json({ trade_ups: list === "claims" ? [tradeUp(41)] : [], tier: "pro" }));
+        : denied
+          ? json({ error: "nope" }, 403)
+          : json({ trade_ups: list === "claims" ? [tradeUp(41)] : [], tier: user?.tier ?? "free" }));
       return;
     }
     if (path.startsWith("/api/claims")) {
@@ -174,7 +200,7 @@ async function measure(browser, { width, height, delay, list }) {
     mkdirSync(OUT, { recursive: true });
     await page.screenshot({ path: `${OUT}/${width}-${list}-loading.png` });
   }
-  await page.waitForTimeout(delay + 1200);
+  await page.waitForTimeout(authDelay + delay + 1200);
   if (SHOTS && delay === 2000) {
     await page.screenshot({ path: `${OUT}/${width}-${list}-loaded.png` });
   }
@@ -215,6 +241,8 @@ async function measure(browser, { width, height, delay, list }) {
       slot: box(slot),
       dash: stats ? (stats.textContent || "").includes("—") : false,
       error: (document.body.textContent || "").includes("Could not load trade-ups."),
+      busy: document.querySelectorAll("[aria-busy=true]").length,
+      label: (document.body.textContent || "").includes("Sold at a profit"),
       innerHeight: window.innerHeight,
     };
   });
@@ -223,7 +251,11 @@ async function measure(browser, { width, height, delay, list }) {
     width,
     height,
     delay,
+    authDelay,
+    userKey,
     list,
+    busy: report.busy,
+    label: report.label,
     cls: Number(report.score.toFixed(4)),
     session: Number(report.session.toFixed(4)),
     shifts: report.shifts,
@@ -247,27 +279,42 @@ const browser = await chromium.launch({
 
 const rows = [];
 try {
-  for (const vp of VIEWPORTS) {
-    for (const delay of DELAYS) {
-      for (const list of CASES) {
-        const row = await measure(browser, { ...vp, delay, list });
-        rows.push(row);
-        const top = row.shifts
-          .filter((s) => !s.hadInput && s.value >= 0.001)
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 2)
-          .map((s) => `${s.value.toFixed(3)}@${s.start} ${s.sources.map((src) => `${src.cls || src.name} ${src.prev?.y}/${src.prev?.h}->${src.curr?.y}/${src.curr?.h}`).join(" | ")}`)
-          .join(" || ");
-        const detail = process.env.CLS_DEBUG ? ` early ${JSON.stringify(row.early)} late stats ${JSON.stringify(row.stats)} ${top}` : "";
-        const errorNote = row.list === "error" ? ` slot ${row.slot?.h ?? "?"} dash ${row.dash} msg ${row.error}` : "";
-        console.log(`${row.width}x${row.height} ${row.delay}ms ${row.list} sum ${row.cls} session ${row.session}${errorNote}${detail}`);
+  const jobs = [];
+  for (const userKey of USER_KEYS) {
+    for (const vp of VIEWPORTS) {
+      for (const authDelay of AUTH_DELAYS) {
+        for (const delay of DELAYS) {
+          for (const list of CASES) jobs.push({ ...vp, delay, authDelay, list, userKey });
+        }
       }
     }
   }
+  const workers = Math.min(4, jobs.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < jobs.length) {
+      const job = jobs[cursor];
+      cursor += 1;
+      const row = await measure(browser, job);
+      rows.push(row);
+      const top = row.shifts
+        .filter((s) => !s.hadInput && s.value >= 0.001)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 2)
+        .map((s) => `${s.value.toFixed(3)}@${s.start} ${s.sources.map((src) => `${src.cls || src.name} ${src.prev?.y}/${src.prev?.h}->${src.curr?.y}/${src.curr?.h}`).join(" | ")}`)
+        .join(" || ");
+      const detail = process.env.CLS_DEBUG ? ` early ${JSON.stringify(row.early)} late stats ${JSON.stringify(row.stats)} busy ${row.busy} ${top}` : "";
+      const errorNote = row.list === "error" ? ` slot ${row.slot?.h ?? "?"} dash ${row.dash} msg ${row.error}` : "";
+      console.log(`${row.userKey} ${row.width}x${row.height} auth ${row.authDelay}ms data ${row.delay}ms ${row.list} sum ${row.cls} session ${row.session} busy ${row.busy}${errorNote}${detail}`);
+    }
+  }
+  await Promise.all(Array.from({ length: workers }, () => worker()));
 } finally {
   await browser.close();
 }
 
 console.log("\nTABLE");
-console.log("width\tdelay\tlist\tsum\tsession");
-for (const row of rows) console.log(`${row.width}\t${row.delay}\t${row.list}\t${row.cls}\t${row.session}`);
+console.log("user\twidth\tauth\tdata\tlist\tsum\tsession\tbusy");
+for (const row of rows.sort((a, b) => a.userKey.localeCompare(b.userKey) || a.width - b.width || a.authDelay - b.authDelay || a.delay - b.delay || a.list.localeCompare(b.list))) {
+  console.log(`${row.userKey}\t${row.width}\t${row.authDelay}\t${row.delay}\t${row.list}\t${row.cls}\t${row.session}\t${row.busy}`);
+}

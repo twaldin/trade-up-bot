@@ -3083,13 +3083,33 @@
 
 /* ======================================================== my trade-ups */
 
-/* The signed-in page paints stats, tabs, and the list slot before the
-   payloads arrive. Fixed floors keep those boxes from growing when the
-   numbers and the empty state replace the skeleton, and the fold holds the
-   legal footer below the viewport so it is not pushed into view. */
+/* Auth, a signed-out session, and a signed-in session share one page box.
+   The floor matches the signed-in stack (stats, tabs, list slot, toolbar) so
+   resolving auth fills that box instead of pushing the toolbar and the legal
+   footer. The toolbar sits on the floor while the stack is shorter. */
 .preview-page--account {
   box-sizing: border-box;
-  min-height: calc(100dvh - 2.5rem);
+  min-height: max(880px, calc(100dvh - 2.5rem));
+}
+
+.preview-page--account > .preview-toolbar {
+  margin-top: auto;
+}
+
+.preview-page--account:has(.preview-account__slot--quiet) > .preview-toolbar {
+  margin-top: 0;
+}
+
+@media (min-width: 800px) {
+  .preview-page--account {
+    min-height: max(820px, calc(100dvh - 2.5rem));
+  }
+}
+
+@media (min-width: 1100px) {
+  .preview-page--account {
+    min-height: max(900px, calc(100dvh - 2.5rem));
+  }
 }
 
 .preview-page--account .preview-page__meta {
@@ -3219,11 +3239,6 @@
 .preview-page--account .preview-empty .preview-note {
   min-height: 2.6em;
   max-width: 28rem;
-}
-
-.preview-account__fold {
-  flex: 1 0 auto;
-  min-height: 1px;
 }
 
 .preview-stats b.is-plus { color: var(--profit-ink); }

@@ -157,6 +157,7 @@ export function PreviewAccount() {
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
   const [statsFailed, setStatsFailed] = useState(false);
+  const [statsDenied, setStatsDenied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -191,7 +192,10 @@ export function PreviewAccount() {
       const statsReq = fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
         .then(async (res) => {
           if (signal?.aborted) return;
-          if (res.status === 401 || res.status === 403) return;
+          if (res.status === 401 || res.status === 403) {
+            setStatsDenied(true);
+            return;
+          }
           if (!res.ok) {
             setStatsFailed(true);
             return;
@@ -636,8 +640,9 @@ export function PreviewAccount() {
   const claimCount = claimTradeUps.length;
   const listCount = entries.length;
   const tabCount = activeTab === "claims" ? claimCount : listCount;
-  const showChrome = user !== null && !sessionHold;
-  const listPending = showChrome && (user === undefined || (loading && claimTradeUps.length === 0 && entries.length === 0 && !note));
+  const showChrome = user != null && !sessionHold;
+  const showStats = showChrome && hasProAccess(user) && !statsDenied;
+  const listPending = showChrome && loading && claimTradeUps.length === 0 && entries.length === 0 && !note;
   const loadError = note === "Could not load trade-ups.";
   const slotQuiet = loadError && claimTradeUps.length === 0 && entries.length === 0;
 
@@ -651,7 +656,7 @@ export function PreviewAccount() {
   }
 
   return (
-    <div className={showChrome ? "preview-page preview-page--account" : "preview-page"}>
+    <div className={sessionHold ? "preview-page" : "preview-page preview-page--account"}>
       <title>My Trade-Ups | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
       <header className="preview-page__head">
@@ -691,7 +696,7 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {user === null && !sessionHold && (
+      {user == null && !sessionHold && (
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Session</p>
@@ -703,7 +708,7 @@ export function PreviewAccount() {
         </section>
       )}
 
-      {showChrome && <AccountStats stats={user ? stats : null} failed={user ? statsFailed : false} />}
+      {showStats && <AccountStats stats={stats} failed={statsFailed} />}
 
       {showChrome && (
         <div className="preview-tabs" role="tablist" aria-label="My trade-ups">
@@ -984,7 +989,6 @@ export function PreviewAccount() {
         <a className="preview-btn" href="/pricing">Pricing</a>
         {showChrome && <a className="preview-btn" href="/auth/logout">Sign out</a>}
       </div>
-      {showChrome && <div className="preview-account__fold" aria-hidden="true" />}
     </div>
   );
 }

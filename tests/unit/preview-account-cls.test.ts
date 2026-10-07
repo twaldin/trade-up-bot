@@ -62,7 +62,12 @@ describe("account layout reservation", () => {
     await act(async () => {
       root.render(createElement(MemoryRouter, { initialEntries: ["/my-trade-ups"] }, createElement(PreviewAccount)));
     });
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
   }
 
   it("paints the stats strip, tabs, and list slot before the payloads arrive", async () => {
@@ -120,7 +125,39 @@ describe("account layout reservation", () => {
     expect(host.textContent).toContain("Sign in with Steam");
     expect(host.querySelector(".preview-stats")).toBeNull();
     expect(host.querySelector(".preview-account__slot")).toBeNull();
-    expect(host.querySelector(".preview-page--account")).toBeNull();
+    expect(host.querySelector("[aria-busy=true]")).toBeNull();
+    expect(host.querySelector(".preview-page--account")).toBeTruthy();
+  });
+
+  it.each(["free", "basic"])("keeps the stats strip off the page when %s is denied stats", async (tier) => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats") || path.includes("my_claims=true")) {
+        await gate;
+        return json(403, { error: "nope" });
+      }
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect(host.querySelector(".preview-stats[aria-busy=true]")).toBeNull();
+    expect(host.textContent).not.toContain("00.0%");
+    expect(host.textContent).not.toContain("+$000.00");
+
+    await act(async () => { release(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect(host.querySelector("[aria-busy=true]")).toBeNull();
+    expect(host.textContent).not.toContain("00.0%");
   });
 
   it("keeps the reserved boxes in the account stylesheet", () => {
@@ -139,5 +176,7 @@ describe("account layout reservation", () => {
     expect(page).not.toContain("Win rate");
     expect(page).not.toContain("Checking session");
     expect(page).not.toContain("{user && stats &&");
+    expect(page).toContain("const showChrome = user != null && !sessionHold;");
+    expect(page).toContain("hasProAccess(user) && !statsDenied");
   });
 });
