@@ -15,6 +15,7 @@ import {
   trackClaimTradeUp,
   trackVerifyComplete,
   trackCtaClick,
+  trackUpgradeCta,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -62,6 +63,7 @@ describe("with every tracking env var unset (production today)", () => {
     trackCalculatorComplete("custom");
     trackVerifyClick("pro");
     trackCtaClick("home_hero_calculator");
+    trackUpgradeCta("landing_plan_tile");
     trackClaimTradeUp({ surface: "share", tradeUpId: 1 });
     const silentResult = {
       all_active: true,
@@ -242,6 +244,45 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/" });
     expect(() => trackCtaClick("home_hero_calculator")).not.toThrow();
+  });
+
+  it("upgrade_cta_click names the control and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackUpgradeCta("share_bar");
+    trackUpgradeCta("landing_plan_tile");
+    trackUpgradeCta("nav_pricing");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "share_bar", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "landing_plan_tile", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "nav_pricing", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+    for (const call of gtag.mock.calls) {
+      const params = call[2] as Record<string, unknown>;
+      expect(params).not.toHaveProperty("value");
+      expect(params).not.toHaveProperty("price");
+      expect(params).not.toHaveProperty("listing_id");
+    }
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("upgrade_cta_click stays off the pixel even when a pixel id is set", () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    installBrowser({ pathname: "/" });
+    trackUpgradeCta("nav_pricing");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "nav_pricing", page_path: "/", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("upgrade_cta_click no-ops without a measurement id and does not throw when gtag is blocked", () => {
+    globalThis.tubTracking = undefined;
+    installBrowser({ pathname: "/" });
+    trackUpgradeCta("landing_plan_tile");
+    expect(gtag).not.toHaveBeenCalled();
+    globalThis.tubTracking = { ga4MeasurementId: GA4 };
+    globalThis.gtag = () => { throw new Error("blocked"); };
+    expect(() => trackUpgradeCta("share_bar")).not.toThrow();
   });
 
   it("does not throw when gtag is blocked", () => {

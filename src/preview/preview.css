@@ -188,6 +188,22 @@
   .preview-nav .preview-currency__trigger > span:not(.preview-currency__code) { display: none; }
 }
 
+/* Phone tap targets for the remaining upgrade controls. Desktop sizes stay put. */
+@media (max-width: 599px) {
+  .preview-tile--plan .preview-btn--block,
+  .preview-nav__links a[href="/pricing"],
+  .preview-footer__grid a[href="/pricing"],
+  .preview-page__meta a.preview-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .preview-footer__grid a[href="/pricing"] {
+    display: flex;
+    align-items: center;
+  }
+}
+
 .preview-btn {
   display: inline-flex;
   align-items: center;
