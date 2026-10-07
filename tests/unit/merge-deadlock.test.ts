@@ -35,6 +35,7 @@ function scriptedPool(options: {
   onUpdate: () => void;
   onRollback?: () => void;
   onType?: (type: string) => void;
+  onInsert?: () => void;
 }): ScriptedPool {
   const statements: string[] = [];
   const types: string[] = [];
@@ -44,6 +45,10 @@ function scriptedPool(options: {
       statements.push(sql.trim());
       if (sql.includes("ROLLBACK")) options.onRollback?.();
       if (sql.includes("UPDATE trade_ups SET")) options.onUpdate();
+      if (sql.includes("INSERT INTO trade_ups")) {
+        options.onInsert?.();
+        return emptyResult([{ id: 77 }]);
+      }
       return emptyResult();
     },
     release(err?: Error | boolean): void {
@@ -80,14 +85,18 @@ function scriptedPool(options: {
   };
 }
 
-function updateTradeUp(): ReturnType<typeof makeTradeUp> {
+function tradeUpWith(listingIds: string[]): ReturnType<typeof makeTradeUp> {
   return makeTradeUp({
-    listingIds: LISTING_IDS,
+    listingIds,
     profit_cents: 0,
     total_cost_cents: 1000,
     expected_value_cents: 1000,
     roi_percentage: 0,
   });
+}
+
+function updateTradeUp(): ReturnType<typeof makeTradeUp> {
+  return tradeUpWith(LISTING_IDS);
 }
 
 function clientStatements(statements: readonly string[]): string[] {
@@ -247,60 +256,120 @@ describe("merge-update lock retry", () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it("still rejects a non-transient error on the first attempt and keeps the re-queue", async () => {
+  it("rejects a non-transient error on a fresh merge without retrying it", async () => {
     const type = "merge_p0_syntax";
-    const other = "merge_p0_syntax_other";
     touchedTypes.add(type);
-    touchedTypes.add(other);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
-
-    let seedUpdates = 0;
-    const seeder = scriptedPool({
-      onUpdate() {
-        seedUpdates += 1;
-        throw pgError("40P01", "deadlock detected");
-      },
-    });
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const before = skippedShareLockStats().queuedTradeUps;
-    await mergeTradeUps(seeder.pool, [updateTradeUp()], type);
-    expect(seedUpdates).toBe(4);
-    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
-
     let updates = 0;
-    const failing = scriptedPool({
+    const { pool } = scriptedPool({
       onUpdate() {
         updates += 1;
         throw pgError("42601", "syntax error");
       },
     });
+    const before = skippedShareLockStats().queuedTradeUps;
+    await expect(mergeTradeUps(pool, [updateTradeUp()], type)).rejects.toThrow("syntax error");
+    expect(updates).toBe(1);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before);
+  });
+
+  it("drops a carried batch on 23505 and still merges the worker's new trade-ups", async () => {
+    const type = "merge_p0_unique";
+    const other = "merge_p0_unique_other";
+    touchedTypes.add(type);
+    touchedTypes.add(other);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const seeder = scriptedPool({
+      onUpdate() {
+        throw pgError("40P01", "deadlock detected");
+      },
+    });
+    const before = skippedShareLockStats().queuedTradeUps;
+    await mergeTradeUps(seeder.pool, [updateTradeUp()], type);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
+
+    const seen: string[] = [];
+    let inserts = 0;
+    let poisonUpdates = 0;
     const errors: string[] = [];
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       errors.push(args.map(arg => String(arg)).join(" "));
     });
-
-    await expect(mergeTradeUps(failing.pool, [], type)).rejects.toThrow("syntax error");
-    expect(updates).toBe(1);
-    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
-
-    const seen: string[] = [];
     const loopPool = scriptedPool({
       onType(tradeUpType) {
         seen.push(tradeUpType);
       },
+      onInsert() {
+        inserts += 1;
+      },
       onUpdate() {
-        if (seen.at(-1) === type) throw pgError("42601", "syntax error");
+        if (seen.at(-1) !== type) return;
+        poisonUpdates += 1;
+        throw pgError("23505", "duplicate key value violates unique constraint");
       },
     });
-    const knifeOk = await mergeTaskTradeUps(loopPool.pool, "knife", [], type);
-    const classifiedOk = await mergeTaskTradeUps(loopPool.pool, "classified", [updateTradeUp()], other);
-    expect(knifeOk).toBe(false);
+
+    const knifeOk = await mergeTaskTradeUps(
+      loopPool.pool,
+      "knife",
+      [tradeUpWith(["fresh-knife-a", "fresh-knife-b"])],
+      type,
+    );
+    const again = await mergeTradeUps(loopPool.pool, [tradeUpWith(["fresh-knife-c", "fresh-knife-d"])], type);
+    void again;
+    const classifiedOk = await mergeTaskTradeUps(
+      loopPool.pool,
+      "classified",
+      [updateTradeUp()],
+      other,
+    );
+
+    expect(knifeOk).toBe(true);
     expect(classifiedOk).toBe(true);
-    expect(seen).toEqual([type, other]);
-    expect(errors.some(line => line.includes("knife merge failed") && line.includes("syntax error"))).toBe(true);
-    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
+    expect(poisonUpdates).toBe(1);
+    expect(inserts).toBe(2);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before);
+    expect(errors.some(line =>
+      line.includes("dropping 1") && line.includes(type) && line.includes("23505"),
+    )).toBe(true);
+    expect(errors.some(line => line.includes("knife merge failed"))).toBe(false);
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("drops a batch after 3 transient failures and keeps merging new rows", async () => {
+    const type = "merge_p0_requeue_cap";
+    touchedTypes.add(type);
+    const errors: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(arg => String(arg)).join(" "));
+    });
+    let inserts = 0;
+    const { pool } = scriptedPool({
+      onInsert() {
+        inserts += 1;
+      },
+      onUpdate() {
+        throw pgError("40P01", "deadlock detected");
+      },
+    });
+    const before = skippedShareLockStats().queuedTradeUps;
+
+    await mergeTradeUps(pool, [updateTradeUp()], type);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
+    await mergeTradeUps(pool, [], type);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before + 1);
+    await mergeTradeUps(pool, [], type);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before);
+    expect(errors.some(line =>
+      line.includes("dropping 1") && line.includes(type) && line.includes("after 3 failed attempts (40P01)"),
+    )).toBe(true);
+
+    await mergeTradeUps(pool, [tradeUpWith(["capped-new-a", "capped-new-b"])], type);
+    expect(inserts).toBe(1);
+    expect(skippedShareLockStats().queuedTradeUps).toBe(before);
   });
 
   it("wires the daemon super-batch to continue after a failed merge", () => {

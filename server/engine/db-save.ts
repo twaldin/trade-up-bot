@@ -14,9 +14,18 @@ const MERGE_LOCK_TIMEOUT = "5s";
 /** Deadlock and lock_not_available. Matches the relink apply retry, then the batch is skipped. */
 const MERGE_LOCK_CODES = new Set(["40P01", "55P03"]);
 const MERGE_LOCK_RETRIES = 3;
+/** A batch that has already failed this many times is dropped instead of re-queued. */
+const MERGE_REQUEUE_CAP = 3;
+
+interface QueuedMergeBatch {
+  type: string;
+  tradeUps: TradeUp[];
+  /** Failures already spent. Absent on insert-path entries, which count as zero. */
+  attempts?: number;
+}
 
 /** Insert batches that lost the share lock. The next mergeTradeUps of that type tries them again. */
-const queuedMergeBatches: { type: string; tradeUps: TradeUp[] }[] = [];
+const queuedMergeBatches: QueuedMergeBatch[] = [];
 let skippedShareLockBatches = 0;
 
 export interface SkippedShareLockStats {
@@ -31,11 +40,11 @@ export function skippedShareLockStats(): SkippedShareLockStats {
   };
 }
 
-function takeQueuedMerge(type: string): TradeUp[] {
-  const kept: { type: string; tradeUps: TradeUp[] }[] = [];
-  const taken: TradeUp[] = [];
+function takeQueuedMerge(type: string): QueuedMergeBatch[] {
+  const kept: QueuedMergeBatch[] = [];
+  const taken: QueuedMergeBatch[] = [];
   for (const batch of queuedMergeBatches) {
-    if (batch.type === type) taken.push(...batch.tradeUps);
+    if (batch.type === type) taken.push(batch);
     else kept.push(batch);
   }
   queuedMergeBatches.length = 0;
@@ -47,12 +56,34 @@ function tradeUpListingSig(tu: TradeUp): string {
   return listingSig(tu.inputs.map(inp => inp.listing_id));
 }
 
+function attemptBySig(batches: readonly QueuedMergeBatch[]): Map<string, number> {
+  const attempts = new Map<string, number>();
+  for (const batch of batches) {
+    const spent = batch.attempts ?? 0;
+    for (const tu of batch.tradeUps) attempts.set(tradeUpListingSig(tu), spent);
+  }
+  return attempts;
+}
+
+function previousAttempts(tradeUps: readonly TradeUp[], attempts: ReadonlyMap<string, number>): number {
+  let spent = 0;
+  for (const tu of tradeUps) {
+    const prior = attempts.get(tradeUpListingSig(tu)) ?? 0;
+    if (prior > spent) spent = prior;
+  }
+  return spent;
+}
+
 /**
- * A merge that throws has already removed this type's queue. Put those
- * trade-ups back so the next merge retries them. Skip signatures a lock-skip
- * during the same attempt already re-queued.
+ * Put a failed batch back, unless this failure is the cap. Signatures already
+ * queued by an earlier skip in the same attempt are left as they are.
  */
-function restoreMergeQueue(type: string, tradeUps: readonly TradeUp[]): void {
+function requeueMergeBatch(
+  type: string,
+  tradeUps: readonly TradeUp[],
+  spentAttempts: number,
+  code: string,
+): void {
   if (tradeUps.length === 0) return;
   const queued = new Set<string>();
   for (const batch of queuedMergeBatches) {
@@ -61,7 +92,13 @@ function restoreMergeQueue(type: string, tradeUps: readonly TradeUp[]): void {
   }
   const missing = tradeUps.filter(tu => !queued.has(tradeUpListingSig(tu)));
   if (missing.length === 0) return;
-  queuedMergeBatches.push({ type, tradeUps: missing.slice() });
+  const attempts = spentAttempts + 1;
+  if (attempts >= MERGE_REQUEUE_CAP) {
+    console.error(`mergeTradeUps: dropping ${missing.length} ${type} trade-ups after ${attempts} failed attempts (${code})`);
+    return;
+  }
+  queuedMergeBatches.push({ type, tradeUps: missing.slice(), attempts });
+  console.error(`mergeTradeUps-update: re-queued ${missing.length} trade-ups for the next merge cycle`);
 }
 
 export interface MergeTradeUpHooks {
@@ -218,7 +255,7 @@ async function withShareLockRetry<T>(
   label: string,
   batchSize: number,
   fn: () => Promise<T>,
-  onSkip?: () => void,
+  onSkip?: (code: string) => void,
 ): Promise<T | null> {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -230,7 +267,7 @@ async function withShareLockRetry<T>(
         skippedShareLockBatches++;
         const reason = err instanceof Error ? err.message : String(err);
         console.error(`${label}: ${code} after ${MERGE_LOCK_RETRIES} retries, skipping batch of ${batchSize}: ${reason}`);
-        onSkip?.();
+        onSkip?.(code);
         return null;
       }
       const wait = 50 * 2 ** attempt;
@@ -476,7 +513,8 @@ async function mergeCollectedTradeUps(
   pool: pg.Pool,
   tradeUps: TradeUp[],
   type: string,
-  hooks?: MergeTradeUpHooks,
+  hooks: MergeTradeUpHooks | undefined,
+  attempts: ReadonlyMap<string, number>,
 ) {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
   // Retarget first so a relink that landed during the cycle matches the live signature.
@@ -522,6 +560,9 @@ async function mergeCollectedTradeUps(
     // refreshListingStatuses() in housekeeping handles actual staleness.
   }
 
+  // Lock trade-up rows in primary-key order so concurrent writers don't deadlock.
+  toUpdate.sort((a, b) => a.existId - b.existId);
+
   // Batch-read all streak data upfront: one ANY(array) query replaces per-row SELECTs
   const oldById = new Map<number, { profit_cents: number; profit_streak: number }>();
   if (toUpdate.length > 0) {
@@ -543,9 +584,9 @@ async function mergeCollectedTradeUps(
       "mergeTradeUps-update",
       batch.length,
       () => updateMergeBatchOnce(pool, batch, oldById),
-      () => {
-        queuedMergeBatches.push({ type, tradeUps: batch.map(row => row.tu) });
-        console.error(`mergeTradeUps-update: re-queued ${batch.length} trade-ups for the next merge cycle`);
+      (code) => {
+        const rows = batch.map(row => row.tu);
+        requeueMergeBatch(type, rows, previousAttempts(rows, attempts), code);
       },
     );
   }
@@ -573,6 +614,12 @@ async function mergeCollectedTradeUps(
   // handles cleanup. We want to show as many trade-ups as possible to users.
 }
 
+function dropTakenMerge(type: string, tradeUps: readonly TradeUp[], err: unknown): void {
+  const code = pgErrorCode(err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`mergeTradeUps: dropping ${tradeUps.length} ${type} trade-ups (${code || "unknown"}): ${message}`);
+}
+
 export async function mergeTradeUps(
   pool: pg.Pool,
   tradeUps: TradeUp[],
@@ -580,17 +627,22 @@ export async function mergeTradeUps(
   hooks?: MergeTradeUpHooks,
 ) {
   // A batch skipped after share-lock retries is tried again on this type's next merge.
-  // takeQueuedMerge removes that queue first. A throw puts it back.
-  const carried = takeQueuedMerge(type);
-  const pending = carried.length > 0 ? [...carried, ...tradeUps] : tradeUps;
-  try {
-    await mergeCollectedTradeUps(pool, pending, type, hooks);
-  } catch (err) {
-    // Lock skips re-queue themselves. This puts back the queue this call
-    // already took, and leaves a non-transient failure thrown.
-    restoreMergeQueue(type, carried);
-    throw err;
+  // The carried queue is merged on its own so a failure there cannot drop the
+  // trade-ups this call just received.
+  const carriedBatches = takeQueuedMerge(type);
+  const carried = carriedBatches.flatMap(batch => batch.tradeUps);
+  const attempts = attemptBySig(carriedBatches);
+  if (carried.length > 0) {
+    try {
+      await mergeCollectedTradeUps(pool, carried, type, hooks, attempts);
+    } catch (err) {
+      const code = pgErrorCode(err);
+      if (MERGE_LOCK_CODES.has(code)) requeueMergeBatch(type, carried, previousAttempts(carried, attempts), code);
+      else dropTakenMerge(type, carried, err);
+    }
   }
+  if (carried.length > 0 && tradeUps.length === 0) return;
+  await mergeCollectedTradeUps(pool, tradeUps, type, hooks, new Map());
 }
 
 /**
