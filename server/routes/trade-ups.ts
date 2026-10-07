@@ -578,7 +578,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
        LIMIT $${limitParam} OFFSET $${offsetParam}`;
     const dataParams = [...params, perPage, offset];
     // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
-    const cappedCountSql = `SELECT COUNT(*) as c FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT 10001) sub`;
+    const cappedCountSql = `SELECT COUNT(*) as c, COUNT(*) FILTER (WHERE profit_cents > 0) as p
+      FROM (SELECT t.profit_cents ${diversitySql.fromWhere} LIMIT 10001) sub`;
 
     let total = 0;
     let totalProfitable = 0;
@@ -597,10 +598,10 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         // A second count query sorts the same rows again and, run beside this
         // one, was the cold-page regression (two external merges contending).
         const capParam = limitParam - 1;
-        const { rows: rankRows } = await pool.query<{ id: number; total: number }>(
+        const { rows: rankRows } = await pool.query<{ id: number; total: number; profitable: number }>(
           `WITH ranked AS MATERIALIZED (
-             SELECT id, sort_value FROM (
-               SELECT t.id, ${sortCol} AS sort_value,
+             SELECT id, sort_value, profit_cents FROM (
+               SELECT t.id, ${sortCol} AS sort_value, t.profit_cents,
                  ROW_NUMBER() OVER (
                    PARTITION BY t.collection_names
                    ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
@@ -610,10 +611,11 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
              ) scanned
              WHERE combo_rank <= $${capParam}
            )
-           SELECT id, total FROM (
+           SELECT id, total, profitable FROM (
              SELECT id,
                row_number() OVER (ORDER BY sort_value ${sortOrder} NULLS LAST, id DESC) AS ord,
-               LEAST(COUNT(*) OVER (), 10001)::int AS total
+               LEAST(COUNT(*) OVER (), 10001)::int AS total,
+               LEAST(COUNT(*) FILTER (WHERE profit_cents > 0) OVER (), 10001)::int AS profitable
              FROM ranked
            ) numbered
            WHERE ord <= $${limitParam}
@@ -623,6 +625,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         return {
           ids: rankRows.map((r) => Number(r.id)),
           total: rankRows.length > 0 ? Number(rankRows[0].total) : 0,
+          profitable: rankRows.length > 0 ? Number(rankRows[0].profitable) : 0,
         };
       });
       const pageIds = snapshot.ids.slice(offset, offset + perPage);
@@ -637,6 +640,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       if (ordered) {
         rows = ordered;
         total = snapshot.total;
+        totalProfitable = snapshot.profitable;
       } else {
         await rankStore.del(snapshotKey).catch(() => {});
       }
@@ -671,7 +675,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       } else {
         const { rows: [countRow] } = await pool.query(cappedCountSql, params);
         total = parseInt(countRow?.c) || 0;
-        totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
+        // Same filters, delay window and diversity cap as total, so the two agree.
+        totalProfitable = parseInt(countRow?.p) || 0;
       }
 
       rows = (await dataPromise).rows;
