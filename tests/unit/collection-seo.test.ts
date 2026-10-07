@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { contentSecurityPolicyDirectives } from "../../server/security-headers.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(join(__dir, "../../server/index.ts"), "utf-8");
@@ -39,12 +40,15 @@ describe("collection page SEO crawler HTML", () => {
   });
 
   it("allows collection set icons from raw.githubusercontent.com in img-src only", () => {
-    const helmet = serverSource.slice(serverSource.indexOf("contentSecurityPolicy"), serverSource.indexOf("Stripe webhook"));
-    expect(helmet).toContain('"https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/"');
-    const imgLine = helmet.split("\n").find((line) => line.includes("imgSrc"));
-    expect(imgLine).toContain("https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/");
-    expect(imgLine).toContain("https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/");
-    expect(helmet.split("\n").filter((line) => line.includes("raw.githubusercontent.com") || line.includes("set_icons"))).toHaveLength(1);
+    const directives = contentSecurityPolicyDirectives();
+    expect(directives.imgSrc).toContain("https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/");
+    expect(directives.imgSrc).toContain("https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/");
+    for (const [name, values] of Object.entries(directives)) {
+      if (name === "imgSrc") continue;
+      const joined = values.join(" ");
+      expect(joined).not.toContain("raw.githubusercontent.com");
+      expect(joined).not.toContain("set_icons");
+    }
   });
 
   it("does not inject a second client canonical on the collection page", () => {
