@@ -24,6 +24,7 @@ import {
 } from "../../server/engine/pricing.js";
 import { conditionMultiplierCache } from "../../server/engine/condition-multipliers.js";
 import { curveCache } from "../../server/engine/curve-classification.js";
+import { clearKnnCache, warmKnnCache } from "../../server/engine/knn-pricing.js";
 
 const REDLINE = "AK-47 | Redline:Field-Tested";
 const KNIFE_FN = "★ Karambit | Fade:Factory New";
@@ -362,5 +363,42 @@ describe("price cache stale-while-revalidate", () => {
     expect(resolved).toBe(false);
     blockHold.release();
     await pending;
+  });
+
+  it("keeps float-ceiling and KNN queries behind an in-flight price rebuild", async () => {
+    const script = makeScript();
+    const pool = scriptedPool(script);
+    await buildPriceCache(pool);
+    const ceilingBefore = script.ceilingQueries;
+
+    expirePriceCacheForTests(PRICE_CACHE_TTL_MS + 60_000);
+    ageFloatCeilingForTests(PRICE_CACHE_TTL_MS + 60_000);
+    const hold = armHold();
+    script.holdRef = hold.promise;
+
+    let knnQueries = 0;
+    const knnPool = {
+      query: async (sql: string) => {
+        if (!String(sql).includes("FROM price_observations")) {
+          throw new Error(`unexpected sql: ${String(sql).slice(0, 80)}`);
+        }
+        knnQueries++;
+        return { rows: [] };
+      },
+    } as pg.Pool;
+
+    const pricePromise = buildPriceCache(pool);
+    const ceilingPromise = ensureFloatCeilingForTests(pool);
+    const knnPromise = warmKnnCache(knnPool);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(knnQueries).toBe(0);
+    expect(script.ceilingQueries).toBe(ceilingBefore);
+
+    hold.release();
+    await Promise.all([pricePromise, ceilingPromise, knnPromise]);
+    expect(script.ceilingQueries).toBe(ceilingBefore + 1);
+    expect(knnQueries).toBeGreaterThan(0);
+    clearKnnCache();
   });
 });
