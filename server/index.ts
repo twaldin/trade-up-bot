@@ -29,7 +29,7 @@ import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { unknownApiJson404 } from "./unknown-api.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd, sendSlugNotFound } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { tradeUpCountPhrase, tradeUpPair } from "../shared/copy.js";
 import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE } from "../shared/types.js";
@@ -276,7 +276,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
       if (!collectionName) {
-        res.status(404).send("Collection trade-up page not found");
+        sendSlugNotFound(res, "Collection trade-up page not found");
         return;
       }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
@@ -452,7 +452,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
       if (!collectionName) {
-        res.status(404).send("Collection not found");
+        sendSlugNotFound(res, "Collection not found");
         return;
       }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
@@ -652,7 +652,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getSlugMap(pool);
       const skinName = slugMap.get(req.params.slug);
       if (!skinName) {
-        res.status(404).send("Skin not found");
+        sendSlugNotFound(res, "Skin not found");
         return;
       }
 
@@ -665,7 +665,7 @@ registerCanonicalRedirectRoutes(app);
         GROUP BY s.id
       `, [skinName]);
       if (!skinMeta) {
-        res.status(404).send("Skin not found");
+        sendSlugNotFound(res, "Skin not found");
         return;
       }
 

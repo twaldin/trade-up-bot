@@ -35,7 +35,7 @@ describe("collection page SEO crawler HTML", () => {
     expect(handler).not.toContain("req.query");
     expect(handler).not.toContain("collections/${req.params.slug}?");
     const unknown = handler.slice(handler.indexOf("if (!collectionName)"), handler.indexOf("const displayName"));
-    expect(unknown).toContain('res.status(404).send("Collection not found")');
+    expect(unknown).toContain('sendSlugNotFound(res, "Collection not found")');
     expect(unknown).not.toContain("canonical");
   });
 

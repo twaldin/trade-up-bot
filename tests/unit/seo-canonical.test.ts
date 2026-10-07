@@ -76,9 +76,9 @@ describe("server route canonical/noindex/404 behavior", () => {
   ].join("\n");
 
   it("dynamic collection, skin, and trade-up routes return 404/410 instead of falling through to SPA", () => {
-    expect(source).toContain('res.status(404).send("Collection trade-up page not found")');
-    expect(source).toContain('res.status(404).send("Collection not found")');
-    expect(source).toContain('res.status(404).send("Skin not found")');
+    expect(source).toContain('sendSlugNotFound(res, "Collection trade-up page not found")');
+    expect(source).toContain('sendSlugNotFound(res, "Collection not found")');
+    expect(source).toContain('sendSlugNotFound(res, "Skin not found")');
     // A missing row, including an all-digit id that was never stored, is a 404 not-found page.
     // 410 is reserved for a trade-up already known to be deleted or expired.
     expect(source).toContain("sendTradeUpNotFound(req, res)");
