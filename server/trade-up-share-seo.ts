@@ -1,5 +1,6 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type pg from "pg";
+import { collectionTradeUpLinks } from "../shared/collection-links.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
 import { tradeUpDetailJsonLd } from "../shared/types.js";
 import { inputsAreRedacted } from "./routes/trade-ups.js";
@@ -54,18 +55,14 @@ export async function handleTradeUpShareSeo(
       skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
     }>;
 
-    const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
+    const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
     const related = [
-      ...collections.map((c: string) => ({
-        label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
-        url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
-      })).slice(0, 2),
+      ...collectionTradeUpLinks(collectionNames),
       { label: "All CS2 Trade-Ups", url: "/trade-ups" },
       { label: "Browse CS2 Collections", url: "/collections" },
     ];
 
     const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name);
-    const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
     const pair = tradeUpPair(row.type, outcomes);
 
     const meta = {

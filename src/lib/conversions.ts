@@ -160,7 +160,7 @@ export function trackVerifyComplete(args: {
   sendActivation("verify_complete", args.tradeUpId, args.surface, verifyCompleteStatus(args.result));
 }
 
-export type CtaId = "home_hero_calculator" | "intent_board";
+export type CtaId = "home_hero_calculator" | "intent_board" | "detail_collection";
 
 /** Landing CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
 export function trackCtaClick(cta: CtaId): void {

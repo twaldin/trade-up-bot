@@ -5,6 +5,7 @@ import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
+import { DetailCollectionLinks } from "../components/DetailCollectionLinks.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -262,6 +263,8 @@ export function PreviewShare() {
           </div>
         )}
       </header>
+
+      <DetailCollectionLinks names={collections} />
 
       {loading && <p className="preview-note">Loading…</p>}
       {(error || (!loading && !tu)) && (
