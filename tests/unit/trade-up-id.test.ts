@@ -3,7 +3,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { asyncHandler } from "../../server/async-handler.js";
 import { shouldRedirectToNoTrailingSlash } from "../../server/canonical-redirects.js";
-import { parseTradeUpId, TRADE_UP_ID_MAX } from "../../shared/trade-up-id.js";
+import { isRepeatedTradeUpSlash, parseTradeUpId, TRADE_UP_ID_MAX } from "../../shared/trade-up-id.js";
 
 describe("parseTradeUpId", () => {
   it("accepts 1 through the int4 max", () => {
@@ -22,6 +22,16 @@ describe("parseTradeUpId", () => {
     expect(parseTradeUpId("2147483648")).toBeNull();
     expect(parseTradeUpId("999999999999")).toBeNull();
     expect(parseTradeUpId("1".repeat(30))).toBeNull();
+  });
+});
+
+describe("repeated trade-up slashes", () => {
+  it("treats /trade-ups// as an empty id and leaves the board slash alone", () => {
+    expect(isRepeatedTradeUpSlash("/trade-ups//")).toBe(true);
+    expect(isRepeatedTradeUpSlash("/trade-ups///")).toBe(true);
+    expect(isRepeatedTradeUpSlash("/trade-ups/")).toBe(false);
+    expect(isRepeatedTradeUpSlash("/trade-ups")).toBe(false);
+    expect(isRepeatedTradeUpSlash("/trade-ups/1")).toBe(false);
   });
 });
 

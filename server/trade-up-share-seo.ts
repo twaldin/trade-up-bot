@@ -1,10 +1,10 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type pg from "pg";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
-import { parseTradeUpId, routeParam } from "../shared/trade-up-id.js";
+import { isRepeatedTradeUpSlash, parseTradeUpId, routeParam } from "../shared/trade-up-id.js";
 import { tradeUpDetailJsonLd } from "../shared/types.js";
 import { inputsAreRedacted } from "./routes/trade-ups.js";
-import { buildSeoHtml, deletedTradeUpStatus, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
+import { buildSeoHtml, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
 
 const NOT_FOUND_BODY = "Trade-up not found";
 
@@ -28,7 +28,7 @@ function sendTradeUpNotFound(req: Request, res: Response): void {
 /** Crawler and SPA-shell HTML for /trade-ups/:id. Fresh rows hide per-input price and source. */
 export function registerTradeUpDetailRoute(app: Express, pool: pg.Pool): void {
   app.use((req, res, next) => {
-    if ((req.method === "GET" || req.method === "HEAD") && /^\/trade-ups\/{2,}/.test(req.path)) {
+    if ((req.method === "GET" || req.method === "HEAD") && isRepeatedTradeUpSlash(req.path)) {
       sendTradeUpNotFound(req, res);
       return;
     }
@@ -62,10 +62,7 @@ export async function handleTradeUpShareSeo(
       [id],
     );
     if (!row) {
-      const status = deletedTradeUpStatus(String(id));
-      res.status(status).set("X-Robots-Tag", "noindex").send(
-        status === 410 ? "Trade-up no longer available" : "Trade-up not found",
-      );
+      sendTradeUpNotFound(req, res);
       return;
     }
     const isStale = row.listing_status === "stale"

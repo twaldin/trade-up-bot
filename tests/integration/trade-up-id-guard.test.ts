@@ -9,7 +9,7 @@ const BROWSER = "Mozilla/5.0";
 const THIRTY = "1".repeat(30);
 const GUARD_TOKEN = "GuardTokenSkin";
 const SCIENCE_TOKEN = "ScientificTokenSkin";
-const SHELL = `<!DOCTYPE html><html><head><title>Home</title><link rel="canonical" href="https://tradeupbot.app/" /></head><body><div id="root"><p>homepage</p></div></body></html>`;
+const SHELL = `<!DOCTYPE html><html><head><title>Home</title><meta name="robots" content="index, follow" /><meta name="robots" content="index, follow" /><link rel="canonical" href="https://tradeupbot.app/" /></head><body><div id="root"><p>homepage</p></div></body></html>`;
 
 const BAD_IDS = [
   { name: "abc", api: "/api/trade-ups/abc", page: "/trade-ups/abc", leak: "abc" },
@@ -108,15 +108,38 @@ describe("trade-up id guard", () => {
     expect(bot.text).not.toContain(SCIENCE_TOKEN);
   });
 
-  it("returns 404 for a valid missing id and 410 for the crawler tombstone", async () => {
-    const api = await request(ctx.app).get("/api/trade-ups/2147483647");
+  it("returns the not-found page for a missing all-digit id", async () => {
+    const api = await request(ctx.app).get("/api/trade-ups/999999");
     expect(api.status).toBe(404);
     expect(api.body).toEqual({ error: "Trade-up not found" });
 
-    const bot = await request(ctx.app).get("/trade-ups/2147483647").set("User-Agent", GOOGLEBOT);
-    expect(bot.status).toBe(410);
+    const bot = await request(ctx.app).get("/trade-ups/999999").set("User-Agent", GOOGLEBOT);
+    expect(bot.status).toBe(404);
     expect(bot.headers["x-robots-tag"]).toBe("noindex");
-    expect(bot.text).toBe("Trade-up no longer available");
+    expect(bot.text).toBe("Trade-up not found");
+    expect(bot.text).not.toContain("Trade-up no longer available");
+
+    const browser = await request(ctx.app).get("/trade-ups/999999").set("User-Agent", BROWSER);
+    expect(browser.status).toBe(404);
+    expect(browser.headers["content-type"]).toMatch(/html/);
+    expect(browser.headers["x-robots-tag"]).toBe("noindex");
+    expect(browser.text).toContain("Trade-up not found");
+    expect(browser.text).toContain('href="https://tradeupbot.app/trade-ups"');
+    expect(browser.text).not.toContain('href="https://tradeupbot.app/"');
+    expect(browser.text).not.toContain("<p>homepage</p>");
+    expect(browser.text).not.toContain("Trade-up no longer available");
+    const robots = [...browser.text.matchAll(/<meta\s+name="robots"[^>]*>/gi)];
+    expect(robots).toHaveLength(1);
+    expect(robots[0]?.[0]).toContain('content="noindex, follow"');
+  });
+
+  it("gives a browser the not-found page for /trade-ups// instead of the board", async () => {
+    const res = await request(ctx.app).get("/trade-ups//").set("User-Agent", BROWSER);
+    expect(res.status).toBe(404);
+    expect(res.headers["x-robots-tag"]).toBe("noindex");
+    expect(res.text).toContain("Trade-up not found");
+    expect(res.text).not.toContain("<p>homepage</p>");
+    expect(res.headers.location).toBeUndefined();
   });
 
   it("returns JSON 500 when the detail handler throws", async () => {

@@ -15,3 +15,8 @@ export function parseTradeUpId(raw: string): number | null {
 export function routeParam(value: string | readonly string[] | undefined): string {
   return typeof value === "string" ? value : "";
 }
+
+/** `/trade-ups//` is an empty id. A single trailing slash is the board redirect. */
+export function isRepeatedTradeUpSlash(pathname: string): boolean {
+  return /^\/trade-ups\/{2,}/.test(pathname);
+}
