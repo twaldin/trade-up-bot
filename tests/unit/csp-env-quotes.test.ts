@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { staticHtmlSecurityHeaders } from "../../server/security-headers.js";
+import helmet from "helmet";
+import { helmetSecurityOptions, staticHtmlSecurityHeaders } from "../../server/security-headers.js";
 import { applyDotenv, parseDotenv, parseDotenvValue } from "../../scripts/lib/dotenv-file.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -52,7 +53,7 @@ describe("nginx header patch skips backup copies", () => {
     return JSON.parse(out.stdout) as boolean[];
   }
 
-  it("skips dated, numbered, and suffix backups", () => {
+  it("skips backups and keeps live config names", () => {
     expect(isBackup([
       "tradeup.bak-20260518220608",
       "tradeup.bak",
@@ -63,10 +64,39 @@ describe("nginx header patch skips backup copies", () => {
       "tradeup~",
       "tradeup.dpkg-old",
       "tradeup.save",
-    ])).toEqual(Array(9).fill(true));
-  });
+      "tradeup",
+      "default",
+      "tradeup.conf",
+      "bakery.conf",
+      "oldsite.conf",
+    ])).toEqual([...Array(9).fill(true), ...Array(5).fill(false)]);
+  }, 20_000);
+});
 
-  it("still patches live config names", () => {
-    expect(isBackup(["tradeup", "default", "tradeup.conf", "bakery.conf", "oldsite.conf"])).toEqual(Array(5).fill(false));
+describe("static nginx CSP mirrors the app CSP", () => {
+  function helmetCsp(env: NodeJS.ProcessEnv): string {
+    const headers = new Map<string, string>();
+    const res = {
+      setHeader: (n: string, v: string) => headers.set(n.toLowerCase(), String(v)),
+      getHeader: (n: string) => headers.get(n.toLowerCase()),
+      removeHeader: (n: string) => headers.delete(n.toLowerCase()),
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    helmet(helmetSecurityOptions(env))({} as any, res as any, () => {});
+    return headers.get("content-security-policy") ?? "";
+  }
+
+  for (const env of [{}, { GA4_MEASUREMENT_ID: "G-2474G4P5QE" }, { GA4_MEASUREMENT_ID: "G-2474G4P5QE", META_PIXEL_ID: "123456789012345" }]) {
+    it(`matches helmet exactly for ${JSON.stringify(env)}`, () => {
+      expect(staticHtmlSecurityHeaders(env)["Content-Security-Policy"]).toBe(helmetCsp(env));
+    });
+  }
+
+  it("allows the GA4 signals host in connect-src and img-src when GA4 is set", () => {
+    const csp = staticHtmlSecurityHeaders({ GA4_MEASUREMENT_ID: "G-2474G4P5QE" })["Content-Security-Policy"];
+    const directive = (name: string) => csp.split(";").find((d) => d.trim().startsWith(`${name} `)) ?? "";
+    expect(directive("connect-src")).toContain("https://stats.g.doubleclick.net");
+    expect(directive("img-src")).toContain("https://stats.g.doubleclick.net");
+    expect(directive("connect-src")).toContain("https://*.google-analytics.com");
   });
 });
