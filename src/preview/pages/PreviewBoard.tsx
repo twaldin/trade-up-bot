@@ -8,7 +8,7 @@ import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
-import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { boardDelayReserveSentence, boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -95,6 +95,7 @@ import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js"
 import { createFaceCache, faceFor, loadFaces, rememberFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
+const DELAY_RESERVE = `${DELAY_BANNER} ${boardDelayReserveSentence()}`;
 
 /** Filter and sort edits wait this long so a burst becomes one list request. */
 export const FILTER_SETTLE_MS = 350;
@@ -883,6 +884,10 @@ export function PreviewBoard({
   });
   const delayGap = useBoardDelay(isFree);
   const delaySentence = boardDelaySentence(delayGap);
+  // Tier is unknown until the first page lands. Hold the banner's box so the
+  // free board does not jump when that page, then the delay sentence, arrives.
+  const delayPending = loading && tradeUps.length === 0 && !isFree;
+  const showDelayReserve = delayPending || delayGap !== null;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1022,10 +1027,13 @@ export function PreviewBoard({
           onBlur={onFilterBlur}
         />
       )}
-      {isFree && (
-        <div className="preview-delay">
+      {(isFree || delayPending) && (
+        <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined}>
           <span className="preview-delay__label">Free tier</span>
-          <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
+          <p className="preview-delay__copy">
+            <span>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</span>
+            {showDelayReserve && <span className="preview-delay__reserve" aria-hidden="true">{DELAY_RESERVE}</span>}
+          </p>
           <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}

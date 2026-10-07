@@ -198,6 +198,15 @@ describe("preview craft bar", () => {
     expect(board).toContain("preview-delay__cta");
   });
 
+  it("reserves the free-tier banner height before the list reports a tier", () => {
+    expect(board).toContain("preview-delay--hold");
+    expect(board).toContain("preview-delay__reserve");
+    expect(board).toContain("loading && tradeUps.length === 0 && !isFree");
+    expect(css).toMatch(/\.preview-delay__copy\s*\{[^}]*display:\s*grid/);
+    expect(css).toContain(".preview-delay__reserve");
+    expect(css).toContain(".preview-delay--hold");
+  });
+
   it("builds the data pages on the kit table and a real series chart", () => {
     const skins = read("../../src/preview/pages/PreviewSkins.tsx");
     const table = read("../../src/preview/components/PreviewTable.tsx");

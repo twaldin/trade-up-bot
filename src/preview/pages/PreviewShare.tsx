@@ -5,7 +5,7 @@ import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from
 import { formatDollars } from "../../utils/format.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
-import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { authUserFrom, shareActionPanel, type AuthUser } from "../lib/auth-state.js";
@@ -225,7 +225,7 @@ export function PreviewShare() {
     })
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
-  const delaySentence = boardDelaySentence(useBoardDelay(panel === "sign-in" || panel === "upgrade"));
+  const delaySentence = boardDelaySentence(useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user)));
   const realIds = tu ? realListingIds(tu) : [];
 
   return (

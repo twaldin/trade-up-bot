@@ -1022,11 +1022,26 @@
   font-size: 12px;
 }
 
-.preview-delay p {
-  margin: 0;
+/* Hidden until the list reports a free tier. Same contents as the live banner,
+   so the row does not move when the sentence fills in. */
+.preview-delay--hold {
+  visibility: hidden;
+}
+
+.preview-delay__copy {
+  display: grid;
   flex: 1;
   min-width: 0;
+  margin: 0;
   font-weight: 500;
+}
+
+.preview-delay__copy > span {
+  grid-area: 1 / 1;
+}
+
+.preview-delay__reserve {
+  visibility: hidden;
 }
 
 .preview-delay__label {
