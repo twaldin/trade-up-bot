@@ -557,6 +557,7 @@ export default function App() {
         <Route path="/trade-ups/tiers/:slug" element={<ConsoleApp page="intent" />} />
         <Route path="/trade-ups/collection/:slug" element={<ConsoleApp page="collectionTradeUps" />} />
         <Route path="/trade-ups/:id" element={<ConsoleApp page="share" />} />
+        <Route path="/trade-ups/:id/" element={<ConsoleApp page="share" />} />
         {/* The kit shell is the console now: leftover marketing, share, sniper,
             and collection trade-up URLs join /, /trade-ups, /skins,
             /collections, /calculator and /account. /preview/* still redirects. */}
