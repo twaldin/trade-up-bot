@@ -395,7 +395,8 @@
 }
 
 .preview-hero .preview-stats b {
-  display: inline;
+  display: inline-block;
+  min-width: 9ch;
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
@@ -1035,6 +1036,17 @@
   align-items: flex-start;
   gap: 8px;
   padding: 10px 2px 4px;
+}
+
+.preview-calc-next {
+  margin: 0;
+}
+
+@media (max-width: 599px) {
+  .preview-calc-next .preview-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 .preview-panel__meta .preview-chip {

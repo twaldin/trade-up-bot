@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
-import { trackCalculatorComplete } from "../../lib/conversions.js";
+import { trackCalculatorComplete, trackCtaClick } from "../../lib/conversions.js";
 import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
 import {
   LABEL_AFTER_FEES,
@@ -12,6 +13,7 @@ import {
   NOTE_OF_OUTCOMES,
 } from "../lib/copy.js";
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
+import { intentBoardHref } from "../lib/intent-landings.js";
 import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseErrorKind, fetchBrowseJson, isRateLimitError, readEvaluationBody, readPagedJson, retryDelayMs } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { useCanonicalSlot } from "../components/PreviewSeo.js";
@@ -286,6 +288,17 @@ export function PreviewCalculator() {
           <Readout label={LABEL_EXPECTED_PL} value={signedDollars(profit)} tone={signClass(profit)} />
           <Readout label={LABEL_ABOVE_COST} value={stats ? formatOdds(stats.chance_to_profit) : "—"} note={NOTE_OF_OUTCOMES} />
         </div>
+      )}
+      {result && (
+        <p className="preview-calc-next">
+          <Link
+            className="preview-btn"
+            to={intentBoardHref(result.type)}
+            onClick={() => trackCtaClick("calculator_board")}
+          >
+            See live trade-ups above cost
+          </Link>
+        </p>
       )}
       <FeeLine line={isExample ? CALCULATOR_EXAMPLE_FEE_LINE : CALCULATOR_FEE_LINE} />
       {result && (

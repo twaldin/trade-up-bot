@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { isMarketingPage, needsLandingStats, pageFor, type ConsolePage } from "./lib/console-routes.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "./lib/copy.js";
-import { landingStatsFromSources, type BoardCountSource, type LandingStatCounts } from "./lib/landing-stats.js";
+import { landingStatsFromSources, nextHeroGlobal, serverLandingStats, type BoardCountSource, type LandingStatCounts } from "./lib/landing-stats.js";
 import { PreviewAccount } from "./pages/PreviewAccount.js";
 import { PreviewBlogIndex, PreviewBlogPost } from "./pages/PreviewBlog.js";
 import { PreviewBoard, usePreviewTradeUps } from "./pages/PreviewBoard.js";
@@ -64,7 +64,8 @@ function BoardRoute() {
 
 export default function PreviewApp(props: { page?: ConsolePage } = {}) {
   const [mode, setMode] = useState<"light" | "dark">("dark");
-  const [globalStats, setGlobalStats] = useState<LandingStatCounts | null>(null);
+  const [globalStats, setGlobalStats] = useState<LandingStatCounts | null>(serverLandingStats);
+  const [countsPending, setCountsPending] = useState(() => serverLandingStats() == null);
   const [boardCounts, setBoardCounts] = useState<BoardCountSource | null>(null);
   const location = useLocation();
 
@@ -83,7 +84,9 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
       .then((global: LandingStatCounts | null) => {
-        if (live) setGlobalStats(global);
+        if (!live) return;
+        setGlobalStats((current) => nextHeroGlobal(current, global));
+        setCountsPending(false);
       });
     return () => { live = false; };
   }, [wantsStats]);
@@ -110,7 +113,7 @@ export default function PreviewApp(props: { page?: ConsolePage } = {}) {
       case "collectionTradeUps": return <PreviewCollectionTradeUps />;
       case "intent": return <PreviewIntent />;
       case "landing":
-      default: return <PreviewLanding stats={stats} mode={mode} onBoardCounts={setBoardCounts} />;
+      default: return <PreviewLanding stats={stats} mode={mode} onBoardCounts={setBoardCounts} countsPending={countsPending} />;
     }
   })();
 
