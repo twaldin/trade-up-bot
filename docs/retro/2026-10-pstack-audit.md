@@ -15,10 +15,12 @@ Labels used below. **Observed-live** means this run, the QA sweep, or the Fronte
 | Bucket | Count | What is included |
 | --- | --- | --- |
 | P0 | 6 | Banned public copy, skin canonical after a client click, merge-batch deadlock (PR 194, in flight), mobile trade-up header, claim pop-up with no Pro step, SEO pages whose main button is raw Steam sign-in |
-| P1 | 16 | Autoresearch AR-P1-1 through AR-P1-9, two GA4 properties on one page, `sign_up` under-firing, internal traffic in GA4, the untracked "Find Real Tradeups" click, upgrade clicks PR 193 does not cover, the unsaved activation funnel, and the calculator dead end |
-| P2 | 29 | Autoresearch AR-P2-1 through AR-P2-8, QA F-01 F-02 F-03 F-04 F-05 F-06 F-12 F-13, list-cache keys, Redis `commandTimeout`, the detail tier header, the board hub without ItemList, plus nine Frontend items (empty board peek, blank skin art, filler copy, pricing card order at 390, pricing copy accuracy, pricing resume after sign-in, masked landing errors, intent rows labelled only by id, footer separators) |
+| P1 | 24 | The 16 already listed in the measurement and daemon sections, plus detail 429 copy, an unpaid lifetime webhook, a lifetime tier overwrite, the nginx route patch, the rate-limit key, the Steam return path, the dev session secret, and Redis `commandTimeout` moved up from P2 |
+| P2 | 44 | The 29 already listed, minus the Redis timeout, plus 16 from the late code passes (claimer list gap, redacted `input_sources`, collection URL filters, `NaN` filters, checkout result gaps, Lifetime tab label, auth hang, free banner before tier, global-stats TTL, worker `statement_timeout`, and six structural items) |
 
 F-08 through F-11 are the same copy slice as the P0 posts. They are not a second set of findings. The teardown's two-property P1 is the GA4 split already in this table. Its tap-target P2 is F-05. Its board-sort P2 is part of the SEO-button P0. Its ad-safe scan found no new banned phrase, so it adds no finding. Several seed items were refuted and are listed under the seed checklist so they are not in these counts.
+
+Late code passes (board, pricing, API, blast radius, structure, and an adversarial read) are folded below. Daemon deadlock, relink, and the `release(err)` / re-queue work stay in the Autoresearch section and are not counted again.
 
 ## P0
 
@@ -177,7 +179,7 @@ Reviewer is Autoresearch.
 | F-02 | Observed this run. Googlebot on `/trade-ups/2147483648` and `/trade-ups/999999999999` is HTTP 200 with canonical `https://tradeupbot.app/`. `/trade-ups/abc` is 404 in 98ms. `handleTradeUpShareSeo` catch calls `next()` | Same PR as F-01 |
 | F-03 | QA. A real browser on an expired id gets 410 and unstyled text, no nav, no link to the board | Wave 1. Keep 410 |
 | F-04 | QA. Board CLS 0.283 desktop and 0.217 mobile, one shift near 2.7s when the placeholder collapses. Field CrUX still open | Wave 1 with F-05 |
-| F-05 | QA measured at 390px. Filter selects about 16px tall, number inputs about 14px, nav chips 24px. This run measured the intent "Sign in with Steam" control at 28 by 131px. The Frontend teardown added the share primary at 338 by 28, board Verify and See Pro at about 24px tall, pricing tabs at 28px, Go Pro at 34px, calculator controls at 28px, the mobile header CTA at 28px, and FAQ summaries at about 20px. `--control` is 28px in `src/preview/kit/outlay/theme.css` | Wave 1. Coarse pointer min-height 44px for those controls. The intent block's 44px rule ships with the SEO-button P0. Do not raise the global token for every desktop control |
+| F-05 | QA measured at 390px. Filter selects about 16px tall, number inputs about 14px, nav chips 24px. This run measured the intent "Sign in with Steam" control at 28 by 131px. The Frontend teardown added the share primary at 338 by 28, board Verify and See Pro at about 24px tall, pricing tabs at 28px, Go Pro at 34px, calculator controls at 28px, the mobile header CTA at 28px, and FAQ summaries at about 20px. Quiet Retry and Clear are 24px because `.preview-btn--quiet` is 24px and the 44px rule only covers the load-more button. `--control` is 28px in `src/preview/kit/outlay/theme.css` | Wave 1. Coarse pointer min-height 44px for those controls, including notice and filter-bar Retry and Clear. Leave `.preview-loadmore` and the nav quiet buttons alone. The intent block's 44px rule ships with the SEO-button P0. Do not raise the global token for every desktop control |
 | F-06 | QA plus this run. nginx `/` has no CSP, no Referrer-Policy, no HSTS. Asset requests can carry `auth` and `lid` in Referer before the strip script runs. Node sends both `no-referrer` and `strict-origin-when-cross-origin`. `/api/status` also doubles `X-Frame-Options` (SAMEORIGIN and DENY) | Wave 1, merged with the doubled-header work |
 | F-12 | QA. Unknown skin, collection, and blog slugs return 404 with no `X-Robots-Tag`. Tier 404 already sends noindex | Wave 1 |
 | F-13 | QA saw "10,001 trade-ups" on the landing hero, then 820,934 after global stats. `landingStatsFromSources` falls back to the board total, and `LIST_TOTAL_CAP` is 10001 | Wave 1 |
@@ -190,10 +192,9 @@ Autoresearch AR-P2-3 (per-cycle counters), AR-P2-5 (sweep duplicate guard), AR-P
 
 Code-only, not in wave 1.
 
-- `tradeUpsCacheKey` copies every query key, so unknown params fragment the list cache.
-- `server/redis.ts` sets `maxRetriesPerRequest` and does not set `commandTimeout`.
-- Detail and inputs set `X-Effective-Tier` from the session user only. The list treats an internal bearer as pro.
-- `/trade-ups` Googlebot HTML has FAQPage and WebApplication and no ItemList, by the template in `server/index.ts`. `/best-cs2-trade-ups` does include ItemList. Optional SEO, not a broken hub.
+- `tradeUpsCacheKey` copies every query key, so unknown params fragment the list cache. Build the key from the names the handler reads.
+- Detail and inputs set `X-Effective-Tier` from the session user only. The list treats an internal bearer as pro. Set the header from that same bearer check.
+- `/trade-ups` Googlebot HTML has FAQPage and WebApplication and no ItemList, by the template in `server/index.ts`. The verification skill does not require ItemList there. `/best-cs2-trade-ups` does include ItemList. Collection pages emit an ItemList even when the array is empty. Omit that block when there are no rows. Do not invent rows.
 
 ## Frontend P2
 
@@ -205,7 +206,7 @@ Code-only, not in wave 1.
 | FE-P2-4 | At 390 the pricing first screen is the Free card. Go Pro starts near y 961. Billing tabs are 28px tall | Later. Pro card first under 600px, tabs at least 44px, 1280 layout unchanged, plan values unchanged |
 | FE-P2-5 | The Pro lede says "full analytics" while the compare table gives Free a check for price analytics. Three Pro lines repeat Claim. The Free list marks the 3-hour delay like a feature. PR 193's delay sentence does not cover these lines | Later. Every number stays byte-identical ($6.99, 20/hr, 10/hr, 5, 30 min) |
 | FE-P2-6 | Controls under 44px beyond the intent page | Same PR as F-05 |
-| FE-P2-7 | After Steam, pricing comes back on the Monthly tab and the visitor has to find Go Pro again | Later. Restore the chosen billing tab and point at Go Pro. No auto-checkout. Stripe stays untouched |
+| FE-P2-7 | After Steam, pricing comes back on the Monthly tab. A visitor who picked Yearly or Lifetime in the pop-up is sent `plan: pro` on the next Go Pro | Later. Restore the chosen billing tab from the return path, limited to monthly, yearly, and lifetime. No auto-checkout. Prices stay as they are |
 | FE-P2-8 | `LandingGraph` never checks `res.ok`, so an error draws an empty scatter. Hero proof says the board is refreshing for any failure | Later |
 | FE-P2-9 | "Open the live board" uses the default Score sort, so the intent table's top row is not the board's top row | Part of the SEO-button P0 |
 | FE-P2-10 | Intent rows are labelled only by id | Later. Use the first output name when the list payload includes it. No new API params |
@@ -228,22 +229,81 @@ Two notes from that sweep stay out of the UI slices. The guest board's top cards
 | Spent-claims Retry on the account page | Not reproduced at the cited line |
 | Pricing "Checking…" forever | Fixed. `AUTH_ME_TIMEOUT_MS` is 8s |
 | Unknown `GET /api/*` returns the SPA | Fixed. `/api/__pstack_missing__` is 404 JSON |
-| Cold global-stats around 3s | Not reproduced. A hot call was about 131ms with `X-Cache: HIT` |
-| `toBeLessThan(400)` in tests | Absent. The weak assert that exists is `toBeLessThan(1280)` on the end line. Page 5 in `tests/unit/board-pagination-history.test.ts` can still hang the runner |
-| Free claimer sees their own fresh row | Low impact. Free cannot claim. Do not change delay numbers. PR 193 owns the delay copy |
+| Cold global-stats around 3s | The 3s wait was not reproduced. A hot call was about 131ms with `X-Cache: HIT`. The TTL clash is a separate P2 below |
+| `toBeLessThan(400)` in tests | Absent. The weak assert that exists is `toBeLessThan(1280)` on the end line in `tests/unit/preview-loadmore-target.test.ts`. Page 5 in `tests/unit/board-pagination-history.test.ts` can still hang the runner |
+| Free claimer sees their own fresh row | Confirmed for the list and `my_claims` when someone claimed as Pro and is now free. Detail still returns the row. Counted below. Do not change the delay |
+| Reprice hides old rows by rewriting `created_at` | Refuted. Reprice, revive, and merge leave `created_at` alone |
 | F-07 interstitial events missing on G-2474 | Refuted. GA4 Realtime at 9:52 PM PT recorded `pro_interstitial_view` 2, `steam_continue` 2, and `sign_up_start` 2 on G-2474G4P5QE after two Go Pro then Continue with Steam runs. Harness artifact. No beacon fix |
-| `tier = 'lifetime'` string | Webhook writes `tier` pro and `lifetime` true. A raw string would not count as pro. Not seen in prod data |
-| `input_sources` on a redacted list payload | Not on the sample list payload |
+| `tier = 'lifetime'` string | Checkout writes `tier` pro and `lifetime` true. A raw string would not count as pro. `subscription.updated` can still write `tier` free on a lifetime row. That overwrite is a P1 below |
+| `input_sources` on a redacted list payload | Absent from the list SELECT. Present on redacted detail, because detail returns `SELECT t.*`. Counted below |
 
 PR 193 is still open (`cursor/free-paid-conversion-1406`). Do not duplicate its delay-gap copy. PR 186 is merged.
 
+## Late code passes
+
+Code-only, except where a live GET is named. None of these enter wave 1. Prices, plan gates, fee math, the score formula, and the rate-limit ceilings stay as they are.
+
+### P1
+
+| Id | What | Slice |
+| --- | --- | --- |
+| Detail 429 | `/trade-ups/:id` maps every non-OK status except 404 to "Failed to load". The board, in the same session, names the throttle and retries. `PreviewShare.tsx` is the page | Frontend. On 429, show the existing rate-limit copy and a Retry that refetches that id. Leave the upgrade-gate sentences for the PR 193 rebase |
+| Unpaid lifetime webhook | `checkout.session.completed` sets `tier` pro and `lifetime` true when the line item is the lifetime price. It does not read `payment_status`. Monthly and yearly come from subscription events | Autoresearch. Return before the update when `payment_status` is `unpaid`. Leave `paid` and `no_payment_required` on the current path. Price ids stay as they are |
+| Lifetime tier overwrite | `customer.subscription.updated` writes `tier` from that event and does not look at `lifetime`. Delete already skips lifetime rows. Discord lookup and `/api/auth/me` return the raw column, so a lifetime buyer can look Free and lose the Pro role | Autoresearch. Use the delete handler's lifetime guard on update. Return `getEffectiveTier` from discord lookup and `/api/auth/me` |
+| Nginx route patch | `scripts/patch-nginx-best-route.py` rewrites the first location whose URI contains `calculator`, with no `server_name` check. Two files that share a basename share one backup. `cancel-in-progress` on the deploy workflow can stop the SSH session after the write and before `nginx -t` restores | Autoresearch. Patch only the tradeupbot.app TLS server. One backup per file. Restore before any reload. The workflow must not cancel a deploy that is inside `rsync --delete` or `nginx -s reload` |
+| Rate-limit key | The limiter reads `X-Real-IP` and, when that header is missing, uses one shared key. Ceilings stay 120, 600, 10, and 5 | Autoresearch. Key from the address the proxy set. Do not retune the buckets |
+| Steam return path | `/auth/steam` stores a `return` that starts with `/` and does not start with `//`, then redirects to it. A value that is not a same-site path can leave the site after login | Autoresearch. Accept only one relative path on this origin |
+| Dev session secret | Production refuses a non-https `BASE_URL` and still boots when `SESSION_SECRET` is missing, using the dev fallback in source. A known secret forges the session cookie. `is_admin` stays true after `ADMIN_STEAM_ID` changes | Autoresearch. Refuse to listen in production when the secret is missing or still the dev fallback |
+| Redis command timeout | `server/redis.ts` sets `maxRetriesPerRequest` and does not set `commandTimeout`. A command that is written and never answered holds the HTTP request until the socket dies. Moved up from the P2 list | Autoresearch. Set `commandTimeout` on the request client only. Leave the subscriber without one |
+
+### P2
+
+| Id | What | Slice |
+| --- | --- | --- |
+| Claimer list gap | A free viewer who still holds a claim does not see that row on `/trade-ups` or Account claims. Detail returns it. There is no release control without the card. Creating a claim is Pro-only | Autoresearch. OR the viewer's active claim ids into the delayed list, including `my_claims`. Do not change the 3-hour cut or PR 193's public count |
+| Redacted `input_sources` | Detail responds with the row, and redaction never deletes `input_sources`. The list SELECT omits the column | Autoresearch. Delete `input_sources` on the redacted detail object |
+| Collection URL filters | `/trade-ups/collection/:slug` is not a filter path, so refresh drops the filters. A `q` on an embedded skin or collection board narrows the list with no search field | Frontend. Treat that path as a filter path and pass search plus clear through |
+| `NaN` filters | A lone `.` in min profit or max cost becomes `min_profit=NaN`. The URL writer drops it. The API bind throws and the board shows the load error | Frontend. Skip those params unless the number is finite and greater than 0 |
+| Checkout result gaps | A 2xx body with no `url` still fires `begin_checkout` and does not navigate. The button is not disabled while the POST is in flight, so a second 2xx records a second event. A 429 text body surfaces as "Checkout failed" | Frontend. Fire `begin_checkout` only when `res.ok` and `url` are both set. Disable the button while the promise is pending. Keep `upgrade_cta_click` on the click when PR 193 lands |
+| Lifetime tab label | A monthly or yearly subscriber on the Lifetime tab sees "Current plan" and the button never calls checkout. The server 409 that explains the portal step is unreachable | Frontend. On Lifetime, for Pro without `lifetime`, leave the button enabled and call the existing `pro-lifetime` checkout. Prices and the 409 rules stay as they are |
+| Auth hang | Pricing aborts `/api/auth/me` at 8s. The trade-up page and My trade-ups wait forever, so Verify and the account body never mount | Frontend. Use that same 8s abort. Timeout means logged out |
+| Free banner before tier | `isFree` starts true, so every viewer sees the Free banner until the list returns. A failed list leaves it up. PR 193's live hidden count follows that flag | Frontend. Hold the banner until the list reports a tier. On failure, leave it off |
+| Global-stats TTL | The API stores `global_stats` for 1800s. The daemon writes the same key with TTL 60s, so the next caller after each cycle pays the full counts again | Autoresearch. Match the daemon TTL to 1800s. Leave the SQL alone |
+| Worker `statement_timeout` | The calc-worker fallback runs `SET statement_timeout` and releases the client with no `RESET`. Later queries on that pooled connection inherit 30s | Autoresearch. `RESET` in `finally`, or use `SET LOCAL` inside the one query |
+
+### Structure
+
+Six maintainability items, all P2, all later. Score, fees, and rate-limit pacing stay as they are.
+
+| What | Owner |
+| --- | --- |
+| Gun and knife budgeted search is one driver copied twice. The range check after the switch can relabel a sample. Delete the uncalled `randomExplore` pair. One loop takes samplers that name their ordering | Autoresearch |
+| Sale ingest is five copies, and the live round-robin contains the loop twice. One `ingestSales` | Autoresearch |
+| Listing sync keeps a stack of uncalled schedulers around `syncListingsRoundRobin`. Delete the uncalled ones | Autoresearch |
+| `server/routes/trade-ups.ts` owns the list planner and the marketplace verify write. Split verify into its own function and the list handler into its own module | Autoresearch |
+| `server/index.ts` is the crawler renderer and imports preview copy. One cached crawler helper. Move the shared strings to `shared/` | Frontend |
+| Preview pages own the list hook, three face caches, and four routes in `PreviewSkins.tsx`. One face map. Move the hook next to `page-fetch` | Frontend |
+
 ## Agent mistakes worth encoding
 
-Mined from recent history. No product lint was added in this pass. The class that already shipped banned copy is the one the copy PR closes by scanning blog bodies.
+Mined from the last 80 commits and from review comments. No product lint was added in this pass. The class that already shipped banned copy is the one the copy PR closes by scanning blog bodies.
 
-Repeated shapes, for the next agent. A new public URL falls through nginx `try_files` to the homepage (`/best-cs2-trade-ups` needed #192). A non-OK fetch gets drawn as an empty list. A listing id is rewritten on one writer and skipped on the next. Titles and canonicals are copied per surface. Conversion events fire before the server result. The barrel rule is skipped by scripts that import `server/engine/` files directly.
+The shapes that keep coming back, and the level that would actually stop the next one.
 
-Claude thermo-nuclear review and a second-family interrogate did not run. Those models were over the usage limit. File sizes alone are not findings.
+- One writer owns `trade_up_inputs.price_cents`. A second writer has already dropped the buyer fee (`b92a002`, `9c3735f`, `e9ad17f`). Fees stay locked in this audit. The fix is one writer, not a new fee number.
+- A non-OK fetch is drawn as an empty list (`d7ecc4b`, `e04041a`, `4011f34`). The landing graph and the trade-up 429 page are the open instances.
+- A new public URL falls through nginx `try_files` to the homepage (`/best-cs2-trade-ups` needed #192). `tests/unit/nginx-best-route.test.ts` still allows the next path to be absent from PR smoke.
+- Tier and delay are recomputed at each gate. The lifetime overwrite above is the open instance.
+- A listing-id rewrite is added on one writer and skipped on the next. PR 186 closed the save path. Do not re-file it.
+- A pooled session keeps a GUC, or DDL runs in the wrong transaction. The worker `statement_timeout` and the `release(err)` hardening item are the open instances.
+- Board focus, live text, or the long-list hint updates before the page lands (`a404260`, `7281a54`). The page-5 test can still hang the runner.
+- A conversion event or a one-shot token is saved before the server result, then a later save puts it back (`871060b`, `6b3f14b`, `e1fada2`). `begin_checkout` on the live path is already behind HTTP 2xx. The checkout-result gap above is the remaining hole.
+- Titles, canonicals, and odds text are copied per surface. The skin canonical P0 and the banned-copy PR are the open instances.
+- A probability is scaled twice (`ed93595`, `96ba7f0`). URL percents and engine fractions both have to exist. A branded pair is the stop. No open instance beyond that history.
+- Scripts still import `server/engine/` past the barrel (`scripts/backfill-input-fees.ts`, `scripts/mark-outlier-stale.ts`, `server/daemon/completeness-audit.ts`). A restricted-import lint is the stop.
+- `Co-authored-by` trailers are forbidden in `AGENTS.md` and still land on squash commits. A commit-msg check is the stop.
+
+`toBeLessThan(400)` is absent. Claude thermo-nuclear review did not run. The structural pass and the adversarial pass above did.
 
 ## Wave 1
 
@@ -274,6 +334,8 @@ One Frontend trust PR. The landing peek renders cards. A trade-up opened in a ne
 Still later, each its own Frontend PR. Remaining upgrade clicks (`landing_plan_tile`, `share_bar`, `nav_pricing`). Pricing card order at 390. Pricing copy with every number left byte-identical. Restore the chosen billing tab after Steam, with no auto-checkout. Landing errors that must not draw an empty chart. Intent rows that name a skin. Footer separators. Filler copy on the share lede, the board meta, and the how-it-works lines.
 
 The activation funnel is a CEO save inside G-2474G4P5QE. It is not a code PR.
+
+The late P1s ship after wave 1, each as its own PR. Detail 429 copy is Frontend. The unpaid lifetime webhook, the lifetime tier guard, the nginx route patch, the rate-limit key, the Steam return path, the dev session secret, and the Redis command timeout are Autoresearch. The late P2s and the six structural items follow those.
 
 Wave 2, Autoresearch, in the sign order from that audit. AR-P1-2, AR-P1-3, AR-P1-1, AR-P1-7, AR-P1-6, AR-P1-8, then the remaining P2 hygiene that wave 1 did not absorb.
 
