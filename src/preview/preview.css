@@ -1201,9 +1201,18 @@
    and reserving only that shifted the board when the count arrived. */
 @media (max-width: 479px) {
   .preview-delay { min-height: 144px; }
+  /* 12px / 18px is one wrap away from leaving this box. 15px leading keeps
+     that extra line inside the 144px slot. */
+  .preview-delay p { line-height: 15px; }
 }
 @media (max-width: 389px) {
   .preview-delay { min-height: 126px; }
+  /* The count sentence shares this row with the label and the 44px control.
+     12px type wraps past the reserved box; 10px / 12px stays inside it. */
+  .preview-delay p {
+    font-size: 10px;
+    line-height: 12px;
+  }
 }
 @media (max-width: 359px) {
   .preview-delay { min-height: 144px; }

@@ -69,12 +69,12 @@ describe("board delay gap", () => {
 
   it("states the hidden count and the best expected P/L in cents", () => {
     expect(boardDelaySentence({ hidden_profitable: 0, best_hidden_profit_cents: null }))
-      .toBe("No profitable trade-ups are inside the 3-hour window right now.");
+      .toBe("No profitable listing combos in the last 3 hours.");
     expect(boardDelaySentence({ hidden_profitable: 1, best_hidden_profit_cents: 1840 }))
-      .toBe("1 profitable trade-up found in the last 3 hours is hidden on the free board. It is +$18.40 expected P/L.");
+      .toBe("1 profitable listing combo turned up in the last 3 hours. Free sees new finds after a 3-hour delay. It is +$18.40 expected P/L.");
     expect(boardDelaySentence({ hidden_profitable: 12, best_hidden_profit_cents: 7600 }))
-      .toBe("12 profitable trade-ups found in the last 3 hours are hidden on the free board. The best is +$76.00 expected P/L.");
+      .toBe("12 profitable listing combos turned up in the last 3 hours. Free sees new finds after a 3-hour delay. The best is +$76.00 expected P/L.");
     expect(boardDelaySentence({ hidden_profitable: 1200, best_hidden_profit_cents: null }))
-      .toBe("1,200 profitable trade-ups found in the last 3 hours are hidden on the free board.");
+      .toBe("1,200 profitable listing combos turned up in the last 3 hours. Free sees new finds after a 3-hour delay.");
   });
 });
