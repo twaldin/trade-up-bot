@@ -16,6 +16,7 @@ import {
   trackVerifyComplete,
   trackCtaClick,
   trackUpgradeCta,
+  readActivationSurface,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -240,6 +241,27 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("price");
   });
 
+  it("upgrade_cta_click names the board claim control and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackUpgradeCta("board_claim");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "board_claim", page_path: "/trade-ups", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("price");
+    expect(params).not.toHaveProperty("listing_id");
+  });
+
+  it("reads board as a claim surface and rejects anything outside the spec", () => {
+    expect(readActivationSurface("share")).toBe("share");
+    expect(readActivationSurface("account")).toBe("account");
+    expect(readActivationSurface("board")).toBe("board");
+    expect(readActivationSurface("pricing")).toBeNull();
+    expect(readActivationSurface(null)).toBeNull();
+  });
+
   it("cta_click no-ops when gtag has not loaded", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/" });
@@ -400,6 +422,12 @@ describe("claim_trade_up and verify_complete", () => {
     expect(claims.map((call) => (call[2] as { trade_up_id: string }).trade_up_id)).toEqual(["8105", "8110"]);
     expect(verifies).toHaveLength(1);
     expect(verifies[0]?.[2]).toMatchObject({ trade_up_id: "8106", status: "all_active", surface: "share" });
+    trackClaimTradeUp({ surface: "board", tradeUpId: 8201 });
+    expect(gtag.mock.calls.filter((call) => call[1] === "claim_trade_up" && (call[2] as { surface?: string }).surface === "board")).toEqual([[
+      "event",
+      "claim_trade_up",
+      expect.objectContaining({ surface: "board", trade_up_id: "8201", send_to: GA4 }),
+    ]]);
   });
 
   it("stays a no-op while GA4 is unset or gtag is missing, then fires once the tracker is available", () => {

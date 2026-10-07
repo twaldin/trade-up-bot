@@ -50,10 +50,21 @@ try {
   await page.goto(`${BASE}/trade-ups`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector(".preview-card", { timeout: 60000 });
   await sleep(2500);
+  const collapsedClaim = await page.evaluate(() => {
+    const link = document.querySelector(".preview-cardline__verify");
+    return {
+      text: link?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      label: link?.getAttribute("aria-label") ?? "",
+    };
+  });
+  if (!collapsedClaim.text.startsWith("Details")) failures.push(`collapsed control still overpromises: ${collapsedClaim.text}`);
+  if (collapsedClaim.label !== "Trade-up details") failures.push(`collapsed label: ${collapsedClaim.label}`);
+
   await page.evaluate(() => { document.querySelector(".preview-card")?.click(); });
   await sleep(3000);
   const expandInfo = await page.evaluate(() => {
     const card = document.querySelector(".preview-card--expanded");
+    const claim = [...(card?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.includes("Verify / Claim trade-up"));
     return {
       hasStrip: !!card?.querySelector(".preview-strip"),
       hasDelta: (card?.querySelectorAll(".preview-skin--output .preview-skin__delta").length ?? 0) > 0,
@@ -61,7 +72,8 @@ try {
       hasCdf: !!card?.querySelector(".preview-cdf"),
       listings: card?.querySelectorAll(".preview-listing").length ?? 0,
       listingHrefs: [...(card?.querySelectorAll(".preview-listing") ?? [])].slice(0, 3).map((a) => a.href),
-      verify: card?.querySelector(".preview-btn--lime")?.href ?? null,
+      verifyTag: claim?.tagName ?? null,
+      verifyHref: claim?.getAttribute("href") ?? null,
       inputTiles: card?.querySelectorAll(".preview-expand__inputs .preview-skin").length ?? 0,
     };
   });
@@ -71,9 +83,17 @@ try {
   if (!expandInfo.hasWaterfall) failures.push("expanded is missing the EV waterfall");
   if (!expandInfo.hasCdf) failures.push("expanded is missing the CDF");
   if (expandInfo.listings === 0) failures.push("expanded is missing listings");
-  if (!/^https:\/\/tradeupbot\.app\/trade-ups\/\d+$/.test(expandInfo.verify ?? "")) {
-    failures.push(`verify/claim href wrong: ${expandInfo.verify}`);
+  if (expandInfo.verifyTag !== "BUTTON" || expandInfo.verifyHref) {
+    failures.push(`verify/claim must be an in-place button: ${expandInfo.verifyTag} ${expandInfo.verifyHref}`);
   }
+  const pagesBefore = (await browser.pages()).length;
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Verify / Claim trade-up"))?.click();
+  });
+  await sleep(400);
+  const claimDialog = await page.evaluate(() => document.querySelector("dialog[open]")?.textContent ?? "");
+  if (!claimDialog.includes("Verify and claim this trade-up")) failures.push("claim tap did not open the modal");
+  if ((await browser.pages()).length !== pagesBefore) failures.push("claim opened a new tab");
   for (const href of expandInfo.listingHrefs) {
     if (!MARKETS.test(href)) failures.push(`listing row is not a marketplace URL: ${href}`);
   }
