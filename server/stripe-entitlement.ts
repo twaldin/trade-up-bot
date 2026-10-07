@@ -91,6 +91,24 @@ export function tierForSubscriptionEvent(
   return tierFromSubscription(status, priceId, prices);
 }
 
+/**
+ * After a lifetime payment fails, drop the lifetime flag and derive tier again.
+ * An admin keeps their current tier. An active or trialing paid price stays pro.
+ * Everyone else goes free.
+ */
+export function tierAfterLifetimeRevoke(
+  user: { is_admin: boolean; tier: string },
+  subscriptions: ReadonlyArray<{ status: string; priceId?: string }>,
+  prices: SubscriptionPrices,
+): string {
+  const stillPro = subscriptions.some(
+    (sub) => tierFromSubscription(sub.status, sub.priceId, prices) === "pro",
+  );
+  if (stillPro) return "pro";
+  if (user.is_admin) return user.tier;
+  return "free";
+}
+
 /** Lifetime and admin are never written down to free by a subscription webhook. */
 export function subscriptionTierChangeAllowed(
   user: TierGuardUser | undefined,
@@ -129,9 +147,10 @@ export async function applyStripeWebhookEvent(
   client: StripeQueryable,
   listLineItems: (sessionId: string) => Promise<{ data: Array<{ price?: { id?: string } | null }> }>,
   event: Stripe.Event,
+  listSubscriptions?: (customerId: string) => Promise<Array<{ status: string; priceId?: string }>>,
 ): Promise<WebhookEffect> {
   if (isSubscriptionEvent(event.type)) return applySubscriptionEvent(client, event);
-  if (isCheckoutEvent(event.type)) return applyCheckoutEvent(client, listLineItems, event);
+  if (isCheckoutEvent(event.type)) return applyCheckoutEvent(client, listLineItems, event, listSubscriptions);
   return NO_EFFECT;
 }
 
@@ -196,6 +215,7 @@ async function applyCheckoutEvent(
   client: StripeQueryable,
   listLineItems: (sessionId: string) => Promise<{ data: Array<{ price?: { id?: string } | null }> }>,
   event: Stripe.Event,
+  listSubscriptions?: (customerId: string) => Promise<Array<{ status: string; priceId?: string }>>,
 ): Promise<WebhookEffect> {
   const cs = event.data.object as Stripe.Checkout.Session;
   const action = lifetimeCheckoutAction(event.type, cs.payment_status);
@@ -228,20 +248,33 @@ async function applyCheckoutEvent(
   }
 
   if (action === "revoke") {
-    const revoked = await client.query<{ discord_id: string | null }>(
-      `UPDATE users SET lifetime = false, tier = 'free'
-       WHERE stripe_customer_id = $1 AND lifetime = true
-       RETURNING discord_id`,
+    const { rows } = await client.query<{
+      tier: string;
+      lifetime: boolean;
+      is_admin: boolean;
+      discord_id: string | null;
+    }>(
+      "SELECT tier, lifetime, is_admin, discord_id FROM users WHERE stripe_customer_id = $1",
       [customerId],
     );
-    if ((revoked.rowCount ?? revoked.rows.length) === 0) {
+    const user = rows[0];
+    if (!user?.lifetime) {
       console.log(`Stripe: checkout ${cs.id} async payment failed — no lifetime grant to revoke`);
       return NO_EFFECT;
     }
-    console.log(`Stripe: customer ${customerId} -> free (lifetime payment failed)`);
-    const discordId = revoked.rows[0]?.discord_id ?? null;
+    const subscriptions = listSubscriptions ? await listSubscriptions(customerId) : [];
+    const nextTier = tierAfterLifetimeRevoke(user, subscriptions, subscriptionPrices());
+    const revoked = await client.query<{ discord_id: string | null }>(
+      `UPDATE users SET lifetime = false, tier = $2
+       WHERE stripe_customer_id = $1 AND lifetime = true
+       RETURNING discord_id`,
+      [customerId, nextTier],
+    );
+    if ((revoked.rowCount ?? revoked.rows.length) === 0) return NO_EFFECT;
+    console.log(`Stripe: customer ${customerId} -> ${nextTier} (lifetime payment failed)`);
+    const discordId = revoked.rows[0]?.discord_id ?? user.discord_id;
     return {
-      discord: discordId ? { discordId, tier: "free" } : null,
+      discord: discordId ? { discordId, tier: nextTier } : null,
       invalidate: true,
     };
   }

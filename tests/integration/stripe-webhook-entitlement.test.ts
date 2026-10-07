@@ -7,6 +7,7 @@ import { STRIPE_WEBHOOK_EVENTS_DDL } from "../../server/stripe-entitlement.js";
 
 const harness = vi.hoisted(() => ({
   listLineItems: vi.fn(async (_sessionId: string) => ({ data: [] as Array<{ price: { id: string } | null }> })),
+  listSubscriptions: vi.fn(async (_customerId: string) => [] as Array<{ status: string; priceId?: string }>),
   syncDiscordRoles: vi.fn(async (_discordId: string, _tier: string) => {}),
 }));
 
@@ -189,7 +190,10 @@ beforeAll(async () => {
     if (req.path === "/api/stripe-webhook") express.raw({ type: "application/json" })(req, res, next);
     else express.json()(req, res, next);
   });
-  app.use(stripeRouter(pool, { listLineItems: harness.listLineItems }));
+  app.use(stripeRouter(pool, {
+    listLineItems: harness.listLineItems,
+    listSubscriptions: harness.listSubscriptions,
+  }));
 }, 30_000);
 
 afterAll(async () => {
@@ -207,6 +211,8 @@ afterAll(async () => {
 beforeEach(async () => {
   harness.listLineItems.mockReset();
   harness.listLineItems.mockResolvedValue(lifetimeLines());
+  harness.listSubscriptions.mockReset();
+  harness.listSubscriptions.mockResolvedValue([]);
   harness.syncDiscordRoles.mockReset();
   await pool.query("DELETE FROM stripe_webhook_events");
   await pool.query("DELETE FROM users");
@@ -312,8 +318,60 @@ describe("lifetime checkout payment status", () => {
       customer: "cus_fail",
     }));
     expect(res.status).toBe(200);
-    expect(await userByCustomer("cus_fail")).toMatchObject({ tier: "free", lifetime: false });
+    expect(await userByCustomer("cus_fail")).toMatchObject({ tier: "free", lifetime: false, is_admin: false });
     expect(harness.syncDiscordRoles).toHaveBeenCalledWith("disc_fail", "free");
+    expect(harness.listSubscriptions).toHaveBeenCalledWith("cus_fail");
+  });
+
+  it("keeps an admin's tier when a lifetime payment fails", async () => {
+    await seed({
+      steamId: "admin_fail",
+      customerId: "cus_admin_fail",
+      tier: "pro",
+      lifetime: true,
+      isAdmin: true,
+      discordId: "disc_admin_fail",
+    });
+    const res = await post(checkoutEvent({
+      id: "evt_admin_fail",
+      type: "checkout.session.async_payment_failed",
+      paymentStatus: "unpaid",
+      customer: "cus_admin_fail",
+    }));
+    expect(res.status).toBe(200);
+    expect(await userByCustomer("cus_admin_fail")).toMatchObject({
+      tier: "pro",
+      lifetime: false,
+      is_admin: true,
+    });
+    expect(harness.syncDiscordRoles).toHaveBeenCalledWith("disc_admin_fail", "pro");
+    expect(harness.syncDiscordRoles).not.toHaveBeenCalledWith("disc_admin_fail", "free");
+  });
+
+  it("keeps pro when a lifetime payment fails but a monthly subscription is active", async () => {
+    harness.listSubscriptions.mockResolvedValueOnce([{ status: "active", priceId: PRO_PRICE }]);
+    await seed({
+      steamId: "monthly_fail",
+      customerId: "cus_monthly_fail",
+      tier: "pro",
+      lifetime: true,
+      discordId: "disc_monthly_fail",
+    });
+    const res = await post(checkoutEvent({
+      id: "evt_monthly_fail",
+      type: "checkout.session.async_payment_failed",
+      paymentStatus: "unpaid",
+      customer: "cus_monthly_fail",
+    }));
+    expect(res.status).toBe(200);
+    expect(await userByCustomer("cus_monthly_fail")).toMatchObject({
+      tier: "pro",
+      lifetime: false,
+      is_admin: false,
+    });
+    expect(harness.listSubscriptions).toHaveBeenCalledWith("cus_monthly_fail");
+    expect(harness.syncDiscordRoles).toHaveBeenCalledWith("disc_monthly_fail", "pro");
+    expect(harness.syncDiscordRoles).not.toHaveBeenCalledWith("disc_monthly_fail", "free");
   });
 });
 

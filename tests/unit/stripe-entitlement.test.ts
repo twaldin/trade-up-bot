@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   lifetimeCheckoutAction,
   subscriptionTierChangeAllowed,
+  tierAfterLifetimeRevoke,
   tierForSubscriptionEvent,
   tierFromSubscription,
 } from "../../server/stripe-entitlement.js";
@@ -26,6 +27,39 @@ describe("lifetime checkout fulfillment", () => {
 
   it("revokes on async_payment_failed", () => {
     expect(lifetimeCheckoutAction("checkout.session.async_payment_failed", "unpaid")).toBe("revoke");
+  });
+});
+
+describe("tier after a failed lifetime payment", () => {
+  it("keeps an admin on their current tier", () => {
+    expect(tierAfterLifetimeRevoke({ is_admin: true, tier: "pro" }, [], PRICES)).toBe("pro");
+    expect(tierAfterLifetimeRevoke(
+      { is_admin: true, tier: "pro" },
+      [{ status: "canceled", priceId: "price_pro" }],
+      PRICES,
+    )).toBe("pro");
+  });
+
+  it("keeps pro when an active monthly subscription remains", () => {
+    expect(tierAfterLifetimeRevoke(
+      { is_admin: false, tier: "pro" },
+      [{ status: "active", priceId: "price_pro" }],
+      PRICES,
+    )).toBe("pro");
+    expect(tierAfterLifetimeRevoke(
+      { is_admin: false, tier: "pro" },
+      [{ status: "trialing", priceId: "price_pro" }],
+      PRICES,
+    )).toBe("pro");
+  });
+
+  it("sets free when the account is neither admin nor on an active subscription", () => {
+    expect(tierAfterLifetimeRevoke({ is_admin: false, tier: "pro" }, [], PRICES)).toBe("free");
+    expect(tierAfterLifetimeRevoke(
+      { is_admin: false, tier: "pro" },
+      [{ status: "past_due", priceId: "price_pro" }],
+      PRICES,
+    )).toBe("free");
   });
 });
 

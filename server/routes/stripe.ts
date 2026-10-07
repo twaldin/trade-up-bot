@@ -47,6 +47,7 @@ export function stripeRouter(
   // Tests pass Checkout line-item fixtures here. Production calls Stripe.
   deps?: {
     listLineItems?: (sessionId: string) => Promise<{ data: Array<{ price?: { id?: string } | null }> }>;
+    listSubscriptions?: (customerId: string) => Promise<Array<{ status: string; priceId?: string }>>;
   },
 ): Router {
   const router = Router();
@@ -63,6 +64,13 @@ export function stripeRouter(
     return {
       data: items.data.map((item) => ({ price: item.price ? { id: item.price.id } : null })),
     };
+  });
+  const listCustomerSubscriptions = deps?.listSubscriptions ?? (async (customerId: string) => {
+    const listed = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 });
+    return listed.data.map((sub) => ({
+      status: sub.status,
+      priceId: sub.items.data[0]?.price?.id,
+    }));
   });
 
   // Create checkout session for upgrading
@@ -253,7 +261,7 @@ export function stripeRouter(
         return;
       }
 
-      const effect = await applyStripeWebhookEvent(client, listCheckoutLineItems, event);
+      const effect = await applyStripeWebhookEvent(client, listCheckoutLineItems, event, listCustomerSubscriptions);
       await client.query("COMMIT");
       begun = false;
 
