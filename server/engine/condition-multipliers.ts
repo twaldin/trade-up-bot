@@ -8,8 +8,11 @@ import pg from "pg";
 // e.g. "Well-Worn→Field-Tested" → 3.2 (FT costs 3.2× WW for typical gloves)
 export const conditionMultiplierCache = new Map<string, number>();
 
-export async function buildConditionMultipliers(pool: pg.Pool): Promise<void> {
-  conditionMultiplierCache.clear();
+export async function buildConditionMultipliers(
+  pool: pg.Pool,
+  target: Map<string, number> = conditionMultiplierCache,
+): Promise<void> {
+  target.clear();
 
   const PAIRS: [string, string][] = [
     ["Well-Worn",     "Field-Tested"],
@@ -39,8 +42,8 @@ export async function buildConditionMultipliers(pool: pg.Pool): Promise<void> {
 
     const { median_ratio, n } = rows[0] ?? {};
     if (n >= 10 && median_ratio > 0) {
-      conditionMultiplierCache.set(`${fromCond}→${toCond}`, Number(median_ratio));
+      target.set(`${fromCond}→${toCond}`, Number(median_ratio));
     }
   }
-  console.log(`  Condition multipliers: ${conditionMultiplierCache.size} pairs computed`);
+  console.log(`  Condition multipliers: ${target.size} pairs computed`);
 }

@@ -5,9 +5,10 @@ import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS, type PriceAnchor, type FallbackParams, type FallbackResult } from "./types.js";
 import { MARKETPLACE_FEES, effectiveSellProceeds } from "./fees.js";
 import { buildInputReferenceMaps } from "./input-outlier.js";
-import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCount } from "./knn-pricing.js";
-import { buildCurveCache } from "./curve-classification.js";
+import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCount, warmKnnCache } from "./knn-pricing.js";
+import { buildCurveCache, commitCurveCache, curveCacheIsFresh, resetCurveCacheForTests, type CurveScore } from "./curve-classification.js";
 import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
+import { requestCacheServesStale, staleDecision } from "./request-cache-policy.js";
 
 // KNN same-condition obs below this threshold → treat as sparse, apply tighter cap
 const SPARSE_CONDITION_OBS_THRESHOLD = 10;
@@ -27,7 +28,59 @@ export const skinportFloorCache = new Map<string, number>(); // skinName:conditi
 // Cache for getConditionPrices results — avoids repeated DB queries for knife phase names
 const conditionPricesCache = new Map<string, PriceAnchor[]>();
 let priceCacheBuiltAt = 0;
-const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/** Serve a successful cache for at most three TTL periods, then block. */
+export const PRICE_CACHE_MAX_STALE_MS = PRICE_CACHE_TTL_MS * 3;
+
+interface PriceMaps {
+  prices: Map<string, number>;
+  sources: Map<string, string>;
+  ref: Map<string, number>;
+  skinportMedian: Map<string, number>;
+  dmarket: Map<string, number>;
+  skinport: Map<string, number>;
+}
+
+export interface AssembledPriceCache {
+  maps: PriceMaps;
+  multipliers: Map<string, number>;
+  curves: Map<string, CurveScore>;
+  ceiling: Map<string, { float: number; price: number }[]>;
+  refreshCurve: boolean;
+  salesCount: number;
+  listingOverrides: number;
+  listingFills: number;
+  listingLastResort: number;
+  csfloatRefCount: number;
+  knifeExtrapolated: number;
+  curveCount: number;
+}
+
+function emptyPriceMaps(): PriceMaps {
+  return {
+    prices: new Map(),
+    sources: new Map(),
+    ref: new Map(),
+    skinportMedian: new Map(),
+    dmarket: new Map(),
+    skinport: new Map(),
+  };
+}
+
+function replaceMap<K, V>(target: Map<K, V>, source: Map<K, V>): void {
+  target.clear();
+  for (const [key, value] of source) target.set(key, value);
+}
+
+function isPriceCacheFresh(now = Date.now()): boolean {
+  return priceCacheBuilt && priceCache.size > 0 && now - priceCacheBuiltAt < PRICE_CACHE_TTL_MS;
+}
+
+function priceCacheAgeMs(now = Date.now()): number {
+  return priceCacheBuiltAt > 0 ? now - priceCacheBuiltAt : Number.POSITIVE_INFINITY;
+}
+
+let priceCacheRebuild: Promise<void> | null = null;
 
 // Module-level ref price map shared between loadCsfloatRefPrices and overrideWithListingFloors/fillKnifeLastResort.
 // Exported so data-load.ts can filter outlier input listings before discovery.
@@ -39,7 +92,7 @@ export let skinportMedianCache = new Map<string, number>();
 /** Step 1: Load CSFloat ref prices (conservative condition-level averages, high volume).
  *  Sales are skewed by low-float premiums within a condition (FT 0.15 = $11 vs FT 0.32 = $6).
  *  Ref is the better estimate for "average price at this condition". */
-async function loadCsfloatRefPrices(pool: pg.Pool): Promise<{ cached: number; totalRows: number }> {
+async function loadCsfloatRefPrices(pool: pg.Pool, maps: PriceMaps): Promise<{ cached: number; totalRows: number }> {
   let cached = 0;
   const { rows } = await pool.query(`
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
@@ -49,8 +102,8 @@ async function loadCsfloatRefPrices(pool: pg.Pool): Promise<{ cached: number; to
     const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
     if (price > 0) {
       const k = `${row.skin_name}:${row.condition}`;
-      priceCache.set(k, price);
-      priceSources.set(k, `csfloat_ref (${row.volume} vol)`);
+      maps.prices.set(k, price);
+      maps.sources.set(k, `csfloat_ref (${row.volume} vol)`);
       cached++;
     }
   }
@@ -58,7 +111,7 @@ async function loadCsfloatRefPrices(pool: pg.Pool): Promise<{ cached: number; to
 }
 
 /** Step 1b: CSFloat sales fill gaps where ref doesn't exist. */
-async function fillCsfloatSalesGaps(pool: pg.Pool): Promise<number> {
+async function fillCsfloatSalesGaps(pool: pg.Pool, maps: PriceMaps): Promise<number> {
   let count = 0;
   const { rows } = await pool.query(`
     SELECT skin_name, condition, median_price_cents, volume
@@ -67,9 +120,9 @@ async function fillCsfloatSalesGaps(pool: pg.Pool): Promise<number> {
   for (const row of rows) {
     if (row.median_price_cents > 0 && row.volume >= 2) {
       const k = `${row.skin_name}:${row.condition}`;
-      if (!priceCache.has(k)) {
-        priceCache.set(k, row.median_price_cents);
-        priceSources.set(k, `csfloat_sales (${row.volume} sales)`);
+      if (!maps.prices.has(k)) {
+        maps.prices.set(k, row.median_price_cents);
+        maps.sources.set(k, `csfloat_sales (${row.volume} sales)`);
         count++;
       }
     }
@@ -79,14 +132,15 @@ async function fillCsfloatSalesGaps(pool: pg.Pool): Promise<number> {
 
 /** Step 1c: Override with listing floors where lower, fill Covert gaps from listings.
  *  Builds per-condition reference price map for outlier detection, shared with fillKnifeLastResort. */
-async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: number; fills: number }> {
+async function overrideWithListingFloors(pool: pg.Pool, maps: PriceMaps): Promise<{ overrides: number; fills: number }> {
   let overrides = 0;
   let fills = 0;
 
-  // Per-condition reference for outlier detection. Reassigned so data-load's live binding updates.
-  const maps = await buildInputReferenceMaps(pool);
-  refPriceCache = maps.refPriceCache;
-  skinportMedianCache = maps.skinportMedianCache;
+  // Per-condition reference for outlier detection. Copied into the draft so the
+  // live maps stay readable until the rebuild commits.
+  const built = await buildInputReferenceMaps(pool);
+  replaceMap(maps.ref, built.refPriceCache);
+  replaceMap(maps.skinportMedian, built.skinportMedianCache);
 
   for (const cond of CONDITION_BOUNDS) {
     const { rows } = await pool.query(`
@@ -101,23 +155,23 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
       // Filter out outlier listings: >5x the per-condition reference price
-      const ref = refPriceCache.get(`${row.name}:${cond.name}`);
+      const ref = maps.ref.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
-      const existing = priceCache.get(key);
+      const existing = maps.prices.get(key);
 
       if (existing !== undefined) {
         // Override only if listing is LOWER (more conservative for output pricing)
         if (row.lowest_price < existing) {
-          priceCache.set(key, row.lowest_price);
-          priceSources.set(key, `listing floor (${row.cnt} listings, lower than ${priceSources.get(key)})`);
+          maps.prices.set(key, row.lowest_price);
+          maps.sources.set(key, `listing floor (${row.cnt} listings, lower than ${maps.sources.get(key)})`);
           overrides++;
         }
       } else if (row.rarity === "Covert" && parseInt(row.cnt, 10) >= 3) {
         // For Covert inputs with decent listing depth: fill from listings
-        priceCache.set(key, row.lowest_price);
-        priceSources.set(key, `listing floor (${row.cnt} listings)`);
+        maps.prices.set(key, row.lowest_price);
+        maps.sources.set(key, `listing floor (${row.cnt} listings)`);
         fills++;
       }
       // For Extraordinary (knives/gloves): don't fill from listings alone —
@@ -128,7 +182,7 @@ async function overrideWithListingFloors(pool: pg.Pool): Promise<{ overrides: nu
 }
 
 /** Step 3: Fill remaining gaps from listings (last resort for knives/gloves). */
-async function fillKnifeLastResort(pool: pg.Pool): Promise<{ lastResort: number; overrides: number }> {
+async function fillKnifeLastResort(pool: pg.Pool, maps: PriceMaps): Promise<{ lastResort: number; overrides: number }> {
   let lastResort = 0;
   let overrides = 0;
   for (const cond of CONDITION_BOUNDS) {
@@ -144,18 +198,18 @@ async function fillKnifeLastResort(pool: pg.Pool): Promise<{ lastResort: number;
 
     for (const row of rows) {
       if (row.lowest_price <= 0) continue;
-      const ref = refPriceCache.get(`${row.name}:${cond.name}`);
+      const ref = maps.ref.get(`${row.name}:${cond.name}`);
       if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
-      const existing = priceCache.get(key);
+      const existing = maps.prices.get(key);
       if (existing === undefined) {
-        priceCache.set(key, row.lowest_price);
-        priceSources.set(key, `knife listing floor`);
+        maps.prices.set(key, row.lowest_price);
+        maps.sources.set(key, `knife listing floor`);
         lastResort++;
       } else if (row.lowest_price < existing) {
-        priceCache.set(key, row.lowest_price);
-        priceSources.set(key, `knife listing floor (lower than ${priceSources.get(key)})`);
+        maps.prices.set(key, row.lowest_price);
+        maps.sources.set(key, `knife listing floor (lower than ${maps.sources.get(key)})`);
         overrides++;
       }
     }
@@ -165,7 +219,7 @@ async function fillKnifeLastResort(pool: pg.Pool): Promise<{ lastResort: number;
 
 /** Step 4: Condition extrapolation for ★ items — fill missing conditions from adjacent known ones.
  *  Uses conservative ratios: 0.85x stepping down (worse condition), 1.15x stepping up. */
-function extrapolateKnifeConditions(): number {
+function extrapolateKnifeConditions(maps: PriceMaps): number {
   let knifeExtrapolated = 0;
   const condOrder = CONDITION_BOUNDS.map(c => c.name);
   const STEP_DOWN = 0.85; // conservative discount for worse condition
@@ -173,7 +227,7 @@ function extrapolateKnifeConditions(): number {
 
   // Collect all ★ skin names that have at least one cached price
   const knifeSkins = new Set<string>();
-  for (const key of priceCache.keys()) {
+  for (const key of maps.prices.keys()) {
     if (key.startsWith("★") && !key.includes("StatTrak")) {
       knifeSkins.add(key.split(":")[0]);
     }
@@ -183,7 +237,7 @@ function extrapolateKnifeConditions(): number {
     // Find which conditions we already have
     const existing = new Map<number, number>(); // condIndex → price
     for (let i = 0; i < condOrder.length; i++) {
-      const p = priceCache.get(`${skinName}:${condOrder[i]}`);
+      const p = maps.prices.get(`${skinName}:${condOrder[i]}`);
       if (p !== undefined && p > 0) existing.set(i, p);
     }
     if (existing.size === 0 || existing.size === condOrder.length) continue;
@@ -193,20 +247,20 @@ function extrapolateKnifeConditions(): number {
       // Extrapolate one step worse (higher float)
       if (idx < condOrder.length - 1 && !existing.has(idx + 1)) {
         const key = `${skinName}:${condOrder[idx + 1]}`;
-        if (!priceCache.has(key)) {
+        if (!maps.prices.has(key)) {
           const extPrice = Math.round(price * STEP_DOWN);
-          priceCache.set(key, extPrice);
-          priceSources.set(key, `extrapolated from ${condOrder[idx]}`);
+          maps.prices.set(key, extPrice);
+          maps.sources.set(key, `extrapolated from ${condOrder[idx]}`);
           knifeExtrapolated++;
         }
       }
       // Extrapolate one step better (lower float)
       if (idx > 0 && !existing.has(idx - 1)) {
         const key = `${skinName}:${condOrder[idx - 1]}`;
-        if (!priceCache.has(key)) {
+        if (!maps.prices.has(key)) {
           const extPrice = Math.round(price * STEP_UP);
-          priceCache.set(key, extPrice);
-          priceSources.set(key, `extrapolated from ${condOrder[idx]}`);
+          maps.prices.set(key, extPrice);
+          maps.sources.set(key, `extrapolated from ${condOrder[idx]}`);
           knifeExtrapolated++;
         }
       }
@@ -215,36 +269,134 @@ function extrapolateKnifeConditions(): number {
   return knifeExtrapolated;
 }
 
-/** Rebuild price cache. Skips if already built within TTL unless force=true. */
-export async function buildPriceCache(pool: pg.Pool, force = false) {
-  if (!force && priceCacheBuilt && Date.now() - priceCacheBuiltAt < PRICE_CACHE_TTL_MS) {
-    return; // Cache is fresh, skip rebuild
-  }
-  priceCache.clear();
-  priceSources.clear();
-  dmarketFloorCache.clear();
-  skinportFloorCache.clear();
-  skinportMedianCache.clear();
-  conditionPricesCache.clear();
-  _floatCeilingCache.clear();
-  _floatCeilingCacheBuiltAt = 0;
-  _floatCeilingEpoch++; // invalidate any in-flight float-ceiling build (built against old refPriceCache)
-
-  const { cached: refCached, totalRows: csfloatRefCount } = await loadCsfloatRefPrices(pool);
-  const salesGapFills = await fillCsfloatSalesGaps(pool);
+/**
+ * Assemble a price snapshot without touching the live maps.
+ * The row filters and price writes are the same steps buildPriceCache used to
+ * apply in place. Callers compare this draft to the committed maps.
+ */
+export async function assemblePriceCache(pool: pg.Pool): Promise<AssembledPriceCache> {
+  const maps = emptyPriceMaps();
+  const { cached: refCached, totalRows: csfloatRefCount } = await loadCsfloatRefPrices(pool, maps);
+  const salesGapFills = await fillCsfloatSalesGaps(pool, maps);
   const salesCount = refCached + salesGapFills;
-  const { overrides: listingOverrides1, fills: listingFills } = await overrideWithListingFloors(pool);
-  const { lastResort: listingLastResort, overrides: listingOverrides2 } = await fillKnifeLastResort(pool);
+  const { overrides: listingOverrides1, fills: listingFills } = await overrideWithListingFloors(pool, maps);
+  const { lastResort: listingLastResort, overrides: listingOverrides2 } = await fillKnifeLastResort(pool, maps);
   const listingOverrides = listingOverrides1 + listingOverrides2;
-  const knifeExtrapolated = extrapolateKnifeConditions();
-  await buildSourceFloorCaches(pool);
+  const knifeExtrapolated = extrapolateKnifeConditions(maps);
+  await buildSourceFloorCaches(pool, maps);
 
-  const curveCount = await buildCurveCache(pool);
-  await buildConditionMultipliers(pool);
+  const refreshCurve = !curveCacheIsFresh();
+  const curves = new Map<string, CurveScore>();
+  const curveCount = await buildCurveCache(pool, curves);
+  const multipliers = new Map<string, number>();
+  await buildConditionMultipliers(pool, multipliers);
+  const ceiling = await queryFloatCeiling(pool, maps.ref);
 
+  return {
+    maps,
+    multipliers,
+    curves,
+    ceiling,
+    refreshCurve,
+    salesCount,
+    listingOverrides,
+    listingFills,
+    listingLastResort,
+    csfloatRefCount,
+    knifeExtrapolated,
+    curveCount,
+  };
+}
+
+function commitPriceCache(assembled: AssembledPriceCache): void {
+  const { maps } = assembled;
+  replaceMap(priceCache, maps.prices);
+  replaceMap(priceSources, maps.sources);
+  replaceMap(refPriceCache, maps.ref);
+  replaceMap(skinportMedianCache, maps.skinportMedian);
+  replaceMap(dmarketFloorCache, maps.dmarket);
+  replaceMap(skinportFloorCache, maps.skinport);
+  replaceMap(conditionMultiplierCache, assembled.multipliers);
+  if (assembled.refreshCurve) commitCurveCache(assembled.curves);
+  conditionPricesCache.clear();
+  // Publish the ceiling built against these refs, and drop any in-flight
+  // ceiling query that still holds the previous ref map.
+  _floatCeilingEpoch++;
+  if (assembled.ceiling.size === 0 && _floatCeilingCache.size > 0) {
+    console.error("[float-ceiling] rebuild produced an empty cache; keeping the previous cache");
+  } else {
+    replaceMap(_floatCeilingCache, assembled.ceiling);
+    if (assembled.ceiling.size > 0) _floatCeilingCacheBuiltAt = Date.now();
+  }
   priceCacheBuilt = true;
   priceCacheBuiltAt = Date.now();
-  console.log(`  Price cache: ${salesCount} sales, ${listingOverrides} listing overrides (lower), ${listingFills} listing fills, ${listingLastResort} knife listing fills, ${csfloatRefCount} ref, 0 steam, 0 skinport, ${knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size}, curves: ${curveCount})`);
+  console.log(`  Price cache: ${assembled.salesCount} sales, ${assembled.listingOverrides} listing overrides (lower), ${assembled.listingFills} listing fills, ${assembled.listingLastResort} knife listing fills, ${assembled.csfloatRefCount} ref, 0 steam, 0 skinport, ${assembled.knifeExtrapolated} knife extrapolated = ${priceCache.size} total (DM floors: ${dmarketFloorCache.size}, SP floors: ${skinportFloorCache.size}, curves: ${assembled.curveCount})`);
+}
+
+async function rebuildPriceCache(pool: pg.Pool): Promise<void> {
+  try {
+    const assembled = await assemblePriceCache(pool);
+    if (assembled.maps.prices.size === 0) {
+      console.error("[price-cache] rebuild produced an empty cache; keeping the previous cache");
+      return;
+    }
+    commitPriceCache(assembled);
+  } catch (err) {
+    console.error("[price-cache] rebuild failed:", err);
+    throw err;
+  }
+}
+
+/**
+ * Rebuild price cache. Skips if already built within TTL unless force=true.
+ * Blocking callers (daemon, discovery, repricer) await a finished snapshot.
+ * The live maps stay readable until that snapshot commits.
+ */
+export async function buildPriceCache(pool: pg.Pool, force = false): Promise<void> {
+  if (!force && isPriceCacheFresh()) return;
+  if (!priceCacheRebuild) {
+    priceCacheRebuild = rebuildPriceCache(pool).finally(() => {
+      priceCacheRebuild = null;
+    });
+  }
+  return priceCacheRebuild;
+}
+
+/**
+ * Calculator-only entry. A warm cache is returned immediately, including for
+ * up to three TTL periods after it expires, while one rebuild runs behind it.
+ * Cold start and a cache older than the cap wait for the rebuild.
+ */
+export async function ensureRequestPriceCache(pool: pg.Pool): Promise<void> {
+  const decision = staleDecision({
+    size: priceCache.size,
+    ageMs: priceCacheAgeMs(),
+    ttlMs: PRICE_CACHE_TTL_MS,
+    maxStaleMs: PRICE_CACHE_MAX_STALE_MS,
+    allowStale: true,
+  });
+  if (decision === "fresh") return;
+  if (decision === "serve-stale") {
+    // rebuildPriceCache logs the failure. This catch only marks it handled.
+    void buildPriceCache(pool).catch(() => {});
+    return;
+  }
+  if (priceCache.size > 0) {
+    console.error(
+      `[price-cache] stale for ${Math.round(priceCacheAgeMs())}ms, past ${PRICE_CACHE_MAX_STALE_MS}ms cap; blocking until rebuild`,
+    );
+  }
+  await buildPriceCache(pool);
+  if (priceCache.size === 0) {
+    throw new Error("Price cache is empty");
+  }
+}
+
+/** Boot warm so the first calculator request is not a cold build. */
+export async function warmCalculatorCaches(pool: pg.Pool): Promise<void> {
+  await buildPriceCache(pool);
+  await warmOutputPriceCaches(pool);
+  await warmKnnCache(pool);
 }
 
 /**
@@ -256,12 +408,12 @@ export async function warmOutputPriceCaches(pool: pg.Pool): Promise<void> {
   await ensureFloatCeilingCache(pool);
 }
 
-async function buildSourceFloorCaches(pool: pg.Pool) {
-  dmarketFloorCache.clear();
-  skinportFloorCache.clear();
+async function buildSourceFloorCaches(pool: pg.Pool, maps: PriceMaps) {
+  maps.dmarket.clear();
+  maps.skinport.clear();
 
   for (const source of ["dmarket", "skinport"] as const) {
-    const cache = source === "dmarket" ? dmarketFloorCache : skinportFloorCache;
+    const cache = source === "dmarket" ? maps.dmarket : maps.skinport;
     for (const cond of CONDITION_BOUNDS) {
       // Require 2+ listings for floor price — single listings are unreliable
       // (collector prices, mispriced items, etc.)
@@ -309,24 +461,67 @@ export interface OutputPriceResult {
 const _floatCeilingCache = new Map<string, { float: number; price: number }[]>();
 let _floatCeilingCacheBuiltAt = 0;
 const FLOAT_CEILING_CACHE_TTL_MS = 5 * 60 * 1000;
+const FLOAT_CEILING_MAX_STALE_MS = FLOAT_CEILING_CACHE_TTL_MS * 3;
 
 let _floatCeilingBuildPromise: Promise<void> | null = null;
 let _floatCeilingEpoch = 0;
 
-/** Build-or-join: collapses concurrent cold builds onto one in-flight promise so
- *  parallel callers never duplicate-append into the per-skin ceiling arrays. */
+function floatCeilingAgeMs(now = Date.now()): number {
+  return _floatCeilingCacheBuiltAt > 0 ? now - _floatCeilingCacheBuiltAt : Number.POSITIVE_INFINITY;
+}
+
+/** Build-or-join. API requests serve a stale ceiling; other callers wait. */
 async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
-  if (_floatCeilingCache.size > 0 && Date.now() - _floatCeilingCacheBuiltAt < FLOAT_CEILING_CACHE_TTL_MS) return;
+  const decision = staleDecision({
+    size: _floatCeilingCache.size,
+    ageMs: floatCeilingAgeMs(),
+    ttlMs: FLOAT_CEILING_CACHE_TTL_MS,
+    maxStaleMs: FLOAT_CEILING_MAX_STALE_MS,
+    allowStale: requestCacheServesStale(),
+  });
+  if (decision === "fresh") return;
+  if (decision === "serve-stale") {
+    // rebuildFloatCeiling logs the failure. This catch only marks it handled.
+    void startFloatCeilingRebuild(pool).catch(() => {});
+    return;
+  }
+  if (requestCacheServesStale() && _floatCeilingCache.size > 0) {
+    console.error(
+      `[float-ceiling] stale for ${Math.round(floatCeilingAgeMs())}ms, past ${FLOAT_CEILING_MAX_STALE_MS}ms cap; blocking until rebuild`,
+    );
+  }
+  await startFloatCeilingRebuild(pool);
+}
+
+function startFloatCeilingRebuild(pool: pg.Pool): Promise<void> {
   if (!_floatCeilingBuildPromise) {
-    _floatCeilingBuildPromise = buildFloatCeilingCache(pool).finally(() => { _floatCeilingBuildPromise = null; });
+    _floatCeilingBuildPromise = rebuildFloatCeiling(pool).finally(() => {
+      _floatCeilingBuildPromise = null;
+    });
   }
   return _floatCeilingBuildPromise;
 }
 
-async function buildFloatCeilingCache(pool: pg.Pool): Promise<void> {
-  // Capture the invalidation epoch; build into a local map and only commit if a
-  // buildPriceCache() did not clear/rebuild underneath us mid-query.
+async function rebuildFloatCeiling(pool: pg.Pool): Promise<void> {
   const epoch = _floatCeilingEpoch;
+  try {
+    const next = await queryFloatCeiling(pool, refPriceCache);
+    if (epoch !== _floatCeilingEpoch) return;
+    if (next.size === 0 && _floatCeilingCache.size > 0) {
+      throw new Error("Float ceiling rebuild returned no rows");
+    }
+    replaceMap(_floatCeilingCache, next);
+    if (next.size > 0) _floatCeilingCacheBuiltAt = Date.now();
+  } catch (err) {
+    console.error("[float-ceiling] rebuild failed:", err);
+    throw err;
+  }
+}
+
+async function queryFloatCeiling(
+  pool: pg.Pool,
+  refs: Map<string, number>,
+): Promise<Map<string, { float: number; price: number }[]>> {
   const next = new Map<string, { float: number; price: number }[]>();
 
   // Listings-only ceiling: active market offers represent current reality.
@@ -365,7 +560,7 @@ async function buildFloatCeilingCache(pool: pg.Pool): Promise<void> {
     // Same filter applied to CSFloat input listings in data-load.ts.
     if (row.source === 'buff' || row.source === 'dmarket') {
       const condition = floatToCondition(row.float_value);
-      const ref = refPriceCache.get(`${row.skin_name}:${condition}`);
+      const ref = refs.get(`${row.skin_name}:${condition}`);
       if (row.source === 'buff') {
         // Buff: filter if no ref OR >5x ref (conservative — Buff has many sticker premiums)
         if (!ref || row.price_cents > ref * 5) {
@@ -387,11 +582,7 @@ async function buildFloatCeilingCache(pool: pg.Pool): Promise<void> {
     arr.push({ float: row.float_value, price: row.price_cents });
   }
   if (buffFiltered > 0 || dmarketFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff + ${dmarketFiltered} DMarket outlier listings (>5x ref)`);
-  // Discard if invalidated mid-build; otherwise swap in atomically (no await between).
-  if (epoch !== _floatCeilingEpoch) return;
-  _floatCeilingCache.clear();
-  for (const [skin, arr] of next) _floatCeilingCache.set(skin, arr);
-  _floatCeilingCacheBuiltAt = Date.now();
+  return next;
 }
 
 /**
@@ -881,4 +1072,50 @@ export function interpolatePrice(anchors: PriceAnchor[], float: number): number 
     }
   }
   return anchors[anchors.length - 1].price;
+}
+
+export function resetPriceCacheForTests(): void {
+  priceCache.clear();
+  priceSources.clear();
+  dmarketFloorCache.clear();
+  skinportFloorCache.clear();
+  refPriceCache.clear();
+  skinportMedianCache.clear();
+  conditionPricesCache.clear();
+  conditionMultiplierCache.clear();
+  _floatCeilingCache.clear();
+  _floatCeilingCacheBuiltAt = 0;
+  _floatCeilingEpoch++;
+  priceCacheBuilt = false;
+  priceCacheBuiltAt = 0;
+  priceCacheRebuild = null;
+  _floatCeilingBuildPromise = null;
+  resetCurveCacheForTests();
+}
+
+export function expirePriceCacheForTests(ageMs: number): void {
+  priceCacheBuilt = true;
+  priceCacheBuiltAt = Date.now() - ageMs;
+}
+
+export function settlePriceCacheRebuildForTests(): Promise<void> {
+  return priceCacheRebuild ?? Promise.resolve();
+}
+
+export function floatCeilingCacheSizeForTests(): number {
+  return _floatCeilingCache.size;
+}
+
+export function ageFloatCeilingForTests(ageMs: number): void {
+  _floatCeilingCacheBuiltAt = Date.now() - ageMs;
+}
+
+export function seedFloatCeilingForTests(skinName: string, floatValue: number, priceCents: number): void {
+  _floatCeilingCache.set(skinName, [{ float: floatValue, price: priceCents }]);
+  _floatCeilingCacheBuiltAt = Date.now();
+}
+
+/** test seam — drives the same ensure path lookupOutputPrice uses */
+export function ensureFloatCeilingForTests(pool: pg.Pool): Promise<void> {
+  return ensureFloatCeilingCache(pool);
 }

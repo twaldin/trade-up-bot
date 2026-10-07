@@ -25,7 +25,8 @@ export { pick, shuffle, listingSig, parseSig, computeChanceToProfit, computeBest
 export { calculateOutputFloat, calculateOutcomeProbabilities } from "./engine/core.js";
 
 // === Pricing ===
-export { buildPriceCache, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
+export { buildPriceCache, ensureRequestPriceCache, warmCalculatorCaches, priceCache, priceSources, lookupOutputPrice, dmarketFloorCache, skinportFloorCache } from "./engine/pricing.js";
+export { runWithRequestCachePolicy } from "./engine/request-cache-policy.js";
 export {
   buildInputReferenceMaps, inputReferenceCents, exceedsReferenceCap, isInputPriceOutlier,
   ensureInputReferences, markTradeUpsOutlierStale, findOutlierTradeUpIds, resetInputReferenceCache,
