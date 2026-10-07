@@ -7,10 +7,11 @@ import { getEffectiveTier } from "../../../shared/pro-access.js";
 
 /**
  * How long an unknown account may hide a list that has already loaded.
- * After this, the board paints the guest list and keeps that paint if auth
- * later says the viewer is paid.
+ * Short enough that a 5s auth still shows real cards within about 1.2s of
+ * navigation. After this, the board paints the guest list and keeps that
+ * paint if auth later says the viewer is paid.
  */
-export const AUTH_PAINT_WAIT_MS = 1000;
+export const AUTH_PAINT_WAIT_MS = 750;
 
 /** Express session cookie. HttpOnly, so a page script only sees it when a test or a non-HttpOnly mirror set it. */
 export const SESSION_COOKIE_NAME = "connect.sid";
