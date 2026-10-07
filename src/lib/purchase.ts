@@ -65,6 +65,26 @@ function clearIfOurs(win: Window, key: string, claimValue: string): void {
   } catch { /* ignore */ }
 }
 
+interface ConfirmedCheckout {
+  transaction_id: string;
+  value: number;
+  currency: string;
+  ga4_server_side?: boolean;
+}
+
+/** The lookup route only returns this shape after payment and ownership both pass. */
+function isConfirmedCheckout(sessionId: string, data: unknown): data is ConfirmedCheckout {
+  if (typeof data !== "object" || data === null) return false;
+  const transactionId = Reflect.get(data, "transaction_id");
+  const value = Reflect.get(data, "value");
+  const currency = Reflect.get(data, "currency");
+  return transactionId === sessionId
+    && typeof value === "number"
+    && Number.isFinite(value)
+    && typeof currency === "string"
+    && currency.length > 0;
+}
+
 async function firePurchase(win: Window, tier: string, sessionId: string, key: string, claimValue: string): Promise<void> {
   try {
     const res = await fetch(`/api/checkout-session/${encodeURIComponent(sessionId)}`, {
@@ -74,8 +94,12 @@ async function firePurchase(win: Window, tier: string, sessionId: string, key: s
       clearIfOurs(win, key, claimValue);
       return;
     }
-    const data: { transaction_id: string; value: number; currency: string; ga4_server_side?: boolean } = await res.json();
+    const data: unknown = await res.json();
     if (readKey(win, key) !== claimValue) return;
+    if (!isConfirmedCheckout(sessionId, data)) {
+      clearIfOurs(win, key, claimValue);
+      return;
+    }
     trackPurchaseComplete({
       sessionId,
       checkoutPlan: tier,
