@@ -32,7 +32,7 @@ export const blogPosts: BlogPost[] = [
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>CS2 trade-ups are contracts where 10 same-rarity skins become one higher-rarity output, with the result weighted by collection and priced by exact float. To profit, you must calculate input cost, adjusted float, output odds, and marketplace fees before buying anything.</p>
+<p>CS2 trade-ups are contracts where 10 same-rarity skins become one higher-rarity output, with the result weighted by collection and priced by exact float. Before buying anything, work out input cost, adjusted float, output probabilities, and marketplace fees. Any profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
 <p>For live examples, <a href="/trade-ups">browse current CS2 trade-up contracts</a> or use the <a href="/calculator">CS2 trade-up calculator</a> to test your own 10-skin setup.</p>
 
@@ -44,7 +44,7 @@ export const blogPosts: BlogPost[] = [
 
 <p>The key constraint: <strong>all 10 inputs must be the same rarity</strong>, but they can come from different collections. This is where strategy comes in. The output skin is randomly selected from the next-rarity skins in all collections represented by your inputs, weighted by how many inputs came from each collection.</p>
 
-<p>If you use 7 skins from the Fracture Collection and 3 from the Prisma Collection, you have a 70% chance of getting a Fracture output and 30% chance of a Prisma output. That weighting is the foundation of every profitable trade-up.</p>
+<p>If you use 7 skins from the Fracture Collection and 3 from the Prisma Collection, you have a 70% probability of a Fracture output and a 30% probability of a Prisma output. That weighting is the foundation of every trade-up's expected value.</p>
 
 <h2>The Float Formula</h2>
 
@@ -80,7 +80,7 @@ export const blogPosts: BlogPost[] = [
 
 <p>The output skin must exist at the next rarity tier within the same collection as the input. If a collection has no skins at the next tier, you can't use skins from that collection in a trade-up. Each collection contributes its proportional share of possible outcomes.</p>
 
-<p>This is why some collections are vastly more valuable for trade-ups than others. A collection where the next-tier skins are all high-value gives you good outcomes regardless of which one you hit. A collection with one expensive skin and four cheap ones is a gamble.</p>
+<p>This is why some collections are vastly more valuable for trade-ups than others. A collection where the next-tier skins are all high-value gives you good outcomes regardless of which one you hit. A collection with one expensive skin and four cheap ones is high variance: most outcomes are cheap, and the average depends on one rare result.</p>
 
 <h2>Common Mistakes</h2>
 
@@ -157,7 +157,7 @@ export const blogPosts: BlogPost[] = [
 
 <p>This is particularly nasty with knife and glove trade-ups, where Covert inputs can cost $30-100+ each. You're tying up $150-500 for a week, exposed to price movement the entire time.</p>
 
-<p>There's no way to eliminate this risk, but you can manage it. Trade-ups with higher profit margins give you more buffer. Trade-ups with 100% chance to profit (only one possible output, and it's worth more than the inputs) eliminate outcome variance even if prices shift slightly.</p>
+<p>There's no way to eliminate this risk, but you can manage it. Trade-ups with higher profit margins give you more buffer. Trade-ups with only one possible output remove outcome variance, but not price risk. The output's price can move before you sell, and fees still apply, so even these can lose money.</p>
 
 <h2>The Availability Problem</h2>
 
@@ -410,7 +410,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Cheapest Marketplace Depends on Which Side You're On</h2>
 
-<p>For buying inputs, Skinport wins at every price point: $50 costs $50. DMarket is next: $50 costs $51.25. CSFloat is most expensive: $50 costs $51.70.</p>
+<p>For buying inputs, Skinport is cheapest at every price point: $50 costs $50. DMarket is next: $50 costs $51.25. CSFloat is most expensive: $50 costs $51.70.</p>
 
 <p>For selling outputs, the ranking flips completely. CSFloat and DMarket both take 2% — a $100 output nets you $98 on either. Skinport takes 8% — that same output nets you $92. The difference is $6 on a single skin.</p>
 
@@ -484,7 +484,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>CS2 knife trade-up collections determine which knife or glove pool your 5 Covert inputs can hit, how diluted your odds are, and how painful the worst outcome becomes. The best collections combine affordable inputs, premium knife pools, and manageable float requirements.</p>
+<p>CS2 knife trade-up collections determine which knife or glove pool your 5 Covert inputs can produce, how diluted each output's probability is, and how painful the worst outcome becomes. The best collections combine affordable inputs, premium knife pools, and manageable float requirements.</p>
 
 <p>Research candidate pools in the <a href="/collections">CS2 collections browser</a> and compare knife opportunities on the <a href="/trade-ups">live trade-up table</a> before funding a high-stakes contract.</p>
 
@@ -516,7 +516,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>The upside: glove cases sometimes have fewer total output finishes than knife cases, which concentrates probability. If a glove case has 3 glove types with 8 finishes each (24 outputs), versus a knife case with 5 knife types and 10 finishes each (50 outputs), each individual glove outcome has roughly double the probability. Higher concentration means you can more reliably land specific outcomes.</p>
 
-<p>Glove cases also tend to have slightly cheaper Covert inputs on average. The combination of lower input costs and more concentrated probability can produce trade-ups with better chance-to-profit metrics, even if the peak payout is lower. For risk-adjusted returns, gloves can outperform knives.</p>
+<p>Glove cases also tend to have slightly cheaper Covert inputs on average. The combination of lower input costs and more concentrated probability can produce trade-ups with a higher share of outcomes above cost, even if the top outcome is worth less. For lower variance, gloves can compare well with knives.</p>
 
 <h2>Float Ranges and Output Conditions</h2>
 
@@ -846,7 +846,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "7 min read",
     author: "TradeUpBot Team",
     content: `
-<p>Run the same ten inputs through two CS2 trade-up calculators and you will often get two different profit numbers. That feels like it should be impossible. The inputs are fixed. The output odds are fixed. The float formula is deterministic and public. Nothing about the contract is ambiguous.</p>
+<p>Run the same ten inputs through two CS2 trade-up calculators and you will often get two different profit numbers. That feels like it should be impossible. The inputs are fixed. The output probabilities are fixed. The float formula is deterministic and public. Nothing about the contract is ambiguous.</p>
 
 <p>The disagreement almost never comes from the math. It comes from one quieter decision each tool makes: how to price the output skin. Get that wrong and a contract that looks like a $6 profit can actually be a $2 loss, or the other way around.</p>
 
@@ -858,7 +858,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><code>output_float = avg_adjusted_input_float * (output_max - output_min) + output_min</code></p>
 
-<p>Because that value is deterministic, every honest calculator predicts the same output float and the same outcome probabilities for a given set of inputs. If two tools printed different odds, one would simply be wrong. They rarely do.</p>
+<p>Because that value is deterministic, every honest calculator predicts the same output float and the same outcome probabilities for a given set of inputs. If two tools printed different probabilities, one would simply be wrong. They rarely do.</p>
 
 <h2>Where the disagreement starts: pricing the output</h2>
 
@@ -901,7 +901,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>See it in practice: <a href="/calculator">run your inputs through the calculator</a>, <a href="/trade-ups">compare live profitable contracts</a>, or read the underlying mechanics in <a href="/blog/how-cs2-trade-ups-work/">how CS2 trade-ups work</a>.</p>
 `,
     faq: [
-      { question: "Why do two CS2 trade-up calculators show different profit?", answer: "The float math and odds are deterministic, so tools agree there. They disagree on how they price the output skin: condition-average pricing uses one blended price for the whole wear band, while float-exact pricing prices the exact predicted output float from real sales. Near a condition boundary those two numbers can differ by a multiple. Input pricing (reference averages vs real listings) and fee handling add smaller differences." },
+      { question: "Why do two CS2 trade-up calculators show different profit?", answer: "The float math and output probabilities are deterministic, so tools agree there. They disagree on how they price the output skin: condition-average pricing uses one blended price for the whole wear band, while float-exact pricing prices the exact predicted output float from real sales. Near a condition boundary those two numbers can differ by a multiple. Input pricing (reference averages vs real listings) and fee handling add smaller differences." },
       { question: "What is condition-average pricing?", answer: "Condition-average pricing values a skin using a single blended price for its wear band — for example, one price for any Field-Tested copy — regardless of where inside the band its float actually falls. It is simple but misprices outputs that land near a condition boundary, where value changes sharply." },
       { question: "What is float-exact pricing?", answer: "Float-exact pricing computes the exact predicted output float and prices the skin from real sales near that float, so a clean 0.16 Field-Tested is valued differently from a worn 0.37 Field-Tested. It matters most for trade-ups engineered to land just inside a higher condition." },
       { question: "Does the boundary really change the price that much?", answer: "Yes. Across real CS2 skins, crossing the 0.07 Factory New / Minimal Wear boundary regularly changes the value by 10x or more on the same day, even though the two floats are visually identical. That is why a pricing model that does not pin the exact float can be wildly off near boundaries." },
