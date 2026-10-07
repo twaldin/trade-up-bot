@@ -53,7 +53,6 @@ const ALLOWLIST = [
   "not guaranteed", // product FAQ: not guaranteed profit
   "const win", // window handle in openListings, not user-facing copy
   "if (win)", // same window handle
-  "Win rate", // completed-sale statistic on the account page
 ];
 
 const GUIDE_TITLE = "How to Use TradeUpBot to Find Profitable Trade-Ups";
