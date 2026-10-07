@@ -12,6 +12,7 @@ import {
   type StripeClient,
   type StripePool,
 } from "../stripe-entitlement.js";
+import { gatePaidCheckout } from "../checkout-confirm.js";
 import {
   checkoutSessionTrackingFields,
   checkoutTrackingMetadata,
@@ -181,19 +182,23 @@ export function stripeRouter(
         return;
       }
       const cs = await stripe.checkout.sessions.retrieve(String(req.params.id));
-      // Ownership + payment guards: only the buyer can read it, and only once paid.
-      if (cs.customer !== customerId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      if (cs.payment_status !== "paid") {
-        res.status(409).json({ error: "Not paid" });
-        return;
+      const gated = gatePaidCheckout(cs, customerId);
+      if (!gated.ok) {
+        switch (gated.status) {
+          case 404:
+            res.status(404).json({ error: "Checkout session not found" });
+            return;
+          case 409:
+            res.status(409).json({ error: "Not paid" });
+            return;
+          default: {
+            const unreachable: never = gated.status;
+            return unreachable;
+          }
+        }
       }
       res.json({
-        transaction_id: cs.id,
-        value: (cs.amount_total ?? 0) / 100,
-        currency: (cs.currency ?? "usd").toUpperCase(),
+        ...gated.body,
         ...checkoutSessionTrackingFields(serverTrackingConfig()),
       });
     } catch {
