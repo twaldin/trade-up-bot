@@ -202,7 +202,7 @@ describe("/api/trade-ups rank snapshot pagination", () => {
     expect(store.sets).toBe(1);
   });
 
-  it("falls back to a live query when a snapshot row went stale, so pages have no holes", async () => {
+  it("rebuilds the deduped snapshot when a snapshot row went stale, so pages have no holes", async () => {
     const store = memoryStore();
     const app = appWithStore(ctx, store);
     await request(app).get(`/api/trade-ups?type=${TYPE}&per_page=12&page=1`);
@@ -217,7 +217,10 @@ describe("/api/trade-ups rank snapshot pagination", () => {
     const ids = res.body.trade_ups.map((tu: { id: number }) => tu.id);
     expect(ids).not.toContain(goneId);
     expect(ids).toEqual((await directBoardIds(ctx.pool)).slice(12, 24));
-    expect(store.data.size).toBe(0);
+    // PR 206: the default board stays on the listing-disjoint list; the snapshot is
+    // rebuilt in place instead of dropped for a raw live query.
+    expect(res.body.deduped).toBe(true);
+    expect(store.data.size).toBe(1);
   });
 
   it("hides a leaked snapshot row without writing or flushing the ranking", async () => {

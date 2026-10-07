@@ -37,6 +37,8 @@ async function insertTradeUp(
 }
 
 describe("listing-disjoint board", () => {
+  it.todo("has_more at the 1000-row cap is covered by unit tests (seeding 1000+ rows is too slow here)");
+
   let ctx: TestContext;
   let ids: { core: number; variantA: number; variantB: number; other: number };
 
@@ -64,6 +66,46 @@ describe("listing-disjoint board", () => {
     expect(got).toEqual([ids.core, ids.other]);
     expect(res.body.total).toBe(2);
     expect(res.body.trade_ups[0]).not.toHaveProperty("shared_with_rank");
+    expect(res.body.deduped).toBe(true);
+    expect(res.body.raw_total).toBe(4);
+    expect(res.body.has_more).toBe(false);
+  });
+
+  it("total_profitable counts the deduped list, not raw rows", async () => {
+    // Raw: 4 profitable rows. Deduped: core + other -> 2.
+    const res = await get("");
+    expect(res.body.total_profitable).toBe(2);
+    const raw = await get("&overlap=all");
+    expect(raw.body.total_profitable).toBe(4);
+  });
+
+  it("an id going inactive mid-scroll keeps paging on the deduped list (no raw fallback)", async () => {
+    const first = await request(ctx.app)
+      .get("/api/trade-ups?per_page=1&page=1")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(first.body.trade_ups.map((t: { id: number }) => t.id)).toEqual([ids.core]);
+    await ctx.pool.query(`UPDATE trade_ups SET listing_status = 'stale' WHERE id = $1`, [ids.core]);
+    const second = await request(ctx.app)
+      .get("/api/trade-ups?per_page=1&page=2")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(second.status).toBe(200);
+    expect(second.body.deduped).toBe(true);
+    // Rebuilt deduped list without core: variantA, variantB (c3 freed), other.
+    expect(second.body.total).toBe(3);
+    expect(second.body.total).toBeLessThan(second.body.raw_total + 1);
+    const got = second.body.trade_ups as Array<{ id: number }>;
+    expect(got.map((t) => t.id)).not.toContain(ids.core);
+    expect(got).toHaveLength(1);
+  });
+
+  it("pages past the deduped list are empty, not raw rows", async () => {
+    const res = await get("&page=5");
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups).toHaveLength(0);
+    expect(res.body.total).toBe(2);
+    expect(res.body.deduped).toBe(true);
   });
 
   it("overlap=all restores today's ranking and reports shared_with_rank", async () => {
@@ -73,6 +115,8 @@ describe("listing-disjoint board", () => {
     expect(rows.map((t) => t.id)).toEqual([ids.core, ids.variantA, ids.variantB, ids.other]);
     expect(rows.map((t) => t.shared_with_rank)).toEqual([null, 1, 1, null]);
     expect(res.body.total).toBe(4);
+    expect(res.body.deduped).toBe(false);
+    expect(res.body).not.toHaveProperty("raw_total");
   });
 
   it("does not change scores", async () => {
@@ -94,5 +138,7 @@ describe("listing-disjoint board", () => {
   it("explicit collection filter is unaffected (no snapshot, raw rows)", async () => {
     const res = await get(`&collection=${encodeURIComponent("Coll A")}`);
     expect(res.body.trade_ups).toHaveLength(4);
+    expect(res.body.deduped).toBe(false);
+    expect(res.body).not.toHaveProperty("has_more");
   });
 });
