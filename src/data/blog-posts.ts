@@ -32,7 +32,7 @@ export const blogPosts: BlogPost[] = [
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>CS2 trade-ups are contracts where 10 same-rarity skins become one higher-rarity output, with the result weighted by collection and priced by exact float. Before buying anything, estimate input cost, adjusted float, output probabilities, and marketplace fees. These are estimates after fees. A trade-up can lose money.</p>
+<p>CS2 trade-ups are contracts where 10 same-rarity skins become one higher-rarity output, with the result weighted by collection and priced by exact float. Before buying anything, work out input cost, adjusted float, output probabilities, and marketplace fees. Any profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
 <p>For live examples, <a href="/trade-ups">browse current CS2 trade-up contracts</a> or use the <a href="/calculator">CS2 trade-up calculator</a> to test your own 10-skin setup.</p>
 
@@ -80,7 +80,7 @@ export const blogPosts: BlogPost[] = [
 
 <p>The output skin must exist at the next rarity tier within the same collection as the input. If a collection has no skins at the next tier, you can't use skins from that collection in a trade-up. Each collection contributes its proportional share of possible outcomes.</p>
 
-<p>This is why some collections are vastly more valuable for trade-ups than others. A collection where the next-tier skins are all high-value gives you good outcomes regardless of which one you hit. A collection with one expensive skin and four cheap ones is high variance: most outcomes land below cost, and the average depends on one rare result.</p>
+<p>This is why some collections are vastly more valuable for trade-ups than others. A collection where the next-tier skins are all high-value gives you good outcomes regardless of which one you hit. A collection with one expensive skin and four cheap ones is high variance: most outcomes are cheap, and the average depends on one rare result.</p>
 
 <h2>Common Mistakes</h2>
 
