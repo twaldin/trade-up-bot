@@ -10,6 +10,7 @@ import { setupAuth } from "./auth.js";
 import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { warmCalculatorCaches } from "./engine.js";
+import { PROCESS_DRAIN_MS, warmThenListen } from "./boot-ready.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { boardDelayRouter } from "./routes/board-delay.js";
 import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
@@ -106,7 +107,7 @@ import { helmetSecurityOptions } from "./security-headers.js";
 import { CACHEABLE_READ_MAX, isCacheableRead, RATE_WINDOW_MS, SHARED_API_MAX, usesSharedApiBucket } from "./rate-limit-buckets.js";
 
 const app = express();
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 app.use(redirectWwwHost);
 app.use(compression());
@@ -1353,16 +1354,39 @@ registerCanonicalRedirectRoutes(app);
 
   logCapiOptOutIgnored();
 
-  // Start listening
-  const server = app.listen(PORT, () => {
-    process.send?.("ready"); // signal PM2 wait_ready when configured
-    console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
-    void warmCalculatorCaches(pool).catch((err) => {
-      console.error("Calculator cache warm failed:", err instanceof Error ? err.message : err);
-    });
-    warmPublicBoardOnStartup();
-    void materializeStaticHomepage();
+  // Warm calculator caches before listen. PM2 wait_ready holds the old
+  // process in rotation until this process sends "ready" from the listen callback.
+  let server: ReturnType<typeof app.listen> | undefined;
+  let draining = false;
+  const drain = (signal: string) => {
+    if (draining) return;
+    draining = true;
+    console.log(`${signal} received — draining`);
+    const finish = () => process.exit(0);
+    if (server) server.close(finish);
+    else finish();
+    setTimeout(finish, PROCESS_DRAIN_MS).unref();
+  };
+  process.on("SIGTERM", () => drain("SIGTERM"));
+  process.on("SIGINT", () => drain("SIGINT"));
+  process.on("message", (message: unknown) => {
+    if (message === "shutdown") drain("shutdown");
+  });
 
+  await warmThenListen({
+    warm: () => warmCalculatorCaches(pool),
+    listen: () => {
+      server = app.listen(PORT, () => {
+        process.send?.("ready");
+        console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+        warmPublicBoardOnStartup();
+        void materializeStaticHomepage();
+        warmBackgroundCaches();
+      });
+    },
+  });
+
+  function warmBackgroundCaches() {
     // Background cache warming: pre-populate Redis with heavy COUNT queries
     // so the first user request doesn't wait 8-10s for cold PG queries.
     setTimeout(async () => {
@@ -1402,7 +1426,7 @@ registerCanonicalRedirectRoutes(app);
             console.log(`Warming cache: skin-data ${rarity}...`);
             const t3 = Date.now();
             // Hit our own API to warm the cache (reuses all data.ts logic including collectionKnifePool)
-            await fetch(`http://localhost:${process.env.PORT || 3001}/api/skin-data?rarity=${encodeURIComponent(rarity)}`).catch(() => {});
+            await fetch(`http://127.0.0.1:${PORT}/api/skin-data?rarity=${encodeURIComponent(rarity)}`).catch(() => {});
             console.log(`Cache warmed: skin-data ${rarity} (${((Date.now() - t3) / 1000).toFixed(1)}s)`);
           }
         }
@@ -1411,13 +1435,7 @@ registerCanonicalRedirectRoutes(app);
         console.error("Cache warming failed:", (e as Error).message);
       }
     }, 500);
-  });
-
-  process.on("SIGTERM", () => {
-    console.log("SIGTERM received — draining");
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 8000).unref(); // hard deadline
-  });
+  }
 })();
 
 process.on("uncaughtException", (err) => {

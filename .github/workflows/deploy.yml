@@ -120,9 +120,9 @@ jobs:
       - name: Rsync dist to VPS
         run: rsync -avz --delete dist/ root@178.156.239.58:/opt/trade-up-bot/dist/
 
-      - name: Git pull main + session secret preflight + pm2 reload api
+      - name: Git pull main + session secret preflight + reload api
         run: |
-          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && npx --no-install tsx scripts/check-production-session-secret.ts && npx --no-install tsx scripts/reload-api.ts"
 
       - name: Proxy /best-cs2-trade-ups to Node
         run: |
