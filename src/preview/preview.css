@@ -981,13 +981,24 @@
   background: var(--panel);
 }
 
-/* At 360 the mobile links fit on one row in the fallback font and wrap once
-   Schibsted loads. The narrower bar matches that wrapped row from the first
-   paint, so the links do not jump. */
+/* At 360 the fallback face fits five links on the first row and Schibsted
+   wraps the fifth. Equal columns keep every link on the same row either way. */
 @media (max-width: 367px) {
-  .preview-console__bar {
-    padding-right: 22px;
-    padding-left: 22px;
+  .preview-console__mobile {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 1 0 100%;
+    gap: 8px;
+  }
+
+  .preview-console__mobile > .preview-btn {
+    flex: 0 0 calc(33.333% - 6px);
+    max-width: calc(33.333% - 6px);
+    min-width: 0;
+    justify-content: center;
+    padding-right: 4px;
+    padding-left: 4px;
+    white-space: nowrap;
   }
 }
 
