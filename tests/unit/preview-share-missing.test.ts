@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveConsolePage } from "../../src/preview/lib/console-routes.js";
+import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
 import { PreviewShare } from "../../src/preview/pages/PreviewShare.js";
 
 const CASES = ["abc", "1e9", "-1", "01", "1".repeat(30)];
@@ -204,5 +205,80 @@ describe("/trade-ups//", () => {
     expect(host.querySelector("h1")?.textContent).toBe("Trade-up not found");
     expect(host.textContent).not.toContain("Board");
     expect(host.querySelector("a[href='/trade-ups']")?.textContent).toBe("Back to the board");
+  });
+});
+
+function boardElement(embed = false) {
+  return createElement(PreviewBoard, {
+    tradeUps: [],
+    loading: false,
+    isFree: false,
+    expandedId: null,
+    onExpand: () => {},
+    embed,
+  });
+}
+
+describe("board robots after a not-found trade-up", () => {
+  let root: Root;
+  let host: HTMLDivElement;
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    document.head.querySelectorAll("meta[name='robots']").forEach((node) => node.remove());
+    vi.unstubAllGlobals();
+  });
+
+  it("sets index, follow when Back to the board leaves the 404", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/trade-ups/")) throw new Error(`fetched ${url}`);
+      return { ok: false, status: 401, json: async () => null };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/trade-ups/abc"] },
+        createElement(Routes, null,
+          createElement(Route, { path: "/trade-ups/:id", element: createElement(PreviewShare) }),
+          createElement(Route, { path: "/trade-ups", element: boardElement() }),
+        ),
+      ));
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(host.querySelector("h1")?.textContent).toBe("Trade-up not found");
+    expect(robotsContents()).toEqual(["noindex, follow"]);
+
+    await act(async () => {
+      host.querySelector("a[href='/trade-ups']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(host.querySelector("h1")?.textContent).toBe("Live trade-ups");
+    expect(robotsContents()).toEqual(["index, follow"]);
+  });
+
+  it("replaces a leftover noindex tag when the board mounts", async () => {
+    seedRobots(["noindex, follow", "noindex, follow"]);
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, boardElement()));
+    });
+    expect(host.querySelector("h1")?.textContent).toBe("Live trade-ups");
+    expect(robotsContents()).toEqual(["index, follow"]);
+  });
+
+  it("leaves robots alone when the board is embedded in another page", async () => {
+    seedRobots(["noindex, follow"]);
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, boardElement(true)));
+    });
+    expect(robotsContents()).toEqual(["noindex, follow"]);
   });
 });

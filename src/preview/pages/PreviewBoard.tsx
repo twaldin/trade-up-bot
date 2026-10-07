@@ -48,7 +48,7 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
-import { useCanonicalSlot } from "../components/PreviewSeo.js";
+import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
 import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
 import {
@@ -922,6 +922,7 @@ export function PreviewBoard({
   const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
   const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
   const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
+  const emitRobots = useRobotsSlot(embed ? "" : "index, follow");
   useEffect(() => {
     pendingFocus.current = null;
   }, [query, search]);
@@ -978,6 +979,7 @@ export function PreviewBoard({
     <div className={embed ? "preview-board-embed" : "preview-page"}>
       {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
       {!embed && emitCanonical && <link rel="canonical" href="https://tradeupbot.app/trade-ups" />}
+      {!embed && emitRobots && <meta name="robots" content="index, follow" />}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
