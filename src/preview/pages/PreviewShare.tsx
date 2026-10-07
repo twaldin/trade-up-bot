@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { parseTradeUpId } from "../../../shared/trade-up-id.js";
 import type { TradeUp } from "../../../shared/types.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpH1, tradeUpPair } from "../../../shared/copy.js";
 import { formatDollars } from "../../utils/format.js";
@@ -30,8 +31,31 @@ function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
   return <span className={`preview-timer ${tick.expired || tick.minutes <= 5 ? "is-minus" : ""}`}>{tick.label}</span>;
 }
 
+function TradeUpNotFound() {
+  return (
+    <div className="preview-page">
+      <PreviewSeo
+        title="Trade-up not found | TradeUpBot"
+        description="That trade-up is not on TradeUpBot."
+        canonical="https://tradeupbot.app/trade-ups"
+        robots="noindex, follow"
+      />
+      <header className="preview-page__head">
+        <div>
+          <h1>Trade-up not found</h1>
+          <p>That trade-up is not on TradeUpBot.</p>
+        </div>
+      </header>
+      <Link className="preview-btn" to="/trade-ups">Back to the board</Link>
+    </div>
+  );
+}
+
 export function PreviewShare() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const rawId = typeof id === "string" ? id : "";
+  const tradeUpId = location.pathname.endsWith("/") ? null : parseTradeUpId(rawId);
   const [tu, setTu] = useState<TradeUp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +79,11 @@ export function PreviewShare() {
   }, []);
 
   useEffect(() => {
-    if (!id) return;
+    if (tradeUpId === null) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/trade-ups/${id}`)
+    fetch(`/api/trade-ups/${tradeUpId}`)
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 404 ? "Trade-up not found" : "Failed to load");
         return res.json();
@@ -98,11 +122,10 @@ export function PreviewShare() {
       .catch((err: Error) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [tradeUpId]);
 
   useEffect(() => {
-    if (!user || !id) return;
-    const tradeUpId = Number(id);
+    if (!user || tradeUpId === null) return;
     fetch(MY_TRADE_UPS_API.activeClaims, { credentials: "include" })
       .then((res) => res.ok ? res.json() : { claims: [] })
       .then((data: { claims?: ActiveClaimRow[] }) => {
@@ -113,7 +136,7 @@ export function PreviewShare() {
         }
       })
       .catch(() => {});
-  }, [user, id]);
+  }, [user, tradeUpId]);
 
   const readError = async (res: Response, fallback: string) => {
     try {
@@ -225,6 +248,10 @@ export function PreviewShare() {
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
   const realIds = tu ? realListingIds(tu) : [];
+
+  if (tradeUpId === null || (!loading && error === "Trade-up not found")) {
+    return <TradeUpNotFound />;
+  }
 
   return (
     <div className="preview-page">
