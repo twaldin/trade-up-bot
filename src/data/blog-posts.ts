@@ -775,9 +775,9 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>Total input cost</strong> is the first number to inspect. It should include the actual listing prices and buyer-side fees where applicable. If a simulator uses average prices, treat the result as an estimate, not a buy list.</p>
 
-<p><strong>Expected value</strong> measures the probability-weighted average output value minus total cost. Positive EV means the average result is estimated to be positive over many attempts, if prices and probabilities hold. It does not mean any single attempt lands above cost. These are estimates after fees. A trade-up can lose money.</p>
+<p><strong>Expected value</strong> is the probability-weighted average output value after fees. Expected P/L is expected value minus total input cost. Positive expected P/L means the average result is estimated to be positive over many attempts, if prices and probabilities hold. It does not mean any single attempt lands above cost. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
-<p><strong>Outcomes above cost</strong> tells you how often a single attempt finishes above breakeven. That matters for sizing what you spend. A contract can have positive EV because one rare output is huge, while still losing money most of the time. Smaller budgets usually need a higher share of outcomes above cost, not just higher EV.</p>
+<p><strong>Outcomes above cost</strong> is the probability-weighted share of outcomes worth more than your total cost. That matters for sizing what you spend. A contract can have positive expected P/L because one rare output is huge, while still losing money most of the time. Smaller budgets usually need a higher share of outcomes above cost, not just higher expected P/L.</p>
 
 <p><strong>Best case and worst case</strong> reveal variance. A simulator that only shows one profit number hides the downside. You need to know whether the bad outcome loses $2, $20, or $200 before deciding whether the contract fits your risk tolerance.</p>
 
@@ -785,11 +785,11 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>How to Use TradeUpBot as a Simulator</h2>
 
-<p>Start on the live trade-ups page and sort by the metric that matches your goal. Sorting by Expected P/L highlights the highest expected value. Sorting by Above cost % highlights lower-variance contracts. Filtering by rarity and type helps narrow the list to trade ups that fit your budget.</p>
+<p>Start on the live trade-ups page and sort by the metric that matches your goal. Sorting by Expected P/L highlights the highest expected P/L. Sorting by Above cost % highlights contracts with a larger probability-weighted share of outcomes worth more than your total cost. Filtering by rarity and type helps narrow the list to trade ups that fit your budget.</p>
 
 <p>Open a trade up and inspect the inputs. The simulator view should show each listing, source marketplace, price, float, and collection. Check whether the inputs are clustered around an important float target or whether the contract relies mostly on cheap prices. If one input disappears, you need to understand whether a replacement would preserve the output condition.</p>
 
-<p>Next, review the output distribution. Look at every possible skin, not just the headline profit. A contract with three slightly profitable outcomes and one small loss behaves very differently from a contract with one expensive outcome and nine below cost. The expanded output table is where the real risk profile lives.</p>
+<p>Next, review the output distribution. Look at every possible skin, not just the headline expected P/L. A contract with three slightly profitable outcomes and one small loss behaves very differently from a contract with one expensive outcome and nine below cost. The expanded view, with its readouts and charts, is where that spread shows up.</p>
 
 <p>Finally, use verification before purchasing whenever possible. Listings can be bought by other players, delisted, or repriced. A simulator result is only as useful as the freshness of its input data, so checking availability right before buying reduces the risk of being stuck with partial inputs.</p>
 
@@ -848,7 +848,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     content: `
 <p>Run the same ten inputs through two CS2 trade-up calculators and you will often get two different profit numbers. That feels like it should be impossible. The inputs are fixed. The output probabilities are fixed. The float formula is deterministic and public. Nothing about the contract is ambiguous.</p>
 
-<p>The disagreement almost never comes from the math. It comes from one quieter decision each tool makes: how to price the output skin. Get that wrong and a contract that looks like a $6 profit can actually be a $2 loss, or the other way around. These are estimates after fees. A trade-up can lose money.</p>
+<p>The disagreement almost never comes from the math. It comes from one quieter decision each tool makes: how to price the output skin. Get that wrong and a contract that looks like a $6 profit can actually be a $2 loss, or the other way around. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
 <p>Want to skip the theory and see it on real contracts? <a href="/trade-ups">Browse live profitable trade-ups</a> or test your own inputs in the <a href="/calculator">CS2 trade-up calculator</a>.</p>
 
