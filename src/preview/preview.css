@@ -1003,6 +1003,17 @@
   padding: 10px 2px 4px;
 }
 
+.preview-calc-next {
+  margin: 0;
+}
+
+@media (max-width: 599px) {
+  .preview-calc-next .preview-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 .preview-panel__meta .preview-chip {
   margin-right: 6px;
 }

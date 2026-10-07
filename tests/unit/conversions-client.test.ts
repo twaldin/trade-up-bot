@@ -238,6 +238,15 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("price");
   });
 
+  it("cta_click names the calculator board link once and does not call the pixel", () => {
+    installBrowser({ pathname: "/calculator" });
+    trackCtaClick("calculator_board");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "calculator_board", page_path: "/calculator", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
   it("cta_click no-ops when gtag has not loaded", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/" });
