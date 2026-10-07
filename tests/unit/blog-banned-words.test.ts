@@ -1,9 +1,9 @@
 /**
- * Shared by the probability-guide PR and the five-post PR.
- * Both branches carry this same file. A slug is enforced once its rewrite
- * marker is in the tree, so each PR stays green before the other merges.
- * After both land, every post these PRs edit is checked, and a rebase of
- * the second branch does not change this file.
+ * Shared by the de-gamble PRs. Every branch carries this same file.
+ * A slug is enforced once its rewrite marker is in the tree, so each PR
+ * stays green before the other merges. After both land, every post these
+ * PRs edit is checked, and a rebase of the second branch does not change
+ * this file.
  */
 import { describe, expect, it } from "vitest";
 import { blogMeta } from "../../src/data/blog-meta.js";
@@ -16,6 +16,9 @@ const SLUGS = [
   "best-cs2-collections-knife-trade-ups-2026",
   "profitable-trade-ups-theory-vs-reality",
   "cs2-trade-up-marketplace-fees",
+  "how-to-use-tradeupbot",
+  "cs2-trade-up-calculator-guide",
+  "best-cs2-trade-up-simulator",
 ] as const;
 
 /** Present only after that post's rewrite. Unrelated posts are not scanned. */
@@ -26,9 +29,12 @@ const MARKERS: Record<(typeof SLUGS)[number], string> = {
   "best-cs2-collections-knife-trade-ups-2026": "how diluted each output's probability is",
   "profitable-trade-ups-theory-vs-reality": "only one possible output remove outcome variance",
   "cs2-trade-up-marketplace-fees": "Skinport is cheapest at every price point",
+  "how-to-use-tradeupbot": "The default sort is Score",
+  "cs2-trade-up-calculator-guide": "Compare EV and the share of outcomes above cost",
+  "best-cs2-trade-up-simulator": "using input skins, floats, collection probabilities",
 };
 
-const LOCKED: Record<(typeof SLUGS)[number], { title: string; excerpt: string }> = {
+const LOCKED: Record<(typeof SLUGS)[number], { title: string; excerpt: string; h1?: string }> = {
   "cs2-trade-up-probability-expected-value": {
     title: "How to Use CS2 Trade-Up Probability and EV Wisely",
     excerpt:
@@ -59,18 +65,35 @@ const LOCKED: Record<(typeof SLUGS)[number], { title: string; excerpt: string }>
     excerpt:
       "CSFloat charges 2% seller fee (2.8% + $0.30 buyer). DMarket: 2% seller, 2.5% buyer. Skinport: 8% seller, 0% buyer. Full CS2 marketplace fee breakdown for trade-ups.",
   },
+  "how-to-use-tradeupbot": {
+    title: "How to Use TradeUpBot to Find Profitable Trade-Ups",
+    excerpt:
+      "Learn how to use TradeUpBot to find CS2 trade-ups with positive expected profit, verify live listings, claim inputs, and compare risk before you buy.",
+  },
+  "cs2-trade-up-calculator-guide": {
+    title: "CS2 Trade Up Calculator Guide: Profits, Floats & Fees",
+    excerpt:
+      "Use this CS2 trade up calculator guide to test floats, expected value, and fees before buying inputs. Start calculating smarter contracts today.",
+  },
+  "best-cs2-trade-up-simulator": {
+    title: "CS2 Trade-Up Simulator vs Calculator (Live Listings)",
+    excerpt:
+      "A guide to CS2 trade-up simulators vs calculators. Live listings, exact floats, and fees — then use the TradeUpBot calculator to test a contract.",
+    h1: "CS2 Trade-Up Simulator vs Calculator",
+  },
 };
 
 /**
- * Word-boundary, case-insensitive. `roll` / `rolls` / `rolled` match.
- * The trailing `(?!-)` keeps hyphenated compounds such as `rolled-out`
+ * Word-boundary, case-insensitive. Hyphenated forms `chance-to-profit`,
+ * `win-rate`, and `odds-on` are listed before the bare words. `roll` /
+ * `rolls` / `rolled` match, and the trailing `(?!-)` keeps `rolled-out`
  * out. `scroll`, `payroll`, and `rollback` fail the boundary.
  */
 const BANNED =
-  /\b(?:chances?|odds|gambl\w*|bankrolls?|jackpots?|bets?|betting|win|wins|winning|winners?|lottery|win rate|guaranteed|lucky|rolls?|rolled)\b(?!-)|cannot lose|\brisk-free\b|%\s*profit\b|\bprofit\s*%/gi;
+  /\b(?:chance-to-profit|odds-on|win-rate|chances?|odds|gambl\w*|bankrolls?|jackpots?|bets?|betting|win|wins|winning|winners?|lottery|win rate|guaranteed|lucky|rolls?|rolled)\b(?!-)|cannot lose|\brisk-free\b|%\s*profit\b|\bprofit\s*%/gi;
 
 /** FAQ questions that deny a guarantee may stay. Market skin names may contain a banned word. */
-const ALLOW_SNIPPETS = ["guarantee profit?", "High Roller"];
+const ALLOW_SNIPPETS = ["guarantee profit?", "High Roller", "FAMAS | Roll Cage"];
 
 function postBySlug(slug: string): BlogPost {
   const post = blogPosts.find((entry) => entry.slug === slug);
@@ -113,7 +136,7 @@ describe("blog banned words", () => {
       const meta = blogMeta.find((entry) => entry.slug === slug);
       const locked = LOCKED[slug];
       expect(post.slug).toBe(slug);
-      expect(post.h1).toBeUndefined();
+      expect(post.h1).toBe(locked.h1);
       expect(post.title).toBe(locked.title);
       expect(post.excerpt).toBe(locked.excerpt);
       expect(meta?.title).toBe(post.title);
@@ -130,7 +153,24 @@ describe("blog banned words", () => {
     expect(hit("two rolls")).toEqual([expect.stringContaining("\"rolls\"")]);
     expect(hit("he rolled")).toEqual([expect.stringContaining("\"rolled\"")]);
     expect(hit("a risk-free contract")).toEqual([expect.stringContaining("\"risk-free\"")]);
+    expect(hit("chance-to-profit")).toEqual([expect.stringContaining("\"chance-to-profit\"")]);
+    expect(hit("a win-rate column")).toEqual([expect.stringContaining("\"win-rate\"")]);
+    expect(hit("odds-on favorite")).toEqual([expect.stringContaining("\"odds-on\"")]);
     expect(hit("scroll payroll rollback rolled-out controller")).toEqual([]);
+  });
+
+  it("allowlists High Roller and FAMAS | Roll Cage in the scanned text", () => {
+    const strip = (raw: string) => {
+      let text = raw;
+      for (const snippet of ALLOW_SNIPPETS) {
+        text = text.split(snippet).join(" ");
+        text = text.split(snippet.toLowerCase()).join(" ");
+      }
+      return text;
+    };
+    expect(bannedHits("FAMAS | Roll Cage")).toEqual([expect.stringContaining("\"Roll\"")]);
+    expect(bannedHits(strip("High Roller and FAMAS | Roll Cage"))).toEqual([]);
+    expect(bannedHits(strip("Can a trade up calculator guarantee profit?"))).toEqual([]);
   });
 
   it("keeps the probability walkthrough on engine EV", () => {
@@ -187,5 +227,48 @@ describe("blog banned words", () => {
     expect(disagree.faq?.[0]?.answer.startsWith(
       "The float math and output probabilities are deterministic, so tools agree there.",
     )).toBe(true);
+  });
+
+  it("ships the product-guide replacement sentences", () => {
+    const how = postBySlug("how-to-use-tradeupbot");
+    if (how.content.includes(MARKERS["how-to-use-tradeupbot"])) {
+      expect(how.content).toContain("Sort by Above cost %");
+      expect(how.content).toContain("Sort by Expected P/L");
+      expect(how.content).toContain("The default sort is Score");
+      expect(how.content).toContain("<strong>Expected P/L</strong>");
+      expect(how.content).toContain("<strong>Best case</strong>");
+      expect(how.content).toContain("<strong>Worst case</strong>");
+      expect(how.content).toContain("<strong>P10 tail</strong>");
+      expect(how.content).toContain("10th percentile");
+      expect(how.content).toContain("These are estimates after fees. A trade-up can lose money.");
+      const what = "TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by expected P/L after fees, ROI, share of outcomes above cost, input cost, and output distribution.";
+      expect(how.content).toContain(what);
+      expect(how.faq?.find((item) => item.question === "What does TradeUpBot do?")?.answer).toBe(what);
+    }
+
+    const calc = postBySlug("cs2-trade-up-calculator-guide");
+    if (calc.content.includes(MARKERS["cs2-trade-up-calculator-guide"])) {
+      expect(calc.content).toContain("These are estimates after fees. A trade-up can lose money.");
+      const what = "A CS2 trade up calculator estimates output probabilities, output float, input cost, expected value, and expected P/L after fees for a trade-up contract before you buy the required skins.";
+      expect(calc.content).toContain(what);
+      expect(calc.faq?.find((item) => item.question === "What is a CS2 trade up calculator?")?.answer).toBe(what);
+      expect(calc.faq?.find((item) => item.question === "Can a trade up calculator guarantee profit?")?.answer.startsWith("No.")).toBe(true);
+    }
+
+    const sim = postBySlug("best-cs2-trade-up-simulator");
+    if (sim.content.includes(MARKERS["best-cs2-trade-up-simulator"])) {
+      expect(sim.content).toContain("Sorting by Expected P/L");
+      expect(sim.content).toContain("Sorting by Above cost %");
+      expect(sim.content).toContain("These are estimates after fees. A trade-up can lose money.");
+      const denial = "No. A simulator can calculate expected value and the share of outcomes above cost, but the output skin is still random and market prices can change before you buy inputs or sell the result.";
+      expect(sim.content).toContain(denial);
+      expect(sim.faq?.find((item) => item.question === "Can a trade up simulator guarantee profit?")?.answer).toBe(denial);
+      expect(sim.content).toContain("What is the best CS2 trade up simulator?");
+    }
+
+    const disagree = postBySlug("why-cs2-trade-up-calculators-disagree");
+    if (sim.content.includes(MARKERS["best-cs2-trade-up-simulator"])) {
+      expect(disagree.content).toContain("These are estimates after fees. A trade-up can lose money.");
+    }
   });
 });

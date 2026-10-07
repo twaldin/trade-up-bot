@@ -298,7 +298,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "5 min read",
     author: "TradeUpBot Team",
     content: `
-<p>TradeUpBot is a CS2 trade-up scanner that finds profitable contracts from real CSFloat, DMarket, and Skinport listings, then ranks them by profit, ROI, risk, and chance-to-profit. Use it to verify listings, claim opportunities, and compare outcomes before buying inputs safely.</p>
+<p>TradeUpBot is a CS2 trade-up scanner that finds contracts with positive expected value from real CSFloat, DMarket, and Skinport listings, then ranks them by expected P/L after fees, ROI, risk, and the share of outcomes above cost. Use it to verify listings, claim opportunities, and compare outcomes before you buy inputs. These are estimates after fees. A trade-up can lose money.</p>
 
 <p>Start with the <a href="/trade-ups">live trade-up table</a>, then check account limits on <a href="/pricing">TradeUpBot pricing</a> before using Verify or Claim on real listings.</p>
 
@@ -313,21 +313,21 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>Each row in the table represents a complete, executable trade-up contract built from real listings. Here's what each column tells you:</p>
 
 <ul>
-<li><strong>Profit</strong> — Expected profit in dollars, accounting for marketplace fees on both buying inputs and selling the output. Green means positive expected value.</li>
+<li><strong>Expected P/L</strong> — Expected profit and loss in dollars, after marketplace fees on both buying inputs and selling the output. Green means positive expected value.</li>
 <li><strong>ROI</strong> — Return on investment as a percentage. A 25% ROI on a $40 cost means $10 expected profit.</li>
-<li><strong>Chance</strong> — The probability that the trade-up produces a profitable outcome. A trade-up can have positive expected value but only 30% chance to profit if the profitable outcome is rare but very valuable.</li>
+<li><strong>Above cost %</strong> — The share of possible outcomes worth more than your total cost. A trade-up can have positive expected value with only 30% of outcomes above cost, if the outcome above cost is rare but very valuable.</li>
 <li><strong>Cost</strong> — Total cost to buy all input listings, including marketplace buyer fees.</li>
-<li><strong>EV</strong> — Expected value of the output, weighted across all possible outcomes by probability.</li>
-<li><strong>Best / Worst</strong> — The highest-value and lowest-value possible outcomes with their probabilities. This gives you the range of what could happen.</li>
+<li><strong>Expected value</strong> — Expected value of the output after fees, weighted across all possible outcomes by probability.</li>
+<li><strong>Best case</strong> — The highest outcome. <strong>Worst case</strong> — The lowest outcome. <strong>P10 tail</strong> — The 10th percentile.</li>
 </ul>
 
-<p>The default sort is by profit, but sorting by chance-to-profit is often more practical. A trade-up with 90% chance to profit and $5 expected profit is a safer bet than one with 15% chance and $40 expected profit — unless you're willing to absorb losses on the misses.</p>
+<p>The default sort is Score, but sorting by Above cost % is often more practical. A trade-up with 90% of outcomes above cost and $5 expected P/L has less downside variance than one with 15% of outcomes above cost and $40 expected P/L, unless you can absorb losses on the outcomes below cost.</p>
 
 <h2>Expanding a Trade-Up</h2>
 
 <p>Click any row to expand it. The expanded view shows three things:</p>
 
-<p><strong>Outcome distribution chart.</strong> A horizontal bar chart showing every possible output skin, its probability, its estimated value, and whether it's profitable (green) or not (red). This is the core of the trade-up — you can see exactly what you're betting on.</p>
+<p><strong>Outcome distribution chart.</strong> A horizontal bar chart showing every possible output skin, its probability, its estimated value, and whether it's profitable (green) or not (red). This is the core of the trade-up: you can see every output you could receive and what each is estimated to be worth.</p>
 
 <p><strong>Input listings.</strong> The specific marketplace listings that make up this trade-up. Each input shows the skin name, float value, condition, price, and which marketplace it's listed on. Each input links directly to the marketplace listing so you can buy it.</p>
 
@@ -357,11 +357,11 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Tips for Finding the Best Trade-Ups</h2>
 
-<p><strong>Sort by chance-to-profit for consistent returns.</strong> Trade-ups with 80%+ chance to profit will win most of the time. The profit per trade-up is usually modest ($5-20), but the consistency adds up. This is the lower-variance strategy.</p>
+<p><strong>Sort by Above cost % for lower variance.</strong> On trade-ups with 80%+ of outcomes above cost, most outcomes land above cost, though the ones below cost can lose more than the others make. Expected P/L per trade-up is usually modest ($5-20). This is the lower-variance approach.</p>
 
-<p><strong>Sort by profit for highest upside.</strong> The top-profit trade-ups often have lower chance-to-profit — maybe 30-50%. But when they hit, the payout is significant. This works if you're doing enough volume that the expected value plays out over many attempts.</p>
+<p><strong>Sort by Expected P/L for the largest estimates.</strong> The top expected-P/L trade-ups often have fewer outcomes above cost, maybe 30-50%, and the outcomes above cost are large. That only averages out if you do enough volume for expected value to show up over many attempts.</p>
 
-<p><strong>Check the Best/Worst columns together.</strong> A trade-up where the worst outcome still breaks even is fundamentally different from one where the worst outcome loses 80% of your cost. The chance-to-profit number alone doesn't capture this — look at the actual downside.</p>
+<p><strong>Check Best case, Worst case, and P10 tail together.</strong> A trade-up where the worst outcome still breaks even is fundamentally different from one where the worst outcome loses 80% of your cost. The Above cost % number alone doesn't capture this. Look at the actual downside.</p>
 
 <p><strong>Verify before every purchase.</strong> Prices move. Listings sell. A trade-up that was +$15 profit when discovered might be +$3 by the time you verify it. Verification takes seconds and saves you from buying into a trade-up that's no longer worth it.</p>
 
@@ -372,7 +372,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <h2>FAQ</h2>
 
 <h3>What does TradeUpBot do?</h3>
-<p>TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by net profit, ROI, chance-to-profit, input cost, and output distribution.</p>
+<p>TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by expected P/L after fees, ROI, share of outcomes above cost, input cost, and output distribution.</p>
 
 <h3>Should I verify a trade-up before buying inputs?</h3>
 <p>Yes. Verification checks whether each marketplace listing still exists and updates prices before you commit money to the contract.</p>
@@ -382,7 +382,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 `,
     faq: [
-      { question: "What does TradeUpBot do?", answer: "TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by net profit, ROI, chance-to-profit, input cost, and output distribution." },
+      { question: "What does TradeUpBot do?", answer: "TradeUpBot scans real marketplace listings and ranks executable CS2 trade-ups by expected P/L after fees, ROI, share of outcomes above cost, input cost, and output distribution." },
       { question: "Should I verify a trade-up before buying inputs?", answer: "Yes. Verification checks whether each marketplace listing still exists and updates prices before you commit money to the contract." },
       { question: "What does claiming a trade-up do?", answer: "Claiming hides the trade-up inputs from other TradeUpBot users for 30 minutes, giving Pro users time to purchase the linked listings." },
     ],
@@ -663,7 +663,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "8 min read",
     author: "TradeUpBot Team",
     content: `
-<p>A CS2 trade up calculator is a tool that estimates a contract's output odds, output float, total input cost, marketplace fees, and expected profit before you buy skins. The best calculators use exact float values and live prices instead of averages.</p>
+<p>A CS2 trade up calculator is a tool that estimates a contract's output probabilities, output float, total input cost, marketplace fees, and expected P/L before you buy skins. The best calculators use exact float values and live prices instead of averages.</p>
 
 <p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and enter the exact skin, float, and price for each slot. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
 
@@ -675,7 +675,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>Second, the calculator must predict the output float. The output float decides whether the result is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred. Since condition boundaries often create the biggest price jumps, a contract that lands at 0.0699 can be profitable while the same contract at 0.0701 loses money.</p>
 
-<p>Third, the calculator must price every output at the predicted float and subtract realistic marketplace fees. A raw $12 profit can disappear once buyer fees on inputs and seller fees on the output are included. This is why calculators built on real CSFloat, DMarket, and Skinport listings are more useful than calculators using generic Steam averages.</p>
+<p>Third, the calculator must price every output at the predicted float and subtract realistic marketplace fees. A raw $12 profit can disappear once buyer fees on inputs and seller fees on the output are included. These are estimates after fees. A trade-up can lose money. This is why calculators built on real CSFloat, DMarket, and Skinport listings are more useful than calculators using generic Steam averages.</p>
 
 <h2>The Float Formula You Need to Understand</h2>
 
@@ -695,13 +695,13 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>2. Enter exact inputs.</strong> Add each input skin with its collection, rarity, float, and real buy price. If you are using marketplace listings, include the exact listing price rather than an average price. Average prices do not tell you what a specific low-float listing costs.</p>
 
-<p><strong>3. Check the output pool.</strong> Review every possible output skin and its probability. A contract with one jackpot and nine bad outcomes may show positive expected value while still losing money most of the time. Probability matters as much as headline profit.</p>
+<p><strong>3. Check the output pool.</strong> Review every possible output skin and its probability. A contract with one expensive outcome and nine below cost may show positive expected value while still losing money most of the time. Probability matters as much as headline profit.</p>
 
 <p><strong>4. Inspect output conditions.</strong> Confirm where each possible output lands after the float formula. If the profitable outputs need Factory New, make sure the predicted float is safely below 0.07. A tiny buffer is risky because replacement inputs may not have identical floats.</p>
 
 <p><strong>5. Add marketplace fees.</strong> CSFloat, DMarket, Skinport, and other marketplaces use different buyer and seller fee structures. Your calculator should add buyer fees to input cost and subtract seller fees from output value. Without fees, thin-margin trade-ups look better than they really are.</p>
 
-<p><strong>6. Compare EV and chance-to-profit.</strong> Expected value tells you the average result over many attempts. Chance-to-profit tells you how often one attempt finishes green. Small bankrolls usually benefit from higher chance-to-profit, while larger bankrolls can tolerate lower-probability positive-EV contracts.</p>
+<p><strong>6. Compare EV and the share of outcomes above cost.</strong> Expected value tells you the average result over many attempts. The share of outcomes above cost tells you how often one attempt lands above cost. Smaller budgets usually suit a higher share of outcomes above cost. Larger budgets can absorb lower-probability positive-EV contracts.</p>
 
 <h2>Common Calculator Mistakes</h2>
 
@@ -709,7 +709,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>The second mistake is ignoring non-standard float ranges. Some skins cannot exist in every condition. Others have very narrow ranges that make their adjusted floats surprisingly high. A calculator that assumes every skin ranges from 0.00 to 1.00 will produce wrong output floats for many contracts.</p>
 
-<p>The third mistake is trusting expected value alone. A +$25 EV trade-up with a 20% chance to profit can be mathematically attractive but emotionally and financially brutal if you only run it once. Always look at the worst outcome, best outcome, and probability distribution.</p>
+<p>The third mistake is trusting expected value alone. A +$25 EV trade-up with 20% of outcomes above cost can be mathematically attractive but emotionally and financially brutal if you only run it once. Always look at the worst outcome, best outcome, and probability distribution.</p>
 
 <p>The fourth mistake is forgetting availability. Marketplace listings sell. If one required input disappears, the contract may no longer hit the same float target or output distribution. Before buying, verify that every listing is still live and that prices have not changed.</p>
 
@@ -717,14 +717,14 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>TradeUpBot is designed around executable trade-ups, not just theoretical recipes. The calculator helps you test your own inputs, while the discovery engine scans real market listings and surfaces contracts that can actually be assembled from current inventory. That connection between calculation and availability is the difference between planning and execution.</p>
 
-<p>The platform also shows downside risk. Instead of giving one profit number, it breaks out output probabilities, estimated values, expected value, ROI, best case, worst case, and chance-to-profit. That helps you decide whether a contract fits your bankroll and risk tolerance.</p>
+<p>The platform also shows downside risk. Instead of giving one profit number, it breaks out output probabilities, estimated values, expected value, ROI, best case, worst case, and the share of outcomes above cost. That helps you decide whether a contract fits your budget and risk tolerance.</p>
 
 <p>Use the calculator when you are experimenting with a custom idea. Use the live trade-up table when you want marketplace-backed examples that already include real input prices and fees. Use skin pages when you need to understand float ranges, active listings, and collection relationships before substituting inputs.</p>
 
 <h2>FAQ</h2>
 
 <h3>What is a CS2 trade up calculator?</h3>
-<p>A CS2 trade up calculator estimates output odds, output float, input cost, expected value, and profit for a trade-up contract before you buy the required skins.</p>
+<p>A CS2 trade up calculator estimates output probabilities, output float, input cost, expected value, and expected P/L after fees for a trade-up contract before you buy the required skins.</p>
 
 <h3>Can a trade up calculator guarantee profit?</h3>
 <p>No. A calculator can estimate expected value from known inputs, floats, prices, and fees, but the output skin is still random and marketplace prices can change before you sell.</p>
@@ -736,7 +736,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>Exact float determines the output condition. Small differences near 0.07, 0.15, 0.38, or 0.45 can move an output across a condition boundary and change its value.</p>
 `,
     faq: [
-      { question: "What is a CS2 trade up calculator?", answer: "A CS2 trade up calculator estimates output odds, output float, input cost, expected value, and profit for a trade-up contract before you buy the required skins." },
+      { question: "What is a CS2 trade up calculator?", answer: "A CS2 trade up calculator estimates output probabilities, output float, input cost, expected value, and expected P/L after fees for a trade-up contract before you buy the required skins." },
       { question: "Can a trade up calculator guarantee profit?", answer: "No. A calculator can estimate expected value from known inputs, floats, prices, and fees, but the output skin is still random and marketplace prices can change before you sell." },
       { question: "What information do I need for accurate calculations?", answer: "You need each input skin's collection, rarity, exact float, float range, and current buy price, plus realistic output prices and marketplace buyer and seller fees." },
       { question: "Why does exact float matter in trade-up contracts?", answer: "Exact float determines the output condition. Small differences near 0.07, 0.15, 0.38, or 0.45 can move an output across a condition boundary and change its value." },
