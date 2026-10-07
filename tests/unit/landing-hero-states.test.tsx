@@ -18,7 +18,8 @@ describe("hero proof panel states", () => {
   it("holds the panel shape with skeleton blocks while the board loads", () => {
     const html = render({ tu: null, loading: true, isFree: true });
     expect(html).toContain("preview-proof__skeleton");
-    expect(html).toContain("Loading the top trade-up on the board");
+    expect(html).not.toContain("Loading the top trade-up on the board");
+    expect(html).not.toContain("Loading trade-ups");
     expect(html).not.toContain("The board is refreshing");
   });
 

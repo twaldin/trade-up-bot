@@ -15,6 +15,7 @@ import {
   trackClaimTradeUp,
   trackVerifyComplete,
   trackCtaClick,
+  trackLandingLoadError,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -236,6 +237,30 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("value");
     expect(params).not.toHaveProperty("listing_id");
     expect(params).not.toHaveProperty("price");
+  });
+
+  it("cta_click names the hero trade-up open and carries no prices or ids", () => {
+    installBrowser({ pathname: "/" });
+    trackCtaClick("home_hero_tradeup");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "home_hero_tradeup", page_path: "/", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("listing_id");
+    expect(params).not.toHaveProperty("price");
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("landing_load_error names the failure and does not touch the pixel", () => {
+    installBrowser({ pathname: "/" });
+    trackLandingLoadError("rate_limited");
+    trackLandingLoadError("error");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "landing_load_error", { kind: "rate_limited", page_path: "/", send_to: GA4 }],
+      ["event", "landing_load_error", { kind: "error", page_path: "/", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
   });
 
   it("cta_click no-ops when gtag has not loaded", () => {

@@ -8,6 +8,8 @@ export const PREVIEW_CTA_PRIMARY = "Find Real Tradeups ->";
 export const PREVIEW_CTA_DISCORD = "Join the Discord";
 export const PREVIEW_CTA_CALCULATOR = "Try the calculator";
 export const PREVIEW_CTA_NOTE = "Free to browse — no account needed.";
+/** Shown after the hero has been loading for 8s. States no board facts. */
+export const HERO_STILL_LOADING = "Still loading the live board…";
 export const PREVIEW_DISCORD_HREF = "https://discord.gg/gQ8cPqBq2a";
 export const PREVIEW_GITHUB_HREF = "https://github.com/twaldin/trade-up-bot";
 

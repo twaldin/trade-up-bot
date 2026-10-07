@@ -572,6 +572,101 @@
 .preview-proof__skeleton--outs span { height: 34px; }
 .preview-proof__skeleton--kpis span { height: 58px; }
 
+/* Phones get one compact card under the H1. The 1280 proof panel stays. */
+.preview-hero__card { display: none; }
+
+.preview-hero__retry {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.preview-hero__card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-hero__card-head time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-hero__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.preview-hero__metrics b { font-variant-numeric: tabular-nums; }
+
+.preview-hero__card-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-hero__card-skeleton span {
+  display: block;
+  height: 18px;
+  border-radius: var(--r-control);
+  background: var(--row-hover);
+}
+
+.preview-hero__card-skeleton span:last-child { height: 44px; width: 46%; }
+
+.preview-hero__slow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-live__skeleton,
+.preview-hero__plot-skeleton {
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-live__skeleton {
+  height: 160px;
+  margin-top: 20px;
+}
+
+.preview-hero__plot-skeleton { height: 216px; }
+
+@media (max-width: 1079px) {
+  .preview-proof { display: none; }
+
+  .preview-hero__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    order: 2;
+    width: 100%;
+    min-height: 148px;
+    padding: 12px;
+    border: 1px solid var(--line-hard);
+    border-radius: var(--r-panel);
+    background: var(--panel);
+  }
+
+  .preview-hero__copy > .o-kicker { order: 0; }
+  .preview-hero__copy > h1 { order: 1; }
+  .preview-hero__copy > .preview-toolbar { order: 3; }
+  .preview-hero__lede { order: 4; }
+  .preview-hero .preview-stats { order: 5; }
+
+  .preview-hero__open,
+  .preview-hero .preview-btn--lg {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .preview-laptop { display: none; padding: 0 24px; }
 .preview-phone { display: block; padding: 0 24px; }
 
