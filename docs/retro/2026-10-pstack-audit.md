@@ -2,22 +2,23 @@
 
 Tree `d6b21a3` on 2026-10-07. Production deploy of that tree was confirmed by the QA live sweep (bundle `index-Co1S_JBH.js`, homepage last-modified Mon 05 Oct 2026). This pass adds the verification skill and this plan. It does not change prices, plans, the score formula, fee math, or rate-limit values.
 
-Two code audits are cited and not redone.
+Three reviews are cited and not redone.
 
 - Autoresearch code audit, 2026-10-06, tree `d6b21a3e2f9d4b0bbc13049c2ea089644066797f`. Code only. Schema `2026-10-02.4`. Counts in that document are 1 P0, 9 P1, 8 P2.
 - QA live sweep, 2026-10-06, prod `d6b21a3e`. 230 read-only requests, 0 organic 5xx, 0 rate limits. That document counted 0 P0, 1 P1, and 12 P2. The P1 (F-07) was later refuted in GA4 Realtime and is not in the counts below.
+- Frontend first-session teardown, 2026-10-06, prod `d6b21a3e`, guest only, 1280 and 390. That document counted 3 P0, 5 P1, and 12 P2. Screenshots are in `reviews/pstack-frontend-audit-2026-10-06/`. Blog and canonical items it lists as already known are the copy and skin-canonical findings in this report, so they are not counted again.
 
-Labels used below. **Observed-live** means this run or the QA sweep saw it on tradeupbot.app. **Code-only** means the file was read and production was not exercised for that path. Daemon findings stay code-only. Prod is not claimed fixed.
+Labels used below. **Observed-live** means this run, the QA sweep, or the Frontend teardown saw it on tradeupbot.app. **Code-only** means the file was read and production was not exercised for that path. Daemon findings stay code-only. Prod is not claimed fixed.
 
 ## Counts
 
 | Bucket | Count | What is included |
 | --- | --- | --- |
-| P0 | 3 | Banned public copy, skin canonical after a client click, merge-batch deadlock (PR 194, in flight) |
-| P1 | 12 | Autoresearch AR-P1-1 through AR-P1-9, two GA4 properties on one page, `sign_up` under-firing, internal traffic in GA4 |
-| P2 | 20 | Autoresearch AR-P2-1 through AR-P2-8, QA F-01 F-02 F-03 F-04 F-05 F-06 F-12 F-13, plus list-cache keys, Redis `commandTimeout`, the detail tier header, and the board hub without ItemList |
+| P0 | 6 | Banned public copy, skin canonical after a client click, merge-batch deadlock (PR 194, in flight), mobile trade-up header, claim pop-up with no Pro step, SEO pages whose main button is raw Steam sign-in |
+| P1 | 16 | Autoresearch AR-P1-1 through AR-P1-9, two GA4 properties on one page, `sign_up` under-firing, internal traffic in GA4, the untracked "Find Real Tradeups" click, upgrade clicks PR 193 does not cover, the unsaved activation funnel, and the calculator dead end |
+| P2 | 29 | Autoresearch AR-P2-1 through AR-P2-8, QA F-01 F-02 F-03 F-04 F-05 F-06 F-12 F-13, list-cache keys, Redis `commandTimeout`, the detail tier header, the board hub without ItemList, plus nine Frontend items (empty board peek, blank skin art, filler copy, pricing card order at 390, pricing copy accuracy, pricing resume after sign-in, masked landing errors, intent rows labelled only by id, footer separators) |
 
-F-08 through F-11 are the same copy slice as the P0 posts. They are not a second set of findings. Several seed items were refuted and are listed under the seed checklist so they are not in these counts.
+F-08 through F-11 are the same copy slice as the P0 posts. They are not a second set of findings. The teardown's two-property P1 is the GA4 split already in this table. Its tap-target P2 is F-05. Its board-sort P2 is part of the SEO-button P0. Its ad-safe scan found no new banned phrase, so it adds no finding. Several seed items were refuted and are listed under the seed checklist so they are not in these counts.
 
 ## P0
 
@@ -42,7 +43,11 @@ Same slice, same wording.
 
 `tests/unit/banned-copy.test.ts` scans `src/preview` and a short server list. It does not scan `src/data/blog-posts.ts`. The allowlist still contains "Win rate", which is why the account label stays green. Negated lines "never guaranteed" and "not guaranteed" stay allowed. Do not rename the database column `chance_to_profit`. Do not edit engine comments in this slice.
 
-User impact is ad and SEO copy that the review already banned. Blast radius is content, `llms.txt`, Discord user strings, and the account label. One Frontend PR. Extend the banned-copy test so the next agent cannot land the phrases again.
+The free board is delayed 3 hours, so two labels overstate it. The board heading defaults to "Live trade-ups" in `src/preview/pages/PreviewBoard.tsx`. The nav CTA is `PREVIEW_CTA_PRIMARY` ("Find Real Tradeups ->") in `src/preview/lib/copy.ts`, rendered from `PreviewChrome`. The same CTA is hardcoded in `src/preview/pages/PreviewPricing.tsx` and `server/static-seo-pages.ts`. Make them honest. "Trade-ups" and "Find trade-ups" are the examples. Keep a delayed-view note where a surface does not already say the free list is 3 hours behind. The board already has that banner, so do not add a second one there.
+
+PR 193 (`cursor/free-paid-conversion-1406`) already edits `src/preview/lib/copy.ts`, `src/preview/pages/PreviewBoard.tsx`, `src/preview/pages/PreviewPricing.tsx`, and `src/preview/pages/PreviewLanding.tsx`. Leave those files alone until 193 merges, then rebase this copy PR onto that result. `server/static-seo-pages.ts` is not in 193.
+
+User impact is ad and SEO copy that the review already banned, plus a free-tier promise the delay makes false. Blast radius is content, `llms.txt`, Discord user strings, the account label, the board heading, and the primary nav CTA. One Frontend PR. Extend the banned-copy test so the next agent cannot land the phrases again. Update the tests that pin "Find Real Tradeups".
 
 ### Skin canonical after a client click
 
@@ -55,6 +60,24 @@ Observed-live. A direct GET of `/skins` and `/skins/ak-47-redline` has the right
 Code-only. AR-P0-1. A 40P01, or any non-connection database error, in the Phase 5 merge update kills the process. `server/engine/db-save.ts` update batch uses `withRetry` without lock handling and sets `listing_status = 'active'`. `isTransientDbError` in `server/engine/utils.ts` does not treat 40P01, 55P03, or 57014 as transient. `mergeTradeUps` at `server/daemon/index.ts` is outside try/catch. `server/daemon.ts` calls `process.exit(1)`. A pm2 restart drops the in-memory `queuedMergeBatches`.
 
 This is in flight as [PR 194](https://github.com/twaldin/trade-up-bot/pull/194) on `cursor/merge-deadlock-retry-f431` ("Retry merge-update deadlocks so the daemon stays up"). Autoresearch has signed it. It is waiting on QA isolation. Do not open a second PR for the same deadlock.
+
+### Trade-up header breaks at 390
+
+Observed-live in the Frontend teardown, on `/trade-ups/781571674` at 390 by 844. The title sits in a column about 130px wide, Copy link is clipped at the right edge, and "Verify or claim this trade-up" starts near y 598. `.preview-page__meta` sets `flex-shrink: 0` in `src/preview/preview.css` (the meta rule under `.preview-page__head`). That meta row does not shrink, so the title column collapses. There is no document-level horizontal overflow, which is why a page overflow check misses it.
+
+User impact is every phone visitor who opens a trade-up from the board. Blast radius is that header. One Frontend PR. Under `max-width: 599px`, let `.preview-page__head` wrap and let `.preview-page__meta` shrink, wrap, and take the full width. Playwright at 390 by 844 on a live id. The title is at least 320px wide, Copy link is fully on screen, and the main button sits inside the first 450px. Desktop screenshots of the board, pricing, and calculator headers stay unchanged. `preview.css` is also on PR 193, so rebase onto main after that PR merges before editing the file.
+
+### Claim pop-up has no Pro step
+
+Observed-live. The claim dialog says Verify and Claim are Pro, then its only button is Continue with Steam, and the next line says the guest comes back to this trade-up. The Free return still has no Verify and no Claim. Upgrading is a second trip through Pricing. The current upgrade control is a small "Compare plans" text link. PR 193 adds a delay sentence on the share panels and leaves this dialog alone. `upgrade_cta_click` arrives in 193.
+
+User impact is the path from a guest trade-up to checkout. Blast radius is `src/preview/lib/steam-interstitial.ts`, `src/preview/components/SteamInterstitial.tsx`, and the upgrade id in `src/lib/conversions.ts`. One Frontend PR, based on main after PR 193 merges. Add a visible "See Pro plans" button at least 44px tall that fires `upgrade_cta_click`. The copy says plainly that Verify and Claim need Pro, and it uses the price string already shown on the pricing page. The price stays as it is. The Continue with Steam href stays byte-identical. Hillclimb metric is `upgrade_cta_click`.
+
+### SEO pages send the main button to Steam
+
+Observed-live on `/best-cs2-trade-ups`, `/trade-ups/tiers`, and `/trade-ups/tiers/covert`. The lime primary is a raw Steam sign-in. It skips the pop-up. The return path is `/trade-ups` rather than the page the visitor was on. A Free account still cannot verify or claim. "Open the live board" is the secondary action and lands on the default Score sort, so the table the visitor just read is not the board they land on. PR 193 adds See Pro plans as a third button and keeps raw Steam as the primary. The page file is `src/preview/pages/PreviewIntent.tsx`.
+
+User impact is the first action on the indexable intent pages. Blast radius is that page. One Frontend PR, rebased after PR 193. The main button goes to Pro or opens the pop-up, and Steam returns to the page the visitor came from. The intent block's controls are at least 44px at 390.
 
 ## P1 measurement
 
@@ -71,7 +94,7 @@ The property G-2474G4P5QE shows `sign_up` first on Oct 1 and once across Oct 1 t
 5. There is no consent gate. The gtag stub in `index.html` exists before the module. A module on the live page can see `gtag` (`typeof gtag === "function"`). A missing gtag function is not the drop on this build.
 6. There is no server-side GA4 `sign_up`. Meta CompleteRegistration is a different pipe, and the pixel is unset in prod.
 
-One Frontend slice. Fire `sign_up` exactly once per newly created account, using a server-side signal that is consumed once (auth return or `/api/auth/me`). A returning login stays `login`. An unauthenticated `?auth=new` must not count. Add a unit or integration test. The skill command `signup` already fails on the missing server flag. Interstitial events need no transport change. Two live Go Pro then Continue with Steam runs at 9:52 PM PT showed `pro_interstitial_view` 2, `steam_continue` 2, and `sign_up_start` 2 in GA4 Realtime for G-2474G4P5QE. The earlier capture that saw those events only on the legacy property was a QA harness artifact.
+Fire `sign_up` exactly once per newly created account, using a server-side signal that is consumed once (auth return or `/api/auth/me`). A returning login stays `login`. An unauthenticated `?auth=new` must not count. Add a unit or integration test. The skill command `signup` already fails on the missing server flag. This fix ships in the measurement PR at the front of wave 1, with the legacy-tag retirement and the `cta_click` ids. `server/auth.ts` and `src/lib/conversions.ts` are on PR 193, so those hunks rebase after 193 merges. Interstitial events need no beacon or `event_callback` change. Two live Go Pro then Continue with Steam runs at 9:52 PM PT showed `pro_interstitial_view` 2, `steam_continue` 2, and `sign_up_start` 2 in GA4 Realtime for G-2474G4P5QE. The earlier capture that saw those events only on the legacy property was a QA harness artifact.
 
 ### Internal traffic in GA4
 
@@ -81,7 +104,35 @@ One Frontend slice. When the user agent contains `HeadlessChrome` or `TradeUpBot
 
 ### Two GA4 properties on one page
 
-Observed-live. Homepage HTML contains hardcoded `G-EKWRB4FE37` in `index.html` and injected `G-2474G4P5QE` in `window.tubTracking`. QA re-check saw one `page_view` per id, with the right `dl`, and no Meta pixel. Retire the legacy id in its own small change after the measurement slice. Do not delete it in the audit PR. `trackSpaPageView` sends only a pixel page view. GA4 history hits depend on the property's enhanced measurement. That admin setting was not opened, so a missing SPA `page_view` is not filed as its own bug.
+Observed-live. Homepage HTML contains hardcoded `G-EKWRB4FE37` in `index.html` and injected `G-2474G4P5QE` in `window.tubTracking`. The Frontend teardown saw `page_view` on both properties. `sendGa4` events, including `cta_click`, `sign_up`, `login`, `begin_checkout`, and `claim_trade_up`, go to G-2474 only. `trackEvent` calls without `send_to` (`pro_interstitial_view`, `steam_continue`, `sign_up_start`, `interstitial_dismiss`) go to both properties.
+
+CEO decision. `G-2474G4P5QE` is the single canonical property. The GA4 account does not contain `G-EKWRB4FE37`, so that tag has no readers and it splits the event stream. Retire the hard-coded tag in `index.html` in the measurement PR now. Every event goes to G-2474, including `page_view` and the sign-in pop-up events. After the change, one page load records one `page_view` on that property. Leave the tag in place in this audit PR.
+
+`trackSpaPageView` sends only a pixel page view. GA4 history hits depend on the property's enhanced measurement. That admin setting was not opened. A missing SPA `page_view` stays unfiled until that setting is checked.
+
+### "Find Real Tradeups" fires no event
+
+Observed-live. The hero, the sticky nav, the live section, the peek section, and the pricing footer navigate with a SPA `page_view` and no `cta_click`. "Try the calculator" is the control that already fires `cta_click` with `home_hero_calculator`.
+
+Same measurement PR, no visible change. Extend `CtaId` in `src/lib/conversions.ts` with `home_hero_board`, `nav_board`, `home_live_board`, `home_peek_board`, and `pricing_board`. Wire `onClick` in `PreviewLanding.tsx`, `PreviewChrome.tsx`, and `PreviewPricing.tsx`. The honest-label copy PR may rename the visible string later. These ids stay on the control. `conversions.ts`, `PreviewLanding.tsx`, and `PreviewPricing.tsx` are on PR 193. `PreviewChrome.tsx` is not. Rebase the 193 files after that PR merges.
+
+### Upgrade clicks PR 193 does not cover
+
+193 covers board See Pro, redacted View Plans, the landing hero See Pro, the share upgrade panel, intent See Pro, and pricing Go Pro. Still open after that. The landing Pro tile "Compare plans", the Free user's share-header Verify chip (a full document load to `/pricing`, currently counted as `verify_click`), and the nav and footer Pricing links. The interstitial "Compare plans" control is the claim-pop-up P0.
+
+A later Frontend PR, after 193, adds `upgrade_cta_click` ids `landing_plan_tile`, `share_bar`, and `nav_pricing`, and turns the share-bar upgrade anchor into a client `Link`.
+
+### No saved activation funnel
+
+Claim is Pro-only, so a first session cannot move `claim_trade_up` inside a test window. The steps exist in code. `verify_click`, `claim_interstitial_view`, `steam_continue` or `sign_up_start`, `sign_up`, `upgrade_cta_click`, `begin_checkout`, purchase, then `claim_trade_up`. There is no saved funnel, so the P0 flow fixes have no named intermediate readout.
+
+No code PR. The CEO saves that funnel exploration in G-2474G4P5QE, seven days, Pacific time. Each slice names its own hillclimb step. The claim pop-up uses `upgrade_cta_click`. The SEO pages use the intent `cta_click` and `upgrade_cta_click`.
+
+### Calculator example ends with nowhere to go
+
+Observed-live. Load example evaluates to about -$0.33 expected P/L (ten Zeus x27 | Olympus inputs, 50% of outcomes above cost) and then offers no next action. `calculator_complete` does fire on G-2474. The preferred example id is `PREFERRED_EXAMPLE_TRADE_UP_ID` in `shared/calculator-example.ts`.
+
+This waits for the trust slice. Pick an example that shows the tool honestly, and add a next step to live trade-ups. Fee math and the EV formula stay as they are.
 
 `begin_checkout` is gated in `src/preview/lib/checkout.ts` and in `tests/unit/preview-checkout.test.ts`. The signed-out pricing command opened Continue with Steam and did not post `/api/subscribe`. Meta stayed absent.
 
@@ -126,7 +177,7 @@ Reviewer is Autoresearch.
 | F-02 | Observed this run. Googlebot on `/trade-ups/2147483648` and `/trade-ups/999999999999` is HTTP 200 with canonical `https://tradeupbot.app/`. `/trade-ups/abc` is 404 in 98ms. `handleTradeUpShareSeo` catch calls `next()` | Same PR as F-01 |
 | F-03 | QA. A real browser on an expired id gets 410 and unstyled text, no nav, no link to the board | Wave 1. Keep 410 |
 | F-04 | QA. Board CLS 0.283 desktop and 0.217 mobile, one shift near 2.7s when the placeholder collapses. Field CrUX still open | Wave 1 with F-05 |
-| F-05 | QA measured at 390px. Filter selects about 16px tall, number inputs about 14px, nav chips 24px. This run measured the intent "Sign in with Steam" control at 28 by 131px. `--control` is 28px in `src/preview/kit/outlay/theme.css` | Wave 1. Coarse pointer min-height 44px for those controls and the earlier primary CTAs. Do not raise the global token for every desktop control |
+| F-05 | QA measured at 390px. Filter selects about 16px tall, number inputs about 14px, nav chips 24px. This run measured the intent "Sign in with Steam" control at 28 by 131px. The Frontend teardown added the share primary at 338 by 28, board Verify and See Pro at about 24px tall, pricing tabs at 28px, Go Pro at 34px, calculator controls at 28px, the mobile header CTA at 28px, and FAQ summaries at about 20px. `--control` is 28px in `src/preview/kit/outlay/theme.css` | Wave 1. Coarse pointer min-height 44px for those controls. The intent block's 44px rule ships with the SEO-button P0. Do not raise the global token for every desktop control |
 | F-06 | QA plus this run. nginx `/` has no CSP, no Referrer-Policy, no HSTS. Asset requests can carry `auth` and `lid` in Referer before the strip script runs. Node sends both `no-referrer` and `strict-origin-when-cross-origin`. `/api/status` also doubles `X-Frame-Options` (SAMEORIGIN and DENY) | Wave 1, merged with the doubled-header work |
 | F-12 | QA. Unknown skin, collection, and blog slugs return 404 with no `X-Robots-Tag`. Tier 404 already sends noindex | Wave 1 |
 | F-13 | QA saw "10,001 trade-ups" on the landing hero, then 820,934 after global stats. `landingStatsFromSources` falls back to the board total, and `LIST_TOTAL_CAP` is 10001 | Wave 1 |
@@ -143,6 +194,27 @@ Code-only, not in wave 1.
 - `server/redis.ts` sets `maxRetriesPerRequest` and does not set `commandTimeout`.
 - Detail and inputs set `X-Effective-Tier` from the session user only. The list treats an internal bearer as pro.
 - `/trade-ups` Googlebot HTML has FAQPage and WebApplication and no ItemList, by the template in `server/index.ts`. `/best-cs2-trade-ups` does include ItemList. Optional SEO, not a broken hub.
+
+## Frontend P2
+
+| Id | What | Where it goes |
+| --- | --- | --- |
+| FE-P2-1 | "A peek at the live board" renders no cards. `usePreviewTradeUps({ perPage: 3 })` feeds the hero and the featured row, so the peek slice is empty | Trust slice |
+| FE-P2-2 | A trade-up opened in a new tab never calls `warmBoardFaces`. Board Verify opens a new tab, so those visitors see blank skin art. `PreviewShare.tsx` is the page. The calculator already warms faces | Trust slice |
+| FE-P2-3 | Filler on first-session surfaces. The share lede describes the verify and claim flow. The expanded board says it opens the live trade-up on this site. Board meta shows rows loaded and a column count. How-it-works mentions request rate, swap optimization, and float-target counts. The covert page repeats the same input and output sentence | Later copy polish, after the banned-phrase PR |
+| FE-P2-4 | At 390 the pricing first screen is the Free card. Go Pro starts near y 961. Billing tabs are 28px tall | Later. Pro card first under 600px, tabs at least 44px, 1280 layout unchanged, plan values unchanged |
+| FE-P2-5 | The Pro lede says "full analytics" while the compare table gives Free a check for price analytics. Three Pro lines repeat Claim. The Free list marks the 3-hour delay like a feature. PR 193's delay sentence does not cover these lines | Later. Every number stays byte-identical ($6.99, 20/hr, 10/hr, 5, 30 min) |
+| FE-P2-6 | Controls under 44px beyond the intent page | Same PR as F-05 |
+| FE-P2-7 | After Steam, pricing comes back on the Monthly tab and the visitor has to find Go Pro again | Later. Restore the chosen billing tab and point at Go Pro. No auto-checkout. Stripe stays untouched |
+| FE-P2-8 | `LandingGraph` never checks `res.ok`, so an error draws an empty scatter. Hero proof says the board is refreshing for any failure | Later |
+| FE-P2-9 | "Open the live board" uses the default Score sort, so the intent table's top row is not the board's top row | Part of the SEO-button P0 |
+| FE-P2-10 | Intent rows are labelled only by id | Later. Use the first output name when the list payload includes it. No new API params |
+| FE-P2-11 | Footer GitHub, Discord, and email stack with stray period separators | Later |
+| FE-P2-12 | Visible text on the seven first-session surfaces had no new banned phrase. "guaranteed" showed up only inside disclaimers | No slice |
+
+The trust slice is one Frontend PR after the wave-1 front. The landing peek renders cards from the same single trade-up request. A trade-up opened in a new tab requests faces and shows skin art where a face exists. The calculator example is one that shows the tool honestly, with a next step after the result. Fee math, the EV formula, prices, and plan gates stay as they are.
+
+Two notes from that sweep stay out of the UI slices. The guest board's top cards can share one input listing, so one purchase removes all of them. That is ranking. The free list returned `total` 10001 and `total_profitable` 0 while its rows had positive P/L. The landing display of that cap is F-13.
 
 ## Seed checklist
 
@@ -175,22 +247,33 @@ Claude thermo-nuclear review and a second-family interrogate did not run. Those 
 
 ## Wave 1
 
-About ten was the original cap. Later instructions added the QA DoS, the header and SEO items, and the post-194 daemon work, so this list is the full mandated wave.
+About ten was the original cap. The QA sweep, the post-194 daemon work, and the Frontend teardown expanded it. The Frontend slices are first. Frontend signs the UI and SEO ones. Score, fees, prices, plan gates, rate limits, and Stripe stay out of every slice.
 
 | Order | Slice | Owner | Status |
 | --- | --- | --- | --- |
-| 1 | Retry merge-update deadlocks so the daemon stays up | Autoresearch | In flight. PR 194. Do not duplicate |
-| 2 | 404 bad trade-up ids, and turn async throws into 500s (F-01, F-02) | Autoresearch | New. Skill `ids` fails until this lands |
-| 3 | `sign_up` once per new account | Frontend | No interstitial beacon change. F-07 refuted |
-| 4 | `traffic_type: internal` for automation user agents | Frontend | Driver already sets the marker and blocks collect |
-| 5 | Daemon hardening after PR 194 merges. Loop guards, re-queue cap, `release(err)`, merge-failed counts. Tiny sibling PR for `lock_timeout` 5s on merge-update | Autoresearch | Start after 194 is on main. Score and fees untouched |
-| 6 | Banned-copy sweep, including llms.txt, the three extra posts, "odds", and Win rate | Frontend | One PR. Extend `banned-copy.test.ts` |
-| 7 | Skin page canonical on client navigation | Frontend | |
-| 8 | CSP, HSTS, and `Referrer-Policy: strict-origin-when-cross-origin` on nginx `/`, strip `auth` and `lid` before assets load, and stop doubling API security headers (F-06) | Autoresearch | |
-| 9 | Expired share keeps HTTP 410 and gains the site shell, nav, and a link to the board (F-03) | Frontend | |
-| 10 | Reserve the board placeholder height (F-04) and use 44px targets on coarse pointers for filter selects, number inputs, nav, and the earlier primary CTAs (F-05) | Frontend | |
-| 11 | `noindex` on unknown skin, collection, and blog slugs (F-12) | Frontend | |
-| 12 | Landing hero must not show "10,001 trade-ups" before the real count (F-13) | Frontend | Neutral placeholder, or the server-rendered count |
+| 1 | One measurement PR. `G-2474G4P5QE` is the only GA4 property. Retire the hard-coded `G-EKWRB4FE37` tag in `index.html` now. Every event goes there, including `page_view`, `pro_interstitial_view`, `steam_continue`, and `sign_up_start`. Confirm one `page_view` per load. Add `cta_click` ids for the Find Real Tradeups controls in the hero, nav, and landing sections, with no visible change. Fold in `sign_up` once per newly created account | Frontend | First. Rebase `conversions.ts`, `PreviewLanding.tsx`, `PreviewPricing.tsx`, and `server/auth.ts` after PR 193. `index.html`, `src/lib/analytics.ts`, and `PreviewChrome.tsx` are not on 193 |
+| 2 | `traffic_type: internal` for `HeadlessChrome` and `TradeUpBotVerify` | Frontend | Alongside row 1. The driver already sets the marker and blocks collect |
+| 3 | Trade-up page header at 390. Let `.preview-page__meta` shrink and let the head row wrap | Frontend | Playwright at 390 by 844. Title at least 320px wide, Copy link fully on screen, main button inside the first 450px, desktop screenshot diff unchanged. Rebase `preview.css` after PR 193 |
+| 4 | Claim and verify pop-up gets a visible 44px "See Pro plans" button that fires `upgrade_cta_click`. Copy states that Verify and Claim need Pro, using the pricing-page price as it already reads. The Steam href stays byte-identical | Frontend | After PR 193 merges. Hillclimb metric is `upgrade_cta_click` |
+| 5 | SEO main button on `/best-cs2-trade-ups`, `/trade-ups/tiers`, and `/trade-ups/tiers/covert` goes to Pro or the pop-up, and Steam returns to the page the visitor came from | Frontend | Rebase `PreviewIntent.tsx` after PR 193 |
+| 6 | Retry merge-update deadlocks so the daemon stays up | Autoresearch | In flight. PR 194. Do not duplicate |
+| 7 | 404 bad trade-up ids, and turn async throws into 500s (F-01, F-02) | Autoresearch | Skill `ids` fails until this lands |
+| 8 | Daemon hardening after PR 194 merges. Loop guards, re-queue cap, `release(err)`, merge-failed counts. Tiny sibling PR for `lock_timeout` 5s on merge-update | Autoresearch | Start after 194 is on main. Score and fees untouched |
+| 9 | Banned-copy sweep, plus honest board heading and nav ("Trade-ups" / "Find trade-ups") | Frontend | One PR. Rebase after PR 193. The `cta_click` ids from row 1 stay on the control when the visible label changes |
+| 10 | Skin page canonical on client navigation | Frontend | |
+| 11 | CSP, HSTS, and `Referrer-Policy: strict-origin-when-cross-origin` on nginx `/`, strip `auth` and `lid` before assets load, and stop doubling API security headers (F-06) | Autoresearch | |
+| 12 | Expired share keeps HTTP 410 and gains the site shell, nav, and a link to the board (F-03) | Frontend | |
+| 13 | Reserve the board placeholder height (F-04) and use 44px targets on coarse pointers for the controls in F-05, including the share primary | Frontend | Do not raise the global `--control` token. The intent block is row 5 |
+| 14 | `noindex` on unknown skin, collection, and blog slugs (F-12) | Frontend | |
+| 15 | Landing hero must not show "10,001 trade-ups" before the real count (F-13) | Frontend | Neutral placeholder, or the server-rendered count |
+
+## Later slices
+
+One Frontend trust PR. The landing peek renders cards. A trade-up opened in a new tab shows skin art. The calculator example shows the tool honestly and then offers a next step. Fee math and the EV formula stay as they are.
+
+Still later, each its own Frontend PR. Remaining upgrade clicks (`landing_plan_tile`, `share_bar`, `nav_pricing`). Pricing card order at 390. Pricing copy with every number left byte-identical. Restore the chosen billing tab after Steam, with no auto-checkout. Landing errors that must not draw an empty chart. Intent rows that name a skin. Footer separators. Filler copy on the share lede, the board meta, and the how-it-works lines.
+
+The activation funnel is a CEO save inside G-2474G4P5QE. It is not a code PR.
 
 Wave 2, Autoresearch, in the sign order from that audit. AR-P1-2, AR-P1-3, AR-P1-1, AR-P1-7, AR-P1-6, AR-P1-8, then the remaining P2 hygiene that wave 1 did not absorb.
 
