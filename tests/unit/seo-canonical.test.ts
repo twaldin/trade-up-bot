@@ -57,9 +57,9 @@ describe("server route canonical/noindex/404 behavior", () => {
     expect(source).toContain('res.status(404).send("Collection trade-up page not found")');
     expect(source).toContain('res.status(404).send("Collection not found")');
     expect(source).toContain('res.status(404).send("Skin not found")');
-    // Trade-up DETAIL now distinguishes deleted (410) vs malformed (404) via deletedTradeUpStatus;
-    // both branches still return a hard status (no SPA fallthrough) with a noindex tombstone.
-    expect(source).toContain("deletedTradeUpStatus(String(req.params.id))");
+    // Trade-up DETAIL now distinguishes deleted (410) vs malformed (404) via deletedTradeUpStatus.
+    // The status uses the parsed integer, so a rejected id never reaches this call.
+    expect(source).toContain("deletedTradeUpStatus(String(id))");
     expect(source).toContain('"Trade-up not found"');
   });
 
@@ -72,9 +72,10 @@ describe("server route canonical/noindex/404 behavior", () => {
     expect(countMatches(source, /injectMetaIntoSpa\(shellHtmlLocal, meta\)/g)).toBeGreaterThanOrEqual(3);
   });
 
-  it("noindex remains limited to low-listing skins and stale trade-up details", () => {
+  it("noindex stays on low-listing skins, stale trade-up details, and bad trade-up ids", () => {
     expect(source).toContain('const robots = listingCount < 5 ? "noindex, follow" : "index, follow"');
     expect(source).toContain('robots: isStale ? "noindex, follow" : "index, follow"');
-    expect(countMatches(source, /noindex, follow/g)).toBe(2);
+    expect(source).toContain('robots: "noindex, follow"');
+    expect(countMatches(source, /noindex, follow/g)).toBe(3);
   });
 });
