@@ -134,6 +134,8 @@ export function parseOutcomesJson(raw: string | null | undefined): TradeUpOutcom
 export interface RankSnapshot {
   ids: number[];
   total: number;
+  /** Rows with profit_cents > 0 in the same diversified set, capped like total. */
+  profitable: number;
 }
 
 export interface RankSnapshotStore {
@@ -174,7 +176,10 @@ function isRankSnapshot(value: unknown): value is RankSnapshot {
   if (!value || typeof value !== "object") return false;
   const ids: unknown = Reflect.get(value, "ids");
   const total: unknown = Reflect.get(value, "total");
-  return Array.isArray(ids) && ids.every((id) => typeof id === "number") && typeof total === "number";
+  const profitable: unknown = Reflect.get(value, "profitable");
+  // Snapshots cached before `profitable` existed are treated as a miss and rebuilt.
+  return Array.isArray(ids) && ids.every((id) => typeof id === "number") && typeof total === "number"
+    && typeof profitable === "number";
 }
 
 const inflightSnapshots = new Map<string, Promise<RankSnapshot>>();
