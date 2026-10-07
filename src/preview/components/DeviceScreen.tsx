@@ -25,7 +25,7 @@ export function DeviceScreen({
   const src = SHOTS[compact ? "mobile" : "desktop"][mode];
   return (
     <div className={`tub-shot ${compact ? "tub-shot--phone" : ""}`}>
-      <img src={src} alt="The TradeUpBot board: input and output skins, payoff strip, and live listings." />
+      <img src={src} alt="The TradeUpBot board: input and output skins, payoff strip, and live listings." referrerPolicy="strict-origin" />
     </div>
   );
 }

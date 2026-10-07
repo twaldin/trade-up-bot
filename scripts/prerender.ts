@@ -8,6 +8,7 @@ import { blogPosts } from "../src/data/blog-posts.js";
 import { dedupeHead } from "../server/seo.js";
 import { fetchLiveHomepageStats, writeHomepageFirstHtmlFile } from "../server/homepage-first-html.js";
 import { normalizePrerenderedHead } from "./seo-html.js";
+import { deferSameOriginSubresources } from "../shared/defer-same-origin-subresources.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = join(__dirname, "..", "dist");
@@ -122,7 +123,7 @@ async function prerenderRoute(browser: import("puppeteer").Browser, route: strin
     await page.waitForSelector("main, h1, [data-prerender]", { timeout: 10000 }).catch(() => {});
 
     const rawHtml = await page.content();
-    const html = normalizePrerenderedHead(dedupeHead(rawHtml), route);
+    const html = deferSameOriginSubresources(normalizePrerenderedHead(dedupeHead(rawHtml), route));
 
     let outputPath: string;
     if (route === "/") {
