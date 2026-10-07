@@ -170,6 +170,22 @@ function SkinCard({ row }: { row: SkinRow }) {
 
 /** Matches `/api/skin-data` default limit. Do not send `limit=` — the cache key omits it. */
 const SKIN_INDEX_PAGE_SIZE = 100;
+/** First screen of the skin grid. The fold holds anything shorter. */
+const SKIN_SKELETONS = 12;
+
+function SkinSkeletonCard() {
+  return (
+    <div className="preview-skin preview-skin--card preview-skin--skeleton" aria-hidden="true">
+      <span className="preview-skin__buy">
+        <span className="preview-skin__art"><span className="preview-skin__ph" /></span>
+      </span>
+      <span className="preview-skin__label">
+        <em>&nbsp;</em>
+        <b>&nbsp;</b>
+      </span>
+    </div>
+  );
+}
 
 const SKIN_INDEX_TTL_MS = 5 * 60_000;
 const SKIN_SEARCH_DEBOUNCE_MS = 200;
@@ -312,8 +328,11 @@ export function PreviewSkinsPage() {
   // 200 rows), so ask for exactly what the grid renders, in the order it renders.
   useFaceNames(useMemo(() => rows.map((row) => row.name), [rows]));
 
+  const pending = loading && rows.length === 0 && !notice;
+  const shortGrid = !pending && rows.length < SKIN_SKELETONS;
+
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--fold">
       <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/skins" />}
       <header className="preview-page__head">
@@ -321,7 +340,9 @@ export function PreviewSkinsPage() {
           <h1>Skins</h1>
           <p>Live listing counts, floors, and float ranges from the production data API.</p>
         </div>
-        <div className="preview-page__meta"><span>{rows.length} loaded</span></div>
+        <div className="preview-page__meta preview-page__meta--count">
+          <span>{pending ? "— loaded" : `${rows.length} loaded`}</span>
+        </div>
       </header>
 
       <PreviewSearch
@@ -332,13 +353,15 @@ export function PreviewSkinsPage() {
         examples={["covert", "ak nightwish", "classified <$50", "awp"]}
       />
 
-      <div className="preview-grid">
-        {rows.map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
+      <div className={`preview-grid${pending || shortGrid ? " preview-fold" : ""}`} aria-busy={pending || undefined}>
+        {pending
+          ? Array.from({ length: SKIN_SKELETONS }, (_, index) => <SkinSkeletonCard key={index} />)
+          : rows.map((row) => <SkinCard key={row.id ?? row.name} row={row} />)}
       </div>
-      {loading && rows.length === 0 && <p className="preview-note">Loading skins…</p>}
+      {pending && <p className="sr-only">Loading skins…</p>}
       {!loading && !notice && rows.length === 0 && <p className="preview-note">No skin matches that search.</p>}
 
-      {!exhausted && !notice && (
+      {rows.length > 0 && !exhausted && !notice && (
         <div className="preview-sentinel" ref={sentinel}>
           <span className="preview-note">Loading more skins…</span>
         </div>
@@ -678,6 +701,30 @@ const COLLECTIONS_TTL_MS = 5 * 60_000;
 /** Faces for collections that land close together go out as one batch. */
 const COLLECTION_FACE_FLUSH_MS = 150;
 const NO_COLLECTIONS: CollectionRow[] = [];
+/** First screen of collection cards. The fold holds a shorter index. */
+const COLLECTION_SKELETONS = 12;
+const COLLECTION_TILE_SKELETONS = 8;
+
+function CollectionSkeletonCard() {
+  return (
+    <div className="preview-collection preview-collection--skeleton" aria-hidden="true">
+      <span className="preview-collection__cluster">
+        {Array.from({ length: 4 }, (_, index) => <i key={index} />)}
+      </span>
+      <b>&nbsp;</b>
+      <span className="preview-collection__meta">&nbsp;</span>
+    </div>
+  );
+}
+
+function CollectionTileSkeleton() {
+  return (
+    <div className="preview-allskins__tile" aria-hidden="true">
+      <span className="preview-skin__ph" />
+      <b>&nbsp;</b>
+    </div>
+  );
+}
 
 function parseSkinRows(data: SkinRow[] | { skins?: SkinRow[] }): SkinRow[] {
   return Array.isArray(data) ? data : data.skins ?? [];
@@ -695,9 +742,14 @@ async function fetchCollectionSkins(name: string, signal?: AbortSignal): Promise
   }));
 }
 
-function useCollectionsIndex(): { rows: CollectionRow[]; throttled: boolean } {
-  const { data, throttled } = useBrowseJson<CollectionRow[]>("/api/collections", COLLECTIONS_TTL_MS);
-  return { rows: Array.isArray(data) ? data : NO_COLLECTIONS, throttled };
+function useCollectionsIndex(): { rows: CollectionRow[]; throttled: boolean; pending: boolean; failed: boolean } {
+  const { data, error, throttled } = useBrowseJson<CollectionRow[]>("/api/collections", COLLECTIONS_TTL_MS);
+  return {
+    rows: Array.isArray(data) ? data : NO_COLLECTIONS,
+    throttled,
+    pending: data === null && !error && !throttled,
+    failed: error,
+  };
 }
 
 async function mapPool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -771,7 +823,7 @@ function useCollectionSkins(names: string[]) {
 }
 
 export function PreviewCollectionsPage() {
-  const { rows, throttled: indexThrottled } = useCollectionsIndex();
+  const { rows, throttled: indexThrottled, pending, failed } = useCollectionsIndex();
   const [search, setSearch] = useState("");
   const [visible, setVisible] = useState(12);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -842,7 +894,7 @@ export function PreviewCollectionsPage() {
   ];
 
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--fold">
       <title>CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot</title>
       <meta name="description" content="Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection." />
       <meta name="robots" content="index, follow" />
@@ -853,7 +905,9 @@ export function PreviewCollectionsPage() {
           <h1>Collections</h1>
           <p>CS2 collections group weapon skins by the case, operation, map, or themed release where those skins entered the game. Each collection contains skins across rarity tiers, and those rarity tiers determine which inputs and outputs can appear in a trade-up.</p>
         </div>
-        <div className="preview-page__meta"><span>{rows.length} collections</span></div>
+        <div className="preview-page__meta preview-page__meta--count">
+          <span>{pending || (failed && rows.length === 0) ? "— collections" : `${rows.length} collections`}</span>
+        </div>
       </header>
 
       <PreviewSearch
@@ -863,32 +917,35 @@ export function PreviewCollectionsPage() {
         examples={["dreams", "kilowatt", "recoil"]}
       />
 
-      <div className="preview-collections">
-        {shown.map((row) => (
-          <Link key={row.name} className="preview-collection" to={previewCollectionHref(row.name)}>
-            <span className="preview-collection__cluster">
-              {(skins[row.name]?.faces ?? []).map((skin) => (
-                <i key={skin.name} style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
-                  <Face name={skin.name} size={46} />
-                </i>
-              ))}
-              {(skins[row.name]?.faces ?? []).length === 0 && <em className="preview-note">loading skins…</em>}
-            </span>
-            <b>{row.name}</b>
-            <span className="preview-collection__meta">
-              {skinCopy(row)} · {row.listing_count.toLocaleString()} listings
-            </span>
-          </Link>
-        ))}
-        {shown.length === 0 && (
-          <p className="preview-note">{indexThrottled ? SLOW_DOWN_COPY : "Loading collections…"}</p>
+      <div className="preview-collections preview-fold" aria-busy={pending || undefined}>
+        {pending
+          ? Array.from({ length: COLLECTION_SKELETONS }, (_, index) => <CollectionSkeletonCard key={index} />)
+          : shown.map((row) => (
+            <Link key={row.name} className="preview-collection" to={previewCollectionHref(row.name)}>
+              <span className="preview-collection__cluster">
+                {(skins[row.name]?.faces ?? []).map((skin) => (
+                  <i key={skin.name} style={{ "--skin-tint": rarityTint(skin.rarity) } as CSSProperties}>
+                    <Face name={skin.name} size={46} />
+                  </i>
+                ))}
+                {(skins[row.name]?.faces ?? []).length === 0 && <em className="preview-note">loading skins…</em>}
+              </span>
+              <b>{row.name}</b>
+              <span className="preview-collection__meta">
+                {skinCopy(row)} · {row.listing_count.toLocaleString()} listings
+              </span>
+            </Link>
+          ))}
+        {!pending && shown.length === 0 && (
+          <p className="preview-note">{indexThrottled ? SLOW_DOWN_COPY : failed ? "Couldn't load collections." : "No collection matches that search."}</p>
         )}
       </div>
+      {pending && <p className="sr-only">Loading collections…</p>}
 
       <section className="preview-panel">
         <header className="preview-panel__head">
           <p className="o-kicker">All collections</p>
-          <span className="preview-panel__meta">{filtered.length} rows</span>
+          <span className="preview-panel__meta">{pending ? "— rows" : `${filtered.length} rows`}</span>
         </header>
         <PreviewTable
           columns={columns}
@@ -1008,12 +1065,15 @@ export function PreviewCollectionPage() {
     canonicalNode.current = null;
     if (node?.isConnected && original != null) node.setAttribute("href", original);
   }, []);
-  const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
+  const tradeUpsPending = !title || (board.loading && board.tradeUps.length === 0);
+  const tradeUpCount = tradeUpsPending || (board.throttle && board.tradeUps.length === 0)
+    ? "— trade-ups"
+    : `${board.tradeUps.length} trade-ups`;
 
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--fold">
       <title>{title ? `${title.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection — CS2 Skins, Prices & Trade-Ups | TradeUpBot` : "CS2 Collections | TradeUpBot"}</title>
-      <header className="preview-page__head">
+      <header className="preview-page__head preview-collection-head">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to={collectionsHref()}>Collections</Link>
@@ -1027,36 +1087,43 @@ export function PreviewCollectionPage() {
               : `${skinsCopy} · every skin in the collection, and the trade-ups the loop found inside it.`}
           </p>
         </div>
-        <div className="preview-page__meta"><span>{tradeUpCount}</span></div>
+        <div className="preview-page__meta preview-page__meta--count"><span>{tradeUpCount}</span></div>
       </header>
 
-      {skins.length > 0 && (
+      {!unknown && (
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Every skin in this collection</p>
-            <span className="preview-panel__meta">{skins.length} skins</span>
+            <span className="preview-panel__meta">{skinsStatus === "ok" ? `${skins.length} skins` : "— skins"}</span>
           </header>
-          <div className="preview-allskins">
-            {skins.map((row) => (
-              <Link
-                key={row.id ?? row.name}
-                to={previewSkinHref(row.name)}
-                className="preview-allskins__tile"
-                style={{ "--skin-tint": rarityTint(row.rarity) } as CSSProperties}
-                title={row.name}
-              >
-                <Face name={row.name} size={52} />
-                <b>{splitSkinName(row.name).finish}</b>
-              </Link>
-            ))}
+          <div className="preview-allskins preview-fold" aria-busy={skinsStatus === "loading" || undefined}>
+            {skinsStatus === "loading"
+              ? Array.from({ length: COLLECTION_TILE_SKELETONS }, (_, index) => <CollectionTileSkeleton key={index} />)
+              : skins.map((row) => (
+                <Link
+                  key={row.id ?? row.name}
+                  to={previewSkinHref(row.name)}
+                  className="preview-allskins__tile"
+                  style={{ "--skin-tint": rarityTint(row.rarity) } as CSSProperties}
+                  title={row.name}
+                >
+                  <Face name={row.name} size={52} />
+                  <b>{splitSkinName(row.name).finish}</b>
+                </Link>
+              ))}
+            {skinsStatus !== "loading" && skins.length === 0 && (
+              <p className="preview-note">{skinsCopy}</p>
+            )}
           </div>
         </section>
       )}
 
-      {title && (
+      {!unknown && (
         <PreviewBoard
-          tradeUps={board.tradeUps}
-          loading={board.loading}
+          reserve
+          reserveSlots={6}
+          tradeUps={title ? board.tradeUps : []}
+          loading={!title || board.loading}
           isFree={board.isFree}
           signedIn={board.signedIn}
           tier={board.tier}
@@ -1080,7 +1147,7 @@ export function PreviewCollectionPage() {
           rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
-          collection={title}
+          collection={title ?? undefined}
           heading="Trade-ups from this collection"
           lede="Ranked the same way as the board, filtered to this collection."
           embed

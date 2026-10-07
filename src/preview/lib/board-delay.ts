@@ -26,12 +26,9 @@ export {
 
 /** undefined while the request is in flight, null if it failed, was skipped, or the body was unusable. */
 export function useBoardDelay(enabled = true): BoardDelayGap | null | undefined {
-  const [gap, setGap] = useState<BoardDelayGap | null | undefined>(enabled ? undefined : null);
+  const [gap, setGap] = useState<BoardDelayGap | null | undefined>(undefined);
   useEffect(() => {
-    if (!enabled) {
-      setGap(null);
-      return;
-    }
+    if (!enabled) return;
     let live = true;
     fetch("/api/board-delay")
       .then((res) => (res.ok ? res.json() : null))
@@ -43,5 +40,8 @@ export function useBoardDelay(enabled = true): BoardDelayGap | null | undefined 
       });
     return () => { live = false; };
   }, [enabled]);
+  // A late enable has to report "in flight" on that same render. Waiting for
+  // the effect left the sentence unreserved and the card jumped when it arrived.
+  if (!enabled) return null;
   return gap;
 }
