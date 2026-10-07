@@ -43,6 +43,27 @@ function takeQueuedMerge(type: string): TradeUp[] {
   return taken;
 }
 
+function tradeUpListingSig(tu: TradeUp): string {
+  return listingSig(tu.inputs.map(inp => inp.listing_id));
+}
+
+/**
+ * A merge that throws has already removed this type's queue. Put those
+ * trade-ups back so the next merge retries them. Skip signatures a lock-skip
+ * during the same attempt already re-queued.
+ */
+function restoreMergeQueue(type: string, tradeUps: readonly TradeUp[]): void {
+  if (tradeUps.length === 0) return;
+  const queued = new Set<string>();
+  for (const batch of queuedMergeBatches) {
+    if (batch.type !== type) continue;
+    for (const tu of batch.tradeUps) queued.add(tradeUpListingSig(tu));
+  }
+  const missing = tradeUps.filter(tu => !queued.has(tradeUpListingSig(tu)));
+  if (missing.length === 0) return;
+  queuedMergeBatches.push({ type, tradeUps: missing.slice() });
+}
+
 export interface MergeTradeUpHooks {
   /** After signature matching, before insert transactions. Tests commit a relink here. */
   beforeInsert?: () => Promise<void>;
@@ -398,16 +419,66 @@ export async function saveTradeUps(
   await setSyncMeta(pool, "last_calculation", new Date().toISOString());
 }
 
-export async function mergeTradeUps(
+/**
+ * One update batch. A deadlock aborts the transaction, so roll it back before
+ * the client goes back to the pool and before withShareLockRetry tries again.
+ * A failed ROLLBACK discards the client; the original error is what gets retried.
+ */
+async function updateMergeBatchOnce(
+  pool: pg.Pool,
+  batch: readonly { existId: number; tu: TradeUp }[],
+  oldById: ReadonlyMap<number, { profit_cents: number; profit_streak: number }>,
+): Promise<void> {
+  const client = await pool.connect();
+  let discard: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    for (const { existId, tu } of batch) {
+      const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
+      const old = oldById.get(existId);
+      let streak = 0;
+      if (tu.profit_cents > 0) {
+        streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
+      }
+      // listing_status = 'active' is safe here: workers filter claimed_by IS NULL when loading
+      // listings, so if a listing is claimed this signature won't be re-discovered. If a race
+      // condition causes a claimed listing to sneak in, API auto-correct fixes it on next read.
+      const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
+      const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
+      await client.query(`
+        UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3, roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
+          peak_profit_cents = GREATEST(peak_profit_cents, $8), listing_status = 'active', preserved_at = NULL, outcomes_json = $9,
+          profit_streak = $10, previous_inputs = NULL, output_skin_names = $12, collection_names = $13
+        WHERE id=$11
+      `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId, outputSkinNames, collectionNames]);
+      if (tu.profit_cents > 0) {
+        const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
+        await recordProfitableCombo(client, tu, comboKey);
+      }
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      discard = rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr));
+      console.error(`mergeTradeUps-update: rollback failed: ${discard.message}`);
+    }
+    throw err;
+  } finally {
+    if (discard) client.release(discard);
+    else client.release();
+  }
+}
+
+async function mergeCollectedTradeUps(
   pool: pg.Pool,
   tradeUps: TradeUp[],
-  type: string = "classified_covert",
+  type: string,
   hooks?: MergeTradeUpHooks,
 ) {
   // Upsert trade-ups by listing signature. New sigs inserted, existing updated, missing marked stale.
-  // A batch skipped after share-lock retries is tried again on this type's next merge.
-  const carried = takeQueuedMerge(type);
-  if (carried.length > 0) tradeUps = [...carried, ...tradeUps];
   // Retarget first so a relink that landed during the cycle matches the live signature.
   const liveTradeUps = await retargetDMarketTradeUps(pool, tradeUps);
 
@@ -466,42 +537,17 @@ export async function mergeTradeUps(
 
   for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
     const batch = toUpdate.slice(i, i + BATCH_SIZE);
-    await withRetry(async () => {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const { existId, tu } of batch) {
-          const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
-          const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
-          const old = oldById.get(existId);
-          let streak = 0;
-          if (tu.profit_cents > 0) {
-            streak = (old && old.profit_cents > 0) ? (old.profit_streak ?? 0) + 1 : 1;
-          }
-          // listing_status = 'active' is safe here: workers filter claimed_by IS NULL when loading
-          // listings, so if a listing is claimed this signature won't be re-discovered. If a race
-          // condition causes a claimed listing to sneak in, API auto-correct fixes it on next read.
-          const outputSkinNames = [...new Set(tu.outcomes.map(o => o.skin_name))].sort();
-          const collectionNames = [...new Set(tu.inputs.map(i => i.collection_name))].sort();
-          await client.query(`
-            UPDATE trade_ups SET total_cost_cents=$1, expected_value_cents=$2, profit_cents=$3, roi_percentage=$4, chance_to_profit=$5, best_case_cents=$6, worst_case_cents=$7,
-              peak_profit_cents = GREATEST(peak_profit_cents, $8), listing_status = 'active', preserved_at = NULL, outcomes_json = $9,
-              profit_streak = $10, previous_inputs = NULL, output_skin_names = $12, collection_names = $13
-            WHERE id=$11
-          `, [tu.total_cost_cents, tu.expected_value_cents, tu.profit_cents, tu.roi_percentage, chanceToProfit, bestCase, worstCase, Math.max(tu.profit_cents, 0), JSON.stringify(tu.outcomes), streak, existId, outputSkinNames, collectionNames]);
-          if (tu.profit_cents > 0) {
-            const comboKey = [...new Set(tu.inputs.map(i => i.collection_name))].sort().join("|");
-            await recordProfitableCombo(client, tu, comboKey);
-          }
-        }
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-    }, 3, "mergeTradeUps-update");
+    // Same 40P01/55P03 cap and backoff as inserts. Exhaustion re-queues the
+    // batch instead of killing the daemon; the next merge of this type retries it.
+    await withShareLockRetry(
+      "mergeTradeUps-update",
+      batch.length,
+      () => updateMergeBatchOnce(pool, batch, oldById),
+      () => {
+        queuedMergeBatches.push({ type, tradeUps: batch.map(row => row.tu) });
+        console.error(`mergeTradeUps-update: re-queued ${batch.length} trade-ups for the next merge cycle`);
+      },
+    );
   }
 
   // Batch 2: insert new trade-ups in batches
@@ -525,6 +571,26 @@ export async function mergeTradeUps(
   // No per-type caps — keep all trade-ups. Global 1M cap applied separately.
   // Natural staleness (listings sell → refreshListingStatuses → purgeExpiredPreserved)
   // handles cleanup. We want to show as many trade-ups as possible to users.
+}
+
+export async function mergeTradeUps(
+  pool: pg.Pool,
+  tradeUps: TradeUp[],
+  type: string = "classified_covert",
+  hooks?: MergeTradeUpHooks,
+) {
+  // A batch skipped after share-lock retries is tried again on this type's next merge.
+  // takeQueuedMerge removes that queue first. A throw puts it back.
+  const carried = takeQueuedMerge(type);
+  const pending = carried.length > 0 ? [...carried, ...tradeUps] : tradeUps;
+  try {
+    await mergeCollectedTradeUps(pool, pending, type, hooks);
+  } catch (err) {
+    // Lock skips re-queue themselves. This puts back the queue this call
+    // already took, and leaves a non-transient failure thrown.
+    restoreMergeQueue(type, carried);
+    throw err;
+  }
 }
 
 /**
