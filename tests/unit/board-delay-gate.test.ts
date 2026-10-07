@@ -386,6 +386,69 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.querySelector(".preview-card--skeleton")).toBeNull();
   });
 
+  it.each([
+    ["pro", 200],
+    ["pro", 1500],
+    ["lifetime", 200],
+    ["lifetime", 1500],
+  ] as const)("keeps the free banner off a %s list when auth is 5s late and the list arrives at %ims", async (tier, listMs) => {
+    vi.useFakeTimers();
+    try {
+      localStorage.clear();
+      vi.stubGlobal("fetch", vi.fn((url: string) => {
+        calls.push(String(url));
+        if (String(url).includes("/api/auth/me")) return new Promise<Response>(() => {});
+        if (String(url).includes("/api/trade-ups")) {
+          return new Promise<Response>((resolve) => {
+            setTimeout(() => resolve(json({
+              trade_ups: [row],
+              total: 1,
+              tier,
+              signed_in: true,
+            })), listMs);
+          });
+        }
+        return Promise.resolve(json(GAP));
+      }));
+
+      function Harness() {
+        const api = usePreviewTradeUps({ perPage: 12 });
+        return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+          tradeUps: api.tradeUps,
+          loading: api.loading,
+          isFree: api.isFree,
+          expandedId: api.expandedId,
+          onExpand: api.onExpand,
+        }));
+      }
+
+      await mount(createElement(Harness));
+      expect(host.querySelector(".preview-delay:not(.preview-delay--hold)")).toBeNull();
+      expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+
+      if (listMs > AUTH_PAINT_WAIT_MS) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_PAINT_WAIT_MS); });
+        expect(host.querySelector(".preview-delay:not(.preview-delay--hold)")).toBeNull();
+        expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+        expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+        await act(async () => { await vi.advanceTimersByTimeAsync(listMs - AUTH_PAINT_WAIT_MS); });
+      } else {
+        await act(async () => { await vi.advanceTimersByTimeAsync(listMs); });
+      }
+
+      expect(host.querySelector(".preview-delay")).toBeNull();
+      expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(host.querySelector(".preview-delay:not(.preview-delay--hold)")).toBeNull();
+      expect(host.querySelector(".preview-delay")).toBeNull();
+      expect(host.textContent).not.toContain("Free view:");
+      expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drops the reserve when a saved free account is now pro", async () => {
     localStorage.setItem("tub_board_account", JSON.stringify({ tier: "free" }));
     localStorage.setItem("site_nav_user", JSON.stringify({ tier: "free", steam_id: "765" }));
@@ -414,8 +477,9 @@ describe("board delay fetch waits for the viewer", () => {
 
     await mount(createElement(Harness));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
-    expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+    // The list already says pro, so the hold leaves with the skeletons.
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
 
     await act(async () => {
       releaseAuth(authBody("pro"));

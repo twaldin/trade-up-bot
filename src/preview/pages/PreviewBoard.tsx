@@ -1150,12 +1150,15 @@ export function PreviewBoard({
   const delaySentence = boardDelaySentence(delayGap);
   const confirmedGuest = !startedPaid && known.authAnswered && (isFree || shouldFetchBoardDelay(account));
   const authSaysPaid = known.authAnswered && !shouldFetchBoardDelay(account);
-  // Latch the guest list once the wait ends or auth says free. A later paid
-  // answer must not take the banner back out: that would pull the cards up.
+  // The list already carries the viewer's tier. A paid payload must not grow
+  // the free banner while auth is still out. Latch only once a free list is
+  // on screen. A later paid answer must not take that banner back out: that
+  // would pull the cards up.
+  const listSaysPaid = !loading && tradeUps.length > 0 && !isFree;
   const guestPainted = useRef(false);
-  const paintGuest = !embed && !startedPaid && !authSaysPaid && (
-    known.authTimedOut || (known.authAnswered && shouldFetchBoardDelay(account))
-  );
+  const paintGuest = !embed && !startedPaid && !authSaysPaid && !listSaysPaid
+    && tradeUps.length > 0 && isFree
+    && (known.authTimedOut || (known.authAnswered && shouldFetchBoardDelay(account)));
   if (paintGuest) guestPainted.current = true;
   const guestLocked = guestPainted.current;
   const askedTail = useRef(false);
@@ -1167,14 +1170,22 @@ export function PreviewBoard({
   }, [embed, known.authAnswered, known.authTimedOut, account, onPaidTail]);
   // No `window` means static markup (the load-more measurement). Show the rows.
   // In the browser, hide a loaded list only until auth answers or the wait ends.
+  // A list that already says paid is not held for auth.
   const withholdCards = typeof window !== "undefined"
     && !embed
     && !startedPaid
     && !guestLocked
+    && !listSaysPaid
     && !known.authAnswered
     && !known.authTimedOut;
   const delayEmbed = embed && (isFree || accountDelay);
-  const delayPending = !known.authTimedOut && (!confirmedGuest || (accountDelay && loading && tradeUps.length === 0 && !isFree));
+  // Timing out while the list is still out keeps the invisible hold. The free
+  // copy waits for a free list. A paid list drops the slot with the skeletons.
+  const delayPending = !guestLocked && (
+    !known.authTimedOut
+      ? (!confirmedGuest || (accountDelay && loading && tradeUps.length === 0 && !isFree))
+      : !listSaysPaid
+  );
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1340,14 +1351,16 @@ export function PreviewBoard({
   // board swaps them for one fold-height message so the FAQ stays below the
   // fold without a blank page of hidden cards.
   const countPending = tradeUps.length === 0 && (loading || Boolean(failed) || Boolean(throttle));
-  // A loaded list stays on skeletons only during the short auth wait. After
-  // that the guest banner and the real cards are in normal flow. The banner
-  // is a row of the grid, so it never covers a card.
+  // A loaded free list stays on skeletons only during the short auth wait.
+  // A paid list leaves the hold in the same render that swaps skeletons for
+  // cards. The banner is a row of the grid, so it never covers a card.
   const showSkeletons = !embed && notice == null && (
     (loading && tradeUps.length === 0) || (withholdCards && tradeUps.length > 0)
   );
   const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
-  const showDelayInFlow = !embed && !startedPaid && (guestLocked || withholdCards || showSkeletons || confirmedGuest);
+  const showDelayInFlow = !embed && !startedPaid && (
+    guestLocked || (!listSaysPaid && (withholdCards || showSkeletons || confirmedGuest))
+  );
   // One row of cards ends above the fold at desktop, so a short page would
   // pull the FAQ up into view. The floor holds that list to the viewport.
   const shortPage = !embed && tradeUps.length > 0 && tradeUps.length < BOARD_PAGE_CARDS;
