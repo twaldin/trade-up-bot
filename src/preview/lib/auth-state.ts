@@ -49,3 +49,15 @@ export function shareActionPanel(user: AuthUser | null | undefined): ShareAction
   if (hasProAccess(user) || user.tier === "admin" || !!user.is_admin) return "pro";
   return "upgrade";
 }
+
+/**
+ * Board list equivalent of `shareActionPanel`. `signedIn` is the list payload's
+ * `signed_in` (undefined until that payload arrives). Tier `admin` is Pro here;
+ * the list does not carry `is_admin`.
+ */
+export function listClaimPanel(signedIn: boolean | undefined, tier: string | undefined): ShareActionPanel {
+  if (signedIn === undefined) return "pending";
+  if (!signedIn) return "sign-in";
+  if (hasProAccess({ tier }) || tier === "admin") return "pro";
+  return "upgrade";
+}

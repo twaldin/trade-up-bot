@@ -130,14 +130,14 @@ describe("preview P/L tone and odds", () => {
 
 describe("board rate limit", () => {
   it("renders the slow-down copy when the board is rate limited", () => {
-    const html = renderToStaticMarkup(createElement(PreviewBoard, {
+    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(PreviewBoard, {
       tradeUps: [],
       loading: false,
       isFree: false,
       expandedId: null,
       onExpand: () => {},
       throttle: SLOW_DOWN_COPY,
-    }));
+    })));
     expect(html).toContain("preview-note");
     expect(html).toContain(SLOW_DOWN_COPY);
     expect(html).not.toContain("Loading more trade-ups");
