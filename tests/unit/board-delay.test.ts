@@ -8,6 +8,7 @@ import {
   parseBoardDelayRow,
 } from "../../shared/board-delay.js";
 import {
+  accountFromCheckoutUpgrade,
   accountToPaint,
   hasSessionCookie,
   parseStoredBoardAccount,
@@ -45,6 +46,15 @@ describe("board delay paint", () => {
       tier: "free",
       lifetime: true,
     });
+  });
+
+  it("maps a confirmed checkout onto a paid tier", () => {
+    expect(accountFromCheckoutUpgrade("1")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro-yearly")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro-lifetime")).toEqual({ tier: "pro", lifetime: true });
+    expect(accountFromCheckoutUpgrade("lifetime")).toEqual({ tier: "pro", lifetime: true });
+    expect(accountFromCheckoutUpgrade("nope")).toBeNull();
   });
 });
 

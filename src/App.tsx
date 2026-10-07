@@ -17,7 +17,7 @@ import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib
 import { consumeAuthReturn, consumeCheckoutReturn, reportReturnLogin } from "./lib/auth-return.js";
 import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
-import { writeStoredBoardAccount } from "./preview/lib/board-delay.js";
+import { accountFromCheckoutUpgrade, writeStoredBoardAccount } from "./preview/lib/board-delay.js";
 const DataViewer = lazy(() => import("./components/DataViewer.js").then(m => ({ default: m.DataViewer })));
 const CollectionViewer = lazy(() => import("./components/CollectionViewer.js").then(m => ({ default: m.CollectionViewer })));
 const CollectionListViewer = lazy(() => import("./components/CollectionListViewer.js").then(m => ({ default: m.CollectionListViewer })));
@@ -517,6 +517,8 @@ export default function App() {
   useEffect(() => {
     const checkout = consumeCheckoutReturn();
     if (!checkout) return;
+    const paid = accountFromCheckoutUpgrade(checkout.upgraded);
+    if (paid) writeStoredBoardAccount(paid);
     void reportPurchase(checkout.upgraded, checkout.sessionId);
   }, []);
 

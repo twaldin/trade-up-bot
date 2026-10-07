@@ -82,6 +82,30 @@ function readStorage(key: string): string | null {
   }
 }
 
+/** Stripe return flag → the tier the next board should paint. `1` is the legacy success flag. */
+export function accountFromCheckoutUpgrade(upgraded: string): { tier: string; lifetime?: boolean } | null {
+  if (upgraded === "pro-lifetime" || upgraded === "lifetime") return { tier: "pro", lifetime: true };
+  if (upgraded === "pro" || upgraded === "pro-yearly" || upgraded === "basic" || upgraded === "1") {
+    return { tier: upgraded === "1" || upgraded === "pro-yearly" ? "pro" : upgraded };
+  }
+  return null;
+}
+
+function patchNavAccount(tier: string, lifetime: boolean): void {
+  const raw = readStorage(NAV_ACCOUNT_STORAGE_KEY);
+  if (raw == null) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+  Reflect.set(parsed, "tier", tier);
+  Reflect.set(parsed, "lifetime", lifetime);
+  localStorage.setItem(NAV_ACCOUNT_STORAGE_KEY, JSON.stringify(parsed));
+}
+
 export function writeStoredBoardAccount(account: { tier?: string; lifetime?: boolean } | null): void {
   try {
     if (typeof localStorage === "undefined") return;
@@ -94,13 +118,32 @@ export function writeStoredBoardAccount(account: { tier?: string; lifetime?: boo
     const tier = typeof account.tier === "string" && account.tier !== "" ? account.tier : "free";
     const value = account.lifetime === true ? { tier, lifetime: true } : { tier };
     localStorage.setItem(BOARD_ACCOUNT_STORAGE_KEY, JSON.stringify(value));
+    patchNavAccount(tier, account.lifetime === true);
   } catch {
     // Private mode. The next load paints the optimistic guest hold again.
   }
 }
 
+interface CheckoutStash {
+  upgraded?: string | null;
+  sessionId?: string | null;
+}
+
+function checkoutUpgradeAccount(): { tier: string; lifetime?: boolean } | null {
+  const scope = globalThis as typeof globalThis & { window?: { __tubCheckoutReturn?: CheckoutStash | null } };
+  const stash = scope.window?.__tubCheckoutReturn;
+  if (!stash || typeof stash.upgraded !== "string" || stash.upgraded.length === 0) return null;
+  if (typeof stash.sessionId !== "string" || stash.sessionId.length === 0) return null;
+  return accountFromCheckoutUpgrade(stash.upgraded);
+}
+
 export function paintAccountFromBrowser(): PaintDecision {
   if (typeof document === "undefined") return accountToPaint("", null, null);
+  const upgraded = checkoutUpgradeAccount();
+  if (upgraded) {
+    writeStoredBoardAccount(upgraded);
+    return { account: upgraded, settled: true };
+  }
   return accountToPaint(
     document.cookie,
     readStorage(BOARD_ACCOUNT_STORAGE_KEY),

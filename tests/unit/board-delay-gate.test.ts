@@ -55,6 +55,7 @@ describe("board delay fetch waits for the viewer", () => {
     calls.length = 0;
     localStorage.clear();
     document.cookie = "connect.sid=; Max-Age=0";
+    window.__tubCheckoutReturn = null;
     window.history.replaceState({}, "", "/trade-ups");
   });
 
@@ -95,7 +96,8 @@ describe("board delay fetch waits for the viewer", () => {
     await mount(createElement(Harness));
     expect(delayCalls()).toEqual([]);
     expect(host.textContent).not.toContain(GAP_SENTENCE);
-    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
 
     await act(async () => {
       release(json({
@@ -112,7 +114,7 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.textContent).not.toContain("Free tier");
   });
 
-  it("pins the banner over the reserved list once a guest session resolves", async () => {
+  it("keeps the reserved row in the skeleton grid once a guest session resolves", async () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => {
       calls.push(String(url));
       if (String(url).includes("/api/auth/me")) return Promise.resolve(authBody(null));
@@ -136,7 +138,9 @@ describe("board delay fetch waits for the viewer", () => {
     await mount(createElement(Harness));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(delayCalls()).toHaveLength(1);
-    expect(host.querySelector(".preview-delay--cover")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
+    expect(host.querySelector(".preview-bento > .preview-delay")).not.toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
     expect(host.textContent).toContain("Common questions");
     expect(host.textContent).not.toContain(GAP_SENTENCE);
@@ -163,12 +167,13 @@ describe("board delay fetch waits for the viewer", () => {
 
     await mount(createElement(Harness));
     expect(delayCalls()).toEqual([]);
-    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
     expect(host.textContent).toContain("Common questions");
   });
 
-  it("does not reserve the hold while a session cookie is present and the tier is unknown", async () => {
+  it("still reserves the skeleton row when a session cookie is present and the tier is unknown", async () => {
     localStorage.clear();
     document.cookie = "connect.sid=paid-session";
     vi.stubGlobal("fetch", vi.fn((url: string) => {
@@ -189,7 +194,8 @@ describe("board delay fetch waits for the viewer", () => {
 
     await mount(createElement(Harness));
     expect(delayCalls()).toEqual([]);
-    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
   });
 
@@ -240,7 +246,8 @@ describe("board delay fetch waits for the viewer", () => {
     }
 
     await mount(createElement(Harness));
-    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
 
     await act(async () => {
@@ -249,13 +256,15 @@ describe("board delay fetch waits for the viewer", () => {
       await Promise.resolve();
     });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
+    expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
     expect(delayCalls()).toEqual([]);
     expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
   });
 
-  it("pins the banner over the skeletons when an unknown account is a guest", async () => {
+  it("keeps the banner in the skeleton grid when an unknown account is a guest", async () => {
     localStorage.clear();
     let release: (value: Response) => void = () => {};
     vi.stubGlobal("fetch", vi.fn((url: string) => {
@@ -285,7 +294,9 @@ describe("board delay fetch waits for the viewer", () => {
       await Promise.resolve();
     });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(host.querySelector(".preview-delay--cover")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-delay--cover")).toBeNull();
+    expect(host.querySelector(".preview-bento > .preview-delay")).not.toBeNull();
     expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
     expect(host.textContent).toContain("Common questions");
     expect(host.querySelector(".preview-card--skeleton")?.getBoundingClientRect().top ?? null).toBe(before);
@@ -328,6 +339,121 @@ describe("board delay fetch waits for the viewer", () => {
     expect(delayCalls()).toEqual([]);
     expect(localStorage.getItem("tub_board_account")).toBe("null");
     expect(localStorage.getItem("site_nav_user")).toBeNull();
+  });
+
+  const row = {
+    id: 1,
+    inputs: [{ skin_name: "In" }],
+    outcomes: [{ skin_name: "Out" }],
+    total_cost_cents: 100,
+    expected_value_cents: 200,
+    profit_cents: 100,
+    roi_percentage: 10,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("puts the banner above the first card once a guest list arrives", async () => {
+    localStorage.clear();
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) return Promise.resolve(authBody(null));
+      if (String(url).includes("/api/trade-ups")) {
+        return Promise.resolve(json({ trade_ups: [row], total: 1, tier: "free", signed_in: false }));
+      }
+      return Promise.resolve(json(GAP));
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const bento = host.querySelector(".preview-bento");
+    const first = bento?.firstElementChild;
+    expect(first?.classList.contains("preview-delay")).toBe(true);
+    expect(first?.classList.contains("preview-delay--cover")).toBe(false);
+    expect(first?.classList.contains("preview-delay--hold")).toBe(false);
+    expect(bento?.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).toBeNull();
+  });
+
+  it("drops the reserve when a saved free account is now pro", async () => {
+    localStorage.setItem("tub_board_account", JSON.stringify({ tier: "free" }));
+    localStorage.setItem("site_nav_user", JSON.stringify({ tier: "free", steam_id: "765" }));
+    let releaseAuth: (value: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) {
+        return new Promise<Response>((resolve) => { releaseAuth = resolve; });
+      }
+      if (String(url).includes("/api/trade-ups")) {
+        return Promise.resolve(json({ trade_ups: [row], total: 1, tier: "pro", signed_in: true }));
+      }
+      return Promise.resolve(json(GAP));
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+
+    await act(async () => {
+      releaseAuth(authBody("pro"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+    expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
+    expect(JSON.parse(localStorage.getItem("site_nav_user") ?? "{}").tier).toBe("pro");
+  });
+
+  it("paints a confirmed checkout as paid before auth answers", async () => {
+    localStorage.setItem("tub_board_account", JSON.stringify({ tier: "free" }));
+    localStorage.setItem("site_nav_user", JSON.stringify({ tier: "free", steam_id: "765" }));
+    window.__tubCheckoutReturn = { upgraded: "1", sessionId: "cs_test" };
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
+    expect(JSON.parse(localStorage.getItem("site_nav_user") ?? "{}").tier).toBe("pro");
+    window.__tubCheckoutReturn = null;
   });
 
   it("loads the gap once the board list reports a free viewer", async () => {

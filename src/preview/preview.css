@@ -1231,15 +1231,10 @@
   color: transparent;
 }
 
-/* A guest confirmed after first paint. The list underneath is already the
-   reserved skeleton grid, so the banner pins to that box instead of pushing it. */
-.preview-delay-anchor { position: relative; }
-.preview-delay--cover {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  left: 0;
-  right: 0;
+/* The banner is a full-width row of the card grid. It sits above the cards
+   in normal flow. It is never taken out of flow over a card. */
+.preview-bento > .preview-delay {
+  grid-column: 1 / -1;
 }
 
 .preview-delay p {

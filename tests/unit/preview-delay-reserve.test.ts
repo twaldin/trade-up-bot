@@ -176,8 +176,9 @@ describe("free-tier banner reserves its height", () => {
       expect(html).toContain("preview-card--skeleton");
     }
     expect(lifetime).not.toContain("preview-delay");
-    // No cookie and no stored tier: the hold is in the first markup, and the list under it is not.
-    expect(unknown).not.toContain("preview-delay");
+    // No stored tier: the reserve is a row of the skeleton grid, not an overlay.
+    expect(unknown).toContain("preview-delay--hold");
+    expect(unknown).not.toContain("preview-delay--cover");
     expect(unknown).toContain("preview-card--skeleton");
     expect(unknown).toContain("Common questions");
     expect(free).toContain("preview-delay--hold");
@@ -188,5 +189,40 @@ describe("free-tier banner reserves its height", () => {
     expect(hold).toContain('aria-hidden="true"');
     expect(banner).toContain("Free tier");
     expect(banner).not.toContain("preview-delay--hold");
+    expect(banner).not.toContain("preview-delay--cover");
   });
+
+  it("keeps the banner off the first card at 360, 390, and 1280", async () => {
+    const page = await browser.newPage();
+    for (const width of [360, 390, 1280]) {
+      await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
+      for (const html of [banner, hold]) {
+        await page.setContent(boardDocument(html), { waitUntil: "domcontentloaded" });
+        const hit = await page.evaluate(() => {
+          const bannerEl = document.querySelector(".preview-delay");
+          const card = document.querySelector(".preview-card");
+          if (!(bannerEl instanceof HTMLElement) || !(card instanceof HTMLElement)) {
+            return { ok: false, reason: "missing" };
+          }
+          const a = bannerEl.getBoundingClientRect();
+          const b = card.getBoundingClientRect();
+          const overlap = a.bottom > b.top + 0.5 && a.top < b.bottom && a.right > b.left && a.left < b.right;
+          const probe = document.elementFromPoint(b.left + 8, b.top + 8);
+          const onBanner = probe instanceof Element && probe.closest(".preview-delay") != null;
+          const positioned = getComputedStyle(bannerEl).position;
+          return {
+            ok: !overlap && !onBanner && positioned !== "absolute" && a.height > 40 && b.top >= a.bottom - 0.5,
+            overlap,
+            onBanner,
+            positioned,
+            bannerTop: a.top,
+            bannerBottom: a.bottom,
+            cardTop: b.top,
+          };
+        });
+        expect(hit.ok, `${width} ${JSON.stringify(hit)}`).toBe(true);
+      }
+    }
+    await page.close();
+  }, 30000);
 });
