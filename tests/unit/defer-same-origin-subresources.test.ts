@@ -85,7 +85,8 @@ describe("deferred assets do not send auth or lid", () => {
       const target = `http://127.0.0.1:${port}/?auth=return&lid=${NONCE}&eid=legacy&session_id=cs_test_123&upgraded=pro&utm_source=google`;
       await page.goto(target, { waitUntil: "networkidle0", timeout: 15_000 });
       const interesting = hits.filter((hit) => hit.path !== "/favicon.ico");
-      expect(interesting.map((hit) => hit.path).sort()).toEqual([
+      // Chrome sometimes retries a body-less image. Every hit still has to be clean.
+      expect([...new Set(interesting.map((hit) => hit.path))].sort()).toEqual([
         "/assets/app.css",
         "/assets/app.js",
         "/assets/font.woff2",
