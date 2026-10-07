@@ -659,7 +659,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     content: `
 <p>A CS2 trade up calculator is a tool that estimates a contract's output probabilities, output float, total input cost, marketplace fees, and expected P/L before you buy skins. The best calculators use exact float values and live prices instead of averages.</p>
 
-<p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and search a skin into each slot. The calculator fills each slot with the mid-range float and the lowest buy-now listing price for that skin across all wears, and can't take a float or price. Those two may not match. Treat the result as a starting estimate. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
+<p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and search a skin into each slot. The calculator fills each slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
 
 <h2>What a Trade Up Calculator Actually Calculates</h2>
 
@@ -687,7 +687,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>1. Choose a rarity tier.</strong> Normal weapon trade-ups use 10 same-rarity inputs and produce one higher-rarity output. Mil-Spec trades into Restricted, Restricted trades into Classified, and Classified trades into Covert. Knife and glove trade-ups use a different 5-Covert-input structure, so do not mix those rules with standard weapon contracts.</p>
 
-<p><strong>2. Enter exact inputs.</strong> Add each input skin with its collection, rarity, float, and real buy price. If you are using marketplace listings, include the exact listing price rather than an average price. Average prices do not tell you what a specific low-float listing costs.</p>
+<p><strong>2. Fill each slot from a listing.</strong> Search a skin into each slot. The calculator fills that slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Average prices do not tell you what a specific low-float listing costs.</p>
 
 <p><strong>3. Check the output pool.</strong> Review every possible output skin and its probability. A contract with one expensive outcome and nine below cost may show positive expected P/L while still losing money most of the time. Probability matters as much as headline expected P/L.</p>
 
