@@ -22,7 +22,15 @@ CONF_ROOTS = (
     Path("/etc/nginx/sites-available"),
     Path("/etc/nginx/conf.d"),
 )
-SKIP_SUFFIXES = (".bak", ".save", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
+SKIP_SUFFIXES = (".bak", ".save", ".orig", ".old", "~", ".swp", ".disabled", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
+# Dated or tagged backups such as tradeup.bak-20260518220608 or tradeup.bak.1.
+BACKUP_NAME_RE = re.compile(r"[._-](?:bak\d*|backup|orig|old|save)(?:[-._]|$)", re.I)
+
+
+def is_backup_name(name: str) -> bool:
+    """True for editor/package/manual backup copies that nginx never loads."""
+    return name.endswith(SKIP_SUFFIXES) or bool(BACKUP_NAME_RE.search(name))
+
 MARKER = "tub-collection-slug-redirect"
 LEGACY_RE = re.compile(
     r"^/(trade-ups/collection|collections)/the-([a-z0-9][a-z0-9-]*)-collection/?$"
@@ -122,7 +130,7 @@ def iter_conf_files() -> list[Path]:
         if not root.is_dir():
             continue
         for path in sorted(root.iterdir()):
-            if not path.is_file() or path.name.endswith(SKIP_SUFFIXES):
+            if not path.is_file() or is_backup_name(path.name):
                 continue
             real = path.resolve()
             if real in seen:

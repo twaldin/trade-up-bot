@@ -79,6 +79,40 @@ describe("nginx 301 for legacy the-*-collection slugs", () => {
     expect(mapPath("/api/collection-by-slug/the-dust-collection").stdout).toBe("none");
   });
 
+  it("skips backup copies the same way the security-header patch does", () => {
+    const code = [
+      "import importlib.util, json, sys",
+      `spec = importlib.util.spec_from_file_location("p", ${JSON.stringify(script)})`,
+      "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+      "print(json.dumps([m.is_backup_name(n) for n in json.loads(sys.argv[1])]))",
+    ].join("\n");
+    const names = [
+      "tradeup.bak-20260518220608",
+      "tradeup.bak",
+      "tradeup.bak.1",
+      "tradeup.backup-2026",
+      "tradeup.orig",
+      "tradeup.old",
+      "tradeup~",
+      "tradeup.dpkg-old",
+      "tradeup.save",
+      "tradeup_bak",
+      "tradeup.bak2",
+      "tradeup-old",
+      "tradeup.disabled",
+      ".tradeup.swp",
+      "tradeup",
+      "default",
+      "tradeup.conf",
+      "bakery.conf",
+      "oldsite.conf",
+      "old-site",
+    ];
+    const out = spawnSync("python3", ["-c", code, JSON.stringify(names)], { encoding: "utf8" });
+    expect(out.status, out.stderr).toBe(0);
+    expect(JSON.parse(out.stdout) as boolean[]).toEqual([...Array(14).fill(true), ...Array(6).fill(false)]);
+  });
+
   it("deploy applies the redirect after the security-header patch and before smoke", () => {
     const security = deploy.indexOf("scripts/patch-nginx-security-headers.py --apply");
     const redirect = deploy.indexOf("scripts/patch-nginx-collection-slug.py --apply");

@@ -159,7 +159,10 @@ describe("leftover marketing pages join the kit shell", () => {
     expect(features).not.toMatch(/noindex/);
     expect(blog).not.toMatch(/noindex/);
     expect(legal).not.toMatch(/noindex/);
-    expect(share).not.toMatch(/noindex/);
+    const notFound = share.slice(share.indexOf("function TradeUpNotFound"), share.indexOf("export function PreviewShare"));
+    const liveShare = share.slice(share.indexOf("export function PreviewShare"));
+    expect(notFound).toContain('robots="noindex, follow"');
+    expect(liveShare).not.toMatch(/noindex/);
     expect(collectionTu).not.toMatch(/noindex/);
     expect(sniper).toContain("seo.robots");
     expect(staticPage("/listing-sniper").robots).toBe("noindex, follow");

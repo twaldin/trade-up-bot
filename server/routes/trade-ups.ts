@@ -1,4 +1,6 @@
 import { Router, type Request } from "express";
+import { asyncHandler } from "../async-handler.js";
+import { parseTradeUpId, routeParam } from "../../shared/trade-up-id.js";
 import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, repricedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale, lookupDMarketRelinks } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
@@ -213,10 +215,22 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   const router = Router();
   const rankStore = opts.rankStore ?? redisRankStore;
 
+  router.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      next();
+      return;
+    }
+    if (req.path === "/api/trade-ups/" || /^\/api\/trade-ups\/{2,}/.test(req.path)) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
+    next();
+  });
+
   // Filter options: Redis-first (daemon pre-populates every cycle).
   // The DISTINCT + GROUP BY queries on 10M+ trade_up_inputs rows block the
   // event loop for 20-50s (better-sqlite3 is synchronous). MUST come from cache.
-  router.get("/api/filter-options", async (_req, res) => {
+  router.get("/api/filter-options", asyncHandler(async (_req, res) => {
     try {
       const { cacheGet } = await import("../redis.js");
       const cached = await cacheGet<Record<string, unknown>>("filter_opts");
@@ -273,7 +287,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     } catch {
       res.json({ skins: [], collections: [], markets: [] });
     }
-  });
+  }));
 
   // The list cache stores the full payload. Fresh rows are redacted here, after
   // the read, so a free viewer never receives a cached Pro body and a redacted
@@ -768,13 +782,22 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     res.json(result);
   }, presentList));
 
-  router.get("/api/trade-ups/:id", async (req, res) => {
+  router.get("/api/trade-ups/:id", asyncHandler(async (req, res) => {
+    if (req.path.endsWith("/")) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
+    const tradeUpId = parseTradeUpId(routeParam(req.params.id));
+    if (tradeUpId === null) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
     // #172 owns redaction of fresh rows. The header is the tier stamp; redaction is separate.
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
     setTierCacheHeaders(res);
     const { rows: [row] } = await pool.query(
       `SELECT t.* FROM trade_ups t WHERE t.id = $1`,
-      [req.params.id]
+      [tradeUpId]
     );
 
     if (!row) {
@@ -809,9 +832,9 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       outcomes,
       ...(redacted ? { inputs_redacted: true } : {}),
     });
-  });
+  }));
 
-  router.post("/api/verify-trade-up/:id", async (req, res) => {
+  router.post("/api/verify-trade-up/:id", asyncHandler(async (req, res) => {
     // Verify requires pro tier
     const userId = req.user?.steam_id;
     const viewer = req.user as User | undefined;
@@ -826,7 +849,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       return;
     }
 
-    const tradeUpId = parseInt(req.params.id);
+    const tradeUpId = parseInt(routeParam(req.params.id), 10);
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
       return;
@@ -1331,12 +1354,12 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       updated_trade_up: updatedTradeUp,
       rate_limit: verifyRateLimit,
     });
-  });
+  }));
 
   // Load inputs on-demand (not included in list response to save bandwidth).
   // Header is per request, outside the shared cache. The shared cache is full-access only —
   // a redacted response must not be stored under it.
-  router.get("/api/trade-up/:id/inputs", async (req, res, next) => {
+  router.get("/api/trade-up/:id/inputs", asyncHandler(async (req, res, next) => {
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
     setTierCacheHeaders(res);
     const id = parseInt(req.params.id as string);
@@ -1357,7 +1380,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       return;
     }
     return cachedInputsHandler(req, res, next);
-  });
+  }));
 
   const cachedInputsHandler = cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);

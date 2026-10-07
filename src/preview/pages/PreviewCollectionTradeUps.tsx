@@ -74,6 +74,8 @@ export function PreviewCollectionTradeUps() {
           tradeUps={board.tradeUps}
           loading={board.loading}
           isFree={board.isFree}
+          signedIn={board.signedIn}
+          tier={board.tier}
           expandedId={board.expandedId}
           onExpand={board.onExpand}
           query={board.query}

@@ -150,6 +150,12 @@ export function verifyClaimHref(tradeUpId: number): string {
   return `${PREVIEW_PROD_ORIGIN}/trade-ups/${tradeUpId}`;
 }
 
+/** Same-tab path the claim sign-in modal returns to. Never an external URL. */
+export function claimReturnTo(tradeUpId: number): string {
+  if (!Number.isInteger(tradeUpId) || tradeUpId <= 0) return "/trade-ups";
+  return `/trade-ups/${tradeUpId}`;
+}
+
 export function bentoColumns(viewportWidth: number): 1 | 2 | 3 {
   if (viewportWidth < 720) return 1;
   if (viewportWidth < 1180) return 2;
