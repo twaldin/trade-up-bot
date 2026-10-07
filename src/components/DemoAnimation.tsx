@@ -289,9 +289,9 @@ export function DemoAnimation() {
         <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Profit ▾</div>
         <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">ROI ▾</div>
         <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Cost ▾</div>
-        <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Chance ▾</div>
+        <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Outcomes above cost ▾</div>
         <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Max Loss ▾</div>
-        <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Best Win ▾</div>
+        <div className="text-[11px] px-3 py-1 rounded-full border border-[#262626] text-[#737373]">Best outcome ▾</div>
         <div className="ml-auto text-[11px] text-[#525252] flex items-center gap-1"><input type="checkbox" disabled /> Show stale</div>
       </div>
 
@@ -301,7 +301,7 @@ export function DemoAnimation() {
       <div className="overflow-hidden" style={{ maxHeight: 460 }}>
         <table className="demo-tbl">
           <thead><tr>
-            <th style={{ width: 24 }} /><th>Inputs</th><th>Profit ↓</th><th>ROI</th><th>Chance</th><th>Cost</th><th>EV</th><th>Best</th><th>Worst</th>
+            <th style={{ width: 24 }} /><th>Inputs</th><th>Profit ↓</th><th>ROI</th><th>Outcomes above cost</th><th>Cost</th><th>EV</th><th>Best</th><th>Worst</th>
           </tr></thead>
           <tbody>
             <tr data-row="0">
@@ -309,7 +309,7 @@ export function DemoAnimation() {
               <td><span className="demo-inp"><a>4× M4A4 | Buzz Kill</a>, <a>1× SSG 08 | Dragonfire</a></span> <span className="demo-colb">Glove</span> <span className="demo-age">(2h)</span></td>
               <td className="demo-pos">$306.42</td>
               <td><span className="demo-roi">20.9%</span></td>
-              <td><span className="demo-ch demo-ch-md">46%</span></td>
+              <td><span className="demo-ch demo-ch-md">46% above cost</span></td>
               <td>$1,466.87</td><td>$1,773.29</td><td className="demo-pos">$4,631.58</td><td className="demo-neg">-$1,256.40</td>
             </tr>
             <tr data-expanded style={{ display: 'none' }}><td colSpan={9} className="!p-0 !bg-[#0f0f0f]"><div className="py-4 px-5 pl-11">
@@ -407,7 +407,7 @@ export function DemoAnimation() {
                 <td><span className="demo-inp"><a>{r.inputs}</a></span> <span className="demo-colb">Glove</span> <span className="demo-age">({r.age})</span></td>
                 <td className="demo-pos">{r.profit}</td>
                 <td><span className="demo-roi">{r.roi}</span></td>
-                <td><span className={`demo-ch ${r.chCls}`}>{r.chance}</span></td>
+                <td><span className={`demo-ch ${r.chCls}`}>{r.chance} above cost</span></td>
                 <td>{r.cost}</td><td>{r.ev}</td><td className="demo-pos">{r.best}</td><td className="demo-neg">{r.worst}</td>
               </tr>
             ))}

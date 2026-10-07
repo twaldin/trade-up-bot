@@ -287,7 +287,7 @@ export function DemoAnimationMobile() {
             <span className="text-[11px] text-[#525252] flex-shrink-0">Sort:</span>
             <div className="mdemo-spill mdemo-spill-active">Profit ↓</div>
             <div className="mdemo-spill">ROI</div>
-            <div className="mdemo-spill">Chance</div>
+            <div className="mdemo-spill">Outcomes above cost</div>
             <div className="mdemo-spill">Cost</div>
             <div className="mdemo-spill">EV</div>
             <div className="mdemo-spill">Best</div>
@@ -313,7 +313,7 @@ export function DemoAnimationMobile() {
               <div className="px-3 pb-2.5 flex items-center gap-2 flex-wrap">
                 <span data-mprofit className="text-[15px] font-bold mdemo-pos">$306.42</span>
                 <span className="text-[11px] px-[7px] py-0.5 rounded bg-green-500/15 text-green-500 font-semibold">20.9%</span>
-                <span className="text-[11px] px-[7px] py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">46%</span>
+                <span className="text-[11px] px-[7px] py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">46% above cost</span>
                 <span className="text-[11px] text-[#737373] ml-auto">$1,466.87 cost</span>
               </div>
 
@@ -427,7 +427,7 @@ export function DemoAnimationMobile() {
                 <div className="px-3 pb-2.5 flex items-center gap-2 flex-wrap">
                   <span className="text-[15px] font-bold mdemo-pos">{c.profit}</span>
                   <span className="text-[11px] px-[7px] py-0.5 rounded bg-green-500/15 text-green-500 font-semibold">{c.roi}</span>
-                  <span className="text-[11px] px-[7px] py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">{c.chance}</span>
+                  <span className="text-[11px] px-[7px] py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">{c.chance} above cost</span>
                   <span className="text-[11px] text-[#737373] ml-auto">{c.cost} cost</span>
                 </div>
               </div>

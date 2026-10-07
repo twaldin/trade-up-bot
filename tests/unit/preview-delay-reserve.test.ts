@@ -135,12 +135,21 @@ describe("free-tier banner reserves its height", () => {
     const narrowFilled = await delayBox(page, 390, boardDocument(banner), HIDDEN_COUNT_SENTENCE);
     const wideHold = await delayBox(page, 1280, boardDocument(hold), null);
     const wideFilled = await delayBox(page, 1280, boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+    const phone: Record<number, { held: number; filled: number }> = {};
+    for (const width of [360, 375]) {
+      const held = await delayBox(page, width, boardDocument(hold), null);
+      const filled = await delayBox(page, width, boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+      phone[width] = { held: held.height, filled: filled.height };
+    }
     await page.close();
     expect(narrowHold.height).toBe(144);
     expect(narrowFilled.height).toBe(narrowHold.height);
     expect(wideFilled.height).toBe(wideHold.height);
     expect(wideHold.height).toBeLessThan(144);
-  }, 30000);
+    for (const [width, box] of Object.entries(phone)) {
+      expect(box.filled, `${width} filled ${box.filled} hold ${box.held}`).toBe(box.held);
+    }
+  }, 45000);
 
   it("reserves the slot for a guest and skips it for a paid account", () => {
     const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });

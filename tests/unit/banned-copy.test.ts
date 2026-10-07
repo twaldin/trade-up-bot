@@ -53,7 +53,7 @@ const ALLOWLIST = [
   "not guaranteed", // product FAQ: not guaranteed profit
   "const win", // window handle in openListings, not user-facing copy
   "if (win)", // same window handle
-  "Win rate", // completed-sale statistic on the account page
+  "Sold at a profit", // completed-sale statistic: share of sold trade-ups with actual profit
 ];
 
 const GUIDE_TITLE = "How to Use TradeUpBot to Find Profitable Trade-Ups";
@@ -107,6 +107,17 @@ describe("banned ad copy", () => {
       expect(found, found.join(", ")).toEqual([]);
     });
   }
+
+  it("labels the sold-trade-up share as a completed sale", () => {
+    const account = readFileSync(join(root, "src/preview/pages/PreviewAccount.tsx"), "utf8");
+    const legacy = readFileSync(join(root, "src/pages/MyTradeUpsPage.tsx"), "utf8");
+    const caption = "Sold at a profit · {stats.avg_roi}% avg ROI";
+    expect(account).toContain(`<b>{stats.win_rate}%</b>`);
+    expect(account).toContain(caption);
+    expect(account).not.toContain("Outcomes above cost · {stats.avg_roi}%");
+    expect(legacy).toContain("Sold at a profit · <strong className=\"text-foreground\">{stats.win_rate}%</strong> · {stats.avg_roi}% avg ROI");
+    expect(legacy).not.toContain("Win Rate");
+  });
 
   it("pins the sign-in bar and the FAQ Steam sentence", () => {
     const bar = "Verify and Claim are Pro features. Signing in with Steam is free.";

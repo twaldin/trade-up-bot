@@ -48,12 +48,11 @@ export function parseBoardDelayPayload(body: unknown): BoardDelayGap | null {
 export function boardDelaySentence(gap: BoardDelayGap | null | undefined): string | null {
   if (!gap) return null;
   if (gap.hidden_profitable === 0) {
-    return "No profitable trade-ups are inside the 3-hour window right now.";
+    return "No profitable listing combos in the last 3 hours.";
   }
   const n = gap.hidden_profitable.toLocaleString("en-US");
-  const noun = gap.hidden_profitable === 1 ? "profitable trade-up" : "profitable trade-ups";
-  const verb = gap.hidden_profitable === 1 ? "is" : "are";
-  const lead = `${n} ${noun} found in the last 3 hours ${verb} hidden on the free board.`;
+  const noun = gap.hidden_profitable === 1 ? "profitable listing combo" : "profitable listing combos";
+  const lead = `${n} ${noun} turned up in the last 3 hours. Free sees new finds after a 3-hour delay.`;
   const best = gap.best_hidden_profit_cents;
   if (best === null || best <= 0) return lead;
   const money = `+${formatDollars(best)} expected P/L`;

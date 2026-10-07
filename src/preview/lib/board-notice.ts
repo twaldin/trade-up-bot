@@ -1,4 +1,5 @@
-import { listExtent } from "./page-fetch.js";
+import { formatLandingStat } from "./landing-stats.js";
+import { LIST_TOTAL_CAP, listExtent } from "./page-fetch.js";
 
 /**
  * Which message the board shows when it has nothing (or can't get anything)
@@ -11,14 +12,14 @@ export const LOAD_ERROR_COPY = "Couldn't load trade-ups.";
 /** Shown once a short page says the server has no further row. */
 export const END_OF_LIST_COPY = "That's the end of this list.";
 /** Shown when the list hits the 10,001 count cap with full pages still coming. */
-export const LIST_CAP_COPY = "This list stops at 10,000 matches. Narrow the filters to see the rest.";
+export const LIST_CAP_COPY = `This list stops at ${formatLandingStat(LIST_TOTAL_CAP)} matches. Narrow the filters to see the rest.`;
 /**
  * Deduped boards keep at most this many rows. Named in the cap line only when
  * the loaded list actually stopped on that many.
  */
 export const DISPLAY_LIST_CAP = 1_000;
 /** Shown when `has_more` cut the list at the 1,000-row snapshot. */
-export const DISPLAY_CAP_COPY = "Showing the top 1,000. Narrow your filters to see more.";
+export const DISPLAY_CAP_COPY = `Showing the top ${formatLandingStat(DISPLAY_LIST_CAP)}. Narrow your filters to see more.`;
 /** Shown after several pages of a very large board. Suggests narrowing; does not block paging. */
 export const NARROW_FILTERS_HINT = "This list is long. Narrow it with Max cost or Min above cost %.";
 export const NARROW_HINT_MIN_PAGES = 5;
@@ -28,7 +29,7 @@ export const NARROW_HINT_MIN_TOTAL = 1000;
 export function displayCapCopy(shown: number): string {
   if (shown === DISPLAY_LIST_CAP) return DISPLAY_CAP_COPY;
   if (Number.isFinite(shown) && shown > 0) {
-    return `Showing ${Math.trunc(shown).toLocaleString("en-US")} trade-ups. Narrow your filters to see more.`;
+    return `Showing ${formatLandingStat(shown)} trade-ups. Narrow your filters to see more.`;
   }
   return "This list was cut short. Narrow your filters to see more.";
 }

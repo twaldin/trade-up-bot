@@ -41,7 +41,7 @@ const COMPARE = [
   { feature: "Sort columns", free: true, pro: true },
   { feature: "Filters & search", free: true, pro: true },
   { feature: "Pagination", free: true, pro: true },
-  { feature: "Direct listing links", free: true, pro: true },
+  { feature: "Listing links", free: "With delayed trade-ups", pro: "With real-time trade-ups" },
   { feature: "Verify availability", free: false, pro: "20/hr" },
   { feature: "Claim system", free: false, pro: "10/hr" },
   { feature: "Active claims", free: false, pro: "Up to 5" },
@@ -60,7 +60,7 @@ const FAQ = [
   },
   {
     q: "Is there a free trial for Pro?",
-    a: "No separate trial. The Free tier has no time limit: full filters and listing links, with trade-up data delayed 3 hours. Upgrade when you want real-time data, verification, and claims.",
+    a: "No separate trial. The Free tier has no time limit: full filters, and listing links come with delayed trade-ups. Upgrade when you want real-time data, verification, and claims.",
   },
   {
     q: "What do the data delays mean?",
@@ -107,7 +107,7 @@ export function PreviewPricing() {
         <div>
           <h1>TradeUpBot Pricing</h1>
           <p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
-          <p>Free and Pro use the same board: every trade-up, the same filters, and listing links. Free is 3 hours behind. Pro adds Verify (20/hr) and Claim (10/hr, up to 5 active).</p>
+          <p>Free and Pro use the same board and the same filters. On Free, listing links come with delayed trade-ups. Pro adds Verify (20/hr) and Claim (10/hr, up to 5 active).</p>
           {showGap && delaySentence && <p>{delaySentence}</p>}
         </div>
       </header>
@@ -132,11 +132,11 @@ export function PreviewPricing() {
         <section className="preview-panel preview-plan">
           <p className="o-kicker">Free</p>
           <p className="preview-plan__price">$0</p>
-          <p className="preview-note">Full access to all trade-ups with filters, sorting, and listing links. 3-hour data delay.</p>
+          <p className="preview-note">Full access to all trade-ups with filters and sorting. Listing links come with delayed trade-ups.</p>
           <ul className="preview-plan__list">
             <li><IconCheck /> Unlimited trade-ups</li>
             <li><IconCheck /> Full filters, search, sorting</li>
-            <li><IconCheck /> Direct listing links</li>
+            <li><IconCheck /> Listing links on delayed trade-ups</li>
             <li><IconCheck /> Full outcome details and chart</li>
             <li className="preview-plan__delay"><IconClock /> 3-hour data delay</li>
             <li><IconCheck /> Collection browser</li>
@@ -230,7 +230,7 @@ export function PreviewPricing() {
         <h2>Product screenshots from the TradeUpBot dashboard.</h2>
         <figure className="preview-shot">
           <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
-          <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and direct listing links</figcaption>
+          <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and listing links on delayed trade-ups</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>

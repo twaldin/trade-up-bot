@@ -653,7 +653,7 @@ export function PreviewAccount() {
           </div>
           <div>
             <b>{stats.win_rate}%</b>
-            <span>Win rate · {stats.avg_roi}% avg ROI</span>
+            <span>Sold at a profit · {stats.avg_roi}% avg ROI</span>
           </div>
         </div>
       )}

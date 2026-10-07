@@ -77,7 +77,7 @@ export const PREVIEW_FAQ: { q: string; a: string }[] = [
 /** Landing plan teaser. Every limit here is one `/pricing` already sells. */
 export const PREVIEW_PLAN_FREE = [
   "Every trade-up, with filters, search, and sorting",
-  "Direct links to every input listing",
+  "Listing links on delayed trade-ups",
   "Board data delayed 3 hours",
 ] as const;
 
