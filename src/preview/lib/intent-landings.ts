@@ -5,7 +5,7 @@
  */
 import { formatOdds, rarityLabel } from "./board.js";
 import { boardFeeLine } from "./fees.js";
-import { REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "./copy.js";
+import { FREE_VIEW_DELAY_NOTE, OPEN_BOARD_CTA, REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "./copy.js";
 import { proPriceLine } from "./pro-pricing.js";
 import { formatDollars } from "../../utils/format.js";
 
@@ -312,7 +312,7 @@ function rowsFor(page: IntentPage, snapshot: IntentSnapshot): IntentRow[] {
 
 function tableHtml(rows: IntentRow[], showTier: boolean): string {
   if (rows.length === 0) {
-    return `<p>No active trade-ups above $1 expected P/L in this list right now. Listings sell and prices move. <a href="/trade-ups">Open the live board</a>.</p>`;
+    return `<p>No active trade-ups above $1 expected P/L in this list right now. Listings sell and prices move. <a href="/trade-ups">${OPEN_BOARD_CTA}</a>. ${escapeHtml(FREE_VIEW_DELAY_NOTE)}</p>`;
   }
   const head = showTier
     ? "<th>Trade-up</th><th>Tier</th><th>Cost</th><th>Expected P/L</th><th>ROI</th><th>Above cost</th>"
@@ -448,7 +448,7 @@ export function renderIntentDocument(page: IntentPage, snapshot: IntentSnapshot)
 
   const faqHtml = `<section><h2>Common questions</h2>${faq.map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`).join("")}</section>`;
   const boardHref = page.tier ? intentBoardHref(page.tier.type) : intentBoardHref();
-  const cta = `<p><a href="${boardHref}">Open the live board</a>. ${escapeHtml(SIGN_IN_TO_CLAIM)}</p>`
+  const cta = `<p><a href="${boardHref}">${OPEN_BOARD_CTA}</a>. ${escapeHtml(FREE_VIEW_DELAY_NOTE)} ${escapeHtml(SIGN_IN_TO_CLAIM)}</p>`
     + `<p><a href="/pricing">See Pro plans</a>. Pro is ${escapeHtml(proPriceLine("monthly"))}, with the board in real time, Verify (20/hr), and Claim (10/hr, up to 5 active). The free board is delayed 3 hours.</p>`;
   const bodyHtml = `${crumb.html}<h1>${escapeHtml(page.h1)}</h1>${intro}${faqHtml}${cta}${relatedHtml(page)}`;
 

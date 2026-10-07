@@ -1060,6 +1060,19 @@
   color: var(--accent);
 }
 
+/* Upgrade taps on a phone need a 44px target. Desktop keeps the slim control. */
+@media (max-width: 699px) {
+  .preview-upgrade {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 44px;
+    min-height: 44px;
+    height: auto;
+  }
+}
+
 /* ------------------------------------------------------------- filter bar */
 
 .preview-filters {

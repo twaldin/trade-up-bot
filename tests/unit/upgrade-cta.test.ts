@@ -34,6 +34,8 @@ describe("upgrade CTAs", () => {
     const landings = read("../../src/preview/lib/intent-landings.ts");
     expect(landings).toContain('href="/pricing">See Pro plans</a>');
     expect(landings).toContain("proPriceLine(\"monthly\")");
-    expect(landings).toContain("Open the live board");
+    expect(landings).toContain("${OPEN_BOARD_CTA}");
+    expect(landings).toContain("FREE_VIEW_DELAY_NOTE");
+    expect(landings).not.toContain("Open the live board");
   });
 });

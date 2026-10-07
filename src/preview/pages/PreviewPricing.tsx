@@ -4,7 +4,7 @@ import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
 import { trackPricingView, trackUpgradeCta } from "../../lib/conversions.js";
-import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
 import { fetchPricingSession } from "../lib/auth-state.js";
 import { hasProAccess } from "../lib/billing.js";
 import { runCheckout } from "../lib/checkout.js";
@@ -79,7 +79,8 @@ export function PreviewPricing() {
   const [billing, setBilling] = useState<BillingInterval>("monthly");
   const [checkoutError, setCheckoutError] = useState<{ message: string; manage: boolean } | null>(null);
   const interstitial = useSteamInterstitial();
-  const delaySentence = boardDelaySentence(useBoardDelay());
+  const showGap = shouldFetchBoardDelay(user);
+  const delaySentence = boardDelaySentence(useBoardDelay(showGap));
 
   useEffect(() => { trackPricingView(); }, []);
 
@@ -99,7 +100,7 @@ export function PreviewPricing() {
           <h1>TradeUpBot Pricing</h1>
           <p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
           <p>Free and Pro use the same board: every trade-up, the same filters, and listing links. Free is 3 hours behind. Pro adds Verify (20/hr) and Claim (10/hr, up to 5 active).</p>
-          {delaySentence && <p>{delaySentence}</p>}
+          {showGap && delaySentence && <p>{delaySentence}</p>}
         </div>
       </header>
 
@@ -154,7 +155,7 @@ export function PreviewPricing() {
           </ul>
           <button
             type="button"
-            className="preview-btn preview-btn--lime preview-btn--block"
+            className="preview-btn preview-btn--lime preview-btn--block preview-upgrade"
             disabled={user === undefined || hasProAccess(user)}
             onClick={(event) => {
               if (user === undefined || hasProAccess(user)) return;

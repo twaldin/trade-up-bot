@@ -3,11 +3,12 @@ import { Link, useLocation } from "react-router-dom";
 import { PreviewSeo } from "../components/PreviewSeo.js";
 import { formatOdds, rarityLabel } from "../lib/board.js";
 import { boardFeeLine } from "../lib/fees.js";
-import { REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { authHref } from "../../lib/ref.js";
 import { trackEvent } from "../../lib/analytics.js";
 import { trackCtaClick, trackSteamContinue, trackUpgradeCta } from "../../lib/conversions.js";
-import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
+import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
+import { fetchPricingSession } from "../lib/auth-state.js";
+import { FREE_VIEW_DELAY_NOTE, OPEN_BOARD_CTA, REPRICE_CAVEAT, SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import {
   INTENT_MIN_PROFIT_CENTS,
@@ -107,7 +108,7 @@ function LiveTable({ rows, failed, showTier }: { rows: IntentRow[] | null; faile
     return (
       <p>
         {failed ? "The live list did not load. " : "No active trade-ups above $1 expected P/L in this list right now. "}
-        <Link className="preview-link" to="/trade-ups">Open the live board</Link>.
+        <Link className="preview-link" to="/trade-ups">{OPEN_BOARD_CTA}</Link>. {FREE_VIEW_DELAY_NOTE}
       </p>
     );
   }
@@ -142,13 +143,23 @@ function LiveTable({ rows, failed, showTier }: { rows: IntentRow[] | null; faile
 }
 
 function IntentCta({ location }: { location: string }) {
-  const delaySentence = boardDelaySentence(useBoardDelay());
+  const [user, setUser] = useState<{ tier?: string; lifetime?: boolean } | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPricingSession().then((session) => {
+      if (!cancelled) setUser(session);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const showGap = shouldFetchBoardDelay(user);
+  const delaySentence = boardDelaySentence(useBoardDelay(showGap));
   return (
     <section className="preview-panel">
       <header className="preview-panel__head">
         <p className="o-kicker">Start free</p>
       </header>
-      {delaySentence && <p className="preview-note">{delaySentence}</p>}
+      {showGap && delaySentence && <p className="preview-note">{delaySentence}</p>}
+      <p className="preview-note">{FREE_VIEW_DELAY_NOTE}</p>
       <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
       <div className="preview-toolbar">
         <a
@@ -162,11 +173,11 @@ function IntentCta({ location }: { location: string }) {
         >
           Sign in with Steam
         </a>
-        <Link className="preview-btn" to="/pricing" onClick={() => trackUpgradeCta("intent_pro")}>
+        <Link className="preview-btn preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("intent_pro")}>
           See Pro plans
         </Link>
         <Link className="preview-btn" to="/trade-ups" onClick={() => trackCtaClick("intent_board")}>
-          Open the live board
+          {OPEN_BOARD_CTA}
         </Link>
       </div>
     </section>

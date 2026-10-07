@@ -100,7 +100,9 @@ describe("intent landing documents", () => {
       expect(html).toContain(`<h1>${doc.h1}</h1>`);
       expect(html).toContain("CSFloat 2.8%");
       expect(html).toContain("Outcome prices are after CSFloat's 2% seller fee.");
-      expect(html).toContain("Open the live board");
+      expect(html).toContain("Open the board");
+      expect(html).toContain("The free view is delayed 3 hours.");
+      expect(html).not.toContain("Open the live board");
       expect(html).toContain("Signing in with Steam is free.");
       expect(html).toContain('href="/pricing">See Pro plans</a>');
       expect(html).toContain("$6.99/mo");

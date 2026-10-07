@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Request } from "express";
 import {
   BOARD_DELAY_SECONDS,
   boardDelaySentence,
@@ -6,10 +7,21 @@ import {
   parseBoardDelayRow,
 } from "../../shared/board-delay.js";
 import { BOARD_DELAY_SQL } from "../../server/routes/board-delay.js";
+import { getTierConfig } from "../../server/auth.js";
+import type { TierUser } from "../../shared/pro-access.js";
+
+function tierReq(user: TierUser): Request {
+  return { user } as Request;
+}
 
 describe("board delay gap", () => {
   it("uses the same 3-hour cut as the free list", () => {
     expect(BOARD_DELAY_SECONDS).toBe(3 * 60 * 60);
+    expect(getTierConfig(tierReq(null)).delay).toBe(BOARD_DELAY_SECONDS);
+    expect(getTierConfig(tierReq({ tier: "free" })).delay).toBe(BOARD_DELAY_SECONDS);
+    expect(getTierConfig(tierReq({ tier: "pro" })).delay).toBe(0);
+    expect(getTierConfig(tierReq({ tier: "basic" })).delay).toBe(0);
+    expect(getTierConfig(tierReq({ tier: "free", lifetime: true })).delay).toBe(0);
     expect(BOARD_DELAY_SQL).toContain("profit_cents > 0");
     expect(BOARD_DELAY_SQL).toContain("listing_status = 'active'");
     expect(BOARD_DELAY_SQL).toContain("is_theoretical = false");

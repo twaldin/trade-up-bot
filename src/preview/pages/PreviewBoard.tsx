@@ -628,7 +628,7 @@ export function TradeUpCard({
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
           <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
-          <Link to="/pricing" className="preview-btn preview-btn--quiet" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</Link>
+          <Link to="/pricing" className="preview-btn preview-btn--quiet preview-upgrade" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</Link>
         </div>
       )}
 
@@ -1026,7 +1026,7 @@ export function PreviewBoard({
         <div className="preview-delay">
           <span className="preview-delay__label">Free tier</span>
           <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
-          <Link className="preview-delay__cta" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
+          <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
@@ -1104,7 +1104,8 @@ export function usePreviewTradeUps(options: {
   const { collection, skin, perPage = 12, enabled = true } = options;
   const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFree, setIsFree] = useState(true);
+  // Unknown tier is not free: /api/board-delay waits until the list reports one.
+  const [isFree, setIsFree] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [query, setQuery] = useState<BoardQuery>(() => readBoardLocation(typeof window === "undefined" ? null : window.location).query);
   const [search, setSearch] = useState(() => readBoardLocation(typeof window === "undefined" ? null : window.location).text);

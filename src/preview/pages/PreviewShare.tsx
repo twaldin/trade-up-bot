@@ -291,7 +291,7 @@ export function PreviewShare() {
         <section className="preview-panel">
           <p className="preview-note">Verify and Claim are Pro features: {proPriceLine("monthly")}.</p>
           {delaySentence && <p className="preview-note">{delaySentence}</p>}
-          <Link className="preview-btn" to="/pricing" onClick={() => trackUpgradeCta("share_upgrade")}>See Pro plans</Link>
+          <Link className="preview-btn preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("share_upgrade")}>See Pro plans</Link>
         </section>
       )}
 

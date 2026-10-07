@@ -3,6 +3,18 @@ import {
   parseBoardDelayPayload,
   type BoardDelayGap,
 } from "../../../shared/board-delay.js";
+import { getEffectiveTier } from "../../../shared/pro-access.js";
+
+/**
+ * Free and logged-out viewers load the gap. `undefined` is auth still resolving,
+ * so the request waits. Pro, lifetime, basic, and admin skip it.
+ */
+export function shouldFetchBoardDelay(
+  user: { tier?: string; lifetime?: boolean } | null | undefined,
+): boolean {
+  if (user === undefined) return false;
+  return getEffectiveTier(user) === "free";
+}
 
 export {
   BOARD_DELAY_SECONDS,

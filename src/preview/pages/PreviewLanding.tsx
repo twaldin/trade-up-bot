@@ -214,7 +214,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             <Link to={`/trade-ups/${proof.id}`} className="preview-btn">Open this trade-up</Link>
             {isFree && (
               <p className="preview-note">
-                {DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""} <Link to="/pricing" onClick={() => trackUpgradeCta("landing_delay")}>See Pro</Link>
+                {DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""} <Link className="preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("landing_delay")}>See Pro</Link>
               </p>
             )}
           </footer>
@@ -458,7 +458,7 @@ export function PreviewLanding({
               ))}
             </ul>
             <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
-            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing">Compare plans</Link>
+            <Link className="preview-btn preview-btn--lime preview-btn--block preview-upgrade" to="/pricing">Compare plans</Link>
           </article>
         </div>
       </section>
