@@ -46,6 +46,8 @@ import { faqEntities, seoPage } from "../lib/seo-pages.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import {
   formatLandingStat,
+  LANDING_STAT_PLACEHOLDER,
+  landingStatPlaceholderTiles,
   visibleLandingStatTiles,
   type BoardCountSource,
   type LandingStatCounts,
@@ -255,11 +257,14 @@ export function PreviewLanding({
   stats,
   mode = "dark",
   onBoardCounts,
+  countsPending = false,
 }: {
   stats: LandingStatCounts | null;
   mode?: "light" | "dark";
   /** Hero trade-up totals come from this teaser response. No second count query. */
   onBoardCounts?: (counts: BoardCountSource) => void;
+  /** True until the real count is known. The cap from the board list is not a count. */
+  countsPending?: boolean;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
   const live = usePreviewTradeUps({ perPage: 3 });
@@ -287,6 +292,7 @@ export function PreviewLanding({
 
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
   const statTiles = visibleLandingStatTiles(stats);
+  const showPlaceholder = countsPending && statTiles.length === 0;
 
   return (
     <main id="main">
@@ -308,7 +314,17 @@ export function PreviewLanding({
             </Link>
             <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
           </div>
-          {statTiles.length > 0 && (
+          {showPlaceholder && (
+            <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties} aria-busy="true" aria-label="Loading trade-up counts">
+              {landingStatPlaceholderTiles().map((tile) => (
+                <div key={tile.key} aria-hidden="true">
+                  <b>{LANDING_STAT_PLACEHOLDER}</b>
+                  <span>{tile.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!showPlaceholder && statTiles.length > 0 && (
             <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
               {statTiles.map((tile) => (
                 <div key={tile.key}>

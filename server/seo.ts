@@ -1,3 +1,4 @@
+import type { Response } from "express";
 import { buildCollectionsHubJsonLd, buildHomepageJsonLd } from "../shared/crawler-jsonld.js";
 import { tradeUpH1, tradeUpPair } from "../shared/copy.js";
 import { detailTypeLabel } from "../shared/types.js";
@@ -258,6 +259,16 @@ ${jsonLdTag}
 export function deletedTradeUpStatus(id: string, knownDeletedOrExpired = false): 404 | 410 {
   if (!knownDeletedOrExpired || !/^\d+$/.test(id)) return 404;
   return 410;
+}
+
+/** Hard 404 for an unknown skin, collection, or blog slug. Crawlers see noindex in the document and the header. */
+export function slugNotFoundHtml(message: string): string {
+  const safe = escapeHtml(message);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><title>${safe}</title><meta name="robots" content="noindex" /></head><body><p>${safe}</p></body></html>`;
+}
+
+export function sendSlugNotFound(res: Response, message: string): void {
+  res.status(404).set("X-Robots-Tag", "noindex").type("html").send(slugNotFoundHtml(message));
 }
 
 export interface CollectionHubLink {
