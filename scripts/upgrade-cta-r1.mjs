@@ -2,11 +2,10 @@
  * R1: each remaining upgrade control fires one upgrade_cta_click and one
  * page_view, and stays inside the client router.
  *
- * gtag.js is blocked, so enhanced measurement cannot send the history page_view.
- * The script wraps history.pushState / replaceState and records one page_view
- * when the path changes — the same one-per-navigation rule that measurement
- * uses. An app-emitted page_view on the same click makes the count 2 and fails.
- * A full document load drops the alive marker and fails.
+ * gtag.js is blocked. The app sends one page_view on a client navigation
+ * (enhanced measurement does not, once the bundle is delayed). An extra
+ * history page_view makes the count 2 and fails. A full document load drops
+ * the alive marker and fails.
  *
  *   node scripts/upgrade-cta-r1.mjs
  *   QA_BASE=http://127.0.0.1:5173 node scripts/upgrade-cta-r1.mjs
@@ -172,24 +171,6 @@ async function openPage(browser, base, { path, user, width, height, mobile }) {
   });
   await page.evaluateOnNewDocument((measurementId) => {
     window.tubTracking = { ga4MeasurementId: measurementId };
-    const wrap = (name) => {
-      const orig = history[name];
-      history[name] = function (state, title, url) {
-        const before = location.pathname;
-        const result = orig.apply(this, arguments);
-        let next = location.pathname;
-        if (typeof url === "string" && url.length > 0) {
-          try { next = new URL(url, location.origin).pathname; } catch { /* keep location */ }
-        }
-        if (next !== before) {
-          window.dataLayer = window.dataLayer || [];
-          window.dataLayer.push(["event", "page_view", { page_path: next, source: "history" }]);
-        }
-        return result;
-      };
-    };
-    wrap("pushState");
-    wrap("replaceState");
   }, GA4);
   await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
   return { context, page };
@@ -270,6 +251,15 @@ try {
           page.waitForFunction((destination) => location.pathname === destination, { timeout: 10_000 }, spec.destination),
           page.click(spec.selector),
         ]);
+        await page.waitForFunction(() => {
+          const layer = window.dataLayer || [];
+          const mark = window.__r1Mark ?? 0;
+          for (let i = mark; i < layer.length; i += 1) {
+            const entry = layer[i];
+            if (entry && entry[0] === "event" && entry[1] === "page_view") return true;
+          }
+          return false;
+        }, { timeout: 5_000 });
         const after = await readLayer(page);
         const upgrades = after.events.filter((event) => event.name === "upgrade_cta_click");
         const views = after.events.filter((event) => event.name === "page_view");

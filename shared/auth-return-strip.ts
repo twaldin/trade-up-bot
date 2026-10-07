@@ -1,7 +1,21 @@
 // Inline head script. It runs before every tracker snippet and before the app's
-// first fetch, so auth, lid, eid, session_id, and upgraded never become a
-// page_location or a Referer. The app reads the stashes. A later history rewrite
-// would send a second page view.
+// first fetch, so any auth value, plus lid, eid, session_id, and upgraded, never
+// become a page_location or a Referer. Only auth=new and auth=return are stashed.
+// The app reads the stashes. A later history rewrite would send a second page view.
+export const TRACKING_STRIP_KEYS = ["auth", "lid", "eid", "session_id", "upgraded"] as const;
+
+/** page_location with auth, lid, eid, session_id, and upgraded removed. */
+export function scrubbedPageLocation(href: string): string {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return href;
+  }
+  for (const key of TRACKING_STRIP_KEYS) url.searchParams.delete(key);
+  return `${url.origin}${url.pathname}${url.search}${url.hash}`;
+}
+
 export const AUTH_RETURN_STRIP_SOURCE = `(function () {
         try {
           var params = new URLSearchParams(location.search);
@@ -16,7 +30,7 @@ export const AUTH_RETURN_STRIP_SOURCE = `(function () {
           if (upgraded || sessionId) {
             window.__tubCheckoutReturn = { upgraded: upgraded, sessionId: sessionId };
           }
-          if (tracked || lid || upgraded || sessionId || params.has("eid")) {
+          if (params.has("auth") || lid || upgraded || sessionId || params.has("eid")) {
             params.delete("auth");
             params.delete("lid");
             params.delete("eid");

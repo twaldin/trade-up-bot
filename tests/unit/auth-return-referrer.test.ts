@@ -90,4 +90,33 @@ describe("delayed bundle does not leak the login nonce", () => {
       await page.close();
     }
   }, 25_000);
+
+  it("strips auth=failed, a bare lid, and the checkout ids before collect and /api", async () => {
+    const cases = [
+      "/pricing?auth=failed&utm_source=google",
+      "/pricing?auth=new&lid=123",
+      "/pricing?upgraded=1&session_id=cs_x&utm_source=google",
+    ];
+    for (const path of cases) {
+      const page = await browser.newPage();
+      const start = hits.length;
+      try {
+        const apiSeen = page.waitForResponse((res) => res.url().includes("/api/auth/me"), { timeout: 15_000 });
+        await page.goto(`http://127.0.0.1:${port}${path}`, { waitUntil: "domcontentloaded", timeout: 15_000 });
+        await apiSeen;
+        const tracked = hits.slice(start).filter((hit) => hit.url.startsWith("/collect") || hit.url.startsWith("/tr") || hit.url.startsWith("/api/"));
+        expect(tracked.some((hit) => hit.url.startsWith("/collect")), path).toBe(true);
+        for (const hit of tracked) {
+          for (const leaked of ["auth=", "lid=", "session_id=", "upgraded=", "auth%3D", "lid%3D", "session_id%3D", "upgraded%3D", "cs_x"]) {
+            expect(hit.url, `${path} ${hit.url}`).not.toContain(leaked);
+            expect(hit.referer, `${path} referer`).not.toContain(leaked);
+          }
+        }
+        const search = await page.evaluate(() => location.search);
+        expect(search, path).not.toMatch(/auth=|lid=|session_id=|upgraded=/);
+      } finally {
+        await page.close();
+      }
+    }
+  }, 40_000);
 });

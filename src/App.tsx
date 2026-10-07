@@ -476,7 +476,8 @@ export default function App() {
   const { pathname } = useLocation();
   const pageViewPath = useRef<string | null>(null);
 
-  // The Pixel snippet records the document load. Later client navigations get one PageView each.
+  // Document load is the gtag config page_view. Later client navigations send one
+  // page_view to the configured property, and one Pixel PageView. Not on the first render.
   useEffect(() => {
     const previous = pageViewPath.current;
     pageViewPath.current = pathname;

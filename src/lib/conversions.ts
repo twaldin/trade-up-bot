@@ -14,10 +14,14 @@ import {
   type Attribution,
   type TrackedPlan,
 } from "../../shared/tracking.js";
+import { scrubbedPageLocation } from "../../shared/auth-return-strip.js";
 import { trackEvent, trackPurchase, type GtagItem } from "./analytics.js";
 import { checkoutAttribution, storedAttribution } from "./attribution.js";
 import { newEventId, pixelEvent, pixelPageView, type FbqParams } from "./meta-pixel.js";
 import { clientTracking } from "./tracking-config.js";
+
+// Hardcoded in index.html. SPA page_view goes to the env property only.
+const LEGACY_GA4_MEASUREMENT_ID = "G-EKWRB4FE37";
 
 function pagePath(): string {
   return typeof window !== "undefined" ? window.location.pathname : "/";
@@ -243,15 +247,36 @@ export function trackAuthReturn(kind: "sign_up" | "login", eventId?: string | nu
   if (eventId) pixelEvent("login", { status: "complete" }, eventId);
 }
 
+function currentHref(): string {
+  if (typeof window === "undefined") return "https://tradeupbot.app/";
+  const loc = window.location;
+  if (typeof loc.href === "string" && loc.href.length > 0) return loc.href;
+  const origin = typeof loc.origin === "string" && loc.origin.length > 0 ? loc.origin : "https://tradeupbot.app";
+  return `${origin}${loc.pathname}${loc.search ?? ""}${loc.hash ?? ""}`;
+}
+
 /**
- * Client-side route change. The gtag config already records each history page view, and the
- * Pixel base code records the document load, so this only sends Meta PageView — once per path.
+ * Client-side route change. gtag config already recorded the document load for both
+ * properties, and history changes do not. Send one page_view to the configured
+ * measurement id (never the legacy snippet) with the same query scrub as the head
+ * script. The first render is not a route change. The Pixel base code recorded the
+ * document load, so Meta PageView is also once per path.
  */
 export function shouldTrackSpaPageView(previousPath: string | null, nextPath: string): boolean {
   return previousPath !== null && previousPath !== nextPath;
 }
 
 export function trackSpaPageView(): void {
+  try {
+    const id = clientTracking().ga4MeasurementId;
+    if (id && id !== LEGACY_GA4_MEASUREMENT_ID) {
+      const page_location = scrubbedPageLocation(currentHref());
+      const page_path = new URL(page_location).pathname || "/";
+      sendGa4("page_view", { page_location, page_path });
+    }
+  } catch {
+    // A blocked tag must not break navigation.
+  }
   pixelPageView();
 }
 
