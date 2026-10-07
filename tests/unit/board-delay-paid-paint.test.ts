@@ -129,7 +129,8 @@ describe("paid lists do not grow the free banner", () => {
       const timer = setTimeout(() => reject(new Error(`vite did not start\n${log}`)), 20000);
       const onData = (buf: Buffer) => {
         log += String(buf);
-        if (log.includes("Local:")) {
+        const plain = log.replace(/\u001b\[[0-9;]*m/g, "");
+        if (plain.includes(`127.0.0.1:${PORT}`)) {
           clearTimeout(timer);
           resolveReady();
         }

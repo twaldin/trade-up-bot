@@ -1153,8 +1153,12 @@ export function PreviewBoard({
   // The list already carries the viewer's tier. A paid payload must not grow
   // the free banner while auth is still out. Latch only once a free list is
   // on screen. A later paid answer must not take that banner back out: that
-  // would pull the cards up.
-  const listSaysPaid = !loading && tradeUps.length > 0 && !isFree;
+  // would pull the cards up. Page 2 sets `loading` again; that must not put
+  // the free banner back over a list that already said paid.
+  const paidList = useRef(false);
+  if (!loading && tradeUps.length > 0 && !isFree) paidList.current = true;
+  if (!loading && isFree) paidList.current = false;
+  const listSaysPaid = paidList.current;
   const guestPainted = useRef(false);
   const paintGuest = !embed && !startedPaid && !authSaysPaid && !listSaysPaid
     && tradeUps.length > 0 && isFree
