@@ -135,7 +135,13 @@ export function visibleLandingStatTiles(
 }
 
 export function formatLandingStat(value: number): string {
-  return value.toLocaleString("en-US");
+  const whole = Math.trunc(value);
+  // The board count stops at 10001. That sentinel is "10,000+", never "10,001".
+  // A larger figure is a real published total (global stats, data points).
+  if (Number.isFinite(value) && whole >= LIST_TOTAL_CAP && whole < LIST_TOTAL_CAP + 1) {
+    return "10,000+";
+  }
+  return whole.toLocaleString("en-US");
 }
 
 /** Neutral mark while the real count is still unknown. Not a number. */

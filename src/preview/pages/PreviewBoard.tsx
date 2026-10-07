@@ -1308,6 +1308,7 @@ type BoardListPayload = {
   tier?: string;
   total?: number;
   total_profitable?: number;
+  total_profitable_capped?: boolean;
   raw_total?: number;
   has_more?: boolean;
   deduped?: boolean;
@@ -1348,7 +1349,6 @@ export function usePreviewTradeUps(options: {
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
-  const [deduped, setDeduped] = useState(false);
   const [totalProfitableCapped, setTotalProfitableCapped] = useState(false);
   const [landedPage, setLandedPage] = useState(1);
   const [shownStatus, setShownStatus] = useState("");
@@ -1461,6 +1461,7 @@ export function usePreviewTradeUps(options: {
     setEndKind("more");
     setRawTotal(null);
     setDeduped(false);
+    setTotalProfitableCapped(false);
     listMetaRef.current = {};
     attemptRef.current = 0;
     setBackoffUntil(0);

@@ -50,6 +50,57 @@ describe("parseTradeUpsResponse", () => {
     expect(parseTradeUpsResponse(200, true, { total: 12 }).kind).toBe("error");
     expect(parseTradeUpsResponse(500, false, { error: "boom" }).kind).toBe("error");
   });
+
+  it("reads total_profitable_capped when the flag is true", () => {
+    const result = parseTradeUpsResponse(200, true, {
+      trade_ups: [makeTradeUp()],
+      total: 10001,
+      total_profitable: 10001,
+      total_profitable_capped: true,
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.payload.total_profitable_capped).toBe(true);
+    const next = applyBoardFetch(emptySnapshot(), result);
+    expect(next.totalProfitable).toBe(10001);
+    expect(next.totalProfitableCapped).toBe(true);
+  });
+
+  it("reads total_profitable_capped when the flag is false", () => {
+    const result = parseTradeUpsResponse(200, true, {
+      trade_ups: [makeTradeUp()],
+      total: 80,
+      total_profitable: 56,
+      total_profitable_capped: false,
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.payload.total_profitable_capped).toBe(false);
+    expect(applyBoardFetch(emptySnapshot(), result).totalProfitableCapped).toBe(false);
+  });
+
+  it("defaults a missing total_profitable_capped flag to false and clears a previous cap", () => {
+    const result = parseTradeUpsResponse(200, true, {
+      trade_ups: [makeTradeUp()],
+      total: 40,
+      total_profitable: 7,
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.payload.total_profitable_capped).toBe(false);
+    expect(result.payload.deduped).toBe(false);
+    const prev = {
+      ...emptySnapshot(),
+      total: 10001,
+      totalProfitable: 10001,
+      totalProfitableCapped: true,
+      deduped: true,
+    };
+    const next = applyBoardFetch(prev, result);
+    expect(next.totalProfitable).toBe(7);
+    expect(next.totalProfitableCapped).toBe(false);
+    expect(next.deduped).toBe(false);
+  });
 });
 
 describe("applyBoardFetch — keep last good rows", () => {
@@ -231,5 +282,11 @@ describe("TradeUpsPage wiring", () => {
     expect(page).toContain("EMPTY_FILTER_COPY");
     expect(page).toContain("RATE_LIMIT_COPY");
     expect(page).not.toMatch(/emptyKind === "empty_filter"[\s\S]*RATE_LIMIT_COPY/);
+  });
+
+  it("formats the profitable count through the cap helper and drops it on a deduped list", () => {
+    expect(page).toContain("listProfitableSuffix");
+    expect(page).toContain("formatProfitableCount");
+    expect(page).not.toContain("totalProfitable.toLocaleString");
   });
 });
