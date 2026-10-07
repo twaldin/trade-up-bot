@@ -106,4 +106,12 @@ describe("end-of-list notice", () => {
     expect(displayCapCopy(16)).toBe("Showing 16 trade-ups. Narrow your filters to see more.");
     expect(displayCapCopy(16)).not.toContain("1,000");
   });
+
+  it("formats a cut list with the same sentinel rule as the landing stats", () => {
+    expect(displayCapCopy(10_001)).toBe("Showing 10,000+ trade-ups. Narrow your filters to see more.");
+    expect(displayCapCopy(10_001)).not.toContain("10,001");
+    expect(displayCapCopy(1_000)).toBe("Showing the top 1,000. Narrow your filters to see more.");
+    expect(LIST_CAP_COPY).toBe("This list stops at 10,000+ matches. Narrow the filters to see the rest.");
+    expect(LIST_CAP_COPY).not.toContain("1,000+");
+  });
 });
