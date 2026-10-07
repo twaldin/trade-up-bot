@@ -7,6 +7,7 @@ import pg from "pg";
 import { initDb, createTables } from "./db.js";
 import { initRedis, startBoardFlushSubscriber } from "./redis.js";
 import { setupAuth } from "./auth.js";
+import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
@@ -83,7 +84,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
-    const match = line.match(/^(\w+)=(.*)$/);
+    const match = line.replace(/\r$/, "").match(/^(\w+)=(.*)$/);
     if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
   }
 }
@@ -187,6 +188,13 @@ registerCanonicalRedirectRoutes(app);
 
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
+  try {
+    resolveSessionSecrets(process.env);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Refusing to start: SESSION_SECRET is not safe for production.");
+    process.exit(1);
+  }
+
   if (process.env.NODE_ENV === "production" && !(process.env.BASE_URL || "").startsWith("https")) {
     throw new Error("BASE_URL must be set to an https URL in production");
   }
