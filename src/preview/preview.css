@@ -1359,7 +1359,7 @@
 
 .preview-skel__bar {
   display: block;
-  width: min(220px, 70%);
+  width: min(14rem, 70%);
   height: 10px;
   border-radius: var(--r-chip);
   background: var(--row-hover);
