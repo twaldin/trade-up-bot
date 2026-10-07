@@ -174,4 +174,16 @@ describe("total_profitable on /api/trade-ups", () => {
     expect(res.body.total_profitable).toBe(6);
     expect(res.body.total_profitable_capped).toBe(false);
   });
+
+  it("counts exactly on a diversified page past the snapshot (single-scan path)", async () => {
+    const res = await request(ctx.app)
+      .get("/api/trade-ups?per_page=12&page=100")
+      .set("X-Test-User-Id", "user_pro")
+      .set("X-Test-User-Tier", "pro");
+    expect(res.status).toBe(200);
+    expect(res.body.trade_ups).toHaveLength(0);
+    expect(res.body.total).toBe(8);
+    expect(res.body.total_profitable).toBe(6);
+    expect(res.body.total_profitable_capped).toBe(false);
+  });
 });
