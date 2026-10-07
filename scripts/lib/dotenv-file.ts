@@ -1,7 +1,9 @@
 // Minimal .env reader that matches how dotenvx (and dotenv) treat values,
 // so scripts see the same value the api sees under `dotenvx run`.
-// First assignment wins. Matching surrounding quotes (' " `) are stripped;
-// unquoted values drop a trailing ` # comment`. Values are never logged.
+// Last assignment wins (as in dotenvx). Matching surrounding quotes (' " `)
+// are stripped; an unquoted value is cut at the first `#`. Leading whitespace
+// before the key, `export `, and `KEY: value` are accepted. `${VAR}` expansion
+// is not done, so the deploy .env should not rely on it. Values are never logged.
 
 export function parseDotenvValue(raw: string): string {
   const value = raw.trim();
@@ -13,15 +15,15 @@ export function parseDotenvValue(raw: string): string {
       return quote === '"' ? inner.replace(/\\n/g, "\n").replace(/\\r/g, "\r") : inner;
     }
   }
-  const hash = value.search(/\s#/);
+  const hash = value.indexOf("#");
   return (hash === -1 ? value : value.slice(0, hash)).trim();
 }
 
 export function parseDotenv(text: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const line of text.split("\n")) {
-    const match = line.replace(/\r$/, "").match(/^(?:export\s+)?(\w+)\s*=(.*)$/);
-    if (match && !out.has(match[1])) out.set(match[1], parseDotenvValue(match[2]));
+    const match = line.replace(/\r$/, "").match(/^\s*(?:export\s+)?([\w.-]+)\s*(?:=|:\s?)(.*)$/);
+    if (match) out.set(match[1], parseDotenvValue(match[2]));
   }
   return out;
 }

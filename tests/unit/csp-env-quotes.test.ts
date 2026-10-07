@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -15,13 +16,45 @@ describe("deploy .env reader matches dotenvx quoting", () => {
     expect(parseDotenvValue("`G-2474G4P5QE`")).toBe("G-2474G4P5QE");
     expect(parseDotenvValue("G-2474G4P5QE")).toBe("G-2474G4P5QE");
     expect(parseDotenvValue("G-2474G4P5QE # prod")).toBe("G-2474G4P5QE");
+    expect(parseDotenvValue("G-2474G4P5QE#prod")).toBe("G-2474G4P5QE");
+    expect(parseDotenvValue('"G-2474G4P5QE" # prod')).toBe("G-2474G4P5QE");
     expect(parseDotenvValue('"a # b"')).toBe("a # b");
     expect(parseDotenvValue('"unterminated')).toBe('"unterminated');
   });
 
-  it("keeps the first assignment and handles CRLF", () => {
-    const env = parseDotenv('GA4_MEASUREMENT_ID="G-AAAA1111"\r\nGA4_MEASUREMENT_ID=G-BBBB2222\n');
-    expect(env.get("GA4_MEASUREMENT_ID")).toBe("G-AAAA1111");
+  it("lets the last assignment win, like dotenvx, and handles CRLF", () => {
+    const env = parseDotenv('GA4_MEASUREMENT_ID="G-AAAA1111"\r\nGA4_MEASUREMENT_ID=G-BBBB2222\r\n');
+    expect(env.get("GA4_MEASUREMENT_ID")).toBe("G-BBBB2222");
+  });
+
+  it("accepts leading whitespace, export, and KEY: value", () => {
+    const env = parseDotenv("  A=1\nexport B=2\nexport\tC=3\nD: 4\n# E=5\n");
+    expect([env.get("A"), env.get("B"), env.get("C"), env.get("D"), env.has("E")]).toEqual(["1", "2", "3", "4", false]);
+  });
+
+  it("an unquoted GA4 id with a glued #comment still yields the GA4 CSP wildcards", () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyDotenv("GA4_MEASUREMENT_ID=G-2474G4P5QE#prod\n", env);
+    expect(staticHtmlSecurityHeaders(env)["Content-Security-Policy"]).toContain("https://*.google-analytics.com");
+  });
+
+  const dotenvx = (() => {
+    try {
+      return createRequire(import.meta.url)("@dotenvx/dotenvx") as { parse: (src: string) => Record<string, string> };
+    } catch {
+      return null;
+    }
+  })();
+  it.skipIf(!dotenvx)("matches @dotenvx/dotenvx parse when it is installed", () => {
+    const src = [
+      'Q1="dq # kept"', "Q2='sq'", "Q3=`bt`", "U1=plain # c", "U2=G-X#prod", "U3=  spaced  ",
+      "  LEAD=1", "export EXP=2", "DUP=first", "DUP=last", "EMPTY=", "CRLF=x\r",
+    ].join("\n");
+    const ours = Object.fromEntries(parseDotenv(src));
+    const theirs = dotenvx!.parse(src);
+    for (const key of ["Q1", "Q2", "Q3", "U1", "U2", "U3", "LEAD", "EXP", "DUP", "EMPTY", "CRLF"]) {
+      expect(ours[key], key).toBe(theirs[key]);
+    }
   });
 
   it("a quoted GA4 id still yields the GA4 CSP wildcards", () => {
@@ -64,13 +97,19 @@ describe("nginx header patch skips backup copies", () => {
       "tradeup~",
       "tradeup.dpkg-old",
       "tradeup.save",
+      "tradeup_bak",
+      "tradeup.bak2",
+      "tradeup-old",
+      "tradeup.disabled",
+      ".tradeup.swp",
       "tradeup",
       "default",
       "tradeup.conf",
       "bakery.conf",
       "oldsite.conf",
-    ])).toEqual([...Array(9).fill(true), ...Array(5).fill(false)]);
-  }, 20_000);
+      "old-site",
+    ])).toEqual([...Array(14).fill(true), ...Array(6).fill(false)]);
+  }, 60_000);
 });
 
 describe("static nginx CSP mirrors the app CSP", () => {

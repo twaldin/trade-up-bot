@@ -28,9 +28,9 @@ CONF_ROOTS = (
     Path("/etc/nginx/sites-available"),
     Path("/etc/nginx/conf.d"),
 )
-SKIP_SUFFIXES = (".bak", ".save", ".orig", ".old", "~", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
+SKIP_SUFFIXES = (".bak", ".save", ".orig", ".old", "~", ".swp", ".disabled", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
 # Dated or tagged backups such as tradeup.bak-20260518220608 or tradeup.bak.1.
-BACKUP_NAME_RE = re.compile(r"\.(?:bak|backup|orig|old|save)(?:[-._]|$)", re.I)
+BACKUP_NAME_RE = re.compile(r"[._-](?:bak\d*|backup|orig|old|save)(?:[-._]|$)", re.I)
 
 
 def is_backup_name(name: str) -> bool:
