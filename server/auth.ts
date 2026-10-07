@@ -9,6 +9,7 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { DB_PATH } from "./db.js";
 import { sanitizeRef } from "../shared/ref.js";
+import { BOARD_DELAY_SECONDS } from "../shared/board-delay.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
 import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce, startLoginNoncePrune } from "./auth-login-nonce.js";
@@ -472,5 +473,5 @@ export function getTierConfig(req: Request): { delay: number; limit: number; sho
   if (!isDelayedTier(req.user as TierUser)) {
     return { delay: 0, limit: 0, showListingIds: true };
   }
-  return { delay: 3 * 60 * 60, limit: 0, showListingIds: true };
+  return { delay: BOARD_DELAY_SECONDS, limit: 0, showListingIds: true };
 }

@@ -2,10 +2,16 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { authUserFrom, listClaimPanel, shareActionPanel } from "../../src/preview/lib/auth-state.js";
+import { authUserFrom, listClaimPanel, shareActionPanel, type AuthUser } from "../../src/preview/lib/auth-state.js";
+import { shouldFetchBoardDelay } from "../../src/preview/lib/board-delay.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const share = readFileSync(resolve(dir, "../../src/preview/pages/PreviewShare.tsx"), "utf8");
+
+function fetchesShareDelay(user: AuthUser | null | undefined): boolean {
+  const panel = shareActionPanel(user);
+  return panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user);
+}
 
 describe("share page auth tri-state", () => {
   it("treats /api/auth/me payloads without a steam_id as logged out", () => {
@@ -34,8 +40,22 @@ describe("share page auth tri-state", () => {
     expect(shareActionPanel({ steam_id: "1", tier: "free", lifetime: true })).toBe("pro");
     expect(share).toContain('panel === "upgrade"');
     expect(share).toContain("Verify and Claim are Pro features: {proPriceLine(\"monthly\")}.");
-    expect(share).toContain('to="/pricing">See Pro plans');
+    expect(share).toContain('to="/pricing"');
+    expect(share).toContain(">See Pro plans</Link>");
+    expect(share).toContain('trackUpgradeCta("share_upgrade")');
     expect(share).not.toContain("loggedIn: true");
+  });
+
+  it("does not load the free-board gap for a grandfathered basic account", () => {
+    const basic: AuthUser = { steam_id: "1", tier: "basic" };
+    expect(shareActionPanel(basic)).toBe("upgrade");
+    expect(shouldFetchBoardDelay(basic)).toBe(false);
+    expect(fetchesShareDelay(basic)).toBe(false);
+    expect(fetchesShareDelay(null)).toBe(true);
+    expect(fetchesShareDelay({ steam_id: "1", tier: "free" })).toBe(true);
+    expect(fetchesShareDelay({ steam_id: "1", tier: "pro" })).toBe(false);
+    expect(fetchesShareDelay(undefined)).toBe(false);
+    expect(share).toContain('useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user))');
   });
 
   it("sends a signed-in Free board viewer to upgrade and a logged-out viewer to sign-in", () => {

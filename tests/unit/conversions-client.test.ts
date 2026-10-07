@@ -65,6 +65,7 @@ describe("with every tracking env var unset (production today)", () => {
     trackCalculatorComplete("custom");
     trackVerifyClick("pro");
     trackCtaClick("home_hero_calculator");
+    trackUpgradeCta("board_delay");
     trackUpgradeCta("landing_plan_tile");
     trackClaimTradeUp({ surface: "share", tradeUpId: 1 });
     const silentResult = {
@@ -100,6 +101,7 @@ describe("with every tracking env var unset (production today)", () => {
 
   it("never calls the Meta Pixel, even if something else defined fbq", () => {
     trackBeginCheckout("pro", 6.99);
+    trackUpgradeCta("pricing_go_pro");
     trackCalculatorComplete("custom");
     trackTradeUpDetailOpen({ collectionSlug: null });
     trackVerifyClick("pro");
@@ -240,6 +242,18 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("value");
     expect(params).not.toHaveProperty("listing_id");
     expect(params).not.toHaveProperty("price");
+  });
+
+  it("upgrade_cta_click names the gate and carries no prices or listing ids", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackUpgradeCta("board_delay");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "board_delay", page_path: "/trade-ups", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("price");
+    expect(params).not.toHaveProperty("listing_id");
   });
 
   it("cta_click names the hero trade-up open and carries no prices or ids", () => {
@@ -553,6 +567,18 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
       ["track", "ViewContent", { page_path: "/collections/dreams-nightmares", collection_slug: "dreams-nightmares", content_type: "trade_up" }],
       ["trackCustom", "VerifyClick", { page_path: "/trade-ups/42", surface: "pro" }],
     ]);
+  });
+
+  it("upgrade clicks map to a custom UpgradeCtaClick with no value", () => {
+    installBrowser({ pathname: "/best-cs2-trade-ups" });
+    trackUpgradeCta("intent_pro");
+    expect(fbq).toHaveBeenCalledTimes(1);
+    const [cmd, name, params, options] = fbq.mock.calls[0];
+    expect([cmd, name]).toEqual(["trackCustom", "UpgradeCtaClick"]);
+    expect(params).toEqual({ cta: "intent_pro", page_path: "/best-cs2-trade-ups" });
+    expect(params).not.toHaveProperty("value");
+    expect(options?.eventID).toMatch(/^upgrade_/);
+    expect(gtag.mock.calls).toEqual([]);
   });
 
   it("GA4 stays on legacy events when only the Pixel is configured", () => {

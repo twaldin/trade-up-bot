@@ -8,6 +8,8 @@ import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
+import { authUserFrom } from "../lib/auth-state.js";
+import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -678,7 +680,7 @@ export function TradeUpCard({
       {inputsRedacted && (
         <div className="preview-notice" role="status" onClick={stop}>
           <p className="preview-note">This trade-up is inside the 3-hour free delay. Upgrade to Pro to see listing links and exact floats.</p>
-          <a href="/pricing" className="preview-btn preview-btn--quiet">View Plans</a>
+          <Link to="/pricing" className="preview-btn preview-btn--quiet preview-upgrade" onClick={() => trackUpgradeCta("redacted_links")}>View Plans</Link>
         </div>
       )}
 
@@ -869,6 +871,27 @@ function rankedMeta(count: number, pending: boolean): string {
   return `${count} ranked`;
 }
 
+type BoardAccount = { tier?: string; lifetime?: boolean } | null | undefined;
+
+/** Account from `/api/auth/me` when the board was not given one. `undefined` until that returns. */
+function useKnownAccount(given: BoardAccount): BoardAccount {
+  const [loaded, setLoaded] = useState<BoardAccount>(undefined);
+  useEffect(() => {
+    if (given !== undefined) return;
+    let live = true;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (live) setLoaded(authUserFrom(data));
+      })
+      .catch(() => {
+        if (live) setLoaded(null);
+      });
+    return () => { live = false; };
+  }, [given]);
+  return given !== undefined ? given : loaded;
+}
+
 /** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
 const BOARD_PAGE_CARDS = 12;
 /** Tile counts on a collapsed board card, so the placeholder matches its box. */
@@ -951,6 +974,7 @@ export function PreviewBoard({
   collection,
   lockedSkin,
   embed = false,
+  user,
 }: {
   tradeUps: HydratedTradeUp[];
   loading: boolean;
@@ -999,6 +1023,8 @@ export function PreviewBoard({
   collection?: string;
   lockedSkin?: string;
   embed?: boolean;
+  /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
+  user?: BoardAccount;
 }) {
   const navigate = useNavigate();
   const interstitial = useSteamInterstitial();
@@ -1049,6 +1075,13 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
+  const account = useKnownAccount(user);
+  const accountDelay = shouldFetchBoardDelay(account);
+  const delayGap = useBoardDelay(accountDelay || isFree);
+  const delaySentence = boardDelaySentence(delayGap);
+  // Guest and free reserve the banner before the list lands. Paid accounts
+  // render nothing, so their board does not jump when the list reports a tier.
+  const delayPending = accountDelay && loading && tradeUps.length === 0 && !isFree;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1273,11 +1306,11 @@ export function PreviewBoard({
           onBlur={onFilterBlur}
         />
       )}
-      {isFree && (
-        <div className="preview-delay">
+      {(isFree || delayPending) && (
+        <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined} inert={delayPending ? true : undefined}>
           <span className="preview-delay__label">Free tier</span>
-          <p>{DELAY_BANNER}</p>
-          <a className="preview-delay__cta" href="/pricing">See Pro</a>
+          <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
+          <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
@@ -1395,7 +1428,8 @@ export function usePreviewTradeUps(options: {
   const { collection, skin, perPage = 12, enabled = true } = options;
   const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFree, setIsFree] = useState(true);
+  // Unknown tier is not free: the delay banner waits for a guest or free account.
+  const [isFree, setIsFree] = useState(false);
   const [signedIn, setSignedIn] = useState<boolean | undefined>(undefined);
   const [tier, setTier] = useState<string | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<number | null>(null);

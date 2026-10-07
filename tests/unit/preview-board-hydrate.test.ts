@@ -118,6 +118,7 @@ describe("board card hydration 429", () => {
   });
 
   it("paints the board slow-down notice on a card that stayed throttled", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "anonymous" }, 401)));
     const host = document.createElement("div");
     document.body.appendChild(host);
     let root: Root | null = null;
@@ -141,5 +142,6 @@ describe("board card hydration 429", () => {
     expect(sentinel?.textContent?.trim()).toBe("");
     await act(async () => { root?.unmount(); });
     host.remove();
+    vi.unstubAllGlobals();
   });
 });

@@ -14,6 +14,7 @@ import { claimsRouter } from "../../server/routes/claims.js";
 import { tradeUpsRouter } from "../../server/routes/trade-ups.js";
 import { dataRouter } from "../../server/routes/data.js";
 import { statusRouter } from "../../server/routes/status.js";
+import { boardDelayRouter } from "../../server/routes/board-delay.js";
 import { collectionsRouter } from "../../server/routes/collections.js";
 import myTradeUpsRouter from "../../server/routes/my-trade-ups.js";
 import { calculatorRouter } from "../../server/routes/calculator.js";
@@ -632,6 +633,10 @@ export async function createExpandedApp(opts: TestAppOptions = {}): Promise<Test
   ]);
 
   ctx.app.use(statusRouter(ctx.pool));
+  ctx.app.use(boardDelayRouter(ctx.pool, {
+    cacheGet: async () => null,
+    cacheSet: async () => {},
+  }));
   ctx.app.use(collectionsRouter(ctx.pool, collectionKnifePool));
   ctx.app.use(dataRouter(ctx.pool, knifeTypeToCases, collectionKnifePool));
 

@@ -4,6 +4,7 @@ import { requireProAccess, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
 import { cascadeTradeUpStatuses, deleteListings, ensureInputReferences } from "../engine.js";
 import { buildSnapshot } from "../build-snapshot.js";
+import { ACTIVE_CLAIM_PREDICATE } from "./active-claim.js";
 
 const CLAIM_DURATION_MINUTES = 30;
 const MAX_ACTIVE_CLAIMS = 5;
@@ -30,7 +31,7 @@ export async function getActiveClaims(pool: pg.Pool): Promise<ActiveClaim[]> {
   // Fallback: load from PostgreSQL and populate Redis
   try {
     const { rows: claims } = await pool.query(
-      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
+      `SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE ${ACTIVE_CLAIM_PREDICATE}`
     );
 
     // Batch-load all listing IDs in a single query instead of one per claim
@@ -65,7 +66,7 @@ export async function getActiveClaims(pool: pg.Pool): Promise<ActiveClaim[]> {
 async function refreshClaimsCache(pool: pg.Pool): Promise<void> {
   try {
     const { rows: claims } = await pool.query(
-      "SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE released_at IS NULL AND expires_at > NOW()"
+      `SELECT trade_up_id, user_id, claimed_at, expires_at FROM trade_up_claims WHERE ${ACTIVE_CLAIM_PREDICATE}`
     );
 
     // Batch-load all listing IDs in a single query instead of one per claim
@@ -310,7 +311,7 @@ export function claimsRouter(pool: pg.Pool): Router {
 
       // Check no active claim on this trade-up (serialized by advisory lock)
       const { rows: [existingClaim] } = await client.query(
-        "SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+        `SELECT id, user_id FROM trade_up_claims WHERE trade_up_id = $1 AND ${ACTIVE_CLAIM_PREDICATE}`,
         [tradeUpId]
       );
 
@@ -326,7 +327,7 @@ export function claimsRouter(pool: pg.Pool): Router {
 
       // Check user has < MAX_ACTIVE_CLAIMS active claims
       const { rows: [activeCountRow] } = await client.query(
-        "SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND released_at IS NULL AND expires_at > NOW()",
+        `SELECT COUNT(*) as c FROM trade_up_claims WHERE user_id = $1 AND ${ACTIVE_CLAIM_PREDICATE}`,
         [userId]
       );
 
@@ -421,7 +422,7 @@ export function claimsRouter(pool: pg.Pool): Router {
     const userId = (req.user as User)?.steam_id || "anonymous";
 
     const result = await pool.query(
-      "UPDATE trade_up_claims SET released_at = NOW() WHERE trade_up_id = $1 AND user_id = $2 AND released_at IS NULL AND expires_at > NOW()",
+      `UPDATE trade_up_claims SET released_at = NOW() WHERE trade_up_id = $1 AND user_id = $2 AND ${ACTIVE_CLAIM_PREDICATE}`,
       [tradeUpId, userId]
     );
 

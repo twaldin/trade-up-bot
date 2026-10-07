@@ -10,6 +10,7 @@ import { setupAuth } from "./auth.js";
 import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
+import { boardDelayRouter } from "./routes/board-delay.js";
 import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
 import { loadActiveTradeUpCounts, tradeUpsHubDescription } from "./routes/active-trade-up-counts.js";
 import { tradeUpsRouter } from "./routes/trade-ups.js";
@@ -197,6 +198,7 @@ registerCanonicalRedirectRoutes(app);
 
   // Mount route modules — all routes receive the pg pool
   app.use(statusRouter(pool));
+  app.use(boardDelayRouter(pool));
   app.use(tradeUpsRouter(pool));
   app.use(dataRouter(pool, knifeTypeToCases, collectionKnifePool));
   app.use(collectionsRouter(pool, collectionKnifePool));

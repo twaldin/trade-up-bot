@@ -177,16 +177,40 @@ export function trackVerifyComplete(args: {
 
 export type CtaId = "home_hero_calculator" | "home_hero_tradeup" | "intent_board" | "calculator_board" | "detail_collection";
 
-export type UpgradeCtaId = "landing_plan_tile" | "share_bar" | "nav_pricing" | "board_claim";
+export type UpgradeCtaId =
+  | "board_delay"
+  | "landing_delay"
+  | "share_upgrade"
+  | "intent_pro"
+  | "pricing_go_pro"
+  | "redacted_links"
+  | "landing_plan_tile"
+  | "share_bar"
+  | "nav_pricing"
+  | "board_claim";
+
+/** Delay-gap gates also send Meta `UpgradeCtaClick`. The other controls stay on GA4 only. */
+const PIXEL_UPGRADE_CTAS: ReadonlySet<string> = new Set<UpgradeCtaId>([
+  "board_delay",
+  "landing_delay",
+  "share_upgrade",
+  "intent_pro",
+  "pricing_go_pro",
+  "redacted_links",
+]);
 
 /**
- * Pro upgrade controls: landing plan tile, free share-bar Verify, nav Pricing, and the board claim.
- * GA4 `upgrade_cta_click` with `cta`. No price, listing id, or PII, and no Meta Pixel event.
- * No-op until GA4 is configured. A blocked gtag must not stop the click.
+ * Click on a Pro upgrade control.
+ * GA4 `upgrade_cta_click`. Delay-gap gates also send Meta custom `UpgradeCtaClick`.
+ * Landing plan tile, share bar, nav Pricing, and the board claim stay off the Pixel.
+ * No prices, listing ids, or PII.
+ * Checkout itself stays `begin_checkout` / InitiateCheckout, fired only after /api/subscribe returns 2xx.
  */
 export function trackUpgradeCta(cta: UpgradeCtaId): void {
+  const params = { cta, page_path: pagePath() };
   try {
-    sendGa4("upgrade_cta_click", { cta, page_path: pagePath() });
+    sendGa4("upgrade_cta_click", params);
+    if (PIXEL_UPGRADE_CTAS.has(cta)) pixelEvent("upgrade_cta_click", params, newEventId("upgrade"));
   } catch {
     // A blocked tag must not swallow the click.
   }

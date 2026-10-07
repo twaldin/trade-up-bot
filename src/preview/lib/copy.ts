@@ -91,6 +91,8 @@ export const PREVIEW_PLAN_PRO = [
 export const PREVIEW_PRO_PRICES = `Or ${proPriceLine("yearly")} · ${proPriceLine("lifetime")}`;
 
 export const DELAY_BANNER = "Free view: trade-ups are delayed 3 hours. Pro sees them the moment they're found.";
+export const OPEN_BOARD_CTA = "Open the board";
+export const FREE_VIEW_DELAY_NOTE = "The free view is delayed 3 hours.";
 
 /** Visible metric labels. Engine fields (chance_to_profit, profit_cents) stay unchanged. */
 export const LABEL_OUTCOMES_ABOVE_COST = "Outcomes above cost";

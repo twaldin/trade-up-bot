@@ -20,6 +20,7 @@ import { FeeLine } from "../components/FeeLine.js";
 import { heroProof, pickHeroTradeUp } from "../lib/hero-proof.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { PRO_PRICE, proPriceLine } from "../lib/pro-pricing.js";
+import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
@@ -257,6 +258,7 @@ export function HeroProof({
   throttled?: boolean;
   onRetry?: () => void;
 }) {
+  const delaySentence = boardDelaySentence(useBoardDelay(isFree));
   const proof = heroProof(tu);
   const phase = heroLoadPhase({ hasTradeUp: Boolean(proof), throttled, failed, loading, slow });
   const outTint = outputRarityColor(tu?.type);
@@ -353,7 +355,7 @@ export function HeroProof({
             <Link to={`/trade-ups/${proof.id}`} className="preview-btn" onClick={() => trackCtaClick("home_hero_tradeup")}>Open this trade-up</Link>
             {isFree && (
               <p className="preview-note">
-                {DELAY_BANNER} <Link to="/pricing">See Pro</Link>
+                {DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""} <Link className="preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("landing_delay")}>See Pro</Link>
               </p>
             )}
           </footer>
@@ -690,7 +692,7 @@ export function PreviewLanding({
               ))}
             </ul>
             <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
-            <Link className="preview-btn preview-btn--lime preview-btn--block" to="/pricing" onClick={() => trackUpgradeCta("landing_plan_tile")}>Compare plans</Link>
+            <Link className="preview-btn preview-btn--lime preview-btn--block preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("landing_plan_tile")}>Compare plans</Link>
           </article>
         </div>
       </section>
