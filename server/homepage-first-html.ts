@@ -59,6 +59,8 @@ function asBoard(value: unknown): BoardCountSource | null {
   return {
     total: readNumber(value, "total"),
     total_profitable: readNumber(value, "total_profitable"),
+    total_profitable_capped: Reflect.get(value, "total_profitable_capped") === true,
+    deduped: Reflect.get(value, "deduped") === true,
     trade_ups: Array.isArray(tradeUps) ? tradeUps : undefined,
   };
 }
