@@ -79,6 +79,37 @@ describe("listing-disjoint board", () => {
     expect(raw.body.total_profitable).toBe(4);
   });
 
+  it("total_profitable_capped is false on the deduped board and on small raw lists", async () => {
+    expect((await get("")).body.total_profitable_capped).toBe(false);
+    const all = await get("&overlap=all&min_cost=1");
+    expect(all.body.total_profitable).toBe(4);
+    expect(all.body.total_profitable_capped).toBe(false);
+    const coll = await get(`&collection=${encodeURIComponent("Coll A")}`);
+    expect(coll.body.total_profitable).toBe(4);
+    expect(coll.body.total_profitable_capped).toBe(false);
+  });
+
+  it("collection filter uses the separate capped profitable count and flags the cap", async () => {
+    await ctx.pool.query(
+      `INSERT INTO trade_ups (
+         total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+         chance_to_profit, type, best_case_cents, worst_case_cents, listing_status,
+         outcomes_json, output_skin_names, collection_names, created_at
+       )
+       SELECT 10000, 10400, 400, 4, 0.5, 'classified_covert', 0, 0, 'active',
+              '[]', '{}', ARRAY['Coll Big'], NOW() - interval '5 hours'
+       FROM generate_series(1, 10050)`,
+    );
+    const res = await get(`&collection=${encodeURIComponent("Coll Big")}&min_profit=1`);
+    expect(res.body.deduped).toBe(false);
+    expect(res.body.total_profitable).toBe(10_001);
+    expect(res.body.total_profitable_capped).toBe(true);
+    // The deduped default board still counts its own list and is never capped.
+    const board = await get("");
+    expect(board.body.deduped).toBe(true);
+    expect(board.body.total_profitable_capped).toBe(false);
+  }, 60_000);
+
   it("an id going inactive mid-scroll keeps paging on the deduped list (no raw fallback)", async () => {
     const first = await request(ctx.app)
       .get("/api/trade-ups?per_page=1&page=1")
