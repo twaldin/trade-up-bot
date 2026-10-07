@@ -279,25 +279,30 @@ function knnCacheAgeMs(now = Date.now()): number {
   return _knnCacheLoadedAt > 0 ? now - _knnCacheLoadedAt : Number.POSITIVE_INFINITY;
 }
 
-/** Build-or-join: one in-flight rebuild. API requests may return the stale map. */
+/**
+ * Build-or-join: one in-flight rebuild. A calculator request with a cache
+ * always reads that cache, including past the staleness cap, and rebuilds
+ * behind the request. Cold start and non-request callers still wait.
+ */
 async function ensureKnnCache(pool: pg.Pool): Promise<void> {
+  const ageMs = knnCacheAgeMs();
   const decision = staleDecision({
     size: _knnCache.size,
-    ageMs: knnCacheAgeMs(),
+    ageMs,
     ttlMs: KNN_CACHE_TTL_MS,
     maxStaleMs: KNN_CACHE_MAX_STALE_MS,
     allowStale: requestCacheServesStale(),
   });
   if (decision === "fresh") return;
-  if (decision === "serve-stale") {
+  if (requestCacheServesStale() && _knnCache.size > 0) {
+    if (decision !== "serve-stale") {
+      console.log(
+        `[knn-cache] serving stale cache, age ${Math.round(ageMs)}ms past ${KNN_CACHE_MAX_STALE_MS}ms cap; background rebuild`,
+      );
+    }
     // buildAndStoreKnnCache logs the failure. This catch only marks it handled.
     void startKnnRebuild(pool).catch(() => {});
     return;
-  }
-  if (requestCacheServesStale() && _knnCache.size > 0) {
-    console.error(
-      `[knn-cache] stale for ${Math.round(knnCacheAgeMs())}ms, past ${KNN_CACHE_MAX_STALE_MS}ms cap; blocking until rebuild`,
-    );
   }
   await startKnnRebuild(pool);
 }
