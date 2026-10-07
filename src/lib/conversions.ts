@@ -175,7 +175,7 @@ export function trackVerifyComplete(args: {
   sendActivation("verify_complete", args.tradeUpId, args.surface, verifyCompleteStatus(args.result));
 }
 
-export type CtaId = "home_hero_calculator" | "intent_board" | "calculator_board";
+export type CtaId = "home_hero_calculator" | "intent_board" | "calculator_board" | "detail_collection";
 
 export type UpgradeCtaId = "landing_plan_tile" | "share_bar" | "nav_pricing" | "board_claim";
 

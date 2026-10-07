@@ -241,6 +241,18 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("price");
   });
 
+  it("cta_click names the detail collection link and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackCtaClick("detail_collection");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "detail_collection", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("listing_id");
+    expect(params).not.toHaveProperty("price");
+  });
+
   it("cta_click names the calculator board link once and does not call the pixel", () => {
     installBrowser({ pathname: "/calculator" });
     trackCtaClick("calculator_board");

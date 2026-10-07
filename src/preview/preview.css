@@ -960,6 +960,19 @@
   color: var(--text-muted);
 }
 
+.preview-detail-collections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.preview-detail-collections .preview-btn {
+  max-width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .preview-board-embed {
   display: flex;
   flex-direction: column;
