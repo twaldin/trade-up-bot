@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import Stripe from "stripe";
-import pg from "pg";
 import { stripeRouter } from "../../server/routes/stripe.js";
+import { trackingWebhookPool } from "../helpers/stripe-webhook-pool.js";
 
 const WEBHOOK_SECRET = "whsec_test_tracking";
 const TRACKING_ENV = {
@@ -21,7 +21,7 @@ function app() {
     if (req.path === "/api/stripe-webhook") express.raw({ type: "application/json" })(req, res, next);
     else express.json()(req, res, next);
   });
-  server.use(stripeRouter(new pg.Pool({ connectionString: "postgres://unused@127.0.0.1:1/unused" })));
+  server.use(stripeRouter(trackingWebhookPool()));
   return server;
 }
 
