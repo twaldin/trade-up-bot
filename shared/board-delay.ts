@@ -40,17 +40,6 @@ export function parseBoardDelayPayload(body: unknown): BoardDelayGap | null {
 }
 
 /**
- * Sizing stand-in for the free-tier banner. The live sentence replaces shorter
- * copy inside this box; it is not a count to show on its own.
- */
-export function boardDelayReserveSentence(): string {
-  return boardDelaySentence({
-    hidden_profitable: 999_999,
-    best_hidden_profit_cents: 99_999_999,
-  }) ?? "";
-}
-
-/**
  * One sentence for the free-tier gate. Null while the count is unknown.
  * `hidden_profitable` is active, non-theoretical trade-ups with profit_cents > 0
  * created inside the delay window — the rows the free list query drops.

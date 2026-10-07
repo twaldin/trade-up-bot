@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Request } from "express";
 import {
   BOARD_DELAY_SECONDS,
-  boardDelayReserveSentence,
   boardDelaySentence,
   parseBoardDelayPayload,
   parseBoardDelayRow,
@@ -59,13 +58,5 @@ describe("board delay gap", () => {
       .toBe("12 profitable trade-ups found in the last 3 hours are hidden on the free board. The best is +$76.00 expected P/L.");
     expect(boardDelaySentence({ hidden_profitable: 1200, best_hidden_profit_cents: null }))
       .toBe("1,200 profitable trade-ups found in the last 3 hours are hidden on the free board.");
-  });
-
-  it("reserves a sentence at least as long as the counts the banner can show", () => {
-    const reserve = boardDelayReserveSentence();
-    expect(reserve.startsWith("999,999 profitable trade-ups")).toBe(true);
-    expect(reserve.length).toBeGreaterThan(
-      boardDelaySentence({ hidden_profitable: 12, best_hidden_profit_cents: 7600 })!.length,
-    );
   });
 });

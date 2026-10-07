@@ -1014,6 +1014,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
+  box-sizing: border-box;
+  /* Tallest painted sentence (999,999 trade-ups, +$999999.99) at desktop width.
+     Hidden copy uses the fallback face, so a reserve string cannot size this. */
+  min-height: 54px;
   padding: 8px 10px;
   border: 1px solid var(--accent);
   border-radius: var(--r-panel);
@@ -1022,9 +1026,31 @@
   font-size: 12px;
 }
 
-/* Present before the list reports a free tier. The box stays painted so the
-   web font still sizes it; opacity or visibility would fall back to another
-   face and the row would jump when the banner appears. */
+/* Narrower last. Each step is the painted long sentence's outer height. */
+@media (max-width: 1023px) {
+  .preview-delay { min-height: 72px; }
+}
+@media (max-width: 599px) {
+  .preview-delay { min-height: 108px; }
+}
+@media (max-width: 479px) {
+  .preview-delay { min-height: 126px; }
+}
+@media (max-width: 411px) {
+  .preview-delay { min-height: 144px; }
+}
+@media (max-width: 389px) {
+  .preview-delay { min-height: 162px; }
+}
+@media (max-width: 359px) {
+  .preview-delay { min-height: 198px; }
+}
+@media (max-width: 339px) {
+  .preview-delay { min-height: 216px; }
+}
+
+/* Present before the list reports a free tier. Ink stays transparent so the
+   slot occupies the banner's height without flashing the free-tier fill. */
 .preview-delay--hold {
   pointer-events: none;
   border-color: transparent;
@@ -1039,20 +1065,11 @@
   color: transparent;
 }
 
-.preview-delay__copy {
-  display: grid;
+.preview-delay p {
   flex: 1;
   min-width: 0;
   margin: 0;
   font-weight: 500;
-}
-
-.preview-delay__copy > span {
-  grid-area: 1 / 1;
-}
-
-.preview-delay__reserve {
-  visibility: hidden;
 }
 
 .preview-delay__label {
