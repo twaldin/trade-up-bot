@@ -204,18 +204,85 @@ describe("board claim tap at 390 and 1280", () => {
     await page.close();
   }, 30000);
 
-  it("fires claim_trade_up once when a Pro viewer claims from the board", async () => {
-    const page = await open(1280, "pro");
-    await page.waitForSelector("button", { timeout: 15000 });
+  async function tapClaim(page: Page) {
     await page.evaluate(() => {
       [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("Verify / Claim trade-up"))?.click();
     });
     await page.waitForFunction(() => document.body.innerText.includes("Claim for 30 min?"), { timeout: 5000 });
-    const postedEarly = await page.evaluate(() => window.__claims);
-    expect(postedEarly).toBe(0);
+  }
+
+  async function tapConfirm(page: Page) {
     await page.evaluate(() => {
       [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Confirm")?.click();
     });
+  }
+
+  it.each([390, 1280])("gives Confirm and Cancel a 44px target at %ipx", async (width) => {
+    const page = await open(width, "pro");
+    await page.waitForSelector("button", { timeout: 15000 });
+    await tapClaim(page);
+    const heights = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll("button")];
+      const confirm = buttons.find((node) => node.textContent?.trim() === "Confirm");
+      const cancel = buttons.find((node) => node.textContent?.trim() === "Cancel");
+      return {
+        confirm: confirm?.getBoundingClientRect().height ?? 0,
+        cancel: cancel?.getBoundingClientRect().height ?? 0,
+      };
+    });
+    expect(heights.confirm).toBeGreaterThanOrEqual(44);
+    expect(heights.cancel).toBeGreaterThanOrEqual(44);
+    await page.evaluate(() => {
+      [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Confirm")?.scrollIntoView({ block: "center" });
+    });
+    await shoot(page, `claim-confirm-${width}`);
+    await page.close();
+  }, 30000);
+
+  it("shows a friendly error when Confirm gets a 500", async () => {
+    const page = await open(1280, "500");
+    await page.waitForSelector("button", { timeout: 15000 });
+    await tapClaim(page);
+    await tapConfirm(page);
+    await page.waitForFunction(() => document.body.innerText.includes("Could not claim this trade-up."), { timeout: 5000 });
+    const result = await page.evaluate(() => ({
+      posts: window.__claims,
+      claims: window.__gtag.filter((call) => call[1] === "claim_trade_up").length,
+      raw: document.body.innerText.includes("Internal server error"),
+    }));
+    expect(result.posts).toBe(1);
+    expect(result.claims).toBe(0);
+    expect(result.raw).toBe(false);
+    await page.close();
+  }, 30000);
+
+  it("claims on the next Confirm after a failed claim", async () => {
+    const page = await open(1280, "retry");
+    await page.waitForSelector("button", { timeout: 15000 });
+    await tapClaim(page);
+    await tapConfirm(page);
+    await page.waitForFunction(() => document.body.innerText.includes("Could not claim this trade-up."), { timeout: 5000 });
+    const midway = await page.evaluate(() => window.__claims);
+    expect(midway).toBe(1);
+    await tapClaim(page);
+    await tapConfirm(page);
+    await page.waitForFunction(() => document.body.innerText.includes("Claimed"), { timeout: 5000 });
+    const result = await page.evaluate(() => ({
+      posts: window.__claims,
+      claims: window.__gtag.filter((call) => call[1] === "claim_trade_up").length,
+    }));
+    expect(result.posts).toBe(2);
+    expect(result.claims).toBe(1);
+    await page.close();
+  }, 30000);
+
+  it("fires claim_trade_up once when a Pro viewer claims from the board", async () => {
+    const page = await open(1280, "pro");
+    await page.waitForSelector("button", { timeout: 15000 });
+    await tapClaim(page);
+    const postedEarly = await page.evaluate(() => window.__claims);
+    expect(postedEarly).toBe(0);
+    await tapConfirm(page);
     await page.waitForFunction(() => document.body.innerText.includes("Claimed"), { timeout: 5000 });
     await page.evaluate(() => {
       [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("Verify / Claim trade-up"))?.click();

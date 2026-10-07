@@ -972,6 +972,11 @@
   gap: 8px;
 }
 
+.preview-toolbar[aria-label="Claim for 30 min?"] > .preview-btn {
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
 .preview-input {
   min-width: 240px;
   height: var(--control);

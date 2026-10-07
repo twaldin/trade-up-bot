@@ -1,6 +1,10 @@
 /**
  * Real-browser harness for the board claim control. Served by
- * tests/unit/board-claim-viewport.test.ts. `?mode=collapsed|modal|pro`.
+ * tests/unit/board-claim-viewport.test.ts.
+ * `?mode=collapsed|modal|pro|500|retry`.
+ * Pro, 500, and retry are signed-in Pro. The first claim tap only asks
+ * "Claim for 30 min?"; the POST happens on Confirm. `500` fails that POST.
+ * `retry` fails the first Confirm and succeeds the next one.
  */
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
@@ -15,6 +19,8 @@ declare global {
 }
 
 const mode = new URLSearchParams(window.location.search).get("mode") ?? "modal";
+const pro = mode === "pro" || mode === "500" || mode === "retry";
+let claimAttempts = 0;
 
 window.__claims = 0;
 window.__gtag = [];
@@ -27,6 +33,14 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (url.includes("/claim") && init?.method === "POST") {
     window.__claims += 1;
+    claimAttempts += 1;
+    const fail = mode === "500" || (mode === "retry" && claimAttempts === 1);
+    if (fail) {
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ claim: { expires_at: "2099-01-01T00:00:00.000Z" } }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -44,9 +58,9 @@ createRoot(root).render(
       <PreviewBoard
         tradeUps={[makeTradeUp({ id: 42 })]}
         loading={false}
-        isFree={mode !== "pro"}
-        signedIn={mode === "pro"}
-        tier={mode === "pro" ? "pro" : "free"}
+        isFree={!pro}
+        signedIn={pro}
+        tier={pro ? "pro" : "free"}
         expandedId={mode === "collapsed" ? null : 42}
         onExpand={() => {}}
       />
