@@ -69,11 +69,26 @@ describe("collapsed board cards invite open and Verify", () => {
 describe("share-bar Verify", () => {
   it("sends logged-out users to the sign-in panel and free users to pricing, and hides the button for Pro", () => {
     expect(share).toContain('panel === "sign-in" || panel === "upgrade"');
-    expect(share).toContain('href={panel === "sign-in" ? "#share-verify" : "/pricing"}');
+    expect(share).toContain('href="#share-verify"');
+    expect(share).toContain('to="/pricing"');
+    expect(share).not.toContain('href={panel === "sign-in" ? "#share-verify" : "/pricing"}');
     expect(share).toContain("SIGN_IN_TO_CLAIM");
     expect(share).toContain('trackVerifyClick("share_bar")');
+    expect(share).toContain('trackUpgradeCta("share_bar")');
     expect(share).toContain('id="share-verify"');
     expect(share).not.toContain("verifyClaimHref");
+  });
+
+  it("keeps verify_click on the hash chip and co-fires upgrade_cta_click only on the pricing link", () => {
+    const hashAt = share.indexOf('href="#share-verify"');
+    const hashChip = share.slice(hashAt, share.indexOf("</a>", hashAt));
+    expect(hashChip).toContain('trackVerifyClick("share_bar")');
+    expect(hashChip).not.toContain("trackUpgradeCta");
+    const linkAt = share.indexOf('trackUpgradeCta("share_bar")');
+    const upgradeChip = share.slice(share.lastIndexOf("<Link", linkAt), share.indexOf("</Link>", linkAt));
+    expect(upgradeChip).toContain('to="/pricing"');
+    expect(upgradeChip).toContain('trackVerifyClick("share_bar")');
+    expect(upgradeChip).toContain(">Verify");
   });
 });
 

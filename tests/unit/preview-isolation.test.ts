@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { CONSOLE_BASE, previewSkinHref } from "../../src/preview/lib/board.js";
-import { consoleTargetFor, pageFor } from "../../src/preview/lib/console-routes.js";
+import { consoleTargetFor, pageFor, resolveConsolePage } from "../../src/preview/lib/console-routes.js";
 import { ROBOTS_TXT, buildStaticSitemap } from "../../server/routes/sitemap.js";
 import { PREVIEW_FAQ, PREVIEW_HEADLINE } from "../../src/preview/lib/copy.js";
 import { CACHEABLE_READ_MAX, RATE_WINDOW_MS, SHARED_API_MAX, isCacheableRead, usesSharedApiBucket } from "../../server/rate-limit-buckets.js";
@@ -69,6 +69,11 @@ describe("console cutover", () => {
 
   it("reads the page off the path when no page is passed", () => {
     expect(pageFor(undefined, "/trade-ups")).toBe("board");
+    expect(pageFor(undefined, "/trade-ups/")).toBe("board");
+    expect(pageFor(undefined, "/trade-ups//")).toBe("share");
+    expect(resolveConsolePage("board", "/trade-ups", "/trade-ups")).toBe("board");
+    expect(resolveConsolePage("board", "/trade-ups/", "/trade-ups//")).toBe("share");
+    expect(appSource).toContain("resolveConsolePage");
     expect(pageFor(undefined, "/skins/ak-47-redline")).toBe("skin");
     expect(pageFor(undefined, "/skins")).toBe("skins");
     expect(pageFor(undefined, "/collections/dreams-nightmares")).toBe("collection");

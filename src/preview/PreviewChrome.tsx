@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { trackDiscordCta } from "../lib/analytics.js";
+import { trackUpgradeCta } from "../lib/conversions.js";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
 import { useCanonicalSlot } from "./components/PreviewSeo.js";
@@ -22,6 +23,10 @@ const PRODUCT = [
   { to: "/faq", label: "FAQ" },
   { to: "/blog", label: "Blog" },
 ] as const;
+
+function trackNavPricing(): void {
+  trackUpgradeCta("nav_pricing");
+}
 
 export function PreviewChrome({
   children,
@@ -53,7 +58,12 @@ export function PreviewChrome({
         </Link>
         <nav className="preview-nav__links" aria-label="Product">
           {PRODUCT.map((item) => (
-            <Link key={item.to} className="preview-btn preview-btn--quiet" to={item.to}>{item.label}</Link>
+            <Link
+              key={item.to}
+              className="preview-btn preview-btn--quiet"
+              to={item.to}
+              onClick={item.to === "/pricing" ? trackNavPricing : undefined}
+            >{item.label}</Link>
           ))}
         </nav>
         <div className="preview-bar__actions">
@@ -83,7 +93,7 @@ export function PreviewChrome({
           <div>
             <p className="o-kicker">Product</p>
             <Link to="/features">Features</Link>
-            <Link to="/pricing">Pricing</Link>
+            <Link to="/pricing" onClick={trackNavPricing}>Pricing</Link>
             <Link to="/faq">FAQ</Link>
             <Link to="/blog">Blog</Link>
           </div>
