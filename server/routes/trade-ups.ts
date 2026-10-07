@@ -111,6 +111,9 @@ async function batchLoadPageInputs(pool: pg.Pool, tradeUpIds: number[]): Promise
   return groupInputRows(rows);
 }
 
+// Capped counts stop at this many rows; reaching it means "10,000+".
+const COUNT_CAP = 10001;
+
 const redisRankStore: RankSnapshotStore = {
   get: (key) => cacheGet(key),
   set: (key, value, ttlSeconds) => cacheSet(key, value, ttlSeconds),
@@ -592,11 +595,19 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
        LIMIT $${limitParam} OFFSET $${offsetParam}`;
     const dataParams = [...params, perPage, offset];
     // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
-    const cappedCountSql = `SELECT COUNT(*) as c, COUNT(*) FILTER (WHERE profit_cents > 0) as p
-      FROM (SELECT t.profit_cents ${diversitySql.fromWhere} LIMIT 10001) sub`;
+    const cappedCountSql = `SELECT COUNT(*) as c
+      FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT ${COUNT_CAP}) sub`;
+    // Profitable rows get their own capped scan. Counting them inside the
+    // unordered LIMIT above counts an arbitrary slice, and can return the cap
+    // sentinel as if it were a real count.
+    const cappedProfitableSql = `SELECT COUNT(*) as p FROM (
+        SELECT 1 FROM (SELECT t.profit_cents ${diversitySql.fromWhere}) f
+        WHERE f.profit_cents > 0 LIMIT ${COUNT_CAP}
+      ) sub`;
 
     let total = 0;
     let totalProfitable = 0;
+    let totalProfitableCapped = false;
     let rows: ListRow[] | null = null;
 
     // The diversified window sorts every active row regardless of OFFSET, so rank
@@ -628,8 +639,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
            SELECT id, total, profitable FROM (
              SELECT id,
                row_number() OVER (ORDER BY sort_value ${sortOrder} NULLS LAST, id DESC) AS ord,
-               LEAST(COUNT(*) OVER (), 10001)::int AS total,
-               LEAST(COUNT(*) FILTER (WHERE profit_cents > 0) OVER (), 10001)::int AS profitable
+               LEAST(COUNT(*) OVER (), ${COUNT_CAP})::int AS total,
+               LEAST(COUNT(*) FILTER (WHERE profit_cents > 0) OVER (), ${COUNT_CAP})::int AS profitable
              FROM ranked
            ) numbered
            WHERE ord <= $${limitParam}
@@ -655,6 +666,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         rows = ordered;
         total = snapshot.total;
         totalProfitable = snapshot.profitable;
+        totalProfitableCapped = totalProfitable >= COUNT_CAP;
       } else {
         await rankStore.del(snapshotKey).catch(() => {});
       }
@@ -687,10 +699,14 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           totalProfitable = counts[type]?.profitable ?? 0;
         }
       } else {
-        const { rows: [countRow] } = await pool.query(cappedCountSql, params);
-        total = parseInt(countRow?.c) || 0;
         // Same filters, delay window and diversity cap as total, so the two agree.
-        totalProfitable = parseInt(countRow?.p) || 0;
+        const [{ rows: [countRow] }, { rows: [profitRow] }] = await Promise.all([
+          pool.query(cappedCountSql, params),
+          pool.query(cappedProfitableSql, params),
+        ]);
+        total = parseInt(countRow?.c) || 0;
+        totalProfitable = parseInt(profitRow?.p) || 0;
+        totalProfitableCapped = totalProfitable >= COUNT_CAP;
       }
 
       rows = (await dataPromise).rows;
@@ -766,6 +782,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       trade_ups: filteredTradeUps,
       total: total - removedOnPage,
       total_profitable: totalProfitable,
+      total_profitable_capped: totalProfitableCapped,
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
