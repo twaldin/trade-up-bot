@@ -1366,20 +1366,23 @@
 }
 
 /* Empty and failed boards. One block for the message, not a page of hidden cards.
-   The block matches the short-page floor: a message-height box lets the FAQ
-   rise into the viewport (CLS ~0.25 at 1280). */
+   The fold offset keeps the FAQ below a normal viewport. 100vh is the fallback
+   when max() or dvh is unsupported, and 12rem stops the block collapsing to 0
+   on a landscape phone. */
 .preview-board-status {
   box-sizing: border-box;
   display: flex;
   align-items: flex-start;
-  height: calc(100dvh - 360px);
-  min-height: calc(100dvh - 360px);
+  min-height: 100vh;
+  min-height: max(12rem, calc(100dvh - 360px));
 }
 
 /* A short first page is shorter than the skeleton grid. Hold the list to the
-   fold so the FAQ does not move up into the viewport. */
+   fold so the FAQ does not move up into the viewport. Same floor as the
+   empty-board block. */
 .preview-bento--floor {
-  min-height: calc(100dvh - 360px);
+  min-height: 100vh;
+  min-height: max(12rem, calc(100dvh - 360px));
 }
 
 @media (min-width: 720px) {

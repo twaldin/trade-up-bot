@@ -50,10 +50,10 @@ describe("trade-up board reserves the first page", () => {
   it("replaces the page of skeletons with one fold-height status block when empty or failed", () => {
     const rule = css.match(/\.preview-board-status\s*\{[^}]*\}/);
     expect(rule?.[0]).toBeTruthy();
-    expect(rule?.[0]).toMatch(/height:\s*calc\(100dvh - 360px\)/);
-    expect(rule?.[0]).toMatch(/min-height:\s*calc\(100dvh - 360px\)/);
+    expect(rule?.[0]).not.toMatch(/(?<!min-)height\s*:/);
+    expect(rule?.[0]).toMatch(/min-height:\s*100vh;\s*min-height:\s*max\(12rem,\s*calc\(100dvh - 360px\)\)/);
     const floor = css.match(/\.preview-bento--floor\s*\{[^}]*\}/);
-    expect(floor?.[0]).toMatch(/min-height:\s*calc\(100dvh - 360px\)/);
+    expect(floor?.[0]).toMatch(/min-height:\s*100vh;\s*min-height:\s*max\(12rem,\s*calc\(100dvh - 360px\)\)/);
 
     for (const html of [board({ loading: false }), board({ loading: false, failed: true })]) {
       expect(html.match(/preview-card--skeleton/g)).toBeNull();
