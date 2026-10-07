@@ -9,8 +9,8 @@ import puppeteer from "puppeteer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const MAIN_CLS: Record<number, number> = {
-  360: 0.0377,
-  375: 0.0348,
+  360: 0.0322,
+  375: 0.0322,
   390: 0.0252,
   1280: 0.0139,
 };
@@ -111,4 +111,82 @@ describe("signed-out account CLS", () => {
     }
     expect(failures).toEqual([]);
   }, 180_000);
+
+  async function pricingBox(page: Page, width: number, height: number, user: "out" | "free"): Promise<{ bottom: number; cls: number; legalGap: number }> {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(() => {
+      const shifts: number[] = [];
+      const obs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const hadRecentInput = Reflect.get(entry, "hadRecentInput");
+          const value = Reflect.get(entry, "value");
+          if (hadRecentInput === false && typeof value === "number") shifts.push(value);
+        }
+      });
+      obs.observe({ type: "layout-shift", buffered: true });
+      Object.assign(window, {
+        __accountCls: () => shifts.reduce((sum, value) => sum + value, 0),
+      });
+    });
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.pathname + url.search;
+      if (!path.startsWith("/api/")) {
+        await route.continue();
+        return;
+      }
+      if (path.startsWith("/api/auth/me")) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const body = user === "out"
+          ? "null"
+          : JSON.stringify({ steam_id: "2", display_name: "Bea", avatar_url: "", tier: "free", is_admin: false });
+        await route.fulfill({ status: 200, contentType: "application/json", body });
+        return;
+      }
+      if (path.includes("my_claims") || path.startsWith("/api/my-trade-ups")) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "nope" }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForTimeout(500 + 500 + 800);
+    return page.evaluate(() => {
+      const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
+      const prect = pricing?.getBoundingClientRect();
+      const legal = document.querySelector(".preview-console__legal")?.getBoundingClientRect();
+      const reader = Reflect.get(window, "__accountCls");
+      const raw: unknown = typeof reader === "function" ? reader() : 0;
+      return {
+        bottom: prect ? prect.bottom : 9999,
+        cls: typeof raw === "number" ? raw : 999,
+        legalGap: prect && legal ? legal.y - prect.bottom : 999,
+      };
+    });
+  }
+
+  it("keeps Pricing above the fold for signed-out and empty free users at 390×844", async () => {
+    const failures: string[] = [];
+    const phones = [
+      { width: 360, height: 780 },
+      { width: 375, height: 812 },
+      { width: 390, height: 844 },
+    ] as const;
+    for (const user of ["out", "free"] as const) {
+      for (const phone of phones) {
+        const page = await browser.newPage();
+        try {
+          const box = await pricingBox(page, phone.width, phone.height, user);
+          const ceiling = phone.width === 390 ? MAIN_CLS[390] ?? 0.0252 : 0.05;
+          if (box.bottom > phone.height || box.cls > ceiling || box.legalGap > 48 || box.legalGap < -4) {
+            failures.push(`${user} ${phone.width}x${phone.height} bottom ${box.bottom.toFixed(0)} cls ${box.cls.toFixed(4)} legalGap ${box.legalGap.toFixed(0)}`);
+          }
+        } finally {
+          await page.close();
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  }, 120_000);
 });
