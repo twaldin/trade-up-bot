@@ -21,9 +21,6 @@ function boardMarkup(extra: { exhausted?: boolean; endKind?: "more" | "end" }) {
     tradeUps: rows,
     loading: false,
     isFree: false,
-    // A missing account stays on the skeleton grid until auth answers, which
-    // pushes this sentinel below the viewport. This measurement is a settled board.
-    user: { tier: "pro" },
     expandedId: null,
     onExpand: () => {},
     loadMore: () => {},

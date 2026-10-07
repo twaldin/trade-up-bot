@@ -144,8 +144,10 @@ describe("free-tier banner reserves its height", () => {
     await page.close();
     expect(narrowHold.height).toBe(144);
     expect(narrowFilled.height).toBe(narrowHold.height);
+    expect(wideHold.height).toBe(54);
     expect(wideFilled.height).toBe(wideHold.height);
-    expect(wideHold.height).toBeLessThan(144);
+    expect(phone[360]?.held).toBe(126);
+    expect(phone[375]?.held).toBe(126);
     for (const [width, box] of Object.entries(phone)) {
       expect(box.filled, `${width} filled ${box.filled} hold ${box.held}`).toBe(box.held);
     }
@@ -153,7 +155,7 @@ describe("free-tier banner reserves its height", () => {
 
   it("matches the reserved height at 359, 360, 375, and 389", async () => {
     const page = await browser.newPage();
-    const expected: Record<number, number> = { 359: 180, 360: 180, 375: 180, 389: 180, 390: 144 };
+    const expected: Record<number, number> = { 359: 180, 360: 126, 375: 126, 389: 126, 390: 144, 1280: 54 };
     for (const [width, height] of Object.entries(expected)) {
       const held = await delayBox(page, Number(width), boardDocument(hold), null);
       const filled = await delayBox(page, Number(width), boardDocument(banner), HIDDEN_COUNT_SENTENCE);
@@ -201,9 +203,9 @@ describe("free-tier banner reserves its height", () => {
     expect(banner).not.toContain("preview-delay--cover");
   });
 
-  it("keeps the banner off the first card at 360, 390, and 1280", async () => {
+  it("keeps the banner off the first card at 360, 375, 390, and 1280", async () => {
     const page = await browser.newPage();
-    for (const width of [360, 390, 1280]) {
+    for (const width of [360, 375, 390, 1280]) {
       await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
       for (const html of [banner, hold]) {
         await page.setContent(boardDocument(html), { waitUntil: "domcontentloaded" });

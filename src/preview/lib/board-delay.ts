@@ -5,6 +5,13 @@ import {
 } from "../../../shared/board-delay.js";
 import { getEffectiveTier } from "../../../shared/pro-access.js";
 
+/**
+ * How long an unknown account may hide a list that has already loaded.
+ * After this, the board paints the guest list and keeps that paint if auth
+ * later says the viewer is paid.
+ */
+export const AUTH_PAINT_WAIT_MS = 1000;
+
 /** Express session cookie. HttpOnly, so a page script only sees it when a test or a non-HttpOnly mirror set it. */
 export const SESSION_COOKIE_NAME = "connect.sid";
 /** Last account this board confirmed. Read on the next load so the hold is in the first paint. */

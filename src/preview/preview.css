@@ -1205,13 +1205,16 @@
      that extra line inside the 144px slot. */
   .preview-delay p { line-height: 15px; }
 }
-/* 360–389. The scroller’s scrollbar narrows 360 to ~344px. The hidden-count
-   sentence paints 138px there and 123px at 389. 180px keeps it inside the slot.
-   126px let that line grow under the skeletons. */
+/* 360–389. The count sentence shares this row with the label and the 44px control.
+   12px type wraps past the reserved box; 10px / 12px stays inside it. */
 @media (max-width: 389px) {
-  .preview-delay { min-height: 180px; }
+  .preview-delay { min-height: 126px; }
+  .preview-delay p {
+    font-size: 10px;
+    line-height: 12px;
+  }
 }
-/* 340–359 paints it at 180px. The old 144px step (and 126px above it) was short. */
+/* 340–359 paints it at 180px. The old 144px step was short. */
 @media (max-width: 359px) {
   .preview-delay { min-height: 180px; }
 }

@@ -10,6 +10,7 @@ import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
 import { authUserFrom } from "../lib/auth-state.js";
 import {
+  AUTH_PAINT_WAIT_MS,
   boardDelaySentence,
   paintAccountFromBrowser,
   shouldFetchBoardDelay,
@@ -899,13 +900,17 @@ function accountFromAuth(data: unknown): { tier: string; lifetime?: boolean } | 
  * paint the hold: the session cookie is HttpOnly, so a first visit cannot
  * tell a guest from a paid user.
  */
-function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled: boolean; authAnswered: boolean } {
+function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled: boolean; authAnswered: boolean; authTimedOut: boolean } {
   const [loaded, setLoaded] = useState<BoardAccount>(() => given !== undefined ? given : paintAccountFromBrowser().account);
   const [settled, setSettled] = useState(() => given !== undefined || paintAccountFromBrowser().settled);
   const [authAnswered, setAuthAnswered] = useState(given !== undefined);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
   useEffect(() => {
     if (given !== undefined) return;
     let live = true;
+    const timer = window.setTimeout(() => {
+      if (live) setAuthTimedOut(true);
+    }, AUTH_PAINT_WAIT_MS);
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: unknown) => {
@@ -923,10 +928,13 @@ function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled:
         setSettled(true);
         setAuthAnswered(true);
       });
-    return () => { live = false; };
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
   }, [given]);
-  if (given !== undefined) return { account: given, settled: true, authAnswered: true };
-  return { account: loaded, settled, authAnswered };
+  if (given !== undefined) return { account: given, settled: true, authAnswered: true, authTimedOut: false };
+  return { account: loaded, settled, authAnswered, authTimedOut };
 }
 
 /** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
@@ -1022,6 +1030,7 @@ export function PreviewBoard({
   lockedSkin,
   embed = false,
   user,
+  onPaidTail,
 }: {
   tradeUps: HydratedTradeUp[];
   loading: boolean;
@@ -1072,6 +1081,12 @@ export function PreviewBoard({
   embed?: boolean;
   /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
   user?: BoardAccount;
+  /**
+   * Fired once, after the guest list is on screen and auth then says paid.
+   * The caller appends rows the free list did not have. It must not replace
+   * the rows already painted.
+   */
+  onPaidTail?: () => void;
 }) {
   const navigate = useNavigate();
   const interstitial = useSteamInterstitial();
@@ -1133,10 +1148,33 @@ export function PreviewBoard({
   const accountDelay = !startedPaid && known.settled && shouldFetchBoardDelay(account);
   const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
-  const awaitDelayDecision = !embed && !startedPaid && !known.authAnswered;
   const confirmedGuest = !startedPaid && known.authAnswered && (isFree || shouldFetchBoardDelay(account));
+  const authSaysPaid = known.authAnswered && !shouldFetchBoardDelay(account);
+  // Latch the guest list once the wait ends or auth says free. A later paid
+  // answer must not take the banner back out: that would pull the cards up.
+  const guestPainted = useRef(false);
+  const paintGuest = !embed && !startedPaid && !authSaysPaid && (
+    known.authTimedOut || (known.authAnswered && shouldFetchBoardDelay(account))
+  );
+  if (paintGuest) guestPainted.current = true;
+  const guestLocked = guestPainted.current;
+  const askedTail = useRef(false);
+  useEffect(() => {
+    if (embed || !guestPainted.current || askedTail.current) return;
+    if (!known.authAnswered || shouldFetchBoardDelay(account)) return;
+    askedTail.current = true;
+    onPaidTail?.();
+  }, [embed, known.authAnswered, known.authTimedOut, account, onPaidTail]);
+  // No `window` means static markup (the load-more measurement). Show the rows.
+  // In the browser, hide a loaded list only until auth answers or the wait ends.
+  const withholdCards = typeof window !== "undefined"
+    && !embed
+    && !startedPaid
+    && !guestLocked
+    && !known.authAnswered
+    && !known.authTimedOut;
   const delayEmbed = embed && (isFree || accountDelay);
-  const delayPending = !confirmedGuest || (accountDelay && loading && tradeUps.length === 0 && !isFree);
+  const delayPending = !known.authTimedOut && (!confirmedGuest || (accountDelay && loading && tradeUps.length === 0 && !isFree));
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1302,14 +1340,14 @@ export function PreviewBoard({
   // board swaps them for one fold-height message so the FAQ stays below the
   // fold without a blank page of hidden cards.
   const countPending = tradeUps.length === 0 && (loading || Boolean(failed) || Boolean(throttle));
-  // Real cards stay behind the skeleton grid until auth answers for anyone
-  // who might still need the banner. The banner is a row inside that grid,
-  // so it is in normal flow above the cards and never covers one.
+  // A loaded list stays on skeletons only during the short auth wait. After
+  // that the guest banner and the real cards are in normal flow. The banner
+  // is a row of the grid, so it never covers a card.
   const showSkeletons = !embed && notice == null && (
-    (loading && tradeUps.length === 0) || (awaitDelayDecision && tradeUps.length > 0)
+    (loading && tradeUps.length === 0) || (withholdCards && tradeUps.length > 0)
   );
   const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
-  const showDelayInFlow = !embed && !startedPaid && (confirmedGuest || awaitDelayDecision || showSkeletons);
+  const showDelayInFlow = !embed && !startedPaid && (guestLocked || withholdCards || showSkeletons || confirmedGuest);
   // One row of cards ends above the fold at desktop, so a short page would
   // pull the FAQ up into view. The floor holds that list to the viewport.
   const shortPage = !embed && tradeUps.length > 0 && tradeUps.length < BOARD_PAGE_CARDS;
@@ -1517,6 +1555,7 @@ export function usePreviewTradeUps(options: {
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
   const rowsRef = useRef<HydratedTradeUp[]>([]);
+  const paidTailRef = useRef(false);
   const openField = useRef<string | null>(null);
   const burstAt = useRef(0);
   const fromPop = useRef(false);
@@ -1783,6 +1822,31 @@ export function usePreviewTradeUps(options: {
     burstAt.current = 0;
   }, []);
 
+  // Paid rows the guest list did not include. Appended under the painted
+  // cards so the banner and the first page stay where they are.
+  const appendPaidTail = useCallback(() => {
+    if (paidTailRef.current) return;
+    paidTailRef.current = true;
+    const key = settledKey;
+    void (async () => {
+      try {
+        const res = await fetch(boardListUrl(key, 1), { credentials: "include" });
+        const data = await readPagedJson<BoardListPayload>(res);
+        const incoming = data.trade_ups ?? [];
+        const hydrated = await Promise.all(incoming.map((row) => hydrateBoardCard(row)));
+        const previous = rowsRef.current;
+        const seen = new Set(previous.map((row) => row.id));
+        const extra = hydrated.filter((row) => !seen.has(row.id));
+        if (extra.length === 0) return;
+        const next = [...previous, ...extra];
+        rowsRef.current = next;
+        setTradeUps(next);
+      } catch {
+        // The guest list stays. A retry would insert rows under a settled paint.
+      }
+    })();
+  }, [settledKey]);
+
   const onExpand = useCallback(async (id: number | null) => {
     setExpandedId(id);
     if (id == null) return;
@@ -1802,8 +1866,9 @@ export function usePreviewTradeUps(options: {
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
+      appendPaidTail,
     }),
     [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus, appendPaidTail],
   );
 }

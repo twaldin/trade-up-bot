@@ -5,9 +5,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { shouldFetchBoardDelay } from "../../src/preview/lib/board-delay.js";
+import { AUTH_PAINT_WAIT_MS, shouldFetchBoardDelay } from "../../src/preview/lib/board-delay.js";
 import { resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
+import { makeTradeUp } from "../helpers/fixtures.js";
 import { PreviewIntent } from "../../src/preview/pages/PreviewIntent.js";
 import { PreviewPricing } from "../../src/preview/pages/PreviewPricing.js";
 
@@ -426,6 +427,117 @@ describe("board delay fetch waits for the viewer", () => {
     expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
     expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
     expect(JSON.parse(localStorage.getItem("site_nav_user") ?? "{}").tier).toBe("pro");
+  });
+
+  it("paints the guest list in flow when auth is still pending after the wait", async () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.clear();
+      vi.stubGlobal("fetch", vi.fn((url: string) => {
+        calls.push(String(url));
+        return new Promise<Response>(() => {});
+      }));
+      await mount(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: [makeTradeUp({ id: 1 })],
+        loading: false,
+        isFree: true,
+        expandedId: null,
+        onExpand: () => {},
+      })));
+      expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+      expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUTH_PAINT_WAIT_MS);
+      });
+      const bento = host.querySelector(".preview-bento");
+      const first = bento?.firstElementChild;
+      expect(host.querySelector(".preview-card--skeleton")).toBeNull();
+      expect(first?.classList.contains("preview-delay")).toBe(true);
+      expect(first?.classList.contains("preview-delay--hold")).toBe(false);
+      expect(first?.classList.contains("preview-delay--cover")).toBe(false);
+      expect(bento?.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the guest banner and appends paid rows underneath", async () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem("tub_board_account", JSON.stringify({ tier: "free" }));
+      const freeRow = {
+        ...row,
+        id: 1,
+        inputs: [{ skin_name: "Free Skin" }],
+        outcomes: [{ skin_name: "Free Out" }],
+      };
+      const paidRow = {
+        ...row,
+        id: 2,
+        inputs: [{ skin_name: "Paid Skin" }],
+        outcomes: [{ skin_name: "Paid Out" }],
+      };
+      let releaseAuth: (value: Response) => void = () => {};
+      let listCalls = 0;
+      vi.stubGlobal("fetch", vi.fn((url: string) => {
+        calls.push(String(url));
+        if (String(url).includes("/api/auth/me")) {
+          return new Promise<Response>((resolve) => { releaseAuth = resolve; });
+        }
+        if (String(url).includes("/api/trade-ups")) {
+          listCalls += 1;
+          const rows = listCalls === 1 ? [freeRow] : [freeRow, paidRow];
+          return Promise.resolve(json({
+            trade_ups: rows,
+            total: rows.length,
+            tier: listCalls === 1 ? "free" : "pro",
+            signed_in: listCalls > 1,
+          }));
+        }
+        return Promise.resolve(json(GAP));
+      }));
+
+      function Harness() {
+        const api = usePreviewTradeUps({ perPage: 12 });
+        return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+          tradeUps: api.tradeUps,
+          loading: api.loading,
+          isFree: api.isFree,
+          expandedId: api.expandedId,
+          onExpand: api.onExpand,
+          onPaidTail: api.appendPaidTail,
+        }));
+      }
+
+      await mount(createElement(Harness));
+      expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUTH_PAINT_WAIT_MS);
+      });
+      expect(host.textContent).toContain("Free Skin");
+      expect(host.textContent).not.toContain("Paid Skin");
+      expect(host.querySelector(".preview-bento > .preview-delay:not(.preview-delay--hold)")).not.toBeNull();
+
+      await act(async () => {
+        releaseAuth(authBody("pro"));
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const cards = [...host.querySelectorAll(".preview-card:not(.preview-card--skeleton)")];
+      expect(host.querySelector(".preview-delay")).not.toBeNull();
+      expect(host.querySelector(".preview-delay--hold")).toBeNull();
+      expect(cards).toHaveLength(2);
+      expect(cards[0]?.textContent).toContain("Free Skin");
+      expect(cards[1]?.textContent).toContain("Paid Skin");
+      const text = host.textContent ?? "";
+      expect(text.indexOf("Free Skin")).toBeLessThan(text.indexOf("Paid Skin"));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("paints a confirmed checkout as paid before auth answers", async () => {

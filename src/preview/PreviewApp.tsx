@@ -59,6 +59,7 @@ function BoardRoute() {
       rawTotal={state.rawTotal}
       landedPage={state.landedPage}
       shownStatus={state.shownStatus}
+      onPaidTail={state.appendPaidTail}
     />
   );
 }
