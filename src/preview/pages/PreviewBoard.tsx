@@ -1319,6 +1319,8 @@ export function usePreviewTradeUps(options: {
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [deduped, setDeduped] = useState(false);
+  const [totalProfitableCapped, setTotalProfitableCapped] = useState(false);
   const [landedPage, setLandedPage] = useState(1);
   const [shownStatus, setShownStatus] = useState("");
   const inFlightRef = useRef(false);
@@ -1453,13 +1455,15 @@ export function usePreviewTradeUps(options: {
           credentials: "include",
           signal: controller.signal,
         });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; signed_in?: boolean; total?: number; total_profitable?: number; faces?: Record<string, string | null> }>(res);
+        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; signed_in?: boolean; total?: number; total_profitable?: number; deduped?: boolean; total_profitable_capped?: boolean; faces?: Record<string, string | null> }>(res);
         if (data.faces) rememberFaces(FACE_CACHE, data.faces);
         const nextTier = data.tier ?? "free";
         const nextSignedIn = data.signed_in === true;
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
           setTotalProfitable(typeof data.total_profitable === "number" ? data.total_profitable : 0);
+          setDeduped(data.deduped === true);
+          setTotalProfitableCapped(data.total_profitable_capped === true);
         }
         if (live) {
           setTier(nextTier);
@@ -1583,13 +1587,13 @@ export function usePreviewTradeUps(options: {
   return useMemo(
     () => ({
       tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand,
-      total, totalProfitable,
+      total, totalProfitable, deduped, totalProfitableCapped,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
     [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

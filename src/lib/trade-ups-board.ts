@@ -37,6 +37,10 @@ export interface TradeUpsOkPayload {
   trade_ups: TradeUp[];
   total: number;
   total_profitable: number;
+  /** True when `total` counts the listing-deduped board, not tracked trade-ups. */
+  deduped?: boolean;
+  /** True when `total_profitable` stopped at the 10001 cap. */
+  total_profitable_capped?: boolean;
   tier?: string;
   signed_in?: boolean;
   claim_limit?: LimitInfo;
@@ -52,6 +56,8 @@ export interface BoardSnapshot {
   tradeUps: TradeUp[];
   total: number;
   totalProfitable: number;
+  deduped?: boolean;
+  totalProfitableCapped?: boolean;
   loadKind: BoardLoadKind;
 }
 
@@ -96,6 +102,8 @@ function readOkPayload(body: unknown): TradeUpsOkPayload | null {
     total,
     total_profitable,
   };
+  if (body.deduped === true) payload.deduped = true;
+  if (body.total_profitable_capped === true) payload.total_profitable_capped = true;
   if (typeof body.tier === "string") payload.tier = body.tier;
   if (typeof body.signed_in === "boolean") payload.signed_in = body.signed_in;
   if (isLimitInfo(body.claim_limit)) payload.claim_limit = body.claim_limit;
@@ -131,6 +139,8 @@ export function applyBoardFetch(prev: BoardSnapshot, result: BoardFetchResult): 
       tradeUps: result.payload.trade_ups,
       total: result.payload.total,
       totalProfitable: result.payload.total_profitable,
+      deduped: result.payload.deduped === true,
+      totalProfitableCapped: result.payload.total_profitable_capped === true,
       loadKind: "ok",
     };
   }

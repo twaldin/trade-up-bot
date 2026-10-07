@@ -489,8 +489,14 @@ export function PreviewLanding({
 
   useEffect(() => {
     if (!onBoardCounts || live.total == null) return;
-    onBoardCounts({ total: live.total, total_profitable: live.totalProfitable });
-  }, [live.total, live.totalProfitable, onBoardCounts]);
+    // The flags reach heroBoardCounts, which ignores deduped or capped board counts.
+    onBoardCounts({
+      total: live.total,
+      total_profitable: live.totalProfitable,
+      deduped: live.deduped,
+      total_profitable_capped: live.totalProfitableCapped,
+    });
+  }, [live.total, live.totalProfitable, live.deduped, live.totalProfitableCapped, onBoardCounts]);
   const hero = pickHeroTradeUp(live.tradeUps);
   // Wait for the hero pick so the expanded card below never swaps mid-load.
   const rest = hero || !live.loading ? live.tradeUps.filter((tu) => tu.id !== hero?.id) : [];
