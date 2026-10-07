@@ -562,9 +562,9 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
-<p>CS2 trade-up probability measures which output you can hit, while expected value estimates average profit after input cost. Use both with chance-to-profit: a +$36 EV contract can still lose money 35% of the time if the output distribution is volatile.</p>
+<p>CS2 trade-up probability measures which output you can hit, while expected value is the probability-weighted average of outcome prices. Expected P/L is that average minus input cost. Use both with the share of outcomes above cost: a contract with +$36 expected P/L still has a 35% probability of losing money if the output distribution is volatile. Live board figures are estimates after fees. A trade-up can lose money.</p>
 
-<p>Sort <a href="/trade-ups">live trade-ups by chance-to-profit</a> to see probability in practice, or run scenarios in the <a href="/calculator">CS2 trade-up calculator</a> before risking inputs.</p>
+<p>Sort <a href="/trade-ups">live trade-ups by Above cost %</a> to see probability in practice, or run scenarios in the <a href="/calculator">CS2 trade-up calculator</a> before risking inputs.</p>
 
 <h2>How Trade-Up Probabilities Work</h2>
 
@@ -577,76 +577,82 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <li>Collection B total probability: 3/10 = 30%</li>
 </ul>
 
-<p>Within Collection A, each next-rarity skin gets an equal share: Skin X = 35%, Skin Y = 35%. Collection B has only one option: Skin Z = 30%.</p>
+<p>Within Collection A, each next-rarity skin gets an equal share of that collection's share of the 10 inputs: Skin X = 35%, Skin Y = 35%. Collection B has only one option: Skin Z = 30%. Those probabilities sum to 100%.</p>
 
 <p>This weighting is deterministic. There's no hidden RNG on top of it — the game generates a random number, maps it to these weights, and you get that outcome. Over enough trade-ups, your results will converge on these exact probabilities.</p>
 
 <h2>Expected Value: The Formula</h2>
 
-<p>Expected value is the probability-weighted average of all outcomes minus your input cost. The formula:</p>
+<p>Expected value is the probability-weighted average of outcome prices. Prices and expected P/L on the live board are after sale fees. The formula:</p>
 
-<p><code>EV = sum(probability_i * output_value_i) - total_input_cost</code></p>
+<p><code>EV = sum(probability_i * output_price_i)</code></p>
 
-<p>Using our example above, suppose Skin X is worth $120, Skin Y is worth $40, Skin Z is worth $200, and your total input cost is $80:</p>
+<p>Expected P/L subtracts total input cost from that average:</p>
 
-<p><code>EV = (0.35 * $120) + (0.35 * $40) + (0.30 * $200) - $80</code><br/>
-<code>EV = $42 + $14 + $60 - $80 = $36</code></p>
+<p><code>Expected P/L = EV - total_input_cost</code></p>
 
-<p>Positive EV. On average, this trade-up returns $36 profit per attempt. Run it 100 times and you'd expect roughly $3,600 in total profit. That's the theory.</p>
+<p>Using our example above, suppose Skin X is worth $120, Skin Y is worth $40, Skin Z is worth $200, and your total input cost is $80. This example omits sale fees, so the prices and expected P/L below are before fees.</p>
+
+<p><code>EV = (0.35 * $120) + (0.35 * $40) + (0.30 * $200)</code><br/>
+<code>EV = $42 + $14 + $60 = $116</code></p>
+
+<p><code>Expected P/L = $116 - $80 = +$36</code></p>
+
+<p>Positive expected P/L. On average, this trade-up returns +$36 per attempt. Run it 100 times and you'd expect roughly +$3,600 across those attempts. That's the theory. Dollar examples later in this post omit sale fees unless they say the prices are after fees.</p>
 
 <h2>Why EV Alone Is Misleading</h2>
 
-<p>That $36 EV number hides important information. Look at the individual outcomes:</p>
+<p>That +$36 expected P/L hides important information. Look at the individual outcomes:</p>
 
 <ul>
-<li>Skin X ($120): 35% chance, profit = $40</li>
-<li>Skin Y ($40): 35% chance, profit = -$40 (loss)</li>
-<li>Skin Z ($200): 30% chance, profit = $120</li>
+<li>Skin X ($120): 35% probability, P/L = +$40</li>
+<li>Skin Y ($40): 35% probability, P/L = -$40</li>
+<li>Skin Z ($200): 30% probability, P/L = +$120</li>
 </ul>
 
-<p>Chance to profit: 65% (Skin X + Skin Z). Chance to lose: 35% (Skin Y). The expected value is positive, but you lose money more than one-third of the time. If you run this trade-up once and hit Skin Y, you're down $40. The $36 EV is real, but it only materializes over many repetitions.</p>
+<p>At these before-fee prices, outcomes above cost are 65% (Skin X + Skin Z). Outcomes below cost: 35% (Skin Y). The expected P/L is positive, but you lose money more than one-third of the time. If you run this trade-up once and hit Skin Y, you're down $40. The +$36 expected P/L is real, but it only materializes over many repetitions.</p>
 
-<p>Now consider a different trade-up: 100% chance of one output worth $84, input cost $80. EV = $4. Boring. But you literally cannot lose. Every single execution makes $4. For someone doing one trade-up, the $4 guaranteed profit beats the $36 EV gamble that has a 35% chance of losing $40.</p>
+<p>Now consider a different trade-up: one possible output, estimated at $84 after fees, for $80 of inputs. Its probability is 100%. EV = $84. Expected P/L = +$4. Boring, but there's no outcome variance: every result is the same skin. It can still lose money if the output's price drops before you sell. For someone doing one trade-up, a small estimate with no outcome spread may suit better than a +$36 expected P/L contract with a 35% probability of losing $40.</p>
 
-<h2>Chance-to-Profit: The Practical Metric</h2>
+<h2>Outcomes Above Cost: The Practical Metric</h2>
 
-<p>Chance-to-profit measures the probability that the trade-up produces an output worth more than your total input cost. It doesn't care how much you profit or lose — just whether the result is green or red.</p>
+<p>The share of outcomes above cost measures the probability that the trade-up produces an output worth more than your total input cost after fees. It counts only those outcomes, weighted by their probabilities. It doesn't care how much you profit or lose — just whether the result is green or red.</p>
 
-<p>A trade-up with 90% chance to profit is one where 9 out of 10 outcomes are worth more than your inputs. You might profit $5 on the good outcomes and lose $30 on the bad one, with EV of +$1.50. The EV is tiny, but you almost always come out ahead.</p>
+<p>A trade-up with 90% of outcomes above cost is one where 9 out of 10 outcomes are worth more than your inputs. You might be up $5 on those and down $30 on the other one, with expected P/L of +$1.50. The expected P/L is tiny, and the one outcome below cost costs as much as six of the good ones make.</p>
 
-<p>A trade-up with 20% chance to profit but high EV is the opposite: most attempts lose money, but the rare win is big enough to pull the average positive. This is a lottery ticket with favorable odds. Mathematically sound, emotionally brutal.</p>
+<p>A trade-up with 20% of outcomes above cost but high expected P/L is the opposite: most attempts lose money, and one rare, expensive outcome pulls the average positive. It's positive expected P/L with very high variance. Mathematically sound, emotionally brutal.</p>
 
 <p>Neither metric alone tells the full story. You need both.</p>
 
-<h2>Risk Profiles: Lottery vs Grinder</h2>
+<h2>Risk Profiles: High-Variance vs Low-Variance</h2>
 
-<p><strong>The Lottery profile</strong>: low chance-to-profit (15-35%), high EV. These trade-ups have one or two expensive outcomes and several cheap ones. You lose most of the time, but the wins are large. A knife trade-up where 4 out of 5 possible outputs are worth less than your inputs, but the 5th is a $3,000 Karambit Fade, fits this profile. EV might be +$80, but you're losing money 80% of the time.</p>
+<p><strong>High-variance profile</strong>: a low share of outcomes above cost (15-35%), high expected P/L. These trade-ups have one or two expensive outcomes and several cheap ones. Most outcomes land below cost, and the few above it are large. A knife trade-up where 4 out of 5 possible outputs are worth less than your inputs, but the 5th is a $3,000 Karambit Fade, fits this profile. Expected P/L might be +$80, but you're losing money 80% of the time.</p>
 
-<p>This works if you have the bankroll to absorb repeated losses and the volume to let expected value converge. Ten attempts at $200 each ($2,000 total outlay) with 20% chance to profit and +$80 EV should net ~$800 profit over those 10 attempts — but you might need to survive 6-7 losses in a row before hitting a winner. Can your bankroll handle that?</p>
+<p>This only fits if you can afford repeated losses and do enough volume for the average to show up. Ten attempts at $200 each ($2,000 total) with 20% of outcomes above cost and +$80 expected P/L have an expected P/L of about +$800 across all 10. That's an estimate after fees, and the real result can be negative: 6-7 outcomes below cost in a row is a normal run. Can your budget absorb that?</p>
 
-<p><strong>The Grinder profile</strong>: high chance-to-profit (75-100%), modest EV. These trade-ups have most or all outcomes above breakeven. Individual profits are small — $3 to $15 typically — but losses are rare. A Classified-to-Covert trade-up where 8 of 10 outcomes are profitable and the other 2 lose only a few dollars fits here.</p>
+<p><strong>Low-variance profile</strong>: a high share of outcomes above cost (75-100%), modest expected P/L. These trade-ups have most or all outcomes above breakeven. Individual profits are small — $3 to $15 typically — but losses are rare. A Classified-to-Covert trade-up where 8 of 10 outcomes are profitable and the other 2 lose only a few dollars fits here.</p>
 
-<p>This works for smaller bankrolls and traders who want predictable income. Ten Grinder trade-ups at $50 each ($500 outlay) with 85% chance to profit and +$5 EV should net ~$50 with very low variance. You won't get rich quickly, but you won't go broke either.</p>
+<p>This suits smaller budgets and traders who want lower variance. Ten of these at $50 each ($500 total) with 85% of outcomes above cost and +$5 expected P/L have an expected P/L of about +$50, with a narrower spread of results. Expect small numbers, and a trade-up can still lose money.</p>
 
 <h2>When Negative EV Trade-Ups Make Sense</h2>
 
-<p>This sounds contradictory, but negative EV trade-ups can be rational under specific conditions.</p>
+<p>This sounds contradictory, but trade-ups with negative expected P/L can be rational under specific conditions.</p>
 
-<p>Suppose a trade-up has -$5 EV but 60% chance to profit, with the following outcome distribution: 60% chance of +$15 profit, 40% chance of -$35 loss. Expected value is (0.6 * $15) + (0.4 * -$35) = $9 - $14 = -$5. The math says don't do it.</p>
+<p>Suppose a trade-up has −$5 expected P/L but 60% of outcomes above cost, with this distribution: 60% probability of +$15, 40% probability of −$35. Expected P/L is (0.6 * $15) + (0.4 * -$35) = $9 - $14 = -$5. The math says don't do it.</p>
 
-<p>But what if the 40% loss outcome produces a skin you actually want to keep and use? Or what if the $15 profit outcome produces a skin with high trade velocity that you can flip immediately, while the loss outcome is a skin that will eventually recover in value? Context matters beyond raw EV.</p>
+<p>But what if the 40% loss outcome produces a skin you actually want to keep and use? Or what if the $15 profit outcome produces a skin with high trade velocity that you can flip immediately, while the loss outcome is a skin that will eventually recover in value? Context matters beyond raw expected P/L.</p>
 
-<p>TradeUpBot flags trade-ups with negative EV but above 25% chance to profit, specifically because some of them have profiles worth considering. A trade-up with -$3 EV but 70% chance to profit and a worst-case loss of only $8 is a mild gamble with mostly good outcomes. The expected value is slightly negative, but the actual experience of running it is usually positive.</p>
+<p>You set the filter for the share of outcomes above cost. Trade-ups with negative expected P/L stay on the board when they meet the share you chose, because some of them are worth a look. A trade-up with −$3 expected P/L, 70% of outcomes above cost and a worst-case loss of $8 has limited downside and mostly outcomes above cost. Its expected P/L is still slightly negative.</p>
 
-<p>The opposite is also true: positive EV doesn't automatically make a trade-up worth doing. A +$50 EV trade-up with 5% chance to profit and $500 input cost means you lose money 95% of the time and need to do it 20+ times for the EV to converge. Unless you have $10,000+ allocated to this single trade-up type, the variance will eat you alive.</p>
+<p>The opposite is also true: positive expected P/L doesn't automatically make a trade-up worth doing. A trade-up with +$50 expected P/L, 5% of outcomes above cost, and $500 input cost means you lose money 95% of the time and need to do it 20+ times for the average to converge. Unless you have $10,000+ allocated to this single trade-up type, the variance will eat you alive.</p>
 
 <h2>Putting It Together</h2>
 
-<p>The best trade-ups score well on both metrics: positive EV and high chance-to-profit. These are rare, which is why discovery engines exist — manually finding trade-ups where most outcomes are profitable AND the expected value is meaningfully positive requires evaluating thousands of listing combinations.</p>
+<p>The best trade-ups score well on both metrics: positive expected P/L and a high share of outcomes above cost. These are rare, which is why discovery engines exist — manually finding trade-ups where most outcomes are profitable AND the expected P/L is meaningfully positive requires evaluating thousands of listing combinations.</p>
 
-<p>When you have to choose between the two metrics, let your bankroll decide. Large bankroll with high volume? Optimize for EV. You'll weather the variance. Small bankroll, doing a few trade-ups per week? Optimize for chance-to-profit. Consistency beats expected value when you can't afford a losing streak.</p>
+<p>When you have to choose between the two metrics, let your budget decide. Large budget and high volume? Weight expected P/L more; you can absorb the variance. Small budget and a few trade-ups a week? Weight the share of outcomes above cost more. Lower variance matters more than expected P/L when you can't afford several losses in a row.</p>
 
-<p>TradeUpBot lets you sort by either metric. Sort by profit (EV) to find the highest-upside plays. Sort by chance to find the most consistent ones. Expand any trade-up to see the full outcome distribution — every possible output, its probability, and whether it's above or below breakeven. That distribution is the trade-up. Everything else is just a summary of it.</p>
+<p>TradeUpBot lets you sort by either metric. Sort by Expected P/L to find the highest expected P/L. Sort by Above cost % to find the lowest-variance ones. Expand any trade-up to see the full outcome distribution — every possible output, its probability, and whether it's above or below breakeven. That distribution is the trade-up. Everything else is just a summary of it.</p>
 `,
   },
   {
