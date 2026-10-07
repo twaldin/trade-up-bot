@@ -38,7 +38,11 @@ export async function runCheckout(
     return { ok: false, status: res.status, error: data.error || "Checkout failed" };
   }
   const named = trackedPlan(plan);
-  trackBeginCheckout(plan, named ? centsToUsd(PLAN_PRICE_CENTS[named]) : 0);
+  try {
+    await trackBeginCheckout(plan, named ? centsToUsd(PLAN_PRICE_CENTS[named]) : 0);
+  } catch {
+    // A blocked tag must not keep the buyer on this page.
+  }
   if (data.url) go(data.url);
   return { ok: true, status: res.status, url: data.url };
 }

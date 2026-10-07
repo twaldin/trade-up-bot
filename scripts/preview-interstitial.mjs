@@ -361,7 +361,7 @@ try {
     check(subscribeCalls.length === 1 && subscribeCalls[0] === JSON.stringify({ plan: "pro" }), `free: Go Pro calls /api/subscribe ${JSON.stringify(subscribeCalls)}`);
     check(!(await dialogOpen(page)), "free: Go Pro opens no modal");
     const ev = await events(page);
-    check(JSON.stringify(ev) === JSON.stringify([["begin_checkout", { item_name: "pro" }]]), `free: begin_checkout fires as before ${JSON.stringify(ev)}`);
+    check(JSON.stringify(ev) === JSON.stringify([["begin_checkout", { item_name: "pro", transport_type: "beacon", event_timeout: 500 }]]), `free: begin_checkout fires as before ${JSON.stringify(ev)}`);
     await page.close();
   }
   // Pro and lifetime: Manage subscription on /pricing opens the billing portal. Screenshot before the redirect.
