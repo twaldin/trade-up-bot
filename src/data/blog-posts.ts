@@ -745,15 +745,15 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "9 min read",
     author: "TradeUpBot Team",
     content: `
-<p>A trade up simulator is a tool that lets CS2 players model a trade-up contract before spending money, using input skins, floats, collection odds, fees, and expected output value. The best CS2 trade up simulator works from real listings, not stale recipes, so the contract you test can actually be assembled.</p>
+<p>A trade up simulator is a tool that lets CS2 players model a trade-up contract before spending money, using input skins, floats, collection probabilities, fees, and expected output value. The best CS2 trade up simulator works from real listings, not stale recipes, so the contract you test can actually be assembled.</p>
 
-<p>TradeUpBot's <a href="/trade-ups">live CS2 trade up simulator</a> shows marketplace-backed contracts with real input prices, exact floats, output odds, expected value, ROI, and chance-to-profit. You can also test custom ideas in the <a href="/calculator">CS2 trade up calculator</a> and research replacement inputs in the <a href="/skins">CS2 skin database</a>.</p>
+<p>TradeUpBot's <a href="/trade-ups">live CS2 trade up simulator</a> shows marketplace-backed contracts with real input prices, exact floats, output probabilities, expected value, ROI, and the share of outcomes above cost. You can also test custom ideas in the <a href="/calculator">CS2 trade up calculator</a> and research replacement inputs in the <a href="/skins">CS2 skin database</a>.</p>
 
 <h2>What a CS2 Trade Up Simulator Should Do</h2>
 
 <p>A good simulator does more than tell you the theoretical output pool. It should answer the practical question: if you buy these inputs at these prices, what can happen next? That means it needs to understand rarity rules, collection weighting, adjusted float math, marketplace fees, output pricing, and listing availability.</p>
 
-<p>In a standard CS2 weapon trade up, 10 skins of the same rarity produce one skin of the next rarity. The output skin is random, but the odds are not mysterious. They are determined by the collections represented by your inputs. If six inputs come from one collection and four from another, the simulator should show the output probability split across those collections, then divide each collection's share among eligible next-rarity skins.</p>
+<p>In a standard CS2 weapon trade up, 10 skins of the same rarity produce one skin of the next rarity. The output skin is random, but the probabilities are not mysterious. They are determined by the collections represented by your inputs. If six inputs come from one collection and four from another, the simulator should show the output probability split across those collections, then divide each collection's share among eligible next-rarity skins.</p>
 
 <p>The output float is also calculable. CS2 normalizes each input float inside that skin's own min-max range, averages those adjusted floats, then maps the result onto each possible output skin's range. A useful simulator must calculate this per output because two possible outputs can land in different conditions from the same input set.</p>
 
@@ -769,9 +769,9 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>Total input cost</strong> is the first number to inspect. It should include the actual listing prices and buyer-side fees where applicable. If a simulator uses average prices, treat the result as an estimate, not a buy list.</p>
 
-<p><strong>Expected value</strong> measures the probability-weighted average output value minus total cost. Positive EV means the contract should make money over many attempts if prices and probabilities are accurate. It does not mean one attempt is guaranteed to win.</p>
+<p><strong>Expected value</strong> is the probability-weighted average output value after fees. Expected P/L is expected value minus total input cost. Positive expected P/L means the average result is estimated to be positive over many attempts, if prices and probabilities hold. It does not mean any single attempt lands above cost. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
-<p><strong>Chance-to-profit</strong> tells you how often a single attempt finishes above breakeven. This is critical for bankroll management. A contract can have positive EV because one rare output is huge, while still losing money most of the time. Smaller bankrolls usually need higher chance-to-profit, not just higher EV.</p>
+<p><strong>Outcomes above cost</strong> is the probability-weighted share of outcomes worth more than your total cost. That matters for sizing what you spend. A contract can have positive expected P/L because one rare output is huge, while still losing money most of the time. Smaller budgets usually need a higher share of outcomes above cost, not just higher expected P/L.</p>
 
 <p><strong>Best case and worst case</strong> reveal variance. A simulator that only shows one profit number hides the downside. You need to know whether the bad outcome loses $2, $20, or $200 before deciding whether the contract fits your risk tolerance.</p>
 
@@ -779,13 +779,13 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>How to Use TradeUpBot as a Simulator</h2>
 
-<p>Start on the live trade-ups page and sort by the metric that matches your goal. Sorting by profit highlights the highest expected value opportunities. Sorting by chance-to-profit highlights more consistent contracts. Filtering by rarity and type helps narrow the list to trade ups that fit your budget.</p>
+<p>Start on the live trade-ups page and sort by the metric that matches your goal. Sorting by Expected P/L highlights the highest expected P/L. Sorting by Above cost % highlights contracts with a larger probability-weighted share of outcomes worth more than your total cost. Filtering by rarity and type helps narrow the list to trade ups that fit your budget.</p>
 
 <p>Open a trade up and inspect the inputs. The simulator view should show each listing, source marketplace, price, float, and collection. Check whether the inputs are clustered around an important float target or whether the contract relies mostly on cheap prices. If one input disappears, you need to understand whether a replacement would preserve the output condition.</p>
 
-<p>Next, review the output distribution. Look at every possible skin, not just the headline profit. A contract with three slightly profitable outcomes and one small loss behaves very differently from a contract with one jackpot and nine losses. The expanded output table is where the real risk profile lives.</p>
+<p>Next, review the output distribution. Look at every possible skin, not just the headline expected P/L. A contract with three slightly profitable outcomes and one small loss behaves very differently from a contract with one expensive outcome and nine below cost. The expanded view, with its readouts and charts, is where that spread shows up.</p>
 
-<p>Finally, use verification before purchasing whenever possible. Listings can be bought by other players, delisted, or repriced. A simulator result is only as useful as the freshness of its input data, so checking availability right before buying reduces the chance of being stuck with partial inputs.</p>
+<p>Finally, use verification before purchasing whenever possible. Listings can be bought by other players, delisted, or repriced. A simulator result is only as useful as the freshness of its input data, so checking availability right before buying reduces the risk of being stuck with partial inputs.</p>
 
 <h2>When to Use the Calculator Instead</h2>
 
@@ -799,7 +799,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>The second mistake is treating condition labels as enough information. Factory New covers everything from 0.00 to 0.07. For trade ups, a 0.006 input and a 0.066 input are not interchangeable. Exact float matters because condition boundaries create major price jumps.</p>
 
-<p>The third mistake is ignoring collection dilution. Cheap skins from another collection can reduce input cost, but they may also add low-value outputs or lower the probability of the desired skin. A good simulator makes that dilution visible in the odds table.</p>
+<p>The third mistake is ignoring collection dilution. Cheap skins from another collection can reduce input cost, but they may also add low-value outputs or lower the probability of the desired skin. A good simulator makes that dilution visible in the probability table.</p>
 
 <p>The fourth mistake is using stale output prices. A rare sale at an unusually high price can make EV look better than reality. Prefer tools that combine recent sales, current listings, and float-sensitive pricing rather than one generic average.</p>
 
@@ -817,7 +817,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>The TradeUpBot calculator (/calculator) and the live trade-up board (/trade-ups) are the tools. This URL (/blog/best-cs2-trade-up-simulator/) is the guide comparing CS2 trade-up simulators vs calculators.</p>
 
 <h3>Can a trade up simulator guarantee profit?</h3>
-<p>No. A simulator can calculate expected value and chance-to-profit, but the output skin is still random and market prices can change before you buy inputs or sell the result.</p>
+<p>No. A simulator can calculate expected value and the share of outcomes above cost, but the output skin is still random and market prices can change before you buy inputs or sell the result.</p>
 
 <h3>Why should a simulator use live listings?</h3>
 <p>Live listings show whether the required inputs actually exist at the assumed prices and floats. Static recipes can look profitable even when their inputs are unavailable or too expensive.</p>
@@ -827,7 +827,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 `,
     faq: [
       { question: "What is the best CS2 trade up simulator?", answer: "The TradeUpBot calculator (/calculator) and the live trade-up board (/trade-ups) are the tools. This URL (/blog/best-cs2-trade-up-simulator/) is the guide comparing CS2 trade-up simulators vs calculators." },
-      { question: "Can a trade up simulator guarantee profit?", answer: "No. A simulator can calculate expected value and chance-to-profit, but the output skin is still random and market prices can change before you buy inputs or sell the result." },
+      { question: "Can a trade up simulator guarantee profit?", answer: "No. A simulator can calculate expected value and the share of outcomes above cost, but the output skin is still random and market prices can change before you buy inputs or sell the result." },
       { question: "Why should a simulator use live listings?", answer: "Live listings show whether the required inputs actually exist at the assumed prices and floats. Static recipes can look profitable even when their inputs are unavailable or too expensive." },
       { question: "Should I use a simulator or a calculator?", answer: "Use the simulator to browse marketplace-backed opportunities and the calculator to test custom inputs, substitutions, and float targets for your own trade-up ideas." },
     ],
@@ -842,7 +842,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     content: `
 <p>Run the same ten inputs through two CS2 trade-up calculators and you will often get two different profit numbers. That feels like it should be impossible. The inputs are fixed. The output probabilities are fixed. The float formula is deterministic and public. Nothing about the contract is ambiguous.</p>
 
-<p>The disagreement almost never comes from the math. It comes from one quieter decision each tool makes: how to price the output skin. Get that wrong and a contract that looks like a $6 profit can actually be a $2 loss, or the other way around.</p>
+<p>The disagreement almost never comes from the math. It comes from one quieter decision each tool makes: how to price the output skin. Get that wrong and a contract that looks like a $6 profit can actually be a $2 loss, or the other way around. Every profit figure is an estimate after fees, and a trade-up can lose money.</p>
 
 <p>Want to skip the theory and see it on real contracts? <a href="/trade-ups">Browse live profitable trade-ups</a> or test your own inputs in the <a href="/calculator">CS2 trade-up calculator</a>.</p>
 
