@@ -50,6 +50,31 @@ export const STRIPE_WEBHOOK_EVENTS_DDL = `CREATE TABLE IF NOT EXISTS stripe_webh
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`;
 
+/** The checkout that turned lifetime on. A later failure revokes only this session. */
+export const LIFETIME_GRANTS_DDL = `CREATE TABLE IF NOT EXISTS lifetime_grants (
+  stripe_customer_id TEXT PRIMARY KEY,
+  checkout_session_id TEXT NOT NULL,
+  payment_intent_id TEXT,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`;
+
+export interface LifetimeGrantRef {
+  checkoutSessionId: string;
+  paymentIntentId: string | null;
+}
+
+/** True only when the failed Checkout Session is the one that granted lifetime. */
+export function lifetimeGrantMatchesFailure(
+  grant: LifetimeGrantRef | undefined,
+  failure: LifetimeGrantRef,
+): boolean {
+  if (!grant) return false;
+  if (grant.checkoutSessionId === failure.checkoutSessionId) return true;
+  return grant.paymentIntentId !== null
+    && failure.paymentIntentId !== null
+    && grant.paymentIntentId === failure.paymentIntentId;
+}
+
 const eventsTableReady = new WeakMap<StripePool, Promise<void>>();
 
 /**
@@ -122,10 +147,12 @@ export function subscriptionTierChangeAllowed(
 export function ensureStripeWebhookEvents(pool: StripePool): Promise<void> {
   const pending = eventsTableReady.get(pool);
   if (pending) return pending;
-  const created = pool.query(STRIPE_WEBHOOK_EVENTS_DDL).then(() => undefined, (err: unknown) => {
-    eventsTableReady.delete(pool);
-    throw err;
-  });
+  const created = pool.query(STRIPE_WEBHOOK_EVENTS_DDL)
+    .then(() => pool.query(LIFETIME_GRANTS_DDL))
+    .then(() => undefined, (err: unknown) => {
+      eventsTableReady.delete(pool);
+      throw err;
+    });
   eventsTableReady.set(pool, created);
   return created;
 }
@@ -169,6 +196,11 @@ function isCheckoutEvent(eventType: string): boolean {
 function customerIdOf(customer: string | { id: string } | null | undefined): string | null {
   if (!customer) return null;
   return typeof customer === "string" ? customer : customer.id;
+}
+
+function paymentIntentId(paymentIntent: string | { id: string } | null | undefined): string | null {
+  if (!paymentIntent) return null;
+  return typeof paymentIntent === "string" ? paymentIntent : paymentIntent.id;
 }
 
 function subscriptionPrices(): SubscriptionPrices {
@@ -239,6 +271,15 @@ async function applyCheckoutEvent(
       "UPDATE users SET tier = 'pro', lifetime = true WHERE stripe_customer_id = $1",
       [customerId],
     );
+    await client.query(
+      `INSERT INTO lifetime_grants (stripe_customer_id, checkout_session_id, payment_intent_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (stripe_customer_id) DO UPDATE
+       SET checkout_session_id = EXCLUDED.checkout_session_id,
+           payment_intent_id = EXCLUDED.payment_intent_id,
+           granted_at = NOW()`,
+      [customerId, cs.id, paymentIntentId(cs.payment_intent)],
+    );
     console.log(`Stripe: customer ${customerId} -> pro (lifetime)`);
     const discordId = await discordIdFor(client, customerId);
     return {
@@ -262,6 +303,28 @@ async function applyCheckoutEvent(
       console.log(`Stripe: checkout ${cs.id} async payment failed — no lifetime grant to revoke`);
       return NO_EFFECT;
     }
+    const { rows: grants } = await client.query<{
+      checkout_session_id: string;
+      payment_intent_id: string | null;
+    }>(
+      "SELECT checkout_session_id, payment_intent_id FROM lifetime_grants WHERE stripe_customer_id = $1",
+      [customerId],
+    );
+    const stored = grants[0];
+    const failure = {
+      checkoutSessionId: cs.id,
+      paymentIntentId: paymentIntentId(cs.payment_intent),
+    };
+    const matches = lifetimeGrantMatchesFailure(
+      stored
+        ? { checkoutSessionId: stored.checkout_session_id, paymentIntentId: stored.payment_intent_id }
+        : undefined,
+      failure,
+    );
+    if (!matches) {
+      console.log(`Stripe: checkout ${cs.id} async payment failed — not the lifetime grant`);
+      return NO_EFFECT;
+    }
     const subscriptions = listSubscriptions ? await listSubscriptions(customerId) : [];
     const nextTier = tierAfterLifetimeRevoke(user, subscriptions, subscriptionPrices());
     const revoked = await client.query<{ discord_id: string | null }>(
@@ -271,6 +334,7 @@ async function applyCheckoutEvent(
       [customerId, nextTier],
     );
     if ((revoked.rowCount ?? revoked.rows.length) === 0) return NO_EFFECT;
+    await client.query("DELETE FROM lifetime_grants WHERE stripe_customer_id = $1", [customerId]);
     console.log(`Stripe: customer ${customerId} -> ${nextTier} (lifetime payment failed)`);
     const discordId = revoked.rows[0]?.discord_id ?? user.discord_id;
     return {

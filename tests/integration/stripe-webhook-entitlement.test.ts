@@ -58,6 +58,7 @@ function checkoutEvent(input: {
   customer: string;
   sessionId?: string;
   mode?: string;
+  paymentIntent?: string;
 }) {
   return JSON.stringify({
     id: input.id,
@@ -76,6 +77,7 @@ function checkoutEvent(input: {
         amount_total: 7499,
         currency: "usd",
         metadata: {},
+        ...(input.paymentIntent ? { payment_intent: input.paymentIntent } : {}),
       },
     },
   });
@@ -303,19 +305,31 @@ describe("lifetime checkout payment status", () => {
     expect(harness.syncDiscordRoles).toHaveBeenCalledWith("disc_async", "pro");
   });
 
-  it("revokes lifetime Pro on async_payment_failed", async () => {
+  it("revokes lifetime only when the granting session fails, then recomputes tier", async () => {
     await seed({
       steamId: "life_fail",
       customerId: "cus_fail",
-      tier: "pro",
-      lifetime: true,
+      tier: "free",
       discordId: "disc_fail",
     });
+    const granted = await post(checkoutEvent({
+      id: "evt_fail_grant",
+      type: "checkout.session.completed",
+      paymentStatus: "paid",
+      customer: "cus_fail",
+      sessionId: "cs_fail",
+      paymentIntent: "pi_fail",
+    }));
+    expect(granted.status).toBe(200);
+    expect(await userByCustomer("cus_fail")).toMatchObject({ tier: "pro", lifetime: true });
+
     const res = await post(checkoutEvent({
       id: "evt_async_fail",
       type: "checkout.session.async_payment_failed",
       paymentStatus: "unpaid",
       customer: "cus_fail",
+      sessionId: "cs_fail",
+      paymentIntent: "pi_fail",
     }));
     expect(res.status).toBe(200);
     expect(await userByCustomer("cus_fail")).toMatchObject({ tier: "free", lifetime: false, is_admin: false });
@@ -323,20 +337,63 @@ describe("lifetime checkout payment status", () => {
     expect(harness.listSubscriptions).toHaveBeenCalledWith("cus_fail");
   });
 
-  it("keeps an admin's tier when a lifetime payment fails", async () => {
+  it("leaves lifetime intact when a different session fails", async () => {
+    await seed({ steamId: "life_other", customerId: "cus_other_fail", tier: "free", discordId: "disc_other_fail" });
+    const granted = await post(checkoutEvent({
+      id: "evt_cs_a",
+      type: "checkout.session.completed",
+      paymentStatus: "paid",
+      customer: "cus_other_fail",
+      sessionId: "cs_A",
+      paymentIntent: "pi_A",
+    }));
+    expect(granted.status).toBe(200);
+    expect(await userByCustomer("cus_other_fail")).toMatchObject({ tier: "pro", lifetime: true });
+    harness.syncDiscordRoles.mockClear();
+    harness.listSubscriptions.mockClear();
+
+    const failed = await post(checkoutEvent({
+      id: "evt_cs_b",
+      type: "checkout.session.async_payment_failed",
+      paymentStatus: "unpaid",
+      customer: "cus_other_fail",
+      sessionId: "cs_B",
+      paymentIntent: "pi_B",
+    }));
+    expect(failed.status).toBe(200);
+    expect(await userByCustomer("cus_other_fail")).toMatchObject({ tier: "pro", lifetime: true, is_admin: false });
+    const grant = await pool.query<{ checkout_session_id: string; payment_intent_id: string | null }>(
+      "SELECT checkout_session_id, payment_intent_id FROM lifetime_grants WHERE stripe_customer_id = $1",
+      ["cus_other_fail"],
+    );
+    expect(grant.rows[0]).toEqual({ checkout_session_id: "cs_A", payment_intent_id: "pi_A" });
+    expect(harness.listSubscriptions).not.toHaveBeenCalled();
+    expect(harness.syncDiscordRoles).not.toHaveBeenCalled();
+  });
+
+  it("keeps an admin's tier when the granting session fails", async () => {
     await seed({
       steamId: "admin_fail",
       customerId: "cus_admin_fail",
       tier: "pro",
-      lifetime: true,
       isAdmin: true,
       discordId: "disc_admin_fail",
     });
+    expect((await post(checkoutEvent({
+      id: "evt_admin_grant",
+      type: "checkout.session.completed",
+      paymentStatus: "paid",
+      customer: "cus_admin_fail",
+      sessionId: "cs_admin",
+      paymentIntent: "pi_admin",
+    }))).status).toBe(200);
     const res = await post(checkoutEvent({
       id: "evt_admin_fail",
       type: "checkout.session.async_payment_failed",
       paymentStatus: "unpaid",
       customer: "cus_admin_fail",
+      sessionId: "cs_admin",
+      paymentIntent: "pi_admin",
     }));
     expect(res.status).toBe(200);
     expect(await userByCustomer("cus_admin_fail")).toMatchObject({
@@ -348,20 +405,29 @@ describe("lifetime checkout payment status", () => {
     expect(harness.syncDiscordRoles).not.toHaveBeenCalledWith("disc_admin_fail", "free");
   });
 
-  it("keeps pro when a lifetime payment fails but a monthly subscription is active", async () => {
-    harness.listSubscriptions.mockResolvedValueOnce([{ status: "active", priceId: PRO_PRICE }]);
+  it("keeps pro when the granting session fails but a monthly subscription is active", async () => {
     await seed({
       steamId: "monthly_fail",
       customerId: "cus_monthly_fail",
-      tier: "pro",
-      lifetime: true,
+      tier: "free",
       discordId: "disc_monthly_fail",
     });
+    expect((await post(checkoutEvent({
+      id: "evt_monthly_grant",
+      type: "checkout.session.completed",
+      paymentStatus: "paid",
+      customer: "cus_monthly_fail",
+      sessionId: "cs_monthly",
+      paymentIntent: "pi_monthly",
+    }))).status).toBe(200);
+    harness.listSubscriptions.mockResolvedValueOnce([{ status: "active", priceId: PRO_PRICE }]);
     const res = await post(checkoutEvent({
       id: "evt_monthly_fail",
       type: "checkout.session.async_payment_failed",
       paymentStatus: "unpaid",
       customer: "cus_monthly_fail",
+      sessionId: "cs_monthly",
+      paymentIntent: "pi_monthly",
     }));
     expect(res.status).toBe(200);
     expect(await userByCustomer("cus_monthly_fail")).toMatchObject({

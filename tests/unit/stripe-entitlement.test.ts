@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   lifetimeCheckoutAction,
+  lifetimeGrantMatchesFailure,
   subscriptionTierChangeAllowed,
   tierAfterLifetimeRevoke,
   tierForSubscriptionEvent,
@@ -51,6 +52,14 @@ describe("tier after a failed lifetime payment", () => {
       [{ status: "trialing", priceId: "price_pro" }],
       PRICES,
     )).toBe("pro");
+  });
+
+  it("revokes only the checkout session that granted lifetime", () => {
+    const grant = { checkoutSessionId: "cs_A", paymentIntentId: "pi_A" };
+    expect(lifetimeGrantMatchesFailure(grant, { checkoutSessionId: "cs_A", paymentIntentId: "pi_A" })).toBe(true);
+    expect(lifetimeGrantMatchesFailure(grant, { checkoutSessionId: "cs_B", paymentIntentId: "pi_A" })).toBe(true);
+    expect(lifetimeGrantMatchesFailure(grant, { checkoutSessionId: "cs_B", paymentIntentId: "pi_B" })).toBe(false);
+    expect(lifetimeGrantMatchesFailure(undefined, { checkoutSessionId: "cs_A", paymentIntentId: "pi_A" })).toBe(false);
   });
 
   it("sets free when the account is neither admin nor on an active subscription", () => {

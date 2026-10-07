@@ -125,6 +125,24 @@ describe("Stripe webhook conversion side-effect", () => {
     expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
   });
 
+  it("fires the same Purchase on async_payment_succeeded", async () => {
+    Object.assign(process.env, TRACKING_ENV);
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const paid = JSON.parse(checkoutCompleted({
+      metadata: { tub_plan: "pro_monthly", tub_ua: "Mozilla/5.0 test", tub_xid: "a".repeat(64) },
+    })) as { id: string; type: string; data: { object: { payment_status: string } } };
+    paid.id = "evt_async_succeeded";
+    paid.type = "checkout.session.async_payment_succeeded";
+    paid.data.object.payment_status = "unpaid";
+    const res = await post(JSON.stringify(paid));
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((u) => u.includes("graph.facebook.com")).length).toBe(1);
+    expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
+  });
+
   it("does not report unpaid checkouts", async () => {
     Object.assign(process.env, TRACKING_ENV);
     const fetchSpy = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));

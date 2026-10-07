@@ -11,7 +11,7 @@ export function trackingWebhookPool(): StripePool {
     const text = sql.replace(/\s+/g, " ").trim();
     const empty: { rows: T[]; rowCount: number } = { rows: [], rowCount: 0 };
     if (text === "BEGIN" || text === "COMMIT" || text === "ROLLBACK") return empty;
-    if (text.startsWith("CREATE TABLE IF NOT EXISTS stripe_webhook_events")) return empty;
+    if (text.startsWith("CREATE TABLE IF NOT EXISTS")) return empty;
     if (text.startsWith("INSERT INTO stripe_webhook_events")) {
       const id = String(values?.[0]);
       if (seen.has(id)) return empty;

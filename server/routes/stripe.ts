@@ -273,9 +273,12 @@ export function stripeRouter(
         });
       }
 
-      if (event.type === "checkout.session.completed") {
+      if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
         try {
-          const cs = event.data.object as Stripe.Checkout.Session;
+          const raw = event.data.object as Stripe.Checkout.Session;
+          const cs = event.type === "checkout.session.async_payment_succeeded" && raw.payment_status !== "paid"
+            ? { ...raw, payment_status: "paid" as const }
+            : raw;
           void trackCheckoutCompleted({
             session: cs,
             eventCreatedSec: event.created,
