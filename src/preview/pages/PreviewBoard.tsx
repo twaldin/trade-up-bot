@@ -9,7 +9,14 @@ import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
 import { authUserFrom } from "../lib/auth-state.js";
-import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
+import {
+  boardDelaySentence,
+  paintAccountFromBrowser,
+  shouldFetchBoardDelay,
+  useBoardDelay,
+  writeStoredBoardAccount,
+  type PaintAccount,
+} from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -871,25 +878,51 @@ function rankedMeta(count: number, pending: boolean): string {
   return `${count} ranked`;
 }
 
-type BoardAccount = { tier?: string; lifetime?: boolean } | null | undefined;
+type BoardAccount = PaintAccount;
 
-/** Account from `/api/auth/me` when the board was not given one. `undefined` until that returns. */
-function useKnownAccount(given: BoardAccount): BoardAccount {
-  const [loaded, setLoaded] = useState<BoardAccount>(undefined);
+function accountFromAuth(data: unknown): { tier: string; lifetime?: boolean } | null {
+  if (!data || typeof data !== "object") return null;
+  const user = authUserFrom({
+    steam_id: Reflect.get(data, "steam_id"),
+    tier: Reflect.get(data, "tier"),
+    lifetime: Reflect.get(data, "lifetime"),
+  });
+  if (!user) return null;
+  const tier = typeof user.tier === "string" && user.tier !== "" ? user.tier : "free";
+  return user.lifetime === true ? { tier, lifetime: true } : { tier };
+}
+
+/**
+ * Account for the delay slot. A passed-in user is settled. Otherwise the first
+ * paint uses the session cookie and the stored tier: no cookie reserves the
+ * hold and leaves the list unmounted until auth answers, so a paid account can
+ * drop the hold without moving skeletons.
+ */
+function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled: boolean } {
+  const [loaded, setLoaded] = useState<BoardAccount>(() => given !== undefined ? given : paintAccountFromBrowser().account);
+  const [settled, setSettled] = useState(() => given !== undefined || paintAccountFromBrowser().settled);
   useEffect(() => {
     if (given !== undefined) return;
     let live = true;
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (live) setLoaded(authUserFrom(data));
+      .then((data: unknown) => {
+        if (!live) return;
+        const next = accountFromAuth(data);
+        writeStoredBoardAccount(next);
+        setLoaded(next);
+        setSettled(true);
       })
       .catch(() => {
-        if (live) setLoaded(null);
+        if (!live) return;
+        writeStoredBoardAccount(null);
+        setLoaded(null);
+        setSettled(true);
       });
     return () => { live = false; };
   }, [given]);
-  return given !== undefined ? given : loaded;
+  if (given !== undefined) return { account: given, settled: true };
+  return { account: loaded, settled };
 }
 
 /** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
@@ -1075,13 +1108,19 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const account = useKnownAccount(user);
-  const accountDelay = shouldFetchBoardDelay(account);
+  const known = useKnownAccount(user);
+  const account = known.account;
+  const accountDelay = known.settled && shouldFetchBoardDelay(account);
   const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
   // Guest and free reserve the banner before the list lands. Paid accounts
   // render nothing, so their board does not jump when the list reports a tier.
-  const delayPending = accountDelay && loading && tradeUps.length === 0 && !isFree;
+  // An optimistic guest (no session cookie, auth still out) keeps the hold and
+  // mounts nothing under it, so dropping the hold for a paid account does not move the list.
+  const optimisticGuest = !embed && !known.settled && account === null;
+  const confirmedHold = accountDelay && loading && tradeUps.length === 0 && !isFree;
+  const delayPending = !isFree && (confirmedHold || optimisticGuest);
+  const delayHoldOnly = optimisticGuest && !isFree;
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1313,13 +1352,13 @@ export function PreviewBoard({
           <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
         </div>
       )}
-      {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
+      {!delayHoldOnly && !embed && <FeeLine line={boardFeeLine()} caveat />}
+      {!delayHoldOnly && loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
         <p className={embed ? "preview-note" : "sr-only"}>Loading trade-ups…</p>
       )}
-      {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
-      {!showStatus && noticeNode}
-      {showSkeletons ? (
+      {!delayHoldOnly && refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
+      {!delayHoldOnly && !showStatus && noticeNode}
+      {delayHoldOnly ? null : showSkeletons ? (
         <div className="preview-bento preview-bento--reserved" aria-busy="true">
           {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
         </div>
@@ -1383,7 +1422,7 @@ export function PreviewBoard({
       {showNarrowHint && (
         <p className="preview-note preview-note--hint">{NARROW_FILTERS_HINT}</p>
       )}
-      {!embed && (
+      {!delayHoldOnly && !embed && (
         <section className="preview-panel">
           <h2>Common questions</h2>
           {TRADE_UPS_FAQ.map((item) => (

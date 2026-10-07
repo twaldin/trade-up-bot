@@ -1202,11 +1202,14 @@
 @media (max-width: 479px) {
   .preview-delay { min-height: 144px; }
 }
+/* 360–389. The scroller’s scrollbar narrows 360 to ~344px, where the hidden-count
+   sentence is 180px. 162px (and the old 126px) let that line grow under the skeletons. */
 @media (max-width: 389px) {
-  .preview-delay { min-height: 126px; }
+  .preview-delay { min-height: 180px; }
 }
+/* 340–359 paints it at 180px. The old 144px step (and 126px above it) was short. */
 @media (max-width: 359px) {
-  .preview-delay { min-height: 144px; }
+  .preview-delay { min-height: 180px; }
 }
 @media (max-width: 339px) {
   .preview-delay { min-height: 162px; }

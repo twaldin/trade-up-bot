@@ -53,6 +53,8 @@ describe("board delay fetch waits for the viewer", () => {
     vi.unstubAllGlobals();
     resetBrowseFetchState();
     calls.length = 0;
+    localStorage.clear();
+    document.cookie = "connect.sid=; Max-Age=0";
     window.history.replaceState({}, "", "/trade-ups");
   });
 
@@ -136,6 +138,119 @@ describe("board delay fetch waits for the viewer", () => {
     expect(delayCalls()).toHaveLength(1);
     expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
     expect(host.textContent).not.toContain(GAP_SENTENCE);
+  });
+
+  it("reserves the hold before auth/me when the session cookie is missing, and withholds the skeletons", async () => {
+    localStorage.clear();
+    document.cookie = "connect.sid=; Max-Age=0";
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(delayCalls()).toEqual([]);
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).toBeNull();
+    expect(host.textContent).not.toContain("Common questions");
+  });
+
+  it("does not reserve the hold while a session cookie is present and the tier is unknown", async () => {
+    localStorage.clear();
+    document.cookie = "connect.sid=paid-session";
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(delayCalls()).toEqual([]);
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+  });
+
+  it("paints a stored paid tier with no hold and collapses an optimistic hold once auth says paid", async () => {
+    localStorage.setItem("tub_board_account", JSON.stringify({ tier: "pro" }));
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+  });
+
+  it("drops the optimistic hold when auth returns paid and does not request the gap", async () => {
+    localStorage.clear();
+    document.cookie = "connect.sid=; Max-Age=0";
+    let release: (value: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      calls.push(String(url));
+      if (String(url).includes("/api/auth/me")) {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return new Promise<Response>(() => {});
+    }));
+
+    function Harness() {
+      const api = usePreviewTradeUps({ perPage: 12 });
+      return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: api.tradeUps,
+        loading: api.loading,
+        isFree: api.isFree,
+        expandedId: api.expandedId,
+        onExpand: api.onExpand,
+      }));
+    }
+
+    await mount(createElement(Harness));
+    expect(host.querySelector(".preview-delay--hold")).not.toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).toBeNull();
+
+    await act(async () => {
+      release(authBody("pro"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector(".preview-delay")).toBeNull();
+    expect(host.querySelector(".preview-card--skeleton")).not.toBeNull();
+    expect(delayCalls()).toEqual([]);
+    expect(localStorage.getItem("tub_board_account")).toBe(JSON.stringify({ tier: "pro" }));
   });
 
   it("loads the gap once the board list reports a free viewer", async () => {

@@ -142,6 +142,18 @@ describe("free-tier banner reserves its height", () => {
     expect(wideHold.height).toBeLessThan(144);
   }, 30000);
 
+  it("matches the reserved height at 359, 360, 375, and 389", async () => {
+    const page = await browser.newPage();
+    const expected: Record<number, number> = { 359: 180, 360: 180, 375: 180, 389: 180, 390: 144 };
+    for (const [width, height] of Object.entries(expected)) {
+      const held = await delayBox(page, Number(width), boardDocument(hold), null);
+      const filled = await delayBox(page, Number(width), boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+      expect(held.height, width).toBe(height);
+      expect(filled.height, width).toBe(held.height);
+    }
+    await page.close();
+  }, 30000);
+
   it("reserves the slot for a guest and skips it for a paid account", () => {
     const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });
     const loadingPaid = ["pro", "basic", "admin"].map((tier) => boardHtml({
@@ -164,7 +176,9 @@ describe("free-tier banner reserves its height", () => {
       expect(html).toContain("preview-card--skeleton");
     }
     expect(lifetime).not.toContain("preview-delay");
-    expect(unknown).not.toContain("preview-delay");
+    // No cookie and no stored tier: the hold is in the first markup, and the list under it is not.
+    expect(unknown).toContain("preview-delay--hold");
+    expect(unknown).not.toContain("preview-card--skeleton");
     expect(free).toContain("preview-delay--hold");
     expect(hold).toContain("preview-delay--hold");
     expect(hold).toContain('aria-hidden="true"');
