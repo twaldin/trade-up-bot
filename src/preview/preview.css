@@ -988,9 +988,11 @@
 
 /* At 360 the webfont is a few pixels wider than the fallback, so Sniper falls
    to the next row only after the font arrives. A 16px inset — the same gutter
-   as the page — makes that wrap happen for both fonts. */
+   as the page — makes that wrap happen for both fonts. The product links take
+   the whole row so the view prefs do not hop up when Schibsted replaces DejaVu. */
 @media (max-width: 364px) {
   .preview-console__bar { padding-inline: 16px; }
+  .preview-nav__links { flex-basis: 100%; }
 }
 
 .preview-console__main {
@@ -3388,6 +3390,17 @@
 
 @media (max-width: 389px) {
   .preview-pricing-gap:empty { min-height: 6.4em; }
+}
+
+/* Below 375 Schibsted keeps the free-gap sentence on three lines and DejaVu
+   wraps a fourth. A 300px measure puts both faces on four lines. */
+@media (max-width: 374px) {
+  .preview-market .preview-page__head .preview-pricing-gap { max-width: 280px; }
+}
+
+/* From 380 to 399 the third billing tab fits in Schibsted and wraps in DejaVu. */
+@media (max-width: 399px) {
+  .preview-tabs--billing { max-width: 304px; }
 }
 
 .preview-footer {
