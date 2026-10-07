@@ -93,6 +93,7 @@ export function PreviewCollectionTradeUps() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
           collection={title}

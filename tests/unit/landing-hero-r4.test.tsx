@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOAD_ERROR_COPY } from "../../src/preview/lib/board-notice.js";
+import { landingStatsFromSources, visibleLandingStatTiles } from "../../src/preview/lib/landing-stats.js";
 import { HERO_STILL_LOADING } from "../../src/preview/lib/copy.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import {
@@ -111,6 +112,37 @@ describe("landing hero copy", () => {
     for (const word of BANNED) {
       expect(text, word).not.toMatch(new RegExp(`\\b${word}\\b`));
     }
+  });
+});
+
+describe("landing hero counts", () => {
+  it("does not render a deduped board profitable count of 1", () => {
+    const stats = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 1, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    const html = heroHtml({
+      loading: false,
+      statTiles: visibleLandingStatTiles(stats),
+    });
+    expect(html).not.toContain("positive EV");
+    expect(html).not.toContain(">1<");
+    expect(html).not.toContain("1 profitable");
+  });
+
+  it("renders the 10001 sentinel as 10,000+ through LandingHero and never prints 10,001", () => {
+    const html = heroHtml({
+      loading: false,
+      statTiles: [
+        { key: "total_trade_ups", label: "trade-ups", value: 10_001 },
+        { key: "profitable_trade_ups", label: "positive EV", value: 90_700 },
+        { key: "total_data_points", label: "data points", value: 2_405_119 },
+      ],
+    });
+    expect(html).toContain("<b>10,000+</b>");
+    expect(html).toContain("<b>90,700</b>");
+    expect(html).toContain("<b>2,405,119</b>");
+    expect(html).not.toContain("10,001");
+    expect(html).not.toContain("10001");
   });
 });
 

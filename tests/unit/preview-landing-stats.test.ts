@@ -12,6 +12,7 @@ import {
   landingStatsFromSources,
   nextHeroGlobal,
   publishedTradeUpCounts,
+  formatLandingStat,
   renderLandingStatsHtml,
   serverLandingStats,
   visibleLandingStatTiles,
@@ -195,6 +196,41 @@ describe("landing stats from the board + global-stats", () => {
     }
   });
 
+  it("prints 10,000+ for the 10001 sentinel and leaves a real larger count alone", () => {
+    expect(formatLandingStat(10_001)).toBe("10,000+");
+    expect(formatLandingStat(10_001)).not.toContain("10,001");
+    expect(formatLandingStat(10_001)).not.toContain("10001");
+    expect(formatLandingStat(90_700)).toBe("90,700");
+    expect(formatLandingStat(7_085)).toBe("7,085");
+
+    const flagFalse = landingStatsFromSources({
+      board: { total: 8000, total_profitable: 7085, total_profitable_capped: false, trade_ups: [makeTradeUp()] },
+    });
+    expect(renderLandingStatsHtml(flagFalse)).toContain("<b>7,085</b><span>positive EV</span>");
+    expect(renderLandingStatsHtml(flagFalse)).not.toContain("10,000+");
+
+    const globalWins = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 10001, total_profitable_capped: true, deduped: true, trade_ups: [makeTradeUp()] },
+      global: { total_trade_ups: 120000, profitable_trade_ups: 90700 },
+    });
+    const globalHtml = renderLandingStatsHtml(globalWins);
+    expect(globalHtml).toContain("90,700");
+    expect(globalHtml).not.toContain("10,000+");
+    expect(globalHtml).not.toContain("56");
+  });
+
+  it("does not render a deduped board profitable count of 1", () => {
+    const stats = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 1, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.profitable_trade_ups).toBeUndefined();
+    const html = renderLandingStatsHtml(stats);
+    expect(html).not.toContain("positive EV");
+    expect(html).not.toContain(">1<");
+    expect(html).not.toContain("1 profitable");
+    expect(visibleLandingStatTiles(stats).map((tile) => tile.key)).not.toContain("profitable_trade_ups");
+  });
+
   it("does not present a deduped board total as the tracked trade-up count", () => {
     const missed = landingStatsFromSources({
       board: { total: 1_000, total_profitable: 400, trade_ups: [makeTradeUp()], deduped: true },
@@ -202,7 +238,10 @@ describe("landing stats from the board + global-stats", () => {
     });
     expect(missed.total_trade_ups).toBeUndefined();
     expect(missed.profitable_trade_ups).toBeUndefined();
-    expect(renderLandingStatsHtml(missed)).not.toContain("1,000");
+    const html = renderLandingStatsHtml(missed);
+    expect(html).not.toContain("1,000");
+    expect(html).not.toContain("trade-ups");
+    expect(visibleLandingStatTiles(missed)).toEqual([]);
 
     const live = landingStatsFromSources({
       global: LIVE_GLOBAL,

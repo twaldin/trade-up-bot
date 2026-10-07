@@ -202,7 +202,7 @@ describe("build bakes active hero counts from global-stats", () => {
     expect(materializeHomepageFirstHtml(html, fallback)).toContain("1,842");
   });
 
-  it("does not bake a deduped board count into the hero when global-stats is missing", async () => {
+  it("does not bake a deduped board profitable count of 1 into the hero", async () => {
     const html = `<section class="preview-hero"><div class="preview-toolbar"><a href="/trade-ups">Go</a></div></section>`;
     const fetchImpl: typeof fetch = async (input) => {
       const body = String(input).includes("global-stats")
@@ -220,6 +220,8 @@ describe("build bakes active hero counts from global-stats", () => {
     const baked = materializeHomepageFirstHtml(html, stats);
     expect(baked).not.toContain("213");
     expect(baked).not.toContain("positive EV");
+    expect(baked).not.toContain(">1<");
+    expect(baked).not.toContain("1 profitable");
   });
 });
 

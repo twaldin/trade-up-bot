@@ -19,6 +19,7 @@ import {
   type BoardLoadKind,
   type BoardSnapshot,
 } from "../lib/trade-ups-board.js";
+import { formatProfitableCount, listProfitableSuffix } from "../preview/lib/profitable-count.js";
 type TradeUpType = "all" | "covert_knife" | "classified_covert" | "restricted_classified" | "milspec_restricted" | "industrial_milspec" | "consumer_industrial";
 
 interface TypeOption {
@@ -58,6 +59,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const [tradeUps, setTradeUps] = useState<TradeUp[]>([]);
   const [total, setTotal] = useState(0);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [totalProfitableCapped, setTotalProfitableCapped] = useState(false);
+  const [deduped, setDeduped] = useState(false);
   const [loadKind, setLoadKind] = useState<BoardLoadKind>("ok");
   const [loading, setLoading] = useState(true); // Start loading to prevent empty state flash
   const snapshotRef = useRef<BoardSnapshot>({
@@ -141,6 +144,8 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
     setTradeUps(next.tradeUps);
     setTotal(next.total);
     setTotalProfitable(next.totalProfitable);
+    setTotalProfitableCapped(next.totalProfitableCapped === true);
+    setDeduped(next.deduped === true);
     setLoadKind(next.loadKind);
   }, []);
 
@@ -238,6 +243,14 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
   const noticeCopy = !loading && loadKind !== "ok" && tradeUps.length > 0
     ? (loadKind === "rate_limited" ? RATE_LIMIT_COPY : LOAD_ERROR_COPY)
     : null;
+  const profitableSuffix = listProfitableSuffix({
+    count: totalProfitable,
+    capped: totalProfitableCapped,
+    deduped,
+  });
+  const profitableLabel = profitableSuffix == null
+    ? null
+    : `${formatProfitableCount(totalProfitable, totalProfitableCapped)} profitable`;
 
   return (
     <>
@@ -331,7 +344,7 @@ export function TradeUpsPage({ types, defaultType, status, refreshKey, onNavigat
       <div className="flex items-center gap-2 flex-wrap mb-1.5 min-h-[20px]">
         {total > 0 && (
           <span className={`text-xs text-muted-foreground whitespace-nowrap ${loading ? "opacity-50" : ""}`}>
-            {total >= 10001 ? "10,000+" : total.toLocaleString()} found{totalProfitable > 0 && <> (<span className="text-green-500">{totalProfitable.toLocaleString()} profitable</span>)</>}
+            {total >= 10001 ? "10,000+" : total.toLocaleString()} found{profitableLabel != null && <> (<span className="text-green-500">{profitableLabel}</span>)</>}
           </span>
         )}
         {loading && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
