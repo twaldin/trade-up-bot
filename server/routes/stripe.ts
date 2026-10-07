@@ -3,9 +3,15 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import Stripe from "stripe";
-import pg from "pg";
 import { requireAuth, invalidateAllUserCache, invalidateUserCache, type User } from "../auth.js";
 import { syncDiscordRoles } from "../discord-rest.js";
+import {
+  applyStripeWebhookEvent,
+  claimStripeWebhookEvent,
+  ensureStripeWebhookEvents,
+  type StripeClient,
+  type StripePool,
+} from "../stripe-entitlement.js";
 import {
   checkoutSessionTrackingFields,
   checkoutTrackingMetadata,
@@ -36,7 +42,14 @@ function withCheckoutLock<T>(steamId: string, fn: () => Promise<T>): Promise<T> 
   return run;
 }
 
-export function stripeRouter(pool: pg.Pool): Router {
+export function stripeRouter(
+  pool: StripePool,
+  // Tests pass Checkout line-item fixtures here. Production calls Stripe.
+  deps?: {
+    listLineItems?: (sessionId: string) => Promise<{ data: Array<{ price?: { id?: string } | null }> }>;
+    listSubscriptions?: (customerId: string) => Promise<Array<{ status: string; priceId?: string }>>;
+  },
+): Router {
   const router = Router();
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) {
@@ -46,6 +59,19 @@ export function stripeRouter(pool: pg.Pool): Router {
 
   const stripe = new Stripe(stripeKey);
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+  const listCheckoutLineItems = deps?.listLineItems ?? (async (sessionId: string) => {
+    const items = await stripe.checkout.sessions.listLineItems(sessionId);
+    return {
+      data: items.data.map((item) => ({ price: item.price ? { id: item.price.id } : null })),
+    };
+  });
+  const listCustomerSubscriptions = deps?.listSubscriptions ?? (async (customerId: string) => {
+    const listed = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 });
+    return listed.data.map((sub) => ({
+      status: sub.status,
+      priceId: sub.items.data[0]?.price?.id,
+    }));
+  });
 
   // Create checkout session for upgrading
   router.post("/api/subscribe", requireAuth, async (req: Request, res: Response) => {
@@ -60,7 +86,7 @@ export function stripeRouter(pool: pg.Pool): Router {
       await withCheckoutLock(user.steam_id, async () => {
         // Read tier fresh. The cached Passport user can lag a webhook, and a second checkout
         // would double-charge someone who already has Pro or lifetime.
-        const { rows } = await pool.query(
+        const { rows } = await pool.query<{ tier: string; lifetime: boolean; stripe_customer_id: string | null }>(
           "SELECT tier, lifetime, stripe_customer_id FROM users WHERE steam_id = $1",
           [user.steam_id],
         );
@@ -145,7 +171,10 @@ export function stripeRouter(pool: pg.Pool): Router {
       // first-time buyer whose customer id was created during this same checkout flow.
       // Kept inside try so a DB rejection returns a controlled response (Express 4 won't
       // catch an async rejection otherwise).
-      const { rows } = await pool.query("SELECT stripe_customer_id FROM users WHERE steam_id = $1", [user.steam_id]);
+      const { rows } = await pool.query<{ stripe_customer_id: string | null }>(
+        "SELECT stripe_customer_id FROM users WHERE steam_id = $1",
+        [user.steam_id],
+      );
       const customerId: string | null = rows[0]?.stripe_customer_id ?? null;
       if (!customerId) {
         res.status(404).json({ error: "No checkout session" });
@@ -217,120 +246,77 @@ export function stripeRouter(pool: pg.Pool): Router {
       return;
     }
 
-    switch (event.type) {
-      case "customer.subscription.created":
-      case "customer.subscription.updated": {
-        const sub = event.data.object as Stripe.Subscription;
-        const customerId = sub.customer as string;
-        const status = sub.status;
-        const priceId = sub.items.data[0]?.price?.id;
-
-        // Map price ID -> tier (basic and yearly grandfathered/mapped to pro)
-        let tier = "free";
-        if (status === "active" || status === "trialing") {
-          const basicPriceId = process.env.STRIPE_BASIC_PRICE_ID;
-          const yearlyPriceId = process.env.STRIPE_PRO_YEARLY_PRICE_ID;
-          if (priceId === getPlan("pro")!.priceId) tier = "pro";
-          else if (yearlyPriceId && priceId === yearlyPriceId) tier = "pro";
-          else if (basicPriceId && priceId === basicPriceId) tier = "pro";
-        }
-
-        await pool.query("UPDATE users SET tier = $1 WHERE stripe_customer_id = $2", [tier, customerId]);
-        // Invalidate user cache so tier change is immediate (no 60s stale window)
-        invalidateAllUserCache();
-        console.log(`Stripe: customer ${customerId} -> ${tier}`);
-
-        // Sync Discord role if user has linked their account
-        pool.query("SELECT discord_id FROM users WHERE stripe_customer_id = $1", [customerId])
-          .then(({ rows }) => {
-            if (rows[0]?.discord_id) {
-              syncDiscordRoles(rows[0].discord_id, tier).catch(err =>
-                console.error(`Discord role sync failed: ${err.message}`));
-            }
-          })
-          .catch(() => {}); // non-blocking
-        break;
+    let client: StripeClient | undefined;
+    let begun = false;
+    try {
+      await ensureStripeWebhookEvents(pool);
+      client = await pool.connect();
+      await client.query("BEGIN");
+      begun = true;
+      const claimed = await claimStripeWebhookEvent(client, event.id, event.type);
+      if (!claimed) {
+        await client.query("COMMIT");
+        begun = false;
+        res.json({ received: true });
+        return;
       }
 
-      case "checkout.session.completed": {
-        const cs = event.data.object as Stripe.Checkout.Session;
-        const lifetimePriceId = process.env.STRIPE_PRO_LIFETIME_PRICE_ID;
-        if (!lifetimePriceId || !cs.customer) break;
+      const effect = await applyStripeWebhookEvent(client, listCheckoutLineItems, event, listCustomerSubscriptions);
+      await client.query("COMMIT");
+      begun = false;
 
-        const lineItems = await stripe.checkout.sessions.listLineItems(cs.id);
-        const hasLifetime = lineItems.data.some(item => item.price?.id === lifetimePriceId);
-        if (!hasLifetime) break;
-
-        const ltCustomerId = cs.customer as string;
-        await pool.query("UPDATE users SET tier = 'pro', lifetime = true WHERE stripe_customer_id = $1", [ltCustomerId]);
-        invalidateAllUserCache();
-        console.log(`Stripe: customer ${ltCustomerId} -> pro (lifetime)`);
-
-        pool.query("SELECT discord_id FROM users WHERE stripe_customer_id = $1", [ltCustomerId])
-          .then(({ rows }) => {
-            if (rows[0]?.discord_id) {
-              syncDiscordRoles(rows[0].discord_id, "pro").catch(err =>
-                console.error(`Discord role sync failed: ${err.message}`));
-            }
-          })
-          .catch(() => {});
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const sub = event.data.object as Stripe.Subscription;
-        const customerId = sub.customer as string;
-
-        // Never downgrade lifetime users
-        const { rows: userRows } = await pool.query(
-          "SELECT lifetime, discord_id FROM users WHERE stripe_customer_id = $1", [customerId]
-        );
-        if (userRows[0]?.lifetime) {
-          console.log(`Stripe: customer ${customerId} cancelled subscription but has lifetime — skipping downgrade`);
-          break;
-        }
-
-        await pool.query("UPDATE users SET tier = 'free' WHERE stripe_customer_id = $1", [customerId]);
-        invalidateAllUserCache();
-        console.log(`Stripe: customer ${customerId} -> free (cancelled)`);
-
-        // Sync Discord role
-        if (userRows[0]?.discord_id) {
-          syncDiscordRoles(userRows[0].discord_id, "free").catch(err =>
-            console.error(`Discord role sync failed: ${err.message}`));
-        }
-        break;
-      }
-    }
-
-    if (event.type === "checkout.session.completed") {
-      try {
-        const cs = event.data.object as Stripe.Checkout.Session;
-        void trackCheckoutCompleted({
-          session: cs,
-          eventCreatedSec: event.created,
-          listLineItemPriceIds: async () => {
-            const items = await stripe.checkout.sessions.listLineItems(cs.id);
-            return items.data.flatMap((item) => (item.price?.id ? [item.price.id] : []));
-          },
-          lookupSteamId: async (customerId) => {
-            try {
-              const { rows } = await pool.query<{ steam_id: string }>(
-                "SELECT steam_id FROM users WHERE stripe_customer_id = $1",
-                [customerId],
-              );
-              return singleSteamId(rows);
-            } catch {
-              return null;
-            }
-          },
+      if (effect.invalidate) invalidateAllUserCache();
+      if (effect.discord) {
+        syncDiscordRoles(effect.discord.discordId, effect.discord.tier).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Discord role sync failed: ${message}`);
         });
-      } catch {
-        // Conversion tracking is best-effort; it must never fail the webhook.
       }
-    }
 
-    res.json({ received: true });
+      if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+        try {
+          const raw = event.data.object as Stripe.Checkout.Session;
+          const cs = event.type === "checkout.session.async_payment_succeeded" && raw.payment_status !== "paid"
+            ? { ...raw, payment_status: "paid" as const }
+            : raw;
+          void trackCheckoutCompleted({
+            session: cs,
+            eventCreatedSec: event.created,
+            listLineItemPriceIds: async () => {
+              const items = await listCheckoutLineItems(cs.id);
+              return items.data.flatMap((item) => (item.price?.id ? [item.price.id] : []));
+            },
+            lookupSteamId: async (customerId) => {
+              try {
+                const { rows } = await pool.query<{ steam_id: string }>(
+                  "SELECT steam_id FROM users WHERE stripe_customer_id = $1",
+                  [customerId],
+                );
+                return singleSteamId(rows);
+              } catch {
+                return null;
+              }
+            },
+          });
+        } catch {
+          // Conversion tracking is best-effort; it must never fail the webhook.
+        }
+      }
+
+      res.json({ received: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Stripe webhook handler failed:", message);
+      if (begun && client) {
+        await client.query("ROLLBACK").catch((rollbackErr: unknown) => {
+          const rollbackMessage = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+          console.error("Stripe webhook rollback failed:", rollbackMessage);
+        });
+      }
+      if (!res.headersSent) res.status(500).json({ error: "Webhook handler failed" });
+    } finally {
+      client?.release();
+    }
   });
 
   return router;
