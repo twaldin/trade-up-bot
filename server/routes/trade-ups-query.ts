@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 /**
  * Query-string contract for GET /api/trade-ups.
  *
@@ -83,6 +84,41 @@ export function chanceThreshold(
  * `tier` is the effective delay tier: internal-token calls are "pro" (no delay),
  * same as a signed-in pro user. Anonymous stays "free".
  */
+/**
+ * Bump when the /api/trade-ups response shape changes in a way the build id
+ * would not catch (e.g. a deploy that skips git).
+ */
+export const TRADE_UPS_RESPONSE_VERSION = 3;
+
+function resolveBuildId(): string {
+  const fromEnv = process.env.BUILD_SHA?.trim();
+  if (fromEnv) return fromEnv.slice(0, 12);
+  try {
+    // Prod runs from a git checkout; a deploy moves HEAD and reloads the api.
+    return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+    }).toString().trim() || "dev";
+  } catch {
+    return "dev";
+  }
+}
+
+/**
+ * Resolved once per process. Cached bodies from an older deploy live under a
+ * different key, so a response-shape change is never served stale after deploy.
+ */
+export const TRADE_UPS_CACHE_BUILD = resolveBuildId();
+if (TRADE_UPS_CACHE_BUILD === "dev" && process.env.NODE_ENV !== "test") {
+  // Runs once at module load. Every deploy would share one key, so a response-shape
+  // change could be served stale until TRADE_UPS_RESPONSE_VERSION is bumped.
+  console.warn(
+    "[trade-ups] cache key build id fell back to 'dev' (no BUILD_SHA, no git HEAD); " +
+    "cached /api/trade-ups bodies will not roll over on deploy",
+  );
+}
+
 export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string, tier: string): string {
   const normalized: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(query)) {
@@ -98,7 +134,7 @@ export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string,
     else normalized[name] = threshold;
   }
   const ordered = Object.fromEntries(Object.entries(normalized).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-  return `tu:v2:${JSON.stringify(ordered)}${viewer}${tier}`;
+  return `tu:v${TRADE_UPS_RESPONSE_VERSION}:${TRADE_UPS_CACHE_BUILD}:${JSON.stringify(ordered)}${viewer}${tier}`;
 }
 
 /** Delay tier the list handler will actually apply, including the internal bot token. */
