@@ -67,30 +67,36 @@ async function delayBox(page: Page, width: number, html: string, sentence: strin
   await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
   await page.setContent(html, { waitUntil: "domcontentloaded" });
   const face = "500 12px \"Schibsted Grotesk\"";
-  const faceLoaded = await page.evaluate(async (spec) => {
-    await document.fonts.load(spec);
-    await document.fonts.load("600 11px \"Schibsted Grotesk\"", "See Pro");
-    await document.fonts.load("500 10px \"DM Mono\"", "Free tier");
-    await document.fonts.ready;
-    return document.fonts.check(spec);
-  }, face);
-  if (!faceLoaded) throw new Error("Schibsted Grotesk did not load");
   if (sentence) {
     await page.$eval(".preview-delay p", (node, text) => {
       node.textContent = text;
     }, sentence);
-    // The long sentence can need a latin subset that the space-only load
-    // never fetched. Measuring before that subset settles wraps an extra line.
-    const sentenceLoaded = await page.evaluate(async (spec, text) => {
-      await document.fonts.load(spec, text);
-      await document.fonts.ready;
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-      return document.fonts.check(spec);
-    }, face, sentence);
-    if (!sentenceLoaded) throw new Error("Schibsted Grotesk did not load");
   }
+  // fonts.ready can resolve while a latin subset is still "loading", and the
+  // hidden-count sentence then wraps an extra line. Wait until that text checks.
+  const faceLoaded = await page.evaluate(async (spec, text) => {
+    const sample = text ?? " ";
+    const deadline = performance.now() + 8000;
+    while (performance.now() < deadline) {
+      await document.fonts.load(spec, sample);
+      await document.fonts.load("600 11px \"Schibsted Grotesk\"", "See Pro");
+      await document.fonts.load("500 10px \"DM Mono\"", "Free tier");
+      const pending = [...document.fonts]
+        .filter((entry) => entry.status === "loading")
+        .map((entry) => entry.loaded.catch(() => undefined));
+      if (pending.length > 0) await Promise.all(pending);
+      await document.fonts.ready;
+      if (document.fonts.check(spec, sample)) {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return false;
+  }, face, sentence);
+  if (!faceLoaded) throw new Error("Schibsted Grotesk did not load");
   return page.$eval(".preview-delay", (node) => {
     const rect = node.getBoundingClientRect();
     return { height: rect.height, width: rect.width };
