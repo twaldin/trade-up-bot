@@ -178,10 +178,12 @@ describe("board claim tap at 390 and 1280", () => {
     expect(result.opened).toEqual([]);
     expect((await browser.pages()).length).toBe(pagesBefore);
     await shoot(page, `claim-modal-${width}`);
+    await page.goBack();
+    await page.waitForFunction(() => document.querySelector("dialog[open]") === null, { timeout: 5000 });
     await page.close();
   }, 30000);
 
-  it.each([390, 1280])("labels the collapsed control Open at %ipx", async (width) => {
+  it.each([390, 1280])("labels the collapsed control Details at %ipx", async (width) => {
     const page = await open(width, "collapsed");
     await page.waitForSelector(".preview-cardline__verify", { timeout: 15000 });
     const label = await page.evaluate(() => {
@@ -193,9 +195,10 @@ describe("board claim tap at 390 and 1280", () => {
         height: rect?.height ?? 0,
       };
     });
-    expect(label.text.startsWith("Open")).toBe(true);
+    expect(label.text.startsWith("Details")).toBe(true);
     expect(label.text).not.toContain("Verify");
-    expect(label.aria).toBe("Open trade-up details");
+    expect(label.text).not.toContain("Open");
+    expect(label.aria).toBe("Trade-up details");
     expect(label.height).toBeGreaterThanOrEqual(24);
     await shoot(page, `claim-collapsed-${width}`);
     await page.close();
@@ -206,6 +209,12 @@ describe("board claim tap at 390 and 1280", () => {
     await page.waitForSelector("button", { timeout: 15000 });
     await page.evaluate(() => {
       [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("Verify / Claim trade-up"))?.click();
+    });
+    await page.waitForFunction(() => document.body.innerText.includes("Claim for 30 min?"), { timeout: 5000 });
+    const postedEarly = await page.evaluate(() => window.__claims);
+    expect(postedEarly).toBe(0);
+    await page.evaluate(() => {
+      [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Confirm")?.click();
     });
     await page.waitForFunction(() => document.body.innerText.includes("Claimed"), { timeout: 5000 });
     await page.evaluate(() => {

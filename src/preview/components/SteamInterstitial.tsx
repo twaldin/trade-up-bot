@@ -73,9 +73,10 @@ export function useSteamInterstitial() {
   }, [tracker]);
 
   const open = useCallback((next: InterstitialContext, trigger: HTMLElement | null) => {
-    if (!tracker.open(next)) return;
+    if (!tracker.open(next)) return false;
     triggerRef.current = trigger;
     setContext(next);
+    return true;
   }, [tracker]);
 
   const dialog: SteamInterstitialProps = {

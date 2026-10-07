@@ -57,8 +57,8 @@ try {
       label: link?.getAttribute("aria-label") ?? "",
     };
   });
-  if (!collapsedClaim.text.startsWith("Open")) failures.push(`collapsed control still overpromises: ${collapsedClaim.text}`);
-  if (collapsedClaim.label !== "Open trade-up details") failures.push(`collapsed label: ${collapsedClaim.label}`);
+  if (!collapsedClaim.text.startsWith("Details")) failures.push(`collapsed control still overpromises: ${collapsedClaim.text}`);
+  if (collapsedClaim.label !== "Trade-up details") failures.push(`collapsed label: ${collapsedClaim.label}`);
 
   await page.evaluate(() => { document.querySelector(".preview-card")?.click(); });
   await sleep(3000);

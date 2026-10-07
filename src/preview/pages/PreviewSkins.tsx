@@ -625,6 +625,8 @@ export function PreviewSkinPage() {
             tradeUps={board.tradeUps}
             loading={board.loading}
             isFree={board.isFree}
+            signedIn={board.signedIn}
+            tier={board.tier}
             expandedId={board.expandedId}
             onExpand={board.onExpand}
             query={board.query}
@@ -1055,6 +1057,8 @@ export function PreviewCollectionPage() {
           tradeUps={board.tradeUps}
           loading={board.loading}
           isFree={board.isFree}
+          signedIn={board.signedIn}
+          tier={board.tier}
           expandedId={board.expandedId}
           onExpand={board.onExpand}
           query={board.query}

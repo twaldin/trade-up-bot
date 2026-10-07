@@ -7,7 +7,7 @@
  */
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { PreviewBoard } from "../../src/preview/pages/PreviewBoard.js";
 import { claimReturnTo } from "../../src/preview/lib/board.js";
@@ -66,7 +66,21 @@ describe("board claim opens in place", () => {
 
   const onExpand = vi.fn();
 
-  async function renderBoard(opts: { id: number; expanded: boolean; isFree: boolean; claimStatus?: number; claimBody?: unknown }) {
+  function PathMark() {
+    const location = useLocation();
+    return createElement("span", { id: "path-mark" }, location.pathname);
+  }
+
+  async function renderBoard(opts: {
+    id: number;
+    expanded: boolean;
+    isFree: boolean;
+    signedIn?: boolean;
+    tier?: string;
+    claimed?: boolean;
+    claimStatus?: number;
+    claimBody?: unknown;
+  }) {
     onExpand.mockClear();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -76,17 +90,32 @@ describe("board claim opens in place", () => {
       return jsonResponse(404, {});
     });
     vi.stubGlobal("fetch", fetchMock);
-    const tu = makeTradeUp({ id: opts.id });
+    const tu = makeTradeUp({ id: opts.id, ...(opts.claimed ? { claimed_by_me: true } : {}) });
+    const signedIn = "signedIn" in opts ? opts.signedIn : !opts.isFree;
     await act(async () => {
-      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
-        tradeUps: [tu],
-        loading: false,
-        isFree: opts.isFree,
-        expandedId: opts.expanded ? opts.id : null,
-        onExpand,
-      }) as ReactNode));
+      root.render(createElement(MemoryRouter, null, createElement("div", null,
+        createElement(PathMark),
+        createElement(PreviewBoard, {
+          tradeUps: [tu],
+          loading: false,
+          isFree: opts.isFree,
+          signedIn,
+          tier: opts.tier ?? (opts.isFree ? "free" : "pro"),
+          expandedId: opts.expanded ? opts.id : null,
+          onExpand,
+        }),
+      ) as ReactNode));
     });
     return fetchMock;
+  }
+
+  function confirmButton(): HTMLButtonElement | null {
+    return [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Confirm") ?? null;
+  }
+
+  async function confirmClaim() {
+    await act(async () => { confirmButton()?.click(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   }
 
   function claimButton(): HTMLButtonElement | null {
@@ -131,24 +160,33 @@ describe("board claim opens in place", () => {
     expect(claimEvents()).toEqual([]);
   });
 
-  it("labels the collapsed control for what it does, which is open the trade-up", async () => {
+  it("labels the collapsed control Details and records the board_card click", async () => {
     await renderBoard({ id: 392, expanded: false, isFree: true });
     const link = host.querySelector(".preview-cardline__verify");
-    expect(link?.textContent).toContain("Open");
+    expect(link?.textContent).toContain("Details");
     expect(link?.textContent).not.toContain("Verify");
-    expect(link?.getAttribute("aria-label")).toBe("Open trade-up details");
+    expect(link?.textContent).not.toContain("Open");
+    expect(link?.getAttribute("aria-label")).toBe("Trade-up details");
     expect(link?.getAttribute("href")).toBe("https://tradeupbot.app/trade-ups/392");
-    expect(host.querySelector(".preview-cardline__open")?.textContent).toContain("Details");
+    await act(async () => { (link as HTMLAnchorElement).click(); });
+    expect(gtag.mock.calls.some((call) => call[1] === "verify_click" && (call[2] as { surface?: string }).surface === "board_card")).toBe(true);
     expect(claimButton()).toBeNull();
   });
 
-  it("claims in place for a Pro viewer and fires claim_trade_up once", async () => {
+  it("asks a Pro viewer to confirm before claiming, then fires claim_trade_up once", async () => {
     const fetchMock = await renderBoard({ id: 1280, expanded: true, isFree: false });
     const button = claimButton();
     await act(async () => { button?.click(); });
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
     expect(document.querySelector("dialog")?.open).not.toBe(true);
+    expect(host.textContent).toContain("Claim for 30 min?");
+    expect(confirmButton()?.textContent).toBe("Confirm");
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent?.trim() === "Cancel")).toBe(true);
+    expect(claimCalls(fetchMock)).toBe(0);
+    expect(claimEvents()).toEqual([]);
+
+    await confirmClaim();
+
     expect(claimCalls(fetchMock)).toBe(1);
     expect(host.textContent).toContain("Claimed");
     expect(claimEvents()).toEqual([[
@@ -169,6 +207,59 @@ describe("board claim opens in place", () => {
     expect(opened).toEqual([]);
   });
 
+  it("leaves the claim unsent when the Pro viewer cancels", async () => {
+    const fetchMock = await renderBoard({ id: 1282, expanded: true, isFree: false });
+    await act(async () => { claimButton()?.click(); });
+    const cancel = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Cancel");
+    await act(async () => { cancel?.click(); });
+    expect(host.textContent).not.toContain("Claim for 30 min?");
+    expect(claimCalls(fetchMock)).toBe(0);
+    expect(claimEvents()).toEqual([]);
+  });
+
+  it("sends a signed-in Free viewer to pricing instead of the Steam modal", async () => {
+    const fetchMock = await renderBoard({ id: 393, expanded: true, isFree: true, signedIn: true, tier: "free" });
+    await act(async () => { claimButton()?.click(); });
+    expect(document.querySelector("dialog")?.open).not.toBe(true);
+    expect(host.textContent).not.toContain("Claim for 30 min?");
+    expect(claimCalls(fetchMock)).toBe(0);
+    expect(claimEvents()).toEqual([]);
+    expect(gtag.mock.calls.filter((call) => call[1] === "upgrade_cta_click")).toEqual([[
+      "event",
+      "upgrade_cta_click",
+      expect.objectContaining({ cta: "board_claim", send_to: GA4 }),
+    ]]);
+    expect(host.querySelector("#path-mark")?.textContent).toBe("/pricing");
+    expect(opened).toEqual([]);
+  });
+
+  it("does nothing with the claim control until signed_in is known", async () => {
+    const fetchMock = await renderBoard({ id: 394, expanded: true, isFree: true, signedIn: undefined });
+    await act(async () => { claimButton()?.click(); });
+    expect(document.querySelector("dialog")?.open).not.toBe(true);
+    expect(claimCalls(fetchMock)).toBe(0);
+    expect(host.querySelector("#path-mark")?.textContent).toBe("/");
+  });
+
+  it("shows Claimed for a trade-up the viewer already claimed", async () => {
+    const fetchMock = await renderBoard({ id: 395, expanded: true, isFree: false, claimed: true });
+    expect(host.textContent).toContain("Claimed");
+    expect(claimButton()?.disabled).toBe(true);
+    await act(async () => { claimButton()?.click(); });
+    expect(host.textContent).not.toContain("Claim for 30 min?");
+    expect(claimCalls(fetchMock)).toBe(0);
+  });
+
+  it("pushes a history entry when the sign-in modal opens so back closes it", async () => {
+    await renderBoard({ id: 396, expanded: true, isFree: true, signedIn: false });
+    const before = window.history.length;
+    await act(async () => { claimButton()?.click(); });
+    expect(document.querySelector("dialog")?.open).toBe(true);
+    expect(window.history.length).toBe(before + 1);
+    await act(async () => { window.history.back(); });
+    expect(document.querySelector("dialog")?.open).toBe(false);
+  });
+
   it("does not fire claim_trade_up when the claim request fails", async () => {
     const fetchMock = await renderBoard({
       id: 1281,
@@ -178,10 +269,12 @@ describe("board claim opens in place", () => {
       claimBody: { error: "Pro required" },
     });
     await act(async () => { claimButton()?.click(); });
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(claimCalls(fetchMock)).toBe(0);
+    await confirmClaim();
     expect(claimCalls(fetchMock)).toBe(1);
     expect(claimEvents()).toEqual([]);
-    expect(host.textContent).toContain("Pro required");
+    expect(host.textContent).toContain("Verify and Claim need Pro.");
+    expect(host.textContent).not.toContain("Pro required");
     expect(document.querySelector("dialog")?.open).not.toBe(true);
   });
 });

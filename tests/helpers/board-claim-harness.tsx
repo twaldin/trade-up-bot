@@ -45,6 +45,8 @@ createRoot(root).render(
         tradeUps={[makeTradeUp({ id: 42 })]}
         loading={false}
         isFree={mode !== "pro"}
+        signedIn={mode === "pro"}
+        tier={mode === "pro" ? "pro" : "free"}
         expandedId={mode === "collapsed" ? null : 42}
         onExpand={() => {}}
       />

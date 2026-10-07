@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { authUserFrom, shareActionPanel } from "../../src/preview/lib/auth-state.js";
+import { authUserFrom, listClaimPanel, shareActionPanel } from "../../src/preview/lib/auth-state.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const share = readFileSync(resolve(dir, "../../src/preview/pages/PreviewShare.tsx"), "utf8");
@@ -36,6 +36,15 @@ describe("share page auth tri-state", () => {
     expect(share).toContain("Verify and Claim are Pro features: {proPriceLine(\"monthly\")}.");
     expect(share).toContain('to="/pricing">See Pro plans');
     expect(share).not.toContain("loggedIn: true");
+  });
+
+  it("sends a signed-in Free board viewer to upgrade and a logged-out viewer to sign-in", () => {
+    expect(listClaimPanel(undefined, "free")).toBe("pending");
+    expect(listClaimPanel(false, "free")).toBe("sign-in");
+    expect(listClaimPanel(true, "free")).toBe("upgrade");
+    expect(listClaimPanel(true, "pro")).toBe("pro");
+    expect(listClaimPanel(true, "admin")).toBe("pro");
+    expect(listClaimPanel(true, undefined)).toBe("upgrade");
   });
 
   it("starts the share page user as undefined, not null", () => {

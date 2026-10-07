@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
-import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackVerifyClick } from "../../lib/conversions.js";
+import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -92,6 +92,8 @@ import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
 import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
+import { listClaimPanel } from "../lib/auth-state.js";
+import type { DismissMethod } from "../lib/steam-interstitial.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
 import { MY_TRADE_UPS_API } from "../lib/my-trade-ups.js";
 import { createFaceCache, faceFor, loadFaces, rememberFaces } from "../lib/skin-images.js";
@@ -130,16 +132,27 @@ interface ClaimStatus {
   failed: boolean;
 }
 
-async function readClaimError(res: Response): Promise<string> {
-  try {
-    const data: unknown = await res.json();
-    if (data && typeof data === "object" && "error" in data && typeof data.error === "string" && data.error.length > 0) {
-      return data.error;
-    }
-  } catch {
-    // The claim route returns JSON. A non-JSON body still means the claim did not happen.
+function historyBase(state: unknown): Record<string, unknown> {
+  if (!state || typeof state !== "object") return {};
+  const base: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(state)) base[key] = value;
+  return base;
+}
+
+function claimFailureCopy(status: number): string {
+  switch (status) {
+    case 401:
+    case 403:
+      return "Verify and Claim need Pro.";
+    case 404:
+      return "This trade-up is no longer available.";
+    case 409:
+      return "This trade-up is already claimed.";
+    case 429:
+      return "Claim limit reached. Try again in a little while.";
+    default:
+      return "Could not claim this trade-up.";
   }
-  return "Could not claim this trade-up";
 }
 
 function SkinFace({ name }: { name: string }) {
@@ -585,6 +598,9 @@ export function TradeUpCard({
   expandable = true,
   onVerifyClaim,
   claimStatus = null,
+  confirming = false,
+  onConfirmClaim,
+  onCancelClaim,
 }: {
   tu: HydratedTradeUp;
   expanded: boolean;
@@ -594,6 +610,9 @@ export function TradeUpCard({
   /** Board claim. Absent on pages that still link out to the trade-up. */
   onVerifyClaim?: (id: number, trigger: HTMLButtonElement) => void;
   claimStatus?: ClaimStatus | null;
+  confirming?: boolean;
+  onConfirmClaim?: (id: number) => void;
+  onCancelClaim?: () => void;
 }) {
   const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
@@ -615,6 +634,12 @@ export function TradeUpCard({
   const reportOpen = () => {
     trackTradeUpDetailOpen({ collectionSlug: collectionSlugFromPath(window.location.pathname) });
   };
+  const shownClaim = claimStatus?.id === tu.id
+    ? claimStatus
+    : tu.claimed_by_me
+      ? { id: tu.id, text: "Claimed", failed: false }
+      : null;
+  const claimBusy = shownClaim?.text === "Claiming…" || shownClaim?.text === "Claimed";
   const toggle = () => {
     if (!expandable) return;
     if (!expanded) reportOpen();
@@ -711,11 +736,14 @@ export function TradeUpCard({
               href={verifyClaimHref(tu.id)}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open this trade-up"
-              aria-label="Open trade-up details"
-              onClick={stop}
+              title="Trade-up details"
+              aria-label="Trade-up details"
+              onClick={(event) => {
+                trackVerifyClick("board_card");
+                stop(event);
+              }}
             >
-              Open
+              Details
               <ExternalLink size={10} aria-hidden />
             </a>
           </span>
@@ -784,7 +812,7 @@ export function TradeUpCard({
                   <button
                     type="button"
                     className="preview-btn preview-btn--lime preview-btn--block"
-                    disabled={claimStatus?.id === tu.id && (claimStatus.text === "Claiming…" || claimStatus.text === "Claimed")}
+                    disabled={claimBusy}
                     onClick={(event) => {
                       stop(event);
                       trackVerifyClick("expanded");
@@ -804,8 +832,27 @@ export function TradeUpCard({
                     Verify / Claim trade-up
                   </a>
                 )}
-                {onVerifyClaim && claimStatus?.id === tu.id && (
-                  <p className={`preview-note${claimStatus.failed ? " preview-note--loss" : ""}`} role="status">{claimStatus.text}</p>
+                {onVerifyClaim && confirming && !claimBusy && (
+                  <div className="preview-toolbar" role="group" aria-label="Claim for 30 min?">
+                    <p className="preview-note">Claim for 30 min?</p>
+                    <button
+                      type="button"
+                      className="preview-btn preview-btn--lime"
+                      onClick={(event) => { stop(event); onConfirmClaim?.(tu.id); }}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      className="preview-btn preview-btn--quiet"
+                      onClick={(event) => { stop(event); onCancelClaim?.(); }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {onVerifyClaim && shownClaim && (
+                  <p className={`preview-note${shownClaim.failed ? " preview-note--loss" : ""}`} role="status">{shownClaim.text}</p>
                 )}
                 {!onVerifyClaim && <p className="preview-note">Opens the live trade-up on tradeupbot.app.</p>}
               </Panel>
@@ -826,6 +873,8 @@ export function PreviewBoard({
   tradeUps,
   loading,
   isFree,
+  signedIn,
+  tier,
   onExpand,
   expandedId,
   query,
@@ -857,6 +906,10 @@ export function PreviewBoard({
   tradeUps: HydratedTradeUp[];
   loading: boolean;
   isFree: boolean;
+  /** List payload `signed_in`. Undefined until that payload arrives. */
+  signedIn?: boolean;
+  /** Effective tier from the same payload. */
+  tier?: string;
   expandedId: number | null;
   onExpand: (id: number | null) => void;
   query?: BoardQuery;
@@ -896,10 +949,27 @@ export function PreviewBoard({
   lockedSkin?: string;
   embed?: boolean;
 }) {
+  const navigate = useNavigate();
   const interstitial = useSteamInterstitial();
+  const claimHistory = useRef(false);
+  const dismissClaimModal = useRef<(method: DismissMethod) => void>(() => {});
+  dismissClaimModal.current = interstitial.dialog.onDismiss;
   const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
+  const [confirmId, setConfirmId] = useState<number | null>(null);
   const claimedIds = useRef(new Set<number>());
   const claimingIds = useRef(new Set<number>());
+  for (const tu of tradeUps) {
+    if (tu.claimed_by_me) claimedIds.current.add(tu.id);
+  }
+  useEffect(() => {
+    const onPop = () => {
+      if (!claimHistory.current) return;
+      claimHistory.current = false;
+      dismissClaimModal.current("close");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
@@ -1015,7 +1085,7 @@ export function PreviewBoard({
     try {
       const res = await fetch(MY_TRADE_UPS_API.claim(id), { method: "POST", credentials: "include" });
       if (!res.ok) {
-        setClaimStatus({ id, text: await readClaimError(res), failed: true });
+        setClaimStatus({ id, text: claimFailureCopy(res.status), failed: true });
         return;
       }
       await res.json().catch(() => null);
@@ -1029,12 +1099,50 @@ export function PreviewBoard({
     }
   }
 
-  function onVerifyClaim(id: number, trigger: HTMLButtonElement) {
-    if (!isFree) {
-      void claimFromBoard(id);
-      return;
+  function openClaimModal(id: number, trigger: HTMLButtonElement) {
+    if (!interstitial.open({ surface: "share_verify", returnTo: claimReturnTo(id) }, trigger)) return;
+    if (claimHistory.current || typeof window.history.pushState !== "function") return;
+    try {
+      window.history.pushState({ ...historyBase(window.history.state), boardClaimModal: true }, "");
+      claimHistory.current = true;
+    } catch {
+      // The modal is already open. Back leaves the page if the entry cannot be stored.
     }
-    interstitial.open({ surface: "share_verify", returnTo: claimReturnTo(id) }, trigger);
+  }
+
+  function closeClaimModal(method: DismissMethod) {
+    if (claimHistory.current) {
+      claimHistory.current = false;
+      try { window.history.back(); } catch { /* already at the first entry */ }
+    }
+    dismissClaimModal.current(method);
+  }
+
+  function onVerifyClaim(id: number, trigger: HTMLButtonElement) {
+    const panel = listClaimPanel(signedIn, tier ?? (isFree ? "free" : "pro"));
+    switch (panel) {
+      case "pending":
+        return;
+      case "sign-in":
+        openClaimModal(id, trigger);
+        return;
+      case "upgrade":
+        trackUpgradeCta("board_claim");
+        navigate("/pricing");
+        return;
+      case "pro":
+        setConfirmId(id);
+        return;
+      default: {
+        const unreachable: never = panel;
+        return unreachable;
+      }
+    }
+  }
+
+  function onConfirmClaim(id: number) {
+    setConfirmId(null);
+    void claimFromBoard(id);
   }
 
   const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
@@ -1116,6 +1224,9 @@ export function PreviewBoard({
             onExpand={onExpand}
             onVerifyClaim={onVerifyClaim}
             claimStatus={claimStatus}
+            confirming={confirmId === tu.id}
+            onConfirmClaim={onConfirmClaim}
+            onCancelClaim={() => setConfirmId(null)}
           />
         ))}
       </div>
@@ -1165,7 +1276,7 @@ export function PreviewBoard({
           ))}
         </section>
       )}
-      <SteamInterstitial {...interstitial.dialog} />
+      <SteamInterstitial {...interstitial.dialog} onDismiss={closeClaimModal} />
     </div>
   );
 }
@@ -1187,6 +1298,8 @@ export function usePreviewTradeUps(options: {
   const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFree, setIsFree] = useState(true);
+  const [signedIn, setSignedIn] = useState<boolean | undefined>(undefined);
+  const [tier, setTier] = useState<string | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [query, setQuery] = useState<BoardQuery>(() => readBoardLocation(typeof window === "undefined" ? null : window.location).query);
   const [search, setSearch] = useState(() => readBoardLocation(typeof window === "undefined" ? null : window.location).text);
@@ -1338,13 +1451,19 @@ export function usePreviewTradeUps(options: {
           credentials: "include",
           signal: controller.signal,
         });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number; faces?: Record<string, string | null> }>(res);
+        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; signed_in?: boolean; total?: number; total_profitable?: number; faces?: Record<string, string | null> }>(res);
         if (data.faces) rememberFaces(FACE_CACHE, data.faces);
+        const nextTier = data.tier ?? "free";
+        const nextSignedIn = data.signed_in === true;
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
           setTotalProfitable(typeof data.total_profitable === "number" ? data.total_profitable : 0);
         }
-        return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
+        if (live) {
+          setTier(nextTier);
+          setSignedIn(nextSignedIn);
+        }
+        return { rows: data.trade_ups ?? [], isFree: nextTier === "free", total: data.total };
       },
       alreadyHave: (row) => rowsRef.current.some((have) => have.id === row.id),
       hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
@@ -1461,14 +1580,14 @@ export function usePreviewTradeUps(options: {
 
   return useMemo(
     () => ({
-      tradeUps, loading, refreshing, isFree, expandedId, onExpand,
+      tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand,
       total, totalProfitable,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
-    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
+    [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
       clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

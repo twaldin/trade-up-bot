@@ -33,6 +33,8 @@ function BoardRoute() {
       tradeUps={state.tradeUps}
       loading={state.loading}
       isFree={state.isFree}
+      signedIn={state.signedIn}
+      tier={state.tier}
       expandedId={state.expandedId}
       onExpand={state.onExpand}
       query={state.query}

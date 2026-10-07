@@ -45,7 +45,7 @@ function limited() {
 
 function BoardHarness() {
   const api = usePreviewTradeUps({ perPage: 12 });
-  return createElement(PreviewBoard, {
+  return createElement(MemoryRouter, null, createElement(PreviewBoard, {
     tradeUps: api.tradeUps,
     loading: api.loading,
     isFree: api.isFree,
@@ -58,7 +58,7 @@ function BoardHarness() {
     failed: api.failed,
     onRetry: api.retry,
     onClearFilters: api.clearFilters,
-  });
+  }));
 }
 
 describe("board filter bursts", () => {
