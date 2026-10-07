@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { AUTH_RETURN_STRIP_SOURCE } from "../../shared/auth-return-strip.js";
+import { AUTH_RETURN_STRIP_SOURCE, scrubbedPageLocation } from "../../shared/auth-return-strip.js";
 import { consumeAuthReturn, consumeCheckoutReturn, resolveLoginEventId, type AuthReturnStash } from "../../src/lib/auth-return.js";
 import { injectTrackingHead } from "../../shared/tracking-head.js";
 
@@ -82,6 +82,31 @@ describe("auth return strip script", () => {
     expect(result.stash).toBeUndefined();
     expect(result.replaced).toEqual([]);
     expect(result.pageLocation).toBe("https://tradeupbot.app/pricing?utm_source=google#plans");
+  });
+
+  it("strips auth=failed without stashing a sign-in", () => {
+    const result = runStrip("https://tradeupbot.app/?auth=failed&utm_source=google#top");
+    expect(result.stash).toBeUndefined();
+    expect(result.checkout).toBeUndefined();
+    expect(result.replaced).toEqual(["/?utm_source=google#top"]);
+    expect(result.pageLocation).toBe("https://tradeupbot.app/?utm_source=google#top");
+    expect(String(result.pageLocation)).not.toContain("auth=");
+  });
+
+  it("strips any other auth value and keeps the hash", () => {
+    const result = runStrip("https://tradeupbot.app/pricing?auth=denied#buy");
+    expect(result.stash).toBeUndefined();
+    expect(result.replaced).toEqual(["/pricing#buy"]);
+    expect(result.pageLocation).toBe("https://tradeupbot.app/pricing#buy");
+  });
+
+  it("scrubs auth, lid, eid, session_id, and upgraded from a page_location", () => {
+    expect(scrubbedPageLocation(
+      "https://tradeupbot.app/pricing?utm_source=google&auth=failed&lid=123&eid=old&session_id=cs_x&upgraded=1#plans",
+    )).toBe("https://tradeupbot.app/pricing?utm_source=google#plans");
+    expect(scrubbedPageLocation("https://tradeupbot.app/faq?auth=new&lid=123")).toBe("https://tradeupbot.app/faq");
+    expect(scrubbedPageLocation("https://tradeupbot.app/?upgraded=1&session_id=cs_x")).toBe("https://tradeupbot.app/");
+    expect(scrubbedPageLocation("not a url")).toBe("not a url");
   });
 
   it("runs before gtag config and an injected pixel PageView", () => {

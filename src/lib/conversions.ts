@@ -244,8 +244,11 @@ export function trackAuthReturn(kind: "sign_up" | "login", eventId?: string | nu
 }
 
 /**
- * Client-side route change. The gtag config already records each history page view, and the
- * Pixel base code records the document load, so this only sends Meta PageView — once per path.
+ * Client-side route change. Each configured GA4 container already sends one
+ * history page_view after the navigation (about six seconds, on every route
+ * measured: /faq, /trade-ups, and /). A manual page_view here is a second hit.
+ * The first render is not a route change. The Pixel base code recorded the
+ * document load, so Meta PageView is once per path.
  */
 export function shouldTrackSpaPageView(previousPath: string | null, nextPath: string): boolean {
   return previousPath !== null && previousPath !== nextPath;

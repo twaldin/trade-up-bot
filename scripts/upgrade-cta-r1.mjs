@@ -2,11 +2,9 @@
  * R1: each remaining upgrade control fires one upgrade_cta_click and one
  * page_view, and stays inside the client router.
  *
- * gtag.js is blocked, so enhanced measurement cannot send the history page_view.
- * The script wraps history.pushState / replaceState and records one page_view
- * when the path changes — the same one-per-navigation rule that measurement
- * uses. An app-emitted page_view on the same click makes the count 2 and fails.
- * A full document load drops the alive marker and fails.
+ * gtag.js is blocked, so this script records the one history page_view the
+ * live containers send. An app-emitted page_view on the same click makes the
+ * count 2 and fails. A full document load drops the alive marker and fails.
  *
  *   node scripts/upgrade-cta-r1.mjs
  *   QA_BASE=http://127.0.0.1:5173 node scripts/upgrade-cta-r1.mjs
