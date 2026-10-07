@@ -21,6 +21,7 @@ function boardMarkup(extra: { exhausted?: boolean; endKind?: "more" | "end" }) {
     tradeUps: rows,
     loading: false,
     isFree: false,
+    user: { tier: "pro" },
     expandedId: null,
     onExpand: () => {},
     loadMore: () => {},
