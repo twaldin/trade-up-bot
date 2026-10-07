@@ -612,7 +612,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>At these before-fee prices, outcomes above cost are 65% (Skin X + Skin Z). Outcomes below cost: 35% (Skin Y). The expected P/L is positive, but you lose money more than one-third of the time. If you run this trade-up once and hit Skin Y, you're down $40. The +$36 expected P/L is real, but it only materializes over many repetitions.</p>
 
-<p>Now consider a different trade-up: one possible output, estimated at $84 after fees, for $80 of inputs. Its probability is 100%. EV = $84. Expected P/L = +$4. Boring, but there's no outcome variance: every result is the same skin. It can still lose money if the output's price drops before you sell. For someone doing one trade-up, a small estimate with no outcome spread may suit better than a +$36 expected P/L contract with a 35% probability of losing $40.</p>
+<p>Now consider a different trade-up: one possible output, estimated at $84 after fees, for $80 of inputs. Its probability is 100%. EV = $84. Expected P/L = +$4. Boring, but there's no outcome variance: every result is the same skin. It can still lose money if the output's price drops before you sell. For someone doing one trade-up, expected P/L is one average number, and it does not show how far the individual outcomes spread above or below it, so the single-outcome case may suit better than a +$36 expected P/L contract with a 35% probability of losing $40.</p>
 
 <h2>Outcomes Above Cost: The Practical Metric</h2>
 
@@ -632,7 +632,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>Low-variance profile</strong>: a high share of outcomes above cost (75-100%), modest expected P/L. These trade-ups have most or all outcomes above breakeven. Individual profits are small — $3 to $15 typically — but losses are rare. A Classified-to-Covert trade-up where 8 of 10 outcomes are profitable and the other 2 lose only a few dollars fits here.</p>
 
-<p>This suits smaller budgets and traders who want lower variance. Ten of these at $50 each ($500 total) with 85% of outcomes above cost and +$5 expected P/L have an expected P/L of about +$50, with a narrower spread of results. Expect small numbers, and a trade-up can still lose money.</p>
+<p>This suits smaller budgets and traders who want lower variance. Ten of these at $50 each ($500 total) with 85% of outcomes above cost and +$5 expected P/L per trade-up come to about +$50 across all 10, with a narrower spread of results. Expect small numbers, and a trade-up can still lose money.</p>
 
 <h2>When Negative EV Trade-Ups Make Sense</h2>
 
@@ -642,7 +642,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>But what if the 40% loss outcome produces a skin you actually want to keep and use? Or what if the $15 profit outcome produces a skin with high trade velocity that you can flip immediately, while the loss outcome is a skin that will eventually recover in value? Context matters beyond raw expected P/L.</p>
 
-<p>You set the filter for the share of outcomes above cost. Trade-ups with negative expected P/L stay on the board when they meet the share you chose, because some of them are worth a look. A trade-up with −$3 expected P/L, 70% of outcomes above cost and a worst-case loss of $8 has limited downside and mostly outcomes above cost. Its expected P/L is still slightly negative.</p>
+<p>The board includes trade-ups with negative expected P/L. The Min above cost % filter narrows the list to ones where more outcomes land above cost. A trade-up with −$3 expected P/L, 70% of outcomes above cost and a worst-case loss of $8 has limited downside and mostly outcomes above cost. Its expected P/L is still slightly negative.</p>
 
 <p>The opposite is also true: positive expected P/L doesn't automatically make a trade-up worth doing. A trade-up with +$50 expected P/L, 5% of outcomes above cost, and $500 input cost means you lose money 95% of the time and need to do it 20+ times for the average to converge. Unless you have $10,000+ allocated to this single trade-up type, the variance will eat you alive.</p>
 
@@ -652,7 +652,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>When you have to choose between the two metrics, let your budget decide. Large budget and high volume? Weight expected P/L more; you can absorb the variance. Small budget and a few trade-ups a week? Weight the share of outcomes above cost more. Lower variance matters more than expected P/L when you can't afford several losses in a row.</p>
 
-<p>TradeUpBot lets you sort by either metric. Sort by Expected P/L to find the highest expected P/L. Sort by Above cost % to find the lowest-variance ones. Expand any trade-up to see the full outcome distribution — every possible output, its probability, and whether it's above or below breakeven. That distribution is the trade-up. Everything else is just a summary of it.</p>
+<p>TradeUpBot lets you sort by either metric. Sort by Expected P/L to find the highest expected P/L. Sort by Above cost % to find the trade-ups where the largest share of outcomes lands above cost. Expand any trade-up to see the full outcome distribution — every possible output, its probability, and whether it's above or below breakeven. That distribution is the trade-up. Everything else is just a summary of it.</p>
 `,
   },
   {
