@@ -334,7 +334,16 @@ describe("built client first-load CLS", () => {
         await page.waitForTimeout(API_DELAY_MS * 2);
         expect(await page.locator("[class*='skeleton']").count(), `${item.path} ${item.status} ${viewport.width}`).toBe(0);
         expect(await page.locator("[aria-busy='true']").count(), `${item.path} ${item.status} ${viewport.width}`).toBe(0);
-        if (item.note) expect(await page.getByText(item.text).first().isVisible()).toBe(true);
+        if (item.note) {
+          const label = `${item.path} ${item.status} ${viewport.width}`;
+          expect(await page.getByText(item.text).count(), label).toBe(1);
+          expect(await page.getByText(item.text).first().isVisible(), label).toBe(true);
+          const height = await page.evaluate(() => document.documentElement.scrollHeight);
+          expect(height, `${label} height ${height}`).toBeLessThanOrEqual(viewport.height * 2);
+        }
+        if (item.path === "/collections/phoenix" && item.status === "error") {
+          expect(await page.locator("h1").innerText()).toBe("Couldn't load this collection's skins.");
+        }
         if (item.share) {
           expect(await page.locator(".preview-share-verify").count()).toBe(0);
           expect(await page.getByRole("button", { name: "Copy link" }).count()).toBe(0);

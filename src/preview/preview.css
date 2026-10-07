@@ -2911,12 +2911,8 @@
   white-space: nowrap;
 }
 
-.preview-collection--hold { visibility: hidden; }
-
 .preview-collection--skeleton b,
-.preview-collection--skeleton .preview-collection__meta,
-.preview-collection--hold b,
-.preview-collection--hold .preview-collection__meta {
+.preview-collection--skeleton .preview-collection__meta {
   height: 16px;
   border-radius: var(--r-chip);
   background: var(--row-hover);

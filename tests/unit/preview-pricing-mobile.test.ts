@@ -132,6 +132,7 @@ describe("pricing layout in Chromium", () => {
       `<!doctype html><html><head><style>html,body{margin:0}${sheet}</style></head><body>${html}</body></html>`,
       { waitUntil: "domcontentloaded" },
     );
+    await page.evaluate(() => document.fonts.ready);
     return page;
   }
 

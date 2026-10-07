@@ -877,9 +877,9 @@ const COLLECTION_CARD_RESERVE = 12;
 /** Rows that keep the hub table under the fold at 1280×1080 until the real list arrives. */
 const COLLECTION_ROW_RESERVE = 16;
 
-function CollectionCardSkeleton({ hold = false }: { hold?: boolean }) {
+function CollectionCardSkeleton() {
   return (
-    <div className={`preview-collection ${hold ? "preview-collection--hold" : "preview-collection--skeleton"}`} aria-hidden="true">
+    <div className="preview-collection preview-collection--skeleton" aria-hidden="true">
       <span className="preview-collection__cluster">
         {Array.from({ length: 4 }, (_, index) => <i key={index}><span className="preview-skin__ph" /></i>)}
       </span>
@@ -1008,10 +1008,7 @@ export function PreviewCollectionsPage() {
       <div className="preview-collections" aria-busy={indexPending || undefined}>
         {indexPending && Array.from({ length: COLLECTION_CARD_RESERVE }, (_, index) => <CollectionCardSkeleton key={index} />)}
         {shortIndex && (
-          <>
-            <p className="preview-note">No collection matches that search.</p>
-            {Array.from({ length: COLLECTION_CARD_RESERVE }, (_, index) => <CollectionCardSkeleton key={index} hold />)}
-          </>
+          <p className="preview-note">No collection matches that search.</p>
         )}
         {shown.map((row) => (
           <Link key={row.name} className="preview-collection" to={previewCollectionHref(row.name)}>
@@ -1028,22 +1025,24 @@ export function PreviewCollectionsPage() {
       </div>
       {indexPending && <p className="sr-only">Loading collections…</p>}
 
-      <section className="preview-panel">
-        <header className="preview-panel__head">
-          <p className="o-kicker">All collections</p>
-          <span className="preview-panel__meta">{filtered.length} rows</span>
-        </header>
-        {indexPending ? <CollectionTableSkeleton /> : (
-          <PreviewTable
-            columns={columns}
-            rows={filtered}
-            rowKey={(row) => row.name}
-            initialSort="listings"
-            initialDirection="desc"
-            empty="No collection matches that search."
-          />
-        )}
-      </section>
+      {!shortIndex && (
+        <section className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">All collections</p>
+            <span className="preview-panel__meta">{filtered.length} rows</span>
+          </header>
+          {indexPending ? <CollectionTableSkeleton /> : (
+            <PreviewTable
+              columns={columns}
+              rows={filtered}
+              rowKey={(row) => row.name}
+              initialSort="listings"
+              initialDirection="desc"
+              empty="No collection matches that search."
+            />
+          )}
+        </section>
+      )}
 
       {visible < filtered.length && (
         <div className="preview-sentinel" ref={sentinel}>
@@ -1118,7 +1117,8 @@ export function PreviewCollectionPage() {
     if (skinsStatus === "failed") return "Couldn't load this collection's skins.";
     return "Loading skins…";
   })();
-  const heading = title ?? (unknown ? "Collection not found" : "Loading collection…");
+  const heading = title
+    ?? (index.failed ? "Couldn't load this collection's skins." : unknown ? "Collection not found" : "Loading collection…");
 
   // Every skin in the collection, not a six-tile strip.
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
