@@ -41,3 +41,37 @@ describe("trade-ups cache key is versioned per deploy (214 N1)", () => {
     expect(q.tradeUpsCacheKey({ page: "1" }, "a", "pro")).toBe(q.tradeUpsCacheKey({}, "a", "pro"));
   });
 });
+
+describe("dev fallback warning", () => {
+  it("warns once at boot when the build id falls back to 'dev'", async () => {
+    vi.stubEnv("BUILD_SHA", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.doMock("node:child_process", () => ({
+      execFileSync: () => { throw new Error("no git"); },
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const q = await load();
+      expect(q.TRADE_UPS_CACHE_BUILD).toBe("dev");
+      q.tradeUpsCacheKey({}, "anon", "free");
+      q.tradeUpsCacheKey({ type: "x" }, "anon", "free");
+      const devWarnings = warn.mock.calls.filter((c) => String(c[0]).includes("fell back to 'dev'"));
+      expect(devWarnings).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      vi.doUnmock("node:child_process");
+    }
+  });
+
+  it("does not warn when a build id is present", async () => {
+    vi.stubEnv("BUILD_SHA", "abcdefabcdef1234");
+    vi.stubEnv("NODE_ENV", "production");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await load();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("fell back to 'dev'"))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

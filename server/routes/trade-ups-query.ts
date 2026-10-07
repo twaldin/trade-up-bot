@@ -110,6 +110,14 @@ function resolveBuildId(): string {
  * different key, so a response-shape change is never served stale after deploy.
  */
 export const TRADE_UPS_CACHE_BUILD = resolveBuildId();
+if (TRADE_UPS_CACHE_BUILD === "dev" && process.env.NODE_ENV !== "test") {
+  // Runs once at module load. Every deploy would share one key, so a response-shape
+  // change could be served stale until TRADE_UPS_RESPONSE_VERSION is bumped.
+  console.warn(
+    "[trade-ups] cache key build id fell back to 'dev' (no BUILD_SHA, no git HEAD); " +
+    "cached /api/trade-ups bodies will not roll over on deploy",
+  );
+}
 
 export function tradeUpsCacheKey(query: Record<string, unknown>, viewer: string, tier: string): string {
   const normalized: Record<string, unknown> = {};
