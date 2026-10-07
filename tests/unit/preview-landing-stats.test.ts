@@ -202,7 +202,10 @@ describe("landing stats from the board + global-stats", () => {
     });
     expect(missed.total_trade_ups).toBeUndefined();
     expect(missed.profitable_trade_ups).toBeUndefined();
-    expect(renderLandingStatsHtml(missed)).not.toContain("1,000");
+    const html = renderLandingStatsHtml(missed);
+    expect(html).not.toContain("1,000");
+    expect(html).not.toContain("trade-ups");
+    expect(visibleLandingStatTiles(missed)).toEqual([]);
 
     const live = landingStatsFromSources({
       global: LIVE_GLOBAL,

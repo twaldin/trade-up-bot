@@ -51,7 +51,7 @@ import {
 import { BoardNotice } from "../components/BoardNotice.js";
 import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
+import { boardNotice, displayCapCopy, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, showNarrowFiltersHint } from "../lib/board-notice.js";
 import {
   canonicalBoardSearch,
   historyAction,
@@ -895,6 +895,7 @@ export function PreviewBoard({
   onClearFilters,
   onFilterBlur,
   total = null,
+  rawTotal = null,
   landedPage = 1,
   shownStatus = "",
   heading = "Live trade-ups",
@@ -919,7 +920,7 @@ export function PreviewBoard({
   onParsed?: (parsed: ParsedQuery) => void;
   loadMore?: () => void;
   exhausted?: boolean;
-  /** Why paging stopped. "capped" is the 10,001 count ceiling, not a short page. */
+  /** Why paging stopped. "capped" is the 10,001 count ceiling. "truncated" is has_more. */
   endKind?: ListEndState;
   throttle?: string | null;
   /** True once the automatic 429 retry has been spent. Shows the Retry button. */
@@ -937,8 +938,10 @@ export function PreviewBoard({
   onFilterBlur?: () => void;
   /** Page currently on screen. Used for the load announcement and the long-list hint. */
   page?: number;
-  /** Server total for this filter. The narrow hint only appears above a large set. */
+  /** Server total for this filter. Deduped boards report the kept rows here. */
   total?: number | null;
+  /** Raw diversified count, capped at 10001. The long-list hint falls back to `total`. */
+  rawTotal?: number | null;
   /** Highest page whose rows have actually landed. */
   landedPage?: number;
   /** Set only after a later page lands. Empty on 429, failure, and filter change. */
@@ -1034,11 +1037,14 @@ export function PreviewBoard({
   const sentinel = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLParagraphElement>(null);
   const capRef = useRef<HTMLParagraphElement>(null);
+  const truncRef = useRef<HTMLParagraphElement>(null);
   const throttleRef = useRef<HTMLParagraphElement>(null);
   const loadMoreBtn = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<null | "more" | "return">(null);
-  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
   const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
+  const atTruncated = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "truncated");
+  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && !atCap && !atTruncated);
+  const truncatedCopy = displayCapCopy(typeof total === "number" && total > 0 ? total : tradeUps.length);
   const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
   const emitRobots = useRobotsSlot(embed ? "" : "index, follow");
   useEffect(() => {
@@ -1075,10 +1081,11 @@ export function PreviewBoard({
       if (untouched) {
         if (atEnd) endRef.current?.focus({ preventScroll: true });
         else if (atCap) capRef.current?.focus({ preventScroll: true });
+        else if (atTruncated) truncRef.current?.focus({ preventScroll: true });
       }
       pendingFocus.current = null;
     }
-  }, [pagingThrottle, loadingMore, atEnd, atCap]);
+  }, [pagingThrottle, loadingMore, atEnd, atCap, atTruncated]);
   async function claimFromBoard(id: number) {
     if (claimedIds.current.has(id) || claimingIds.current.has(id)) return;
     claimingIds.current.add(id);
@@ -1146,12 +1153,15 @@ export function PreviewBoard({
     void claimFromBoard(id);
   }
 
-  const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
-    && (total ?? 0) > NARROW_HINT_MIN_TOTAL
-    && !exhausted
-    && !pagingThrottle
-    && !notice
-    && !failed;
+  const showNarrowHint = showNarrowFiltersHint({
+    landedPage,
+    rawTotal,
+    total,
+    exhausted: Boolean(exhausted),
+    paging: Boolean(pagingThrottle),
+    failed: Boolean(failed),
+    notice: notice != null,
+  });
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -1246,6 +1256,9 @@ export function PreviewBoard({
       {atCap && (
         <p className="preview-note preview-note--end" ref={capRef} tabIndex={-1}>{LIST_CAP_COPY}</p>
       )}
+      {atTruncated && (
+        <p className="preview-note preview-note--end" ref={truncRef} tabIndex={-1}>{truncatedCopy}</p>
+      )}
       {atEnd && (
         <p className="preview-note preview-note--end" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
       )}
@@ -1290,6 +1303,19 @@ function skinNames(rows: TradeUp[]): string[] {
   ]);
 }
 
+type BoardListPayload = {
+  trade_ups?: TradeUp[];
+  tier?: string;
+  total?: number;
+  total_profitable?: number;
+  raw_total?: number;
+  has_more?: boolean;
+  deduped?: boolean;
+  total_profitable_capped?: boolean;
+  signed_in?: boolean;
+  faces?: Record<string, string | null>;
+};
+
 export function usePreviewTradeUps(options: {
   collection?: string;
   skin?: string;
@@ -1311,6 +1337,9 @@ export function usePreviewTradeUps(options: {
   const [cursor, setCursor] = useState({ key: "", page: 1 });
   const [endKey, setEndKey] = useState<string | null>(null);
   const [endKind, setEndKind] = useState<ListEndState>("more");
+  const [rawTotal, setRawTotal] = useState<number | null>(null);
+  const [deduped, setDeduped] = useState(false);
+  const listMetaRef = useRef<{ rawTotal?: number; hasMore?: boolean }>({});
   const [backoffUntil, setBackoffUntil] = useState(0);
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -1430,6 +1459,9 @@ export function usePreviewTradeUps(options: {
     setCursor({ key: settledKey, page: 1 });
     setEndKey(null);
     setEndKind("more");
+    setRawTotal(null);
+    setDeduped(false);
+    listMetaRef.current = {};
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
@@ -1455,8 +1487,14 @@ export function usePreviewTradeUps(options: {
           credentials: "include",
           signal: controller.signal,
         });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; signed_in?: boolean; total?: number; total_profitable?: number; deduped?: boolean; total_profitable_capped?: boolean; faces?: Record<string, string | null> }>(res);
+        const data = await readPagedJson<BoardListPayload>(res);
         if (data.faces) rememberFaces(FACE_CACHE, data.faces);
+        if (live && typeof data.raw_total === "number" && Number.isFinite(data.raw_total)) {
+          listMetaRef.current.rawTotal = data.raw_total;
+          setRawTotal(data.raw_total);
+        }
+        if (live && typeof data.has_more === "boolean") listMetaRef.current.hasMore = data.has_more;
+        if (live && typeof data.deduped === "boolean") setDeduped(data.deduped);
         const nextTier = data.tier ?? "free";
         const nextSignedIn = data.signed_in === true;
         if (live && page === 1 && typeof data.total === "number") {
@@ -1492,7 +1530,14 @@ export function usePreviewTradeUps(options: {
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          const kind = listEndState({ received: count, pageSize: perPage, page, total });
+          const kind = listEndState({
+            received: count,
+            pageSize: perPage,
+            page,
+            total,
+            rawTotal: listMetaRef.current.rawTotal,
+            hasMore: listMetaRef.current.hasMore,
+          });
           setEndKind(kind);
           if (kind !== "more") setEndKey(settledKey);
         },
@@ -1587,13 +1632,13 @@ export function usePreviewTradeUps(options: {
   return useMemo(
     () => ({
       tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand,
-      total, totalProfitable, deduped, totalProfitableCapped,
+      total, totalProfitable, rawTotal, deduped, totalProfitableCapped,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
     [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

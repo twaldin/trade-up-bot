@@ -56,6 +56,7 @@ function BoardRoute() {
       onFilterBlur={state.onFilterBlur}
       page={state.page}
       total={state.total}
+      rawTotal={state.rawTotal}
       landedPage={state.landedPage}
       shownStatus={state.shownStatus}
     />

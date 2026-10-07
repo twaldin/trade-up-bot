@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_QUERY } from "../../src/preview/components/PreviewFilters.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
-import { END_OF_LIST_COPY, LIST_CAP_COPY } from "../../src/preview/lib/board-notice.js";
+import { DISPLAY_CAP_COPY, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, displayCapCopy } from "../../src/preview/lib/board-notice.js";
 import { RATE_LIMIT_MANUAL_COPY, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
 import { PreviewCollectionPage, PreviewCollectionsPage } from "../../src/preview/pages/PreviewSkins.js";
@@ -27,12 +27,12 @@ function row(id: number) {
   };
 }
 
-function ok(ids: number[], total = 36) {
+function ok(ids: number[], total = 36, extra: Record<string, unknown> = {}) {
   return {
     ok: true,
     status: 200,
     headers: { get: () => null },
-    json: async () => ({ trade_ups: ids.map(row), total, tier: "pro" }),
+    json: async () => ({ trade_ups: ids.map(row), total, tier: "pro", ...extra }),
   };
 }
 
@@ -72,6 +72,7 @@ function BoardHarness({ onReady }: { onReady: (api: Api) => void }) {
     pagingThrottle: api.pagingThrottle,
     page: api.page,
     total: api.total,
+    rawTotal: api.rawTotal,
     landedPage: api.landedPage,
     shownStatus: api.shownStatus,
     retryReady: api.retryReady,
@@ -149,6 +150,74 @@ describe("board pagination and history", () => {
     expect(pages.filter((page) => page === "2").length).toBe(page2);
     expect(pages).not.toContain("3");
   }, 12000);
+
+  it("shows the cut-list line instead of the end when has_more is true", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const page = new URL(String(url), "http://local").searchParams.get("page");
+      const extra = { has_more: true, raw_total: 10001, deduped: true };
+      if (page === "2") return ok([13, 14, 15, 16], 16, extra);
+      return ok([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 16, extra);
+    }));
+    window.history.replaceState({}, "", "/trade-ups?sort=profit");
+    await mount();
+    await act(async () => { api.loadMore(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    paint();
+    expect(api.endKind).toBe("truncated");
+    expect(api.rawTotal).toBe(10001);
+    expect(api.deduped).toBe(true);
+    expect(host.textContent).toContain(displayCapCopy(16));
+    expect(host.textContent).not.toContain(END_OF_LIST_COPY);
+    expect(host.textContent).not.toContain(DISPLAY_CAP_COPY);
+  });
+
+  it("shows the 1,000 cap line when the deduped list stopped on 1,000 rows", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const rows = [1, 2, 3, 4].map((id) => makeTradeUp({ id }));
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        exhausted: true,
+        endKind: "truncated",
+        total: 1000,
+        rawTotal: 10001,
+      })));
+    });
+    expect(host.textContent).toContain(DISPLAY_CAP_COPY);
+    expect(host.textContent).not.toContain(END_OF_LIST_COPY);
+    expect(host.textContent).not.toContain(LIST_CAP_COPY);
+  });
+
+  it("hints to narrow from raw_total when the deduped total is only 1,000", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const rows = [makeTradeUp({ id: 1 })];
+    const paintHint = (rawTotal: number | null) => {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
+        tradeUps: rows,
+        loading: false,
+        isFree: false,
+        expandedId: null,
+        onExpand: () => {},
+        loadMore: () => {},
+        exhausted: false,
+        total: 1000,
+        rawTotal,
+        landedPage: 5,
+      })));
+    };
+    act(() => { paintHint(10001); });
+    expect(host.textContent).toContain(NARROW_FILTERS_HINT);
+    act(() => { paintHint(null); });
+    expect(host.textContent).not.toContain(NARROW_FILTERS_HINT);
+  });
 
   it("shows the end of the list when the next page is empty", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {

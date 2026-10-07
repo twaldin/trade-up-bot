@@ -644,6 +644,7 @@ export function PreviewSkinPage() {
             onFilterBlur={board.onFilterBlur}
             page={board.page}
             total={board.total}
+            rawTotal={board.rawTotal}
             landedPage={board.landedPage}
             shownStatus={board.shownStatus}
             heading="Trade-ups using this skin"
@@ -1076,6 +1077,7 @@ export function PreviewCollectionPage() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
           collection={title}
