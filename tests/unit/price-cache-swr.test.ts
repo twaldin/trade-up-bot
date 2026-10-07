@@ -1,5 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import { runWithRequestCachePolicy } from "../../server/engine/request-cache-policy.js";
 import {
@@ -139,8 +138,6 @@ function entries<V>(map: Map<string, V>): [string, V][] {
   return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-const measurements: string[] = [];
-
 describe("price cache stale-while-revalidate", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -152,10 +149,6 @@ describe("price cache stale-while-revalidate", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  afterAll(() => {
-    writeFileSync("/opt/cursor/artifacts/price-cache-swr.txt", `${measurements.join("\n")}\n`);
   });
 
   it("returns a stale cache immediately while one rebuild starts", async () => {
@@ -173,7 +166,6 @@ describe("price cache stale-while-revalidate", () => {
     const started = performance.now();
     await ensureRequestPriceCache(pool);
     const elapsed = performance.now() - started;
-    measurements.push(`stale hit ${elapsed.toFixed(1)}ms`);
 
     expect(elapsed).toBeLessThan(1500);
     expect(script.refQueries).toBe(builtQueries + 1);
@@ -197,7 +189,6 @@ describe("price cache stale-while-revalidate", () => {
     const started = performance.now();
     await Promise.all(Array.from({ length: 10 }, () => ensureRequestPriceCache(pool)));
     const elapsed = performance.now() - started;
-    measurements.push(`10 concurrent stale ${elapsed.toFixed(1)}ms refQueries=${script.refQueries - before}`);
 
     expect(elapsed).toBeLessThan(1500);
     expect(script.refQueries - before).toBe(1);
@@ -352,7 +343,6 @@ describe("price cache stale-while-revalidate", () => {
     const started = performance.now();
     await runWithRequestCachePolicy(() => ensureFloatCeilingForTests(pool));
     const elapsed = performance.now() - started;
-    measurements.push(`float ceiling stale ${elapsed.toFixed(1)}ms`);
     expect(elapsed).toBeLessThan(1500);
     expect(script.ceilingQueries).toBe(1);
     expect(floatCeilingCacheSizeForTests()).toBe(1);
