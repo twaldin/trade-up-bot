@@ -342,7 +342,8 @@ describe("built client first-load CLS", () => {
           expect(height, `${label} height ${height}`).toBeLessThanOrEqual(viewport.height * 2);
         }
         if (item.path === "/collections/phoenix" && item.status === "error") {
-          expect(await page.locator("h1").innerText()).toBe("Couldn't load this collection's skins.");
+          expect(await page.locator("h1").innerText()).toBe("Collection");
+          expect(await page.getByText("Couldn't load this collection's skins.").count()).toBe(1);
         }
         if (item.share) {
           expect(await page.locator(".preview-share-verify").count()).toBe(0);

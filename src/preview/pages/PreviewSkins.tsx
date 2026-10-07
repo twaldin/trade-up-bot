@@ -1117,8 +1117,7 @@ export function PreviewCollectionPage() {
     if (skinsStatus === "failed") return "Couldn't load this collection's skins.";
     return "Loading skins…";
   })();
-  const heading = title
-    ?? (index.failed ? "Couldn't load this collection's skins." : unknown ? "Collection not found" : "Loading collection…");
+  const heading = title ?? (index.failed ? "Collection" : unknown ? "Collection not found" : "Loading collection…");
 
   // Every skin in the collection, not a six-tile strip.
   useFaceNames(useMemo(() => skins.map((row) => row.name), [skins]));
