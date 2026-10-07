@@ -181,6 +181,45 @@ describe("landing stats from the board + global-stats", () => {
     captureServerLandingStats(`<div id="root"></div>`);
     expect(serverLandingStats()).toBeNull();
   });
+
+  it("QA 206 B1: a deduped board never fills the hero when global-stats is missing or 0", () => {
+    const board = { total: 213, total_profitable: 1, deduped: true, raw_total: 10001, trade_ups: [makeTradeUp()] };
+    for (const global of [null, { total_trade_ups: 0, profitable_trade_ups: 0 }]) {
+      const stats = landingStatsFromSources({ global, board });
+      expect(stats.total_trade_ups).toBeUndefined();
+      expect(stats.profitable_trade_ups).toBeUndefined();
+      const html = renderLandingStatsHtml(stats);
+      expect(html).not.toContain("213");
+      expect(html).not.toContain("positive EV");
+      expect(visibleLandingStatTiles(stats)).toEqual([]);
+    }
+  });
+
+  it("does not present a deduped board total as the tracked trade-up count", () => {
+    const missed = landingStatsFromSources({
+      board: { total: 1_000, total_profitable: 400, trade_ups: [makeTradeUp()], deduped: true },
+      global: null,
+    });
+    expect(missed.total_trade_ups).toBeUndefined();
+    expect(missed.profitable_trade_ups).toBeUndefined();
+    expect(renderLandingStatsHtml(missed)).not.toContain("1,000");
+
+    const live = landingStatsFromSources({
+      global: LIVE_GLOBAL,
+      board: { total: 1_000, total_profitable: 50, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    expect(live.total_trade_ups).toBe(1_842);
+    expect(live.profitable_trade_ups).toBe(311);
+  });
+
+  it("still drops a capped (10001) non-deduped board total", () => {
+    const stats = landingStatsFromSources({
+      global: null,
+      board: { total: 10_001, total_profitable: 52, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.total_trade_ups).toBeUndefined();
+    expect(stats.profitable_trade_ups).toBeUndefined();
+  });
 });
 
 describe("first-HTML injection", () => {

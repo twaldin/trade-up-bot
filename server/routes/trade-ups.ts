@@ -9,9 +9,12 @@ import { getEffectiveTier } from "../../shared/pro-access.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
+import { DISJOINT_CANDIDATE_FACTOR, buildDisjointSnapshot, loadListingIds, parseOverlapMode, sharedWithRanks } from "./listing-disjoint.js";
 import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpHiddenByDelay, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import {
   RANK_SNAPSHOT_SIZE,
+  orderPresentByIds,
+  type RankSnapshot,
   groupInputRows,
   loadRankSnapshot,
   orderByIds,
@@ -371,6 +374,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     const offset = (pageNum - 1) * perPage;
 
     const includeStale = req.query.include_stale === "true";
+    const overlap = parseOverlapMode(req.query.overlap);
     let where: string;
     const collectionJoin = ""; // Unused: collection filter now uses collection_names GIN array
     const params: (string | number | string[])[] = [];
@@ -613,20 +617,30 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     let totalProfitableCapped = false;
     let rows: ListRow[] | null = null;
 
+    // overlap=all: rank of the first higher row sharing a listing, keyed by trade-up id.
+    const sharedWithRankById = new Map<number, number>();
+    // Set when the default board was served from a listing-disjoint snapshot.
+    let dedupeInfo: { deduped: true; rawTotal: number; hasMore: boolean } | null = null;
+
     // The diversified window sorts every active row regardless of OFFSET, so rank
-    // once per (filters, sort) and slice pages from the snapshot. Rows are re-read
-    // by id; if any snapshot id is no longer active, drop the snapshot and fall
-    // back to the live query so the page has no holes.
-    const snapshotKey = applyDiversity && !includeStale && snapshotCoversPage(offset, perPage)
-      ? rankSnapshotKey({ fromWhere: diversitySql.fromWhere, sortCol, sortOrder, params })
+    // once per (filters, sort, overlap) and slice pages from the snapshot.
+    // Default (disjoint) mode always pages from the snapshot so every page comes
+    // from the same deduped list: an id that went inactive since the build is
+    // rebuilt once, then skipped; pages past the deduped list are empty.
+    // overlap=all keeps the old behaviour (raw live query for holes/deep pages).
+    const useSnapshot = applyDiversity && !includeStale
+      && (overlap === "disjoint" || snapshotCoversPage(offset, perPage));
+    const snapshotKey = useSnapshot
+      ? rankSnapshotKey({ fromWhere: diversitySql.fromWhere, sortCol, sortOrder, params, overlap })
       : null;
     if (snapshotKey) {
-      const snapshot = await loadRankSnapshot(snapshotKey, rankStore, async () => {
-        // One window sort produces both the top ids and the capped total.
+      const computeSnapshot = async (): Promise<RankSnapshot> => {
+        // One window sort produces both the top ids and the capped totals.
         // A second count query sorts the same rows again and, run beside this
         // one, was the cold-page regression (two external merges contending).
         const capParam = limitParam - 1;
-        const { rows: rankRows } = await pool.query<{ id: number; total: number; profitable: number }>(
+        const candidateLimit = overlap === "disjoint" ? RANK_SNAPSHOT_SIZE * DISJOINT_CANDIDATE_FACTOR : RANK_SNAPSHOT_SIZE;
+        const { rows: rankRows } = await pool.query<{ id: number; profit_cents: number; total: number; profitable: number }>(
           `WITH ranked AS MATERIALIZED (
              SELECT id, sort_value, profit_cents FROM (
                SELECT t.id, ${sortCol} AS sort_value, t.profit_cents,
@@ -639,8 +653,8 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
              ) scanned
              WHERE combo_rank <= $${capParam}
            )
-           SELECT id, total, profitable FROM (
-             SELECT id,
+           SELECT id, profit_cents, total, profitable FROM (
+             SELECT id, profit_cents,
                row_number() OVER (ORDER BY sort_value ${sortOrder} NULLS LAST, id DESC) AS ord,
                LEAST(COUNT(*) OVER (), ${COUNT_CAP})::int AS total,
                LEAST(COUNT(*) FILTER (WHERE profit_cents > 0) OVER (), ${COUNT_CAP})::int AS profitable
@@ -648,28 +662,59 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
            ) numbered
            WHERE ord <= $${limitParam}
            ORDER BY ord`,
-          [...params, RANK_SNAPSHOT_SIZE]
+          [...params, candidateLimit]
         );
-        return {
-          ids: rankRows.map((r) => Number(r.id)),
-          total: rankRows.length > 0 ? Number(rankRows[0].total) : 0,
-          profitable: rankRows.length > 0 ? Number(rankRows[0].profitable) : 0,
-        };
-      });
-      const pageIds = snapshot.ids.slice(offset, offset + perPage);
-      const { rows: byId } = pageIds.length === 0
-        ? { rows: [] }
-        : await pool.query<ListRow>(
-          `SELECT ${listColumns} FROM trade_ups t
-           WHERE t.id = ANY($1::int[]) AND t.is_theoretical = false AND t.listing_status = 'active'`,
-          [pageIds]
-        );
-      const ordered = orderByIds(byId, pageIds);
+        const ranked = rankRows.map((r) => ({ id: Number(r.id), profitCents: Number(r.profit_cents) }));
+        const rawTotal = rankRows.length > 0 ? Number(rankRows[0].total) : 0;
+        const rawProfitable = rankRows.length > 0 ? Number(rankRows[0].profitable) : 0;
+        // One indexed read of every candidate's listings, then a pure in-memory pass.
+        const listingsById = await loadListingIds(pool, ranked.map((r) => r.id));
+        if (overlap === "all") {
+          const ids = ranked.map((r) => r.id);
+          return { ids, total: rawTotal, profitable: rawProfitable, sharedWithRank: sharedWithRanks(ids, listingsById) };
+        }
+        return buildDisjointSnapshot({ ranked, listingsById, limit: RANK_SNAPSHOT_SIZE, candidateLimit, rawTotal });
+      };
+
+      let snapshot = await loadRankSnapshot(snapshotKey, rankStore, computeSnapshot);
+      const readPage = async (snap: RankSnapshot) => {
+        const pageIds = snap.ids.slice(offset, offset + perPage);
+        const { rows: byId } = pageIds.length === 0
+          ? { rows: [] as ListRow[] }
+          : await pool.query<ListRow>(
+            `SELECT ${listColumns} FROM trade_ups t
+             WHERE t.id = ANY($1::int[]) AND t.is_theoretical = false AND t.listing_status = 'active'`,
+            [pageIds]
+          );
+        return { pageIds, byId };
+      };
+      let page = await readPage(snapshot);
+      let ordered = orderByIds(page.byId, page.pageIds);
+      if (!ordered && snapshot.deduped) {
+        // A kept id went inactive: rebuild the deduped snapshot once (a freed
+        // listing may let a lower row in), then skip anything still missing.
+        await rankStore.del(snapshotKey).catch(() => {});
+        snapshot = await loadRankSnapshot(snapshotKey, rankStore, computeSnapshot);
+        page = await readPage(snapshot);
+        ordered = orderPresentByIds(page.byId, page.pageIds);
+      }
       if (ordered) {
+        if (snapshot.sharedWithRank) {
+          for (let i = 0; i < page.pageIds.length; i++) {
+            const rank = snapshot.sharedWithRank[offset + i];
+            if (rank != null) sharedWithRankById.set(page.pageIds[i], rank);
+          }
+        }
         rows = ordered;
         total = snapshot.total;
         totalProfitable = snapshot.profitable;
-        totalProfitableCapped = totalProfitable >= COUNT_CAP;
+        if (snapshot.deduped) {
+          dedupeInfo = { deduped: true, rawTotal: snapshot.rawTotal ?? snapshot.total, hasMore: !!snapshot.hasMore };
+          // Counted over the deduped list itself, which never reaches the cap.
+          totalProfitableCapped = false;
+        } else {
+          totalProfitableCapped = totalProfitable >= COUNT_CAP;
+        }
       } else {
         await rankStore.del(snapshotKey).catch(() => {});
       }
@@ -776,6 +821,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         claimed_by_me: claimedByMe.has(row.id),
         claimed_by_other: claimedByOthers.has(row.id),
         claim_expires_at: claimExpiryMap.get(row.id),
+        ...(overlap === "all" ? { shared_with_rank: sharedWithRankById.get(row.id) ?? null } : {}),
       };
     });
 
@@ -797,6 +843,10 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       total: total - removedOnPage,
       total_profitable: totalProfitable,
       total_profitable_capped: totalProfitableCapped,
+      // Listing dedupe applies to the default board only. Collection, my_claims,
+      // include_stale and overlap=all lists are raw: deduped=false says so.
+      deduped: dedupeInfo !== null,
+      ...(dedupeInfo ? { raw_total: dedupeInfo.rawTotal, has_more: dedupeInfo.hasMore } : {}),
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,

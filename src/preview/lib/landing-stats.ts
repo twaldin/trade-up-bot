@@ -22,6 +22,13 @@ export interface BoardCountSource {
   total?: number;
   total_profitable?: number;
   trade_ups?: readonly unknown[];
+  /**
+   * True when `total` is the deduped rows this board can show, not the number
+   * of trade-ups tracked. That count must not fill in for global stats.
+   */
+  deduped?: boolean;
+  /** True when `total_profitable` stopped at 10001. Absent means false. */
+  total_profitable_capped?: boolean;
 }
 
 export const LANDING_STAT_LABELS = {
@@ -72,7 +79,10 @@ function heroBoardCounts(board: BoardCountSource | null | undefined): {
   total: number | undefined;
   profitable: number | undefined;
 } {
-  if (!board || cappedListTotal(board.total)) return { total: undefined, profitable: undefined };
+  // A deduped total is how many rows this list kept, not how many trade-ups are tracked.
+  if (!board || board.deduped === true || cappedListTotal(board.total)) {
+    return { total: undefined, profitable: undefined };
+  }
   const rows = board.trade_ups;
   return {
     total: positiveCount(board.total)
