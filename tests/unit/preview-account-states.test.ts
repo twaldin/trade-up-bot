@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import puppeteer, { type Browser, type Page } from "puppeteer";
+import puppeteer, { type Browser, type HTTPRequest, type Page } from "puppeteer";
+import { createServer, type ViteDevServer } from "vite";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
@@ -46,34 +47,51 @@ function painted(html: string) {
 }
 
 describe("account loading and error states", () => {
-  let root: Root;
-  let host: HTMLDivElement;
+  let root: Root | undefined;
+  let host: HTMLDivElement | undefined;
   let browser: Browser;
+  let server: ViteDevServer;
+  let base = "";
 
   beforeAll(async () => {
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
-  }, 30000);
+    server = await createServer({
+      server: { host: "127.0.0.1", port: 5217, strictPort: false },
+      logLevel: "error",
+    });
+    await server.listen();
+    const address = server.httpServer?.address();
+    const port = typeof address === "object" && address ? address.port : 5217;
+    base = `http://127.0.0.1:${port}`;
+  }, 60_000);
 
   afterAll(async () => {
     await browser?.close();
+    await server?.close();
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    host.remove();
+    if (root && host) {
+      act(() => root?.unmount());
+      host.remove();
+    }
+    root = undefined;
+    host = undefined;
     resetBrowseFetchState();
     vi.unstubAllGlobals();
   });
 
   async function mount() {
-    host = document.createElement("div");
-    document.body.appendChild(host);
-    root = createRoot(host);
+    const next = document.createElement("div");
+    document.body.appendChild(next);
+    host = next;
+    const mounted = createRoot(next);
+    root = mounted;
     await act(async () => {
-      root.render(createElement(MemoryRouter, { initialEntries: ["/my-trade-ups"] }, createElement(PreviewAccount)));
+      mounted.render(createElement(MemoryRouter, { initialEntries: ["/my-trade-ups"] }, createElement(PreviewAccount)));
     });
     for (let i = 0; i < 8; i += 1) {
       await act(async () => {
@@ -118,7 +136,7 @@ describe("account loading and error states", () => {
     }));
     await mount();
     const page = await browser.newPage();
-    const box = await measure(page, 390, host.innerHTML);
+    const box = await measure(page, 390, host?.innerHTML ?? "");
     await page.close();
     expect(box.pending.map((row) => row.text)).toEqual(expect.arrayContaining(["00", "+$000.00", "00", "00%", "00.0%"]));
     for (const row of box.pending) {
@@ -138,20 +156,95 @@ describe("account loading and error states", () => {
       return json(200, {});
     }));
     await mount();
-    const stats = host.querySelector(".preview-stats");
+    const view = host;
+    expect(view).toBeTruthy();
+    if (!view) return;
+    const stats = view.querySelector(".preview-stats");
     expect(stats?.getAttribute("aria-busy")).toBe("false");
     expect(stats?.textContent).toContain("—");
     expect(stats?.textContent).not.toContain("00.0%");
-    expect(host.textContent).toContain("Could not load trade-ups.");
-    expect(host.querySelector(".preview-account__slot .preview-notice")).toBeTruthy();
-    expect(host.querySelector(".preview-account__slot--quiet")).toBeTruthy();
+    expect(view.textContent).toContain("Could not load trade-ups.");
+    expect(view.querySelector(".preview-account__slot .preview-notice")).toBeTruthy();
+    expect(view.querySelector(".preview-account__slot--quiet")).toBeTruthy();
 
     const page = await browser.newPage();
     for (const width of [360, 375, 390, 1280]) {
-      const box = await measure(page, width, host.innerHTML);
+      const box = await measure(page, width, view.innerHTML);
       expect(box.slotHeight, String(width)).toBeLessThan(120);
       expect(box.gap ?? 0, String(width)).toBeLessThan(120);
     }
     await page.close();
   });
+
+  async function deniedStats(width: number, user: { tier: string; lifetime?: boolean }, status: number) {
+    const page = await browser.newPage();
+    const height = width === 1280 ? 800 : 844;
+    await page.setViewport({ width, height, deviceScaleFactor: 1 });
+    await page.evaluateOnNewDocument(() => {
+      const shifts: number[] = [];
+      const obs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const hadRecentInput = Reflect.get(entry, "hadRecentInput");
+          const value = Reflect.get(entry, "value");
+          if (hadRecentInput === false && typeof value === "number") shifts.push(value);
+        }
+      });
+      obs.observe({ type: "layout-shift", buffered: true });
+      Object.assign(window, {
+        __accountCls: () => shifts.reduce((sum, value) => sum + value, 0),
+      });
+    });
+    const fulfill = (request: HTTPRequest, code: number, body: string, wait: number) => {
+      setTimeout(() => {
+        void request.respond({ status: code, contentType: "application/json", body }).catch(() => undefined);
+      }, wait);
+    };
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (!path.startsWith("/api/")) {
+        void request.continue().catch(() => undefined);
+        return;
+      }
+      if (path.startsWith("/api/auth/me")) {
+        fulfill(request, 200, JSON.stringify({ ...USER, ...user }), 200);
+        return;
+      }
+      if (path.startsWith("/api/my-trade-ups/stats")) {
+        fulfill(request, status, "{}", 500);
+        return;
+      }
+      if (path.includes("my_claims")) {
+        fulfill(request, 200, JSON.stringify({ trade_ups: [] }), 500);
+        return;
+      }
+      fulfill(request, 200, "{}", 0);
+    });
+    await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await new Promise((resolve) => setTimeout(resolve, 200 + 500 + 1200));
+    const result = await page.evaluate(() => {
+      const reader = Reflect.get(window, "__accountCls");
+      const value: unknown = typeof reader === "function" ? reader() : 0;
+      const stats = document.querySelector(".preview-stats");
+      return {
+        cls: typeof value === "number" ? value : 0,
+        dash: (stats?.textContent ?? "").includes("—"),
+        present: stats !== null,
+      };
+    });
+    await page.close();
+    return result;
+  }
+
+  it.each([
+    ["401", { tier: "pro" }, 401],
+    ["lifetime lag", { tier: "free", lifetime: true }, 403],
+  ] as const)("keeps the strip and stays under 0.05 when stats return %s", async (_label, user, status) => {
+    for (const width of [360, 375, 390, 1280]) {
+      const result = await deniedStats(width, user, status);
+      expect(result.cls, String(width)).toBeLessThan(0.05);
+      expect(result.present, String(width)).toBe(true);
+      expect(result.dash, String(width)).toBe(true);
+    }
+  }, 120_000);
 });

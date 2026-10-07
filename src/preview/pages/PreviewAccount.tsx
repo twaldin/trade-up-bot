@@ -157,7 +157,6 @@ export function PreviewAccount() {
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
   const [statsFailed, setStatsFailed] = useState(false);
-  const [statsDenied, setStatsDenied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -192,10 +191,6 @@ export function PreviewAccount() {
       const statsReq = fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
         .then(async (res) => {
           if (signal?.aborted) return;
-          if (res.status === 401 || res.status === 403) {
-            setStatsDenied(true);
-            return;
-          }
           if (!res.ok) {
             setStatsFailed(true);
             return;
@@ -641,7 +636,7 @@ export function PreviewAccount() {
   const listCount = entries.length;
   const tabCount = activeTab === "claims" ? claimCount : listCount;
   const showChrome = user != null && !sessionHold;
-  const showStats = showChrome && hasProAccess(user) && !statsDenied;
+  const showStats = showChrome && hasProAccess(user);
   const listPending = showChrome && loading && claimTradeUps.length === 0 && entries.length === 0 && !note;
   const loadError = note === "Could not load trade-ups.";
   const slotQuiet = loadError && claimTradeUps.length === 0 && entries.length === 0;
@@ -664,22 +659,16 @@ export function PreviewAccount() {
           <h1>My trade-ups</h1>
           <p>Claims, purchased rows, and realized P/L from the live APIs.</p>
         </div>
-        {showChrome && (
+        {showChrome && user && (
           <div className="preview-page__meta">
-            {user ? (
+            <span>{user.display_name}</span>
+            <i />
+            <span>{user.tier}</span>
+            {hasProAccess(user) && (
               <>
-                <span>{user.display_name}</span>
                 <i />
-                <span>{user.tier}</span>
-                {hasProAccess(user) && (
-                  <>
-                    <i />
-                    <ManageSubscription />
-                  </>
-                )}
+                <ManageSubscription />
               </>
-            ) : (
-              <span className="preview-account__pending" aria-hidden="true">Member</span>
             )}
           </div>
         )}
@@ -701,8 +690,15 @@ export function PreviewAccount() {
           <header className="preview-panel__head">
             <p className="o-kicker">Session</p>
           </header>
-          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
-          <a className="preview-btn preview-btn--lime preview-btn--block" href={authHref("/my-trade-ups")} rel="nofollow">
+          <p className="preview-note">{user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM}</p>
+          <a
+            className="preview-btn preview-btn--lime preview-btn--block"
+            href={authHref("/my-trade-ups")}
+            rel="nofollow"
+            style={user === undefined ? { visibility: "hidden" } : undefined}
+            aria-hidden={user === undefined || undefined}
+            tabIndex={user === undefined ? -1 : undefined}
+          >
             Sign in with Steam
           </a>
         </section>

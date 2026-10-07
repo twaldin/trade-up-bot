@@ -174,9 +174,43 @@ describe("account layout reservation", () => {
     const page = read("../../src/preview/pages/PreviewAccount.tsx");
     expect(page).toContain("Sold at a profit · {stats.avg_roi}% avg ROI");
     expect(page).not.toContain("Win rate");
-    expect(page).not.toContain("Checking session");
+    expect(page).toContain('user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM');
     expect(page).not.toContain("{user && stats &&");
     expect(page).toContain("const showChrome = user != null && !sessionHold;");
-    expect(page).toContain("hasProAccess(user) && !statsDenied");
+    expect(page).toContain("const showStats = showChrome && hasProAccess(user);");
+  });
+
+  it("hides Sign in with Steam while auth is still pending", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) {
+        await gate;
+        return json(200, USER);
+      }
+      return json(200, { trade_ups: [], claims: [] });
+    }));
+    await mount();
+    const link = host.querySelector("a.preview-btn--block");
+    expect(link?.textContent).toContain("Sign in with Steam");
+    expect(getComputedStyle(link!).visibility).toBe("hidden");
+    expect(link?.getAttribute("aria-hidden")).toBe("true");
+    expect(link?.getAttribute("tabindex")).toBe("-1");
+    expect(host.querySelector(".preview-panel .preview-note")?.textContent).toBe("Checking session…");
+    expect(host.textContent).not.toContain("Verify and Claim are Pro features");
+
+    await act(async () => { release(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    expect(host.querySelector("a.preview-btn--block")).toBeNull();
+    expect(host.textContent).not.toContain("Sign in with Steam");
+    expect(host.textContent).not.toContain("Checking session");
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
   });
 });
