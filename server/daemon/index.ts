@@ -26,12 +26,13 @@ import {
   checkDMarketStaleness, formatDMarketStalenessLog,
 } from "../sync.js";
 import {
-  mergeTradeUps, skippedShareLockStats, updateCollectionScores, buildPriceCache, trimGlobalExcess,
+  skippedShareLockStats, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
   cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap,
   type FinishData,
 } from "../engine.js";
+import { mergeTaskTradeUps } from "./merge-task.js";
 import { BudgetTracker, FreshnessTracker, TARGET_CYCLE_MS } from "./state.js";
 import {
   timestamp, setDaemonStatus, setDaemonMeta, updateExplorationStats, printCoverageReport,
@@ -587,7 +588,8 @@ export async function main() {
             const wStats = r.value.stats;
             const profitable = tradeUps.filter(t => t.profit_cents > 0);
 
-            await mergeTradeUps(pool, tradeUps, tradeUpType);
+            const merged = await mergeTaskTradeUps(pool, taskName, tradeUps, tradeUpType);
+            if (!merged) continue;
 
             // Check for new all-time records and fire Discord alerts (post-merge, uses DB data)
             try {

@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import Stripe from "stripe";
-import pg from "pg";
 import { stripeRouter } from "../../server/routes/stripe.js";
+import { trackingWebhookPool } from "../helpers/stripe-webhook-pool.js";
 
 const WEBHOOK_SECRET = "whsec_test_tracking";
 const TRACKING_ENV = {
@@ -21,7 +21,7 @@ function app() {
     if (req.path === "/api/stripe-webhook") express.raw({ type: "application/json" })(req, res, next);
     else express.json()(req, res, next);
   });
-  server.use(stripeRouter(new pg.Pool({ connectionString: "postgres://unused@127.0.0.1:1/unused" })));
+  server.use(stripeRouter(trackingWebhookPool()));
   return server;
 }
 
@@ -122,6 +122,24 @@ describe("Stripe webhook conversion side-effect", () => {
     await vi.waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThan(0));
     const urls = fetchSpy.mock.calls.map(([url]) => String(url));
     expect(urls.filter((u) => u.includes("graph.facebook.com"))).toEqual([]);
+    expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
+  });
+
+  it("fires the same Purchase on async_payment_succeeded", async () => {
+    Object.assign(process.env, TRACKING_ENV);
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const paid = JSON.parse(checkoutCompleted({
+      metadata: { tub_plan: "pro_monthly", tub_ua: "Mozilla/5.0 test", tub_xid: "a".repeat(64) },
+    })) as { id: string; type: string; data: { object: { payment_status: string } } };
+    paid.id = "evt_async_succeeded";
+    paid.type = "checkout.session.async_payment_succeeded";
+    paid.data.object.payment_status = "unpaid";
+    const res = await post(JSON.stringify(paid));
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((u) => u.includes("graph.facebook.com")).length).toBe(1);
     expect(urls.filter((u) => u.includes("google-analytics.com/mp/collect")).length).toBe(1);
   });
 

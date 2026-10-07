@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import Stripe from "stripe";
-import pg from "pg";
+import { trackingWebhookPool } from "../helpers/stripe-webhook-pool.js";
 
 vi.mock("../../server/tracking.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../server/tracking.js")>();
@@ -38,7 +38,7 @@ describe("Stripe webhook with a tracker that throws synchronously", () => {
   it("still acknowledges the event with 200", async () => {
     const server = express();
     server.use("/api/stripe-webhook", express.raw({ type: "application/json" }));
-    server.use(stripeRouter(new pg.Pool({ connectionString: "postgres://unused@127.0.0.1:1/unused" })));
+    server.use(stripeRouter(trackingWebhookPool()));
     const payload = JSON.stringify({
       id: "evt_test_2",
       object: "event",

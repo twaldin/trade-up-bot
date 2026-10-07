@@ -215,27 +215,27 @@ export function PreviewPricing() {
         <p className="o-kicker">See it in action</p>
         <h2>Product screenshots from the TradeUpBot dashboard.</h2>
         <figure className="preview-shot">
-          <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" />
+          <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
           <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and direct listing links</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/expanded-375w.webp 375w, /expanded-768w.webp 768w, /expanded-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Expanded trade-up with outcomes" width="2596" height="1822" loading="lazy" />
+            <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Expanded trade-up with outcomes" width="2596" height="1822" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Expanded trade-up showing every possible outcome with probabilities and values</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/dataviewer-375w.webp 375w, /dataviewer-768w.webp 768w, /dataviewer-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Price data viewer" width="2434" height="1498" loading="lazy" />
+            <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Price data viewer" width="2434" height="1498" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Price data viewer with float vs price scatter chart across all marketplaces</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/collections-375w.webp 375w, /collections-768w.webp 768w, /collections-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" />
+            <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Collection browser with knife/glove pool info, listing counts, and expected-profit filters</figcaption>
         </figure>

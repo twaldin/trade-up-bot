@@ -8,6 +8,7 @@ import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
 import { formatDollars } from "../../utils/format.js";
 import { ManageSubscription } from "../components/ManageSubscription.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
+import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { hasProAccess } from "../lib/billing.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
 import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseHeldUntil, noteRateLimited, parseRetryAfter, waitForBrowseHold } from "../lib/page-fetch.js";
@@ -95,6 +96,7 @@ function FaceStack({ names }: { names: string[] }) {
 
 export function PreviewAccount() {
   const location = useLocation();
+  const emitCanonical = useCanonicalSlot("https://tradeupbot.app/my-trade-ups");
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [sessionHold, setSessionHold] = useState<string | null>(null);
   const [sessionSpent, setSessionSpent] = useState(false);
@@ -578,12 +580,18 @@ export function PreviewAccount() {
   const tabCount = activeTab === "claims" ? claimCount : listCount;
 
   if (location.pathname === "/account") {
-    return <Navigate to="/my-trade-ups" replace />;
+    return (
+      <>
+        {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
+        <Navigate to="/my-trade-ups" replace />
+      </>
+    );
   }
 
   return (
     <div className="preview-page">
       <title>My Trade-Ups | TradeUpBot</title>
+      {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
       <header className="preview-page__head">
         <div>
           <h1>My trade-ups</h1>

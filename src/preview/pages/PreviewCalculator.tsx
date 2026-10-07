@@ -14,6 +14,7 @@ import {
 import { CALCULATOR_EXAMPLE_FEE_LINE, CALCULATOR_FEE_LINE } from "../lib/fees.js";
 import { RATE_LIMIT_MANUAL_COPY, SLOW_DOWN_COPY, browseErrorKind, fetchBrowseJson, isRateLimitError, readEvaluationBody, readPagedJson, retryDelayMs } from "../lib/page-fetch.js";
 import { FeeLine } from "../components/FeeLine.js";
+import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
 interface SearchResult {
@@ -38,6 +39,7 @@ const SEARCH_TTL_MS = 5 * 60_000;
 const SEARCH_FAILED_COPY = "Search is unavailable right now. Try again.";
 
 export function PreviewCalculator() {
+  const emitCanonical = useCanonicalSlot("https://tradeupbot.app/calculator");
   const [slots, setSlots] = useState<CalculatorExampleSlot[]>(emptyCalculatorSlots());
   const [isExample, setIsExample] = useState(false);
   const [query, setQuery] = useState("");
@@ -188,6 +190,7 @@ export function PreviewCalculator() {
   return (
     <div className="preview-page">
 <title>Free CS2 Trade-Up Calculator — EV, Float & Fees | TradeUpBot</title>
+      {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/calculator" />}
         <header className="preview-page__head">
           <div>
             <h1>CS2 Trade-Up Calculator</h1>
