@@ -24,18 +24,26 @@ function skinNameForSlug(slug: string): string {
   return "AK-47 | Redline";
 }
 
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 async function startVite(): Promise<{ child: ChildProcess; origin: string }> {
   const child = spawn(
     process.execPath,
-    [resolve(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "0", "--strictPort"],
-    { cwd: repo, env: { ...process.env, BROWSER: "none" }, stdio: ["ignore", "pipe", "pipe"] },
+    [resolve(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "5197", "--strictPort"],
+    {
+      cwd: repo,
+      env: { ...process.env, BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
   let logs = "";
   const origin = await new Promise<string>((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new Error(`vite did not start\n${logs}`)), 20_000);
     const onData = (chunk: Buffer) => {
       logs += chunk.toString();
-      const match = logs.match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
+      const match = stripAnsi(logs).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
       if (!match?.[1]) return;
       clearTimeout(timer);
       resolvePromise(match[1].replace(/\/$/, ""));
@@ -118,6 +126,12 @@ async function boardPage(browser: Browser, origin: string): Promise<Page> {
   await expectCanonical(page, "https://tradeupbot.app/trade-ups");
   return page;
 }
+
+it("reads a vite local URL when ANSI color splits the host and port", () => {
+  const raw = "\u001b[32m➜\u001b[31m  \u001b[1mLocal\u001b[22m:   \u001b[36mhttp://127.0.0.1:\u001b[1m5197\u001b[22m/\u001b[39m";
+  const match = stripAnsi(raw).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
+  expect(match?.[1]).toBe("http://127.0.0.1:5197/");
+});
 
 describe("canonical after a client navigation", () => {
   let browser: Browser;
