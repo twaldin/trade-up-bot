@@ -141,7 +141,10 @@ describe("free-tier banner reserves its height", () => {
     const unknown = boardHtml({ loading: true, isFree: false, rows: [] });
     const free = boardHtml({ loading: true, isFree: false, rows: [], user: { tier: "free" } });
     expect(paid).not.toContain("preview-delay");
-    for (const html of loadingPaid) expect(html).not.toContain("preview-delay");
+    for (const html of loadingPaid) {
+      expect(html).not.toContain("preview-delay");
+      expect(html).toContain("preview-card--skeleton");
+    }
     expect(lifetime).not.toContain("preview-delay");
     expect(unknown).not.toContain("preview-delay");
     expect(free).toContain("preview-delay--hold");

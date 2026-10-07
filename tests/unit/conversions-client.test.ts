@@ -15,7 +15,9 @@ import {
   trackClaimTradeUp,
   trackVerifyComplete,
   trackCtaClick,
+  trackLandingLoadError,
   trackUpgradeCta,
+  readActivationSurface,
 } from "../../src/lib/conversions.js";
 import { captureAttributionFromUrl } from "../../src/lib/attribution.js";
 import { installBrowser, navigate } from "../helpers/browser-stub.js";
@@ -64,6 +66,7 @@ describe("with every tracking env var unset (production today)", () => {
     trackVerifyClick("pro");
     trackCtaClick("home_hero_calculator");
     trackUpgradeCta("board_delay");
+    trackUpgradeCta("landing_plan_tile");
     trackClaimTradeUp({ surface: "share", tradeUpId: 1 });
     const silentResult = {
       all_active: true,
@@ -253,10 +256,115 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("listing_id");
   });
 
+  it("cta_click names the hero trade-up open and carries no prices or ids", () => {
+    installBrowser({ pathname: "/" });
+    trackCtaClick("home_hero_tradeup");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "home_hero_tradeup", page_path: "/", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("listing_id");
+    expect(params).not.toHaveProperty("price");
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("landing_load_error names the failure and does not touch the pixel", () => {
+    installBrowser({ pathname: "/" });
+    trackLandingLoadError("rate_limited");
+    trackLandingLoadError("error");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "landing_load_error", { kind: "rate_limited", page_path: "/", send_to: GA4 }],
+      ["event", "landing_load_error", { kind: "error", page_path: "/", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("cta_click names the detail collection link and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackCtaClick("detail_collection");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "detail_collection", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("listing_id");
+    expect(params).not.toHaveProperty("price");
+  });
+
+  it("cta_click names the calculator board link once and does not call the pixel", () => {
+    installBrowser({ pathname: "/calculator" });
+    trackCtaClick("calculator_board");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "cta_click", { cta: "calculator_board", page_path: "/calculator", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("upgrade_cta_click names the board claim control and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups" });
+    trackUpgradeCta("board_claim");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "board_claim", page_path: "/trade-ups", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+    const params = gtag.mock.calls[0][2] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("value");
+    expect(params).not.toHaveProperty("price");
+    expect(params).not.toHaveProperty("listing_id");
+  });
+
+  it("reads board as a claim surface and rejects anything outside the spec", () => {
+    expect(readActivationSurface("share")).toBe("share");
+    expect(readActivationSurface("account")).toBe("account");
+    expect(readActivationSurface("board")).toBe("board");
+    expect(readActivationSurface("pricing")).toBeNull();
+    expect(readActivationSurface(null)).toBeNull();
+  });
+
   it("cta_click no-ops when gtag has not loaded", () => {
     globalThis.gtag = undefined;
     installBrowser({ pathname: "/" });
     expect(() => trackCtaClick("home_hero_calculator")).not.toThrow();
+  });
+
+  it("upgrade_cta_click names the control and carries no prices or ids", () => {
+    installBrowser({ pathname: "/trade-ups/42" });
+    trackUpgradeCta("share_bar");
+    trackUpgradeCta("landing_plan_tile");
+    trackUpgradeCta("nav_pricing");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "share_bar", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "landing_plan_tile", page_path: "/trade-ups/42", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "nav_pricing", page_path: "/trade-ups/42", send_to: GA4 }],
+    ]);
+    for (const call of gtag.mock.calls) {
+      const params = call[2] as Record<string, unknown>;
+      expect(params).not.toHaveProperty("value");
+      expect(params).not.toHaveProperty("price");
+      expect(params).not.toHaveProperty("listing_id");
+    }
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("upgrade_cta_click stays off the pixel even when a pixel id is set", () => {
+    globalThis.tubTracking = { ga4MeasurementId: GA4, metaPixelId: PIXEL };
+    installBrowser({ pathname: "/" });
+    trackUpgradeCta("nav_pricing");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "nav_pricing", page_path: "/", send_to: GA4 }],
+    ]);
+    expect(fbq).not.toHaveBeenCalled();
+  });
+
+  it("upgrade_cta_click no-ops without a measurement id and does not throw when gtag is blocked", () => {
+    globalThis.tubTracking = undefined;
+    installBrowser({ pathname: "/" });
+    trackUpgradeCta("landing_plan_tile");
+    expect(gtag).not.toHaveBeenCalled();
+    globalThis.tubTracking = { ga4MeasurementId: GA4 };
+    globalThis.gtag = () => { throw new Error("blocked"); };
+    expect(() => trackUpgradeCta("share_bar")).not.toThrow();
   });
 
   it("does not throw when gtag is blocked", () => {
@@ -374,6 +482,12 @@ describe("claim_trade_up and verify_complete", () => {
     expect(claims.map((call) => (call[2] as { trade_up_id: string }).trade_up_id)).toEqual(["8105", "8110"]);
     expect(verifies).toHaveLength(1);
     expect(verifies[0]?.[2]).toMatchObject({ trade_up_id: "8106", status: "all_active", surface: "share" });
+    trackClaimTradeUp({ surface: "board", tradeUpId: 8201 });
+    expect(gtag.mock.calls.filter((call) => call[1] === "claim_trade_up" && (call[2] as { surface?: string }).surface === "board")).toEqual([[
+      "event",
+      "claim_trade_up",
+      expect.objectContaining({ surface: "board", trade_up_id: "8201", send_to: GA4 }),
+    ]]);
   });
 
   it("stays a no-op while GA4 is unset or gtag is missing, then fires once the tracker is available", () => {

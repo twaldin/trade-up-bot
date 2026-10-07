@@ -26,6 +26,14 @@ const IconX = () => (
   </svg>
 );
 
+const IconClock = () => (
+  <svg className="preview-plan__clock" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="8" />
+    <line x1="12" y1="8" x2="12" y2="12" />
+    <line x1="12" y1="12" x2="15" y2="14" />
+  </svg>
+);
+
 const COMPARE = [
   { feature: "Trade-ups visible", free: "Unlimited", pro: "Unlimited" },
   { feature: "Data freshness", free: "3-hour delay", pro: "Real-time" },
@@ -104,7 +112,7 @@ export function PreviewPricing() {
         </div>
       </header>
 
-      <div className="preview-tabs" role="tablist" aria-label="Billing interval">
+      <div className="preview-tabs preview-tabs--billing" role="tablist" aria-label="Billing interval">
         {(["monthly", "yearly", "lifetime"] as BillingInterval[]).map((interval) => (
           <button
             key={interval}
@@ -130,7 +138,7 @@ export function PreviewPricing() {
             <li><IconCheck /> Full filters, search, sorting</li>
             <li><IconCheck /> Direct listing links</li>
             <li><IconCheck /> Full outcome details and chart</li>
-            <li><IconCheck /> 3-hour data delay</li>
+            <li className="preview-plan__delay"><IconClock /> 3-hour data delay</li>
             <li><IconCheck /> Collection browser</li>
             <li><IconCheck /> Price analytics</li>
             <li className="is-off"><IconX /> No verification</li>
@@ -146,7 +154,7 @@ export function PreviewPricing() {
             <p className="preview-plan__price">{PRO_PRICE.yearly.amount}<span>{PRO_PRICE.yearly.unit}</span><em>{PRO_PRICE.yearly.note}</em></p>
           )}
           {billing === "lifetime" && <p className="preview-plan__price">{PRO_PRICE.lifetime.amount}<span>{PRO_PRICE.lifetime.unit}</span></p>}
-          <p className="preview-note">Real-time data, claim system, and full analytics.</p>
+          <p className="preview-note">Real-time data, Verify, and Claim.</p>
           <ul className="preview-plan__list">
             <li><IconCheck /> Everything in Free</li>
             {PRO_FEATURES.map((feature) => (
@@ -221,27 +229,27 @@ export function PreviewPricing() {
         <p className="o-kicker">See it in action</p>
         <h2>Product screenshots from the TradeUpBot dashboard.</h2>
         <figure className="preview-shot">
-          <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" />
+          <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
           <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and direct listing links</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/expanded-375w.webp 375w, /expanded-768w.webp 768w, /expanded-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Expanded trade-up with outcomes" width="2596" height="1822" loading="lazy" />
+            <img src="/expanded-1280w.jpg" srcSet="/expanded-375w.jpg 375w, /expanded-768w.jpg 768w, /expanded-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Expanded trade-up with outcomes" width="2596" height="1822" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Expanded trade-up showing every possible outcome with probabilities and values</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/dataviewer-375w.webp 375w, /dataviewer-768w.webp 768w, /dataviewer-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Price data viewer" width="2434" height="1498" loading="lazy" />
+            <img src="/dataviewer-1280w.jpg" srcSet="/dataviewer-375w.jpg 375w, /dataviewer-768w.jpg 768w, /dataviewer-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Price data viewer" width="2434" height="1498" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Price data viewer with float vs price scatter chart across all marketplaces</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>
             <source type="image/webp" srcSet="/collections-375w.webp 375w, /collections-768w.webp 768w, /collections-1280w.webp 1280w" sizes="(max-width: 1024px) 100vw, 1024px" />
-            <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" />
+            <img src="/collections-1280w.jpg" srcSet="/collections-375w.jpg 375w, /collections-768w.jpg 768w, /collections-1280w.jpg 1280w" sizes="(max-width: 1024px) 100vw, 1024px" alt="Collection browser" width="2624" height="1608" loading="lazy" referrerPolicy="strict-origin" />
           </picture>
           <figcaption>Collection browser with knife/glove pool info, listing counts, and expected-profit filters</figcaption>
         </figure>

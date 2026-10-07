@@ -188,6 +188,22 @@
   .preview-nav .preview-currency__trigger > span:not(.preview-currency__code) { display: none; }
 }
 
+/* Phone tap targets for the remaining upgrade controls. Desktop sizes stay put. */
+@media (max-width: 599px) {
+  .preview-tile--plan .preview-btn--block,
+  .preview-nav__links a[href="/pricing"],
+  .preview-footer__grid a[href="/pricing"],
+  .preview-page__meta a.preview-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .preview-footer__grid a[href="/pricing"] {
+    display: flex;
+    align-items: center;
+  }
+}
+
 .preview-btn {
   display: inline-flex;
   align-items: center;
@@ -379,7 +395,8 @@
 }
 
 .preview-hero .preview-stats b {
-  display: inline;
+  display: inline-block;
+  min-width: 9ch;
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
@@ -571,6 +588,101 @@
 
 .preview-proof__skeleton--outs span { height: 34px; }
 .preview-proof__skeleton--kpis span { height: 58px; }
+
+/* Phones get one compact card under the H1. The 1280 proof panel stays. */
+.preview-hero__card { display: none; }
+
+.preview-hero__retry {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.preview-hero__card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-hero__card-head time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preview-hero__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.preview-hero__metrics b { font-variant-numeric: tabular-nums; }
+
+.preview-hero__card-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-hero__card-skeleton span {
+  display: block;
+  height: 18px;
+  border-radius: var(--r-control);
+  background: var(--row-hover);
+}
+
+.preview-hero__card-skeleton span:last-child { height: 44px; width: 46%; }
+
+.preview-hero__slow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-live__skeleton,
+.preview-hero__plot-skeleton {
+  border-radius: var(--r-panel);
+  background: var(--nest-2);
+}
+
+.preview-live__skeleton {
+  height: 160px;
+  margin-top: 20px;
+}
+
+.preview-hero__plot-skeleton { height: 216px; }
+
+@media (max-width: 1079px) {
+  .preview-proof { display: none; }
+
+  .preview-hero__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    order: 2;
+    width: 100%;
+    min-height: 148px;
+    padding: 12px;
+    border: 1px solid var(--line-hard);
+    border-radius: var(--r-panel);
+    background: var(--panel);
+  }
+
+  .preview-hero__copy > .o-kicker { order: 0; }
+  .preview-hero__copy > h1 { order: 1; }
+  .preview-hero__copy > .preview-toolbar { order: 3; }
+  .preview-hero__lede { order: 4; }
+  .preview-hero .preview-stats { order: 5; }
+
+  .preview-hero__open,
+  .preview-hero .preview-btn--lg {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 
 .preview-laptop { display: none; padding: 0 24px; }
 .preview-phone { display: block; padding: 0 24px; }
@@ -934,6 +1046,22 @@
   background: var(--line-hard);
 }
 
+/* The count swaps in place ("— ranked" → "12 ranked"). A fixed line box and
+   a reserved count width keep the header from growing or sliding. */
+.preview-page__meta--board {
+  box-sizing: border-box;
+  min-height: 17px;
+  line-height: 17px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-page__meta--board > span:first-child {
+  display: inline-block;
+  min-width: 13ch;
+  text-align: end;
+}
+
 .preview-crumb {
   display: flex;
   align-items: center;
@@ -941,6 +1069,19 @@
   margin: 0 0 6px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.preview-detail-collections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.preview-detail-collections .preview-btn {
+  max-width: 100%;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .preview-board-embed {
@@ -954,6 +1095,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.preview-toolbar[aria-label="Claim for 30 min?"] > .preview-btn {
+  box-sizing: border-box;
+  min-height: 44px;
 }
 
 .preview-input {
@@ -1001,6 +1147,17 @@
   align-items: flex-start;
   gap: 8px;
   padding: 10px 2px 4px;
+}
+
+.preview-calc-next {
+  margin: 0;
+}
+
+@media (max-width: 599px) {
+  .preview-calc-next .preview-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 .preview-panel__meta .preview-chip {
@@ -1233,6 +1390,59 @@
 
 .preview-bento--stale {
   opacity: 0.45;
+}
+
+/* Placeholder cards keep the first page's box while that page is in flight. */
+.preview-card--skeleton {
+  pointer-events: none;
+  /* Collapsed card box, measured with the live first page in the column.
+     1 col (390) 420.5, 2 col (800) 521, 3 col (1280) 414.2. The empty art
+     box is a few pixels short of a loaded input tile; this floor closes it. */
+  min-height: 420.5px;
+}
+
+@media (min-width: 720px) {
+  .preview-card--skeleton { min-height: 521px; }
+}
+
+@media (min-width: 1180px) {
+  .preview-card--skeleton { min-height: 414.2px; }
+}
+
+.preview-card--skeleton .preview-lane__label {
+  min-height: 15px;
+}
+
+.preview-card--skeleton .preview-cardline {
+  min-height: 46.5px;
+}
+
+.preview-skel__bar {
+  display: block;
+  width: min(14rem, 70%);
+  height: 10px;
+  border-radius: var(--r-chip);
+  background: var(--row-hover);
+}
+
+/* Empty and failed boards. One block for the message, not a page of hidden cards.
+   The fold offset keeps the FAQ below a normal viewport. 100vh is the fallback
+   when max() or dvh is unsupported, and 12rem stops the block collapsing to 0
+   on a landscape phone. */
+.preview-board-status {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+  min-height: max(12rem, calc(100dvh - 360px));
+}
+
+/* A short first page is shorter than the skeleton grid. Hold the list to the
+   fold so the FAQ does not move up into the viewport. Same floor as the
+   empty-board block. */
+.preview-bento--floor {
+  min-height: 100vh;
+  min-height: max(12rem, calc(100dvh - 360px));
 }
 
 @media (min-width: 720px) {
@@ -3204,6 +3414,17 @@
 .preview-plan--pro {
   border-color: var(--line-hard);
 }
+
+@media (max-width: 599px) {
+  .preview-plans > .preview-plan--pro { order: -1; }
+  .preview-tabs--billing .o-tab {
+    height: auto;
+    min-height: 44px;
+  }
+}
+
+.preview-plan__delay { color: var(--text-muted); }
+.preview-plan__clock { flex: none; }
 
 .preview-plan__price {
   margin: 0;

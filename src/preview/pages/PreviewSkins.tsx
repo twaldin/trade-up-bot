@@ -175,6 +175,7 @@ const SKIN_INDEX_TTL_MS = 5 * 60_000;
 const SKIN_SEARCH_DEBOUNCE_MS = 200;
 
 export function PreviewSkinsPage() {
+  const emitCanonical = useCanonicalSlot("https://tradeupbot.app/skins");
   // Pages are tagged with the key they belong to, so a new search keeps showing
   // the last good grid until its own first page lands.
   const [pages, setPages] = useState<{ key: string; pages: SkinRow[][] }>({ key: "", pages: [] });
@@ -314,6 +315,7 @@ export function PreviewSkinsPage() {
   return (
     <div className="preview-page">
       <title>CS2 Skin Prices & Float Data — All Skins | TradeUpBot</title>
+      {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/skins" />}
       <header className="preview-page__head">
         <div>
           <h1>Skins</h1>
@@ -563,6 +565,11 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
 
 export function PreviewSkinPage() {
   const { slug = "" } = useParams();
+  const canonical = slug ? `https://tradeupbot.app/skins/${slug}` : "";
+  const emitCanonical = useCanonicalSlot(canonical);
+  const canonicalLink = emitCanonical && canonical
+    ? <link rel="canonical" href={canonical} />
+    : null;
   const bySlug = useBrowseJson<{ name: string }>(`/api/skin-by-slug/${encodeURIComponent(slug)}`, SKIN_SLUG_TTL_MS);
   const name = bySlug.data?.name ?? null;
   // Same URL SkinStats reads, so the header and the stats card share one request.
@@ -576,18 +583,25 @@ export function PreviewSkinPage() {
   if (error) {
     return (
       <div className="preview-page">
+        {canonicalLink}
         <header className="preview-page__head"><div><h1>Skin</h1><p>{error}</p></div></header>
         <Link className="preview-btn" to={skinsHref()}>Back to skins</Link>
       </div>
     );
   }
   if (!name) {
-    return <div className="preview-page"><p className="preview-note">{bySlug.throttled ? SLOW_DOWN_COPY : "Loading skin…"}</p></div>;
+    return (
+      <div className="preview-page">
+        {canonicalLink}
+        <p className="preview-note">{bySlug.throttled ? SLOW_DOWN_COPY : "Loading skin…"}</p>
+      </div>
+    );
   }
 
   const { weapon, finish } = splitSkinName(name);
   return (
     <div className="preview-page">
+      {canonicalLink}
       <title>{`${name} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`}</title>
       <header className="preview-page__head">
         <div>
@@ -611,6 +625,8 @@ export function PreviewSkinPage() {
             tradeUps={board.tradeUps}
             loading={board.loading}
             isFree={board.isFree}
+            signedIn={board.signedIn}
+            tier={board.tier}
             expandedId={board.expandedId}
             onExpand={board.onExpand}
             query={board.query}
@@ -628,6 +644,7 @@ export function PreviewSkinPage() {
             onFilterBlur={board.onFilterBlur}
             page={board.page}
             total={board.total}
+            rawTotal={board.rawTotal}
             landedPage={board.landedPage}
             shownStatus={board.shownStatus}
             heading="Trade-ups using this skin"
@@ -1041,6 +1058,8 @@ export function PreviewCollectionPage() {
           tradeUps={board.tradeUps}
           loading={board.loading}
           isFree={board.isFree}
+          signedIn={board.signedIn}
+          tier={board.tier}
           expandedId={board.expandedId}
           onExpand={board.onExpand}
           query={board.query}
@@ -1058,6 +1077,7 @@ export function PreviewCollectionPage() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
           collection={title}

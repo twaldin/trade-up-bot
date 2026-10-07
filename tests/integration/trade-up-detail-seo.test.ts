@@ -106,6 +106,8 @@ describe("GET /trade-ups/:id crawler HTML", () => {
     expect(page).toContain('<meta property="og:title" content="Classified to Covert: +$41.20 Expected P/L | TradeUpBot"');
     expect(page).toContain("<h1>Classified to Covert Trade-Up — +$41.20 Expected P/L (16.5% ROI)</h1>");
     expect(page).toContain("+$41.20 expected P/L after fees, 32% of outcomes above cost, $250.00 cost. Inputs: AK-47 Redline.");
+    expect(page).toContain('href="/trade-ups/collection/recoil"');
+    expect(page).not.toContain("the-recoil-collection");
   });
 
   it("renders the likeliest output name at or above 0.5", async () => {
@@ -121,11 +123,15 @@ describe("GET /trade-ups/:id crawler HTML", () => {
     expect(page).toContain(`<meta property="og:title" content="${escapeHtml("Covert to Knife Trade-Up: −$12.34 Expected P/L | TradeUpBot")}"`);
     expect(page).toContain(`<h1>${escapeHtml("Covert to Knife Trade-Up — −$12.34 Expected P/L (−1.4% ROI)")}</h1>`);
     expect(page).toContain(escapeHtml("−$12.34 expected P/L after fees, >99% of outcomes above cost"));
+    expect(page).toContain('href="/trade-ups/collection/dreams-nightmares"');
+    expect(page).not.toContain("the-dreams-nightmares-collection");
   });
 
   it("orders equal collection counts by name", async () => {
     const page = await html("milspec");
     expect(page).toContain("<title>Mil-Spec to Restricted: Fracture + Prisma 2 | TradeUpBot</title>");
+    expect(page).toContain('href="/trade-ups/collection/prisma-2"');
+    expect(page).toContain('href="/trade-ups/collection/fracture"');
   });
 
   it("returns 404 for a non-numeric id", async () => {

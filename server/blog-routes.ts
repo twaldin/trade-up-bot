@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { blogPostHeading, blogPosts, type BlogPost } from "../src/data/blog-posts.js";
-import { buildSeoHtml, escapeHtml, injectMetaIntoSpa, isCrawler } from "./seo.js";
+import { buildSeoHtml, escapeHtml, injectMetaIntoSpa, isCrawler, sendSlugNotFound } from "./seo.js";
 
 // Blog post metadata/content is sourced from the client blog data so crawler HTML,
 // client-rendered posts, and server meta stay in sync.
@@ -76,7 +76,7 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
     const slug = req.params[0];
     const post = BLOG_POST_META[slug];
     if (!post) {
-      res.status(404).send("Blog post not found");
+      sendSlugNotFound(res, "Blog post not found");
       return;
     }
     res.redirect(301, `/blog/${slug}/`);
@@ -86,7 +86,7 @@ export function registerBlogRoutes(app: Express, indexHtml: string): void {
     const slug = req.params[0];
     const post = BLOG_POST_META[slug];
     if (!post) {
-      res.status(404).send("Blog post not found");
+      sendSlugNotFound(res, "Blog post not found");
       return;
     }
     const ua = req.headers["user-agent"] || "";

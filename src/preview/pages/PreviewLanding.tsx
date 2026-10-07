@@ -21,11 +21,12 @@ import { heroProof, pickHeroTradeUp } from "../lib/hero-proof.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { PRO_PRICE, proPriceLine } from "../lib/pro-pricing.js";
 import { boardDelaySentence, useBoardDelay } from "../lib/board-delay.js";
-import { trackUpgradeCta } from "../../lib/conversions.js";
 import type { TradeUp } from "../../../shared/types.js";
 import {
   DELAY_BANNER,
+  HERO_STILL_LOADING,
   LABEL_AFTER_FEES,
+  LABEL_EXPECTED_PL,
   LABEL_EXPECTED_VALUE,
   LABEL_OUTCOME_PROBABILITY,
   LABEL_OUTCOMES_ABOVE_COST,
@@ -43,14 +44,19 @@ import {
   PREVIEW_VALUE,
   PREVIEW_VALUE_HEADLINE,
 } from "../lib/copy.js";
-import { trackCtaClick } from "../../lib/conversions.js";
+import { LOAD_ERROR_COPY } from "../lib/board-notice.js";
+import { RATE_LIMIT_MANUAL_COPY } from "../lib/page-fetch.js";
+import { trackCtaClick, trackLandingLoadError, trackUpgradeCta } from "../../lib/conversions.js";
 import { faqEntities, seoPage } from "../lib/seo-pages.js";
-import { formatDollars, sourceLabel } from "../../utils/format.js";
+import { formatDollars, sourceLabel, timeAgo } from "../../utils/format.js";
 import {
   formatLandingStat,
+  LANDING_STAT_PLACEHOLDER,
+  landingStatPlaceholderTiles,
   visibleLandingStatTiles,
   type BoardCountSource,
   type LandingStatCounts,
+  type LandingStatTile,
 } from "../lib/landing-stats.js";
 import { boardFaceFor, TradeUpCard, usePreviewTradeUps } from "./PreviewBoard.js";
 
@@ -64,6 +70,7 @@ function Face({ name }: { name: string }) {
       <img
         src={src}
         alt=""
+        referrerPolicy={src.startsWith("/") ? "strict-origin" : undefined}
         onError={(event) => {
           event.currentTarget.style.visibility = "hidden";
         }}
@@ -116,10 +123,144 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
 }
 
 const SKELETON_ROWS = Array.from({ length: 6 }, (_, index) => index);
+const CARD_SKELETON_ROWS = Array.from({ length: 3 }, (_, index) => index);
 
-export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading: boolean; isFree: boolean }) {
+/** How long the hero skeleton sits before the honest slow line and Retry. */
+export const HERO_SLOW_AFTER_MS = 8_000;
+
+/** Shown when the board answered and no trade-up is eligible. */
+export const HERO_EMPTY_COPY = "No trade-ups to show right now.";
+
+export type HeroLoadPhase = "ready" | "throttled" | "error" | "slow" | "skeleton" | "empty";
+
+export function heroLoadPhase(state: {
+  hasTradeUp: boolean;
+  throttled: boolean;
+  failed: boolean;
+  loading: boolean;
+  slow: boolean;
+}): HeroLoadPhase {
+  if (state.hasTradeUp) return "ready";
+  if (state.throttled) return "throttled";
+  if (state.failed) return "error";
+  if (state.loading && state.slow) return "slow";
+  if (state.loading) return "skeleton";
+  return "empty";
+}
+
+function useHeroSlow(active: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setSlow(false);
+      return;
+    }
+    const handle = window.setTimeout(() => setSlow(true), HERO_SLOW_AFTER_MS);
+    return () => window.clearTimeout(handle);
+  }, [active]);
+  return slow;
+}
+
+function HeroLoadNotice({ phase, onRetry }: { phase: HeroLoadPhase; onRetry?: () => void }) {
+  const retry = (
+    <button type="button" className="preview-btn preview-hero__retry" onClick={onRetry}>Retry</button>
+  );
+  switch (phase) {
+    case "slow":
+      return (
+        <div className="preview-hero__slow" role="status">
+          <p className="preview-note">{HERO_STILL_LOADING}</p>
+          {retry}
+        </div>
+      );
+    case "throttled":
+      return (
+        <div className="preview-notice" role="status">
+          <p className="preview-note">{RATE_LIMIT_MANUAL_COPY}</p>
+          {retry}
+        </div>
+      );
+    case "error":
+      return (
+        <div className="preview-notice" role="alert">
+          <p className="preview-note">{LOAD_ERROR_COPY}</p>
+          {retry}
+        </div>
+      );
+    case "ready":
+    case "skeleton":
+    case "empty":
+      return null;
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
+}
+
+function HeroMobileCard({
+  tu,
+  phase,
+  onRetry,
+}: {
+  tu: TradeUp | null;
+  phase: HeroLoadPhase;
+  onRetry?: () => void;
+}) {
+  const proof = phase === "ready" ? heroProof(tu) : null;
+  return (
+    <article className="preview-hero__card" aria-label="Top trade-up on the board" aria-busy={phase === "skeleton" || phase === "slow"}>
+      {proof && tu ? (
+        <>
+          <header className="preview-hero__card-head">
+            <p className="o-panel-title">Top trade-up on the board</p>
+            <time dateTime={tu.created_at}>{timeAgo(tu.created_at)}</time>
+          </header>
+          <p className="preview-hero__metrics">
+            <span>Cost <b>{formatDollars(proof.costCents)}</b></span>
+            <span>{LABEL_EXPECTED_PL} <b className={toneOf(proof.profitCents)}>{signedDollars(proof.profitCents)}</b></span>
+            <span>{LABEL_OUTCOMES_ABOVE_COST} <b>{proof.chance === null ? "—" : formatOdds(proof.chance)}</b></span>
+          </p>
+          <Link
+            to={`/trade-ups/${proof.id}`}
+            className="preview-btn preview-hero__open"
+            onClick={() => trackCtaClick("home_hero_tradeup")}
+          >
+            Open this trade-up
+          </Link>
+        </>
+      ) : phase === "skeleton" || phase === "slow" ? (
+        <div className="preview-hero__card-skeleton" aria-hidden="true">
+          {CARD_SKELETON_ROWS.map((index) => <span key={index} />)}
+        </div>
+      ) : phase === "empty" ? (
+        <p className="preview-note">{HERO_EMPTY_COPY} <Link to="/trade-ups">Open the board</Link>.</p>
+      ) : null}
+      <HeroLoadNotice phase={phase} onRetry={onRetry} />
+    </article>
+  );
+}
+
+export function HeroProof({
+  tu,
+  loading,
+  isFree,
+  slow = false,
+  failed = false,
+  throttled = false,
+  onRetry,
+}: {
+  tu: TradeUp | null;
+  loading: boolean;
+  isFree: boolean;
+  slow?: boolean;
+  failed?: boolean;
+  throttled?: boolean;
+  onRetry?: () => void;
+}) {
   const delaySentence = boardDelaySentence(useBoardDelay(isFree));
   const proof = heroProof(tu);
+  const phase = heroLoadPhase({ hasTradeUp: Boolean(proof), throttled, failed, loading, slow });
   const outTint = outputRarityColor(tu?.type);
   return (
     <aside
@@ -211,7 +352,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
           </div>
           <FeeLine line={boardFeeLine(proof.listings.map((row) => row.source))} />
           <footer className="preview-proof__foot">
-            <Link to={`/trade-ups/${proof.id}`} className="preview-btn">Open this trade-up</Link>
+            <Link to={`/trade-ups/${proof.id}`} className="preview-btn" onClick={() => trackCtaClick("home_hero_tradeup")}>Open this trade-up</Link>
             {isFree && (
               <p className="preview-note">
                 {DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""} <Link className="preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("landing_delay")}>See Pro</Link>
@@ -219,7 +360,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             )}
           </footer>
         </>
-      ) : loading ? (
+      ) : phase === "skeleton" || phase === "slow" ? (
         <>
           <div className="preview-proof__skeleton" aria-hidden>
             {SKELETON_ROWS.map((index) => <span key={index} />)}
@@ -231,8 +372,10 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
           <div className="preview-proof__skeleton preview-proof__skeleton--kpis" aria-hidden>
             <span />
           </div>
-          <p className="preview-note preview-proof__status">Loading the top trade-up on the board…</p>
+          <HeroLoadNotice phase={phase} onRetry={onRetry} />
         </>
+      ) : phase === "throttled" || phase === "error" ? (
+        <HeroLoadNotice phase={phase} onRetry={onRetry} />
       ) : (
         <>
           <div className="preview-listings preview-listings--story preview-proof__placeholder">
@@ -245,7 +388,7 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
             </div>
           </div>
           <p className="preview-note preview-proof__status">
-            The board is refreshing. <Link to="/trade-ups">Open the board</Link>.
+            {HERO_EMPTY_COPY} <Link to="/trade-ups">Open the board</Link>.
           </p>
         </>
       )}
@@ -253,23 +396,109 @@ export function HeroProof({ tu, loading, isFree }: { tu: TradeUp | null; loading
   );
 }
 
+export function LandingHero({
+  tu,
+  loading,
+  isFree,
+  slow = false,
+  failed = false,
+  throttled = false,
+  onRetry,
+  statTiles = [],
+  showPlaceholder = false,
+}: {
+  tu: TradeUp | null;
+  loading: boolean;
+  isFree: boolean;
+  slow?: boolean;
+  failed?: boolean;
+  throttled?: boolean;
+  onRetry?: () => void;
+  statTiles?: readonly LandingStatTile[];
+  /** Dashes while the real count is unknown. A capped list total is not a count. */
+  showPlaceholder?: boolean;
+}) {
+  const phase = heroLoadPhase({ hasTradeUp: Boolean(heroProof(tu)), throttled, failed, loading, slow });
+  return (
+    <section className="preview-hero">
+      <div className="preview-hero__copy">
+        <p className="o-kicker o-arrive" style={{ "--stagger": 0 } as CSSProperties}>
+          Listings · CSFloat · DMarket · Skinport · Buff.market
+        </p>
+        <h1 className="o-arrive" style={{ "--stagger": 1 } as CSSProperties}>{PREVIEW_HEADLINE}</h1>
+        <HeroMobileCard tu={tu} phase={phase} onRetry={onRetry} />
+        <p className="preview-hero__lede o-arrive" style={{ "--stagger": 2 } as CSSProperties}>
+          {PREVIEW_LEDE}
+        </p>
+        <div className="preview-toolbar o-arrive" style={{ "--stagger": 3 } as CSSProperties}>
+          <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
+            {PREVIEW_CTA_PRIMARY}
+          </Link>
+          <Link to="/calculator" className="preview-btn preview-btn--lg" onClick={() => trackCtaClick("home_hero_calculator")}>
+            {PREVIEW_CTA_CALCULATOR}
+          </Link>
+          <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
+        </div>
+        {showPlaceholder && (
+          <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties} aria-busy="true" aria-label="Loading trade-up counts">
+            {landingStatPlaceholderTiles().map((tile) => (
+              <div key={tile.key} aria-hidden="true">
+                <b>{LANDING_STAT_PLACEHOLDER}</b>
+                <span>{tile.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {!showPlaceholder && statTiles.length > 0 && (
+          <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
+            {statTiles.map((tile) => (
+              <div key={tile.key}>
+                <b>{formatLandingStat(tile.value)}</b>
+                <span>{tile.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <HeroProof
+        tu={tu}
+        loading={loading}
+        isFree={isFree}
+        slow={slow}
+        failed={failed}
+        throttled={throttled}
+        onRetry={onRetry}
+      />
+    </section>
+  );
+}
+
 export function PreviewLanding({
   stats,
   mode = "dark",
   onBoardCounts,
+  countsPending = false,
 }: {
   stats: LandingStatCounts | null;
   mode?: "light" | "dark";
   /** Hero trade-up totals come from this teaser response. No second count query. */
   onBoardCounts?: (counts: BoardCountSource) => void;
+  /** True until the real count is known. The cap from the board list is not a count. */
+  countsPending?: boolean;
 }) {
   const [pinRef] = useScrollProgress<HTMLElement>("cover");
   const live = usePreviewTradeUps({ perPage: 3 });
 
   useEffect(() => {
     if (!onBoardCounts || live.total == null) return;
-    onBoardCounts({ total: live.total, total_profitable: live.totalProfitable });
-  }, [live.total, live.totalProfitable, onBoardCounts]);
+    // The flags reach heroBoardCounts, which ignores deduped or capped board counts.
+    onBoardCounts({
+      total: live.total,
+      total_profitable: live.totalProfitable,
+      deduped: live.deduped,
+      total_profitable_capped: live.totalProfitableCapped,
+    });
+  }, [live.total, live.totalProfitable, live.deduped, live.totalProfitableCapped, onBoardCounts]);
   const hero = pickHeroTradeUp(live.tradeUps);
   // Wait for the hero pick so the expanded card below never swaps mid-load.
   const rest = hero || !live.loading ? live.tradeUps.filter((tu) => tu.id !== hero?.id) : [];
@@ -289,40 +518,34 @@ export function PreviewLanding({
 
   const graphName = featured ? uniqueOutputs(featured)[0]?.skin_name ?? null : null;
   const statTiles = visibleLandingStatTiles(stats);
+  const showPlaceholder = countsPending && statTiles.length === 0;
+  const boardWaiting = live.loading && !hero && !live.failed && !live.throttle;
+  const slow = useHeroSlow(boardWaiting);
+  const reportedLoadError = useRef<string | null>(null);
+  useEffect(() => {
+    if (hero) {
+      reportedLoadError.current = null;
+      return;
+    }
+    const kind = live.failed ? "error" : live.throttle ? "rate_limited" : null;
+    if (!kind || reportedLoadError.current === kind) return;
+    reportedLoadError.current = kind;
+    trackLandingLoadError(kind);
+  }, [hero, live.failed, live.throttle]);
 
   return (
     <main id="main">
-      <section className="preview-hero">
-        <div className="preview-hero__copy">
-          <p className="o-kicker o-arrive" style={{ "--stagger": 0 } as CSSProperties}>
-            Listings · CSFloat · DMarket · Skinport · Buff.market
-          </p>
-          <h1 className="o-arrive" style={{ "--stagger": 1 } as CSSProperties}>{PREVIEW_HEADLINE}</h1>
-          <p className="preview-hero__lede o-arrive" style={{ "--stagger": 2 } as CSSProperties}>
-            {PREVIEW_LEDE}
-          </p>
-          <div className="preview-toolbar o-arrive" style={{ "--stagger": 3 } as CSSProperties}>
-            <Link to="/trade-ups" className="preview-btn preview-btn--lime preview-btn--lg">
-              {PREVIEW_CTA_PRIMARY}
-            </Link>
-            <Link to="/calculator" className="preview-btn preview-btn--lg" onClick={() => trackCtaClick("home_hero_calculator")}>
-              {PREVIEW_CTA_CALCULATOR}
-            </Link>
-            <span className="preview-hero__note">{PREVIEW_CTA_NOTE}</span>
-          </div>
-          {statTiles.length > 0 && (
-            <div className="preview-stats o-arrive" style={{ "--stagger": 4 } as CSSProperties}>
-              {statTiles.map((tile) => (
-                <div key={tile.key}>
-                  <b>{formatLandingStat(tile.value)}</b>
-                  <span>{tile.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <HeroProof tu={hero} loading={live.loading} isFree={live.isFree} />
-      </section>
+      <LandingHero
+        tu={hero}
+        loading={live.loading}
+        isFree={live.isFree}
+        slow={slow}
+        failed={live.failed}
+        throttled={Boolean(live.throttle)}
+        onRetry={live.retry}
+        statTiles={statTiles}
+        showPlaceholder={showPlaceholder}
+      />
 
       <div className="preview-laptop">
         <Laptop>
@@ -371,7 +594,12 @@ export function PreviewLanding({
             )}
           </div>
         )}
-        {live.loading && !featured && <p className="preview-note">Loading trade-ups…</p>}
+        {live.loading && !featured && !live.failed && !live.throttle && (
+          <div className="preview-live__skeleton" aria-hidden="true" />
+        )}
+        {!featured && (live.failed || live.throttle) && (
+          <HeroLoadNotice phase={live.throttle ? "throttled" : "error"} onRetry={live.retry} />
+        )}
         {featured && (
           <div className="preview-toolbar preview-live__next">
             <Link to={`/trade-ups/${featured.id}`} className="preview-btn preview-btn--lg">
@@ -424,7 +652,13 @@ export function PreviewLanding({
               <p className="o-kicker">Float against price</p>
               {graphName && <span className="preview-panel__meta">{graphName}</span>}
             </header>
-            {graphName ? <LandingGraph name={graphName} /> : <p className="preview-note">No output skin to plot yet.</p>}
+            {graphName ? (
+              <LandingGraph name={graphName} />
+            ) : live.loading || live.failed || live.throttle ? (
+              <div className="preview-plot preview-hero__plot-skeleton" aria-hidden="true" />
+            ) : (
+              <p className="preview-note">No output skin to plot yet.</p>
+            )}
           </div>
         </div>
         <div className="preview-toolbar">
@@ -458,7 +692,7 @@ export function PreviewLanding({
               ))}
             </ul>
             <p className="preview-note">{PREVIEW_PRO_PRICES}</p>
-            <Link className="preview-btn preview-btn--lime preview-btn--block preview-upgrade" to="/pricing">Compare plans</Link>
+            <Link className="preview-btn preview-btn--lime preview-btn--block preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("landing_plan_tile")}>Compare plans</Link>
           </article>
         </div>
       </section>

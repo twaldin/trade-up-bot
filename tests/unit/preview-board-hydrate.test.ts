@@ -3,6 +3,7 @@
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrateBoardCard } from "../../src/preview/lib/board-hydrate.js";
 import { RATE_LIMIT_MANUAL_COPY, holdBrowse, resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
@@ -123,13 +124,13 @@ describe("board card hydration 429", () => {
     let root: Root | null = null;
     await act(async () => {
       root = createRoot(host);
-      root.render(createElement(PreviewBoard, {
+      root.render(createElement(MemoryRouter, null, createElement(PreviewBoard, {
         tradeUps: [{ ...bareCard(), hydrateThrottled: true }, { ...bareCard(), id: 43, hydrateThrottled: true }],
         loading: false,
         isFree: false,
         expandedId: null,
         onExpand: () => {},
-      }));
+      })));
     });
     expect(host.textContent).toContain(RATE_LIMIT_MANUAL_COPY);
     expect(host.textContent).not.toContain("Retrying");

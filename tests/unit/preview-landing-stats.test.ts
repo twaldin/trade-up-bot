@@ -4,10 +4,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 import {
+  captureServerLandingStats,
   injectLandingStats,
+  LANDING_STAT_PLACEHOLDER,
+  landingStatPlaceholderTiles,
+  landingStatsFromMarkup,
   landingStatsFromSources,
+  nextHeroGlobal,
   publishedTradeUpCounts,
+  formatLandingStat,
   renderLandingStatsHtml,
+  serverLandingStats,
   visibleLandingStatTiles,
 } from "../../src/preview/lib/landing-stats.js";
 import { renderHomepageSeoBody } from "../../server/static-seo-pages.js";
@@ -18,6 +25,8 @@ const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
 
 const landing = read("../../src/preview/pages/PreviewLanding.tsx");
 const app = read("../../src/preview/PreviewApp.tsx");
+const main = read("../../src/main.tsx");
+const css = read("../../src/preview/preview.css");
 const server = read("../../server/index.ts");
 const prerender = read("../../scripts/prerender.ts");
 const seoPages = read("../../server/static-seo-pages.ts");
@@ -101,6 +110,154 @@ describe("landing stats from the board + global-stats", () => {
       global: ZERO_GLOBAL,
     });
     expect(visibleLandingStatTiles(stats).map((tile) => tile.value)).toEqual([40, 7]);
+  });
+
+  it("does not publish the capped board total of 10001", () => {
+    const stats = landingStatsFromSources({
+      board: {
+        total: 10001,
+        total_profitable: 5000,
+        trade_ups: [makeTradeUp(), makeTradeUp(), makeTradeUp()],
+      },
+    });
+    expect(stats.total_trade_ups).toBeUndefined();
+    expect(stats.profitable_trade_ups).toBeUndefined();
+    expect(visibleLandingStatTiles(stats)).toEqual([]);
+    const html = renderLandingStatsHtml(stats);
+    expect(html).not.toContain("10,001");
+    expect(html).not.toContain("10001");
+    expect(html).not.toContain("5,000");
+  });
+
+  it("still shows a real board total under the cap", () => {
+    const stats = landingStatsFromSources({ board: { total: 10000, total_profitable: 12 } });
+    expect(visibleLandingStatTiles(stats).map((tile) => tile.value)).toEqual([10000, 12]);
+  });
+
+  it("uses the server global count when the board total is the cap", () => {
+    const stats = landingStatsFromSources({
+      global: {
+        active_trade_ups: 820934,
+        active_profitable_trade_ups: 84301,
+        total_data_points: 100,
+        total_cycles: 9,
+      },
+      board: { total: 10001, total_profitable: 0, trade_ups: [makeTradeUp()] },
+    });
+    const html = renderLandingStatsHtml(stats);
+    expect(html).toContain("820,934");
+    expect(html).toContain("84,301");
+    expect(html).not.toContain("10,001");
+    expect(html).not.toContain("10001");
+    expect(landingStatsFromMarkup(html)?.total_trade_ups).toBe(820934);
+    expect(landingStatsFromMarkup(html)?.profitable_trade_ups).toBe(84301);
+  });
+
+  it("placeholder labels reserve the hero row and do not invent a number", () => {
+    expect(LANDING_STAT_PLACEHOLDER).not.toMatch(/\d/);
+    expect(landingStatPlaceholderTiles().map((tile) => tile.label)).toEqual([
+      "trade-ups",
+      "positive EV",
+      "data points",
+      "cycles analyzed",
+    ]);
+    expect(landingStatPlaceholderTiles().map((tile) => tile.label).join(" ")).not.toMatch(/\d/);
+  });
+
+  it("keeps the server-rendered count when global-stats comes back empty", () => {
+    const serverCounts = { total_trade_ups: 820934, profitable_trade_ups: 84301 };
+    expect(nextHeroGlobal(serverCounts, null)).toEqual(serverCounts);
+    expect(nextHeroGlobal(serverCounts, ZERO_GLOBAL)).toEqual(serverCounts);
+    expect(nextHeroGlobal(null, null)).toBeNull();
+    expect(nextHeroGlobal(serverCounts, { active_trade_ups: 820935 })?.active_trade_ups).toBe(820935);
+  });
+
+  it("reads the server-rendered count from hero HTML before React replaces it", () => {
+    const html = renderLandingStatsHtml(landingStatsFromSources({
+      global: { active_trade_ups: 820934, active_profitable_trade_ups: 84301 },
+    }));
+    captureServerLandingStats(`<div id="root">${html}</div>`);
+    expect(serverLandingStats()?.total_trade_ups).toBe(820934);
+    expect(serverLandingStats()?.profitable_trade_ups).toBe(84301);
+    captureServerLandingStats(`<div id="root"></div>`);
+    expect(serverLandingStats()).toBeNull();
+  });
+
+  it("QA 206 B1: a deduped board never fills the hero when global-stats is missing or 0", () => {
+    const board = { total: 213, total_profitable: 1, deduped: true, raw_total: 10001, trade_ups: [makeTradeUp()] };
+    for (const global of [null, { total_trade_ups: 0, profitable_trade_ups: 0 }]) {
+      const stats = landingStatsFromSources({ global, board });
+      expect(stats.total_trade_ups).toBeUndefined();
+      expect(stats.profitable_trade_ups).toBeUndefined();
+      const html = renderLandingStatsHtml(stats);
+      expect(html).not.toContain("213");
+      expect(html).not.toContain("positive EV");
+      expect(visibleLandingStatTiles(stats)).toEqual([]);
+    }
+  });
+
+  it("prints 10,000+ for the 10001 sentinel and leaves a real larger count alone", () => {
+    expect(formatLandingStat(10_001)).toBe("10,000+");
+    expect(formatLandingStat(10_001)).not.toContain("10,001");
+    expect(formatLandingStat(10_001)).not.toContain("10001");
+    expect(formatLandingStat(90_700)).toBe("90,700");
+    expect(formatLandingStat(7_085)).toBe("7,085");
+
+    const flagFalse = landingStatsFromSources({
+      board: { total: 8000, total_profitable: 7085, total_profitable_capped: false, trade_ups: [makeTradeUp()] },
+    });
+    expect(renderLandingStatsHtml(flagFalse)).toContain("<b>7,085</b><span>positive EV</span>");
+    expect(renderLandingStatsHtml(flagFalse)).not.toContain("10,000+");
+
+    const globalWins = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 10001, total_profitable_capped: true, deduped: true, trade_ups: [makeTradeUp()] },
+      global: { total_trade_ups: 120000, profitable_trade_ups: 90700 },
+    });
+    const globalHtml = renderLandingStatsHtml(globalWins);
+    expect(globalHtml).toContain("90,700");
+    expect(globalHtml).not.toContain("10,000+");
+    expect(globalHtml).not.toContain("56");
+  });
+
+  it("does not render a deduped board profitable count of 1", () => {
+    const stats = landingStatsFromSources({
+      board: { total: 1000, total_profitable: 1, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.profitable_trade_ups).toBeUndefined();
+    const html = renderLandingStatsHtml(stats);
+    expect(html).not.toContain("positive EV");
+    expect(html).not.toContain(">1<");
+    expect(html).not.toContain("1 profitable");
+    expect(visibleLandingStatTiles(stats).map((tile) => tile.key)).not.toContain("profitable_trade_ups");
+  });
+
+  it("does not present a deduped board total as the tracked trade-up count", () => {
+    const missed = landingStatsFromSources({
+      board: { total: 1_000, total_profitable: 400, trade_ups: [makeTradeUp()], deduped: true },
+      global: null,
+    });
+    expect(missed.total_trade_ups).toBeUndefined();
+    expect(missed.profitable_trade_ups).toBeUndefined();
+    const html = renderLandingStatsHtml(missed);
+    expect(html).not.toContain("1,000");
+    expect(html).not.toContain("trade-ups");
+    expect(visibleLandingStatTiles(missed)).toEqual([]);
+
+    const live = landingStatsFromSources({
+      global: LIVE_GLOBAL,
+      board: { total: 1_000, total_profitable: 50, deduped: true, trade_ups: [makeTradeUp()] },
+    });
+    expect(live.total_trade_ups).toBe(1_842);
+    expect(live.profitable_trade_ups).toBe(311);
+  });
+
+  it("still drops a capped (10001) non-deduped board total", () => {
+    const stats = landingStatsFromSources({
+      global: null,
+      board: { total: 10_001, total_profitable: 52, trade_ups: [makeTradeUp()] },
+    });
+    expect(stats.total_trade_ups).toBeUndefined();
+    expect(stats.profitable_trade_ups).toBeUndefined();
   });
 });
 
@@ -213,6 +370,20 @@ describe("wiring: hero reads live counts, prerender does not bake zeros", () => 
     expect(server).toContain("getGlobalStats");
     expect(server).not.toContain('text-muted-foreground">${label}');
     expect(seoPages).toContain("renderLandingStatsHtml");
+  });
+
+  it("shows the server count or a placeholder, never the capped 10,001", () => {
+    expect(main.indexOf("captureServerLandingStats(")).toBeGreaterThan(-1);
+    expect(main.indexOf("captureServerLandingStats(")).toBeLessThan(main.indexOf("createRoot("));
+    expect(app).toContain("serverLandingStats");
+    expect(app).toContain("nextHeroGlobal");
+    expect(app).toContain("countsPending={countsPending}");
+    expect(landing).toContain("countsPending && statTiles.length === 0");
+    expect(landing).toContain("LANDING_STAT_PLACEHOLDER");
+    expect(landing).toContain('aria-busy="true"');
+    expect(landing).not.toContain("10,001");
+    expect(landing).not.toContain("10001");
+    expect(css).toMatch(/\.preview-hero \.preview-stats b \{[^}]*min-width:\s*9ch/s);
   });
 
   it("prerender stub does not feed the hero four zeros", () => {

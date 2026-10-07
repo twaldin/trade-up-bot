@@ -1,4 +1,6 @@
 import { Router, type Request } from "express";
+import { asyncHandler } from "../async-handler.js";
+import { parseTradeUpId, routeParam } from "../../shared/trade-up-id.js";
 import pg from "pg";
 import { priceCache, priceSources, cascadeTradeUpStatuses, CONDITION_BOUNDS, repricedInputCost, recomputeTradeUpCost, ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale, lookupDMarketRelinks } from "../engine.js";
 import { fetchAllDMarketListings, isDMarketConfigured } from "../sync.js";
@@ -7,9 +9,12 @@ import { getEffectiveTier } from "../../shared/pro-access.js";
 import { cachedRoute, getRateLimit, cacheInvalidatePrefix, cacheGet, cacheSet, getRedis } from "../redis.js";
 import { getActiveClaims } from "./claims.js";
 import { applyListDiversityToListSql, shouldApplyListDiversity } from "./dn-diversity.js";
+import { DISJOINT_CANDIDATE_FACTOR, buildDisjointSnapshot, loadListingIds, parseOverlapMode, sharedWithRanks } from "./listing-disjoint.js";
 import { chanceThreshold, listCacheTier, NO_CHANCE_MATCH, tradeUpHiddenByDelay, tradeUpSortColumn, tradeUpsCacheKey } from "./trade-ups-query.js";
 import {
   RANK_SNAPSHOT_SIZE,
+  orderPresentByIds,
+  type RankSnapshot,
   groupInputRows,
   loadRankSnapshot,
   orderByIds,
@@ -108,6 +113,9 @@ async function batchLoadPageInputs(pool: pg.Pool, tradeUpIds: number[]): Promise
   );
   return groupInputRows(rows);
 }
+
+// Capped counts stop at this many rows; reaching it means "10,000+".
+const COUNT_CAP = 10001;
 
 const redisRankStore: RankSnapshotStore = {
   get: (key) => cacheGet(key),
@@ -213,10 +221,22 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
   const router = Router();
   const rankStore = opts.rankStore ?? redisRankStore;
 
+  router.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      next();
+      return;
+    }
+    if (req.path === "/api/trade-ups/" || /^\/api\/trade-ups\/{2,}/.test(req.path)) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
+    next();
+  });
+
   // Filter options: Redis-first (daemon pre-populates every cycle).
   // The DISTINCT + GROUP BY queries on 10M+ trade_up_inputs rows block the
   // event loop for 20-50s (better-sqlite3 is synchronous). MUST come from cache.
-  router.get("/api/filter-options", async (_req, res) => {
+  router.get("/api/filter-options", asyncHandler(async (_req, res) => {
     try {
       const { cacheGet } = await import("../redis.js");
       const cached = await cacheGet<Record<string, unknown>>("filter_opts");
@@ -273,7 +293,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     } catch {
       res.json({ skins: [], collections: [], markets: [] });
     }
-  });
+  }));
 
   // The list cache stores the full payload. Fresh rows are redacted here, after
   // the read, so a free viewer never receives a cached Pro body and a redacted
@@ -354,6 +374,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     const offset = (pageNum - 1) * perPage;
 
     const includeStale = req.query.include_stale === "true";
+    const overlap = parseOverlapMode(req.query.overlap);
     let where: string;
     const collectionJoin = ""; // Unused: collection filter now uses collection_names GIN array
     const params: (string | number | string[])[] = [];
@@ -578,29 +599,51 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
        LIMIT $${limitParam} OFFSET $${offsetParam}`;
     const dataParams = [...params, perPage, offset];
     // Capped COUNT: stop scanning after 10,001 rows for filtered / diversified queries
-    const cappedCountSql = `SELECT COUNT(*) as c FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT 10001) sub`;
+    const cappedCountSql = `SELECT COUNT(*) as c
+      FROM (SELECT 1 ${diversitySql.fromWhere} LIMIT ${COUNT_CAP}) sub`;
+    // Profitable rows get their own capped scan. Counting them inside the
+    // unordered LIMIT above counts an arbitrary slice, and can return the cap
+    // sentinel as if it were a real count.
+    const cappedProfitableSql = `SELECT COUNT(*) as p FROM (
+        SELECT 1 FROM (SELECT t.profit_cents ${diversitySql.fromWhere}) f
+        WHERE f.profit_cents > 0 LIMIT ${COUNT_CAP}
+      ) sub`;
+    const singleScanCountSql = `SELECT LEAST(COUNT(*), ${COUNT_CAP}) as c,
+        LEAST(COUNT(*) FILTER (WHERE profit_cents > 0), ${COUNT_CAP}) as p
+      FROM (SELECT t.profit_cents ${diversitySql.fromWhere}) sub`;
 
     let total = 0;
     let totalProfitable = 0;
+    let totalProfitableCapped = false;
     let rows: ListRow[] | null = null;
 
+    // overlap=all: rank of the first higher row sharing a listing, keyed by trade-up id.
+    const sharedWithRankById = new Map<number, number>();
+    // Set when the default board was served from a listing-disjoint snapshot.
+    let dedupeInfo: { deduped: true; rawTotal: number; hasMore: boolean } | null = null;
+
     // The diversified window sorts every active row regardless of OFFSET, so rank
-    // once per (filters, sort) and slice pages from the snapshot. Rows are re-read
-    // by id; if any snapshot id is no longer active, drop the snapshot and fall
-    // back to the live query so the page has no holes.
-    const snapshotKey = applyDiversity && !includeStale && snapshotCoversPage(offset, perPage)
-      ? rankSnapshotKey({ fromWhere: diversitySql.fromWhere, sortCol, sortOrder, params })
+    // once per (filters, sort, overlap) and slice pages from the snapshot.
+    // Default (disjoint) mode always pages from the snapshot so every page comes
+    // from the same deduped list: an id that went inactive since the build is
+    // rebuilt once, then skipped; pages past the deduped list are empty.
+    // overlap=all keeps the old behaviour (raw live query for holes/deep pages).
+    const useSnapshot = applyDiversity && !includeStale
+      && (overlap === "disjoint" || snapshotCoversPage(offset, perPage));
+    const snapshotKey = useSnapshot
+      ? rankSnapshotKey({ fromWhere: diversitySql.fromWhere, sortCol, sortOrder, params, overlap })
       : null;
     if (snapshotKey) {
-      const snapshot = await loadRankSnapshot(snapshotKey, rankStore, async () => {
-        // One window sort produces both the top ids and the capped total.
+      const computeSnapshot = async (): Promise<RankSnapshot> => {
+        // One window sort produces both the top ids and the capped totals.
         // A second count query sorts the same rows again and, run beside this
         // one, was the cold-page regression (two external merges contending).
         const capParam = limitParam - 1;
-        const { rows: rankRows } = await pool.query<{ id: number; total: number }>(
+        const candidateLimit = overlap === "disjoint" ? RANK_SNAPSHOT_SIZE * DISJOINT_CANDIDATE_FACTOR : RANK_SNAPSHOT_SIZE;
+        const { rows: rankRows } = await pool.query<{ id: number; profit_cents: number; total: number; profitable: number }>(
           `WITH ranked AS MATERIALIZED (
-             SELECT id, sort_value FROM (
-               SELECT t.id, ${sortCol} AS sort_value,
+             SELECT id, sort_value, profit_cents FROM (
+               SELECT t.id, ${sortCol} AS sort_value, t.profit_cents,
                  ROW_NUMBER() OVER (
                    PARTITION BY t.collection_names
                    ORDER BY ${sortCol} ${sortOrder} NULLS LAST, t.id DESC
@@ -610,33 +653,68 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
              ) scanned
              WHERE combo_rank <= $${capParam}
            )
-           SELECT id, total FROM (
-             SELECT id,
+           SELECT id, profit_cents, total, profitable FROM (
+             SELECT id, profit_cents,
                row_number() OVER (ORDER BY sort_value ${sortOrder} NULLS LAST, id DESC) AS ord,
-               LEAST(COUNT(*) OVER (), 10001)::int AS total
+               LEAST(COUNT(*) OVER (), ${COUNT_CAP})::int AS total,
+               LEAST(COUNT(*) FILTER (WHERE profit_cents > 0) OVER (), ${COUNT_CAP})::int AS profitable
              FROM ranked
            ) numbered
            WHERE ord <= $${limitParam}
            ORDER BY ord`,
-          [...params, RANK_SNAPSHOT_SIZE]
+          [...params, candidateLimit]
         );
-        return {
-          ids: rankRows.map((r) => Number(r.id)),
-          total: rankRows.length > 0 ? Number(rankRows[0].total) : 0,
-        };
-      });
-      const pageIds = snapshot.ids.slice(offset, offset + perPage);
-      const { rows: byId } = pageIds.length === 0
-        ? { rows: [] }
-        : await pool.query<ListRow>(
-          `SELECT ${listColumns} FROM trade_ups t
-           WHERE t.id = ANY($1::int[]) AND t.is_theoretical = false AND t.listing_status = 'active'`,
-          [pageIds]
-        );
-      const ordered = orderByIds(byId, pageIds);
+        const ranked = rankRows.map((r) => ({ id: Number(r.id), profitCents: Number(r.profit_cents) }));
+        const rawTotal = rankRows.length > 0 ? Number(rankRows[0].total) : 0;
+        const rawProfitable = rankRows.length > 0 ? Number(rankRows[0].profitable) : 0;
+        // One indexed read of every candidate's listings, then a pure in-memory pass.
+        const listingsById = await loadListingIds(pool, ranked.map((r) => r.id));
+        if (overlap === "all") {
+          const ids = ranked.map((r) => r.id);
+          return { ids, total: rawTotal, profitable: rawProfitable, sharedWithRank: sharedWithRanks(ids, listingsById) };
+        }
+        return buildDisjointSnapshot({ ranked, listingsById, limit: RANK_SNAPSHOT_SIZE, candidateLimit, rawTotal });
+      };
+
+      let snapshot = await loadRankSnapshot(snapshotKey, rankStore, computeSnapshot);
+      const readPage = async (snap: RankSnapshot) => {
+        const pageIds = snap.ids.slice(offset, offset + perPage);
+        const { rows: byId } = pageIds.length === 0
+          ? { rows: [] as ListRow[] }
+          : await pool.query<ListRow>(
+            `SELECT ${listColumns} FROM trade_ups t
+             WHERE t.id = ANY($1::int[]) AND t.is_theoretical = false AND t.listing_status = 'active'`,
+            [pageIds]
+          );
+        return { pageIds, byId };
+      };
+      let page = await readPage(snapshot);
+      let ordered = orderByIds(page.byId, page.pageIds);
+      if (!ordered && snapshot.deduped) {
+        // A kept id went inactive: rebuild the deduped snapshot once (a freed
+        // listing may let a lower row in), then skip anything still missing.
+        await rankStore.del(snapshotKey).catch(() => {});
+        snapshot = await loadRankSnapshot(snapshotKey, rankStore, computeSnapshot);
+        page = await readPage(snapshot);
+        ordered = orderPresentByIds(page.byId, page.pageIds);
+      }
       if (ordered) {
+        if (snapshot.sharedWithRank) {
+          for (let i = 0; i < page.pageIds.length; i++) {
+            const rank = snapshot.sharedWithRank[offset + i];
+            if (rank != null) sharedWithRankById.set(page.pageIds[i], rank);
+          }
+        }
         rows = ordered;
         total = snapshot.total;
+        totalProfitable = snapshot.profitable;
+        if (snapshot.deduped) {
+          dedupeInfo = { deduped: true, rawTotal: snapshot.rawTotal ?? snapshot.total, hasMore: !!snapshot.hasMore };
+          // Counted over the deduped list itself, which never reaches the cap.
+          totalProfitableCapped = false;
+        } else {
+          totalProfitableCapped = totalProfitable >= COUNT_CAP;
+        }
       } else {
         await rankStore.del(snapshotKey).catch(() => {});
       }
@@ -669,9 +747,25 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
           totalProfitable = counts[type]?.profitable ?? 0;
         }
       } else {
-        const { rows: [countRow] } = await pool.query(cappedCountSql, params);
-        total = parseInt(countRow?.c) || 0;
-        totalProfitable = 0; // Not available for filtered queries (arbitrary subset would be meaningless)
+        // Same filters, delay window and diversity cap as total, so the two agree.
+        if (applyDiversity) {
+          // The per-combo window sorts every matching row before any LIMIT can
+          // stop it, so two capped scans would sort twice. One uncapped pass
+          // counts both exactly, then caps (measured ~25% faster than two).
+          const { rows: [countRow] } = await pool.query(singleScanCountSql, params);
+          total = parseInt(countRow?.c) || 0;
+          totalProfitable = parseInt(countRow?.p) || 0;
+        } else {
+          // Without the window, LIMIT stops the scan early, so two cheap capped
+          // scans beat one full pass over a large filtered set.
+          const [{ rows: [countRow] }, { rows: [profitRow] }] = await Promise.all([
+            pool.query(cappedCountSql, params),
+            pool.query(cappedProfitableSql, params),
+          ]);
+          total = parseInt(countRow?.c) || 0;
+          totalProfitable = parseInt(profitRow?.p) || 0;
+        }
+        totalProfitableCapped = totalProfitable >= COUNT_CAP;
       }
 
       rows = (await dataPromise).rows;
@@ -727,6 +821,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
         claimed_by_me: claimedByMe.has(row.id),
         claimed_by_other: claimedByOthers.has(row.id),
         claim_expires_at: claimExpiryMap.get(row.id),
+        ...(overlap === "all" ? { shared_with_rank: sharedWithRankById.get(row.id) ?? null } : {}),
       };
     });
 
@@ -747,6 +842,11 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       trade_ups: filteredTradeUps,
       total: total - removedOnPage,
       total_profitable: totalProfitable,
+      total_profitable_capped: totalProfitableCapped,
+      // Listing dedupe applies to the default board only. Collection, my_claims,
+      // include_stale and overlap=all lists are raw: deduped=false says so.
+      deduped: dedupeInfo !== null,
+      ...(dedupeInfo ? { raw_total: dedupeInfo.rawTotal, has_more: dedupeInfo.hasMore } : {}),
       page: pageNum,
       per_page: perPage,
       tier: effectiveTier,
@@ -768,13 +868,22 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
     res.json(result);
   }, presentList));
 
-  router.get("/api/trade-ups/:id", async (req, res) => {
+  router.get("/api/trade-ups/:id", asyncHandler(async (req, res) => {
+    if (req.path.endsWith("/")) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
+    const tradeUpId = parseTradeUpId(routeParam(req.params.id));
+    if (tradeUpId === null) {
+      res.status(404).json({ error: "Trade-up not found" });
+      return;
+    }
     // #172 owns redaction of fresh rows. The header is the tier stamp; redaction is separate.
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
     setTierCacheHeaders(res);
     const { rows: [row] } = await pool.query(
       `SELECT t.* FROM trade_ups t WHERE t.id = $1`,
-      [req.params.id]
+      [tradeUpId]
     );
 
     if (!row) {
@@ -809,9 +918,9 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       outcomes,
       ...(redacted ? { inputs_redacted: true } : {}),
     });
-  });
+  }));
 
-  router.post("/api/verify-trade-up/:id", async (req, res) => {
+  router.post("/api/verify-trade-up/:id", asyncHandler(async (req, res) => {
     // Verify requires pro tier
     const userId = req.user?.steam_id;
     const viewer = req.user as User | undefined;
@@ -826,7 +935,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       return;
     }
 
-    const tradeUpId = parseInt(req.params.id);
+    const tradeUpId = parseInt(routeParam(req.params.id), 10);
     if (isNaN(tradeUpId)) {
       res.status(400).json({ error: "Invalid trade-up ID" });
       return;
@@ -1331,12 +1440,12 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       updated_trade_up: updatedTradeUp,
       rate_limit: verifyRateLimit,
     });
-  });
+  }));
 
   // Load inputs on-demand (not included in list response to save bandwidth).
   // Header is per request, outside the shared cache. The shared cache is full-access only —
   // a redacted response must not be stored under it.
-  router.get("/api/trade-up/:id/inputs", async (req, res, next) => {
+  router.get("/api/trade-up/:id/inputs", asyncHandler(async (req, res, next) => {
     res.setHeader("X-Effective-Tier", getEffectiveTier(req.user as User | undefined));
     setTierCacheHeaders(res);
     const id = parseInt(req.params.id as string);
@@ -1357,7 +1466,7 @@ export function tradeUpsRouter(pool: pg.Pool, opts: { rankStore?: RankSnapshotSt
       return;
     }
     return cachedInputsHandler(req, res, next);
-  });
+  }));
 
   const cachedInputsHandler = cachedRoute((req) => "tu_inputs:" + req.params.id, 120, async (req, res) => {
     const id = parseInt(req.params.id as string);

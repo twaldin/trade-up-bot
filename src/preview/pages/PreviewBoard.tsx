@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../../shared/types.js";
 import { tradeUpPair } from "../../../shared/copy.js";
 import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
-import { collectionSlugFromPath, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
+import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
 import { authUserFrom } from "../lib/auth-state.js";
 import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
 import {
@@ -37,6 +37,7 @@ import {
   splitSkinName,
   uniqueInputs,
   uniqueOutputs,
+  claimReturnTo,
   verifyClaimHref,
   waterfallBars,
   worstBest,
@@ -50,9 +51,9 @@ import {
   type BoardQuery,
 } from "../components/PreviewFilters.js";
 import { BoardNotice } from "../components/BoardNotice.js";
-import { useCanonicalSlot } from "../components/PreviewSeo.js";
+import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
 import { EXPECTED_PL_TOOLTIP, ExpectedPlHelp, showExpectedPlHelp } from "../components/ExpectedPlHelp.js";
-import { boardNotice, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, NARROW_HINT_MIN_PAGES, NARROW_HINT_MIN_TOTAL } from "../lib/board-notice.js";
+import { boardNotice, displayCapCopy, END_OF_LIST_COPY, LIST_CAP_COPY, NARROW_FILTERS_HINT, showNarrowFiltersHint } from "../lib/board-notice.js";
 import {
   canonicalBoardSearch,
   historyAction,
@@ -92,7 +93,11 @@ import {
 import { TRADE_UPS_FAQ } from "../../../shared/trade-ups-faq.js";
 import { boardFeeLine } from "../lib/fees.js";
 import { FeeLine } from "../components/FeeLine.js";
+import { SteamInterstitial, useSteamInterstitial } from "../components/SteamInterstitial.js";
+import { listClaimPanel } from "../lib/auth-state.js";
+import type { DismissMethod } from "../lib/steam-interstitial.js";
 import { hydrateBoardCard, type HydratedTradeUp } from "../lib/board-hydrate.js";
+import { MY_TRADE_UPS_API } from "../lib/my-trade-ups.js";
 import { createFaceCache, faceFor, loadFaces, rememberFaces } from "../lib/skin-images.js";
 
 const FACE_CACHE = createFaceCache();
@@ -121,6 +126,35 @@ function axisPercent(value: number, lo: number, hi: number): number {
 
 function stop(event: { stopPropagation: () => void }) {
   event.stopPropagation();
+}
+
+interface ClaimStatus {
+  id: number;
+  text: string;
+  failed: boolean;
+}
+
+function historyBase(state: unknown): Record<string, unknown> {
+  if (!state || typeof state !== "object") return {};
+  const base: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(state)) base[key] = value;
+  return base;
+}
+
+function claimFailureCopy(status: number): string {
+  switch (status) {
+    case 401:
+    case 403:
+      return "Verify and Claim need Pro.";
+    case 404:
+      return "This trade-up is no longer available.";
+    case 409:
+      return "This trade-up is already claimed.";
+    case 429:
+      return "Claim limit reached. Try again in a little while.";
+    default:
+      return "Could not claim this trade-up.";
+  }
 }
 
 function SkinFace({ name }: { name: string }) {
@@ -564,12 +598,23 @@ export function TradeUpCard({
   expanded,
   onExpand,
   expandable = true,
+  onVerifyClaim,
+  claimStatus = null,
+  confirming = false,
+  onConfirmClaim,
+  onCancelClaim,
 }: {
   tu: HydratedTradeUp;
   expanded: boolean;
   onExpand: (id: number | null) => void;
   /** False for teaser cards that share expand state with another card they must not disturb. */
   expandable?: boolean;
+  /** Board claim. Absent on pages that still link out to the trade-up. */
+  onVerifyClaim?: (id: number, trigger: HTMLButtonElement) => void;
+  claimStatus?: ClaimStatus | null;
+  confirming?: boolean;
+  onConfirmClaim?: (id: number) => void;
+  onCancelClaim?: () => void;
 }) {
   const [hot, setHot] = useState<string | null>(null);
   const inputs = uniqueInputs(tu);
@@ -591,6 +636,12 @@ export function TradeUpCard({
   const reportOpen = () => {
     trackTradeUpDetailOpen({ collectionSlug: collectionSlugFromPath(window.location.pathname) });
   };
+  const shownClaim = claimStatus?.id === tu.id
+    ? claimStatus
+    : tu.claimed_by_me
+      ? { id: tu.id, text: "Claimed", failed: false }
+      : null;
+  const claimBusy = shownClaim?.text === "Claiming…" || shownClaim?.text === "Claimed";
   const toggle = () => {
     if (!expandable) return;
     if (!expanded) reportOpen();
@@ -687,11 +738,14 @@ export function TradeUpCard({
               href={verifyClaimHref(tu.id)}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open this trade-up to re-check that its listings are still live"
-              aria-label="Verify trade-up (opens in new tab)"
-              onClick={(event) => { trackVerifyClick("board_card"); stop(event); }}
+              title="Trade-up details"
+              aria-label="Trade-up details"
+              onClick={(event) => {
+                trackVerifyClick("board_card");
+                stop(event);
+              }}
             >
-              Verify
+              Details
               <ExternalLink size={10} aria-hidden />
             </a>
           </span>
@@ -756,16 +810,53 @@ export function TradeUpCard({
                     <dd>{formatDollars(totals.totalCents || inputCostCents(tu))}</dd>
                   </div>
                 </dl>
-                <a
-                  className="preview-btn preview-btn--lime preview-btn--block"
-                  href={verifyClaimHref(tu.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
-                >
-                  Verify / Claim trade-up
-                </a>
-                <p className="preview-note">Opens the live trade-up on tradeupbot.app.</p>
+                {onVerifyClaim ? (
+                  <button
+                    type="button"
+                    className="preview-btn preview-btn--lime preview-btn--block"
+                    disabled={claimBusy}
+                    onClick={(event) => {
+                      stop(event);
+                      trackVerifyClick("expanded");
+                      onVerifyClaim(tu.id, event.currentTarget);
+                    }}
+                  >
+                    Verify / Claim trade-up
+                  </button>
+                ) : (
+                  <a
+                    className="preview-btn preview-btn--lime preview-btn--block"
+                    href={verifyClaimHref(tu.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => { trackVerifyClick("expanded"); stop(event); }}
+                  >
+                    Verify / Claim trade-up
+                  </a>
+                )}
+                {onVerifyClaim && confirming && !claimBusy && (
+                  <div className="preview-toolbar" role="group" aria-label="Claim for 30 min?">
+                    <p className="preview-note">Claim for 30 min?</p>
+                    <button
+                      type="button"
+                      className="preview-btn preview-btn--lime"
+                      onClick={(event) => { stop(event); onConfirmClaim?.(tu.id); }}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      className="preview-btn preview-btn--quiet"
+                      onClick={(event) => { stop(event); onCancelClaim?.(); }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {onVerifyClaim && shownClaim && (
+                  <p className={`preview-note${shownClaim.failed ? " preview-note--loss" : ""}`} role="status">{shownClaim.text}</p>
+                )}
+                {!onVerifyClaim && <p className="preview-note">Opens the live trade-up on tradeupbot.app.</p>}
               </Panel>
             </div>
           </motion.div>
@@ -775,8 +866,8 @@ export function TradeUpCard({
   );
 }
 
-function rankedMeta(throttled: boolean, count: number): string {
-  if (throttled && count === 0) return "—";
+function rankedMeta(count: number, pending: boolean): string {
+  if (pending) return "— ranked";
   return `${count} ranked`;
 }
 
@@ -801,10 +892,60 @@ function useKnownAccount(given: BoardAccount): BoardAccount {
   return given !== undefined ? given : loaded;
 }
 
+/** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
+const BOARD_PAGE_CARDS = 12;
+/** Tile counts on a collapsed board card, so the placeholder matches its box. */
+const SKELETON_INPUTS = 3;
+const SKELETON_OUTPUTS = 2;
+
+function SkeletonTile({ output = false }: { output?: boolean }) {
+  return (
+    <div className={`preview-skin preview-skin--${output ? "output" : "input"}`}>
+      <button type="button" className="preview-skin__buy" tabIndex={-1}>
+        <span className="preview-skin__art">
+          <span className="preview-skin__ph" />
+        </span>
+      </button>
+      <span className="preview-skin__label">
+        <em>&nbsp;</em>
+        <b>&nbsp;</b>
+        {output ? <span className="preview-skin__delta">&nbsp;</span> : null}
+      </span>
+    </div>
+  );
+}
+
+function BoardSkeletonCard() {
+  return (
+    <article className="preview-card preview-card--static preview-card--skeleton" aria-hidden="true">
+      <div className="preview-flow">
+        <section className="preview-flow__side">
+          <p className="preview-lane__label">&nbsp;<i /></p>
+          <div className="preview-skins preview-skins--in">
+            {Array.from({ length: SKELETON_INPUTS }, (_, index) => <SkeletonTile key={index} />)}
+          </div>
+        </section>
+        <span className="preview-flow__arrow" aria-hidden>
+          <ArrowRight size={14} />
+        </span>
+        <section className="preview-flow__side">
+          <p className="preview-lane__label">&nbsp;<i /></p>
+          <div className="preview-skins preview-skins--out">
+            {Array.from({ length: SKELETON_OUTPUTS }, (_, index) => <SkeletonTile key={index} output />)}
+          </div>
+        </section>
+      </div>
+      <p className="preview-cardline"><span className="preview-skel__bar" /></p>
+    </article>
+  );
+}
+
 export function PreviewBoard({
   tradeUps,
   loading,
   isFree,
+  signedIn,
+  tier,
   onExpand,
   expandedId,
   query,
@@ -825,6 +966,7 @@ export function PreviewBoard({
   onClearFilters,
   onFilterBlur,
   total = null,
+  rawTotal = null,
   landedPage = 1,
   shownStatus = "",
   heading = "Live trade-ups",
@@ -837,6 +979,10 @@ export function PreviewBoard({
   tradeUps: HydratedTradeUp[];
   loading: boolean;
   isFree: boolean;
+  /** List payload `signed_in`. Undefined until that payload arrives. */
+  signedIn?: boolean;
+  /** Effective tier from the same payload. */
+  tier?: string;
   expandedId: number | null;
   onExpand: (id: number | null) => void;
   query?: BoardQuery;
@@ -846,7 +992,7 @@ export function PreviewBoard({
   onParsed?: (parsed: ParsedQuery) => void;
   loadMore?: () => void;
   exhausted?: boolean;
-  /** Why paging stopped. "capped" is the 10,001 count ceiling, not a short page. */
+  /** Why paging stopped. "capped" is the 10,001 count ceiling. "truncated" is has_more. */
   endKind?: ListEndState;
   throttle?: string | null;
   /** True once the automatic 429 retry has been spent. Shows the Retry button. */
@@ -864,8 +1010,10 @@ export function PreviewBoard({
   onFilterBlur?: () => void;
   /** Page currently on screen. Used for the load announcement and the long-list hint. */
   page?: number;
-  /** Server total for this filter. The narrow hint only appears above a large set. */
+  /** Server total for this filter. Deduped boards report the kept rows here. */
   total?: number | null;
+  /** Raw diversified count, capped at 10001. The long-list hint falls back to `total`. */
+  rawTotal?: number | null;
   /** Highest page whose rows have actually landed. */
   landedPage?: number;
   /** Set only after a later page lands. Empty on 429, failure, and filter change. */
@@ -878,6 +1026,27 @@ export function PreviewBoard({
   /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
   user?: BoardAccount;
 }) {
+  const navigate = useNavigate();
+  const interstitial = useSteamInterstitial();
+  const claimHistory = useRef(false);
+  const dismissClaimModal = useRef<(method: DismissMethod) => void>(() => {});
+  dismissClaimModal.current = interstitial.dialog.onDismiss;
+  const [claimStatus, setClaimStatus] = useState<ClaimStatus | null>(null);
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const claimedIds = useRef(new Set<number>());
+  const claimingIds = useRef(new Set<number>());
+  for (const tu of tradeUps) {
+    if (tu.claimed_by_me) claimedIds.current.add(tu.id);
+  }
+  useEffect(() => {
+    const onPop = () => {
+      if (!claimHistory.current) return;
+      claimHistory.current = false;
+      dismissClaimModal.current("close");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [width, setWidth] = useState(typeof window === "undefined" ? 1280 : window.innerWidth);
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
@@ -949,12 +1118,16 @@ export function PreviewBoard({
   const sentinel = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLParagraphElement>(null);
   const capRef = useRef<HTMLParagraphElement>(null);
+  const truncRef = useRef<HTMLParagraphElement>(null);
   const throttleRef = useRef<HTMLParagraphElement>(null);
   const loadMoreBtn = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<null | "more" | "return">(null);
-  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind !== "capped");
   const atCap = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "capped");
+  const atTruncated = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && endKind === "truncated");
+  const atEnd = Boolean(exhausted && tradeUps.length > 0 && !notice && !pagingThrottle && !atCap && !atTruncated);
+  const truncatedCopy = displayCapCopy(typeof total === "number" && total > 0 ? total : tradeUps.length);
   const emitCanonical = useCanonicalSlot(embed ? "" : "https://tradeupbot.app/trade-ups");
+  const emitRobots = useRobotsSlot(embed ? "" : "index, follow");
   useEffect(() => {
     pendingFocus.current = null;
   }, [query, search]);
@@ -989,16 +1162,96 @@ export function PreviewBoard({
       if (untouched) {
         if (atEnd) endRef.current?.focus({ preventScroll: true });
         else if (atCap) capRef.current?.focus({ preventScroll: true });
+        else if (atTruncated) truncRef.current?.focus({ preventScroll: true });
       }
       pendingFocus.current = null;
     }
-  }, [pagingThrottle, loadingMore, atEnd, atCap]);
-  const showNarrowHint = landedPage >= NARROW_HINT_MIN_PAGES
-    && (total ?? 0) > NARROW_HINT_MIN_TOTAL
-    && !exhausted
-    && !pagingThrottle
-    && !notice
-    && !failed;
+  }, [pagingThrottle, loadingMore, atEnd, atCap, atTruncated]);
+  async function claimFromBoard(id: number) {
+    if (claimedIds.current.has(id) || claimingIds.current.has(id)) return;
+    claimingIds.current.add(id);
+    setClaimStatus({ id, text: "Claiming…", failed: false });
+    try {
+      const res = await fetch(MY_TRADE_UPS_API.claim(id), { method: "POST", credentials: "include" });
+      if (!res.ok) {
+        setClaimStatus({ id, text: claimFailureCopy(res.status), failed: true });
+        return;
+      }
+      await res.json().catch(() => null);
+      claimedIds.current.add(id);
+      setClaimStatus({ id, text: "Claimed", failed: false });
+      trackClaimTradeUp({ surface: "board", tradeUpId: id });
+    } catch {
+      setClaimStatus({ id, text: "Could not claim this trade-up", failed: true });
+    } finally {
+      claimingIds.current.delete(id);
+    }
+  }
+
+  function openClaimModal(id: number, trigger: HTMLButtonElement) {
+    if (!interstitial.open({ surface: "share_verify", returnTo: claimReturnTo(id) }, trigger)) return;
+    if (claimHistory.current || typeof window.history.pushState !== "function") return;
+    try {
+      window.history.pushState({ ...historyBase(window.history.state), boardClaimModal: true }, "");
+      claimHistory.current = true;
+    } catch {
+      // The modal is already open. Back leaves the page if the entry cannot be stored.
+    }
+  }
+
+  function closeClaimModal(method: DismissMethod) {
+    if (claimHistory.current) {
+      claimHistory.current = false;
+      try { window.history.back(); } catch { /* already at the first entry */ }
+    }
+    dismissClaimModal.current(method);
+  }
+
+  function onVerifyClaim(id: number, trigger: HTMLButtonElement) {
+    const panel = listClaimPanel(signedIn, tier ?? (isFree ? "free" : "pro"));
+    switch (panel) {
+      case "pending":
+        return;
+      case "sign-in":
+        openClaimModal(id, trigger);
+        return;
+      case "upgrade":
+        trackUpgradeCta("board_claim");
+        navigate("/pricing");
+        return;
+      case "pro":
+        setConfirmId(id);
+        return;
+      default: {
+        const unreachable: never = panel;
+        return unreachable;
+      }
+    }
+  }
+
+  function onConfirmClaim(id: number) {
+    setConfirmId(null);
+    void claimFromBoard(id);
+  }
+
+  const showNarrowHint = showNarrowFiltersHint({
+    landedPage,
+    rawTotal,
+    total,
+    exhausted: Boolean(exhausted),
+    paging: Boolean(pagingThrottle),
+    failed: Boolean(failed),
+    notice: notice != null,
+  });
+  // Skeletons only while the first page is still in flight. An empty or failed
+  // board swaps them for one fold-height message so the FAQ stays below the
+  // fold without a blank page of hidden cards.
+  const countPending = tradeUps.length === 0 && (loading || Boolean(failed) || Boolean(throttle));
+  const showSkeletons = !embed && loading && tradeUps.length === 0 && notice == null;
+  const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
+  // One row of cards ends above the fold at desktop, so a short page would
+  // pull the FAQ up into view. The floor holds that list to the viewport.
+  const shortPage = !embed && tradeUps.length > 0 && tradeUps.length < BOARD_PAGE_CARDS;
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !loadMore) return;
@@ -1011,10 +1264,11 @@ export function PreviewBoard({
     <div className={embed ? "preview-board-embed" : "preview-page"}>
       {!embed && <title>{TRADE_UPS_DOCUMENT_TITLE}</title>}
       {!embed && emitCanonical && <link rel="canonical" href="https://tradeupbot.app/trade-ups" />}
+      {!embed && emitRobots && <meta name="robots" content="index, follow" />}
       {embed ? (
         <header className="preview-panel__head">
           <p className="o-kicker">{heading}</p>
-          <span className="preview-panel__meta">{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
+          <span className="preview-panel__meta">{rankedMeta(tradeUps.length, countPending)}</span>
         </header>
       ) : (
         <header className="preview-page__head">
@@ -1022,8 +1276,8 @@ export function PreviewBoard({
             <h1>{heading}</h1>
             <p>{lede}</p>
           </div>
-          <div className="preview-page__meta">
-            <span>{rankedMeta(Boolean(throttle), tradeUps.length)}</span>
+          <div className="preview-page__meta preview-page__meta--board">
+            <span>{rankedMeta(tradeUps.length, countPending)}</span>
             <i />
             <span>{cols}-column</span>
           </div>
@@ -1060,14 +1314,37 @@ export function PreviewBoard({
         </div>
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
-      {loading && tradeUps.length === 0 && notice !== "throttled" && <p className="preview-note">Loading trade-ups…</p>}
+      {loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
+        <p className={embed ? "preview-note" : "sr-only"}>Loading trade-ups…</p>
+      )}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
-      {noticeNode}
-      <div className={`preview-bento${refreshing ? " preview-bento--stale" : ""}`} aria-busy={loading || refreshing || undefined}>
-        {ordered.map((tu) => (
-          <TradeUpCard key={tu.id} tu={tu} expanded={expandedId === tu.id} onExpand={onExpand} />
-        ))}
-      </div>
+      {!showStatus && noticeNode}
+      {showSkeletons ? (
+        <div className="preview-bento preview-bento--reserved" aria-busy="true">
+          {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
+        </div>
+      ) : showStatus ? (
+        <div className="preview-board-status">{noticeNode}</div>
+      ) : (
+        <div
+          className={`preview-bento${refreshing ? " preview-bento--stale" : ""}${shortPage ? " preview-bento--floor" : ""}`}
+          aria-busy={loading || refreshing || undefined}
+        >
+          {ordered.map((tu) => (
+            <TradeUpCard
+              key={tu.id}
+              tu={tu}
+              expanded={expandedId === tu.id}
+              onExpand={onExpand}
+              onVerifyClaim={onVerifyClaim}
+              claimStatus={claimStatus}
+              confirming={confirmId === tu.id}
+              onConfirmClaim={onConfirmClaim}
+              onCancelClaim={() => setConfirmId(null)}
+            />
+          ))}
+        </div>
+      )}
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
       <div className="preview-sentinel" ref={sentinel} role="status" aria-live="polite">{pagingThrottle ? (
           <p className="preview-note" ref={throttleRef} tabIndex={-1}>
@@ -1081,6 +1358,9 @@ export function PreviewBoard({
         ) : null}</div>
       {atCap && (
         <p className="preview-note preview-note--end" ref={capRef} tabIndex={-1}>{LIST_CAP_COPY}</p>
+      )}
+      {atTruncated && (
+        <p className="preview-note preview-note--end" ref={truncRef} tabIndex={-1}>{truncatedCopy}</p>
       )}
       {atEnd && (
         <p className="preview-note preview-note--end" ref={endRef} tabIndex={-1}>{END_OF_LIST_COPY}</p>
@@ -1114,6 +1394,7 @@ export function PreviewBoard({
           ))}
         </section>
       )}
+      <SteamInterstitial {...interstitial.dialog} onDismiss={closeClaimModal} />
     </div>
   );
 }
@@ -1125,6 +1406,19 @@ function skinNames(rows: TradeUp[]): string[] {
   ]);
 }
 
+type BoardListPayload = {
+  trade_ups?: TradeUp[];
+  tier?: string;
+  total?: number;
+  total_profitable?: number;
+  total_profitable_capped?: boolean;
+  raw_total?: number;
+  has_more?: boolean;
+  deduped?: boolean;
+  signed_in?: boolean;
+  faces?: Record<string, string | null>;
+};
+
 export function usePreviewTradeUps(options: {
   collection?: string;
   skin?: string;
@@ -1134,8 +1428,10 @@ export function usePreviewTradeUps(options: {
   const { collection, skin, perPage = 12, enabled = true } = options;
   const [tradeUps, setTradeUps] = useState<HydratedTradeUp[]>([]);
   const [loading, setLoading] = useState(true);
-  // Unknown tier is not free: /api/board-delay waits until the list reports one.
+  // Unknown tier is not free: the delay banner waits for a guest or free account.
   const [isFree, setIsFree] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | undefined>(undefined);
+  const [tier, setTier] = useState<string | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [query, setQuery] = useState<BoardQuery>(() => readBoardLocation(typeof window === "undefined" ? null : window.location).query);
   const [search, setSearch] = useState(() => readBoardLocation(typeof window === "undefined" ? null : window.location).text);
@@ -1145,6 +1441,9 @@ export function usePreviewTradeUps(options: {
   const [cursor, setCursor] = useState({ key: "", page: 1 });
   const [endKey, setEndKey] = useState<string | null>(null);
   const [endKind, setEndKind] = useState<ListEndState>("more");
+  const [rawTotal, setRawTotal] = useState<number | null>(null);
+  const [deduped, setDeduped] = useState(false);
+  const listMetaRef = useRef<{ rawTotal?: number; hasMore?: boolean }>({});
   const [backoffUntil, setBackoffUntil] = useState(0);
   const [throttle, setThrottle] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -1153,6 +1452,7 @@ export function usePreviewTradeUps(options: {
   const [reloadTick, setReloadTick] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalProfitable, setTotalProfitable] = useState(0);
+  const [totalProfitableCapped, setTotalProfitableCapped] = useState(false);
   const [landedPage, setLandedPage] = useState(1);
   const [shownStatus, setShownStatus] = useState("");
   const inFlightRef = useRef(false);
@@ -1262,6 +1562,12 @@ export function usePreviewTradeUps(options: {
     setCursor({ key: settledKey, page: 1 });
     setEndKey(null);
     setEndKind("more");
+    setRawTotal(null);
+    setTotal(null);
+    setTotalProfitable(0);
+    setTotalProfitableCapped(false);
+    setDeduped(false);
+    listMetaRef.current = {};
     attemptRef.current = 0;
     setBackoffUntil(0);
     setThrottle(null);
@@ -1287,13 +1593,27 @@ export function usePreviewTradeUps(options: {
           credentials: "include",
           signal: controller.signal,
         });
-        const data = await readPagedJson<{ trade_ups?: TradeUp[]; tier?: string; total?: number; total_profitable?: number; faces?: Record<string, string | null> }>(res);
+        const data = await readPagedJson<BoardListPayload>(res);
         if (data.faces) rememberFaces(FACE_CACHE, data.faces);
+        if (live && typeof data.raw_total === "number" && Number.isFinite(data.raw_total)) {
+          listMetaRef.current.rawTotal = data.raw_total;
+          setRawTotal(data.raw_total);
+        }
+        if (live && typeof data.has_more === "boolean") listMetaRef.current.hasMore = data.has_more;
+        if (live && typeof data.deduped === "boolean") setDeduped(data.deduped);
+        const nextTier = data.tier ?? "free";
+        const nextSignedIn = data.signed_in === true;
         if (live && page === 1 && typeof data.total === "number") {
           setTotal(data.total);
           setTotalProfitable(typeof data.total_profitable === "number" ? data.total_profitable : 0);
+          setDeduped(data.deduped === true);
+          setTotalProfitableCapped(data.total_profitable_capped === true);
         }
-        return { rows: data.trade_ups ?? [], isFree: (data.tier ?? "free") === "free", total: data.total };
+        if (live) {
+          setTier(nextTier);
+          setSignedIn(nextSignedIn);
+        }
+        return { rows: data.trade_ups ?? [], isFree: nextTier === "free", total: data.total };
       },
       alreadyHave: (row) => rowsRef.current.some((have) => have.id === row.id),
       hydrate: (tu) => controller.signal.aborted ? Promise.resolve(tu) : hydrateBoardCard(tu),
@@ -1316,7 +1636,14 @@ export function usePreviewTradeUps(options: {
         facesReady: () => { if (live) setFaceTick((tick) => tick + 1); },
         pageSize: (count, total) => {
           if (!live) return;
-          const kind = listEndState({ received: count, pageSize: perPage, page, total });
+          const kind = listEndState({
+            received: count,
+            pageSize: perPage,
+            page,
+            total,
+            rawTotal: listMetaRef.current.rawTotal,
+            hasMore: listMetaRef.current.hasMore,
+          });
           setEndKind(kind);
           if (kind !== "more") setEndKey(settledKey);
         },
@@ -1410,14 +1737,14 @@ export function usePreviewTradeUps(options: {
 
   return useMemo(
     () => ({
-      tradeUps, loading, refreshing, isFree, expandedId, onExpand,
-      total, totalProfitable,
+      tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand,
+      total, totalProfitable, rawTotal, deduped, totalProfitableCapped,
       query, onQuery: setQuery,
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
     }),
-    [tradeUps, loading, refreshing, isFree, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
+    [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
   );
 }

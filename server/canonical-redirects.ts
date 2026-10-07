@@ -30,7 +30,6 @@ const NO_TRAILING_SLASH_PATTERNS = [
   /^\/skins\/[^/]+$/,
   /^\/trade-ups\/collection\/[^/]+$/,
   /^\/trade-ups\/tiers\/[^/]+$/,
-  /^\/trade-ups\/\d+$/,
 ];
 
 function stripTrailingSlashes(pathname: string): string {
@@ -39,6 +38,8 @@ function stripTrailingSlashes(pathname: string): string {
 
 export function shouldRedirectToNoTrailingSlash(pathname: string): boolean {
   if (pathname === "/" || !pathname.endsWith("/")) return false;
+  // /trade-ups/123/ is a different path from the contract. Do not send it there.
+  if (/\/{2,}$/.test(pathname)) return false;
 
   const canonicalPath = stripTrailingSlashes(pathname);
   return NO_TRAILING_SLASH_PATHS.has(canonicalPath)

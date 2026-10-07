@@ -1,6 +1,7 @@
 // Browser conversion events, fanned out to GA4 and the Meta Pixel.
 // GA4 key events to mark in admin: begin_checkout, purchase, sign_up, calculator_complete, and claim_trade_up.
 // view_item, login, verify_click, verify_complete, cta_click, and upgrade_cta_click are measured but are not key events. Never checkout_start.
+// claim_trade_up and verify_complete `surface`: share (shared trade-up), account (my trade-ups), board (the live board).
 // While GA4_MEASUREMENT_ID is unset the existing GA4 events fire exactly as before
 // (begin_checkout, tradeup_view, legacy purchase); once set, the spec event replaces the
 // legacy one at the same hook, so nothing is double-counted.
@@ -93,7 +94,19 @@ export function trackVerifyClick(surface: VerifySurface): void {
   pixelEvent("verify_click", params, newEventId("verify"));
 }
 
-export type ActivationSurface = "share" | "account";
+/** Allowlist for claim_trade_up and verify_complete. A scoreboard reader must accept every value here, including board. */
+export const ACTIVATION_SURFACES = ["share", "account", "board"] as const;
+export type ActivationSurface = (typeof ACTIVATION_SURFACES)[number];
+
+/** Scoreboard reader. Unknown surfaces are not activation events. */
+export function readActivationSurface(value: unknown): ActivationSurface | null {
+  if (typeof value !== "string") return null;
+  for (const surface of ACTIVATION_SURFACES) {
+    if (surface === value) return surface;
+  }
+  return null;
+}
+
 export type VerifyCompleteStatus = "all_active" | "partial" | "stale";
 
 /** Verify payload fields the kit already renders. Extra listing and price fields are ignored. */
@@ -125,13 +138,15 @@ function sendActivation(
   surface: ActivationSurface,
   status?: VerifyCompleteStatus,
 ): void {
+  const known = readActivationSurface(surface);
+  if (!known) return;
   const trade_up_id = String(tradeUpId);
   const key = `${event}:${trade_up_id}`;
   if (sentActivation.has(key)) return;
   const measurementId = clientTracking().ga4MeasurementId;
   if (!measurementId || typeof globalThis.gtag !== "function") return;
   sentActivation.add(key);
-  const params: Record<string, string> = { page_path: pagePath(), surface, trade_up_id };
+  const params: Record<string, string> = { page_path: pagePath(), surface: known, trade_up_id };
   if (status) params.status = status;
   try {
     trackEvent(event, { ...params, send_to: measurementId });
@@ -160,7 +175,7 @@ export function trackVerifyComplete(args: {
   sendActivation("verify_complete", args.tradeUpId, args.surface, verifyCompleteStatus(args.result));
 }
 
-export type CtaId = "home_hero_calculator" | "intent_board";
+export type CtaId = "home_hero_calculator" | "home_hero_tradeup" | "intent_board" | "calculator_board" | "detail_collection";
 
 export type UpgradeCtaId =
   | "board_delay"
@@ -168,27 +183,47 @@ export type UpgradeCtaId =
   | "share_upgrade"
   | "intent_pro"
   | "pricing_go_pro"
-  | "redacted_links";
+  | "redacted_links"
+  | "landing_plan_tile"
+  | "share_bar"
+  | "nav_pricing"
+  | "board_claim";
+
+/** Delay-gap gates also send Meta `UpgradeCtaClick`. The other controls stay on GA4 only. */
+const PIXEL_UPGRADE_CTAS: ReadonlySet<string> = new Set<UpgradeCtaId>([
+  "board_delay",
+  "landing_delay",
+  "share_upgrade",
+  "intent_pro",
+  "pricing_go_pro",
+  "redacted_links",
+]);
 
 /**
- * Click on a Pro upgrade link or the pricing Go Pro button.
- * GA4 `upgrade_cta_click` and Meta custom `UpgradeCtaClick`. No prices, listing ids, or PII.
+ * Click on a Pro upgrade control.
+ * GA4 `upgrade_cta_click`. Delay-gap gates also send Meta custom `UpgradeCtaClick`.
+ * Landing plan tile, share bar, nav Pricing, and the board claim stay off the Pixel.
+ * No prices, listing ids, or PII.
  * Checkout itself stays `begin_checkout` / InitiateCheckout, fired only after /api/subscribe returns 2xx.
- * No-op until GA4 or the Pixel is configured, same as the other spec events.
  */
 export function trackUpgradeCta(cta: UpgradeCtaId): void {
   const params = { cta, page_path: pagePath() };
   try {
     sendGa4("upgrade_cta_click", params);
-    pixelEvent("upgrade_cta_click", params, newEventId("upgrade"));
+    if (PIXEL_UPGRADE_CTAS.has(cta)) pixelEvent("upgrade_cta_click", params, newEventId("upgrade"));
   } catch {
     // A blocked tag must not swallow the click.
   }
 }
 
-/** Landing CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
+/** In-app CTA click. No PII, listing ids, or prices. No-op until GA4 is configured and gtag has loaded. */
 export function trackCtaClick(cta: CtaId): void {
   sendGa4("cta_click", { cta, page_path: pagePath() });
+}
+
+/** Landing board failed or was throttled. GA4 only — the pixel stays off. */
+export function trackLandingLoadError(kind: "error" | "rate_limited"): void {
+  sendGa4("landing_load_error", { kind, page_path: pagePath() });
 }
 
 /** /pricing rendered. */

@@ -7,6 +7,7 @@ import pg from "pg";
 import { initDb, createTables } from "./db.js";
 import { initRedis, startBoardFlushSubscriber } from "./redis.js";
 import { setupAuth } from "./auth.js";
+import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { boardDelayRouter } from "./routes/board-delay.js";
@@ -29,7 +30,7 @@ import { registerRobotsTxtRoute, sitemapRouter } from "./routes/sitemap.js";
 import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { unknownApiJson404 } from "./unknown-api.js";
-import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd } from "./seo.js";
+import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd, sendSlugNotFound } from "./seo.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { tradeUpCountPhrase, tradeUpPair } from "../shared/copy.js";
 import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE } from "../shared/types.js";
@@ -84,7 +85,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
-    const match = line.match(/^(\w+)=(.*)$/);
+    const match = line.replace(/\r$/, "").match(/^(\w+)=(.*)$/);
     if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
   }
 }
@@ -100,7 +101,7 @@ import { registerCanonicalRedirectRoutes } from "./canonical-redirects.js";
 import { injectLandingStats, landingStatsFromSources } from "../src/preview/lib/landing-stats.js";
 import { HOMEPAGE_SEO, STATIC_SEO_PAGES, renderHomepageSeoBody } from "./static-seo-pages.js";
 import { writeHomepageFirstHtmlFile } from "./homepage-first-html.js";
-import { trackingCspSources } from "./tracking.js";
+import { helmetSecurityOptions } from "./security-headers.js";
 import { CACHEABLE_READ_MAX, isCacheableRead, RATE_WINDOW_MS, SHARED_API_MAX, usesSharedApiBucket } from "./rate-limit-buckets.js";
 
 const app = express();
@@ -141,22 +142,7 @@ app.use(rateLimit({
 }));
 app.use("/auth", rateLimit({ windowMs: 60_000, max: 10, keyGenerator: rlKey }));
 app.use("/api/subscribe", rateLimit({ windowMs: 60_000, max: 5, keyGenerator: rlKey }));
-const trackingCsp = trackingCspSources();
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      // 'unsafe-inline' allows the static gtag snippet and the auth-return strip
-      // script in index.html. Both are inline, neither uses a nonce or hash.
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", ...trackingCsp.scriptSrc],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "https://avatars.steamstatic.com", "https://community.fastly.steamstatic.com", "https://community.cloudflare.steamstatic.com", "https://community.akamai.steamstatic.com", "https://community.steamstatic.com", "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/", "https://cdn.steamstatic.com/apps/730/icons/econ/set_icons/", "data:", ...trackingCsp.imgSrc],
-      connectSrc: ["'self'", "https://checkout.stripe.com", "https://www.google-analytics.com", "https://analytics.google.com", "https://www.google.com", "https://www.googletagmanager.com", "https://open.er-api.com", ...trackingCsp.connectSrc],
-      frameSrc: ["https://checkout.stripe.com"],
-    },
-  },
-}));
+app.use(helmet(helmetSecurityOptions()));
 // Stripe webhook needs raw body for signature verification — capture it before JSON parsing
 app.use((req, res, next) => {
   if (req.path === "/api/stripe-webhook") {
@@ -188,6 +174,13 @@ registerCanonicalRedirectRoutes(app);
 
 // Async startup: initialize PostgreSQL pool and create tables
 (async () => {
+  try {
+    resolveSessionSecrets(process.env);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Refusing to start: SESSION_SECRET is not safe for production.");
+    process.exit(1);
+  }
+
   if (process.env.NODE_ENV === "production" && !(process.env.BASE_URL || "").startsWith("https")) {
     throw new Error("BASE_URL must be set to an https URL in production");
   }
@@ -285,7 +278,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
       if (!collectionName) {
-        res.status(404).send("Collection trade-up page not found");
+        sendSlugNotFound(res, "Collection trade-up page not found");
         return;
       }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
@@ -461,7 +454,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getCollectionSlugMap(pool);
       const collectionName = slugMap.get(req.params.slug);
       if (!collectionName) {
-        res.status(404).send("Collection not found");
+        sendSlugNotFound(res, "Collection not found");
         return;
       }
       const displayName = collectionName.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "");
@@ -661,7 +654,7 @@ registerCanonicalRedirectRoutes(app);
       const slugMap = await getSlugMap(pool);
       const skinName = slugMap.get(req.params.slug);
       if (!skinName) {
-        res.status(404).send("Skin not found");
+        sendSlugNotFound(res, "Skin not found");
         return;
       }
 
@@ -674,7 +667,7 @@ registerCanonicalRedirectRoutes(app);
         GROUP BY s.id
       `, [skinName]);
       if (!skinMeta) {
-        res.status(404).send("Skin not found");
+        sendSlugNotFound(res, "Skin not found");
         return;
       }
 

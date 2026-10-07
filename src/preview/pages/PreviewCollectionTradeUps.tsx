@@ -74,6 +74,8 @@ export function PreviewCollectionTradeUps() {
           tradeUps={board.tradeUps}
           loading={board.loading}
           isFree={board.isFree}
+          signedIn={board.signedIn}
+          tier={board.tier}
           expandedId={board.expandedId}
           onExpand={board.onExpand}
           query={board.query}
@@ -91,6 +93,7 @@ export function PreviewCollectionTradeUps() {
           onFilterBlur={board.onFilterBlur}
           page={board.page}
           total={board.total}
+          rawTotal={board.rawTotal}
           landedPage={board.landedPage}
           shownStatus={board.shownStatus}
           collection={title}

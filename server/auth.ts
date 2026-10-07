@@ -13,6 +13,7 @@ import { BOARD_DELAY_SECONDS } from "../shared/board-delay.js";
 import { getEffectiveTier, type TierUser } from "../shared/pro-access.js";
 import { isValidMetaPixelId } from "../shared/tracking.js";
 import { consumeStoredLoginNonce, ensureLoginNonceTable, issueStoredLoginNonce, startLoginNoncePrune } from "./auth-login-nonce.js";
+import { resolveSessionSecrets, sessionSecretRotationWarning } from "./session-secret.js";
 import { authReturnLocation, newLoginNonce, trackCompleteRegistration, trackLogin } from "./tracking.js";
 import type { TrackingEnv } from "./tracking.js";
 
@@ -148,8 +149,10 @@ export function invalidateAllUserCache(): void {
 }
 
 export async function setupAuth(app: Express, pool: pg.Pool) {
+  const sessionSecret = resolveSessionSecrets(process.env);
+  const rotationWarning = sessionSecretRotationWarning(process.env);
+  if (rotationWarning) console.warn(rotationWarning);
   const steamApiKey = process.env.STEAM_API_KEY;
-  const sessionSecret = process.env.SESSION_SECRET || "trade-up-bot-dev-secret";
   const baseUrl = process.env.BASE_URL || "http://localhost:3001";
 
   // Trust nginx proxy (needed for secure cookies behind reverse proxy)

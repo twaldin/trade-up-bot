@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { authUserFrom, shareActionPanel, type AuthUser } from "../../src/preview/lib/auth-state.js";
+import { authUserFrom, listClaimPanel, shareActionPanel, type AuthUser } from "../../src/preview/lib/auth-state.js";
 import { shouldFetchBoardDelay } from "../../src/preview/lib/board-delay.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,15 @@ describe("share page auth tri-state", () => {
     expect(fetchesShareDelay({ steam_id: "1", tier: "pro" })).toBe(false);
     expect(fetchesShareDelay(undefined)).toBe(false);
     expect(share).toContain('useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user))');
+  });
+
+  it("sends a signed-in Free board viewer to upgrade and a logged-out viewer to sign-in", () => {
+    expect(listClaimPanel(undefined, "free")).toBe("pending");
+    expect(listClaimPanel(false, "free")).toBe("sign-in");
+    expect(listClaimPanel(true, "free")).toBe("upgrade");
+    expect(listClaimPanel(true, "pro")).toBe("pro");
+    expect(listClaimPanel(true, "admin")).toBe("pro");
+    expect(listClaimPanel(true, undefined)).toBe("upgrade");
   });
 
   it("starts the share page user as undefined, not null", () => {

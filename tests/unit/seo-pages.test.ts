@@ -40,7 +40,7 @@ describe("SEO crawler page robustness", () => {
   });
 
   it("non-existent blog slugs still return 404 for trailing-slash canonical routes", () => {
-    expect(blogRoutesSource).toContain('res.status(404).send("Blog post not found")');
+    expect(blogRoutesSource).toContain('sendSlugNotFound(res, "Blog post not found")');
     expect(blogRoutesSource).toContain('res.redirect(301, `/blog/${slug}/`)');
   });
 

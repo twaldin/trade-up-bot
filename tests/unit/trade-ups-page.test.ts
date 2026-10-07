@@ -182,7 +182,7 @@ describe("orderByIds", () => {
 });
 
 describe("loadRankSnapshot", () => {
-  const snapshot: RankSnapshot = { ids: [5, 4, 3], total: 3 };
+  const snapshot: RankSnapshot = { ids: [5, 4, 3], total: 3, profitable: 2 };
 
   it("serves a stored snapshot without recomputing", async () => {
     const store = memoryStore();
@@ -225,6 +225,15 @@ describe("loadRankSnapshot", () => {
     store.data.set("tu:rank:d", { ids: "nope", total: 1 });
     const got = await loadRankSnapshot("tu:rank:d", store, async () => snapshot);
     expect(got).toEqual(snapshot);
+  });
+
+  it("rebuilds a snapshot cached before profitable existed", async () => {
+    const store = memoryStore();
+    store.data.set("tu:rank:legacy", { ids: [5, 4, 3], total: 3 });
+    let computed = 0;
+    const got = await loadRankSnapshot("tu:rank:legacy", store, async () => { computed++; return snapshot; });
+    expect(computed).toBe(1);
+    expect(got.profitable).toBe(2);
   });
 
   it("does not poison later calls when a computation fails", async () => {

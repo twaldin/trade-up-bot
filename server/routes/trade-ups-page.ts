@@ -134,6 +134,16 @@ export function parseOutcomesJson(raw: string | null | undefined): TradeUpOutcom
 export interface RankSnapshot {
   ids: number[];
   total: number;
+  /** Rows with profit_cents > 0 in the same diversified set, capped like total. */
+  profitable: number;
+  /** Listing-disjoint snapshot (default board). Absent/false for overlap=all. */
+  deduped?: boolean;
+  /** Raw diversified count before listing dedupe (capped at 10001 = "10,000+"). */
+  rawTotal?: number;
+  /** Deduped list stopped early (1000-row cap or candidate window): total is a lower bound. */
+  hasMore?: boolean;
+  /** overlap=all only: per id, rank of the first higher row sharing a listing (null = none). */
+  sharedWithRank?: Array<number | null>;
 }
 
 export interface RankSnapshotStore {
@@ -147,15 +157,30 @@ export function rankSnapshotKey(query: {
   sortCol: string;
   sortOrder: string;
   params: readonly unknown[];
+  /** Listing-overlap mode; omitted for callers that predate it. */
+  overlap?: string;
 }): string {
+  const parts: unknown[] = [query.fromWhere, query.sortCol, query.sortOrder, query.params];
+  if (query.overlap !== undefined) parts.push(query.overlap);
   const digest = createHash("sha1")
-    .update(JSON.stringify([query.fromWhere, query.sortCol, query.sortOrder, query.params]))
+    .update(JSON.stringify(parts))
     .digest("hex");
   return `tu:rank:${digest}`;
 }
 
 export function snapshotCoversPage(offset: number, perPage: number): boolean {
   return offset >= 0 && offset + perPage <= RANK_SNAPSHOT_SIZE;
+}
+
+/** Rows in snapshot order, skipping ids that no longer resolve (never switches lists). */
+export function orderPresentByIds<T extends { id: number }>(rows: readonly T[], ids: readonly number[]): T[] {
+  const byId = new Map(rows.map((row) => [Number(row.id), row]));
+  const ordered: T[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (row) ordered.push(row);
+  }
+  return ordered;
 }
 
 /** Rows in snapshot order, or null if any id no longer resolves. */
@@ -174,7 +199,10 @@ function isRankSnapshot(value: unknown): value is RankSnapshot {
   if (!value || typeof value !== "object") return false;
   const ids: unknown = Reflect.get(value, "ids");
   const total: unknown = Reflect.get(value, "total");
-  return Array.isArray(ids) && ids.every((id) => typeof id === "number") && typeof total === "number";
+  const profitable: unknown = Reflect.get(value, "profitable");
+  // Snapshots cached before `profitable` existed are treated as a miss and rebuilt.
+  return Array.isArray(ids) && ids.every((id) => typeof id === "number") && typeof total === "number"
+    && typeof profitable === "number";
 }
 
 const inflightSnapshots = new Map<string, Promise<RankSnapshot>>();

@@ -203,7 +203,7 @@ Every tracker is off, and adds nothing to the page, until its env var is set. Se
 
 | Var | Read at | Enables |
 |-----|---------|---------|
-| `GA4_MEASUREMENT_ID` | build (`npm run build`) + API runtime | Browser GA4 events. Mark `begin_checkout`, `purchase`, `sign_up`, `calculator_complete`, and `claim_trade_up` as key events. Do not mark `view_item`, `login`, `verify_click`, `verify_complete`, or `cta_click`. |
+| `GA4_MEASUREMENT_ID` | build (`npm run build`) + API runtime | Browser GA4 events. Mark `begin_checkout`, `purchase`, `sign_up`, `calculator_complete`, and `claim_trade_up` as key events. Do not mark `view_item`, `login`, `verify_click`, `verify_complete`, `cta_click`, or `upgrade_cta_click`. `claim_trade_up` and `verify_complete` send `surface` `share` (a shared trade-up), `account` (my trade-ups), or `board` (the live board). |
 | `GA4_API_SECRET` | API runtime | GA4 `purchase` via Measurement Protocol from the Stripe webhook (with `GA4_MEASUREMENT_ID`) |
 | `META_PIXEL_ID` | build + API runtime | Meta Pixel base code (PageView) and the conversion events |
 | `META_CAPI_TOKEN` | API runtime | Meta Conversions API `Purchase`, `CompleteRegistration`, and `Login` (with `META_PIXEL_ID`). No-op when unset. No email, name, or raw Steam ID |

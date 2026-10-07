@@ -123,19 +123,45 @@ export function pageIsShort(received: number, pageSize: number): boolean {
 /**
  * GET /api/trade-ups stops the COUNT at 10001 (`LIMIT 10001`). A full page
  * that has walked that far is the cap, not proof the filters are exhausted.
+ * Deduped boards report that raw count as `rawTotal` and keep `total` for the
+ * rows this list can actually show.
  */
 export const LIST_TOTAL_CAP = 10_001;
 
-export type ListEndState = "more" | "end" | "capped";
+export type ListEndState = "more" | "end" | "capped" | "truncated";
 
-/** Short page: real end. Full pages that only hit the count cap: ask to narrow. */
-export function listEndState(page: { received: number; pageSize: number; page: number; total?: number }): ListEndState {
+/** `rawTotal` when the response has one, otherwise `total`. */
+export function listExtent(counts: { rawTotal?: number | null; total?: number | null }): number | undefined {
+  const raw = counts.rawTotal;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const total = counts.total;
+  if (typeof total === "number" && Number.isFinite(total)) return total;
+  return undefined;
+}
+
+/**
+ * Short page: real end, unless `hasMore` says the 1,000-row cap or the
+ * candidate window cut the list. The 10,001 ceiling uses `rawTotal`, then
+ * `total` when that field is absent.
+ */
+export function listEndState(page: {
+  received: number;
+  pageSize: number;
+  page: number;
+  total?: number | null;
+  rawTotal?: number | null;
+  hasMore?: boolean;
+}): ListEndState {
   const covered = page.page * page.pageSize;
   const total = page.total;
   const knownTotal = typeof total === "number" && Number.isFinite(total);
-  if (knownTotal && total >= LIST_TOTAL_CAP && covered >= LIST_TOTAL_CAP && page.received >= page.pageSize) return "capped";
+  const extent = listExtent(page);
+  if (extent != null && extent >= LIST_TOTAL_CAP && covered >= LIST_TOTAL_CAP && page.received >= page.pageSize) return "capped";
   if (page.received < page.pageSize) {
-    if (!knownTotal || covered >= total || page.received === 0) return "end";
+    if (!knownTotal || covered >= total || page.received === 0) {
+      if (page.hasMore === true) return "truncated";
+      return "end";
+    }
     return "more";
   }
   return "more";

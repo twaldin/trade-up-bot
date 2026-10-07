@@ -49,12 +49,13 @@ describe("blog post canonical uses trailing slash (#2)", () => {
   it("returns 404 for unknown blog slugs with or without trailing slash", async () => {
     const app = createApp();
 
-    await request(app)
-      .get("/blog/this-post-does-not-exist")
-      .expect(404, "Blog post not found");
-    await request(app)
-      .get("/blog/this-post-does-not-exist/")
-      .expect(404, "Blog post not found");
+    for (const path of ["/blog/this-post-does-not-exist", "/blog/this-post-does-not-exist/"]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(404);
+      expect(res.headers["x-robots-tag"]).toBe("noindex");
+      expect(res.text).toContain('name="robots" content="noindex"');
+      expect(res.text).toContain("Blog post not found");
+    }
   });
 });
 

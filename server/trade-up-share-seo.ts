@@ -1,12 +1,40 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type pg from "pg";
+import { collectionTradeUpLinks } from "../shared/collection-links.js";
 import { tradeUpDescription, tradeUpDocumentTitle, tradeUpOgTitle, tradeUpPair } from "../shared/copy.js";
+import { isRepeatedTradeUpSlash, parseTradeUpId, routeParam } from "../shared/trade-up-id.js";
 import { tradeUpDetailJsonLd } from "../shared/types.js";
 import { inputsAreRedacted } from "./routes/trade-ups.js";
-import { buildSeoHtml, deletedTradeUpStatus, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
+import { buildSeoHtml, injectMetaIntoSpa, isCrawler, renderTradeUpDetail } from "./seo.js";
+
+const NOT_FOUND_BODY = "Trade-up not found";
+
+function sendTradeUpNotFound(req: Request, res: Response): void {
+  res.status(404).set("X-Robots-Tag", "noindex");
+  const ua = String(req.headers["user-agent"] || "");
+  const shell = req.app.locals.shellHtml;
+  if (isCrawler(ua) || typeof shell !== "string") {
+    res.type("text/plain").send(NOT_FOUND_BODY);
+    return;
+  }
+  res.type("html").send(injectMetaIntoSpa(shell, {
+    title: "Trade-up not found | TradeUpBot",
+    description: "That trade-up is not on TradeUpBot.",
+    url: "https://tradeupbot.app/trade-ups",
+    robots: "noindex, follow",
+    bodyText: NOT_FOUND_BODY,
+  }));
+}
 
 /** Crawler and SPA-shell HTML for /trade-ups/:id. Fresh rows hide per-input price and source. */
 export function registerTradeUpDetailRoute(app: Express, pool: pg.Pool): void {
+  app.use((req, res, next) => {
+    if ((req.method === "GET" || req.method === "HEAD") && isRepeatedTradeUpSlash(req.path)) {
+      sendTradeUpNotFound(req, res);
+      return;
+    }
+    next();
+  });
   app.get("/trade-ups/:id", (req, res, next) => {
     void handleTradeUpShareSeo(pool, req, res, next);
   });
@@ -23,22 +51,19 @@ export async function handleTradeUpShareSeo(
   next: NextFunction,
 ): Promise<void> {
   const ua = req.headers["user-agent"] || "";
-  const id = String(req.params.id);
+  const rawId = routeParam(req.params.id);
+  const id = parseTradeUpId(rawId);
+  if (req.path.endsWith("/") || id === null) {
+    sendTradeUpNotFound(req, res);
+    return;
+  }
   try {
-    if (!/^\d+$/.test(id)) {
-      const status = deletedTradeUpStatus(id);
-      res.status(status).set("X-Robots-Tag", "noindex").send("Trade-up not found");
-      return;
-    }
     const { rows: [row] } = await pool.query(
       "SELECT id, type, total_cost_cents, profit_cents, roi_percentage, chance_to_profit, listing_status, preserved_at, outcomes_json, created_at FROM trade_ups WHERE id = $1",
-      [req.params.id],
+      [id],
     );
     if (!row) {
-      const status = deletedTradeUpStatus(String(req.params.id));
-      res.status(status).set("X-Robots-Tag", "noindex").send(
-        status === 410 ? "Trade-up no longer available" : "Trade-up not found",
-      );
+      sendTradeUpNotFound(req, res);
       return;
     }
     const isStale = row.listing_status === "stale"
@@ -54,18 +79,14 @@ export async function handleTradeUpShareSeo(
       skin_name: string; probability: number; predicted_condition: string; estimated_price_cents: number;
     }>;
 
-    const collections = [...new Set(inputs.map((i: { collection_name: string }) => i.collection_name))];
+    const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
     const related = [
-      ...collections.map((c: string) => ({
-        label: `${c.replace(/^The\s+/i, "").replace(/\s+Collection$/i, "")} Collection Trade-Ups`,
-        url: `/trade-ups/collection/${c.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
-      })).slice(0, 2),
+      ...collectionTradeUpLinks(collectionNames),
       { label: "All CS2 Trade-Ups", url: "/trade-ups" },
       { label: "Browse CS2 Collections", url: "/collections" },
     ];
 
     const inputNames = inputs.map((i: { skin_name: string }) => i.skin_name);
-    const collectionNames = inputs.map((i: { collection_name: string }) => i.collection_name);
     const pair = tradeUpPair(row.type, outcomes);
 
     const meta = {
@@ -108,6 +129,10 @@ export async function handleTradeUpShareSeo(
     res.send(injectMetaIntoSpa(shellHtmlLocal, meta));
   } catch (err) {
     console.error(`SEO route ${req.path} failed:`, err instanceof Error ? err.message : err);
-    next();
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    res.status(503).set("X-Robots-Tag", "noindex").type("text/plain").send("Trade-up unavailable");
   }
 }

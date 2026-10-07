@@ -239,8 +239,11 @@ describe("share page claim and verify hooks", () => {
     expect(functionBody(share, "handleConfirm")).not.toContain("trackVerifyComplete");
     expect(functionBody(account, "handleUnclaim")).not.toContain("trackClaimTradeUp");
     expect(functionBody(account, "handleConfirmPurchased")).not.toContain("trackClaimTradeUp");
+    expect(board).toContain('trackVerifyClick("expanded")');
     expect(board).toContain('trackVerifyClick("board_card")');
-    expect(board).not.toContain("trackClaimTradeUp");
+    const claim = board.slice(board.indexOf("async function claimFromBoard"));
+    expect(claim.indexOf("trackClaimTradeUp")).toBeGreaterThan(claim.indexOf("if (!res.ok)"));
+    expect(claim).toContain('trackClaimTradeUp({ surface: "board"');
     expect(board).not.toContain("trackVerifyComplete");
   });
 });
