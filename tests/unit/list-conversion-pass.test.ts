@@ -32,9 +32,13 @@ describe("C: free-delay transparency banner above the board", () => {
     expect(board).toContain(">See Pro<");
   });
   it("renders before the cards, not only after them", () => {
-    const bannerIdx = board.indexOf("preview-delay${");
-    const cardsIdx = board.indexOf('className="preview-bento preview-bento--reserved"');
-    expect(bannerIdx).toBeGreaterThan(-1);
-    expect(bannerIdx).toBeLessThan(cardsIdx);
+    const bentoIdx = board.indexOf("preview-bento${showSkeletons");
+    const bannerIdx = board.indexOf("<DelayBanner", bentoIdx);
+    const skeletonIdx = board.indexOf("<BoardSkeletonCard", bannerIdx);
+    const cardsIdx = board.indexOf("<TradeUpCard", bannerIdx);
+    expect(bentoIdx).toBeGreaterThan(-1);
+    expect(bannerIdx).toBeGreaterThan(bentoIdx);
+    expect(skeletonIdx).toBeGreaterThan(bannerIdx);
+    expect(cardsIdx).toBeGreaterThan(bannerIdx);
   });
 });
