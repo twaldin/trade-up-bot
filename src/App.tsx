@@ -476,8 +476,8 @@ export default function App() {
   const { pathname } = useLocation();
   const pageViewPath = useRef<string | null>(null);
 
-  // Document load is the gtag config page_view. Later client navigations send one
-  // page_view to the configured property, and one Pixel PageView. Not on the first render.
+  // Document load is the gtag config page_view. History changes are GA4's own
+  // page_view. This effect only sends the Pixel PageView, and not on the first render.
   useEffect(() => {
     const previous = pageViewPath.current;
     pageViewPath.current = pathname;

@@ -136,36 +136,20 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(body?.attribution).toMatchObject({ utm_source: "google", gclid: "Cj0K" });
   });
 
-  it("sends one scrubbed page_view to the configured property and not the legacy property", () => {
-    globalThis.tubTracking = { ga4MeasurementId: "G-2474G4P5QE" };
-    const stub = installBrowser({
+  it("does not send a GA4 page_view on a client navigation; history measurement already does", () => {
+    globalThis.tubTracking = { ga4MeasurementId: "G-2474G4P5QE", metaPixelId: PIXEL };
+    installBrowser({
       pathname: "/pricing",
-      search: "?utm_source=google&auth=failed&lid=123&eid=old&session_id=cs_x&upgraded=1",
-    });
-    Object.assign(stub.location, {
-      href: "https://tradeupbot.app/pricing?utm_source=google&auth=failed&lid=123&eid=old&session_id=cs_x&upgraded=1#plans",
-      origin: "https://tradeupbot.app",
-      hash: "#plans",
+      search: "?utm_source=google&auth=failed&lid=123&session_id=cs_x&upgraded=1",
     });
     expect(shouldTrackSpaPageView(null, "/pricing")).toBe(false);
     expect(shouldTrackSpaPageView("/faq", "/pricing")).toBe(true);
-    trackSpaPageView();
-    expect(gtag).toHaveBeenCalledTimes(1);
-    expect(gtag).toHaveBeenCalledWith("event", "page_view", {
-      page_location: "https://tradeupbot.app/pricing?utm_source=google#plans",
-      page_path: "/pricing",
-      send_to: "G-2474G4P5QE",
-    });
-    expect(JSON.stringify(gtag.mock.calls)).not.toContain("G-EKWRB4FE37");
-    expect(JSON.stringify(gtag.mock.calls)).not.toMatch(/auth=|lid=|eid=|session_id=|upgraded=/);
-  });
-
-  it("does not add a page_view when the only measurement id is the legacy property", () => {
-    globalThis.tubTracking = { ga4MeasurementId: "G-EKWRB4FE37" };
-    const stub = installBrowser({ pathname: "/pricing", search: "" });
-    Object.assign(stub.location, { href: "https://tradeupbot.app/pricing", origin: "https://tradeupbot.app", hash: "" });
+    expect(shouldTrackSpaPageView("/trade-ups", "/calculator")).toBe(true);
+    expect(shouldTrackSpaPageView("/", "/pricing")).toBe(true);
     trackSpaPageView();
     expect(gtag).not.toHaveBeenCalled();
+    expect(fbq).toHaveBeenCalledTimes(1);
+    expect(fbq).toHaveBeenCalledWith("track", "PageView");
   });
 
   it("keeps the Google final-URL suffix when the SPA navigates into /calculator", () => {

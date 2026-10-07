@@ -2,10 +2,11 @@
  * Headed Chromium gate for GA4 page_view hygiene.
  *
  * The app bundle (/src/main.tsx) is held for 3.5s. Collect hits are answered
- * locally. First loads of /, /trade-ups, /calculator, /pricing, and /faq must
- * send one page_view per property. Client navigations must send exactly one
- * page_view to G-2474G4P5QE and leave G-EKWRB4FE37 unchanged. auth, lid,
- * session_id, and upgraded must not reach page_location or the Referer.
+ * locally, including the real gtag.js containers. First loads of /, /trade-ups,
+ * /calculator, /pricing, and /faq must send one page_view per property. Each
+ * client navigation, including /faq to /pricing, is watched for 8s and must
+ * send exactly one page_view per property. auth, lid, eid, session_id, and
+ * upgraded must not reach page_location or page_referrer.
  *
  *   npx tsx scripts/analytics-pageview-gate.mjs before
  *   npx tsx scripts/analytics-pageview-gate.mjs after
@@ -24,7 +25,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEGACY = "G-EKWRB4FE37";
 const GA4 = "G-2474G4P5QE";
 const BUNDLE_DELAY_MS = 3500;
-const SPA_WINDOW_MS = 4000;
+const SPA_WINDOW_MS = 8000;
 const label = process.argv[2] === "after" ? "after" : "before";
 const expectFixed = label === "after";
 
@@ -116,9 +117,10 @@ function eventsFromHit(rawUrl, body) {
   const qs = url.searchParams;
   const baseTid = qs.get("tid") || "";
   const baseDl = qs.get("dl") || qs.get("ep.page_location") || "";
+  const baseDr = qs.get("dr") || qs.get("ep.page_referrer") || "";
   const events = [];
   if (qs.get("en")) {
-    events.push({ tid: baseTid, en: qs.get("en") || "", dl: baseDl });
+    events.push({ tid: baseTid, en: qs.get("en") || "", dl: baseDl, dr: baseDr });
   }
   if (!body) return events;
   for (const line of body.split(/\r?\n/)) {
@@ -130,21 +132,34 @@ function eventsFromHit(rawUrl, body) {
       tid: params.get("tid") || baseTid,
       en,
       dl: params.get("dl") || params.get("ep.page_location") || baseDl,
+      dr: params.get("dr") || params.get("ep.page_referrer") || baseDr,
     });
   }
   return events;
 }
 
-function pageViews(hits) {
+function pageViews(hits, since = 0) {
   const grouped = { [LEGACY]: [], [GA4]: [] };
   for (const hit of hits) {
     for (const event of eventsFromHit(hit.url, hit.body)) {
       if (event.en !== "page_view") continue;
       if (!grouped[event.tid]) grouped[event.tid] = [];
-      grouped[event.tid].push({ dl: event.dl, referer: hit.referer });
+      grouped[event.tid].push({
+        dl: event.dl,
+        dr: event.dr,
+        referer: hit.referer,
+        ms: since ? hit.at - since : 0,
+      });
     }
   }
   return grouped;
+}
+
+const STRIPPED = ["auth=", "lid=", "eid=", "session_id=", "upgraded="];
+
+function dirtyParams(value) {
+  const text = value || "";
+  return STRIPPED.filter((token) => text.includes(token) || text.includes(encodeURIComponent(token)));
 }
 
 function leakIn(value) {
@@ -245,7 +260,9 @@ try {
     const session = await openPage();
     await session.page.goto(`${base}${path}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await session.page.waitForSelector("footer.preview-footer a[href='/pricing'], a.o-nav-item[href='/calculator']", { timeout: 25_000 });
-    await new Promise((r) => setTimeout(r, 1000));
+    // History page_view arrives about six seconds after gtag sees the document.
+    // Count through the same 8s window used after a client navigation.
+    await new Promise((r) => setTimeout(r, SPA_WINDOW_MS));
     return session;
   }
 
@@ -278,12 +295,13 @@ try {
     try {
       const before = pageViews(session.hits);
       const marked = session.hits.length;
+      const navAt = Date.now();
       await Promise.all([
         session.page.waitForFunction((dest) => location.pathname === dest, { timeout: 10_000 }, spec.to),
         session.page.click(spec.selector),
       ]);
       await new Promise((r) => setTimeout(r, SPA_WINDOW_MS));
-      const added = pageViews(session.hits.slice(marked));
+      const added = pageViews(session.hits.slice(marked), navAt);
       const href = await session.page.evaluate(() => location.href);
       const row = {
         from: spec.from,
@@ -292,15 +310,22 @@ try {
         ga4Before: before[GA4].length,
         legacyAdded: added[LEGACY].length,
         ga4Added: added[GA4].length,
-        ga4Locations: added[GA4].map((hit) => hit.dl),
+        legacy: added[LEGACY],
+        ga4: added[GA4],
         href,
       };
       report.spa.push(row);
-      console.log(`spa ${spec.from} -> ${spec.to} legacy+${row.legacyAdded} ga4+${row.ga4Added} ${JSON.stringify(row.ga4Locations)}`);
+      console.log(`spa ${spec.from} -> ${spec.to} legacy+${row.legacyAdded} ga4+${row.ga4Added}`);
+      console.log(`  legacy ${JSON.stringify(added[LEGACY])}`);
+      console.log(`  ga4 ${JSON.stringify(added[GA4])}`);
       if (expectFixed) {
-        check(row.ga4Added === 1, `${spec.from} -> ${spec.to}: one page_view to ${GA4} (got ${row.ga4Added})`);
-        check(row.legacyAdded === 0, `${spec.from} -> ${spec.to}: legacy page_view unchanged (got +${row.legacyAdded})`);
-        check(row.ga4Locations.length === 1 && row.ga4Locations[0].endsWith(spec.to), `${spec.from} -> ${spec.to}: page_location ends with ${spec.to} (${row.ga4Locations.join(", ")})`);
+        check(row.legacyAdded === 1, `${spec.from} -> ${spec.to}: one legacy page_view (got ${row.legacyAdded})`);
+        check(row.ga4Added === 1, `${spec.from} -> ${spec.to}: one ${GA4} page_view (got ${row.ga4Added})`);
+        for (const hit of [...added[LEGACY], ...added[GA4]]) {
+          const leaked = [...dirtyParams(hit.dl), ...dirtyParams(hit.dr)];
+          check(leaked.length === 0, `${spec.from} -> ${spec.to}: page_location/page_referrer clean (${leaked.join(", ") || "clean"}) ${hit.dl} dr=${hit.dr}`);
+          check(hit.dl.endsWith(spec.to), `${spec.from} -> ${spec.to}: page_location ends with ${spec.to} (${hit.dl})`);
+        }
       }
     } finally {
       await session.page.close();
@@ -330,6 +355,8 @@ try {
       if (expectFixed) {
         check(leaked.length === 0, `${path} stays out of page_location and Referer`);
         check(!href.includes("auth=") && !href.includes("lid=") && !href.includes("session_id=") && !href.includes("upgraded="), `${path} leaves a clean address bar (${href})`);
+        check(row.legacy === 1, `${path} hard load: one legacy page_view (got ${row.legacy})`);
+        check(row.ga4 === 1, `${path} hard load: one ${GA4} page_view (got ${row.ga4})`);
       }
     } finally {
       await session.page.close();
