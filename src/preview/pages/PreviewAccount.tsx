@@ -189,7 +189,6 @@ export function PreviewAccount() {
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
   const [statsFailed, setStatsFailed] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [claimsSettled, setClaimsSettled] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [faceTick, setFaceTick] = useState(0);
@@ -318,10 +317,7 @@ export function PreviewAccount() {
       if (!statsStarted) setStatsFailed(true);
     } finally {
       claimsInFlight.current = false;
-      if (!signal?.aborted) {
-        setLoading(false);
-        setClaimsSettled(true);
-      }
+      if (!signal?.aborted) setLoading(false);
     }
   }, [activeTab, user]);
 
@@ -355,12 +351,11 @@ export function PreviewAccount() {
         setSessionHold(null);
         setSessionSpent(false);
         const data = res.ok ? await res.json() as AuthUser : null;
-        setClaimsSettled(false);
+        if (data?.steam_id) setLoading(true);
         setUser(data?.steam_id ? data : null);
       })
       .catch(() => {
         if (!live) return;
-        setClaimsSettled(false);
         setUser(null);
       });
     return () => {
@@ -675,8 +670,7 @@ export function PreviewAccount() {
   const tabCount = activeTab === "claims" ? claimCount : listCount;
   const showChrome = user != null && !sessionHold;
   const showStats = showChrome && hasProAccess(user);
-  const showFreeStack = showChrome && !showStats && claimsSettled;
-  const showStrut = showChrome && !showFreeStack;
+  const pendingSession = (user === undefined && !sessionHold) || (showChrome && loading);
   const listPending = showChrome && loading && claimTradeUps.length === 0 && entries.length === 0 && !note;
   const selectTab = (key: (typeof ACCOUNT_TABS)[number]["key"]) => {
     setActiveTab(key);
@@ -698,7 +692,7 @@ export function PreviewAccount() {
   }
 
   return (
-    <div className={sessionHold ? "preview-page" : "preview-page preview-page--account"}>
+    <div className={sessionHold ? "preview-page" : `preview-page preview-page--account${pendingSession ? " preview-account--pending" : ""}`}>
       <title>My Trade-Ups | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
       <header className="preview-page__head">
@@ -732,69 +726,28 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {!sessionHold && (
-        <div className="preview-account__hold">
-          {user == null && (
-            <section className="preview-panel">
-              <header className="preview-panel__head">
-                <p className="o-kicker">Session</p>
-              </header>
-              <p className="preview-note">{user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM}</p>
-              <a
-                className="preview-btn preview-btn--lime preview-btn--block"
-                href={authHref("/my-trade-ups")}
-                rel="nofollow"
-                style={user === undefined ? { visibility: "hidden" } : undefined}
-                aria-hidden={user === undefined || undefined}
-                tabIndex={user === undefined ? -1 : undefined}
-              >
-                Sign in with Steam
-              </a>
-            </section>
-          )}
-          {showStrut && (
-            <section className="preview-panel preview-account__strut" aria-hidden="true" inert>
-              <header className="preview-panel__head">
-                <p className="o-kicker">{"\u00a0"}</p>
-              </header>
-              <p className="preview-note">{"\u00a0"}</p>
-              <span className="preview-btn preview-btn--block">{"\u00a0"}</span>
-            </section>
-          )}
-          {showFreeStack && (
-            <div className="preview-account__free">
-              <AccountTabBar activeTab={activeTab} tabCount={tabCount} onSelect={selectTab} />
-              {note && (
-                <div className="preview-notice" role="status">
-                  <p className="preview-note">{note}</p>
-                  {note === RATE_LIMIT_MANUAL_COPY && !held && (
-                    <button type="button" className="preview-btn preview-btn--quiet" onClick={retryClaims}>
-                      Retry
-                    </button>
-                  )}
-                </div>
-              )}
-              {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
-              {!note && activeTab === "claims" && claimTradeUps.length === 0 && (
-                <div className="preview-empty">
-                  <p>{empty.title}</p>
-                  <p className="preview-note">{empty.sub}</p>
-                </div>
-              )}
-              {!note && activeTab !== "claims" && entries.length === 0 && (
-                <div className="preview-empty">
-                  <p>{empty.title}</p>
-                  <p className="preview-note">{empty.sub}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      {user == null && !sessionHold && (
+        <section className="preview-panel">
+          <header className="preview-panel__head">
+            <p className="o-kicker">Session</p>
+          </header>
+          <p className="preview-note">{user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM}</p>
+          <a
+            className="preview-btn preview-btn--lime preview-btn--block"
+            href={authHref("/my-trade-ups")}
+            rel="nofollow"
+            style={user === undefined ? { visibility: "hidden" } : undefined}
+            aria-hidden={user === undefined || undefined}
+            tabIndex={user === undefined ? -1 : undefined}
+          >
+            Sign in with Steam
+          </a>
+        </section>
       )}
 
-      {showStats && (
-        <div className="preview-account__rest">
-          <AccountStats stats={stats} failed={statsFailed} />
+      {showChrome && (
+        <>
+          {showStats && <AccountStats stats={stats} failed={statsFailed} />}
           <AccountTabBar activeTab={activeTab} tabCount={tabCount} onSelect={selectTab} />
           {note && !loadError && (
             <div className="preview-notice" role="status">
@@ -807,7 +760,7 @@ export function PreviewAccount() {
             </div>
           )}
           {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
-          <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}`}>
+          <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}${showStats ? "" : " preview-account__slot--fit"}`}>
           {listPending && <AccountListSkeleton />}
           {loadError && (
             <div className="preview-notice" role="status">
@@ -1040,7 +993,7 @@ export function PreviewAccount() {
         </section>
       )}
           </div>
-        </div>
+        </>
       )}
 
       <div className="preview-toolbar">

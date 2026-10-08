@@ -3104,90 +3104,44 @@
 
 /* ======================================================== my trade-ups */
 
-/* The in-flow page is the session panel. Pro stats and the list live in a
-   grid row after the legal line, so they can grow without moving Pricing.
-   Free users replace the panel with their own short stack once claims settle. */
-.preview-console__main:has(.preview-page--account) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  row-gap: 12px;
-}
-
-.preview-page--account {
-  display: contents;
-}
-
-.preview-page--account > title,
-.preview-page--account > link {
+/* Auth pending keeps the session panel's height (the note reserves the
+   wrapped sign-in line). Toolbar and the legal line stay out of flow until
+   auth resolves, and for a signed-in user until the first claims paint, so
+   they appear under the finished stack instead of sliding. Visual order
+   stays DOM order: head, session, content, toolbar, legal. */
+.preview-account--pending > .preview-toolbar {
   display: none;
 }
 
-.preview-page--account > .preview-page__head,
-.preview-page--account > .preview-account__hold,
-.preview-page--account > .preview-toolbar,
-.preview-page--account > .preview-account__rest {
-  padding-right: 16px;
-  padding-left: 16px;
+.preview-console__main:has(.preview-account--pending) > .preview-console__legal {
+  display: none;
 }
 
-.preview-page--account > .preview-page__head {
-  grid-row: 1;
-  padding-top: 16px;
-}
-
-.preview-page--account > .preview-account__hold { grid-row: 2; }
-
-.preview-page--account > .preview-toolbar {
-  grid-row: 3;
-  margin-bottom: 20px;
-}
-
-.preview-console__main:has(.preview-page--account) > .preview-console__legal {
-  grid-row: 4;
-}
-
-.preview-page--account > .preview-account__rest { grid-row: 5; }
-
-.preview-account__rest {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-sizing: border-box;
-  padding-bottom: 32px;
-}
-
-.preview-account__rest > .preview-stats { margin: 0; }
-
-.preview-account__free {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.preview-account__strut { visibility: hidden; }
-
-/* The sign-in sentence wraps to two lines at 360. Reserve that line while
-   auth is still pending so the panel does not grow when the copy swaps. */
 @media (max-width: 367px) {
   .preview-page--account .preview-panel > .preview-note { min-height: 2.9em; }
 }
-
-.preview-page--account .preview-page__head { position: relative; }
 
 @media (max-width: 799px) {
   .preview-page--account .preview-page__head p { min-height: 2.6em; }
 }
 
-.preview-page--account .preview-page__meta {
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  min-height: 24px;
-  max-width: 58%;
-  white-space: nowrap;
+@media (max-width: 600px) {
+  .preview-page--account .preview-page__head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .preview-page--account .preview-page__head > div:first-child {
+    flex: 1 0 100%;
+  }
+
+  .preview-page--account .preview-page__meta {
+    position: static;
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    white-space: normal;
+  }
 }
 
 .preview-page--account .preview-page__meta > span:first-child {
@@ -3299,15 +3253,6 @@
 .preview-page--account .preview-empty .preview-note {
   min-height: 2.6em;
   max-width: 28rem;
-}
-
-.preview-account__free .preview-empty {
-  flex: 0 0 auto;
-  min-height: 0;
-}
-
-.preview-account__free .preview-empty .preview-note {
-  min-height: 0;
 }
 
 .preview-stats b.is-plus { color: var(--profit-ink); }

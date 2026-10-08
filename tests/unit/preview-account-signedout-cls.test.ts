@@ -7,6 +7,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { chromium, type Browser, type Page } from "playwright-core";
 import puppeteer from "puppeteer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeTradeUp } from "../helpers/fixtures.js";
 
 const MAIN_CLS: Record<number, number> = {
   360: 0.0322,
@@ -189,4 +190,104 @@ describe("signed-out account CLS", () => {
     }
     expect(failures).toEqual([]);
   }, 120_000);
+
+  async function signedIn(page: Page, width: number, height: number, tier: "pro" | "free", claims: number) {
+    await page.setViewportSize({ width, height });
+    const tradeUps = Array.from({ length: claims }, (_, index) => makeTradeUp({ id: index + 1 }));
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.pathname + url.search;
+      if (!path.startsWith("/api/")) {
+        await route.continue();
+        return;
+      }
+      if (path.startsWith("/api/auth/me")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            steam_id: "1",
+            display_name: "Ada",
+            avatar_url: "",
+            tier,
+            is_admin: false,
+          }),
+        });
+        return;
+      }
+      if (path.includes("/stats")) {
+        await route.fulfill({
+          status: tier === "pro" ? 200 : 403,
+          contentType: "application/json",
+          body: tier === "pro"
+            ? JSON.stringify({ all_time_profit_cents: 100, total_executed: 1, total_sold: 1, win_count: 1, win_rate: 100, avg_roi: 4 })
+            : JSON.stringify({ error: "nope" }),
+        });
+        return;
+      }
+      if (path.includes("my_claims")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ trade_ups: tradeUps }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForTimeout(800);
+  }
+
+  it("keeps Pricing and the legal line below the last Pro claim", async () => {
+    const failures: string[] = [];
+    for (const width of [390, 1280]) {
+      const page = await browser.newPage();
+      try {
+        await signedIn(page, width, width === 1280 ? 800 : 844, "pro", 3);
+        const order = await page.evaluate(() => {
+          const last = document.querySelector(".preview-claim:last-child")?.getBoundingClientRect();
+          const toolbar = document.querySelector(".preview-page--account > .preview-toolbar")?.getBoundingClientRect();
+          const legal = document.querySelector(".preview-console__legal")?.getBoundingClientRect();
+          return {
+            claims: document.querySelectorAll(".preview-claim").length,
+            lastBottom: last?.bottom ?? 0,
+            toolbarTop: toolbar?.top ?? 0,
+            legalTop: legal?.top ?? 0,
+          };
+        });
+        if (order.claims !== 3 || order.toolbarTop < order.lastBottom || order.legalTop < order.lastBottom) {
+          failures.push(`${width} claims ${order.claims} last ${order.lastBottom.toFixed(0)} toolbar ${order.toolbarTop.toFixed(0)} legal ${order.legalTop.toFixed(0)}`);
+        }
+      } finally {
+        await page.close();
+      }
+    }
+    expect(failures).toEqual([]);
+  }, 60_000);
+
+  it("keeps the header meta off the subtitle on phones", async () => {
+    const failures: string[] = [];
+    for (const width of [360, 375, 390]) {
+      const page = await browser.newPage();
+      try {
+        await signedIn(page, width, 844, "pro", 0);
+        const overlap = await page.evaluate(() => {
+          const sub = document.querySelector(".preview-page__head p");
+          const meta = document.querySelector(".preview-page__meta");
+          if (!sub || !meta) return -1;
+          const subBox = sub.getBoundingClientRect();
+          const metaBox = meta.getBoundingClientRect();
+          const x = Math.max(0, Math.min(subBox.right, metaBox.right) - Math.max(subBox.left, metaBox.left));
+          const y = Math.max(0, Math.min(subBox.bottom, metaBox.bottom) - Math.max(subBox.top, metaBox.top));
+          const position = getComputedStyle(meta).position;
+          return position === "static" ? x * y : -1;
+        });
+        if (overlap !== 0) failures.push(`${width} overlap ${overlap}`);
+      } finally {
+        await page.close();
+      }
+    }
+    expect(failures).toEqual([]);
+  }, 60_000);
 });

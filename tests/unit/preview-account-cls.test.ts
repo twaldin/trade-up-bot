@@ -14,6 +14,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
+import { makeTradeUp } from "../helpers/fixtures.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
@@ -212,5 +213,22 @@ describe("account layout reservation", () => {
     expect(host.textContent).not.toContain("Sign in with Steam");
     expect(host.textContent).not.toContain("Checking session");
     expect(host.querySelector(".preview-stats")).toBeTruthy();
+  });
+
+  it("renders a card for each active claim on a free account", async () => {
+    const tradeUps = [1, 2, 3].map((id) => makeTradeUp({ id }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", display_name: "Bea" });
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: tradeUps });
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelectorAll(".preview-claim").length).toBe(3);
+    expect(host.textContent).toContain("Active Claims (3)");
+    expect(host.querySelectorAll(".preview-claim button").length).toBeGreaterThanOrEqual(3);
+    expect(host.textContent).toContain("Verify");
+    expect(host.querySelector(".preview-stats")).toBeNull();
   });
 });
