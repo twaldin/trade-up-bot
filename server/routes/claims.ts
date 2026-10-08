@@ -2,7 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { requireProAccess, type User } from "../auth.js";
 import { cacheGet, cacheSet, cacheInvalidatePrefix, checkRateLimit, getRateLimit, getRedis } from "../redis.js";
-import { cascadeTradeUpStatuses, deleteListings, ensureInputReferences } from "../engine.js";
+import { ascendingTextIds, cascadeTradeUpStatuses, deleteListings, ensureInputReferences } from "../engine.js";
 import { buildSnapshot } from "../build-snapshot.js";
 import { ACTIVE_CLAIM_PREDICATE } from "./active-claim.js";
 
@@ -345,16 +345,22 @@ export function claimsRouter(pool: pg.Pool): Router {
         "SELECT listing_id FROM trade_up_inputs WHERE trade_up_id = $1",
         [tradeUpId]
       );
-      listingIds = listingRows.map((r: any) => r.listing_id).filter((id: string) => !id.startsWith("theor"));
+      listingIds = ascendingTextIds(
+        listingRows.map((r: { listing_id: string }) => r.listing_id).filter((id: string) => !id.startsWith("theor")),
+      );
 
       // Listing-level conflict check with FOR UPDATE: locks the listing rows so
       // concurrent claims on different trade-ups sharing listings are serialized.
-      if (listingIds.length > 0) {
-        const placeholders = listingIds.map((_: any, i: number) => `$${i + 1}`).join(",");
-        const { rows: lockedListings } = await client.query(
-          `SELECT id, claimed_by FROM listings WHERE id IN (${placeholders}) FOR UPDATE`,
-          listingIds
+      // One id at a time, ascending, so this agrees with relink and merge.
+      const lockedListings: { id: string; claimed_by: string | null }[] = [];
+      for (const id of listingIds) {
+        const { rows } = await client.query<{ id: string; claimed_by: string | null }>(
+          `SELECT id, claimed_by FROM listings WHERE id = $1 FOR UPDATE`,
+          [id],
         );
+        if (rows[0]) lockedListings.push(rows[0]);
+      }
+      if (listingIds.length > 0) {
         const conflicts = lockedListings.filter((l: any) => l.claimed_by && l.claimed_by !== userId);
         if (conflicts.length > 0) {
           await client.query('ROLLBACK');
