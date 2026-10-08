@@ -178,8 +178,11 @@ describe("account layout reservation", () => {
     expect(page).toContain('user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM');
     expect(page).not.toContain("{user && stats &&");
     expect(page).toContain("const showChrome = user != null && !sessionHold;");
-    expect(page).toContain("const showStats = showChrome && hasProAccess(user);");
-    expect(page).toContain('getEffectiveTier(user) === "pro"');
+    expect(page).toContain('const effectiveTier = showChrome ? getEffectiveTier(user) : "free";');
+    expect(page).toContain('const proAccount = effectiveTier === "pro";');
+    expect(page).toContain("const showStats = proAccount;");
+    expect(page).toContain("const waitsForStats = proAccount && !statsSettled;");
+    expect(page).toContain('if (effectiveTier !== "pro") return;');
     expect(page).not.toContain('user.tier === "pro"');
     expect(page).not.toContain("user.tier === 'pro'");
   });
@@ -261,29 +264,53 @@ describe("account layout reservation", () => {
     }
   });
 
-  it.each(["free", "basic"])("shows pricing for %s while stats are still pending", async (tier) => {
-    let releaseStats: () => void = () => {};
-    const statsGate = new Promise<void>((resolveGate) => { releaseStats = resolveGate; });
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+  it.each(["free", "basic"])("shows pricing for %s without requesting stats", async (tier) => {
+    const fetchMock = vi.fn(async (url: string) => {
       const path = String(url);
       if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, lifetime: false, display_name: "Bea" });
-      if (path.includes("/api/my-trade-ups/stats")) {
-        await statsGate;
-        return json(403, { error: "nope" });
-      }
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
       if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
       return json(200, { claims: [] });
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
     await mount();
+    const statsCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/my-trade-ups/stats"));
+    expect(statsCalls).toEqual([]);
     expect(host.querySelector(".preview-account--pending")).toBeNull();
     expect(host.querySelector(".preview-stats")).toBeNull();
     expect([...host.querySelectorAll("a")].some((node) => node.textContent?.trim() === "Pricing")).toBe(true);
+  });
 
-    await act(async () => { releaseStats(); });
-    for (let i = 0; i < 6; i += 1) {
-      await act(async () => { await Promise.resolve(); });
+  it("fetches stats when a checkout return promotes a free user to pro", async () => {
+    let tier = "free";
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, lifetime: false, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats")) return json(200, STATS);
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await mount();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/my-trade-ups/stats"))).toBe(false);
+    expect(host.querySelector(".preview-stats")).toBeNull();
+
+    tier = "pro";
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: true });
+    await act(async () => {
+      window.dispatchEvent(pageshow);
+      await Promise.resolve();
+    });
+    for (let i = 0; i < 12; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
     }
-    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/my-trade-ups/stats"))).toBe(true);
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
+    expect(host.textContent).toContain("+$184.20");
   });
 
   it("holds pricing for a lifetime buyer until stats settle", async () => {

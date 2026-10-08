@@ -48,6 +48,16 @@ function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
 }
 
+function sameSession(current: AuthUser | null | undefined, next: AuthUser | null): current is AuthUser | null {
+  if (!current || !next) return current === next;
+  return current.steam_id === next.steam_id
+    && current.tier === next.tier
+    && !!current.lifetime === !!next.lifetime
+    && current.display_name === next.display_name
+    && current.is_admin === next.is_admin
+    && current.avatar_url === next.avatar_url;
+}
+
 function skinNames(rows: TradeUp[]): string[] {
   return rows.flatMap((tu) => [
     ...tu.inputs.map((row) => row.skin_name),
@@ -192,6 +202,7 @@ export function PreviewAccount() {
   const [statsSettled, setStatsSettled] = useState(false);
   const [listSettled, setListSettled] = useState(false);
   const [pricingRevealed, setPricingRevealed] = useState(false);
+  const [holdCapElapsed, setHoldCapElapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -216,35 +227,12 @@ export function PreviewAccount() {
     claimsInFlight.current = true;
     setLoading(true);
     if (claimAttempts.current === 0) setNote(null);
-    let statsStarted = false;
     let listDone = false;
     try {
       await waitForBrowseHold(signal);
-      const mainReq = activeTab === "claims"
-        ? fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
-        : fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
-      statsStarted = true;
-      void fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
-        .then(async (res) => {
-          if (signal?.aborted) return;
-          if (!res.ok) {
-            setStatsFailed(true);
-            setStatsSettled(true);
-            return;
-          }
-          const data = await res.json() as UserTradeUpStats;
-          if (signal?.aborted) return;
-          setStats(data);
-          setStatsFailed(false);
-          setStatsSettled(true);
-        })
-        .catch(() => {
-          if (signal?.aborted) return;
-          setStatsFailed(true);
-          setStatsSettled(true);
-        });
-
-      const res = await mainReq;
+      const res = activeTab === "claims"
+        ? await fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
+        : await fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
       if (signal?.aborted) return;
       if (res.status === 401 || res.status === 403) {
         setNote("Claims need a Pro account. Pricing stays on the production route.");
@@ -283,6 +271,7 @@ export function PreviewAccount() {
         const hydrated = await Promise.all(rows.map((tu) => hydrateBoardCard(tu)));
         if (signal?.aborted) return;
         setClaimTradeUps(hydrated);
+        setListSettled(true);
         const mine = new Set<number>();
         const fromRows = new Map<number, string>();
         for (const tu of hydrated) {
@@ -327,10 +316,6 @@ export function PreviewAccount() {
       if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", error);
       setNote("Could not load trade-ups.");
-      if (!statsStarted) {
-        setStatsFailed(true);
-        setStatsSettled(true);
-      }
       listDone = true;
     } finally {
       claimsInFlight.current = false;
@@ -371,16 +356,29 @@ export function PreviewAccount() {
         setSessionHold(null);
         setSessionSpent(false);
         const data = res.ok ? await res.json() as AuthUser : null;
-        if (data?.steam_id) setLoading(true);
-        setUser(data?.steam_id ? data : null);
+        const next = data?.steam_id ? data : null;
+        let changed = false;
+        setUser((current) => {
+          if (sameSession(current, next)) return current;
+          changed = true;
+          return next;
+        });
+        if (changed && next) setLoading(true);
       })
       .catch(() => {
         if (!live) return;
         setUser(null);
       });
+    // bfcache restore after checkout. Re-read auth/me so a new Pro tier fetches stats.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      setSessionRetry((n) => n + 1);
+    };
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       live = false;
       window.clearTimeout(timer);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [sessionRetry]);
 
@@ -689,11 +687,42 @@ export function PreviewAccount() {
   const listCount = entries.length;
   const tabCount = activeTab === "claims" ? claimCount : listCount;
   const showChrome = user != null && !sessionHold;
-  const showStats = showChrome && hasProAccess(user);
+  const effectiveTier = showChrome ? getEffectiveTier(user) : "free";
+  const proAccount = effectiveTier === "pro";
+  const showStats = proAccount;
   const authUnresolved = user === undefined && !sessionHold;
-  const waitsForStats = showChrome && getEffectiveTier(user) === "pro" && !statsSettled;
+  const waitsForStats = proAccount && !statsSettled;
   const waitsForClaims = showChrome && !listSettled;
-  const holdPricing = authUnresolved || waitsForStats || waitsForClaims;
+  useEffect(() => {
+    if (effectiveTier !== "pro") return;
+    const controller = new AbortController();
+    void fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal: controller.signal })
+      .then(async (res) => {
+        if (controller.signal.aborted) return;
+        if (!res.ok) {
+          setStatsFailed(true);
+          setStatsSettled(true);
+          return;
+        }
+        const data = await res.json() as UserTradeUpStats;
+        if (controller.signal.aborted) return;
+        setStats(data);
+        setStatsFailed(false);
+        setStatsSettled(true);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setStatsFailed(true);
+        setStatsSettled(true);
+      });
+    return () => controller.abort();
+  }, [effectiveTier]);
+  useEffect(() => {
+    if (holdCapElapsed || !user || sessionHold) return;
+    const id = window.setTimeout(() => setHoldCapElapsed(true), 1500);
+    return () => window.clearTimeout(id);
+  }, [holdCapElapsed, sessionHold, user]);
+  const holdPricing = authUnresolved || (!holdCapElapsed && (waitsForStats || waitsForClaims));
   const pendingSession = !pricingRevealed && holdPricing;
   useEffect(() => {
     if (!holdPricing) setPricingRevealed(true);

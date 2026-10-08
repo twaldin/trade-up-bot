@@ -981,17 +981,22 @@
   background: var(--panel);
 }
 
+.preview-console__mobile {
+  display: contents;
+}
+
 /* At 360 the fallback face fits five links on the first row and Schibsted
-   wraps the fifth. Equal columns keep every link on the same row either way. */
+   wraps the fifth. Equal columns keep every link on the same row either way.
+   Scoped to the account page so other routes keep main's header height. */
 @media (max-width: 367px) {
-  .preview-console__mobile {
+  .preview-console__col:has(.preview-page--account) .preview-console__mobile {
     display: flex;
     flex-wrap: wrap;
     flex: 1 0 100%;
     gap: 8px;
   }
 
-  .preview-console__mobile > .preview-btn {
+  .preview-console__col:has(.preview-page--account) .preview-console__mobile > .preview-btn {
     flex: 0 0 calc(33.333% - 6px);
     max-width: calc(33.333% - 6px);
     min-width: 0;
@@ -1000,10 +1005,6 @@
     padding-left: 4px;
     white-space: nowrap;
   }
-}
-
-.preview-console__mobile {
-  display: contents;
 }
 
 .preview-console__main {
@@ -3108,9 +3109,10 @@
    wrapped sign-in line). Toolbar and the legal line stay out of flow while
    auth is unresolved, and on the first load while the claims list is still
    out (so a late list cannot push them) and, for Pro and lifetime only,
-   while stats are still out. After that first reveal a tab switch or
-   refetch leaves both in flow. Visual order stays DOM order: head, session,
-   content, toolbar, legal. */
+   while stats are still out. That wait ends 1.5s after auth resolves even
+   if those calls are still out; a later list paints in the reserved slot.
+   After that first reveal a tab switch or refetch leaves both in flow.
+   Visual order stays DOM order: head, session, content, toolbar, legal. */
 .preview-account--pending > .preview-toolbar {
   display: none;
 }

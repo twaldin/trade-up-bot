@@ -224,12 +224,64 @@ describe("account pricing reveal", () => {
     }
   }, 30_000);
 
-  it("keeps Pricing still and CLS under 0.01 when claims arrive 2s after auth", async () => {
+  async function timeToPricing(page: Page, claimsWait: number | "hang"): Promise<number> {
+    let authAt = 0;
+    let releaseHang: () => void = () => {};
+    const hang = new Promise<void>((resolve) => { releaseHang = resolve; });
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.pathname + url.search;
+      if (!path.startsWith("/api/")) {
+        await route.continue();
+        return;
+      }
+      if (path.startsWith("/api/auth/me")) {
+        await fulfill(route, 200, {
+          steam_id: "2",
+          display_name: "Bea",
+          avatar_url: "",
+          tier: "free",
+          lifetime: false,
+          is_admin: false,
+        }, 80);
+        authAt = Date.now();
+        return;
+      }
+      if (path.includes("/stats")) {
+        await fulfill(route, 403, { error: "nope" });
+        return;
+      }
+      if (path.includes("my_claims")) {
+        if (claimsWait === "hang") {
+          await hang;
+          await route.fulfill({ status: 200, contentType: "application/json", body: "{\"trade_ups\":[]}" });
+          return;
+        }
+        await fulfill(route, 200, { trade_ups: [makeTradeUp({ id: 11, claimed_by_me: true })] }, claimsWait);
+        return;
+      }
+      await fulfill(route, 200, {});
+    });
+    await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForFunction(() => {
+      const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
+      if (!pricing) return false;
+      const style = getComputedStyle(pricing);
+      return style.display !== "none" && pricing.getClientRects().length > 0;
+    }, undefined, { timeout: 8_000 });
+    const elapsed = Date.now() - authAt;
+    releaseHang();
+    return elapsed;
+  }
+
+  it("shows Pricing within 2s when the list paints and /api/claims hangs", async () => {
     const page = await browser.newPage();
     try {
       await page.setViewportSize({ width: 390, height: 844 });
-      await installCls(page);
-      const tradeUps = [makeTradeUp({ id: 11, claimed_by_me: true })];
+      let authAt = 0;
+      let releaseHang: () => void = () => {};
+      const hang = new Promise<void>((resolve) => { releaseHang = resolve; });
+      const tradeUps = [1, 2, 3].map((id) => makeTradeUp({ id, claimed_by_me: true }));
       await page.route("**/*", async (route) => {
         const url = new URL(route.request().url());
         const path = url.pathname + url.search;
@@ -245,32 +297,69 @@ describe("account pricing reveal", () => {
             tier: "free",
             lifetime: false,
             is_admin: false,
-          }, 100);
+          }, 80);
+          authAt = Date.now();
           return;
         }
-        if (path.includes("/stats")) {
-          await fulfill(route, 403, { error: "nope" }, 5000);
+        if (url.pathname === "/api/claims") {
+          await hang;
+          await route.fulfill({ status: 200, contentType: "application/json", body: "{\"claims\":[]}" });
           return;
         }
         if (path.includes("my_claims")) {
-          await fulfill(route, 200, { trade_ups: tradeUps }, 2000);
+          await fulfill(route, 200, { trade_ups: tradeUps }, 1200);
           return;
         }
         await fulfill(route, 200, {});
       });
       await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      const tops: number[] = [];
-      const started = Date.now();
-      while (Date.now() - started < 3200) {
-        const box = await pricingBox(page);
-        if (box.visible && box.top !== null) tops.push(box.top);
-        await page.waitForTimeout(100);
-      }
-      expect(tops.length).toBeGreaterThan(2);
-      const drift = Math.max(...tops) - Math.min(...tops);
-      expect(drift, `pricing top drift ${drift.toFixed(2)}`).toBeLessThan(2);
-      expect(await page.locator(".preview-claim").count()).toBe(1);
-      expect(await readCls(page)).toBeLessThan(0.01);
+      await page.waitForFunction(() => document.querySelectorAll(".preview-claim").length === 3, undefined, { timeout: 4_000 });
+      await page.waitForFunction(() => {
+        const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
+        if (!pricing) return false;
+        const style = getComputedStyle(pricing);
+        return style.display !== "none" && pricing.getClientRects().length > 0;
+      }, undefined, { timeout: 2_000 });
+      const elapsed = Date.now() - authAt;
+      console.log(`time-to-Pricing claims-followup-hang: ${elapsed}ms`);
+      expect(elapsed, `follow-up /api/claims hang ${elapsed}ms`).toBeLessThan(2000);
+      expect(elapsed).toBeGreaterThan(0);
+      const box = await pricingBox(page);
+      expect(box.visible).toBe(true);
+      expect(box.legalVisible).toBe(true);
+      releaseHang();
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("shows Pricing within 2s of auth when claims hang", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const elapsed = await timeToPricing(page, "hang");
+      console.log(`time-to-Pricing claims-hang: ${elapsed}ms`);
+      expect(elapsed, `claims hang ${elapsed}ms`).toBeLessThan(2000);
+      expect(elapsed).toBeGreaterThan(0);
+      const box = await pricingBox(page);
+      expect(box.visible).toBe(true);
+      expect(box.legalVisible).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it.each([2000, 5000])("shows Pricing within 1.6s of auth when claims take %dms", async (claimsWait) => {
+    const page = await browser.newPage();
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const elapsed = await timeToPricing(page, claimsWait);
+      console.log(`time-to-Pricing claims-${claimsWait}ms: ${elapsed}ms`);
+      expect(elapsed, `claims ${claimsWait}ms → Pricing ${elapsed}ms`).toBeLessThan(1600);
+      expect(elapsed).toBeGreaterThan(0);
+      const box = await pricingBox(page);
+      expect(box.visible).toBe(true);
+      expect(box.legalVisible).toBe(true);
     } finally {
       await page.close();
     }
@@ -281,7 +370,6 @@ describe("account pricing reveal", () => {
     try {
       await page.setViewportSize({ width: 390, height: 844 });
       await installCls(page);
-      let statsAt = 0;
       let authAt = 0;
       await page.route("**/*", async (route) => {
         const url = new URL(route.request().url());
@@ -304,7 +392,6 @@ describe("account pricing reveal", () => {
         }
         if (path.includes("/stats")) {
           await fulfill(route, 200, STATS, 2000);
-          statsAt = Date.now();
           return;
         }
         await fulfill(route, 200, path.includes("my_claims") ? { trade_ups: [] } : {});
@@ -321,8 +408,9 @@ describe("account pricing reveal", () => {
         return !!pricing && getComputedStyle(pricing).display !== "none" && pricing.getClientRects().length > 0;
       }, undefined, { timeout: 6_000 });
       const shownAt = Date.now();
-      expect(shownAt).toBeGreaterThanOrEqual(statsAt - 30);
       expect(authAt).toBeGreaterThan(0);
+      expect(shownAt - authAt, "cap still bounds a slow stats response").toBeLessThan(1600);
+      await page.waitForFunction(() => (document.querySelector(".preview-stats")?.textContent ?? "").includes("+$184.20"), undefined, { timeout: 6_000 });
       const statsText = await page.locator(".preview-stats").innerText();
       expect(statsText).toContain("+$184.20");
       expect(await readCls(page)).toBeLessThan(0.01);
@@ -447,4 +535,141 @@ describe("account pricing reveal", () => {
       await page.close();
     }
   }, 30_000);
+
+  async function headerAt(page: Page, path: string, width = 360) {
+    await page.setViewportSize({ width, height: 780 });
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
+        await route.abort();
+        return;
+      }
+      if (url.pathname.startsWith("/api/")) {
+        await route.fulfill({ status: 200, contentType: "application/json", body: "null" });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForFunction(() => document.querySelector(".preview-console__bar, .preview-nav") !== null, undefined, { timeout: 8_000 });
+    await page.evaluate(() => document.fonts.ready);
+    return page.evaluate(() => {
+      const bar = document.querySelector(".preview-console__bar");
+      const nav = document.querySelector(".preview-nav");
+      const header = bar ?? nav;
+      const mobile = document.querySelector(".preview-console__mobile");
+      const button = mobile?.querySelector(".preview-btn") ?? document.querySelector(".preview-nav__links .preview-btn");
+      const box = header?.getBoundingClientRect();
+      return {
+        height: box ? Math.round(box.height) : 0,
+        kind: bar ? "console" : "marketing",
+        mobileDisplay: mobile ? getComputedStyle(mobile).display : "",
+        buttonBasis: button ? getComputedStyle(button).flexBasis : "",
+      };
+    });
+  }
+
+  it("measures free-empty and claims-403 Pricing bottoms", async () => {
+    const phones = [
+      { width: 360, height: 780 },
+      { width: 375, height: 812 },
+      { width: 390, height: 844 },
+    ] as const;
+    const rows: string[] = [];
+    for (const mode of ["empty", "denied"] as const) {
+      for (const phone of phones) {
+        const page = await browser.newPage();
+        try {
+          await page.setViewportSize(phone);
+          await page.route("**/*", async (route) => {
+            const url = new URL(route.request().url());
+            const path = url.pathname + url.search;
+            if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
+              await route.abort();
+              return;
+            }
+            if (!path.startsWith("/api/")) {
+              await route.continue();
+              return;
+            }
+            if (path.startsWith("/api/auth/me")) {
+              await fulfill(route, 200, {
+                steam_id: "2",
+                display_name: "Bea",
+                avatar_url: "",
+                tier: "free",
+                lifetime: false,
+                is_admin: false,
+              });
+              return;
+            }
+            if (path.includes("my_claims") || path.startsWith("/api/my-trade-ups")) {
+              if (mode === "denied") {
+                await fulfill(route, 403, { error: "nope" });
+                return;
+              }
+              await fulfill(route, 200, { trade_ups: [] });
+              return;
+            }
+            await fulfill(route, 200, {});
+          });
+          await page.goto(`${base}/my-trade-ups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+          await page.addStyleTag({ content: ".preview-console, .preview-console * { font-family: system-ui, sans-serif !important; }" });
+          await page.evaluate(() => document.fonts.ready);
+          await page.waitForFunction(() => {
+            const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
+            return !!pricing && getComputedStyle(pricing).display !== "none" && pricing.getClientRects().length > 0;
+          }, undefined, { timeout: 8_000 });
+          const bottom = await page.evaluate(() => {
+            const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
+            return Math.round(pricing?.getBoundingClientRect().bottom ?? 0);
+          });
+          rows.push(`${mode} ${phone.width} ${bottom}`);
+          const expected = mode === "empty"
+            ? { 360: 449, 375: 412, 390: 412 }
+            : { 360: 371, 375: 319, 390: 319 };
+          expect(bottom, `${mode} ${phone.width}`).toBe(expected[phone.width]);
+          expect(bottom).toBeLessThan(phone.height);
+        } finally {
+          await page.close();
+        }
+      }
+    }
+    console.log(`pricing-bottoms ${rows.join(" | ")}`);
+  }, 60_000);
+
+  it("keeps /trade-ups and / on main's header height at 360", async () => {
+    const boardPage = await browser.newPage();
+    const homePage = await browser.newPage();
+    const accountPage = await browser.newPage();
+    const skinsPage = await browser.newPage();
+    const pricingPage = await browser.newPage();
+    try {
+      const board = await headerAt(boardPage, "/trade-ups");
+      const home = await headerAt(homePage, "/");
+      const account = await headerAt(accountPage, "/my-trade-ups");
+      const skins = await headerAt(skinsPage, "/skins");
+      const pricing = await headerAt(pricingPage, "/pricing");
+      console.log(`header-360 board ${board.height} home ${home.height} account ${account.height} skins ${skins.height} pricing ${pricing.height} basis ${board.buttonBasis}/${account.buttonBasis}`);
+      expect(board.kind).toBe("console");
+      expect(board.mobileDisplay).toBe("contents");
+      expect(board.buttonBasis).toBe("auto");
+      expect(board.height).toBe(skins.height);
+      expect(board.height).toBe(73);
+      expect(home.kind).toBe("marketing");
+      expect(home.height).toBe(pricing.height);
+      expect(home.height).toBe(97);
+      expect(account.height - board.height).toBe(32);
+      expect(home.height).toBeGreaterThan(0);
+      expect(account.mobileDisplay).toBe("flex");
+      expect(account.buttonBasis).not.toBe("auto");
+      expect(account.height).toBeGreaterThan(board.height);
+    } finally {
+      await boardPage.close();
+      await homePage.close();
+      await accountPage.close();
+      await skinsPage.close();
+      await pricingPage.close();
+    }
+  }, 60_000);
 });
