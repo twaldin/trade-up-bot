@@ -893,6 +893,20 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p>Trust the tool that prices the exact predicted output float from real sales, prices your inputs from real listings, and applies the correct per-marketplace fees. That is the combination that survives contact with an actual purchase. A blended condition price is a fine rough cut, but on the boundary-hugging contracts where the money actually is, it is the number most likely to be wrong.</p>
 
 <p>See it in practice: <a href="/calculator">run your inputs through the calculator</a>, <a href="/trade-ups">compare live profitable contracts</a>, or read the underlying mechanics in <a href="/blog/how-cs2-trade-ups-work/">how CS2 trade-ups work</a>.</p>
+
+<h2>FAQ</h2>
+
+<h3>Why do two CS2 trade-up calculators show different profit?</h3>
+<p>The float math and output probabilities are deterministic, so tools agree there. They disagree on how they price the output skin: condition-average pricing uses one blended price for the whole wear band, while float-exact pricing prices the exact predicted output float from real sales. Near a condition boundary those two numbers can differ by a multiple. Input pricing (reference averages vs real listings) and fee handling add smaller differences.</p>
+
+<h3>What is condition-average pricing?</h3>
+<p>Condition-average pricing values a skin using a single blended price for its wear band — for example, one price for any Field-Tested copy — regardless of where inside the band its float actually falls. It is simple but misprices outputs that land near a condition boundary, where value changes sharply.</p>
+
+<h3>What is float-exact pricing?</h3>
+<p>Float-exact pricing computes the exact predicted output float and prices the skin from real sales near that float, so a clean 0.16 Field-Tested is valued differently from a worn 0.37 Field-Tested. It matters most for trade-ups engineered to land just inside a higher condition.</p>
+
+<h3>Does the boundary really change the price that much?</h3>
+<p>Yes. Across real CS2 skins, crossing the 0.07 Factory New / Minimal Wear boundary regularly changes the value by 10x or more on the same day, even though the two floats are visually identical. That is why a pricing model that does not pin the exact float can be wildly off near boundaries.</p>
 `,
     faq: [
       { question: "Why do two CS2 trade-up calculators show different profit?", answer: "The float math and output probabilities are deterministic, so tools agree there. They disagree on how they price the output skin: condition-average pricing uses one blended price for the whole wear band, while float-exact pricing prices the exact predicted output float from real sales. Near a condition boundary those two numbers can differ by a multiple. Input pricing (reference averages vs real listings) and fee handling add smaller differences." },
@@ -955,6 +969,20 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <p><a href="/calculator">Run your inputs through the calculator</a> to see the predicted output float and value, <a href="/trade-ups">compare live contracts</a>, or read <a href="/blog/why-cs2-trade-up-calculators-disagree/">why CS2 trade-up calculators disagree</a> for the pricing mechanics behind these numbers.</p>
 
 <p><em>Method: per-condition prices captured from TradeUpBot's live marketplace data (CSFloat sales, with reference pricing as fallback) on 2026-06-24. Prices move with the market; the ratios are a dated snapshot of the boundary effect, not a fixed quote.</em></p>
+
+<h2>FAQ</h2>
+
+<h3>How much does output float affect CS2 trade-up profit?</h3>
+<p>On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus around $40.50 Factory New versus $2.81 Minimal Wear. Within a single condition, price still drifts with float but less dramatically.</p>
+
+<h3>Why does such a tiny float change matter so much?</h3>
+<p>Because CS2 wear conditions have hard cutoffs. An output at 0.069 is Factory New and one at 0.071 is Minimal Wear, and the market prices those two conditions very differently even though the skins look identical. The float change is invisible; the condition change is not.</p>
+
+<h3>Can I predict the output float before buying inputs?</h3>
+<p>Yes. The output float is deterministic: it is the average of each input's adjusted float mapped onto the output skin's float range. A calculator computes it exactly from your ten inputs, so you can see which condition the output lands in and how close it is to the next boundary before spending anything.</p>
+
+<h3>Are these price numbers exact?</h3>
+<p>They are a dated snapshot. The per-condition prices were captured from live marketplace data (CSFloat sales) on 2026-06-24 and move with the market. The point is the size of the boundary effect — a roughly 10x-plus value change at float 0.07 — which holds even as absolute prices shift.</p>
 `,
     faq: [
       { question: "How much does output float affect CS2 trade-up profit?", answer: "On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus around $40.50 Factory New versus $2.81 Minimal Wear. Within a single condition, price still drifts with float but less dramatically." },
