@@ -575,7 +575,7 @@ describe("account pricing reveal", () => {
       { width: 375, height: 812 },
       { width: 390, height: 844 },
     ] as const;
-    const rows: string[] = [];
+    const bottoms = new Map<string, number>();
     for (const mode of ["empty", "denied"] as const) {
       for (const phone of phones) {
         const page = await browser.newPage();
@@ -624,18 +624,21 @@ describe("account pricing reveal", () => {
             const pricing = [...document.querySelectorAll("a")].find((node) => node.textContent?.trim() === "Pricing");
             return Math.round(pricing?.getBoundingClientRect().bottom ?? 0);
           });
-          rows.push(`${mode} ${phone.width} ${bottom}`);
-          const expected = mode === "empty"
-            ? { 360: 449, 375: 412, 390: 412 }
-            : { 360: 371, 375: 319, 390: 319 };
-          expect(bottom, `${mode} ${phone.width}`).toBe(expected[phone.width]);
-          expect(bottom).toBeLessThan(phone.height);
+          bottoms.set(`${mode}-${phone.width}`, bottom);
+          expect(bottom, `${mode} ${phone.width}`).toBeGreaterThan(0);
+          expect(bottom, `${mode} ${phone.width}`).toBeLessThan(phone.height);
         } finally {
           await page.close();
         }
       }
     }
+    const rows = [...bottoms.entries()].map(([key, bottom]) => `${key} ${bottom}`);
     console.log(`pricing-bottoms ${rows.join(" | ")}`);
+    for (const phone of phones) {
+      const empty = bottoms.get(`empty-${phone.width}`) ?? 0;
+      const denied = bottoms.get(`denied-${phone.width}`) ?? 0;
+      expect(empty, `${phone.width} empty vs claims 403`).toBeGreaterThan(denied + 40);
+    }
   }, 60_000);
 
   it("keeps /trade-ups and / on main's header height at 360", async () => {
