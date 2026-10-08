@@ -2,8 +2,7 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import pg from "pg";
-import { REBUILD_FETCH_SIZE } from "../../server/engine/event-loop.js";
-import { buildPriceCache, resetPriceCacheForTests } from "../../server/engine/pricing.js";
+import { buildPriceCache, FLOAT_CEILING_FETCH_BATCH, resetPriceCacheForTests } from "../../server/engine/pricing.js";
 
 const N = 1_000_000;
 
@@ -20,40 +19,47 @@ describe("calculator rebuild event-loop lag", () => {
 
     let fullScan = false;
     let pages = 0;
-    const pool = {
-      query: async (sql: string, params?: unknown[]) => {
-        const text = String(sql);
-        if (text.includes("UNION ALL")) {
-          pages++;
-          const after = params?.[0];
-          const limit = params?.[1];
-          const start = typeof after === "string" ? Number(after) + 1 : 0;
-          if (typeof limit !== "number" || !(limit > 0 && limit < N)) {
+    let offset = 0;
+    const client = {
+      query: async (sql: string) => {
+        const text = String(sql).trim();
+        if (/^(BEGIN|COMMIT|ROLLBACK|CLOSE)\b/i.test(text)) return { rows: [] };
+        if (/^DECLARE\b/i.test(text)) {
+          if (!text.includes("COALESCE(l.source, 'csfloat')") || text.includes("UNION") || /\bLIMIT\b/i.test(text)) {
             fullScan = true;
-            return {
-              rows: Array.from({ length: N }, (_, id) => ({
-                skin_name: "Buff Skin",
-                float_value: 0.2,
-                price_cents: 100,
-                source: "buff",
-                listing_id: String(id),
-              })),
-            };
           }
-          const count = Math.min(limit, Math.max(0, N - start));
+          offset = 0;
+          return { rows: [] };
+        }
+        if (/^FETCH\b/i.test(text)) {
+          pages++;
+          const match = /^FETCH\s+(\d+)\s+FROM\b/i.exec(text);
+          const limit = match ? Number(match[1]) : 0;
+          if (!(limit > 0 && limit < N)) {
+            fullScan = true;
+            return { rows: [] };
+          }
+          const count = Math.min(limit, Math.max(0, N - offset));
           const rows = [];
           for (let i = 0; i < count; i++) {
-            const id = start + i;
             rows.push({
               skin_name: "Buff Skin",
               float_value: 0.2,
               price_cents: 100,
               source: "buff",
-              listing_id: String(id),
             });
           }
+          offset += count;
           return { rows };
         }
+        throw new Error(`unexpected cursor sql: ${text.slice(0, 120)}`);
+      },
+      release: () => {},
+    };
+    const pool = {
+      connect: async () => client,
+      query: async (sql: string) => {
+        const text = String(sql);
         if (text.includes("source = 'csfloat_ref' AND volume")) {
           return {
             rows: [{
@@ -87,5 +93,5 @@ describe("calculator rebuild event-loop lag", () => {
 });
 
 function limitWasPaged(pages: number): boolean {
-  return pages > Math.ceil(N / REBUILD_FETCH_SIZE);
+  return pages > Math.ceil(N / FLOAT_CEILING_FETCH_BATCH);
 }

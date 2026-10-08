@@ -9,8 +9,8 @@ import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCo
 import { buildCurveCache, commitCurveCache, curveCacheIsFresh, resetCurveCacheForTests, type CurveScore } from "./curve-classification.js";
 import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
 import { requestCacheServesStale, staleDecision } from "./request-cache-policy.js";
-import { REBUILD_FETCH_SIZE, visitRows } from "./event-loop.js";
-import { forEachKeysetPage } from "./rebuild-io.js";
+import { visitRows } from "./event-loop.js";
+import { forEachReadOnlyCursor } from "./rebuild-io.js";
 import { enqueueRebuild, resetRebuildQueueForTests } from "./rebuild-queue.js";
 
 // KNN same-condition obs below this threshold → treat as sparse, apply tighter cap
@@ -464,6 +464,22 @@ export interface OutputPriceResult {
 const _floatCeilingCache = new Map<string, { float: number; price: number }[]>();
 let _floatCeilingCacheBuiltAt = 0;
 const FLOAT_CEILING_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Rows per FETCH. A keyset of 400 was 13s of DB time at 1.4M qualifying listings. */
+export const FLOAT_CEILING_FETCH_BATCH = 5000;
+
+let floatCeilingFetchBatch = FLOAT_CEILING_FETCH_BATCH;
+
+export function setFloatCeilingFetchBatchForTests(size: number): void {
+  if (!Number.isInteger(size) || size < 1) {
+    throw new Error("float ceiling batch must be a positive integer");
+  }
+  floatCeilingFetchBatch = size;
+}
+
+export function resetFloatCeilingFetchBatchForTests(): void {
+  floatCeilingFetchBatch = FLOAT_CEILING_FETCH_BATCH;
+}
+
 const FLOAT_CEILING_MAX_STALE_MS = FLOAT_CEILING_CACHE_TTL_MS * 3;
 
 let _floatCeilingBuildPromise: Promise<void> | null = null;
@@ -524,12 +540,11 @@ async function rebuildFloatCeiling(pool: pg.Pool): Promise<void> {
   }
 }
 
-interface CeilingListingRow {
+interface CeilingListingRow extends pg.QueryResultRow {
   skin_name: string;
   float_value: number;
   price_cents: number;
   source: string;
-  listing_id: string | null;
 }
 
 async function queryFloatCeiling(
@@ -541,57 +556,33 @@ async function queryFloatCeiling(
   // Listings-only ceiling: active market offers represent current reality.
   // Historical sales excluded — they introduce noise from below-market transactions
   // and Skinport fee differentials. KNN already handles sale history for estimation.
-  // Pages by listings.id so node-pg never parses the full scan in one turn.
-  // Ceiling and floor math filter by float and sort by price, so page order
-  // does not change the published snapshot.
+  // One cursor, one REPEATABLE READ snapshot. A shared keyset across three
+  // UNION branches rescans: text order puts every dmarket: id after every
+  // numeric id. DMarket asks are ROUND(price * 1.025). A NULL source is
+  // labeled csfloat. Skinport stays out. The swap of `next` is synchronous.
   let buffFiltered = 0;
   let dmarketFiltered = 0;
-  await forEachKeysetPage<CeilingListingRow>(
-    async (after) => {
-      const cursor = typeof after === "string" ? after : null;
-      const { rows } = await pool.query<CeilingListingRow>(`
-        SELECT skin_name, float_value, price_cents, source, listing_id FROM (
-          -- Each branch keeps the next page of listings.id so the outer LIMIT
-          -- sorts at most three pages, not every active listing.
-          (
-            SELECT s.name as skin_name, l.float_value, l.price_cents, 'csfloat' as source, l.id as listing_id
-            FROM listings l JOIN skins s ON l.skin_id = s.id
-            WHERE (l.source = 'csfloat' OR l.source IS NULL) AND l.stattrak = false
-              AND l.float_value > 0 AND l.price_cents > 0
-              AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
-              AND ($1::text IS NULL OR l.id > $1)
-            ORDER BY l.id
-            LIMIT $2
-          )
-          UNION ALL
-          (
-            -- Active DMarket listings (normalized with 2.5% buyer fee)
-            SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'dmarket', l.id
-            FROM listings l JOIN skins s ON l.skin_id = s.id
-            WHERE l.source = 'dmarket' AND l.stattrak = false
-              AND l.float_value > 0 AND l.price_cents > 0
-              AND ($1::text IS NULL OR l.id > $1)
-            ORDER BY l.id
-            LIMIT $2
-          )
-          UNION ALL
-          (
-            -- Active Buff listings (no buyer fee)
-            SELECT s.name, l.float_value, l.price_cents, 'buff', l.id
-            FROM listings l JOIN skins s ON l.skin_id = s.id
-            WHERE l.source = 'buff' AND l.stattrak = false
-              AND l.float_value > 0 AND l.price_cents > 0
-              AND ($1::text IS NULL OR l.id > $1)
-            ORDER BY l.id
-            LIMIT $2
-          )
-        ) combined
-        ORDER BY listing_id
-        LIMIT $2
-      `, [cursor, REBUILD_FETCH_SIZE]);
-      return rows;
-    },
-    (row) => (typeof row.listing_id === "string" ? row.listing_id : null),
+  await forEachReadOnlyCursor<CeilingListingRow>(
+    pool,
+    "float_ceiling",
+    `
+      SELECT s.name AS skin_name, l.float_value,
+        CASE WHEN l.source = 'dmarket'
+          THEN CAST(ROUND(l.price_cents * 1.025) AS INTEGER)
+          ELSE l.price_cents
+        END AS price_cents,
+        COALESCE(l.source, 'csfloat') AS source
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE l.stattrak = false AND l.float_value > 0 AND l.price_cents > 0
+        AND (
+          ((l.source = 'csfloat' OR l.source IS NULL)
+            AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL))
+          OR l.source = 'dmarket'
+          OR l.source = 'buff'
+        )
+      ORDER BY skin_name, float_value
+    `,
+    floatCeilingFetchBatch,
     (row) => {
       // Filter outlier listings from Buff and DMarket: sticker/pattern premiums
       // can be 10-100x market price. CSFloat listings are trusted (verified buy-now).
@@ -1132,6 +1123,7 @@ export function resetPriceCacheForTests(): void {
   _floatCeilingBuildPromise = null;
   resetRebuildQueueForTests();
   resetCurveCacheForTests();
+  resetFloatCeilingFetchBatchForTests();
 }
 
 export function expirePriceCacheForTests(ageMs: number): void {
@@ -1145,6 +1137,10 @@ export function settlePriceCacheRebuildForTests(): Promise<void> {
 
 export function floatCeilingCacheSizeForTests(): number {
   return _floatCeilingCache.size;
+}
+
+export function floatCeilingRowsForTests(skinName: string): readonly { float: number; price: number }[] {
+  return _floatCeilingCache.get(skinName) ?? [];
 }
 
 export function ageFloatCeilingForTests(ageMs: number): void {
