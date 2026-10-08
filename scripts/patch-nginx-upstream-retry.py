@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """Give nginx a warm backup for the API during a fork-to-cluster handoff.
 
-A single upstream cannot retry a refused connection. POST /api/calculator is
-non-idempotent, so nginx will not follow proxy_next_upstream unless
-non_idempotent is set. The backup on 3002 is unused while 3001 accepts
-connections (max_fails=0). proxy_read_timeout is left alone: calculator
-requests are allowed to run long.
+A refused connection already fails over via `error`. Do not set
+non_idempotent: a POST that dies mid-processing (claims, execute/sell, the
+Stripe webhook, auth) would be sent again. The backup on 3002 is unused
+while 3001 accepts connections (max_fails=0). proxy_read_timeout is left
+alone: calculator requests are allowed to run long.
+
+Each apply writes the previous files under /var/backups/nginx/<UTC>/ and
+keeps the last five of those directories. nginx -t failure restores them.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 CONF_ROOTS = (
@@ -31,11 +36,14 @@ UPSTREAM = """upstream tradeup_api {
 """
 
 RETRY_LINES = (
-    "proxy_next_upstream error timeout http_502 http_503 non_idempotent;",
+    "proxy_next_upstream error timeout http_502 http_503;",
     "proxy_next_upstream_tries 2;",
     "proxy_next_upstream_timeout 3s;",
     "proxy_connect_timeout 1s;",
 )
+
+BACKUP_KEEP = 5
+DEFAULT_BACKUP_ROOT = Path("/var/backups/nginx")
 
 LOCATION_RE = re.compile(
     r"location\s+(?P<mod>=|~\*|~|\^~)?\s*(?P<uri>[^{]+?)\{",
@@ -91,12 +99,48 @@ def _insert_retries(text: str) -> str:
     return "".join(parts)
 
 
+def _strip_non_idempotent(text: str) -> str:
+    return text.replace(" non_idempotent", "")
+
+
 def patch_text(text: str) -> str:
     if "proxy_pass http://127.0.0.1:3001" not in text and "upstream tradeup_api" not in text:
         raise NoApiProxy("no proxy_pass http://127.0.0.1:3001 and no upstream tradeup_api")
     rewritten = PROXY_PASS_RE.sub("proxy_pass http://tradeup_api;", text)
     rewritten = _insert_upstream(rewritten)
-    return _insert_retries(rewritten)
+    return _strip_non_idempotent(_insert_retries(rewritten))
+
+
+def backup_root() -> Path:
+    raw = os.environ.get("NGINX_BACKUP_ROOT", "").strip()
+    return Path(raw) if raw else DEFAULT_BACKUP_ROOT
+
+
+def prune_backup_dirs(root: Path, keep: int = BACKUP_KEEP) -> None:
+    if not root.is_dir():
+        return
+    dirs = sorted(path for path in root.iterdir() if path.is_dir())
+    extra = len(dirs) - keep
+    if extra <= 0:
+        return
+    for old in dirs[:extra]:
+        shutil.rmtree(old)
+
+
+def prepare_backup_dir(now: datetime | None = None) -> Path:
+    moment = now if now is not None else datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = backup_root()
+    dest = root / stamp
+    suffix = 0
+    while dest.exists():
+        suffix += 1
+        dest = root / f"{stamp}-{suffix}"
+    dest.mkdir(parents=True)
+    prune_backup_dirs(root, BACKUP_KEEP)
+    return dest
 
 
 def iter_conf_files() -> list[Path]:
@@ -131,7 +175,11 @@ def apply_live() -> int:
         if patched == text:
             already = True
             continue
-        backup = Path("/tmp") / f"{path.name}.bak-upstream-retry"
+        if not backups:
+            backup_dir = prepare_backup_dir()
+        backup = backup_dir / path.name
+        if backup.exists():
+            backup = backup_dir / f"{path.name}-{len(backups)}"
         shutil.copy2(path, backup)
         backups.append((path, backup))
         path.write_text(patched, encoding="utf-8")
