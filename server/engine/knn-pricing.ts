@@ -192,10 +192,18 @@ export function knnTimeDecay(ageDays: number): number {
   return Math.pow(2, -ageDays / 30);
 }
 
+/** Float, then price_observations.id. Equal floats stay in id order. */
+function compareKnnRows(a: KnnObservationRow, b: KnnObservationRow): number {
+  if (a.float_value !== b.float_value) return a.float_value - b.float_value;
+  const aId = typeof a.id === "number" ? a.id : 0;
+  const bId = typeof b.id === "number" ? b.id : 0;
+  return aId - bId;
+}
+
 async function loadKnnObservationRows(pool: pg.Pool): Promise<KnnObservationRow[]> {
   const rows: KnnObservationRow[] = [];
   // Keyset on price_observations.id. buildKnnCache groups by skin and sorts
-  // by float, so global id order does not change the cache.
+  // by float, then id, so a later page cannot change an earlier tie.
   await forEachKeysetPage<KnnObservationRow>(
     async (after) => {
       const cursor = typeof after === "number" ? after : null;
@@ -243,6 +251,7 @@ async function buildKnnCache(rows: KnnObservationRow[]): Promise<{
   // hold the event loop for the whole group.
   let processed = 0;
   for (const [skinName, skinRows] of rawBySkin) {
+    skinRows.sort(compareKnnRows);
     const arr: KnnObservation[] = [];
     let recentCount = 0;
     let hasCsfloat = false;
@@ -263,7 +272,6 @@ async function buildKnnCache(rows: KnnObservationRow[]): Promise<{
       processed++;
       if (processed % REBUILD_YIELD_EVERY === 0) await yieldEventLoop();
     }
-    arr.sort((a, b) => a.float - b.float);
     cache.set(skinName, arr);
     freshness.set(skinName, recentCount);
     if (hasCsfloat) csfloatSales.add(skinName);
@@ -345,7 +353,8 @@ async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
     _knnCacheLoadedAt = Date.now();
     console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
   } catch (err) {
-    console.error("[knn-cache] rebuild failed:", err);
+    const ageSeconds = Math.round(knnCacheAgeMs() / 1000);
+    console.error(`[knn-cache] rebuild failed, cache age ${ageSeconds}s:`, err);
     throw err;
   }
 }
@@ -371,6 +380,11 @@ export function ageKnnCacheForTests(ageMs: number): void {
 /** test seam — returns the current size of the global _knnCache */
 export function getKnnCacheSize(): number { // test seam
   return _knnCache.size;
+}
+
+/** test seam — observations in float-then-id order for one skin. */
+export function knnCachedObservationsForTests(skinName: string): readonly KnnObservation[] {
+  return _knnCache.get(skinName) ?? [];
 }
 
 // Maximum (skin, condition-range) pairs per query chunk.
@@ -438,11 +452,11 @@ async function loadInputKnnObservationRows(
         SELECT DISTINCT skin_name, min_float, max_float, include_max
         FROM requested
       )
-      SELECT po.skin_name, po.float_value, po.price_cents, po.source,
+      SELECT po.id, po.skin_name, po.float_value, po.price_cents, po.source,
         EXTRACT(EPOCH FROM NOW() - po.observed_at::timestamptz) / 86400.0 as age_days
       FROM distinct_pairs p
       JOIN LATERAL (
-        SELECT skin_name, float_value, price_cents, source, observed_at
+        SELECT id, skin_name, float_value, price_cents, source, observed_at
         FROM price_observations
         WHERE skin_name = p.skin_name
           AND observed_at >= NOW() - ($1::int * INTERVAL '1 day')

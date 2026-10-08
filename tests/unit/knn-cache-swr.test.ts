@@ -127,6 +127,10 @@ describe("KNN cache stale-while-revalidate on the API path", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(unhandled).toEqual([]);
     expect(getKnnCacheSize()).toBe(size);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/\[knn-cache\] rebuild failed, cache age 15\ds:/),
+      expect.any(Error),
+    );
 
     script.fail = false;
     script.hold = null;
