@@ -987,6 +987,28 @@
   display: contents;
 }
 
+/* At 360 the fallback face fits five links on the first row and Schibsted
+   wraps the fifth. Equal columns keep every link on the same row either way.
+   Scoped to the account page so other routes keep main's header height. */
+@media (max-width: 367px) {
+  .preview-console__col:has(.preview-page--account) .preview-console__mobile {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 1 0 100%;
+    gap: 8px;
+  }
+
+  .preview-console__col:has(.preview-page--account) .preview-console__mobile > .preview-btn {
+    flex: 0 0 calc(33.333% - 6px);
+    max-width: calc(33.333% - 6px);
+    min-width: 0;
+    justify-content: center;
+    padding-right: 4px;
+    padding-left: 4px;
+    white-space: nowrap;
+  }
+}
+
 .preview-console__main {
   position: relative;
   min-width: 0;
@@ -3157,7 +3179,159 @@
 
 /* ======================================================== my trade-ups */
 
+/* Auth pending keeps the session panel's height (the note reserves the
+   wrapped sign-in line). Toolbar and the legal line stay out of flow while
+   auth is unresolved, and on the first load while the claims list is still
+   out (so a late list cannot push them) and, for Pro and lifetime only,
+   while stats are still out. That wait ends 1.5s after auth resolves even
+   if those calls are still out; a later list paints in the reserved slot.
+   After that first reveal a tab switch or refetch leaves both in flow.
+   Visual order stays DOM order: head, session, content, toolbar, legal. */
+.preview-account--pending > .preview-toolbar {
+  display: none;
+}
+
+.preview-console__main:has(.preview-account--pending) > .preview-console__legal {
+  display: none;
+}
+
+@media (max-width: 367px) {
+  .preview-page--account .preview-panel > .preview-note { min-height: 2.9em; }
+}
+
+@media (max-width: 799px) {
+  .preview-page--account .preview-page__head p { min-height: 2.6em; }
+}
+
+@media (max-width: 600px) {
+  .preview-page--account .preview-page__head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .preview-page--account .preview-page__head > div:first-child {
+    flex: 1 0 100%;
+  }
+
+  .preview-page--account .preview-page__meta {
+    position: static;
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+}
+
+.preview-page--account .preview-page__meta > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 10rem;
+}
+
 .preview-page > .preview-stats { margin: 0; }
+
+.preview-page--account .preview-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 162px;
+}
+
+.preview-page--account .preview-stats b {
+  height: 1.2em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.preview-page--account .preview-stats > div > span {
+  display: block;
+  height: 2.7em;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+.preview-page--account .preview-account__roi {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 799px) {
+  /* The fallback face fits this label on one line; Schibsted wraps it.
+     A narrow measure wraps both, so the line box does not grow after load. */
+  .preview-page--account .preview-account__roi { max-width: 9.5em; }
+}
+
+.preview-page--account .preview-stats .preview-account__pending {
+  color: transparent;
+}
+
+.preview-page--account .preview-account__roi .preview-account__pending {
+  display: inline;
+  color: transparent;
+}
+
+@media (min-width: 800px) {
+  .preview-page--account .preview-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 82px;
+  }
+}
+
+.preview-account__pending {
+  color: transparent;
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 100% 0.55em;
+  border-radius: var(--r-chip);
+  user-select: none;
+}
+
+.preview-page--account .preview-tabs {
+  flex-wrap: nowrap;
+  align-items: center;
+  min-height: var(--control);
+}
+
+.preview-account__count {
+  display: inline-block;
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-account__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 420px;
+}
+
+@media (min-width: 1100px) {
+  .preview-account__slot { min-height: 500px; }
+}
+
+.preview-account__slot.preview-account__slot--quiet,
+.preview-account__slot.preview-account__slot--fit,
+.preview-page--account .preview-account__slot--fit .preview-empty {
+  min-height: 0;
+}
+
+.preview-page--account .preview-empty {
+  box-sizing: border-box;
+  flex: 1 0 auto;
+  justify-content: center;
+  min-height: 420px;
+}
+
+@media (min-width: 1100px) {
+  .preview-page--account .preview-empty { min-height: 500px; }
+}
+
+.preview-page--account .preview-empty p {
+  min-height: 1.25em;
+}
+
+.preview-page--account .preview-empty .preview-note {
+  min-height: 2.6em;
+  max-width: 28rem;
+}
 
 .preview-stats b.is-plus { color: var(--profit-ink); }
 .preview-stats b.is-minus { color: var(--loss); }

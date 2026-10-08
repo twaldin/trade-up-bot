@@ -1,0 +1,405 @@
+/**
+ * @vitest-environment happy-dom
+ *
+ * The signed-in account page reserves the stats strip, tab bar, and list slot
+ * before /api/my-trade-ups/stats and the claims list resolve, so those
+ * responses cannot insert a block above content that has already painted.
+ */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
+import { PreviewAccount } from "../../src/preview/pages/PreviewAccount.js";
+import { makeTradeUp } from "../helpers/fixtures.js";
+
+const dir = dirname(fileURLToPath(import.meta.url));
+const read = (rel: string) => readFileSync(resolve(dir, rel), "utf8");
+
+const USER = {
+  steam_id: "76561198000000001",
+  display_name: "Ada",
+  avatar_url: "",
+  tier: "pro",
+  is_admin: false,
+};
+
+const STATS = {
+  all_time_profit_cents: 18420,
+  total_executed: 6,
+  total_sold: 4,
+  win_count: 3,
+  win_rate: 75,
+  avg_roi: 12.4,
+};
+
+function json(status: number, body: unknown) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: async () => body,
+  };
+}
+
+describe("account layout reservation", () => {
+  let root: Root;
+  let host: HTMLDivElement;
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    resetBrowseFetchState();
+    vi.unstubAllGlobals();
+  });
+
+  async function mount() {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(createElement(MemoryRouter, { initialEntries: ["/my-trade-ups"] }, createElement(PreviewAccount)));
+    });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+  }
+
+  it("paints the stats strip, tabs, and list slot before the payloads arrive", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, USER);
+      if (path.includes("/api/my-trade-ups/stats") || path.includes("my_claims=true")) {
+        await gate;
+        if (path.includes("/stats")) return json(200, STATS);
+        return json(200, { trade_ups: [] });
+      }
+      return json(200, { claims: [] });
+    }));
+
+    await mount();
+    const stats = host.querySelector(".preview-stats");
+    const tabs = host.querySelector(".preview-tabs");
+    const slot = host.querySelector(".preview-account__slot");
+    expect(stats).toBeTruthy();
+    expect(stats?.querySelectorAll(":scope > div").length).toBe(4);
+    expect(stats?.getAttribute("aria-busy")).toBe("true");
+    expect(tabs?.getAttribute("role")).toBe("tablist");
+    expect(tabs?.querySelectorAll("[role=tab]").length).toBe(3);
+    expect(slot?.querySelector(".preview-empty")?.getAttribute("aria-busy")).toBe("true");
+    expect(host.textContent).toContain("Sold at a profit");
+    expect(host.textContent).toContain("All-time profit");
+    expect(host.textContent).not.toContain("Win rate");
+    expect(host.textContent).not.toContain("Checking session");
+    expect(host.textContent).not.toContain("No active claims.");
+
+    await act(async () => {
+      release();
+      await gate;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(host.querySelector(".preview-stats")).toBe(stats);
+    expect(host.querySelector(".preview-tabs")).toBe(tabs);
+    expect(host.textContent).toContain("Sold at a profit · 12.4% avg ROI");
+    expect(host.textContent).toContain("No active claims.");
+    expect(host.textContent).toContain("+$184.20");
+    expect(host.querySelector(".preview-stats")?.getAttribute("aria-busy")).toBe("false");
+    expect(slot?.querySelector(".preview-empty[aria-busy=true]")).toBeNull();
+  });
+
+  it("leaves the signed-out panel free of the reserved stats strip", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url).includes("/api/auth/me")) return json(200, null);
+      return json(200, {});
+    }));
+    await mount();
+    expect(host.textContent).toContain("Sign in with Steam");
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect(host.querySelector(".preview-account__slot")).toBeNull();
+    expect(host.querySelector("[aria-busy=true]")).toBeNull();
+    expect(host.querySelector(".preview-page--account")).toBeTruthy();
+  });
+
+  it.each(["free", "basic"])("keeps the stats strip off the page when %s is denied stats", async (tier) => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats") || path.includes("my_claims=true")) {
+        await gate;
+        return json(403, { error: "nope" });
+      }
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect(host.querySelector(".preview-stats[aria-busy=true]")).toBeNull();
+    expect(host.textContent).not.toContain("00.0%");
+    expect(host.textContent).not.toContain("+$000.00");
+
+    await act(async () => { release(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect(host.querySelector("[aria-busy=true]")).toBeNull();
+    expect(host.textContent).not.toContain("00.0%");
+  });
+
+  it("keeps the reserved boxes in the account stylesheet", () => {
+    const css = read("../../src/preview/preview.css");
+    expect(css).toContain(".preview-page--account .preview-stats");
+    expect(css).toContain(".preview-page--account .preview-tabs");
+    expect(css).toContain(".preview-account__slot");
+    expect(css).toMatch(/\.preview-page--account \.preview-stats \{[^}]*min-height:\s*162px/);
+    expect(css).toMatch(/\.preview-page--account \.preview-tabs \{[^}]*min-height:\s*var\(--control\)/);
+    expect(css).toMatch(/\.preview-account__slot \{[^}]*min-height:\s*420px/);
+  });
+
+  it("keeps the sold-trade-up label and does not gate the strip on stats", () => {
+    const page = read("../../src/preview/pages/PreviewAccount.tsx");
+    expect(page).toContain("Sold at a profit · {stats.avg_roi}% avg ROI");
+    expect(page).not.toContain("Win rate");
+    expect(page).toContain('user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM');
+    expect(page).not.toContain("{user && stats &&");
+    expect(page).toContain("const showChrome = user != null && !sessionHold;");
+    expect(page).toContain('const effectiveTier = showChrome ? getEffectiveTier(user) : "free";');
+    expect(page).toContain('const proAccount = effectiveTier === "pro";');
+    expect(page).toContain("const showStats = proAccount;");
+    expect(page).toContain("const waitsForStats = proAccount && !statsSettled;");
+    expect(page).toContain('if (effectiveTier !== "pro") return;');
+    expect(page).not.toContain('user.tier === "pro"');
+    expect(page).not.toContain("user.tier === 'pro'");
+  });
+
+  it("hides Sign in with Steam while auth is still pending", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) {
+        await gate;
+        return json(200, USER);
+      }
+      return json(200, { trade_ups: [], claims: [] });
+    }));
+    await mount();
+    const link = host.querySelector("a.preview-btn--block");
+    expect(link?.textContent).toContain("Sign in with Steam");
+    expect(getComputedStyle(link!).visibility).toBe("hidden");
+    expect(link?.getAttribute("aria-hidden")).toBe("true");
+    expect(link?.getAttribute("tabindex")).toBe("-1");
+    expect(host.querySelector(".preview-panel .preview-note")?.textContent).toBe("Checking session…");
+    expect(host.textContent).not.toContain("Verify and Claim are Pro features");
+
+    await act(async () => { release(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    expect(host.querySelector("a.preview-btn--block")).toBeNull();
+    expect(host.textContent).not.toContain("Sign in with Steam");
+    expect(host.textContent).not.toContain("Checking session");
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
+  });
+
+  it("renders a card for each active claim on a free account", async () => {
+    const tradeUps = [1, 2, 3].map((id) => makeTradeUp({ id }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", display_name: "Bea" });
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: tradeUps });
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelectorAll(".preview-claim").length).toBe(3);
+    expect(host.textContent).toContain("Active Claims (3)");
+    expect(host.querySelectorAll(".preview-claim button").length).toBeGreaterThanOrEqual(3);
+    expect(host.textContent).toContain("Verify");
+    expect(host.querySelector(".preview-stats")).toBeNull();
+  });
+
+  it.each([
+    ["basic", { tier: "basic" as const, lifetime: false }, false],
+    ["lifetime", { tier: "free" as const, lifetime: true }, true],
+  ])("renders three claim cards for %s", async (_label, extra, seesStats) => {
+    const tradeUps = [1, 2, 3].map((id) => makeTradeUp({ id, claimed_by_me: true }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, ...extra, display_name: "Bea" });
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: tradeUps });
+      if (path.includes("/api/my-trade-ups/stats")) {
+        return seesStats ? json(200, STATS) : json(403, { error: "nope" });
+      }
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelectorAll(".preview-claim").length).toBe(3);
+    expect(host.textContent).toContain("Verify");
+    expect(host.textContent).toContain("Confirm Purchase");
+    if (seesStats) {
+      expect(host.querySelector(".preview-stats")).toBeTruthy();
+      expect(host.textContent).toContain("+$184.20");
+    } else {
+      expect(host.querySelector(".preview-stats")).toBeNull();
+    }
+  });
+
+  it.each(["free", "basic"])("shows pricing for %s without requesting stats", async (tier) => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, lifetime: false, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await mount();
+    const statsCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/my-trade-ups/stats"));
+    expect(statsCalls).toEqual([]);
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect([...host.querySelectorAll("a")].some((node) => node.textContent?.trim() === "Pricing")).toBe(true);
+  });
+
+  it("fetches stats when a checkout return promotes a free user to pro", async () => {
+    let tier = "free";
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, lifetime: false, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats")) return json(200, STATS);
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await mount();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/my-trade-ups/stats"))).toBe(false);
+    expect(host.querySelector(".preview-stats")).toBeNull();
+
+    tier = "pro";
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: true });
+    await act(async () => {
+      window.dispatchEvent(pageshow);
+      await Promise.resolve();
+    });
+    for (let i = 0; i < 12; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/my-trade-ups/stats"))).toBe(true);
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
+    expect(host.textContent).toContain("+$184.20");
+  });
+
+  it("holds pricing for a lifetime buyer until stats settle", async () => {
+    let releaseStats: () => void = () => {};
+    const statsGate = new Promise<void>((resolveGate) => { releaseStats = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) {
+        return json(200, { ...USER, tier: "free", lifetime: true, display_name: "Ada" });
+      }
+      if (path.includes("/api/my-trade-ups/stats")) {
+        await statsGate;
+        return json(200, STATS);
+      }
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-account--pending")).toBeTruthy();
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
+    expect(host.textContent).not.toContain("+$184.20");
+
+    await act(async () => { releaseStats(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect(host.textContent).toContain("+$184.20");
+    expect(host.querySelector(".preview-stats")?.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("keeps the free claims slot reserved until the list settles", async () => {
+    let releaseClaims: () => void = () => {};
+    const claimsGate = new Promise<void>((resolveGate) => { releaseClaims = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", lifetime: false, display_name: "Bea" });
+      if (path.includes("my_claims=true")) {
+        await claimsGate;
+        return json(200, { trade_ups: [] });
+      }
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    const slot = host.querySelector(".preview-account__slot");
+    expect(slot).toBeTruthy();
+    expect(slot?.classList.contains("preview-account__slot--fit")).toBe(false);
+    expect(host.querySelector(".preview-account--pending")).toBeTruthy();
+
+    await act(async () => { releaseClaims(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(host.querySelector(".preview-account__slot--fit")).toBeTruthy();
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+  });
+
+  it("does not re-hide pricing when a later tab fetch is in flight", async () => {
+    let releasePurchased: () => void = () => {};
+    const purchasedGate = new Promise<void>((resolveGate) => { releasePurchased = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", lifetime: false, display_name: "Bea" });
+      if (path.includes("status=purchased")) {
+        await purchasedGate;
+        return json(200, { trade_ups: [] });
+      }
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    const purchased = [...host.querySelectorAll("[role=tab]")].find((node) => node.textContent?.includes("Purchased"));
+    expect(purchased).toBeInstanceOf(HTMLButtonElement);
+    if (!(purchased instanceof HTMLButtonElement)) return;
+    await act(async () => { purchased.click(); });
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => { await Promise.resolve(); });
+    }
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect([...host.querySelectorAll("a")].some((node) => node.textContent?.trim() === "Pricing")).toBe(true);
+    await act(async () => { releasePurchased(); });
+  });
+});

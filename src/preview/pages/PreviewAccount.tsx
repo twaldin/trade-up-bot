@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
+import { getEffectiveTier } from "../../../shared/pro-access.js";
 import { authHref } from "../../lib/ref.js";
 import { trackClaimTradeUp, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
@@ -47,6 +48,16 @@ function signedDollars(cents: number): string {
   return cents > 0 ? `+${formatDollars(cents)}` : formatDollars(cents);
 }
 
+function sameSession(current: AuthUser | null | undefined, next: AuthUser | null): current is AuthUser | null {
+  if (!current || !next) return current === next;
+  return current.steam_id === next.steam_id
+    && current.tier === next.tier
+    && !!current.lifetime === !!next.lifetime
+    && current.display_name === next.display_name
+    && current.is_admin === next.is_admin
+    && current.avatar_url === next.avatar_url;
+}
+
 function skinNames(rows: TradeUp[]): string[] {
   return rows.flatMap((tu) => [
     ...tu.inputs.map((row) => row.skin_name),
@@ -80,6 +91,84 @@ function ClaimTimer({ expiresAt }: { expiresAt: string }) {
   return <span className={`preview-timer ${tick.expired || tick.minutes <= 5 ? "is-minus" : ""}`}>{tick.label}</span>;
 }
 
+function AccountStats({ stats, failed }: { stats: UserTradeUpStats | null; failed: boolean }) {
+  const pending = !failed && stats == null;
+  return (
+    <div className="preview-stats" aria-busy={pending}>
+      <div>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : failed || !stats ? "—" : stats.total_sold}</b>
+        <span>Sold</span>
+      </div>
+      <div>
+        <b className={pending ? "preview-account__pending" : failed || !stats ? undefined : signClass(stats.all_time_profit_cents)} aria-hidden={pending || undefined}>
+          {pending ? "+$000.00" : failed || !stats ? "—" : signedDollars(stats.all_time_profit_cents)}
+        </b>
+        <span>All-time profit</span>
+      </div>
+      <div>
+        <b className={pending ? "preview-account__pending" : undefined} aria-hidden={pending || undefined}>{pending ? "00" : failed || !stats ? "—" : stats.total_executed}</b>
+        <span>Executed</span>
+      </div>
+      <div>
+        {pending ? (
+          <b className="preview-account__pending" aria-hidden="true">00%</b>
+        ) : failed || !stats ? (
+          <b>—</b>
+        ) : (
+          <b>{stats.win_rate}%</b>
+        )}
+        {pending ? (
+          <span className="preview-account__roi">Sold at a profit · <span className="preview-account__pending" aria-hidden="true">00.0%</span> avg ROI</span>
+        ) : failed || !stats ? (
+          <span className="preview-account__roi">Sold at a profit · — avg ROI</span>
+        ) : (
+          <span className="preview-account__roi">Sold at a profit · {stats.avg_roi}% avg ROI</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AccountListSkeleton() {
+  return (
+    <div className="preview-empty" aria-busy="true" aria-label="Loading">
+      <p><span className="preview-skel__bar" /></p>
+      <p className="preview-note"><span className="preview-skel__bar" /></p>
+    </div>
+  );
+}
+
+function AccountTabBar({
+  activeTab,
+  tabCount,
+  onSelect,
+}: {
+  activeTab: (typeof ACCOUNT_TABS)[number]["key"];
+  tabCount: number;
+  onSelect: (key: (typeof ACCOUNT_TABS)[number]["key"]) => void;
+}) {
+  return (
+    <div className="preview-tabs" role="tablist" aria-label="My trade-ups">
+      {ACCOUNT_TABS.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          className="o-tab"
+          aria-selected={activeTab === tab.key}
+          data-state={activeTab === tab.key ? "active" : "inactive"}
+          onClick={() => onSelect(tab.key)}
+        >
+          {tab.label}
+          {activeTab === tab.key ? (
+            <span className="preview-account__count">{tabCount > 0 ? ` (${tabCount})` : ""}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function FaceStack({ names }: { names: string[] }) {
   const shown = names.filter(Boolean).slice(0, 4);
   if (shown.length === 0) return <span className="preview-note">—</span>;
@@ -109,6 +198,11 @@ export function PreviewAccount() {
   const [claimTradeUps, setClaimTradeUps] = useState<HydratedTradeUp[]>([]);
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [statsSettled, setStatsSettled] = useState(false);
+  const [listSettled, setListSettled] = useState(false);
+  const [pricingRevealed, setPricingRevealed] = useState(false);
+  const [holdCapElapsed, setHoldCapElapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -133,33 +227,25 @@ export function PreviewAccount() {
     claimsInFlight.current = true;
     setLoading(true);
     if (claimAttempts.current === 0) setNote(null);
+    let listDone = false;
     try {
       await waitForBrowseHold(signal);
-      const mainReq = activeTab === "claims"
-        ? fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
-        : fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
-      const statsReq = fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
-        .then((res) => {
-          if (res.status === 401 || res.status === 403) return null;
-          return res.ok ? res.json() : null;
-        })
-        .then((data: UserTradeUpStats | null) => {
-          if (!signal?.aborted && data) setStats(data);
-        })
-        .catch(() => undefined);
-
-      const res = await mainReq;
+      const res = activeTab === "claims"
+        ? await fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
+        : await fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
       if (signal?.aborted) return;
       if (res.status === 401 || res.status === 403) {
         setNote("Claims need a Pro account. Pricing stays on the production route.");
         setClaimTradeUps([]);
         setEntries([]);
+        listDone = true;
         return;
       }
       if (res.status === 429) {
         noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
         if (claimAttempts.current >= 1) {
           setNote(RATE_LIMIT_MANUAL_COPY);
+          listDone = true;
           return;
         }
         setNote(SLOW_DOWN_COPY);
@@ -174,6 +260,7 @@ export function PreviewAccount() {
       }
       if (!res.ok) {
         setNote("Could not load trade-ups.");
+        listDone = true;
         return;
       }
       claimAttempts.current = 0;
@@ -184,6 +271,7 @@ export function PreviewAccount() {
         const hydrated = await Promise.all(rows.map((tu) => hydrateBoardCard(tu)));
         if (signal?.aborted) return;
         setClaimTradeUps(hydrated);
+        setListSettled(true);
         const mine = new Set<number>();
         const fromRows = new Map<number, string>();
         for (const tu of hydrated) {
@@ -222,14 +310,19 @@ export function PreviewAccount() {
           if (!signal?.aborted) setFaceTick((tick) => tick + 1);
         });
       }
-      await statsReq;
+      if (signal?.aborted) return;
+      listDone = true;
     } catch (error) {
       if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", error);
       setNote("Could not load trade-ups.");
+      listDone = true;
     } finally {
       claimsInFlight.current = false;
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        if (listDone) setListSettled(true);
+        setLoading(false);
+      }
     }
   }, [activeTab, user]);
 
@@ -263,14 +356,29 @@ export function PreviewAccount() {
         setSessionHold(null);
         setSessionSpent(false);
         const data = res.ok ? await res.json() as AuthUser : null;
-        setUser(data?.steam_id ? data : null);
+        const next = data?.steam_id ? data : null;
+        let changed = false;
+        setUser((current) => {
+          if (sameSession(current, next)) return current;
+          changed = true;
+          return next;
+        });
+        if (changed && next) setLoading(true);
       })
       .catch(() => {
-        if (live) setUser(null);
+        if (!live) return;
+        setUser(null);
       });
+    // bfcache restore after checkout. Re-read auth/me so a new Pro tier fetches stats.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      setSessionRetry((n) => n + 1);
+    };
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       live = false;
       window.clearTimeout(timer);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [sessionRetry]);
 
@@ -578,6 +686,57 @@ export function PreviewAccount() {
   const claimCount = claimTradeUps.length;
   const listCount = entries.length;
   const tabCount = activeTab === "claims" ? claimCount : listCount;
+  const showChrome = user != null && !sessionHold;
+  const effectiveTier = showChrome ? getEffectiveTier(user) : "free";
+  const proAccount = effectiveTier === "pro";
+  const showStats = proAccount;
+  const authUnresolved = user === undefined && !sessionHold;
+  const waitsForStats = proAccount && !statsSettled;
+  const waitsForClaims = showChrome && !listSettled;
+  useEffect(() => {
+    if (effectiveTier !== "pro") return;
+    const controller = new AbortController();
+    void fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal: controller.signal })
+      .then(async (res) => {
+        if (controller.signal.aborted) return;
+        if (!res.ok) {
+          setStatsFailed(true);
+          setStatsSettled(true);
+          return;
+        }
+        const data = await res.json() as UserTradeUpStats;
+        if (controller.signal.aborted) return;
+        setStats(data);
+        setStatsFailed(false);
+        setStatsSettled(true);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setStatsFailed(true);
+        setStatsSettled(true);
+      });
+    return () => controller.abort();
+  }, [effectiveTier]);
+  useEffect(() => {
+    if (holdCapElapsed || !user || sessionHold) return;
+    const id = window.setTimeout(() => setHoldCapElapsed(true), 1500);
+    return () => window.clearTimeout(id);
+  }, [holdCapElapsed, sessionHold, user]);
+  const holdPricing = authUnresolved || (!holdCapElapsed && (waitsForStats || waitsForClaims));
+  const pendingSession = !pricingRevealed && holdPricing;
+  useEffect(() => {
+    if (!holdPricing) setPricingRevealed(true);
+  }, [holdPricing]);
+  const listPending = showChrome && loading && claimTradeUps.length === 0 && entries.length === 0 && !note;
+  const selectTab = (key: (typeof ACCOUNT_TABS)[number]["key"]) => {
+    setActiveTab(key);
+    setExecutingId(null);
+    setSellingId(null);
+    setConfirmModeId(null);
+    setActionError(null);
+  };
+  const loadError = note === "Could not load trade-ups.";
+  const slotQuiet = loadError && claimTradeUps.length === 0 && entries.length === 0;
 
   if (location.pathname === "/account") {
     return (
@@ -589,7 +748,7 @@ export function PreviewAccount() {
   }
 
   return (
-    <div className="preview-page">
+    <div className={sessionHold ? "preview-page" : `preview-page preview-page--account${pendingSession ? " preview-account--pending" : ""}`}>
       <title>My Trade-Ups | TradeUpBot</title>
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/my-trade-ups" />}
       <header className="preview-page__head">
@@ -597,7 +756,7 @@ export function PreviewAccount() {
           <h1>My trade-ups</h1>
           <p>Claims, purchased rows, and realized P/L from the live APIs.</p>
         </div>
-        {user && (
+        {showChrome && user && (
           <div className="preview-page__meta">
             <span>{user.display_name}</span>
             <i />
@@ -623,78 +782,47 @@ export function PreviewAccount() {
         </div>
       )}
 
-      {user === undefined && !sessionHold && <p className="preview-note">Checking session…</p>}
-
-      {user === null && !sessionHold && (
+      {user == null && !sessionHold && (
         <section className="preview-panel">
           <header className="preview-panel__head">
             <p className="o-kicker">Session</p>
           </header>
-          <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
-          <a className="preview-btn preview-btn--lime preview-btn--block" href={authHref("/my-trade-ups")} rel="nofollow">
+          <p className="preview-note">{user === undefined ? "Checking session…" : SIGN_IN_TO_CLAIM}</p>
+          <a
+            className="preview-btn preview-btn--lime preview-btn--block"
+            href={authHref("/my-trade-ups")}
+            rel="nofollow"
+            style={user === undefined ? { visibility: "hidden" } : undefined}
+            aria-hidden={user === undefined || undefined}
+            tabIndex={user === undefined ? -1 : undefined}
+          >
             Sign in with Steam
           </a>
         </section>
       )}
 
-      {user && stats && (
-        <div className="preview-stats">
-          <div>
-            <b>{stats.total_sold}</b>
-            <span>Sold</span>
-          </div>
-          <div>
-            <b className={signClass(stats.all_time_profit_cents)}>{signedDollars(stats.all_time_profit_cents)}</b>
-            <span>All-time profit</span>
-          </div>
-          <div>
-            <b>{stats.total_executed}</b>
-            <span>Executed</span>
-          </div>
-          <div>
-            <b>{stats.win_rate}%</b>
-            <span>Sold at a profit · {stats.avg_roi}% avg ROI</span>
-          </div>
-        </div>
-      )}
-
-      {user && (
-        <div className="preview-tabs" role="tablist" aria-label="My trade-ups">
-          {ACCOUNT_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              className="o-tab"
-              aria-selected={activeTab === tab.key}
-              data-state={activeTab === tab.key ? "active" : "inactive"}
-              onClick={() => {
-                setActiveTab(tab.key);
-                setExecutingId(null);
-                setSellingId(null);
-                setConfirmModeId(null);
-                setActionError(null);
-              }}
-            >
-              {tab.label}
-              {activeTab === tab.key && tabCount > 0 ? ` (${tabCount})` : ""}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {note && (
-        <div className="preview-notice" role="status">
-          <p className="preview-note">{note}</p>
-          {note === RATE_LIMIT_MANUAL_COPY && !held && (
-            <button type="button" className="preview-btn preview-btn--quiet" onClick={retryClaims}>
-              Retry
-            </button>
+      {showChrome && (
+        <>
+          {showStats && <AccountStats stats={stats} failed={statsFailed} />}
+          <AccountTabBar activeTab={activeTab} tabCount={tabCount} onSelect={selectTab} />
+          {note && !loadError && (
+            <div className="preview-notice" role="status">
+              <p className="preview-note">{note}</p>
+              {note === RATE_LIMIT_MANUAL_COPY && !held && (
+                <button type="button" className="preview-btn preview-btn--quiet" onClick={retryClaims}>
+                  Retry
+                </button>
+              )}
+            </div>
           )}
-        </div>
-      )}
-      {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
-      {user && loading && <p className="preview-note">Loading…</p>}
+          {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
+          <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}${!showStats && listSettled ? " preview-account__slot--fit" : ""}`}>
+          {listPending && <AccountListSkeleton />}
+          {loadError && (
+            <div className="preview-notice" role="status">
+              <p className="preview-note">{note}</p>
+            </div>
+          )}
 
       {user && !loading && !note && activeTab === "claims" && claimTradeUps.length === 0 && (
         <div className="preview-empty">
@@ -920,10 +1048,13 @@ export function PreviewAccount() {
           />
         </section>
       )}
+          </div>
+        </>
+      )}
 
       <div className="preview-toolbar">
         <a className="preview-btn" href="/pricing">Pricing</a>
-        {user && <a className="preview-btn" href="/auth/logout">Sign out</a>}
+        {showChrome && <a className="preview-btn" href="/auth/logout">Sign out</a>}
       </div>
     </div>
   );
