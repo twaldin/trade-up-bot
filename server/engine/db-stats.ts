@@ -78,6 +78,14 @@ export interface ApplyListingPriceOptions {
    * transaction so a listing lock is not held across the recompute.
    */
   deferTradeUpWrites?: boolean;
+  /**
+   * Classify the affected trade-ups and write nothing. A price update in the
+   * same transaction as the listing_id move waits on a concurrent trade_ups
+   * row lock, which deadlocks a revive that already holds that trade-up and
+   * wants the input row. The recompute transaction applies the price after it
+   * locks trade_ups.
+   */
+  deferInputPrices?: boolean;
 }
 
 export interface ApplyListingPriceResult {
@@ -139,6 +147,15 @@ export async function applyListingPriceToInputs(
   }
   const flaggedIds = ascendingNumberIds([...flagged]);
   const recomputeIds = ascendingNumberIds([...tradeUpIds].filter(id => !flagged.has(id)));
+  if (options?.deferInputPrices) {
+    return {
+      inputsUpdated: 0,
+      tradeUpsUpdated: tradeUpIds.size,
+      tradeUpsFlagged: flaggedIds.length,
+      recomputeIds,
+      flaggedIds,
+    };
+  }
   if (!options?.deferTradeUpWrites) {
     await lockTradeUpsInIdOrder(db, ascendingNumberIds([...recomputeIds, ...flaggedIds]));
   }

@@ -315,7 +315,7 @@ export async function applyDMarketRelinks(
         relink.priceCents,
         "dmarket",
         refLookup,
-        { deferTradeUpWrites: true },
+        { deferTradeUpWrites: true, deferInputPrices: true },
       );
       const oldClaim = locked.get(relink.oldId);
       if (oldClaim?.claimed_by) {
@@ -325,7 +325,14 @@ export async function applyDMarketRelinks(
         );
       }
       await recordDMarketRelink(client, relink.oldId, relink.newId);
-      await recordDMarketRelinkRecompute(client, relink.oldId, priced.recomputeIds, priced.flaggedIds);
+      await recordDMarketRelinkRecompute(
+        client,
+        relink.oldId,
+        priced.recomputeIds,
+        priced.flaggedIds,
+        relink.newId,
+        relink.priceCents,
+      );
       await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
       if (hooks?.onListingCommitted) hooks.onListingCommitted();
       await client.query("COMMIT");

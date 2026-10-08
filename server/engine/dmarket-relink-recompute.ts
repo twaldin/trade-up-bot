@@ -5,12 +5,15 @@
  * commits. Recompute runs afterwards in short transactions. A crash between
  * those steps leaves the marker; the next fetcher cycle or daemon boot drains it.
  * Recompute reads the live input sum, so a later relink of the same listing
- * wins even if an earlier batch already wrote a cost.
+ * wins even if an earlier batch already wrote a cost. Input prices are applied
+ * in that recompute transaction, after trade_ups locks: writing them in the
+ * listing transaction waits on a concurrent trade_ups row lock.
  */
 
 import type pg from "pg";
-import { ascendingNumberIds, lockTradeUpsInIdOrder } from "./lock-order.js";
+import { ascendingNumberIds, lockTradeUpInputsInIdOrder, lockTradeUpsInIdOrder } from "./lock-order.js";
 import { recomputeTradeUpCost } from "./db-stats.js";
+import { repricedInputCost } from "./fees.js";
 import { markTradeUpsOutlierStale } from "./input-outlier.js";
 
 export const DMARKET_RELINK_RECOMPUTE_PREFIX = "dm_relink_recompute:";
@@ -34,6 +37,13 @@ interface Marker {
   key: string;
   recomputeIds: number[];
   flaggedIds: number[];
+  newId: string;
+  priceCents: number | null;
+}
+
+interface RelinkPrice {
+  newId: string;
+  priceCents: number;
 }
 
 type Queryable = pg.Pool | pg.PoolClient;
@@ -52,6 +62,8 @@ export async function recordDMarketRelinkRecompute(
   oldId: string,
   recomputeIds: readonly number[],
   flaggedIds: readonly number[],
+  newId: string,
+  priceCents: number,
 ): Promise<void> {
   const recompute = ascendingNumberIds(recomputeIds);
   const flagged = ascendingNumberIds(flaggedIds);
@@ -59,7 +71,12 @@ export async function recordDMarketRelinkRecompute(
   await db.query(
     `INSERT INTO sync_meta (key, value) VALUES ($1, $2)
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [markerKey(oldId), JSON.stringify({ recomputeIds: recompute, flaggedIds: flagged })],
+    [markerKey(oldId), JSON.stringify({
+      recomputeIds: recompute,
+      flaggedIds: flagged,
+      newId,
+      priceCents,
+    })],
   );
 }
 
@@ -71,14 +88,25 @@ async function loadMarkers(pool: pg.Pool): Promise<Marker[]> {
   const markers: Marker[] = [];
   for (const row of rows) {
     try {
-      const parsed = JSON.parse(row.value) as { recomputeIds?: unknown; flaggedIds?: unknown };
+      const parsed = JSON.parse(row.value) as {
+        recomputeIds?: unknown;
+        flaggedIds?: unknown;
+        newId?: unknown;
+        priceCents?: unknown;
+      };
       const recomputeIds = Array.isArray(parsed.recomputeIds)
         ? parsed.recomputeIds.filter((id): id is number => typeof id === "number")
         : [];
       const flaggedIds = Array.isArray(parsed.flaggedIds)
         ? parsed.flaggedIds.filter((id): id is number => typeof id === "number")
         : [];
-      markers.push({ key: row.key, recomputeIds, flaggedIds });
+      markers.push({
+        key: row.key,
+        recomputeIds,
+        flaggedIds,
+        newId: typeof parsed.newId === "string" ? parsed.newId : "",
+        priceCents: typeof parsed.priceCents === "number" ? parsed.priceCents : null,
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`DMarket relink recompute requeued 0 trade-ups: marker ${row.key} is not json (${reason})`);
@@ -87,7 +115,31 @@ async function loadMarkers(pool: pg.Pool): Promise<Marker[]> {
   return markers;
 }
 
-async function recomputeBatch(pool: pg.Pool, ids: readonly number[]): Promise<void> {
+async function applyRelinkInputPrices(
+  client: pg.PoolClient,
+  ids: readonly number[],
+  price: RelinkPrice,
+): Promise<void> {
+  const expected = repricedInputCost(price.priceCents, "dmarket");
+  const ordered = ascendingNumberIds(ids);
+  await lockTradeUpInputsInIdOrder(
+    client,
+    ordered.map(tradeUpId => ({ tradeUpId, listingId: price.newId })),
+  );
+  for (const id of ordered) {
+    await client.query(
+      `UPDATE trade_up_inputs SET price_cents = $1, source = 'dmarket'
+       WHERE trade_up_id = $2 AND listing_id = $3`,
+      [expected, id, price.newId],
+    );
+  }
+}
+
+async function recomputeBatch(
+  pool: pg.Pool,
+  ids: readonly number[],
+  price: RelinkPrice | null,
+): Promise<void> {
   const ordered = ascendingNumberIds(ids);
   if (ordered.length === 0) return;
   const client = await pool.connect();
@@ -96,6 +148,7 @@ async function recomputeBatch(pool: pg.Pool, ids: readonly number[]): Promise<vo
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query("SET LOCAL statement_timeout = '30s'");
     await lockTradeUpsInIdOrder(client, ordered);
+    if (price) await applyRelinkInputPrices(client, ordered, price);
     for (const id of ordered) await recomputeTradeUpCost(client, id);
     await client.query("COMMIT");
   } catch (err) {
@@ -185,7 +238,15 @@ async function drainMarker(
   marker: Marker,
   opts: DMarketRelinkRecomputeOptions | undefined,
 ): Promise<boolean> {
-  const recomputed = await runIdBatches(pool, marker.recomputeIds, opts, batch => recomputeBatch(pool, batch));
+  const price = marker.newId !== "" && marker.priceCents != null
+    ? { newId: marker.newId, priceCents: marker.priceCents }
+    : null;
+  const recomputed = await runIdBatches(
+    pool,
+    marker.recomputeIds,
+    opts,
+    batch => recomputeBatch(pool, batch, price),
+  );
   if (!recomputed) return false;
   const flagged = await runIdBatches(
     pool,

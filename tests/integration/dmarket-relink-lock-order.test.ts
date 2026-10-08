@@ -125,9 +125,9 @@ async function seedRelinkSet(opts: {
      INSERT INTO trade_up_inputs (
        trade_up_id, listing_id, skin_id, skin_name, collection_name, price_cents, float_value, condition, source
      )
-     SELECT id, $5, $6, $7, 'Parity', $8, 0.12, 'Minimal Wear', 'dmarket' FROM numbered
+     SELECT id, $5, $6, $7, 'Parity', $8::int, 0.12, 'Minimal Wear', 'dmarket' FROM numbered
      UNION ALL
-     SELECT id, 'csfloat:' || $9 || '-' || n::text, $6, $7, 'Parity', $10, 0.2, 'Field-Tested', 'csfloat' FROM numbered`,
+     SELECT id, 'csfloat:' || $9 || '-' || n::text, $6, $7, 'Parity', $10::int, 0.2, 'Field-Tested', 'csfloat' FROM numbered`,
     [
       cost,
       evBase,
@@ -191,9 +191,11 @@ async function waitForTradeUpLockWait(): Promise<void> {
   for (;;) {
     const { rows } = await ctx.pool.query<{ waiting: string }>(
       `SELECT COUNT(*)::text AS waiting
-       FROM pg_locks l
-       JOIN pg_class c ON c.oid = l.relation
-       WHERE c.relname = 'trade_ups' AND NOT l.granted`,
+       FROM pg_stat_activity
+       WHERE datname = current_database()
+         AND pid <> pg_backend_pid()
+         AND wait_event_type = 'Lock'
+         AND query LIKE '%trade_ups WHERE id = $1 FOR UPDATE%'`,
     );
     if (Number(rows[0].waiting) > 0) return;
     if (Date.now() - start > 10_000) throw new Error("timed out waiting for a trade_ups lock waiter");
@@ -209,8 +211,6 @@ describe("DMarket relink lock order", () => {
     try {
       await relink.query("BEGIN");
       await phase4c.query("BEGIN");
-      await relink.query("SET LOCAL deadlock_timeout = '200ms'");
-      await phase4c.query("SET LOCAL deadlock_timeout = '200ms'");
       await relink.query(`SELECT id FROM listings WHERE id = $1 FOR UPDATE`, [listingId]);
       await relink.query(`SELECT id FROM trade_ups WHERE id = $1 FOR UPDATE`, [high]);
       await phase4c.query(`SELECT id FROM trade_ups WHERE id = $1 FOR UPDATE`, [low]);
@@ -235,8 +235,6 @@ describe("DMarket relink lock order", () => {
     try {
       await relink.query("BEGIN");
       await revive.query("BEGIN");
-      await relink.query("SET LOCAL deadlock_timeout = '200ms'");
-      await revive.query("SET LOCAL deadlock_timeout = '200ms'");
       await relink.query(
         `SELECT trade_up_id FROM trade_up_inputs WHERE trade_up_id = $1 AND listing_id = $2 FOR UPDATE`,
         [low, listingId],
@@ -478,7 +476,7 @@ describe("DMarket relink lock order", () => {
 
     const mid = await readCosts(newId);
     expect(mid).toHaveLength(3);
-    expect(mid[0].price_cents).toBe(repricedInputCost(nextRaw, "dmarket"));
+    expect(mid.every(row => row.price_cents === repricedInputCost(1000, "dmarket"))).toBe(true);
     expect(mid.every(row => row.total_cost_cents === oldCost)).toBe(true);
     const pending = await ctx.pool.query(
       `SELECT key FROM sync_meta WHERE key LIKE 'dm_relink_recompute:%'`,
