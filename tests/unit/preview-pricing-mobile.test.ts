@@ -132,6 +132,7 @@ describe("pricing layout in Chromium", () => {
       `<!doctype html><html><head><style>html,body{margin:0}${sheet}</style></head><body>${html}</body></html>`,
       { waitUntil: "domcontentloaded" },
     );
+    await page.evaluate(() => document.fonts.ready);
     return page;
   }
 
@@ -146,7 +147,7 @@ describe("pricing layout in Chromium", () => {
       const go = document.querySelector(".preview-plan--pro .preview-btn--lime");
       const tabs = [...document.querySelectorAll('[aria-label="Billing interval"] [role="tab"]')].map((el) => {
         const rect = el.getBoundingClientRect();
-        return { text: el.textContent ?? "", width: rect.width, height: rect.height };
+        return { text: el.textContent ?? "", width: rect.width, height: rect.height, top: rect.top };
       });
       const delay = document.querySelector(".preview-plan__delay");
       const visible = document.body.innerText;
@@ -203,6 +204,18 @@ describe("pricing layout in Chromium", () => {
     expect(box.prices.limits.join("\n")).toContain("30 min");
     expect(box.visible).not.toMatch(BANNED);
     await page.close();
+  }, 20000);
+
+  it("keeps Go Pro inside the phone viewport with billing tabs on one row", async () => {
+    for (const [width, height] of [[375, 812], [390, 844]] as const) {
+      const page = await open(width, height, true);
+      const box = await measure(page);
+      expect(box.innerWidth).toBe(width);
+      expect(box.go).not.toBeNull();
+      expect(box.go!.top + box.go!.height).toBeLessThanOrEqual(height);
+      expect(new Set(box.tabs.map((tab) => Math.round(tab.top))).size).toBe(1);
+      await page.close();
+    }
   }, 20000);
 
   it("keeps the two-column order and 28px tabs at 1280", async () => {

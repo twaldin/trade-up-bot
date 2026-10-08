@@ -62,13 +62,43 @@ export const curveCache = new Map<string, CurveScore>();
 let curveCacheBuiltAt = 0;
 const CURVE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Build curve cache from price_observations. Returns number of skins cached. */
-export async function buildCurveCache(pool: pg.Pool): Promise<number> {
-  if (curveCacheBuiltAt > 0 && Date.now() - curveCacheBuiltAt < CURVE_CACHE_TTL_MS) {
-    return curveCache.size;
+export function curveCacheIsFresh(now = Date.now()): boolean {
+  return curveCacheBuiltAt > 0 && now - curveCacheBuiltAt < CURVE_CACHE_TTL_MS;
+}
+
+/** Copy a finished curve build onto the live cache. */
+export function commitCurveCache(source: Map<string, CurveScore>): void {
+  curveCache.clear();
+  for (const [skin, score] of source) curveCache.set(skin, score);
+  curveCacheBuiltAt = Date.now();
+  console.log(`  Curve cache: ${curveCache.size} skins classified`);
+}
+
+export function resetCurveCacheForTests(): void {
+  curveCache.clear();
+  curveCacheBuiltAt = 0;
+}
+
+/**
+ * Build curve cache from price_observations. Returns number of skins cached.
+ * Pass `destination` to fill a shadow map and leave the live cache untouched
+ * until the caller commits it.
+ */
+export async function buildCurveCache(
+  pool: pg.Pool,
+  destination?: Map<string, CurveScore>,
+): Promise<number> {
+  const target = destination ?? curveCache;
+  const writingLive = destination == null;
+  if (curveCacheIsFresh()) {
+    if (!writingLive) {
+      target.clear();
+      for (const [skin, score] of curveCache) target.set(skin, score);
+    }
+    return target.size;
   }
 
-  curveCache.clear();
+  target.clear();
 
   // Float boundaries match CONDITION_BOUNDS in server/engine/types.ts
   const { rows } = await pool.query(`
@@ -115,13 +145,15 @@ export async function buildCurveCache(pool: pg.Pool): Promise<number> {
 
     const score = classifySkinCurve(data);
     if (score) {
-      curveCache.set(row.skin_name, score);
+      target.set(row.skin_name, score);
     }
   }
 
-  curveCacheBuiltAt = Date.now();
-  console.log(`  Curve cache: ${curveCache.size} skins classified`);
-  return curveCache.size;
+  if (writingLive) {
+    curveCacheBuiltAt = Date.now();
+    console.log(`  Curve cache: ${curveCache.size} skins classified`);
+  }
+  return target.size;
 }
 
 /**

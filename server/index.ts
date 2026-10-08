@@ -9,6 +9,7 @@ import { initRedis, startBoardFlushSubscriber } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
+import { warmCalculatorCaches } from "./engine.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { boardDelayRouter } from "./routes/board-delay.js";
 import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
@@ -1356,6 +1357,9 @@ registerCanonicalRedirectRoutes(app);
   const server = app.listen(PORT, () => {
     process.send?.("ready"); // signal PM2 wait_ready when configured
     console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+    void warmCalculatorCaches(pool).catch((err) => {
+      console.error("Calculator cache warm failed:", err instanceof Error ? err.message : err);
+    });
     warmPublicBoardOnStartup();
     void materializeStaticHomepage();
 

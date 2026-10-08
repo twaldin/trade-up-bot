@@ -35,7 +35,7 @@ function ShareClaimTimer({ expiresAt }: { expiresAt: string }) {
 
 function TradeUpNotFound() {
   return (
-    <div className="preview-page">
+    <div className="preview-page preview-page--stable preview-page--fold">
       <PreviewSeo
         title="Trade-up not found | TradeUpBot"
         description="That trade-up is not on TradeUpBot."
@@ -249,21 +249,27 @@ export function PreviewShare() {
     })
     : "Trade-up detail on TradeUpBot.";
   const panel = shareActionPanel(user);
-  const delaySentence = boardDelaySentence(useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user)));
+  const delayEnabled = panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user);
+  const delayGap = useBoardDelay(panel !== "pending" && panel !== "pro" && shouldFetchBoardDelay(user));
+  const delaySentence = boardDelaySentence(delayGap);
+  const delayPending = delayEnabled && delayGap === undefined;
   const realIds = tu ? realListingIds(tu) : [];
 
   if (tradeUpId === null || (!loading && error === "Trade-up not found")) {
     return <TradeUpNotFound />;
   }
 
+  const signInReady = Boolean(tu) && panel === "sign-in" && !delayPending;
+  const showVerifySkeleton = !error && tu != null && !signInReady && (loading || panel === "pending" || panel === "sign-in");
+
   return (
-    <div className="preview-page">
+    <div className={`preview-page preview-page--stable${loading || error || !tu ? " preview-page--fold" : ""}`}>
       <PreviewSeo
         title={title}
         description={description}
         canonical={id ? `https://tradeupbot.app/trade-ups/${id}` : "https://tradeupbot.app/trade-ups"}
       />
-      <header className="preview-page__head">
+      <header className="preview-page__head preview-page__head--wrap">
         <div>
           <nav className="preview-crumb" aria-label="Breadcrumb">
             <Link className="preview-link" to="/trade-ups">Trade-Ups</Link>
@@ -273,28 +279,28 @@ export function PreviewShare() {
           <h1>{loading ? "Loading trade-up…" : error || !tu ? (error || "Trade-up not found") : h1}</h1>
           <p>Same verify, claim, confirm, and release flow as the live board. Expected value on the card is the probability-weighted output; Expected P/L is that value minus cost.</p>
         </div>
-        {tu && (
-          <div className="preview-page__meta">
-            <span>{pair}</span>
-            <i />
-            {(panel === "sign-in" || panel === "upgrade") && (
-              panel === "upgrade" ? (
-                <Link
-                  className="preview-btn preview-btn--quiet"
-                  to="/pricing"
-                  onClick={() => {
-                    trackVerifyClick("share_bar");
-                    trackUpgradeCta("share_bar");
-                  }}
-                >Verify</Link>
-              ) : (
-                <a
-                  className="preview-btn preview-btn--quiet"
-                  href="#share-verify"
-                  onClick={() => trackVerifyClick("share_bar")}
-                >Verify</a>
-              )
-            )}
+        <div className="preview-page__meta">
+          {tu && <span>{pair}</span>}
+          {tu && <i />}
+          {tu && (panel === "sign-in" || panel === "upgrade") && (
+            panel === "upgrade" ? (
+              <Link
+                className="preview-btn preview-btn--quiet"
+                to="/pricing"
+                onClick={() => {
+                  trackVerifyClick("share_bar");
+                  trackUpgradeCta("share_bar");
+                }}
+              >Verify</Link>
+            ) : (
+              <a
+                className="preview-btn preview-btn--quiet"
+                href="#share-verify"
+                onClick={() => trackVerifyClick("share_bar")}
+              >Verify</a>
+            )
+          )}
+          {tu && (
             <button type="button" className="preview-btn preview-btn--quiet" onClick={() => {
               void navigator.clipboard.writeText(window.location.href);
               setCopied(true);
@@ -302,13 +308,15 @@ export function PreviewShare() {
             }}>
               {copied ? "Copied" : "Copy link"}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
-      <DetailCollectionLinks names={collections} />
+      <div className={collections.length > 0 || loading ? "preview-share-links" : undefined}>
+        <DetailCollectionLinks names={collections} />
+      </div>
 
-      {loading && <p className="preview-note">Loading…</p>}
+      {loading && <p className="sr-only">Loading…</p>}
       {(error || (!loading && !tu)) && (
         <section className="preview-panel">
           <p className="preview-note">{error || "Trade-up not found"}</p>
@@ -316,8 +324,14 @@ export function PreviewShare() {
         </section>
       )}
 
-      {tu && panel === "sign-in" && (
-        <section className="preview-panel" id="share-verify">
+      {showVerifySkeleton && (
+        <section className="preview-panel preview-share-verify" aria-hidden="true">
+          <span className="preview-skel__bar" />
+        </section>
+      )}
+
+      {signInReady && (
+        <section className="preview-panel preview-share-verify" id="share-verify">
           {delaySentence && <p className="preview-note">{delaySentence}</p>}
           <p className="preview-note">{SIGN_IN_TO_CLAIM}</p>
           <button

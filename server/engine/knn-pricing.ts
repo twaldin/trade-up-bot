@@ -14,6 +14,7 @@ import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS } from "./types.js";
 import type { KnnObservation, KnnEstimate, KnnConfig } from "./types.js";
+import { requestCacheServesStale, staleDecision } from "./request-cache-policy.js";
 
 export const FLOAT_BUCKETS = [
   { min: 0.00, max: 0.03, label: "FN-low" },
@@ -171,6 +172,7 @@ const _knnHasCsfloatSales = new Set<string>(); // skins with at least 1 CSFloat 
 const _knnHasBuffSales = new Set<string>(); // skins with at least 1 Buff sale (source='buff_sale')
 let _knnCacheLoadedAt = 0;
 const KNN_CACHE_TTL_MS = 2 * 60 * 1000;
+const KNN_CACHE_MAX_STALE_MS = KNN_CACHE_TTL_MS * 3;
 const KNN_FRESHNESS_MIN = 2; // require at least 2 observations from last 14 days
 // Extended window: rare skins (★ items) trade infrequently and need longer history.
 // The dynamic half-life already downweights old observations — extending the window
@@ -260,35 +262,73 @@ function buildKnnCache(rows: KnnObservationRow[]): {
 
 let _knnCacheBuildPromise: Promise<void> | null = null;
 
-/** Build-or-join: collapses concurrent cold builds onto one in-flight promise so
- *  parallel callers (e.g. concurrent repricing) don't trigger N redundant heavy
- *  KNN rebuilds (CPU + memory spike); all callers read the same warm cache. */
+function knnCacheAgeMs(now = Date.now()): number {
+  return _knnCacheLoadedAt > 0 ? now - _knnCacheLoadedAt : Number.POSITIVE_INFINITY;
+}
+
+/** Build-or-join: one in-flight rebuild. API requests may return the stale map. */
 async function ensureKnnCache(pool: pg.Pool): Promise<void> {
-  if (_knnCache.size > 0 && Date.now() - _knnCacheLoadedAt < KNN_CACHE_TTL_MS) return;
+  const decision = staleDecision({
+    size: _knnCache.size,
+    ageMs: knnCacheAgeMs(),
+    ttlMs: KNN_CACHE_TTL_MS,
+    maxStaleMs: KNN_CACHE_MAX_STALE_MS,
+    allowStale: requestCacheServesStale(),
+  });
+  if (decision === "fresh") return;
+  if (decision === "serve-stale") {
+    // buildAndStoreKnnCache logs the failure. This catch only marks it handled.
+    void startKnnRebuild(pool).catch(() => {});
+    return;
+  }
+  if (requestCacheServesStale() && _knnCache.size > 0) {
+    console.error(
+      `[knn-cache] stale for ${Math.round(knnCacheAgeMs())}ms, past ${KNN_CACHE_MAX_STALE_MS}ms cap; blocking until rebuild`,
+    );
+  }
+  await startKnnRebuild(pool);
+}
+
+function startKnnRebuild(pool: pg.Pool): Promise<void> {
   if (!_knnCacheBuildPromise) {
-    _knnCacheBuildPromise = buildAndStoreKnnCache(pool).finally(() => { _knnCacheBuildPromise = null; });
+    _knnCacheBuildPromise = buildAndStoreKnnCache(pool).finally(() => {
+      _knnCacheBuildPromise = null;
+    });
   }
   return _knnCacheBuildPromise;
 }
 
+/** Blocking warm used at API boot. Does not serve stale. */
+export async function warmKnnCache(pool: pg.Pool): Promise<void> {
+  await ensureKnnCache(pool);
+}
+
 async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
   const t0 = Date.now();
-  _knnCache.clear();
-  _knnFreshnessCache.clear();
-  _knnHasCsfloatSales.clear();
-  _knnHasBuffSales.clear();
-
-  // Sales-only for output pricing: listings are ask prices (not transaction prices)
-  // and inflate estimates for expensive skins where sellers list at collector premiums.
-  const rows = await loadKnnObservationRows(pool);
-  const tQuery = Date.now();
-  const built = buildKnnCache(rows);
-  for (const [skinName, obs] of built.cache) _knnCache.set(skinName, obs);
-  for (const [skinName, recentCount] of built.freshness) _knnFreshnessCache.set(skinName, recentCount);
-  for (const skinName of built.csfloatSales) _knnHasCsfloatSales.add(skinName);
-  for (const skinName of built.buffSales) _knnHasBuffSales.add(skinName);
-  _knnCacheLoadedAt = Date.now();
-  console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
+  try {
+    // Sales-only for output pricing: listings are ask prices (not transaction prices)
+    // and inflate estimates for expensive skins where sellers list at collector premiums.
+    // Build into locals and swap after the query so a stale reader never sees an empty map.
+    const rows = await loadKnnObservationRows(pool);
+    const tQuery = Date.now();
+    const built = buildKnnCache(rows);
+    if (built.cache.size === 0 && _knnCache.size > 0) {
+      throw new Error("KNN rebuild returned no observations");
+    }
+    _knnCache.clear();
+    _knnFreshnessCache.clear();
+    _knnHasCsfloatSales.clear();
+    _knnHasBuffSales.clear();
+    for (const [skinName, obs] of built.cache) _knnCache.set(skinName, obs);
+    for (const [skinName, recentCount] of built.freshness) _knnFreshnessCache.set(skinName, recentCount);
+    for (const skinName of built.csfloatSales) _knnHasCsfloatSales.add(skinName);
+    for (const skinName of built.buffSales) _knnHasBuffSales.add(skinName);
+    _knnCacheLoadedAt = Date.now();
+    console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
+  } catch (err) {
+    console.error("[knn-cache] rebuild failed:", err);
+    throw err;
+  }
 }
 
 export function clearKnnCache() {
@@ -302,6 +342,11 @@ export function clearKnnCache() {
 /** test seam — force-expires the TTL without clearing the map */
 export function expireKnnCacheTtl(): void { // test seam
   _knnCacheLoadedAt = 0;
+}
+
+/** test seam — age the cache without clearing it. ageMs is how long ago it loaded. */
+export function ageKnnCacheForTests(ageMs: number): void {
+  _knnCacheLoadedAt = Date.now() - ageMs;
 }
 
 /** test seam — returns the current size of the global _knnCache */

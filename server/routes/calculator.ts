@@ -2,7 +2,7 @@ import { Router } from "express";
 import pg from "pg";
 import { cachedRoute } from "../redis.js";
 import {
-  buildPriceCache,
+  ensureRequestPriceCache,
   evaluateTradeUp,
   evaluateKnifeTradeUp,
   buildKnifeFinishCache,
@@ -10,6 +10,7 @@ import {
   getNextRarity,
   computeChanceToProfit,
   computeBestWorstCase,
+  runWithRequestCachePolicy,
 } from "../engine.js";
 import type { ListingWithCollection, DbSkinOutcome } from "../engine/types.js";
 import { resolveCalculatorExample } from "./calculator-example.js";
@@ -177,66 +178,76 @@ export function calculatorRouter(pool: pg.Pool): Router {
       }
     }
 
-    // Build price cache for output pricing
-    await buildPriceCache(pool);
+    // Price cache is stale-while-revalidate only on this request. KNN and the
+    // float ceiling, which lookupOutputPrice reads next, follow the same policy.
+    try {
+    await runWithRequestCachePolicy(async () => {
+      await ensureRequestPriceCache(pool);
 
-    // Strip the helper field before passing to engine
-    const engineInputs: ListingWithCollection[] = resolvedInputs.map(({ _inputIndex, ...rest }) => rest);
+      // Strip the helper field before passing to engine
+      const engineInputs: ListingWithCollection[] = resolvedInputs.map(({ _inputIndex, ...rest }) => rest);
 
-    let result;
+      let result;
 
-    if (isKnifeTradeUp) {
-      // Build knife finish cache
-      const knifeFinishCache = await buildKnifeFinishCache(pool);
+      if (isKnifeTradeUp) {
+        // Build knife finish cache
+        const knifeFinishCache = await buildKnifeFinishCache(pool);
 
-      result = await evaluateKnifeTradeUp(pool, engineInputs, knifeFinishCache);
-      if (result) result.type = "covert_knife";
-    } else {
-      // Gun trade-up: determine output rarity
-      const outputRarity = getNextRarity(inputRarity);
-      if (!outputRarity) {
-        res.status(400).json({ error: `No higher rarity exists above "${inputRarity}"` });
+        result = await evaluateKnifeTradeUp(pool, engineInputs, knifeFinishCache);
+        if (result) result.type = "covert_knife";
+      } else {
+        // Gun trade-up: determine output rarity
+        const outputRarity = getNextRarity(inputRarity);
+        if (!outputRarity) {
+          res.status(400).json({ error: `No higher rarity exists above "${inputRarity}"` });
+          return;
+        }
+
+        // Get collection IDs from inputs
+        const collectionIds = [...new Set(engineInputs.map(i => i.collection_id))];
+
+        // Get possible outcomes
+        const outcomes: DbSkinOutcome[] = await getOutcomesForCollections(pool, collectionIds, outputRarity);
+        if (outcomes.length === 0) {
+          res.status(400).json({ error: `No ${outputRarity} outcomes found for the input collections` });
+          return;
+        }
+
+        result = await evaluateTradeUp(pool, engineInputs, outcomes);
+
+        if (result) {
+          // Determine type from rarity
+          if (inputRarity === "Classified") result.type = "classified_covert";
+          else if (inputRarity === "Restricted") result.type = "restricted_classified";
+          else if (inputRarity === "Mil-Spec") result.type = "milspec_restricted";
+          else result.type = inputRarity.toLowerCase();
+        }
+      }
+
+      if (!result) {
+        res.status(400).json({ error: "Could not evaluate trade-up. Output prices may be missing." });
         return;
       }
 
-      // Get collection IDs from inputs
-      const collectionIds = [...new Set(engineInputs.map(i => i.collection_id))];
+      // Compute additional stats
+      const chanceToProfit = computeChanceToProfit(result.outcomes, result.total_cost_cents);
+      const { bestCase, worstCase } = computeBestWorstCase(result.outcomes, result.total_cost_cents);
 
-      // Get possible outcomes
-      const outcomes: DbSkinOutcome[] = await getOutcomesForCollections(pool, collectionIds, outputRarity);
-      if (outcomes.length === 0) {
-        res.status(400).json({ error: `No ${outputRarity} outcomes found for the input collections` });
-        return;
-      }
-
-      result = await evaluateTradeUp(pool, engineInputs, outcomes);
-
-      if (result) {
-        // Determine type from rarity
-        if (inputRarity === "Classified") result.type = "classified_covert";
-        else if (inputRarity === "Restricted") result.type = "restricted_classified";
-        else if (inputRarity === "Mil-Spec") result.type = "milspec_restricted";
-        else result.type = inputRarity.toLowerCase();
-      }
-    }
-
-    if (!result) {
-      res.status(400).json({ error: "Could not evaluate trade-up. Output prices may be missing." });
-      return;
-    }
-
-    // Compute additional stats
-    const chanceToProfit = computeChanceToProfit(result.outcomes, result.total_cost_cents);
-    const { bestCase, worstCase } = computeBestWorstCase(result.outcomes, result.total_cost_cents);
-
-    res.json({
-      trade_up: result,
-      stats: {
-        chance_to_profit: chanceToProfit,
-        best_case_cents: bestCase,
-        worst_case_cents: worstCase,
-      },
+      res.json({
+        trade_up: result,
+        stats: {
+          chance_to_profit: chanceToProfit,
+          best_case_cents: bestCase,
+          worst_case_cents: worstCase,
+        },
+      });
     });
+    } catch (err) {
+      console.error("[calculator] evaluation failed:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
   });
 
   return router;

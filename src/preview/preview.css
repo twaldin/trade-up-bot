@@ -193,7 +193,8 @@
   .preview-tile--plan .preview-btn--block,
   .preview-nav__links a[href="/pricing"],
   .preview-footer__grid a[href="/pricing"],
-  .preview-page__meta a.preview-btn {
+  .preview-page__meta a.preview-btn,
+  .preview-page__meta button.preview-btn {
     min-width: 44px;
     min-height: 44px;
   }
@@ -208,6 +209,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   gap: 6px;
   min-height: var(--control);
   padding: 6px 12px;
@@ -1008,6 +1010,14 @@
   padding: 16px 16px 32px;
 }
 
+/* These pages swap a skeleton for live data. Anchoring would scroll that
+   swap and drag the footer back through the viewport. */
+.preview-page--stable { overflow-anchor: none; }
+
+/* Holds the footer under the fold while a skeleton is up, and on a short
+   empty or error result. Tall results drop the class. */
+.preview-page--fold { min-height: calc(100dvh - 32px); }
+
 .preview-page__head {
   display: flex;
   align-items: flex-end;
@@ -1060,6 +1070,45 @@
   display: inline-block;
   min-width: 13ch;
   text-align: end;
+}
+
+/* "0 collections" and "92 collections" share one box so the lede beside
+   them does not rewrap when the count arrives. */
+.preview-page__meta--count {
+  box-sizing: border-box;
+  min-width: 14ch;
+  justify-content: flex-end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-page__head--wrap { flex-wrap: wrap; }
+.preview-page__head--wrap > div:first-child { flex: 1 1 280px; min-width: 0; }
+.preview-page__head--wrap h1 { min-height: 30px; }
+
+@media (max-width: 700px) {
+  .preview-page__head--wrap h1 { min-height: 60px; }
+}
+
+/* Collection detail lede stays one line on the console and three on a phone,
+   whether the copy still says "Loading skins…" or the tally has arrived. */
+.preview-collection-lede { min-height: 18px; }
+
+@media (max-width: 799px) {
+  .preview-collection-lede { min-height: 54px; }
+}
+
+.preview-share-links { min-height: 44px; }
+
+/* Logged-out verify block, measured with the delay sentence in it. */
+.preview-share-verify { box-sizing: border-box; min-height: 96px; }
+
+@media (max-width: 799px) {
+  .preview-share-verify { min-height: 128px; }
+}
+
+@media (max-width: 389px) {
+  .preview-share-verify { min-height: 144px; }
 }
 
 .preview-crumb {
@@ -2842,8 +2891,10 @@
 .preview-collection__cluster {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: 52px;
   gap: 4px;
-  min-height: 52px;
+  height: 52px;
+  overflow: hidden;
 }
 
 .preview-collection__cluster i,
@@ -2852,10 +2903,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 100%;
+  min-height: 0;
   padding: 3px;
   border: 1px solid color-mix(in srgb, var(--skin-tint) 26%, var(--panel-rule));
   border-radius: var(--r-control);
   background: linear-gradient(180deg, color-mix(in srgb, var(--skin-tint) 5%, var(--nest-3)), color-mix(in srgb, var(--skin-tint) 16%, var(--nest-3)));
+}
+
+.preview-collection b,
+.preview-collection__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-collection--skeleton b,
+.preview-collection--skeleton .preview-collection__meta {
+  height: 16px;
+  border-radius: var(--r-chip);
+  background: var(--row-hover);
 }
 
 .preview-collection__cluster i img,
@@ -3050,7 +3117,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 3px;
+  box-sizing: border-box;
+  height: 70px;
   padding: 6px 4px 7px;
   border: 1px solid color-mix(in srgb, var(--skin-tint) 24%, var(--panel-rule));
   border-radius: var(--r-panel);
@@ -3066,7 +3136,11 @@
   object-fit: contain;
 }
 
-.preview-allskins__tile .preview-skin__ph { height: 34px; }
+.preview-allskins__tile .preview-skin__ph { width: 70%; height: 40px; }
+
+
+.preview-rowskel { height: var(--row); }
+.preview-rowskel td { height: var(--row); padding-top: 0; padding-bottom: 0; }
 
 .preview-allskins__tile b {
   max-width: 100%;
@@ -3299,6 +3373,15 @@
   max-width: 44rem;
   font-size: 14px;
   line-height: 1.6;
+}
+
+/* Free-gap sentence at 14px / 1.6. Two lines on the console (3.2em), three
+   on a phone (4.8em). The paragraph stays mounted for Pro, empty, so auth
+   cannot pull the plans up. The fallback face matches Schibsted's wraps. */
+.preview-pricing-gap { min-height: 3.2em; }
+
+@media (max-width: 599px) {
+  .preview-pricing-gap { min-height: 4.8em; }
 }
 
 .preview-footer {
