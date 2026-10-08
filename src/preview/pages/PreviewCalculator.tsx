@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
-import { emptyCalculatorSlots, type CalculatorExampleSlot } from "../../../shared/calculator-example.js";
+import {
+  NO_LISTINGS_COPY,
+  calculatorEvaluateInputs,
+  emptyCalculatorSlots,
+  slotFromSearchHit,
+  type CalculatorExampleSlot,
+  type CalculatorSearchHit,
+} from "../../../shared/calculator-example.js";
 import { formatDollars } from "../../utils/format.js";
 import { trackCalculatorComplete, trackCtaClick } from "../../lib/conversions.js";
-import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs } from "../lib/board.js";
+import { formatFloat, formatOdds, outputRarityColor, rarityLabel, signClass, uniqueOutputs, wearAbbr } from "../lib/board.js";
 import {
   LABEL_AFTER_FEES,
   LABEL_EXPECTED_PL,
@@ -19,15 +26,7 @@ import { FeeLine } from "../components/FeeLine.js";
 import { useCanonicalSlot } from "../components/PreviewSeo.js";
 import { OutputTile, signedDollars, warmBoardFaces } from "./PreviewBoard.js";
 
-interface SearchResult {
-  name: string;
-  weapon: string;
-  rarity: string;
-  min_float: number;
-  max_float: number;
-  collection_name: string;
-  floor_price_cents: number | null;
-}
+type SearchResult = CalculatorSearchHit;
 
 interface CalculatorStats {
   chance_to_profit: number;
@@ -101,12 +100,7 @@ export function PreviewCalculator() {
     setSlots((prev) => {
       const next = [...prev];
       const empty = next.findIndex((slot) => !slot.resolved);
-      const row: CalculatorExampleSlot = {
-        skinName: item.name,
-        floatValue: String(((item.min_float + item.max_float) / 2).toFixed(4)),
-        priceCents: String(item.floor_price_cents ?? 0),
-        resolved: item,
-      };
+      const row = slotFromSearchHit(item);
       if (empty >= 0) next[empty] = row;
       else next.push(row);
       return next;
@@ -116,17 +110,12 @@ export function PreviewCalculator() {
   };
 
   const evaluate = async (source: CalculatorExampleSlot[], origin: "example" | "custom") => {
+    const inputs = calculatorEvaluateInputs(source);
+    if (inputs.length === 0) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setStats(null);
-    const inputs = source
-      .filter((slot) => slot.resolved && slot.floatValue && slot.priceCents)
-      .map((slot) => ({
-        skinName: slot.skinName,
-        floatValue: parseFloat(slot.floatValue),
-        priceCents: parseInt(slot.priceCents, 10),
-      }));
     try {
       const res = await fetch("/api/calculator", {
         method: "POST",
@@ -187,6 +176,7 @@ export function PreviewCalculator() {
   };
 
   const filled = slots.filter((slot) => slot.resolved);
+  const evaluable = calculatorEvaluateInputs(slots);
   const profit = result ? result.profit_cents : 0;
 
   return (
@@ -219,7 +209,7 @@ export function PreviewCalculator() {
           type="button"
           className={`preview-btn ${filled.length > 0 ? "preview-btn--lime" : ""}`}
           onClick={() => void calculate()}
-          disabled={loading || filled.length === 0}
+          disabled={loading || evaluable.length === 0}
         >
           {loading ? "Evaluating…" : "Evaluate"}
         </button>
@@ -246,22 +236,36 @@ export function PreviewCalculator() {
           <p className="o-kicker">Inputs</p>
           <span className="preview-panel__meta">
             {isExample && <span className="preview-chip">Example</span>}
-            {filled.length} / 10
+            {evaluable.length} / 10
           </span>
         </header>
         <div className="preview-listings">
-          {filled.map((slot, i) => (
-            <div key={`${slot.skinName}-${i}`} className="preview-listing">
-              <span className="preview-listing__n">{String(i + 1).padStart(2, "0")}</span>
-              <span className="preview-listing__name"><b>{slot.skinName}</b></span>
-              <span className="preview-chip">input</span>
-              <span className="preview-listing__float">
-                {formatFloat(parseFloat(slot.floatValue)) ?? "—"}
-              </span>
-              <span className="preview-listing__price">{formatDollars(parseInt(slot.priceCents, 10) || 0)}</span>
-              <span />
-            </div>
-          ))}
+          {filled.map((slot, i) => {
+            const priceCents = Number(slot.priceCents);
+            const floatValue = Number(slot.floatValue);
+            const priced = Number.isInteger(priceCents) && priceCents > 0 && Number.isFinite(floatValue);
+            if (!priced) {
+              return (
+                <div key={`${slot.skinName}-${i}`} className="preview-listing preview-listing--unlisted">
+                  <span className="preview-listing__n">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="preview-listing__name"><b>{slot.skinName}</b></span>
+                  <span className="preview-listing__unlisted">{NO_LISTINGS_COPY}</span>
+                </div>
+              );
+            }
+            return (
+              <div key={`${slot.skinName}-${i}`} className="preview-listing">
+                <span className="preview-listing__n">{String(i + 1).padStart(2, "0")}</span>
+                <span className="preview-listing__name"><b>{slot.skinName}</b></span>
+                <span className="preview-chip">{wearAbbr(floatValue)}</span>
+                <span className="preview-listing__float">
+                  {formatFloat(floatValue) ?? "—"}
+                </span>
+                <span className="preview-listing__price">{formatDollars(priceCents)}</span>
+                <span />
+              </div>
+            );
+          })}
           {filled.length === 0 && (
             <div className="preview-calc-empty">
               <p className="preview-note">

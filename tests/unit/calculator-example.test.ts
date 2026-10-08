@@ -1,14 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { readFileSync } from "node:fs";
 import {
+  NO_LISTINGS_COPY,
   PREFERRED_EXAMPLE_TRADE_UP_ID,
+  calculatorEvaluateInputs,
   emptyCalculatorSlots,
+  isPositiveIntegerCents,
+  slotFromSearchHit,
   slotsFromCurrentListings,
   pickCheapestNamedClassified,
   exampleHasUsableListings,
   buildExamplePayload,
   type CalculatorExampleListing,
+  type CalculatorSearchHit,
 } from "../../shared/calculator-example.js";
+import { wearAbbr } from "../../src/preview/lib/board.js";
 
 function makeListing(overrides: Partial<CalculatorExampleListing> = {}): CalculatorExampleListing {
   return {
@@ -49,6 +56,94 @@ describe("calculator example payload", () => {
     expect(slots[0].resolved?.rarity).toBe("Classified");
     expect(slots[1].priceCents).toBe("150");
     expect(slots.every((slot) => !slot.priceCents.includes("."))).toBe(true);
+  });
+
+  it("fills a search slot from the same listing Load example uses", () => {
+    const listing = makeListing({
+      skin_name: "AK-47 | Leet Museo",
+      float_value: 0.5,
+      price_cents: 6075,
+      min_float: 0,
+      max_float: 0.65,
+    });
+    const hit: CalculatorSearchHit = {
+      name: listing.skin_name,
+      weapon: listing.weapon,
+      rarity: listing.rarity,
+      min_float: listing.min_float,
+      max_float: listing.max_float,
+      collection_name: listing.collection_name,
+      floor_price_cents: listing.price_cents,
+      floor_float: listing.float_value,
+    };
+    const fromSearch = slotFromSearchHit(hit);
+    const fromExample = slotsFromCurrentListings([listing])[0];
+    expect(fromSearch.floatValue).toBe(fromExample.floatValue);
+    expect(fromSearch.priceCents).toBe(fromExample.priceCents);
+    expect(fromSearch.floatValue).toBe("0.5");
+    expect(fromSearch.priceCents).toBe("6075");
+  });
+
+  it("pins AK Leet Museo to the cheap listing when that wear is not the mid float", () => {
+    const min = 0;
+    const max = 0.65;
+    const mid = (min + max) / 2;
+    expect(mid).toBeCloseTo(0.325);
+    expect(wearAbbr(mid)).toBe("FT");
+    const slot = slotFromSearchHit({
+      name: "AK-47 | Leet Museo",
+      weapon: "AK-47",
+      rarity: "Classified",
+      min_float: min,
+      max_float: max,
+      collection_name: "The 2021 Train Collection",
+      floor_price_cents: 6075,
+      floor_float: 0.5,
+    });
+    expect(slot.floatValue).toBe("0.5");
+    expect(slot.priceCents).toBe("6075");
+    expect(slot.floatValue).not.toBe(mid.toFixed(4));
+    expect(wearAbbr(Number(slot.floatValue))).toBe("BS");
+    expect(wearAbbr(Number(slot.floatValue))).not.toBe(wearAbbr(mid));
+  });
+
+  it("leaves a skin with no priced listing out of evaluation", () => {
+    const slot = slotFromSearchHit({
+      name: "SCAR-20 | Splash Jam",
+      weapon: "SCAR-20",
+      rarity: "Restricted",
+      min_float: 0.06,
+      max_float: 0.8,
+      collection_name: "The 2021 Train Collection",
+      floor_price_cents: null,
+      floor_float: null,
+    });
+    expect(slot.priceCents).toBe("");
+    expect(slot.floatValue).toBe("");
+    expect(NO_LISTINGS_COPY).toBe("No listings for this skin right now");
+    expect(calculatorEvaluateInputs([slot])).toEqual([]);
+    expect(isPositiveIntegerCents(0)).toBe(false);
+    expect(isPositiveIntegerCents(1.5)).toBe(false);
+    expect(isPositiveIntegerCents(-5)).toBe(false);
+    expect(isPositiveIntegerCents(6075)).toBe(true);
+    const banned = /\b(?:chances?|odds|gambl\w*|bankrolls?|jackpots?|bets?|betting|win|wins|winning|lottery|lucky|rolls?|rolled)\b(?!-)|risk-free/i;
+    expect(NO_LISTINGS_COPY).not.toMatch(banned);
+  });
+
+  it("selects the cheapest listing in one row, skipping a null float", () => {
+    const src = readFileSync(new URL("../../server/routes/calculator.ts", import.meta.url), "utf8");
+    expect(src).toContain("DISTINCT ON (name)");
+    expect(src).toContain("ORDER BY name, price_cents, id");
+    expect(src).toContain("l.float_value IS NOT NULL");
+    expect(src).toContain("${UNCLAIMED_LISTING_PREDICATE}");
+    expect(src).not.toContain("l.claimed_by IS NULL");
+    const dataLoad = readFileSync(new URL("../../server/engine/data-load.ts", import.meta.url), "utf8");
+    expect(dataLoad).toContain('export const UNCLAIMED_LISTING_PREDICATE = "l.claimed_by IS NULL"');
+    expect(dataLoad).toContain("${UNCLAIMED_LISTING_PREDICATE}");
+    const barrel = readFileSync(new URL("../../server/engine.ts", import.meta.url), "utf8");
+    expect(barrel).toContain("UNCLAIMED_LISTING_PREDICATE");
+    expect(src).not.toContain("MIN(l.price_cents)");
+    expect(src).toContain("priceCents must be a positive integer");
   });
 
   it("requires 10 named current listings before treating a contract as usable", () => {

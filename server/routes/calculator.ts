@@ -8,11 +8,13 @@ import {
   buildKnifeFinishCache,
   getOutcomesForCollections,
   getNextRarity,
+  UNCLAIMED_LISTING_PREDICATE,
   computeChanceToProfit,
   computeBestWorstCase,
   runWithRequestCachePolicy,
 } from "../engine.js";
 import type { ListingWithCollection, DbSkinOutcome } from "../engine/types.js";
+import { isPositiveIntegerCents } from "../../shared/calculator-example.js";
 import { resolveCalculatorExample } from "./calculator-example.js";
 
 interface CalculatorInput {
@@ -45,7 +47,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
   });
 
   // --- Skin search autocomplete ---
-  router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:${req.query.q}` : null, 300, async (req, res) => {
+  router.get("/api/calculator/search", cachedRoute((req) => req.query.q ? `calc_search:v2:${req.query.q}` : null, 300, async (req, res) => {
     const q = (req.query.q as string || "").trim();
     if (q.length < 2) {
       res.json({ results: [] });
@@ -65,20 +67,43 @@ export function calculatorRouter(pool: pg.Pool): Router {
       LIMIT 20
     `, [pattern, `${q}%`]);
 
-    // Also fetch listing floor for each result
+    // Cheapest buy-now row per name. Price and float come from that one listing.
+    const names = results.map((r: { name: string }) => r.name);
+    const floors = new Map<string, { price: number; floatValue: number }>();
+    if (names.length > 0) {
+      const { rows: cheapest } = await pool.query(`
+        SELECT DISTINCT ON (name)
+          name,
+          price_cents AS floor_price,
+          float_value AS floor_float
+        FROM (
+          SELECT s.name, l.price_cents, l.float_value, l.id
+          FROM listings l
+          JOIN skins s ON l.skin_id = s.id
+          WHERE s.name = ANY($1::text[])
+            AND s.stattrak = false
+            AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
+            AND l.float_value IS NOT NULL
+            AND l.price_cents > 0
+            AND ${UNCLAIMED_LISTING_PREDICATE}
+        ) candidates
+        ORDER BY name, price_cents, id
+      `, [names]);
+      for (const row of cheapest) {
+        const price = Number(row.floor_price);
+        const floatValue = Number(row.floor_float);
+        if (!isPositiveIntegerCents(price) || !Number.isFinite(floatValue)) continue;
+        floors.set(String(row.name), { price, floatValue });
+      }
+    }
+
     const withFloor = [];
     for (const r of results) {
-      const { rows: [floor] } = await pool.query(`
-        SELECT MIN(l.price_cents) as floor_price
-        FROM listings l
-        JOIN skins s ON l.skin_id = s.id
-        WHERE s.name = $1 AND s.stattrak = false
-          AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
-      `, [r.name]);
-
+      const floor = floors.get(r.name);
       withFloor.push({
         ...r,
-        floor_price_cents: floor?.floor_price ?? null,
+        floor_price_cents: floor?.price ?? null,
+        floor_float: floor?.floatValue ?? null,
       });
     }
 
@@ -107,6 +132,10 @@ export function calculatorRouter(pool: pg.Pool): Router {
       const inp = inputs[i];
       if (!inp.skinName || inp.floatValue === undefined || inp.priceCents === undefined) {
         errors.push(`Input ${i + 1}: skinName, floatValue, and priceCents are required`);
+        continue;
+      }
+      if (!isPositiveIntegerCents(inp.priceCents)) {
+        errors.push(`Input ${i + 1}: priceCents must be a positive integer`);
         continue;
       }
 
