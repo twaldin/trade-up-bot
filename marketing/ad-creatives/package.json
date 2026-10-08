@@ -1,0 +1,31 @@
+{
+  "name": "tradeupbot-ad-creatives",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remotion + Playwright review pack of paid-ad creatives for TradeUpBot. Isolated from the app build.",
+  "scripts": {
+    "capture": "node capture/capture.mjs",
+    "studio": "remotion studio src/index.tsx",
+    "render": "node scripts/render-all.mjs",
+    "render:videos": "node scripts/render-all.mjs --only=videos",
+    "render:stills": "node scripts/render-all.mjs --only=stills",
+    "check:copy": "node scripts/check-copy.mjs",
+    "test": "tsx --test scripts/emphasis-spaces.test.mjs && node scripts/collision.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.528",
+    "@remotion/cli": "4.0.528",
+    "@remotion/google-fonts": "^4.0.528",
+    "@remotion/renderer": "4.0.528",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.528"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "playwright": "1.63.0",
+    "typescript": "^5.7.0"
+  }
+}
