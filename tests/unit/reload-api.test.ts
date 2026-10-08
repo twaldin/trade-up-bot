@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PM2_LISTEN_TIMEOUT_MS } from "../../server/boot-ready.js";
+import { PM2_LISTEN_TIMEOUT_MS, PROCESS_DRAIN_MS } from "../../server/boot-ready.js";
 import { extractPm2ProcessList } from "../../scripts/check-production-session-secret.js";
 import {
   API_PORT,
@@ -13,6 +13,7 @@ import {
   runReload,
   standbyStartArgs,
   waitForHttpOk,
+  waitForProcessDrain,
   type ReloadIo,
 } from "../../scripts/reload-api.js";
 
@@ -32,6 +33,7 @@ function io(overrides: Partial<ReloadIo> & Pick<ReloadIo, "readPm2Json">): { cal
     startStandby: async () => { calls.push("startStandby"); },
     waitHealthy: async (port: number) => { calls.push(`healthy:${port}`); },
     stopApi: async () => { calls.push("stopApi"); },
+    waitDrain: async () => { calls.push("waitDrain"); },
     deleteApi: async () => { calls.push("deleteApi"); },
     startApi: async () => { calls.push("startApi"); },
     stopStandby: async () => { calls.push("stopStandby"); },
@@ -75,14 +77,17 @@ describe("runReload", () => {
     await expect(runReload(reload)).resolves.toBe("handoff");
     expect(calls).toEqual([
       "log:api process: exec_mode=fork_mode wait_ready=false listen_timeout=3000",
+      "log:api reload via handoff",
       "nginx",
       "startStandby",
       `healthy:${STANDBY_PORT}`,
       "stopApi",
+      "waitDrain",
       "deleteApi",
       "startApi",
       `healthy:${API_PORT}`,
       "stopStandby",
+      "waitDrain",
       "deleteStandby",
       "save",
     ]);
@@ -100,6 +105,9 @@ describe("runReload", () => {
     await expect(runReload(reload)).rejects.toThrow(/standby down/);
     expect(calls).not.toContain("stopApi");
     expect(calls).not.toContain("stopStandby");
+    expect(calls).toContain("deleteStandby");
+    expect(calls.some((line) => line.includes("leaving api serving"))).toBe(true);
+    expect(calls.some((line) => line.includes("via handoff"))).toBe(true);
   });
 
   it("leaves standby in place when the new api fails", async () => {
@@ -128,6 +136,7 @@ describe("runReload", () => {
     await expect(runReload(reload)).resolves.toBe("reload");
     expect(calls).toEqual([
       `log:api process: exec_mode=cluster_mode wait_ready=true listen_timeout=${PM2_LISTEN_TIMEOUT_MS}`,
+      "log:api reload via reload",
       "reload",
     ]);
     expect(calls.join("\n")).not.toContain(SECRET);
@@ -177,5 +186,12 @@ describe("reload env and pm2 args", () => {
       },
     });
     expect(calls).toBe(2);
+  });
+
+  it("waits the full drain even if the port is already closed", async () => {
+    const slept: number[] = [];
+    await waitForProcessDrain(async (ms) => { slept.push(ms); });
+    expect(slept).toEqual([PROCESS_DRAIN_MS]);
+    expect(PROCESS_DRAIN_MS).toBe(8_000);
   });
 });

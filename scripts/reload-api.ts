@@ -9,8 +9,13 @@
 // change exec_mode in place. `pm2 reload` would stop the listener before the
 // new process is warm (the 502 at 12:39:24.7). A single nginx upstream also
 // cannot retry a refused connection. This script starts api-standby on 3002,
-// patches nginx to fail over (including non-idempotent POST), then replaces
-// api from ecosystem.config.cjs. The next deploy takes the reload path.
+// patches nginx to fail over a refused connection, then replaces api from
+// ecosystem.config.cjs. The next deploy takes the reload path.
+//
+// `pm2 delete` sends SIGINT. Prod code that has not picked up the SIGINT
+// drain would die immediately, so the handoff always waits PROCESS_DRAIN_MS
+// after SIGTERM before delete. A standby that never takes over is deleted,
+// and the existing api keeps serving.
 //
 // Run with: npx --no-install tsx scripts/reload-api.ts
 // Never print environment values.
@@ -122,11 +127,19 @@ export interface ReloadIo {
   startStandby: (env: Record<string, string>) => void | Promise<void>;
   waitHealthy: (port: number) => Promise<void>;
   stopApi: () => void | Promise<void>;
+  waitDrain: () => void | Promise<void>;
   deleteApi: () => void | Promise<void>;
   startApi: (env: Record<string, string>) => void | Promise<void>;
   stopStandby: () => void | Promise<void>;
   deleteStandby: () => void | Promise<void>;
   save: () => void | Promise<void>;
+}
+
+/** Full drain window. Do not return when the port stops answering. */
+export async function waitForProcessDrain(
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<void> {
+  await sleep(PROCESS_DRAIN_MS);
 }
 
 export async function runReload(io: ReloadIo): Promise<"reload" | "handoff"> {
@@ -136,26 +149,46 @@ export async function runReload(io: ReloadIo): Promise<"reload" | "handoff"> {
   io.log(describeApi(view));
   const base = inheritedAppEnv(apiPm2Env(procs));
   if (chooseReload(view) === "reload") {
+    io.log("api reload via reload");
     await io.reloadApi();
     return "reload";
   }
 
-  await io.patchNginx();
-  await io.startStandby({ ...base, PORT: String(STANDBY_PORT) });
-  await io.waitHealthy(STANDBY_PORT);
-  await io.stopApi();
-  await io.deleteApi();
+  io.log("api reload via handoff");
+  let standbyStarted = false;
+  let apiStopped = false;
   try {
-    await io.startApi({ ...base, PORT: String(API_PORT) });
-    await io.waitHealthy(API_PORT);
-  } catch (err) {
-    io.log("api start failed; leaving api-standby listening on 3002");
-    throw err;
+    await io.patchNginx();
+    standbyStarted = true;
+    await io.startStandby({ ...base, PORT: String(STANDBY_PORT) });
+    await io.waitHealthy(STANDBY_PORT);
+    await io.stopApi();
+    apiStopped = true;
+    await io.waitDrain();
+    await io.deleteApi();
+    try {
+      await io.startApi({ ...base, PORT: String(API_PORT) });
+      await io.waitHealthy(API_PORT);
+    } catch (err) {
+      io.log("api start failed; leaving api-standby listening on 3002");
+      throw err;
+    }
+    await io.stopStandby();
+    await io.waitDrain();
+    await io.deleteStandby();
+    await io.save();
+    return "handoff";
+  } finally {
+    if (standbyStarted && !apiStopped) {
+      io.log("deleting api-standby; leaving api serving");
+      try {
+        await io.deleteStandby();
+      } catch (cleanupErr) {
+        const message = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        io.log(`api-standby cleanup failed: ${message}`);
+      }
+    }
   }
-  await io.stopStandby();
-  await io.deleteStandby();
-  await io.save();
-  return "handoff";
 }
 
 interface HttpResponse {
@@ -189,21 +222,6 @@ export async function waitForHttpOk(
     await sleep(250);
   }
   throw new Error(`port ${port} did not return HTTP 200: ${lastError}`);
-}
-
-async function waitForPortClosed(port: number): Promise<void> {
-  const deadline = Date.now() + PROCESS_DRAIN_MS + 2_000;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/robots.txt`, {
-        signal: AbortSignal.timeout(500),
-      });
-      if (!res.ok) return;
-    } catch {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
 }
 
 function spawnEnv(app: Record<string, string>): NodeJS.ProcessEnv {
@@ -258,15 +276,14 @@ async function main(): Promise<void> {
       },
       startStandby: (env) => pm2(standbyStartArgs(), spawnEnv(env), startTimeout),
       waitHealthy: (port) => waitForHttpOk(port),
-      stopApi: async () => {
+      stopApi: () => {
         pm2IgnoreFailure(["sendSignal", "SIGTERM", API_NAME]);
-        await waitForPortClosed(API_PORT);
       },
+      waitDrain: () => waitForProcessDrain(),
       deleteApi: () => pm2IgnoreFailure(["delete", API_NAME]),
       startApi: (env) => pm2(apiStartArgs(), spawnEnv(env), startTimeout),
-      stopStandby: async () => {
+      stopStandby: () => {
         pm2IgnoreFailure(["sendSignal", "SIGTERM", STANDBY_NAME]);
-        await waitForPortClosed(STANDBY_PORT);
       },
       deleteStandby: () => pm2IgnoreFailure(["delete", STANDBY_NAME]),
       save: () => pm2(["save"]),

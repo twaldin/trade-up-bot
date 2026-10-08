@@ -1367,6 +1367,9 @@ registerCanonicalRedirectRoutes(app);
     else finish();
     setTimeout(finish, PROCESS_DRAIN_MS).unref();
   };
+  // pm2 delete delivers SIGINT. Same drain as SIGTERM: close the listener,
+  // then exit. The handoff waits PROCESS_DRAIN_MS before that delete so a
+  // process that has not picked up this handler still finishes the SIGTERM drain.
   process.on("SIGTERM", () => drain("SIGTERM"));
   process.on("SIGINT", () => drain("SIGINT"));
   process.on("message", (message: unknown) => {
