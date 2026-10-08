@@ -139,11 +139,22 @@ async function startPreview(): Promise<{ child: ChildProcess; origin: string }> 
   return { child, origin };
 }
 
-type Fixture = { auth?: "anon" | "pro"; status?: "ok" | "error" | "empty" };
+type Fixture = {
+  auth?: "anon" | "pro";
+  status?: "ok" | "error" | "empty";
+  /** Collection-page race: per-request delays for that collection's skins and trade-ups. */
+  delayMs?: { skins?: number; tradeUps?: number };
+  /** Status of the collection's /api/trade-ups only; skins stay ok. */
+  tradeUps?: "error" | "empty";
+};
 
 async function fulfillApi(route: Route, origin: string, fixture: Fixture = {}): Promise<void> {
   const url = new URL(route.request().url());
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, API_DELAY_MS));
+  const scoped = url.searchParams.has("collection");
+  const delay = scoped && url.pathname === "/api/skin-data" ? fixture.delayMs?.skins
+    : scoped && url.pathname === "/api/trade-ups" ? fixture.delayMs?.tradeUps
+      : undefined;
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, delay ?? API_DELAY_MS));
   if (url.pathname === "/face.png") {
     await route.fulfill({ status: 200, contentType: "image/png", body: PNG });
     return;
@@ -191,6 +202,11 @@ async function fulfillApi(route: Route, origin: string, fixture: Fixture = {}): 
   } else if (path === "/api/preview/faces") {
     const names = (url.searchParams.get("names") ?? "").split("||").filter(Boolean);
     body = Object.fromEntries(names.map((name) => [name, `${origin}/face.png`]));
+  } else if (path === "/api/trade-ups" && scoped && fixture.tradeUps === "error") {
+    status = 500;
+    body = { error: "Internal server error" };
+  } else if (path === "/api/trade-ups" && scoped && fixture.tradeUps === "empty") {
+    body = { trade_ups: [], tier: "free", total: 0, total_profitable: 0, signed_in: false };
   } else if (path === "/api/trade-ups") {
     body = {
       trade_ups: Array.from({ length: 6 }, (_, index) => tradeUp(index + 1)),
@@ -236,6 +252,10 @@ async function open(browser: Browser, origin: string, path: string, viewport = V
   });
   await page.goto(`${origin}${path}`, { waitUntil: "commit", timeout: 20_000 });
   return page;
+}
+
+async function footerTop(page: Page): Promise<number> {
+  return page.locator(".preview-console__legal").evaluate((node) => Math.round(node.getBoundingClientRect().top));
 }
 
 async function readCls(page: Page): Promise<number> {
@@ -284,6 +304,32 @@ describe("built client first-load CLS", () => {
     expect(await readCls(page)).toBeLessThan(0.05);
     await page.close();
   }, 40_000);
+
+  it("holds the footer under the fold when a collection's skins land before its trade-ups", async () => {
+    // Prod race (QA aab48d6f): skin-data first mounted the embed at ~115 px and
+    // pulled the footer into view, then 6 rows pushed it out again (CLS 0.104-0.118 at 1280).
+    const cases: { tradeUps?: "error" | "empty"; rows: boolean }[] = [{ rows: true }, { tradeUps: "empty", rows: false }, { tradeUps: "error", rows: false }];
+    for (const viewport of [{ width: 390, height: 844 }, VIEWPORT]) {
+      for (const item of cases) {
+        const label = `${viewport.width} ${item.tradeUps ?? "rows"}`;
+        const page = await open(browser, origin, "/collections/phoenix", viewport, { delayMs: { skins: 300, tradeUps: 3_000 }, tradeUps: item.tradeUps });
+        await page.locator("a.preview-allskins__tile").first().waitFor({ timeout: 20_000 });
+        await page.locator(".preview-board-embed").waitFor({ timeout: 5_000 });
+        // Skins are in and the board's first page is not: the reserve must be up.
+        expect(await page.locator(".preview-board-embed .preview-card").count(), label).toBe(0);
+        expect(await page.locator(".preview-page--fold").count(), label).toBe(1);
+        const before = await footerTop(page);
+        expect(before, label).toBeGreaterThanOrEqual(viewport.height);
+        if (item.rows) await page.locator(".preview-board-embed .preview-card").first().waitFor({ timeout: 10_000 });
+        else await page.locator(".preview-board-embed").getByText(item.tradeUps === "error" ? "Couldn't load trade-ups." : "No live trade-ups").first().waitFor({ timeout: 10_000 });
+        await page.waitForTimeout(500);
+        expect(await footerTop(page), label).toBeGreaterThanOrEqual(before);
+        expect(await page.locator(".preview-page--fold").count(), label).toBe(item.rows ? 0 : 1);
+        expect(await readCls(page), label).toBeLessThan(0.05);
+        await page.close();
+      }
+    }
+  }, 120_000);
 
   it("keeps /pricing under 0.05 at 360, 390, and 1280 while the free-gap sentence is delayed", async () => {
     for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }, VIEWPORT]) {

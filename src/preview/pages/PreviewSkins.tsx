@@ -1155,7 +1155,10 @@ export function PreviewCollectionPage() {
   }, []);
   const tradeUpCount = board.throttle && board.tradeUps.length === 0 ? "— trade-ups" : `${board.tradeUps.length} trade-ups`;
   const skinsPending = skinsStatus === "loading" && skins.length === 0 && !unknown && !index.failed;
-  const holdFold = skins.length === 0;
+  // The trade-up embed mounts as soon as skins land and reserves nothing while
+  // its first page is out. Keep the footer under the fold until the board has
+  // rows; an empty or failed board keeps the fold floor, as on /trade-ups.
+  const holdFold = skins.length === 0 || (Boolean(title) && board.tradeUps.length === 0);
 
   return (
     <div className={`preview-page preview-page--stable${holdFold ? " preview-page--fold" : ""}`}>
