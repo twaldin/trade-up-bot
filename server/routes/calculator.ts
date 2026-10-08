@@ -8,6 +8,7 @@ import {
   buildKnifeFinishCache,
   getOutcomesForCollections,
   getNextRarity,
+  UNCLAIMED_LISTING_PREDICATE,
   computeChanceToProfit,
   computeBestWorstCase,
   runWithRequestCachePolicy,
@@ -84,6 +85,7 @@ export function calculatorRouter(pool: pg.Pool): Router {
             AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
             AND l.float_value IS NOT NULL
             AND l.price_cents > 0
+            AND ${UNCLAIMED_LISTING_PREDICATE}
         ) candidates
         ORDER BY name, price_cents, id
       `, [names]);

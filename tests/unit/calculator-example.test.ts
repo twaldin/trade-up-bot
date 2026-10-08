@@ -135,6 +135,13 @@ describe("calculator example payload", () => {
     expect(src).toContain("DISTINCT ON (name)");
     expect(src).toContain("ORDER BY name, price_cents, id");
     expect(src).toContain("l.float_value IS NOT NULL");
+    expect(src).toContain("${UNCLAIMED_LISTING_PREDICATE}");
+    expect(src).not.toContain("l.claimed_by IS NULL");
+    const dataLoad = readFileSync(new URL("../../server/engine/data-load.ts", import.meta.url), "utf8");
+    expect(dataLoad).toContain('export const UNCLAIMED_LISTING_PREDICATE = "l.claimed_by IS NULL"');
+    expect(dataLoad).toContain("${UNCLAIMED_LISTING_PREDICATE}");
+    const barrel = readFileSync(new URL("../../server/engine.ts", import.meta.url), "utf8");
+    expect(barrel).toContain("UNCLAIMED_LISTING_PREDICATE");
     expect(src).not.toContain("MIN(l.price_cents)");
     expect(src).toContain("priceCents must be a positive integer");
   });

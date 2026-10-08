@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
+import { wearAbbr } from "../../src/preview/lib/board.js";
+import { getRedis } from "../../server/redis.js";
 import { createTestApp, type TestContext } from "./setup.js";
 
 describe("calculator listing fill", () => {
@@ -44,6 +46,26 @@ describe("calculator listing fill", () => {
     expect(hit.floor_float).not.toBeCloseTo(mid);
     expect(hit.min_float).toBe(0);
     expect(hit.max_float).toBe(0.65);
+  });
+
+  it("skips a cheaper claimed listing and picks the next unclaimed listing in the same wear", async () => {
+    const claimedFloat = 0.55;
+    const unclaimedFloat = 0.5;
+    expect(wearAbbr(claimedFloat)).toBe("BS");
+    expect(wearAbbr(unclaimedFloat)).toBe(wearAbbr(claimedFloat));
+    await ctx.pool.query(
+      `INSERT INTO listings (id, skin_id, price_cents, float_value, source, listing_type, claimed_by)
+       VALUES ('aaa-claimed-bs', 'skin-leet', 1000, $1, 'csfloat', 'buy_now', 'user_claimed')`,
+      [claimedFloat],
+    );
+    await getRedis()?.del("calc_search:v2:Museo");
+    const res = await request(ctx.app).get("/api/calculator/search").query({ q: "Museo" });
+    expect(res.status).toBe(200);
+    const hit = res.body.results.find((row: { name: string }) => row.name === "AK-47 | Leet Museo");
+    expect(hit.floor_price_cents).toBe(6075);
+    expect(hit.floor_float).toBe(unclaimedFloat);
+    expect(hit.floor_price_cents).not.toBe(1000);
+    expect(hit.floor_float).not.toBe(claimedFloat);
   });
 
   it("returns no price or float when the skin has no priced listing", async () => {

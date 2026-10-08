@@ -659,7 +659,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     content: `
 <p>A CS2 trade up calculator is a tool that estimates a contract's output probabilities, output float, total input cost, marketplace fees, and expected P/L before you buy skins. The best calculators use exact float values and live prices instead of averages.</p>
 
-<p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and search a skin into each slot. The calculator fills each slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
+<p>If you already have 10 inputs in mind, start with the <a href="/calculator">CS2 trade up calculator</a> and search a skin into each slot. The calculator fills each slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Cost is the listed price with no buyer fee added; outcome values are after CSFloat's 2% seller fee. Then compare your result with <a href="/trade-ups">live CS2 trade-up opportunities</a> and research replacements in the <a href="/skins">CS2 skin price database</a>.</p>
 
 <h2>What a Trade Up Calculator Actually Calculates</h2>
 
@@ -669,7 +669,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p>Second, the calculator must predict the output float. The output float decides whether the result is Factory New, Minimal Wear, Field-Tested, Well-Worn, or Battle-Scarred. Since condition boundaries often create the biggest price jumps, a contract that lands at 0.0699 can be profitable while the same contract at 0.0701 loses money.</p>
 
-<p>Third, the calculator must price every output at the predicted float and subtract realistic marketplace fees. A raw $12 profit can disappear once buyer fees on inputs and seller fees on the output are included. Every profit figure is an estimate after fees, and a trade-up can lose money. This is why calculators built on real CSFloat, DMarket, and Skinport listings are more useful than calculators using generic Steam averages.</p>
+<p>Third, the calculator must price every output at the predicted float and subtract the seller fee. A raw $12 profit can disappear once that seller fee is included. Cost is the listed price with no buyer fee added; outcome values are after CSFloat's 2% seller fee. Every profit figure is an estimate after fees, and a trade-up can lose money. This is why calculators built on real CSFloat, DMarket, and Skinport listings are more useful than calculators using generic Steam averages.</p>
 
 <h2>The Float Formula You Need to Understand</h2>
 
@@ -687,13 +687,13 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <p><strong>1. Choose a rarity tier.</strong> Normal weapon trade-ups use 10 same-rarity inputs and produce one higher-rarity output. Mil-Spec trades into Restricted, Restricted trades into Classified, and Classified trades into Covert. Knife and glove trade-ups use a different 5-Covert-input structure, so do not mix those rules with standard weapon contracts.</p>
 
-<p><strong>2. Fill each slot from a listing.</strong> Search a skin into each slot. The calculator fills that slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Average prices do not tell you what a specific low-float listing costs.</p>
+<p><strong>2. Fill each slot from a listing.</strong> Search a skin into each slot. The calculator fills that slot with the cheapest current buy-now listing's own float and price. A skin with no listings shows "No listings for this skin right now". The result is a starting estimate. Cost is the listed price with no buyer fee added; outcome values are after CSFloat's 2% seller fee. Average prices do not tell you what a specific low-float listing costs.</p>
 
 <p><strong>3. Check the output pool.</strong> Review every possible output skin and its probability. A contract with one expensive outcome and nine below cost may show positive expected P/L while still losing money most of the time. Probability matters as much as headline expected P/L.</p>
 
 <p><strong>4. Inspect output conditions.</strong> Confirm where each possible output lands after the float formula. If the profitable outputs need Factory New, make sure the predicted float is safely below 0.07. A tiny buffer is risky because replacement inputs may not have identical floats.</p>
 
-<p><strong>5. Add marketplace fees.</strong> CSFloat, DMarket, Skinport, and other marketplaces use different buyer and seller fee structures. Your calculator should add buyer fees to input cost and subtract seller fees from output value. Without fees, thin-margin trade-ups look better than they really are.</p>
+<p><strong>5. Account for the seller fee.</strong> Cost is the listed price with no buyer fee added; outcome values are after CSFloat's 2% seller fee. Without that seller fee, thin-margin trade-ups look better than they really are.</p>
 
 <p><strong>6. Compare expected P/L and the share of outcomes above cost.</strong> Expected P/L, expected value minus total input cost, tells you the average result over many attempts. Above cost % is the probability-weighted share of outcomes worth more than your total cost. Smaller budgets usually suit a higher share of outcomes above cost. Larger budgets can absorb lower-probability contracts with positive expected P/L.</p>
 
