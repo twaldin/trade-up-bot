@@ -80,7 +80,7 @@ export function boardFeeLine(
 }
 
 export const CALCULATOR_FEE_LINE: FeeLineCopy = {
-  cost: "Cost is the prices you enter, with no buyer fee added.",
+  cost: "Cost is the listed price, with no buyer fee added.",
   outcomes: outcomeFeeCopy(),
 };
 

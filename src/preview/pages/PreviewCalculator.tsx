@@ -236,7 +236,7 @@ export function PreviewCalculator() {
           <p className="o-kicker">Inputs</p>
           <span className="preview-panel__meta">
             {isExample && <span className="preview-chip">Example</span>}
-            {filled.length} / 10
+            {evaluable.length} / 10
           </span>
         </header>
         <div className="preview-listings">

@@ -95,6 +95,8 @@ describe("calculator listing fill", () => {
     await searchAndAdd("Splash Jam", "Splash Jam");
     expect(host.textContent).toContain(NO_LISTINGS_COPY);
     expect(host.textContent).not.toContain("$0.00");
+    expect(host.querySelector(".preview-panel__meta")?.textContent).toContain("1 / 10");
+    expect(host.querySelector(".preview-panel__meta")?.textContent).not.toContain("2 / 10");
 
     const evaluate = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Evaluate"));
     if (!(evaluate instanceof HTMLButtonElement)) throw new Error("Evaluate missing");
@@ -122,6 +124,7 @@ describe("calculator listing fill", () => {
     const evaluate = [...host.querySelectorAll("button")].find((node) => node.textContent?.includes("Evaluate"));
     if (!(evaluate instanceof HTMLButtonElement)) throw new Error("Evaluate missing");
     expect(evaluate.disabled).toBe(true);
+    expect(host.querySelector(".preview-panel__meta")?.textContent).toContain("0 / 10");
     await act(async () => { evaluate.click(); });
     expect(calls.some((call) => call.method === "POST")).toBe(false);
     expect(host.textContent).toContain(NO_LISTINGS_COPY);
