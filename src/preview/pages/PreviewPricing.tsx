@@ -89,6 +89,7 @@ export function PreviewPricing() {
   const interstitial = useSteamInterstitial();
   const showGap = shouldFetchBoardDelay(user);
   const delaySentence = boardDelaySentence(useBoardDelay(showGap));
+  // The sentence arrives after auth. The slot is in the first paint so the plans do not drop when it does.
 
   useEffect(() => { trackPricingView(); }, []);
 
@@ -108,7 +109,7 @@ export function PreviewPricing() {
           <h1>TradeUpBot Pricing</h1>
           <p>Start free. Upgrade when the 3-hour delay costs you trade-ups.</p>
           <p>Free and Pro use the same board and the same filters. On Free, listing links come with delayed trade-ups. Pro adds Verify (20/hr) and Claim (10/hr, up to 5 active).</p>
-          {showGap && delaySentence && <p>{delaySentence}</p>}
+          <p className="preview-pricing-gap" aria-hidden={showGap && delaySentence ? undefined : true}>{showGap && delaySentence ? delaySentence : ""}</p>
         </div>
       </header>
 
