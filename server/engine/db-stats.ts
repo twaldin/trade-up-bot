@@ -11,6 +11,9 @@ import {
   ensureInputReferences, isInputPriceOutlier, markTradeUpsOutlierStale,
   type InputRefLookup,
 } from "./input-outlier.js";
+import {
+  ascendingNumberIds, lockTradeUpInputsForTradeUps, lockTradeUpInputsInIdOrder, lockTradeUpsInIdOrder,
+} from "./lock-order.js";
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -69,10 +72,27 @@ export async function recomputeTradeUpCost(db: Queryable, tradeUpId: number): Pr
   return { total_cost_cents: cost, expected_value_cents: ev, ...stats };
 }
 
+export interface ApplyListingPriceOptions {
+  /**
+   * Update input prices only. Trade-up cost rows are left for a later
+   * transaction so a listing lock is not held across the recompute.
+   */
+  deferTradeUpWrites?: boolean;
+}
+
+export interface ApplyListingPriceResult {
+  inputsUpdated: number;
+  tradeUpsUpdated: number;
+  tradeUpsFlagged: number;
+  recomputeIds: number[];
+  flaggedIds: number[];
+}
+
 /**
  * Re-derive stored input costs for every trade-up using `listingId` from its
  * current raw listing price. Only inputs whose stored cost differs from
  * storedInputCost(raw, input source) are written; only those trade-ups are recomputed.
+ * Trade-up row locks are taken in ascending id order before the cost writes.
  */
 export async function applyListingPriceToInputs(
   db: Queryable,
@@ -80,7 +100,8 @@ export async function applyListingPriceToInputs(
   rawPriceCents: number,
   listingSource?: string | null,
   refLookup?: InputRefLookup,
-): Promise<{ inputsUpdated: number; tradeUpsUpdated: number; tradeUpsFlagged: number }> {
+  options?: ApplyListingPriceOptions,
+): Promise<ApplyListingPriceResult> {
   const { rows } = await db.query(
     `SELECT tui.trade_up_id, tui.source, tui.price_cents, tui.skin_name, tui.float_value, l.source AS listing_source
      FROM trade_up_inputs tui
@@ -91,6 +112,7 @@ export async function applyListingPriceToInputs(
   let inputsUpdated = 0;
   const tradeUpIds = new Set<number>();
   const flagged = new Set<number>();
+  const writes: { tradeUpId: number; expected: number; feeSource: string }[] = [];
   for (const r of rows as {
     trade_up_id: number; source: string | null; price_cents: number; listing_source: string | null;
     skin_name: string; float_value: number;
@@ -112,18 +134,37 @@ export async function applyListingPriceToInputs(
       }
     }
     if (expected === r.price_cents && feeSource === r.source) continue;
-    await db.query(
-      "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
-      [expected, feeSource, r.trade_up_id, listingId]
-    );
-    inputsUpdated++;
+    writes.push({ tradeUpId: r.trade_up_id, expected, feeSource });
     tradeUpIds.add(r.trade_up_id);
   }
-  for (const id of tradeUpIds) {
-    if (!flagged.has(id)) await recomputeTradeUpCost(db, id);
+  const flaggedIds = ascendingNumberIds([...flagged]);
+  const recomputeIds = ascendingNumberIds([...tradeUpIds].filter(id => !flagged.has(id)));
+  if (!options?.deferTradeUpWrites) {
+    await lockTradeUpsInIdOrder(db, ascendingNumberIds([...recomputeIds, ...flaggedIds]));
   }
-  await markTradeUpsOutlierStale(db, [...flagged]);
-  return { inputsUpdated, tradeUpsUpdated: tradeUpIds.size, tradeUpsFlagged: flagged.size };
+  await lockTradeUpInputsInIdOrder(
+    db,
+    writes.map(write => ({ tradeUpId: write.tradeUpId, listingId })),
+  );
+  const orderedWrites = [...writes].sort((a, b) => a.tradeUpId - b.tradeUpId);
+  for (const write of orderedWrites) {
+    await db.query(
+      "UPDATE trade_up_inputs SET price_cents = $1, source = $2 WHERE trade_up_id = $3 AND listing_id = $4",
+      [write.expected, write.feeSource, write.tradeUpId, listingId],
+    );
+    inputsUpdated++;
+  }
+  if (!options?.deferTradeUpWrites) {
+    for (const id of recomputeIds) await recomputeTradeUpCost(db, id);
+    await markTradeUpsOutlierStale(db, flaggedIds);
+  }
+  return {
+    inputsUpdated,
+    tradeUpsUpdated: tradeUpIds.size,
+    tradeUpsFlagged: flaggedIds.length,
+    recomputeIds,
+    flaggedIds,
+  };
 }
 
 export async function updateCollectionScores(pool: pg.Pool) {
@@ -263,17 +304,19 @@ export async function recalcTradeUpCosts(pool: pg.Pool, sinceTimestamp?: string)
     return { updated: 0, flagged: flagged.size };
   }
 
-  const tuIds = [...driftByTradeUp.keys()];
+  const tuIds = ascendingNumberIds([...driftByTradeUp.keys()]);
 
   let updated = 0;
   const BATCH = 500;
   for (let i = 0; i < tuIds.length; i += BATCH) {
-    const batch = tuIds.slice(i, i + BATCH);
+    const batch = ascendingNumberIds(tuIds.slice(i, i + BATCH));
     await withRetry(async () => {
       const client = await pool.connect();
       let batchUpdated = 0;
       try {
         await client.query('BEGIN');
+        await lockTradeUpsInIdOrder(client, batch);
+        await lockTradeUpInputsForTradeUps(client, batch);
         for (const tuId of batch) {
           for (const d of driftByTradeUp.get(tuId) ?? []) {
             await client.query(
@@ -489,6 +532,71 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
   return results;
 }
 
+export interface TradeUpTouchHooks {
+  /** Fires after each trade-up row lock, in ascending id order. */
+  afterLockId?: (id: number) => Promise<void>;
+}
+
+const REPRICE_WRITE_CHUNK = 200;
+
+async function writeRepriceUpdates(
+  pool: pg.Pool,
+  updates: Extract<RepriceDecision, { kind: "update" }>[],
+): Promise<number> {
+  let wrote = 0;
+  for (let i = 0; i < updates.length; i += REPRICE_WRITE_CHUNK) {
+    const chunk = updates.slice(i, i + REPRICE_WRITE_CHUNK);
+    const sql = buildBulkRepriceUpdate(chunk);
+    if (!sql) continue;
+    const statement = sql;
+    await withRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await lockTradeUpsInIdOrder(client, chunk.map(row => row.id));
+        await client.query(statement.text, statement.values);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
+      }
+    }, 3, "reprice write");
+    wrote += chunk.length;
+  }
+  return wrote;
+}
+
+/** Phase 4c freshness touch. Locks trade_ups in ascending id order, then updates. */
+export async function touchTradeUpOutputs(
+  pool: pg.Pool,
+  ids: readonly number[],
+  hooks?: TradeUpTouchHooks,
+): Promise<void> {
+  const ordered = ascendingNumberIds(ids);
+  for (let i = 0; i < ordered.length; i += REPRICE_WRITE_CHUNK) {
+    const chunk = ordered.slice(i, i + REPRICE_WRITE_CHUNK);
+    await withRetry(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await lockTradeUpsInIdOrder(client, chunk, hooks?.afterLockId);
+        await client.query(
+          "UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])",
+          [chunk],
+        );
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
+      }
+    }, 3, "reprice touch");
+  }
+}
+
 /**
  * Batch re-evaluate output pricing for trade-ups using current price cache + KNN.
  * Picks the oldest-repriced active trade-ups, re-lookups each outcome's price
@@ -565,35 +673,10 @@ export async function repriceTradeUpOutputs(
     );
     const touchIds = decisions.filter(d => d.kind === "touch").map(d => d.id);
 
-    const WRITE_CHUNK = 200;
-    for (let i = 0; i < updates.length; i += WRITE_CHUNK) {
-      const sql = buildBulkRepriceUpdate(updates.slice(i, i + WRITE_CHUNK));
-      if (!sql) continue;
-      await withRetry(async () => {
-        const client = await pool.connect();
-        try {
-          await client.query("BEGIN");
-          await client.query(sql.text, sql.values);
-          await client.query("COMMIT");
-          updated += Math.min(WRITE_CHUNK, updates.length - i);
-        } catch (err) {
-          await client.query("ROLLBACK").catch(() => undefined);
-          throw err;
-        } finally {
-          client.release();
-        }
-      }, 3, "reprice write");
-    }
+    const sortedUpdates = [...updates].sort((a, b) => a.id - b.id);
+    updated += await writeRepriceUpdates(pool, sortedUpdates);
 
-    const TOUCH_CHUNK = 2000;
-    for (let i = 0; i < touchIds.length; i += TOUCH_CHUNK) {
-      const ids = touchIds.slice(i, i + TOUCH_CHUNK);
-      await withRetry(
-        () => pool.query("UPDATE trade_ups SET output_repriced_at = NOW() WHERE id = ANY($1::int[])", [ids]),
-        3,
-        "reprice touch",
-      );
-    }
+    await touchTradeUpOutputs(pool, touchIds);
     writeMs += Date.now() - tWrite;
 
     // Short chunk = eligible pool exhausted; a full chunk may have more behind it.

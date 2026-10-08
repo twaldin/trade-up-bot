@@ -4,6 +4,9 @@
 
 import pg from "pg";
 import { ensureInputReferences, findOutlierTradeUpIds, type InputRefLookup } from "./input-outlier.js";
+import {
+  ascendingNumberIds, ascendingTextIds, lockListingsInIdOrder, lockTradeUpInputsForTradeUps, lockTradeUpsInIdOrder,
+} from "./lock-order.js";
 
 export interface CascadeTradeUpStatusOptions {
   /** SCAN+DEL of `tu:*`. The leaked-row heal passes false and flushes once itself. */
@@ -92,27 +95,24 @@ export async function cascadeTradeUpStatuses(
     }
 
     if (toStale.length > 0) {
-      const r = await pool.query(`
+      const staleWrote = await updateTradeUpsInIdOrder(pool, toStale, `
         UPDATE trade_ups SET
           listing_status = 'stale',
           preserved_at = COALESCE(preserved_at, NOW())
-        WHERE id = ANY($1)
+        WHERE id = ANY($1::int[])
           AND listing_status = 'active'
           AND NOT EXISTS (
             SELECT 1 FROM trade_up_claims tc
             WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
           )
-      `, [toStale]);
-      const staleWrote = r.rowCount ?? 0;
+      `);
       totalUpdated += staleWrote;
       if (options?.tally) options.tally.stale += staleWrote;
     }
 
     // Delete fully stale trade-ups immediately
     if (toDelete.length > 0) {
-      await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = ANY($1)`, [toDelete]);
-      await pool.query(`DELETE FROM trade_ups WHERE id = ANY($1)`, [toDelete]);
-      totalUpdated += toDelete.length;
+      totalUpdated += await deleteTradeUpsAndInputsInIdOrder(pool, toDelete);
     }
 
     // Update partial/active trade-ups — batched by new status to avoid per-row round-trips
@@ -126,22 +126,21 @@ export async function cascadeTradeUpStatuses(
         const activeRecheck = options?.preserveFullyMissing
           ? "AND listing_status = 'active'"
           : "";
-        const r = await pool.query(`
+        const partialWrote = await updateTradeUpsInIdOrder(pool, partialIds, `
           UPDATE trade_ups SET
             listing_status = 'partial',
             preserved_at = CASE
               WHEN listing_status = 'active' THEN NOW()
               ELSE preserved_at
             END
-          WHERE id = ANY($1)
+          WHERE id = ANY($1::int[])
             AND listing_status IS DISTINCT FROM 'partial'
             ${activeRecheck}
             AND NOT EXISTS (
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
-        `, [partialIds]);
-        const partialWrote = r.rowCount ?? 0;
+        `);
         totalUpdated += partialWrote;
         if (options?.tally) options.tally.partial += partialWrote;
       }
@@ -151,18 +150,18 @@ export async function cascadeTradeUpStatuses(
         const outlierIds = await findOutlierTradeUpIds(pool, activeIds, refLookup);
         const safeActiveIds = activeIds.filter(id => !outlierIds.has(id));
         if (safeActiveIds.length === 0) continue;
-        const r = await pool.query(`
+        const activeWrote = await updateTradeUpsInIdOrder(pool, safeActiveIds, `
           UPDATE trade_ups SET
             listing_status = 'active',
             preserved_at = NULL
-          WHERE id = ANY($1)
+          WHERE id = ANY($1::int[])
             AND listing_status IS DISTINCT FROM 'active'
             AND NOT EXISTS (
               SELECT 1 FROM trade_up_claims tc
               WHERE tc.trade_up_id = trade_ups.id AND tc.released_at IS NULL AND tc.expires_at > NOW()
             )
-        `, [safeActiveIds]);
-        totalUpdated += r.rowCount ?? 0;
+        `);
+        totalUpdated += activeWrote;
       }
     }
   }
@@ -177,10 +176,77 @@ export async function cascadeTradeUpStatuses(
  * Use this instead of raw DELETE FROM listings everywhere.
  */
 export async function deleteListings(pool: pg.Pool, ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const { rowCount } = await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
-  await cascadeTradeUpStatuses(pool, ids);
-  return rowCount ?? 0;
+  const ordered = ascendingTextIds(ids);
+  if (ordered.length === 0) return 0;
+  let deleted = 0;
+  const chunkSize = 200;
+  for (let i = 0; i < ordered.length; i += chunkSize) {
+    const chunk = ordered.slice(i, i + chunkSize);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await lockListingsInIdOrder(client, chunk);
+      const { rowCount } = await client.query(`DELETE FROM listings WHERE id = ANY($1::text[])`, [chunk]);
+      await client.query("COMMIT");
+      deleted += rowCount ?? 0;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  await cascadeTradeUpStatuses(pool, ordered);
+  return deleted;
+}
+
+const TRADE_UP_LOCK_CHUNK = 200;
+
+async function updateTradeUpsInIdOrder(pool: pg.Pool, ids: readonly number[], sql: string): Promise<number> {
+  const ordered = ascendingNumberIds(ids);
+  let updated = 0;
+  for (let i = 0; i < ordered.length; i += TRADE_UP_LOCK_CHUNK) {
+    const chunk = ordered.slice(i, i + TRADE_UP_LOCK_CHUNK);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await lockTradeUpsInIdOrder(client, chunk);
+      const { rowCount } = await client.query(sql, [chunk]);
+      await client.query("COMMIT");
+      updated += rowCount ?? 0;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  return updated;
+}
+
+/** Delete these trade-ups and their inputs, locking both tables in ascending id order. */
+export async function deleteTradeUpsAndInputsInIdOrder(pool: pg.Pool, ids: readonly number[]): Promise<number> {
+  const ordered = ascendingNumberIds(ids);
+  let deleted = 0;
+  for (let i = 0; i < ordered.length; i += TRADE_UP_LOCK_CHUNK) {
+    const chunk = ordered.slice(i, i + TRADE_UP_LOCK_CHUNK);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await lockTradeUpsInIdOrder(client, chunk);
+      await lockTradeUpInputsForTradeUps(client, chunk);
+      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = ANY($1::int[])`, [chunk]);
+      const { rowCount } = await client.query(`DELETE FROM trade_ups WHERE id = ANY($1::int[])`, [chunk]);
+      await client.query("COMMIT");
+      deleted += rowCount ?? 0;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  return deleted;
 }
 
 /**
@@ -259,10 +325,9 @@ export async function purgeExpiredPreserved(pool: pg.Pool, maxDays = 2): Promise
   // preserved_at set and must be purged together.
   const hold = await relistHoldExclusion(pool);
   const condition = `listing_status IN ('partial', 'stale') AND preserved_at < NOW() - ($1 * INTERVAL '1 day') ${hold}`;
-
-  // Delete inputs first (trade_up_inputs.trade_up_id FK has ON DELETE CASCADE but explicit
-  // batch delete is faster than row-by-row trigger for large counts), then trade-ups.
-  await pool.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE ${condition})`, [maxDays]);
-  const { rowCount } = await pool.query(`DELETE FROM trade_ups WHERE ${condition}`, [maxDays]);
-  return rowCount ?? 0;
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT id FROM trade_ups WHERE ${condition} ORDER BY id`,
+    [maxDays],
+  );
+  return deleteTradeUpsAndInputsInIdOrder(pool, rows.map(row => Number(row.id)));
 }

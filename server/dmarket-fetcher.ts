@@ -20,7 +20,7 @@ import {
   fetchAllDMarketListings,
   isDMarketConfigured,
 } from "./sync/dmarket.js";
-import { cascadeTradeUpStatuses } from "./engine.js";
+import { deleteListings, drainDMarketRelinkRecomputes } from "./engine.js";
 import { createTables } from "./db.js";
 import { applyDMarketRelinks, assetIdFromInspect, listingIdsToDelete, planDMarketRelinks, referencePricesAllowDeletes, relinkLogLine, type DMarketRelistSide } from "./dmarket-fetcher-relist.js";
 
@@ -166,6 +166,14 @@ async function main() {
   // fails the relink and the old id is then deleted.
   await createTables(pool);
   log("  schema ready");
+  try {
+    const drained = await drainDMarketRelinkRecomputes(pool);
+    if (drained.recomputed > 0 || drained.flagged > 0 || drained.requeued > 0) {
+      log(`  DMarket relink recompute: ${drained.recomputed} recomputed, ${drained.flagged} flagged, ${drained.requeued} requeued`);
+    }
+  } catch (err) {
+    log(`  DMarket relink recompute drain failed: ${err instanceof Error ? err.message : err}`);
+  }
 
   // Graceful shutdown
   let running = true;
@@ -174,6 +182,14 @@ async function main() {
 
   while (running) {
     stats.cycleCount++;
+    try {
+      const drained = await drainDMarketRelinkRecomputes(pool);
+      if (drained.recomputed > 0 || drained.flagged > 0 || drained.requeued > 0) {
+        log(`  DMarket relink recompute: ${drained.recomputed} recomputed, ${drained.flagged} flagged, ${drained.requeued} requeued`);
+      }
+    } catch (err) {
+      log(`  DMarket relink recompute drain failed: ${err instanceof Error ? err.message : err}`);
+    }
     let queue: string[];
     try {
       queue = await buildFetchQueue(pool);
@@ -275,8 +291,7 @@ async function main() {
           ? listingIdsToDelete(plan, applied)
           : [];
         if (deleteIds.length > 0) {
-          await pool.query("DELETE FROM listings WHERE id = ANY($1)", [deleteIds]);
-          await cascadeTradeUpStatuses(pool, deleteIds);
+          await deleteListings(pool, deleteIds);
         }
         if (applied.applied > 0 || deleteIds.length > 0 || plan.contested > 0 || applied.skipped.length > 0 || applied.deferredIds.length > 0) {
           log(relinkLogLine(skinName, plan, applied));

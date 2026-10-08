@@ -10,7 +10,11 @@
  */
 
 import type pg from "pg";
-import { applyListingPriceToInputs, cascadeTradeUpStatuses, ensureInputReferences, pruneDMarketRelinkMap, recordDMarketRelink } from "./engine.js";
+import {
+  applyListingPriceToInputs, cascadeTradeUpStatuses, drainDMarketRelinkRecomputes, ensureInputReferences,
+  lockTradeUpInputsInIdOrder, pruneDMarketRelinkMap, recordDMarketRelink, recordDMarketRelinkRecompute,
+  type DMarketRelinkRecomputeOptions,
+} from "./engine.js";
 import { cacheInvalidatePrefix } from "./redis.js";
 
 export const RELIST_FLOAT_EPSILON = 1e-7;
@@ -62,6 +66,15 @@ export interface ApplyDMarketRelinkHooks {
   beforeListingLock?: () => Promise<void>;
   /** Test barrier after the relink commits and before straggler inputs are moved. */
   beforeStragglerSweep?: () => Promise<void>;
+  /** After the listing transaction commits and before cost recompute. Throw to simulate a kill. */
+  afterRelinkCommit?: () => Promise<void>;
+  /** Leave the durable recompute marker for a later drain. */
+  deferRecompute?: boolean;
+  /** Fired once the listing rows are locked. */
+  onListingLocked?: () => void;
+  /** Fired immediately before the listing transaction commits. */
+  onListingCommitted?: () => void;
+  recompute?: DMarketRelinkRecomputeOptions;
 }
 
 /** S or M must start the inspect argument. A later copy of the token is not an asset id. */
@@ -201,15 +214,18 @@ async function sweepRelinkedInputs(pool: pg.Pool, oldId: string, newId: string):
 }
 
 /**
- * Point trade-up inputs at the new offer, reprice through applyListingPriceToInputs,
- * and delete the old listing. Records old id → new id so a later save can
- * follow the relink. A failed relink is rolled back and returned in
- * `failedIds` so the caller can delete that one listing and cascade it.
- * A lock timeout or deadlock (55P03, 40P01) is rolled back into `deferredIds`
- * instead: the old listing stays, and the next cycle plans the relink again.
- * When the reference-price load throws, nothing is applied and
- * `referenceLoadFailed` is set so the caller skips deletes for the cycle.
- * After commit, inputs that landed on the old id are retargeted or cascaded.
+ * Point trade-up inputs at the new offer and delete the old listing. The
+ * listing transaction commits before trade-up costs are recomputed, so it does
+ * not hold the listing row across that work. Affected trade-up ids are stored
+ * in sync_meta in the same transaction; a crash before recompute is recovered
+ * by the next drain. Records old id → new id so a later save can follow the
+ * relink. A failed relink is rolled back and returned in `failedIds` so the
+ * caller can delete that one listing and cascade it. A lock timeout or
+ * deadlock (55P03, 40P01) is rolled back into `deferredIds` instead: the old
+ * listing stays, and the next cycle plans the relink again. When the
+ * reference-price load throws, nothing is applied and `referenceLoadFailed`
+ * is set so the caller skips deletes for the cycle. After commit, inputs that
+ * landed on the old id are retargeted or cascaded.
  */
 
 const RELINK_DEFER_CODES = new Set(["55P03", "40P01"]);
@@ -235,10 +251,19 @@ export async function applyDMarketRelinks(
     console.warn(`DMarket relink skipped; reference-price load failed: ${reason}`);
     return { applied: 0, failedIds, deferredIds, skipped, referenceLoadFailed: true };
   }
+  if (!hooks?.deferRecompute) {
+    try {
+      await drainDMarketRelinkRecomputes(pool, hooks?.recompute);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`DMarket relink recompute drain failed: ${reason}`);
+    }
+  }
   let applied = 0;
   for (const relink of relinks) {
     const client = await pool.connect();
     let released = false;
+    let committed = false;
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
@@ -257,6 +282,7 @@ export async function applyDMarketRelinks(
         );
         if (rows[0]) locked.set(rows[0].id, { claimed_by: rows[0].claimed_by, claimed_at: rows[0].claimed_at });
       }
+      if (hooks?.onListingLocked) hooks.onListingLocked();
       if (locked.get(relink.newId)?.claimed_by) {
         await client.query("ROLLBACK");
         skipped.push({ oldId: relink.oldId, reason: "claimed_target" });
@@ -271,11 +297,26 @@ export async function applyDMarketRelinks(
         skipped.push({ oldId: relink.oldId, reason: "new_id_already_input" });
         continue;
       }
+      const { rows: inputKeys } = await client.query<{ trade_up_id: number; listing_id: string }>(
+        `SELECT trade_up_id, listing_id FROM trade_up_inputs WHERE listing_id = $1`,
+        [relink.oldId],
+      );
+      await lockTradeUpInputsInIdOrder(
+        client,
+        inputKeys.map(row => ({ tradeUpId: Number(row.trade_up_id), listingId: row.listing_id })),
+      );
       await client.query(
         `UPDATE trade_up_inputs SET listing_id = $1 WHERE listing_id = $2`,
         [relink.newId, relink.oldId],
       );
-      await applyListingPriceToInputs(client, relink.newId, relink.priceCents, "dmarket", refLookup);
+      const priced = await applyListingPriceToInputs(
+        client,
+        relink.newId,
+        relink.priceCents,
+        "dmarket",
+        refLookup,
+        { deferTradeUpWrites: true },
+      );
       const oldClaim = locked.get(relink.oldId);
       if (oldClaim?.claimed_by) {
         await client.query(
@@ -284,40 +325,68 @@ export async function applyDMarketRelinks(
         );
       }
       await recordDMarketRelink(client, relink.oldId, relink.newId);
+      await recordDMarketRelinkRecompute(client, relink.oldId, priced.recomputeIds, priced.flaggedIds);
       await client.query(`DELETE FROM listings WHERE id = $1`, [relink.oldId]);
+      if (hooks?.onListingCommitted) hooks.onListingCommitted();
       await client.query("COMMIT");
+      committed = true;
       applied++;
       client.release();
       released = true;
+      let killed: unknown;
       try {
-        if (hooks?.beforeStragglerSweep) await hooks.beforeStragglerSweep();
-        await sweepRelinkedInputs(pool, relink.oldId, relink.newId);
-      } catch (sweepErr) {
-        const reason = sweepErr instanceof Error ? sweepErr.message : String(sweepErr);
-        console.warn(`DMarket relink sweep failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
+        if (hooks?.afterRelinkCommit) await hooks.afterRelinkCommit();
+      } catch (err) {
+        killed = err;
       }
+      if (!killed && !hooks?.deferRecompute) {
+        try {
+          await drainDMarketRelinkRecomputes(pool, hooks?.recompute);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          console.error(`DMarket relink recompute drain failed: ${reason}`);
+        }
+      }
+      if (!killed) {
+        try {
+          if (hooks?.beforeStragglerSweep) await hooks.beforeStragglerSweep();
+          await sweepRelinkedInputs(pool, relink.oldId, relink.newId);
+        } catch (sweepErr) {
+          const reason = sweepErr instanceof Error ? sweepErr.message : String(sweepErr);
+          console.warn(`DMarket relink sweep failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
+        }
+      }
+      if (killed) throw killed;
     } catch (err) {
-      try {
-        await client.query("ROLLBACK");
-      } catch (rollbackErr) {
-        const original = err instanceof Error ? err.message : String(err);
-        const rollback = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
-        console.warn(`DMarket relink rollback failed after ${original}: ${rollback}`);
-      }
-      const code = pgErrorCode(err);
-      const reason = err instanceof Error ? err.message : String(err);
-      if (RELINK_DEFER_CODES.has(code)) {
-        console.error(
-          `DMarket relink deferred ${relink.oldId} -> ${relink.newId}: ${code} ${reason}; listing kept for the next cycle`,
-        );
-        deferredIds.push(relink.oldId);
+      if (!committed) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (rollbackErr) {
+          const original = err instanceof Error ? err.message : String(err);
+          const rollback = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+          console.warn(`DMarket relink rollback failed after ${original}: ${rollback}`);
+        }
+        const code = pgErrorCode(err);
+        const reason = err instanceof Error ? err.message : String(err);
+        if (RELINK_DEFER_CODES.has(code)) {
+          console.error(
+            `DMarket relink deferred ${relink.oldId} -> ${relink.newId}: ${code} ${reason}; listing kept for the next cycle`,
+          );
+          deferredIds.push(relink.oldId);
+          client.release();
+        } else {
+          console.warn(`DMarket relink failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
+          failedIds.push(relink.oldId);
+          client.release(err instanceof Error ? err : new Error(reason));
+        }
+        released = true;
+      } else if (!released) {
         client.release();
+        released = true;
+        throw err;
       } else {
-        console.warn(`DMarket relink failed ${relink.oldId} -> ${relink.newId}: ${reason}`);
-        failedIds.push(relink.oldId);
-        client.release(err instanceof Error ? err : new Error(reason));
+        throw err;
       }
-      released = true;
     } finally {
       if (!released) client.release();
     }

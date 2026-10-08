@@ -28,6 +28,7 @@ import {
   type BuffListing,
   type BuffSale,
 } from "./sync/buff.js";
+import { deleteListings } from "./engine.js";
 
 const { Pool } = pg;
 
@@ -433,11 +434,8 @@ async function fetchSkinData(
         }
       }
       if (removedIds.length > 0) {
-        await pool.query("DELETE FROM listings WHERE id = ANY($1)", [removedIds]);
-        // Cascade trade-up statuses for removed listings
         try {
-          const { cascadeTradeUpStatuses } = await import("./engine.js");
-          await cascadeTradeUpStatuses(pool, removedIds);
+          await deleteListings(pool, removedIds);
         } catch { /* cascade is best-effort in fetcher context */ }
         result.listingsRemoved += removedIds.length;
       }

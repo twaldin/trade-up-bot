@@ -9,6 +9,7 @@
 import pg from "pg";
 import { floatToCondition } from "../../shared/types.js";
 import { storedInputCost } from "./fees.js";
+import { ascendingNumberIds } from "./lock-order.js";
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -161,14 +162,18 @@ export async function ensureInputReferences(pool: pg.Pool): Promise<InputRefLook
 
 /** Mark real trade-ups stale. Preserves an existing preserved_at. Does not invalidate cache. */
 export async function markTradeUpsOutlierStale(db: Queryable, ids: number[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  const { rowCount } = await db.query(
-    `UPDATE trade_ups SET listing_status = CASE WHEN listing_status = 'active' THEN 'stale' ELSE listing_status END,
-       preserved_at = COALESCE(preserved_at, NOW())
-     WHERE id = ANY($1::int[]) AND is_theoretical = false`,
-    [ids],
-  );
-  return rowCount ?? 0;
+  const ordered = ascendingNumberIds(ids);
+  let updated = 0;
+  for (const id of ordered) {
+    const { rowCount } = await db.query(
+      `UPDATE trade_ups SET listing_status = CASE WHEN listing_status = 'active' THEN 'stale' ELSE listing_status END,
+         preserved_at = COALESCE(preserved_at, NOW())
+       WHERE id = $1 AND is_theoretical = false`,
+      [id],
+    );
+    updated += rowCount ?? 0;
+  }
+  return updated;
 }
 
 /** Trade-ups whose current listing raw price would trip the jump guard against the stored input. */

@@ -64,9 +64,17 @@ export {
   assertDMarketRelinkMap,
 } from "./engine/dmarket-relink-map.js";
 export {
-  saveTradeUps, mergeTradeUps, skippedShareLockStats, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, trimGlobalExcess,
+  saveTradeUps, mergeTradeUps, skippedShareLockStats, updateCollectionScores, recalcTradeUpCosts, repriceTradeUpOutputs, touchTradeUpOutputs, trimGlobalExcess,
   refreshListingStatuses, purgeExpiredPreserved, reviveStaleTradeUps, reviveStaleGunTradeUps,
-  cascadeTradeUpStatuses, deleteListings,
+  cascadeTradeUpStatuses, deleteListings, deleteTradeUpsAndInputsInIdOrder,
   recomputeTradeUpCost, applyListingPriceToInputs, computeTradeUpCostStats,
+  TRADE_UP_LOCK_ORDER_RULE, ascendingNumberIds, ascendingTextIds, ascendingInputKeys,
+  lockTradeUpsInIdOrder, lockListingsInIdOrder, lockTradeUpInputsInIdOrder, lockTradeUpInputsForTradeUps,
+  DMARKET_RELINK_RECOMPUTE_PREFIX, DMARKET_RELINK_RECOMPUTE_BATCH,
+  recordDMarketRelinkRecompute, drainDMarketRelinkRecomputes,
 } from "./engine/db-ops.js";
-export type { RecomputedTradeUpCost, CascadeTradeUpStatusOptions } from "./engine/db-ops.js";
+export type {
+  RecomputedTradeUpCost, CascadeTradeUpStatusOptions, ReviveLockHooks, TradeUpTouchHooks,
+  ApplyListingPriceOptions, ApplyListingPriceResult, TradeUpInputKey,
+  DMarketRelinkRecomputeOptions, DMarketRelinkRecomputeDrain,
+} from "./engine/db-ops.js";

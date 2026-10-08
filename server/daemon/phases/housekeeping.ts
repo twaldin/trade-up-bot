@@ -10,8 +10,11 @@ import {
 import {
   pruneObservations,
   purgeExpiredPreserved,
-  cascadeTradeUpStatuses,
+  deleteListings,
+  deleteTradeUpsAndInputsInIdOrder,
+  lockTradeUpsInIdOrder,
 } from "../../engine.js";
+import { cacheInvalidatePrefix } from "../../redis.js";
 
 import { timestamp, setDaemonStatus } from "../utils.js";
 
@@ -20,16 +23,37 @@ import { timestamp, setDaemonStatus } from "../utils.js";
  * Does not delete. `purgeExpiredPreserved(..., 1)` removes them after 24h.
  */
 export async function markTradeUpsCostOver20xEv(pool: pg.Pool): Promise<number> {
-  const { rowCount } = await pool.query(`
-    UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW())
+  const { rows } = await pool.query<{ id: number }>(`
+    SELECT id FROM trade_ups
     WHERE is_theoretical = false AND listing_status = 'active'
       AND total_cost_cents > 20 * GREATEST(expected_value_cents, 1)
+    ORDER BY id
   `);
-  const count = rowCount ?? 0;
-  if (count > 0) {
-    const { cacheInvalidatePrefix } = await import("../../redis.js");
-    await cacheInvalidatePrefix("tu:");
+  const ids = rows.map(row => Number(row.id));
+  let count = 0;
+  const chunkSize = 200;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await lockTradeUpsInIdOrder(client, chunk);
+      const { rowCount } = await client.query(`
+        UPDATE trade_ups SET listing_status = 'stale', preserved_at = COALESCE(preserved_at, NOW())
+        WHERE id = ANY($1::int[])
+          AND is_theoretical = false AND listing_status = 'active'
+          AND total_cost_cents > 20 * GREATEST(expected_value_cents, 1)
+      `, [chunk]);
+      await client.query("COMMIT");
+      count += rowCount ?? 0;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
+  if (count > 0) await cacheInvalidatePrefix("tu:");
   return count;
 }
 
@@ -49,9 +73,8 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
       AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 3
   `);
   if (oldUncheckedRows.length > 0) {
-    const ids = oldUncheckedRows.map((r: any) => r.id);
-    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
-    await cascadeTradeUpStatuses(pool, ids);
+    const ids = oldUncheckedRows.map((r: { id: string }) => r.id);
+    await deleteListings(pool, ids);
     console.log(`  Purged ${ids.length} old unchecked listings (>3 days, never verified)`);
   }
 
@@ -61,9 +84,8 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
       AND EXTRACT(EPOCH FROM NOW() - created_at) / 86400.0 > 1
   `);
   if (dmPurgedRows.length > 0) {
-    const ids = dmPurgedRows.map((r: any) => r.id);
-    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
-    await cascadeTradeUpStatuses(pool, ids);
+    const ids = dmPurgedRows.map((r: { id: string }) => r.id);
+    await deleteListings(pool, ids);
     console.log(`  Purged ${ids.length} DMarket listings (>24h old)`);
   }
 
@@ -74,8 +96,7 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   `);
   if (buffPurgedRows.length > 0) {
     const ids = buffPurgedRows.map((r: { id: string }) => r.id);
-    await pool.query(`DELETE FROM listings WHERE id = ANY($1)`, [ids]);
-    await cascadeTradeUpStatuses(pool, ids);
+    await deleteListings(pool, ids);
     console.log(`  Purged ${ids.length} Buff listings (>24h since last refresh)`);
   }
 
@@ -91,10 +112,11 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   await purgeOldEvents(pool, 6);
 
   // Clean corrupt trade-ups (0 EV or 0 cost)
-  const { rowCount: cleanedCount } = await pool.query(`
-    DELETE FROM trade_ups WHERE expected_value_cents = 0 OR total_cost_cents = 0
+  const { rows: corruptRows } = await pool.query<{ id: number }>(`
+    SELECT id FROM trade_ups WHERE expected_value_cents = 0 OR total_cost_cents = 0 ORDER BY id
   `);
-  if ((cleanedCount ?? 0) > 0) {
+  const cleanedCount = await deleteTradeUpsAndInputsInIdOrder(pool, corruptRows.map(row => Number(row.id)));
+  if (cleanedCount > 0) {
     console.log(`  Cleaned ${cleanedCount} corrupt trade-ups`);
   }
 
@@ -115,11 +137,13 @@ export async function phase1Housekeeping(pool: pg.Pool, cycleCount: number) {
   // pay it every cycle. Orphans are rare and not user-visible once inputs are
   // missing; periodic cleanup keeps storage bounded without stalling Phase 1.
   if (cycleCount % 10 === 0) {
-    const { rowCount: orphanedCount } = await pool.query(`
-      DELETE FROM trade_ups
+    const { rows: orphanRows } = await pool.query<{ id: number }>(`
+      SELECT id FROM trade_ups
       WHERE id NOT IN (SELECT DISTINCT trade_up_id FROM trade_up_inputs)
+      ORDER BY id
     `);
-    if ((orphanedCount ?? 0) > 0) {
+    const orphanedCount = await deleteTradeUpsAndInputsInIdOrder(pool, orphanRows.map(row => Number(row.id)));
+    if (orphanedCount > 0) {
       console.log(`  Purged ${orphanedCount} orphaned trade-ups (no inputs)`);
     }
   }
