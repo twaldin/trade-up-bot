@@ -5,6 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LOAD_ERROR_COPY } from "../../src/preview/lib/board-notice.js";
 import { AUTH_PAINT_WAIT_MS, shouldFetchBoardDelay } from "../../src/preview/lib/board-delay.js";
 import { resetBrowseFetchState } from "../../src/preview/lib/page-fetch.js";
 import { PreviewBoard, usePreviewTradeUps } from "../../src/preview/pages/PreviewBoard.js";
@@ -444,6 +445,67 @@ describe("board delay fetch waits for the viewer", () => {
       expect(host.querySelector(".preview-delay")).toBeNull();
       expect(host.textContent).not.toContain("Free view:");
       expect(host.querySelector(".preview-card:not(.preview-card--skeleton)")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([2000, 5000])("holds the error still when the list returns 500 and auth answers at %ims", async (authMs) => {
+    vi.useFakeTimers();
+    try {
+      localStorage.clear();
+      vi.stubGlobal("fetch", vi.fn((url: string) => {
+        calls.push(String(url));
+        if (String(url).includes("/api/auth/me")) {
+          return new Promise<Response>((resolve) => {
+            setTimeout(() => resolve(authBody(null)), authMs);
+          });
+        }
+        if (String(url).includes("/api/trade-ups")) {
+          return new Promise<Response>((resolve) => {
+            setTimeout(() => resolve(json({ error: "down" }, 500)), 500);
+          });
+        }
+        return Promise.resolve(json(GAP));
+      }));
+
+      function Harness() {
+        const api = usePreviewTradeUps({ perPage: 12 });
+        return createElement(MemoryRouter, null, createElement(PreviewBoard, {
+          tradeUps: api.tradeUps,
+          loading: api.loading,
+          isFree: api.isFree,
+          failed: api.failed,
+          expandedId: api.expandedId,
+          onExpand: api.onExpand,
+        }));
+      }
+
+      await mount(createElement(Harness));
+
+      const slot = () => {
+        const alert = host.querySelector("[role='alert']");
+        return {
+          shown: alert?.textContent?.includes(LOAD_ERROR_COPY) === true,
+          delay: host.querySelector(".preview-delay") != null,
+        };
+      };
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      const atError = slot();
+      await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_PAINT_WAIT_MS - 500); });
+      const atCap = slot();
+      await act(async () => { await vi.advanceTimersByTimeAsync(authMs - AUTH_PAINT_WAIT_MS); });
+      const atAuth = slot();
+
+      expect(atError.shown).toBe(true);
+      expect(atCap.shown).toBe(true);
+      expect(atAuth.shown).toBe(true);
+      expect(atError.delay, "slot still up when the 500 lands").toBe(false);
+      expect(atCap.delay, "slot drops when the wait ends").toBe(false);
+      expect(atAuth.delay, "slot returns when auth answers").toBe(false);
+      expect(atCap).toEqual(atError);
+      expect(atAuth).toEqual(atError);
     } finally {
       vi.useRealTimers();
     }

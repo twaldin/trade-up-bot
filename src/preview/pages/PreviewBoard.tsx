@@ -1362,7 +1362,7 @@ export function PreviewBoard({
     (loading && tradeUps.length === 0) || (withholdCards && tradeUps.length > 0)
   );
   const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
-  const showDelayInFlow = !embed && !startedPaid && (
+  const showDelayInFlow = !embed && !startedPaid && !(notice === "error" && tradeUps.length === 0) && (
     guestLocked || (!listSaysPaid && (withholdCards || showSkeletons || confirmedGuest))
   );
   // One row of cards ends above the fold at desktop, so a short page would

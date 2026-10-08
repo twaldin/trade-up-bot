@@ -4,12 +4,14 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
 const PORT = 4188;
+const PAID_PAINT_OUT = process.env.PAID_PAINT_OUT || tmpdir();
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 const WIDTHS = [360, 375, 390, 1280] as const;
 const TRADE_UP = makeTradeUp({ id: 7 });
@@ -117,7 +119,7 @@ describe("paid lists do not grow the free banner", () => {
   const cells: Cell[] = [];
 
   beforeAll(async () => {
-    mkdirSync("/opt/cursor/artifacts", { recursive: true });
+    mkdirSync(PAID_PAINT_OUT, { recursive: true });
     let log = "";
     vite = spawn(
       resolve("node_modules/.bin/vite"),
@@ -161,7 +163,7 @@ describe("paid lists do not grow the free banner", () => {
       vite.kill("SIGTERM");
     }
     if (cells.length > 0) {
-      writeFileSync("/opt/cursor/artifacts/paid-paint.json", JSON.stringify(cells, null, 2));
+      writeFileSync(resolve(PAID_PAINT_OUT, "paid-paint.json"), JSON.stringify(cells, null, 2));
     }
   });
 
@@ -177,7 +179,7 @@ describe("paid lists do not grow the free banner", () => {
             const measured = await measure(page, width);
             if (width === 390) {
               await page.screenshot({
-                path: `/opt/cursor/artifacts/paid-${tier}-${listMs}-390.png`,
+                path: resolve(PAID_PAINT_OUT, `paid-${tier}-${listMs}-390.png`),
               });
             }
             return { tier, listMs, width, ...measured };
