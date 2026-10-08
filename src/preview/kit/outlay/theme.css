@@ -1,5 +1,17 @@
 @import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap");
 
+/* Ubuntu paints DejaVu Sans before Schibsted arrives. It is wider, so the
+   free-gap sentence and the billing tabs wrap an extra line. Scale that face
+   to Schibsted's advance and em box instead of narrowing the layout. */
+@font-face {
+  font-family: "Schibsted Grotesk Fallback";
+  src: local("DejaVu Sans");
+  size-adjust: 92%;
+  ascent-override: 100%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
+
 /* ===========================================================================
    Outlay — cream stock, lime as fill, controller density
    ---------------------------------------------------------------------------
@@ -212,7 +224,7 @@
   --t-theme: 700ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --font-body: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-body: "Schibsted Grotesk", "Schibsted Grotesk Fallback", system-ui, sans-serif;
   /* The same face, on its own property. This study runs ONE family by design,
      but a heading that reads --font-body gives a two-family cassette nowhere to
      put its display face, and the mixer would report an axis it did not apply. */
@@ -998,7 +1010,7 @@ textarea.o-input {
   --t-control: 120ms;
   --t-surface: 180ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --font-body: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-body: "Schibsted Grotesk", "Schibsted Grotesk Fallback", system-ui, sans-serif;
   --font-display: var(--font-body);
   --font-mono: "DM Mono", ui-monospace, monospace;
   font-family: var(--font-body);
