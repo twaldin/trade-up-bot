@@ -995,9 +995,9 @@ describe("board pagination and history", () => {
     const button = [...host.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Load more");
     button?.focus();
     await act(async () => { button?.click(); });
-    const card = host.querySelector(".preview-bento a");
-    expect(card instanceof HTMLAnchorElement).toBe(true);
-    if (!(card instanceof HTMLAnchorElement)) return;
+    const card = host.querySelector(".preview-card:not(.preview-card--skeleton) button");
+    expect(card instanceof HTMLButtonElement).toBe(true);
+    if (!(card instanceof HTMLButtonElement)) return;
     card.focus();
     await act(async () => { release(ok([13], 13)); });
     await act(async () => { await Promise.resolve(); });
@@ -1036,9 +1036,9 @@ describe("board pagination and history", () => {
     }
     expect(page2).toBeGreaterThanOrEqual(2);
     expect(document.activeElement).toBe(more);
-    const card = host.querySelector(".preview-bento a");
-    expect(card instanceof HTMLAnchorElement).toBe(true);
-    if (!(card instanceof HTMLAnchorElement)) return card;
+    const card = host.querySelector(".preview-card:not(.preview-card--skeleton) button");
+    expect(card instanceof HTMLButtonElement).toBe(true);
+    if (!(card instanceof HTMLButtonElement)) return card;
     card.focus();
     await act(async () => { release(second()); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });

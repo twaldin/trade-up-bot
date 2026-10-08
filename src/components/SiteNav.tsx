@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { CurrencyPicker } from "./CurrencyPicker.js";
 import { authHref } from "../lib/ref.js";
 import { trackEvent } from "../lib/analytics.js";
+import { writeStoredBoardAccount } from "../preview/lib/board-delay.js";
 
 const NAV_LINKS = [
   { to: "/features", label: "Features" },
@@ -207,6 +208,7 @@ export function SiteNav({ centerLinks }: SiteNavProps = {}) {
                       href="/auth/logout"
                       rel="nofollow"
                       className="block px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-red-400 cursor-pointer"
+                      onClick={() => writeStoredBoardAccount(null)}
                     >
                       Sign Out
                     </a>

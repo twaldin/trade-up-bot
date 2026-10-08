@@ -60,4 +60,23 @@ describe("GET /api/board-delay", () => {
     expect(res.body.hidden_profitable).toBe(3);
     expect(res.body.best_hidden_profit_cents).toBe(5000);
   });
+
+  it("keeps a released claim in the count and the best", async () => {
+    const released = await ctx.pool.query<{ id: number }>(`
+      INSERT INTO trade_ups (total_cost_cents, expected_value_cents, profit_cents, roi_percentage, type, listing_status, created_at)
+      VALUES (1000, 8000, 7000, 700, 'classified_covert', 'active', NOW())
+      RETURNING id
+    `);
+    await ctx.pool.query(
+      `INSERT INTO trade_up_claims (trade_up_id, user_id, expires_at, released_at)
+       VALUES ($1, 'claimer-released', NOW() + INTERVAL '30 minutes', NOW())`,
+      [released.rows[0]?.id],
+    );
+
+    const res = await request(ctx.app).get("/api/board-delay");
+    expect(res.status).toBe(200);
+    // Base window is 1800 and 500. Released 7000 still counts; an active claim would not.
+    expect(res.body.hidden_profitable).toBe(3);
+    expect(res.body.best_hidden_profit_cents).toBe(7000);
+  });
 });

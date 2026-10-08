@@ -52,7 +52,13 @@ describe("with every tracking env var unset (production today)", () => {
   it("checkout keeps the legacy begin_checkout event and sends no extra checkout body", () => {
     expect(checkoutAttributionBody()).toBeNull();
     trackBeginCheckout("pro", 6.99);
-    expect(gtag.mock.calls).toEqual([["event", "begin_checkout", { item_name: "pro" }]]);
+    const params = gtag.mock.calls[0]?.[2];
+    expect(params && typeof params === "object" ? { ...params, event_callback: undefined } : params).toMatchObject({
+      item_name: "pro",
+      transport_type: "beacon",
+      event_timeout: 500,
+    });
+    expect(params && typeof params.event_callback === "function").toBe(true);
   });
 
   it("trade-up page keeps the legacy tradeup_view event", () => {
@@ -120,7 +126,8 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     captureAttributionFromUrl();
     const body = checkoutAttributionBody();
     trackBeginCheckout("pro-yearly", 59.99);
-    expect(gtag.mock.calls).toEqual([["event", "begin_checkout", {
+    const params = gtag.mock.calls[0]?.[2];
+    expect(params && typeof params === "object" ? { ...params, event_callback: undefined } : null).toEqual({
       currency: "USD",
       value: 59.99,
       items: [{ item_id: "yearly", item_name: "yearly", price: 59.99, quantity: 1 }],
@@ -132,7 +139,11 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
       utm_term: "trade up",
       gclid: "Cj0K",
       send_to: GA4,
-    }]]);
+      transport_type: "beacon",
+      event_timeout: 500,
+      event_callback: undefined,
+    });
+    expect(params && typeof params.event_callback === "function").toBe(true);
     expect(body?.attribution).toMatchObject({ utm_source: "google", gclid: "Cj0K" });
   });
 
@@ -242,6 +253,16 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(params).not.toHaveProperty("value");
     expect(params).not.toHaveProperty("listing_id");
     expect(params).not.toHaveProperty("price");
+  });
+
+  it("pricing_go_pro uses beacon transport and other upgrade clicks do not", () => {
+    installBrowser({ pathname: "/pricing" });
+    trackUpgradeCta("pricing_go_pro");
+    trackUpgradeCta("board_delay");
+    expect(gtag.mock.calls).toEqual([
+      ["event", "upgrade_cta_click", { cta: "pricing_go_pro", page_path: "/pricing", transport_type: "beacon", send_to: GA4 }],
+      ["event", "upgrade_cta_click", { cta: "board_delay", page_path: "/pricing", send_to: GA4 }],
+    ]);
   });
 
   it("upgrade_cta_click names the gate and carries no prices or listing ids", () => {
@@ -584,7 +605,11 @@ describe("Meta Pixel events (META_PIXEL_ID set)", () => {
   it("GA4 stays on legacy events when only the Pixel is configured", () => {
     installBrowser({ pathname: "/pricing" });
     trackBeginCheckout("pro", 6.99);
-    expect(gtag.mock.calls).toEqual([["event", "begin_checkout", { item_name: "pro" }]]);
+    const params = gtag.mock.calls[0]?.[2];
+    expect(params && typeof params === "object" ? { ...params, event_callback: undefined } : params).toMatchObject({
+      item_name: "pro",
+      transport_type: "beacon",
+    });
   });
 
   it("does not throw when the Pixel is blocked", () => {

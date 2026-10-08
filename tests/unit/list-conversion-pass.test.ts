@@ -33,8 +33,9 @@ describe("C: free-delay transparency banner above the board", () => {
   });
   it("renders before the cards, not only after them", () => {
     const bannerIdx = board.indexOf("preview-delay${");
-    const cardsIdx = board.indexOf('className="preview-bento preview-bento--reserved"');
+    const cardsIdx = board.indexOf('className={`preview-bento${showSkeletons ? " preview-bento--reserved" : ""}');
     expect(bannerIdx).toBeGreaterThan(-1);
+    expect(cardsIdx).toBeGreaterThan(-1);
     expect(bannerIdx).toBeLessThan(cardsIdx);
   });
 });

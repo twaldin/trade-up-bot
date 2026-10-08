@@ -6,7 +6,9 @@ let gtag: Mock<NonNullable<typeof globalThis.gtag>>;
 let fbq: Mock<NonNullable<typeof globalThis.fbq>>;
 
 beforeEach(() => {
-  gtag = vi.fn<NonNullable<typeof globalThis.gtag>>();
+  gtag = vi.fn<NonNullable<typeof globalThis.gtag>>((_command, _name, params) => {
+    if (params && typeof params.event_callback === "function") params.event_callback();
+  });
   fbq = vi.fn<NonNullable<typeof globalThis.fbq>>();
   globalThis.gtag = gtag;
   globalThis.fbq = fbq;
@@ -57,8 +59,54 @@ describe("runCheckout", () => {
     });
     expect(result.ok).toBe(true);
     expect(gtag).toHaveBeenCalledTimes(1);
-    expect(gtag.mock.calls[0][2]).toMatchObject({ plan: "pro_monthly", price_usd: 6.99, currency: "USD", value: 6.99 });
+    expect(gtag.mock.calls[0][2]).toMatchObject({
+      plan: "pro_monthly",
+      price_usd: 6.99,
+      currency: "USD",
+      value: 6.99,
+      transport_type: "beacon",
+    });
     expect(fbq.mock.calls[0][1]).toBe("InitiateCheckout");
     expect(go).toHaveBeenCalledWith("https://checkout.stripe.test/cs_ok");
+  });
+
+  it("waits for the send callback before redirecting, and falls back to a short timeout", async () => {
+    globalThis.tubTracking = { ga4MeasurementId: "G-NEWPROP123" };
+    const go = vi.fn();
+    let release: (() => void) | undefined;
+    gtag.mockImplementation((_command, _name, params) => {
+      release = () => {
+        if (params && typeof params.event_callback === "function") params.event_callback();
+      };
+    });
+    const pending = runCheckout("pro", {
+      fetchImpl: async () => json(200, { url: "https://checkout.stripe.test/cs_wait" }),
+      go,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(go).not.toHaveBeenCalled();
+    release?.();
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(go).toHaveBeenCalledWith("https://checkout.stripe.test/cs_wait");
+  });
+
+  it("redirects after the timeout when gtag never calls back", async () => {
+    vi.useFakeTimers();
+    globalThis.tubTracking = { ga4MeasurementId: "G-NEWPROP123" };
+    gtag.mockImplementation(() => {});
+    const go = vi.fn();
+    const pending = runCheckout("pro", {
+      fetchImpl: async () => json(200, { url: "https://checkout.stripe.test/cs_timeout" }),
+      go,
+    });
+    await vi.advanceTimersByTimeAsync(499);
+    expect(go).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(result.url).toBe("https://checkout.stripe.test/cs_timeout");
+    expect(go).toHaveBeenCalledWith("https://checkout.stripe.test/cs_timeout");
+    vi.useRealTimers();
   });
 });

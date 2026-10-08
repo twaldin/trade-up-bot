@@ -105,6 +105,7 @@ describe("app consumes the stashed lid", () => {
     expect(appSource).toContain("consumeAuthReturn()");
     expect(appSource).toContain("reportReturnLogin(");
     expect(appSource).toContain("consumeCheckoutReturn()");
+    expect(appSource).toContain("accountFromCheckoutUpgrade(");
     expect(appSource).not.toContain('searchParams.get("lid")');
     expect(appSource).not.toContain('searchParams.get("auth")');
     expect(appSource).not.toContain('searchParams.get("session_id")');
