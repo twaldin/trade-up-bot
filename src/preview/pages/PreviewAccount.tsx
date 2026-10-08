@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { TradeUp } from "../../../shared/types.js";
 import type { SnapshotOutcome, UserTradeUp, UserTradeUpStats } from "../../../shared/my-trade-ups-types.js";
+import { getEffectiveTier } from "../../../shared/pro-access.js";
 import { authHref } from "../../lib/ref.js";
 import { trackClaimTradeUp, trackVerifyClick, trackVerifyComplete } from "../../lib/conversions.js";
 import { SIGN_IN_TO_CLAIM } from "../lib/copy.js";
@@ -188,6 +189,9 @@ export function PreviewAccount() {
   const [entries, setEntries] = useState<UserTradeUp[]>([]);
   const [stats, setStats] = useState<UserTradeUpStats | null>(null);
   const [statsFailed, setStatsFailed] = useState(false);
+  const [statsSettled, setStatsSettled] = useState(false);
+  const [listSettled, setListSettled] = useState(false);
+  const [pricingRevealed, setPricingRevealed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -213,26 +217,31 @@ export function PreviewAccount() {
     setLoading(true);
     if (claimAttempts.current === 0) setNote(null);
     let statsStarted = false;
+    let listDone = false;
     try {
       await waitForBrowseHold(signal);
       const mainReq = activeTab === "claims"
         ? fetch(MY_TRADE_UPS_API.claims, { credentials: "include", signal })
         : fetch(activeTab === "purchased" ? MY_TRADE_UPS_API.purchased : MY_TRADE_UPS_API.history, { credentials: "include", signal });
       statsStarted = true;
-      const statsReq = fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
+      void fetch(MY_TRADE_UPS_API.stats, { credentials: "include", signal })
         .then(async (res) => {
           if (signal?.aborted) return;
           if (!res.ok) {
             setStatsFailed(true);
+            setStatsSettled(true);
             return;
           }
           const data = await res.json() as UserTradeUpStats;
           if (signal?.aborted) return;
           setStats(data);
           setStatsFailed(false);
+          setStatsSettled(true);
         })
         .catch(() => {
-          if (!signal?.aborted) setStatsFailed(true);
+          if (signal?.aborted) return;
+          setStatsFailed(true);
+          setStatsSettled(true);
         });
 
       const res = await mainReq;
@@ -241,12 +250,14 @@ export function PreviewAccount() {
         setNote("Claims need a Pro account. Pricing stays on the production route.");
         setClaimTradeUps([]);
         setEntries([]);
+        listDone = true;
         return;
       }
       if (res.status === 429) {
         noteRateLimited(parseRetryAfter(res.headers.get("retry-after")));
         if (claimAttempts.current >= 1) {
           setNote(RATE_LIMIT_MANUAL_COPY);
+          listDone = true;
           return;
         }
         setNote(SLOW_DOWN_COPY);
@@ -261,6 +272,7 @@ export function PreviewAccount() {
       }
       if (!res.ok) {
         setNote("Could not load trade-ups.");
+        listDone = true;
         return;
       }
       claimAttempts.current = 0;
@@ -309,15 +321,23 @@ export function PreviewAccount() {
           if (!signal?.aborted) setFaceTick((tick) => tick + 1);
         });
       }
-      await statsReq;
+      if (signal?.aborted) return;
+      listDone = true;
     } catch (error) {
       if (signal?.aborted) return;
       console.error("Failed to fetch my trade-ups", error);
       setNote("Could not load trade-ups.");
-      if (!statsStarted) setStatsFailed(true);
+      if (!statsStarted) {
+        setStatsFailed(true);
+        setStatsSettled(true);
+      }
+      listDone = true;
     } finally {
       claimsInFlight.current = false;
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        if (listDone) setListSettled(true);
+        setLoading(false);
+      }
     }
   }, [activeTab, user]);
 
@@ -670,7 +690,14 @@ export function PreviewAccount() {
   const tabCount = activeTab === "claims" ? claimCount : listCount;
   const showChrome = user != null && !sessionHold;
   const showStats = showChrome && hasProAccess(user);
-  const pendingSession = (user === undefined && !sessionHold) || (showChrome && loading);
+  const authUnresolved = user === undefined && !sessionHold;
+  const waitsForStats = showChrome && getEffectiveTier(user) === "pro" && !statsSettled;
+  const waitsForClaims = showChrome && !listSettled;
+  const holdPricing = authUnresolved || waitsForStats || waitsForClaims;
+  const pendingSession = !pricingRevealed && holdPricing;
+  useEffect(() => {
+    if (!holdPricing) setPricingRevealed(true);
+  }, [holdPricing]);
   const listPending = showChrome && loading && claimTradeUps.length === 0 && entries.length === 0 && !note;
   const selectTab = (key: (typeof ACCOUNT_TABS)[number]["key"]) => {
     setActiveTab(key);
@@ -760,7 +787,7 @@ export function PreviewAccount() {
             </div>
           )}
           {actionError && <p className="preview-note preview-note--loss">{actionError}</p>}
-          <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}${showStats ? "" : " preview-account__slot--fit"}`}>
+          <div className={`preview-account__slot${slotQuiet ? " preview-account__slot--quiet" : ""}${!showStats && listSettled ? " preview-account__slot--fit" : ""}`}>
           {listPending && <AccountListSkeleton />}
           {loadError && (
             <div className="preview-notice" role="status">

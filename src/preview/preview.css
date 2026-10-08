@@ -3105,10 +3105,12 @@
 /* ======================================================== my trade-ups */
 
 /* Auth pending keeps the session panel's height (the note reserves the
-   wrapped sign-in line). Toolbar and the legal line stay out of flow until
-   auth resolves, and for a signed-in user until the first claims paint, so
-   they appear under the finished stack instead of sliding. Visual order
-   stays DOM order: head, session, content, toolbar, legal. */
+   wrapped sign-in line). Toolbar and the legal line stay out of flow while
+   auth is unresolved, and on the first load while the claims list is still
+   out (so a late list cannot push them) and, for Pro and lifetime only,
+   while stats are still out. After that first reveal a tab switch or
+   refetch leaves both in flow. Visual order stays DOM order: head, session,
+   content, toolbar, legal. */
 .preview-account--pending > .preview-toolbar {
   display: none;
 }

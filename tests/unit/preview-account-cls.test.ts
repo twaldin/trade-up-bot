@@ -179,6 +179,9 @@ describe("account layout reservation", () => {
     expect(page).not.toContain("{user && stats &&");
     expect(page).toContain("const showChrome = user != null && !sessionHold;");
     expect(page).toContain("const showStats = showChrome && hasProAccess(user);");
+    expect(page).toContain('getEffectiveTier(user) === "pro"');
+    expect(page).not.toContain('user.tier === "pro"');
+    expect(page).not.toContain("user.tier === 'pro'");
   });
 
   it("hides Sign in with Steam while auth is still pending", async () => {
@@ -230,5 +233,146 @@ describe("account layout reservation", () => {
     expect(host.querySelectorAll(".preview-claim button").length).toBeGreaterThanOrEqual(3);
     expect(host.textContent).toContain("Verify");
     expect(host.querySelector(".preview-stats")).toBeNull();
+  });
+
+  it.each([
+    ["basic", { tier: "basic" as const, lifetime: false }, false],
+    ["lifetime", { tier: "free" as const, lifetime: true }, true],
+  ])("renders three claim cards for %s", async (_label, extra, seesStats) => {
+    const tradeUps = [1, 2, 3].map((id) => makeTradeUp({ id, claimed_by_me: true }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, ...extra, display_name: "Bea" });
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: tradeUps });
+      if (path.includes("/api/my-trade-ups/stats")) {
+        return seesStats ? json(200, STATS) : json(403, { error: "nope" });
+      }
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelectorAll(".preview-claim").length).toBe(3);
+    expect(host.textContent).toContain("Verify");
+    expect(host.textContent).toContain("Confirm Purchase");
+    if (seesStats) {
+      expect(host.querySelector(".preview-stats")).toBeTruthy();
+      expect(host.textContent).toContain("+$184.20");
+    } else {
+      expect(host.querySelector(".preview-stats")).toBeNull();
+    }
+  });
+
+  it.each(["free", "basic"])("shows pricing for %s while stats are still pending", async (tier) => {
+    let releaseStats: () => void = () => {};
+    const statsGate = new Promise<void>((resolveGate) => { releaseStats = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier, lifetime: false, display_name: "Bea" });
+      if (path.includes("/api/my-trade-ups/stats")) {
+        await statsGate;
+        return json(403, { error: "nope" });
+      }
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect(host.querySelector(".preview-stats")).toBeNull();
+    expect([...host.querySelectorAll("a")].some((node) => node.textContent?.trim() === "Pricing")).toBe(true);
+
+    await act(async () => { releaseStats(); });
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await Promise.resolve(); });
+    }
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+  });
+
+  it("holds pricing for a lifetime buyer until stats settle", async () => {
+    let releaseStats: () => void = () => {};
+    const statsGate = new Promise<void>((resolveGate) => { releaseStats = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) {
+        return json(200, { ...USER, tier: "free", lifetime: true, display_name: "Ada" });
+      }
+      if (path.includes("/api/my-trade-ups/stats")) {
+        await statsGate;
+        return json(200, STATS);
+      }
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-account--pending")).toBeTruthy();
+    expect(host.querySelector(".preview-stats")).toBeTruthy();
+    expect(host.textContent).not.toContain("+$184.20");
+
+    await act(async () => { releaseStats(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect(host.textContent).toContain("+$184.20");
+    expect(host.querySelector(".preview-stats")?.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("keeps the free claims slot reserved until the list settles", async () => {
+    let releaseClaims: () => void = () => {};
+    const claimsGate = new Promise<void>((resolveGate) => { releaseClaims = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", lifetime: false, display_name: "Bea" });
+      if (path.includes("my_claims=true")) {
+        await claimsGate;
+        return json(200, { trade_ups: [] });
+      }
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    const slot = host.querySelector(".preview-account__slot");
+    expect(slot).toBeTruthy();
+    expect(slot?.classList.contains("preview-account__slot--fit")).toBe(false);
+    expect(host.querySelector(".preview-account--pending")).toBeTruthy();
+
+    await act(async () => { releaseClaims(); });
+    for (let i = 0; i < 8; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+    expect(host.querySelector(".preview-account__slot--fit")).toBeTruthy();
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+  });
+
+  it("does not re-hide pricing when a later tab fetch is in flight", async () => {
+    let releasePurchased: () => void = () => {};
+    const purchasedGate = new Promise<void>((resolveGate) => { releasePurchased = resolveGate; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/api/auth/me")) return json(200, { ...USER, tier: "free", lifetime: false, display_name: "Bea" });
+      if (path.includes("status=purchased")) {
+        await purchasedGate;
+        return json(200, { trade_ups: [] });
+      }
+      if (path.includes("my_claims=true")) return json(200, { trade_ups: [] });
+      if (path.includes("/api/my-trade-ups/stats")) return json(403, { error: "nope" });
+      return json(200, { claims: [] });
+    }));
+    await mount();
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    const purchased = [...host.querySelectorAll("[role=tab]")].find((node) => node.textContent?.includes("Purchased"));
+    expect(purchased).toBeInstanceOf(HTMLButtonElement);
+    if (!(purchased instanceof HTMLButtonElement)) return;
+    await act(async () => { purchased.click(); });
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => { await Promise.resolve(); });
+    }
+    expect(host.querySelector(".preview-account--pending")).toBeNull();
+    expect([...host.querySelectorAll("a")].some((node) => node.textContent?.trim() === "Pricing")).toBe(true);
+    await act(async () => { releasePurchased(); });
   });
 });
