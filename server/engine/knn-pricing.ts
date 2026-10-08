@@ -15,6 +15,9 @@ import { floatToCondition } from "../../shared/types.js";
 import { CONDITION_BOUNDS } from "./types.js";
 import type { KnnObservation, KnnEstimate, KnnConfig } from "./types.js";
 import { requestCacheServesStale, staleDecision } from "./request-cache-policy.js";
+import { REBUILD_FETCH_SIZE, REBUILD_YIELD_EVERY, visitRows, yieldEventLoop } from "./event-loop.js";
+import { forEachKeysetPage } from "./rebuild-io.js";
+import { enqueueRebuild } from "./rebuild-queue.js";
 
 export const FLOAT_BUCKETS = [
   { min: 0.00, max: 0.03, label: "FN-low" },
@@ -159,6 +162,7 @@ const KNN_SOURCE_WEIGHTS: Record<string, number> = {
 type KnnCacheMap = Map<string, KnnObservation[]>;
 
 interface KnnObservationRow {
+  id?: number;
   skin_name: string;
   float_value: number;
   price_cents: number;
@@ -188,50 +192,66 @@ export function knnTimeDecay(ageDays: number): number {
   return Math.pow(2, -ageDays / 30);
 }
 
-async function loadKnnObservationRows(
-  pool: pg.Pool,
-  skinNames?: string[],
-): Promise<KnnObservationRow[]> {
-  const params: unknown[] = [KNN_MAX_OBS_AGE_DAYS];
-  const skinFilter = skinNames && skinNames.length > 0
-    ? `AND skin_name = ANY($2::text[])`
-    : "";
-  if (skinNames && skinNames.length > 0) params.push(skinNames);
+/** Float, then price_observations.id. Equal floats stay in id order. */
+function compareKnnRows(a: KnnObservationRow, b: KnnObservationRow): number {
+  if (a.float_value !== b.float_value) return a.float_value - b.float_value;
+  const aId = typeof a.id === "number" ? a.id : 0;
+  const bId = typeof b.id === "number" ? b.id : 0;
+  return aId - bId;
+}
 
-  const { rows } = await pool.query<KnnObservationRow>(`
-    SELECT skin_name, float_value, price_cents, source,
-      EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
-    FROM price_observations
-    WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 day')
-      AND source IN ('sale', 'skinport_sale', 'buff_sale')
-      ${skinFilter}
-    ORDER BY skin_name, float_value
-  `, params);
-
+async function loadKnnObservationRows(pool: pg.Pool): Promise<KnnObservationRow[]> {
+  const rows: KnnObservationRow[] = [];
+  // Keyset on price_observations.id. buildKnnCache groups by skin and sorts
+  // by float, then id, so a later page cannot change an earlier tie.
+  await forEachKeysetPage<KnnObservationRow>(
+    async (after) => {
+      const cursor = typeof after === "number" ? after : null;
+      const { rows: page } = await pool.query<KnnObservationRow>(`
+        SELECT id, skin_name, float_value, price_cents, source,
+          EXTRACT(EPOCH FROM NOW() - observed_at::timestamptz) / 86400.0 as age_days
+        FROM price_observations
+        WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 day')
+          AND source IN ('sale', 'skinport_sale', 'buff_sale')
+          AND ($2::int IS NULL OR id > $2)
+        ORDER BY id
+        LIMIT $3
+      `, [KNN_MAX_OBS_AGE_DAYS, cursor, REBUILD_FETCH_SIZE]);
+      return page;
+    },
+    (row) => (typeof row.id === "number" ? row.id : null),
+    (row) => {
+      rows.push(row);
+    },
+  );
   return rows;
 }
 
-function buildKnnCache(rows: KnnObservationRow[]): {
+async function buildKnnCache(rows: KnnObservationRow[]): Promise<{
   cache: KnnCacheMap;
   freshness: Map<string, number>;
   csfloatSales: Set<string>;
   buffSales: Set<string>;
-} {
+}> {
   // Group raw observations by skin
   const rawBySkin = new Map<string, KnnObservationRow[]>();
-  for (const row of rows) {
+  await visitRows(rows, (row) => {
     let arr = rawBySkin.get(row.skin_name);
     if (!arr) { arr = []; rawBySkin.set(row.skin_name, arr); }
     arr.push(row);
-  }
+  });
 
   const cache: KnnCacheMap = new Map();
   const freshness = new Map<string, number>();
   const csfloatSales = new Set<string>();
   const buffSales = new Set<string>();
 
-  // Build cache with exponential time-decay + track freshness + CSFloat sale presence
+  // Build cache with exponential time-decay + track freshness + CSFloat sale presence.
+  // Yield across observations, not once per skin, so one large skin cannot
+  // hold the event loop for the whole group.
+  let processed = 0;
   for (const [skinName, skinRows] of rawBySkin) {
+    skinRows.sort(compareKnnRows);
     const arr: KnnObservation[] = [];
     let recentCount = 0;
     let hasCsfloat = false;
@@ -249,8 +269,9 @@ function buildKnnCache(rows: KnnObservationRow[]): {
       if (ageDays < 14) recentCount++;
       if (row.source === "sale") hasCsfloat = true;
       if (row.source === "buff_sale") hasBuff = true;
+      processed++;
+      if (processed % REBUILD_YIELD_EVERY === 0) await yieldEventLoop();
     }
-    arr.sort((a, b) => a.float - b.float);
     cache.set(skinName, arr);
     freshness.set(skinName, recentCount);
     if (hasCsfloat) csfloatSales.add(skinName);
@@ -266,32 +287,37 @@ function knnCacheAgeMs(now = Date.now()): number {
   return _knnCacheLoadedAt > 0 ? now - _knnCacheLoadedAt : Number.POSITIVE_INFINITY;
 }
 
-/** Build-or-join: one in-flight rebuild. API requests may return the stale map. */
+/**
+ * Build-or-join: one in-flight rebuild. A calculator request with a cache
+ * always reads that cache, including past the staleness cap, and rebuilds
+ * behind the request. Cold start and non-request callers still wait.
+ */
 async function ensureKnnCache(pool: pg.Pool): Promise<void> {
+  const ageMs = knnCacheAgeMs();
   const decision = staleDecision({
     size: _knnCache.size,
-    ageMs: knnCacheAgeMs(),
+    ageMs,
     ttlMs: KNN_CACHE_TTL_MS,
     maxStaleMs: KNN_CACHE_MAX_STALE_MS,
     allowStale: requestCacheServesStale(),
   });
   if (decision === "fresh") return;
-  if (decision === "serve-stale") {
+  if (requestCacheServesStale() && _knnCache.size > 0) {
+    if (decision !== "serve-stale") {
+      console.log(
+        `[knn-cache] serving stale cache, age ${Math.round(ageMs)}ms past ${KNN_CACHE_MAX_STALE_MS}ms cap; background rebuild`,
+      );
+    }
     // buildAndStoreKnnCache logs the failure. This catch only marks it handled.
     void startKnnRebuild(pool).catch(() => {});
     return;
-  }
-  if (requestCacheServesStale() && _knnCache.size > 0) {
-    console.error(
-      `[knn-cache] stale for ${Math.round(knnCacheAgeMs())}ms, past ${KNN_CACHE_MAX_STALE_MS}ms cap; blocking until rebuild`,
-    );
   }
   await startKnnRebuild(pool);
 }
 
 function startKnnRebuild(pool: pg.Pool): Promise<void> {
   if (!_knnCacheBuildPromise) {
-    _knnCacheBuildPromise = buildAndStoreKnnCache(pool).finally(() => {
+    _knnCacheBuildPromise = enqueueRebuild(() => buildAndStoreKnnCache(pool)).finally(() => {
       _knnCacheBuildPromise = null;
     });
   }
@@ -304,6 +330,7 @@ export async function warmKnnCache(pool: pg.Pool): Promise<void> {
 }
 
 async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
+  if (_knnCache.size > 0 && knnCacheAgeMs() < KNN_CACHE_TTL_MS) return;
   const t0 = Date.now();
   try {
     // Sales-only for output pricing: listings are ask prices (not transaction prices)
@@ -311,7 +338,7 @@ async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
     // Build into locals and swap after the query so a stale reader never sees an empty map.
     const rows = await loadKnnObservationRows(pool);
     const tQuery = Date.now();
-    const built = buildKnnCache(rows);
+    const built = await buildKnnCache(rows);
     if (built.cache.size === 0 && _knnCache.size > 0) {
       throw new Error("KNN rebuild returned no observations");
     }
@@ -326,7 +353,8 @@ async function buildAndStoreKnnCache(pool: pg.Pool): Promise<void> {
     _knnCacheLoadedAt = Date.now();
     console.log(`  [KNN cache] ${rows.length} observations, ${_knnCache.size} skins — query ${tQuery - t0}ms, build ${Date.now() - tQuery}ms`);
   } catch (err) {
-    console.error("[knn-cache] rebuild failed:", err);
+    const ageSeconds = Math.round(knnCacheAgeMs() / 1000);
+    console.error(`[knn-cache] rebuild failed, cache age ${ageSeconds}s:`, err);
     throw err;
   }
 }
@@ -352,6 +380,11 @@ export function ageKnnCacheForTests(ageMs: number): void {
 /** test seam — returns the current size of the global _knnCache */
 export function getKnnCacheSize(): number { // test seam
   return _knnCache.size;
+}
+
+/** test seam — observations in float-then-id order for one skin. */
+export function knnCachedObservationsForTests(skinName: string): readonly KnnObservation[] {
+  return _knnCache.get(skinName) ?? [];
 }
 
 // Maximum (skin, condition-range) pairs per query chunk.
@@ -419,11 +452,11 @@ async function loadInputKnnObservationRows(
         SELECT DISTINCT skin_name, min_float, max_float, include_max
         FROM requested
       )
-      SELECT po.skin_name, po.float_value, po.price_cents, po.source,
+      SELECT po.id, po.skin_name, po.float_value, po.price_cents, po.source,
         EXTRACT(EPOCH FROM NOW() - po.observed_at::timestamptz) / 86400.0 as age_days
       FROM distinct_pairs p
       JOIN LATERAL (
-        SELECT skin_name, float_value, price_cents, source, observed_at
+        SELECT id, skin_name, float_value, price_cents, source, observed_at
         FROM price_observations
         WHERE skin_name = p.skin_name
           AND observed_at >= NOW() - ($1::int * INTERVAL '1 day')
@@ -462,7 +495,7 @@ async function getInputKnnCache(
 
   const t0 = Date.now();
   const rows = await loadInputKnnObservationRows(pool, listings);
-  const built = buildKnnCache(rows);
+  const built = await buildKnnCache(rows);
   console.log(`  [KNN scoped] ${rows.length} observations, ${built.cache.size}/${skinNames.length} skins — ${Date.now() - t0}ms`);
   return built.cache;
 }

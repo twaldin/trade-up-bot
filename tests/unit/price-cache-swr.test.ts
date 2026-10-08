@@ -24,6 +24,7 @@ import {
 } from "../../server/engine/pricing.js";
 import { conditionMultiplierCache } from "../../server/engine/condition-multipliers.js";
 import { curveCache } from "../../server/engine/curve-classification.js";
+import { clearKnnCache, warmKnnCache } from "../../server/engine/knn-pricing.js";
 
 const REDLINE = "AK-47 | Redline:Field-Tested";
 const KNIFE_FN = "★ Karambit | Fade:Factory New";
@@ -76,18 +77,6 @@ function scriptedPool(script: Script): pg.Pool {
     if (text.includes("source = 'csfloat_sales'")) return { rows: [] };
     if (text.includes("PERCENTILE_CONT")) return { rows: [{ median_ratio: null, n: 0 }] };
     if (text.includes("source = 'skinport'")) return { rows: [] };
-    if (text.includes("UNION ALL")) {
-      script.ceilingQueries++;
-      if (script.holdCeiling) await script.holdCeiling;
-      return {
-        rows: [{
-          skin_name: "AK-47 | Redline",
-          float_value: 0.21,
-          price_cents: 1100,
-          source: "csfloat",
-        }],
-      };
-    }
     if (text.includes("l.source = 'buff'")) return { rows: [] };
     if (text.includes("s.rarity = 'Extraordinary'")) return { rows: [] };
     if (text.includes("HAVING COUNT(*) >= 2")) return { rows: [] };
@@ -109,7 +98,40 @@ function scriptedPool(script: Script): pg.Pool {
     if (text.includes("AVG(CASE WHEN float_value")) return { rows: [] };
     throw new Error(`unexpected sql: ${text.slice(0, 180)}`);
   };
-  return { query } as pg.Pool;
+  let servedThisWalk = false;
+  const client = {
+    query: async (sql: string) => {
+      const text = String(sql).trim();
+      if (/^(BEGIN|COMMIT|ROLLBACK|CLOSE)\b/i.test(text)) return { rows: [] };
+      if (/^DECLARE\b/i.test(text)) {
+        if (!text.includes("COALESCE(l.source, 'csfloat')") || text.includes("UNION")) {
+          throw new Error(`unexpected declare: ${text.slice(0, 180)}`);
+        }
+        servedThisWalk = false;
+        return { rows: [] };
+      }
+      if (/^FETCH\b/i.test(text)) {
+        if (servedThisWalk) return { rows: [] };
+        servedThisWalk = true;
+        script.ceilingQueries++;
+        if (script.holdCeiling) await script.holdCeiling;
+        return {
+          rows: [{
+            skin_name: "AK-47 | Redline",
+            float_value: 0.21,
+            price_cents: 1100,
+            source: "csfloat",
+          }],
+        };
+      }
+      return query(text);
+    },
+    release: () => {},
+  };
+  return {
+    query,
+    connect: async () => client,
+  } as pg.Pool;
 }
 
 function makeScript(overrides: Partial<Script> = {}): Script {
@@ -344,6 +366,9 @@ describe("price cache stale-while-revalidate", () => {
     await runWithRequestCachePolicy(() => ensureFloatCeilingForTests(pool));
     const elapsed = performance.now() - started;
     expect(elapsed).toBeLessThan(1500);
+    for (let i = 0; i < 8 && script.ceilingQueries === 0; i++) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     expect(script.ceilingQueries).toBe(1);
     expect(floatCeilingCacheSizeForTests()).toBe(1);
 
@@ -362,5 +387,42 @@ describe("price cache stale-while-revalidate", () => {
     expect(resolved).toBe(false);
     blockHold.release();
     await pending;
+  });
+
+  it("keeps float-ceiling and KNN queries behind an in-flight price rebuild", async () => {
+    const script = makeScript();
+    const pool = scriptedPool(script);
+    await buildPriceCache(pool);
+    const ceilingBefore = script.ceilingQueries;
+
+    expirePriceCacheForTests(PRICE_CACHE_TTL_MS + 60_000);
+    ageFloatCeilingForTests(PRICE_CACHE_TTL_MS + 60_000);
+    const hold = armHold();
+    script.holdRef = hold.promise;
+
+    let knnQueries = 0;
+    const knnPool = {
+      query: async (sql: string) => {
+        if (!String(sql).includes("FROM price_observations")) {
+          throw new Error(`unexpected sql: ${String(sql).slice(0, 80)}`);
+        }
+        knnQueries++;
+        return { rows: [] };
+      },
+    } as pg.Pool;
+
+    const pricePromise = buildPriceCache(pool);
+    const ceilingPromise = ensureFloatCeilingForTests(pool);
+    const knnPromise = warmKnnCache(knnPool);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(knnQueries).toBe(0);
+    expect(script.ceilingQueries).toBe(ceilingBefore);
+
+    hold.release();
+    await Promise.all([pricePromise, ceilingPromise, knnPromise]);
+    expect(script.ceilingQueries).toBe(ceilingBefore + 1);
+    expect(knnQueries).toBeGreaterThan(0);
+    clearKnnCache();
   });
 });
