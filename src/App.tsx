@@ -10,7 +10,8 @@ import { SiteFooter } from "./components/SiteFooter.js";
 import { Button } from "../shared/components/ui/button.js";
 import { captureRefFromUrl, authHref } from "./lib/ref.js";
 import { reportPurchase } from "./lib/purchase.js";
-import { shouldTrackSpaPageView, trackAuthReturn, trackSpaPageView } from "./lib/conversions.js";
+import { trackAuthReturn } from "./lib/conversions.js";
+import { useSpaPageView } from "./lib/spa-page-view.js";
 import { consumeAuthReturn, consumeCheckoutReturn, reportReturnLogin } from "./lib/auth-return.js";
 import { registrationEventIdFromSteamId } from "./lib/registration-id.js";
 import { trackEvent } from "./lib/analytics.js";
@@ -474,15 +475,9 @@ function RetiredPreviewPrefixRedirect() {
 
 export default function App() {
   const { pathname } = useLocation();
-  const pageViewPath = useRef<string | null>(null);
 
-  // Document load is the gtag config page_view. History changes are GA4's own
-  // page_view. This effect only sends the Pixel PageView, and not on the first render.
-  useEffect(() => {
-    const previous = pageViewPath.current;
-    pageViewPath.current = pathname;
-    if (shouldTrackSpaPageView(previous, pathname)) trackSpaPageView();
-  }, [pathname]);
+  // GA4 page_view stays on gtag history. This records the Pixel PageView only.
+  useSpaPageView(pathname);
 
   // Capture creator/campaign ?ref once on load so it survives to the Steam auth redirect.
   useEffect(() => {
