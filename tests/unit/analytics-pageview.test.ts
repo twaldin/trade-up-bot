@@ -14,6 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AUTH_RETURN_STRIP_SOURCE } from "../../shared/auth-return-strip.js";
 import { useSpaPageView } from "../../src/lib/spa-page-view.js";
 
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GA4 = "G-2474G4P5QE";
 const PIXEL = "123456789012345";
