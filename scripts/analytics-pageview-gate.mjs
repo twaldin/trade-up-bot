@@ -176,7 +176,8 @@ function leakSources(blobs) {
   return found;
 }
 
-mkdirSync("/opt/cursor/artifacts", { recursive: true });
+const artifactsDir = process.env.GATE_ARTIFACTS_DIR ?? resolve(root, "artifacts");
+mkdirSync(artifactsDir, { recursive: true });
 
 const report = {
   label,
@@ -367,7 +368,7 @@ try {
   if (vite && !vite.killed) vite.kill("SIGTERM");
 }
 
-const out = `/opt/cursor/artifacts/analytics-pageview-${label}.json`;
+const out = resolve(artifactsDir, `analytics-pageview-${label}.json`);
 writeFileSync(out, JSON.stringify(report, null, 2));
 console.log(`wrote ${out}`);
 console.log(JSON.stringify({
