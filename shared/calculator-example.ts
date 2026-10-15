@@ -41,8 +41,65 @@ export function emptyCalculatorSlots(): CalculatorExampleSlot[] {
   return [{ skinName: "", floatValue: "", priceCents: "", resolved: null }];
 }
 
+export const NO_LISTINGS_COPY = "No listings for this skin right now";
+
+export interface CalculatorSearchHit {
+  name: string;
+  weapon: string;
+  rarity: string;
+  min_float: number;
+  max_float: number;
+  collection_name: string;
+  floor_price_cents: number | null;
+  floor_float: number | null;
+}
+
+export function isPositiveIntegerCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
 export function listingNumberToField(value: number): string {
   return String(value);
+}
+
+/** Search and Load example both build a slot from one listing's float and price. */
+export function slotFromSearchHit(hit: CalculatorSearchHit): CalculatorExampleSlot {
+  if (!isPositiveIntegerCents(hit.floor_price_cents) || typeof hit.floor_float !== "number" || !Number.isFinite(hit.floor_float)) {
+    const resolved: CalculatorExampleResolved = {
+      name: hit.name,
+      weapon: hit.weapon,
+      rarity: hit.rarity,
+      min_float: hit.min_float,
+      max_float: hit.max_float,
+      collection_name: hit.collection_name,
+      floor_price_cents: null,
+    };
+    return { skinName: hit.name, floatValue: "", priceCents: "", resolved };
+  }
+  return slotsFromCurrentListings([{
+    skin_name: hit.name,
+    float_value: hit.floor_float,
+    price_cents: hit.floor_price_cents,
+    weapon: hit.weapon,
+    rarity: hit.rarity,
+    min_float: hit.min_float,
+    max_float: hit.max_float,
+    collection_name: hit.collection_name,
+  }])[0];
+}
+
+export function calculatorEvaluateInputs(
+  slots: CalculatorExampleSlot[],
+): { skinName: string; floatValue: number; priceCents: number }[] {
+  const inputs: { skinName: string; floatValue: number; priceCents: number }[] = [];
+  for (const slot of slots) {
+    if (!slot.resolved || slot.floatValue === "") continue;
+    const floatValue = Number(slot.floatValue);
+    const priceCents = Number(slot.priceCents);
+    if (!Number.isFinite(floatValue) || !isPositiveIntegerCents(priceCents)) continue;
+    inputs.push({ skinName: slot.skinName, floatValue, priceCents });
+  }
+  return inputs;
 }
 
 export function slotsFromCurrentListings(

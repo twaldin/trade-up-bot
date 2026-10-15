@@ -12,6 +12,9 @@ import { addAdjustedFloat } from "./selection.js";
 import { refPriceCache, skinportMedianCache } from "./pricing.js";
 import { exceedsReferenceCap, inputReferenceCents } from "./input-outlier.js";
 
+/** Discovery skips a listing another user has claimed. Calculator slot fill uses this same predicate. */
+export const UNCLAIMED_LISTING_PREDICATE = "l.claimed_by IS NULL";
+
 export async function getListingsForRarity(
   pool: pg.Pool,
   rarity: string,
@@ -29,7 +32,7 @@ export async function getListingsForRarity(
     JOIN collections c ON sc.collection_id = c.id
     WHERE s.rarity = $1 AND l.stattrak = $2
       AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
-      AND l.claimed_by IS NULL
+      AND ${UNCLAIMED_LISTING_PREDICATE}
   `;
   const params: (string | number | boolean)[] = [rarity, stattrak];
   let paramIdx = 3;

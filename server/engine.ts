@@ -44,7 +44,7 @@ export {
 } from "./engine/observations.js";
 
 // === Data Loading ===
-export { getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache, serializeDiscoveryData, loadDiscoveryDataFromFile, cleanupDiscoveryFiles } from "./engine/data-load.js";
+export { UNCLAIMED_LISTING_PREDICATE, getListingsForRarity, getOutcomesForCollections, getNextRarity, loadDiscoveryData, buildWeightedPool, clearDiscoveryCache, serializeDiscoveryData, loadDiscoveryDataFromFile, cleanupDiscoveryFiles } from "./engine/data-load.js";
 
 // === Selection ===
 export { addAdjustedFloat, selectForFloatTarget, selectLowestFloat, selectKnapsackUnderBoundary } from "./engine/selection.js";
