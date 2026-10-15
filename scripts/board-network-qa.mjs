@@ -36,7 +36,9 @@ async function visit(browser, path, onReady) {
     counts.set(key, (counts.get(key) ?? 0) + 1);
     if (res.status() === 429) limited++;
   });
-  await page.goto(`${BASE}${path}`, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.setUserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 TradeUpBotVerify");
+  const marked = path.includes("tub_internal=1") ? path : `${path}${path.includes("?") ? "&" : "?"}tub_internal=1`;
+  await page.goto(`${BASE}${marked}`, { waitUntil: "networkidle2", timeout: 90000 });
   const extra = onReady ? await onReady(page, started) : {};
   await sleep(1500);
   await page.close();
