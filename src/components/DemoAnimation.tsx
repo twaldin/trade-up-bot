@@ -97,7 +97,7 @@ export function DemoAnimation() {
         hideTip(); await sleep(100); await click();
         allPill.className = 'demo-pill';
         knifePill.className = 'demo-pill demo-pill-knife';
-        statline.innerHTML = '8,421 found (<span class="demo-green">2,847 profitable</span>)';
+        statline.innerHTML = '5,000 found (<span class="demo-green">2,500 profitable</span>)';
         await sleep(400);
 
         // Sweep down through rows with hover highlights
@@ -113,7 +113,7 @@ export function DemoAnimation() {
 
         // Hover profit on row 0
         await moveTo(profitCell, 350);
-        showTip('<span class="demo-step-num">1</span> Sorted by <em>profit</em> — $306 on a $1,467 investment at <em>20.9% ROI</em>', profitCell);
+        showTip('<span class="demo-step-num">1</span> Sorted by <em>profit</em> — $300 on a $1,500 sample cost', profitCell);
         r0.classList.add('demo-row-hl');
         await sleep(1500); if (!runningRef.current) return;
         hideTip();
@@ -126,7 +126,7 @@ export function DemoAnimation() {
 
         // Outcomes
         await moveTo(oc0, 400);
-        showTip('<span class="demo-step-num">1</span> <em>24 possible glove outcomes</em> — Hedge Maze +$4,631, Pandora\'s Box +$4,116', oc0);
+        showTip('<span class="demo-step-num">1</span> <em>24 possible glove outcomes</em> — Hedge Maze +$5,000, Pandora\'s Box +$4,000', oc0);
         oc0.classList.add('demo-ocard-hl');
         await sleep(1500); if (!runningRef.current) return;
         oc0.classList.remove('demo-ocard-hl');
@@ -172,7 +172,7 @@ export function DemoAnimation() {
 
         await moveTo(thirdInput, 300);
         thirdInput.classList.add('demo-icard-hl');
-        showTip('<span class="demo-step-num">4</span> Buy all 5 inputs on <em>DMarket</em> and <em>CSFloat</em> — total: <em>$1,466.87</em>', thirdInput);
+        showTip('<span class="demo-step-num">4</span> Buy all 5 inputs on <em>DMarket</em> and <em>CSFloat</em> — total: <em>$1,500.00</em>', thirdInput);
         await sleep(1500); if (!runningRef.current) return;
         thirdInput.classList.remove('demo-icard-hl');
         hideTip();
@@ -198,7 +198,7 @@ export function DemoAnimation() {
         vb.className = 'demo-verify';
         knifePill.className = 'demo-pill';
         allPill.className = 'demo-pill demo-pill-all';
-        statline.innerHTML = '592,938 found (<span class="demo-green">28,493 profitable</span>)';
+        statline.innerHTML = '500,000 found (<span class="demo-green">25,000 profitable</span>)';
         const cur = cursorRef.current!;
         cur.style.transitionDuration = '300ms';
         cur.style.left = '600px';
@@ -295,7 +295,10 @@ export function DemoAnimation() {
         <div className="ml-auto text-[11px] text-[#525252] flex items-center gap-1"><input type="checkbox" disabled /> Show stale</div>
       </div>
 
-      <div data-stats className="px-4 py-1 text-[11px] text-[#525252]">592,938 found (<span className="demo-green">28,493 profitable</span>)</div>
+      <div className="flex items-center justify-between gap-3 px-4 py-1 text-[11px]">
+        <div data-stats className="text-[#525252] whitespace-nowrap">500,000 found (<span className="demo-green">25,000 profitable</span>)</div>
+        <div className="text-[#737373] shrink-0 whitespace-nowrap">Illustrative example, not live data</div>
+      </div>
 
       {/* Table */}
       <div className="overflow-hidden" style={{ maxHeight: 460 }}>
@@ -307,10 +310,10 @@ export function DemoAnimation() {
             <tr data-row="0">
               <td className="text-[#525252] text-[10px] w-6 text-center" data-expand>▶</td>
               <td><span className="demo-inp"><a>4× M4A4 | Buzz Kill</a>, <a>1× SSG 08 | Dragonfire</a></span> <span className="demo-colb">Glove</span> <span className="demo-age">(2h)</span></td>
-              <td className="demo-pos">$306.42</td>
-              <td><span className="demo-roi">20.9%</span></td>
+              <td className="demo-pos">$300.00</td>
+              <td><span className="demo-roi">20.0%</span></td>
               <td><span className="demo-ch demo-ch-md">46% above cost</span></td>
-              <td>$1,466.87</td><td>$1,773.29</td><td className="demo-pos">$4,631.58</td><td className="demo-neg">-$1,256.40</td>
+              <td>$1,500.00</td><td>$1,800.00</td><td className="demo-pos">$5,000.00</td><td className="demo-neg">-$1,200.00</td>
             </tr>
             <tr data-expanded style={{ display: 'none' }}><td colSpan={9} className="!p-0 !bg-[#0f0f0f]"><div className="py-4 px-5 pl-11">
               {/* Claim bar */}
@@ -340,10 +343,10 @@ export function DemoAnimation() {
                   <div className="demo-bar demo-bar-win" style={{ height: '36%' }}><span className="pct">12.5%</span></div>
                 </div>
                 <div className="flex justify-between text-[8px] mb-0.5">
-                  <span className="text-red-600/50">-$1,256</span><span className="text-red-600/50">-$500</span><span className="text-[#525252]">← Loss | Profit →</span><span className="text-green-600/50">$2,000</span><span className="text-green-600/50">$4,631</span>
+                  <span className="text-red-600/50">-$1,200</span><span className="text-red-600/50">-$500</span><span className="text-[#525252]">← Loss | Profit →</span><span className="text-green-600/50">$2,000</span><span className="text-green-600/50">$5,000</span>
                 </div>
                 <div className="flex justify-between text-[10px] text-[#525252] mt-1">
-                  <span>EV: <strong className="text-green-500">$306.42</strong></span><span>24 outcomes in 6 bins</span>
+                  <span>EV: <strong className="text-green-500">$300.00</strong></span><span>24 outcomes in 6 bins</span>
                 </div>
               </div>
 
@@ -351,11 +354,11 @@ export function DemoAnimation() {
               <div className="text-[11px] text-[#737373] uppercase tracking-wide mb-2 mt-3">Inputs (5) <span className="demo-verify" data-verify>Verify (20/20)</span></div>
               <div className="grid grid-cols-5 gap-1.5">
                 {[
-                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2484', pr: '$292.00' },
-                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2194', pr: '$292.00' },
-                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.1825', pr: '$293.93' },
-                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.3395', pr: '$293.94' },
-                  { src: 'cs', name: 'SSG 08 | Dragonfire', fl: 'FT 0.1513', pr: '$295.00' },
+                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2484', pr: '$300.00' },
+                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2194', pr: '$300.00' },
+                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.1825', pr: '$300.00' },
+                  { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.3395', pr: '$300.00' },
+                  { src: 'cs', name: 'SSG 08 | Dragonfire', fl: 'FT 0.1513', pr: '$300.00' },
                 ].map((inp, i) => (
                   <div key={i} className="demo-icard" data-input>
                     <div className="text-[10px] text-[#d4d4d4] font-medium whitespace-nowrap overflow-hidden text-ellipsis">
@@ -372,15 +375,15 @@ export function DemoAnimation() {
               <div className="text-[11px] text-[#737373] uppercase tracking-wide mb-2 mt-3">Possible Outcomes (24)</div>
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { name: 'Sport Gloves | Hedge Maze', prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,631.58', pos: true, data: '38 listings · 12 sales · CSFloat' },
-                  { name: "Sport Gloves | Pandora's Box", prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,116.30', pos: true, data: '22 listings · 8 sales' },
-                  { name: 'Moto Gloves | Spearmint', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,112.82', pos: true, data: '45 listings · 15 sales' },
-                  { name: 'Sport Gloves | Superconductor', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,030.35', pos: true, data: '31 listings · 11 sales' },
-                  { name: 'Specialist Gloves | Crimson Kimono', prob: '4.2%', fl: 'FT 0.3140', delta: '+$1,869.91', pos: true, data: '28 listings · 9 sales' },
-                  { name: 'Driver Gloves | Crimson Weave', prob: '4.2%', fl: 'FT 0.3140', delta: '+$786.68', pos: true, data: '19 listings · 6 sales' },
-                  { name: 'Hand Wraps | Leather', prob: '4.2%', fl: 'FT 0.3140', delta: '-$434.47', pos: false, data: '42 listings · 14 sales' },
-                  { name: 'Driver Gloves | Convoy', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,032.84', pos: false, data: '15 listings · 4 sales' },
-                  { name: 'Bloodhound Gloves | Snakebite', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,256.40', pos: false, data: '11 listings · 3 sales' },
+                  { name: 'Sport Gloves | Hedge Maze', prob: '4.2%', fl: 'FT 0.3140', delta: '+$5,000.00', pos: true, data: '38 listings · 12 sales · CSFloat' },
+                  { name: "Sport Gloves | Pandora's Box", prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,000.00', pos: true, data: '22 listings · 8 sales' },
+                  { name: 'Moto Gloves | Spearmint', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,000.00', pos: true, data: '45 listings · 15 sales' },
+                  { name: 'Sport Gloves | Superconductor', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,000.00', pos: true, data: '31 listings · 11 sales' },
+                  { name: 'Specialist Gloves | Crimson Kimono', prob: '4.2%', fl: 'FT 0.3140', delta: '+$1,500.00', pos: true, data: '28 listings · 9 sales' },
+                  { name: 'Driver Gloves | Crimson Weave', prob: '4.2%', fl: 'FT 0.3140', delta: '+$800.00', pos: true, data: '19 listings · 6 sales' },
+                  { name: 'Hand Wraps | Leather', prob: '4.2%', fl: 'FT 0.3140', delta: '-$400.00', pos: false, data: '42 listings · 14 sales' },
+                  { name: 'Driver Gloves | Convoy', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,000.00', pos: false, data: '15 listings · 4 sales' },
+                  { name: 'Bloodhound Gloves | Snakebite', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,200.00', pos: false, data: '11 listings · 3 sales' },
                 ].map((o, i) => (
                   <div key={i} className="demo-ocard" {...(i === 0 ? { 'data-outcome': '0' } : {})}>
                     <div className="flex justify-between items-baseline"><span className="text-[10px] text-[#d4d4d4] font-medium">{o.name}</span><span className="text-[10px] text-blue-400 font-semibold">{o.prob}</span></div>
@@ -393,14 +396,14 @@ export function DemoAnimation() {
 
             {/* Other rows */}
             {[
-              { inputs: '3× M4A4 | Buzz Kill, 2× SSG 08 | Dragonfire', profit: '$298.43', roi: '20.4%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,464.38', ev: '$1,762.81', best: '$4,631.07', worst: '-$1,254.73', age: '2h' },
-              { inputs: '5× M4A4 | Buzz Kill', profit: '$296.58', roi: '20.3%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,463.87', ev: '$1,760.45', best: '$4,634.58', worst: '-$1,248.91', age: '1h' },
-              { inputs: '5× M4A4 | Buzz Kill', profit: '$296.03', roi: '20.2%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,463.87', ev: '$1,759.90', best: '$4,634.58', worst: '-$1,254.30', age: '1h' },
-              { inputs: '3× M4A4 | Buzz Kill, 2× SSG 08 | Dragonfire', profit: '$295.73', roi: '20.2%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,464.38', ev: '$1,760.11', best: '$4,631.07', worst: '-$1,253.98', age: '3h' },
-              { inputs: '4× M4A4 | Buzz Kill, 1× AK-47 | Neon Rider', profit: '$289.15', roi: '19.8%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,458.92', ev: '$1,748.07', best: '$4,580.22', worst: '-$1,240.16', age: '1h' },
-              { inputs: '5× SSG 08 | Dragonfire', profit: '$284.90', roi: '19.5%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,462.50', ev: '$1,747.40', best: '$4,631.58', worst: '-$1,262.50', age: '4h' },
-              { inputs: '3× M4A4 | Buzz Kill, 2× AK-47 | Neon Rider', profit: '$281.33', roi: '19.3%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,455.44', ev: '$1,736.77', best: '$4,580.22', worst: '-$1,235.80', age: '2h' },
-              { inputs: '4× SSG 08 | Dragonfire, 1× M4A4 | Buzz Kill', profit: '$278.62', roi: '19.1%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,461.25', ev: '$1,739.87', best: '$4,631.07', worst: '-$1,258.73', age: '3h' },
+              { inputs: '3× M4A4 | Buzz Kill, 2× SSG 08 | Dragonfire', profit: '$280.00', roi: '20.0%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,400.00', ev: '$1,700.00', best: '$5,000.00', worst: '-$1,200.00', age: '2h' },
+              { inputs: '5× M4A4 | Buzz Kill', profit: '$260.00', roi: '20.0%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,400.00', ev: '$1,700.00', best: '$5,000.00', worst: '-$1,200.00', age: '1h' },
+              { inputs: '5× M4A4 | Buzz Kill', profit: '$240.00', roi: '15.0%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,400.00', ev: '$1,600.00', best: '$4,000.00', worst: '-$1,200.00', age: '1h' },
+              { inputs: '3× M4A4 | Buzz Kill, 2× SSG 08 | Dragonfire', profit: '$220.00', roi: '15.0%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,400.00', ev: '$1,600.00', best: '$4,000.00', worst: '-$1,200.00', age: '3h' },
+              { inputs: '4× M4A4 | Buzz Kill, 1× AK-47 | Neon Rider', profit: '$200.00', roi: '10.0%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,500.00', ev: '$1,700.00', best: '$4,000.00', worst: '-$1,200.00', age: '1h' },
+              { inputs: '5× SSG 08 | Dragonfire', profit: '$180.00', roi: '10.0%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,500.00', ev: '$1,700.00', best: '$4,000.00', worst: '-$1,300.00', age: '4h' },
+              { inputs: '3× M4A4 | Buzz Kill, 2× AK-47 | Neon Rider', profit: '$160.00', roi: '10.0%', chance: '46%', chCls: 'demo-ch-md', cost: '$1,500.00', ev: '$1,600.00', best: '$4,000.00', worst: '-$1,200.00', age: '2h' },
+              { inputs: '4× SSG 08 | Dragonfire, 1× M4A4 | Buzz Kill', profit: '$140.00', roi: '10.0%', chance: '42%', chCls: 'demo-ch-md', cost: '$1,500.00', ev: '$1,600.00', best: '$4,000.00', worst: '-$1,200.00', age: '3h' },
             ].map((r, i) => (
               <tr key={i} data-row={i + 1}>
                 <td className="text-[#525252] text-[10px] w-6 text-center">▶</td>

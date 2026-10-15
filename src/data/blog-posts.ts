@@ -99,13 +99,13 @@ export const blogPosts: BlogPost[] = [
   },
   {
     slug: "profitable-trade-ups-theory-vs-reality",
-    title: "CS2 Trade-Up Calculators Are Wrong: $2,778 Data Test",
-    excerpt: "See the $2,778 theory-vs-reality gap in CS2 trade-up calculators. Compare real listings, fees, and floats before you trust profit claims.",
+    title: "Why CS2 Trade-Up Calculators Overstate Profit: A Real-Listings Test",
+    excerpt: "A theoretical calculator can overstate EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
     publishedAt: "2026-03-16",
     readTime: "7 min read",
     author: "TradeUpBot Team",
     content: `
-<p>CS2 trade-up calculator profits often fail when theory meets real listings: ideal floats are missing, cheap inputs sell out, and fees erase margins. Our $2,778 data test showed why marketplace-backed calculations beat theoretical recipes for anyone trying to execute profitable contracts.</p>
+<p>CS2 trade-up calculator profits often fail when theory meets real listings: ideal floats are missing, cheap inputs sell out, and fees erase margins. An early internal test showed why marketplace-backed calculations beat theoretical recipes for anyone trying to execute profitable contracts.</p>
 
 <p>Compare theory against reality by checking <a href="/trade-ups">live marketplace-backed trade-ups</a> and reviewing <a href="/blog/cs2-trade-up-float-values-guide/">CS2 float value math</a> before trusting any profit estimate.</p>
 
@@ -119,7 +119,7 @@ export const blogPosts: BlogPost[] = [
 
 <p><strong>The float values are fabricated.</strong> The calculator assumes you can find inputs at some ideal float — usually something like 0.005 or 0.01. In reality, the cheapest available listings for that skin might have floats of 0.04 to 0.06. That difference alone can push your output from Factory New (0.069) to Minimal Wear (0.075), dropping the output value by 60% or more.</p>
 
-<p>We saw this firsthand when testing a theory engine early in TradeUpBot's development. The theoretical calculator identified a trade-up with $2,778 expected profit. Looked incredible. When we checked against real listings with actual float values, the same trade-up had an expected profit of $99. The theory was using float 0.005 inputs that simply didn't exist at the assumed price. Real inputs with purchasable floats of 0.04-0.06 produced Minimal Wear outputs instead of Factory New.</p>
+<p>We saw this firsthand when testing a theory engine early in TradeUpBot's development. In an early internal test, a theoretical calculator overstated a contract's EV after fees many times over compared with real listings. The theory was using float 0.005 inputs that simply didn't exist at the assumed price. Real inputs with purchasable floats of 0.04-0.06 produced Minimal Wear outputs instead of Factory New.</p>
 
 <h2>The Price Gap</h2>
 
@@ -438,11 +438,11 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>Fees Compress Thin Margins</h2>
 
-<p>Most gun-skin trade-ups (non-knife) operate on thin margins: 5-15% ROI before fees. A 10% ROI trade-up with $80 input cost has $8 of raw profit. After ~$3.50 in buyer fees and ~$2 in seller fees, you're left with $2.50 actual profit. That's 3.1% real ROI.</p>
+<p>Margins on gun-skin trade-ups are often thin before fees. Take $80 of inputs and $8 of value above that cost before fees. After $3.50 in buyer fees and $2 in seller fees, $2.50 remains.</p>
 
 <p>Knife trade-ups have larger absolute margins but the same fee percentages. A $400 knife trade-up with 15% raw profit ($60) keeps about $45 after fees. The percentages hurt the same way, but at least the dollar amounts are worth the effort.</p>
 
-<p>This is exactly why TradeUpBot includes all fees in every calculation. The profit number you see on the trade-up table is net profit after buying fees on every input and selling fees on the output. When it says $12 profit, it means $12 in your pocket, not $12 before someone takes a cut.</p>
+<p>This is exactly why TradeUpBot includes all fees in every calculation. The profit number you see on the trade-up table is net profit after buying fees on every input and selling fees on the output. The figure shown is EV after fees on inputs and output.</p>
 
 <h2>Cross-Marketplace Arbitrage</h2>
 
@@ -556,6 +556,8 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
     readTime: "6 min read",
     author: "TradeUpBot Team",
     content: `
+<p>The numbers below are illustrative examples.</p>
+
 <p>CS2 trade-up probability measures which output you can hit, while expected value is the probability-weighted average of outcome prices. Expected P/L is that average minus input cost. Use both with the share of outcomes above cost: a contract with +$36 expected P/L still has a 35% probability of losing money if the output distribution is volatile. Live board figures are estimates after fees. A trade-up can lose money.</p>
 
 <p>Sort <a href="/trade-ups">live trade-ups by Above cost %</a> to see probability in practice, or run scenarios in the <a href="/calculator">CS2 trade-up calculator</a> before risking inputs.</p>
@@ -937,20 +939,20 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 
 <h2>The data: one boundary, huge price gaps</h2>
 
-<p>We pulled per-condition prices for real CS2 skins from live marketplace data (CSFloat sales, captured June 2026) and compared the Factory New price to the Minimal Wear price for the same skin — the value of crossing that single 0.07 boundary:</p>
+<p>We compared Factory New and Minimal Wear for real CS2 skins using marketplace data captured in June 2026. The table keeps the two sides of the 0.07 boundary and the FN ÷ MW ratio from that comparison:</p>
 
 <table>
-<thead><tr><th>Skin</th><th>Factory New</th><th>Minimal Wear</th><th>Field-Tested</th><th>FN ÷ MW</th></tr></thead>
+<thead><tr><th>Skin</th><th>FN float</th><th>MW float</th><th>FN ÷ MW</th></tr></thead>
 <tbody>
-<tr><td>USP-S | Black Lotus</td><td>$40.50</td><td>$2.81</td><td>$1.72</td><td>14.4x</td></tr>
-<tr><td>M4A1-S | Nightmare</td><td>$237.23</td><td>$22.46</td><td>$10.33</td><td>10.6x</td></tr>
-<tr><td>Glock-18 | Green Line</td><td>$21.18</td><td>$1.58</td><td>$0.44</td><td>13.4x</td></tr>
-<tr><td>MAC-10 | Candy Apple</td><td>$5.23</td><td>$0.31</td><td>$0.25</td><td>16.9x</td></tr>
-<tr><td>SSG 08 | Calligrafaux</td><td>$2.33</td><td>$0.20</td><td>$0.06</td><td>11.7x</td></tr>
+<tr><td>USP-S | Black Lotus</td><td>0.069</td><td>0.071</td><td>14.4x</td></tr>
+<tr><td>M4A1-S | Nightmare</td><td>0.069</td><td>0.071</td><td>10.6x</td></tr>
+<tr><td>Glock-18 | Green Line</td><td>0.069</td><td>0.071</td><td>13.4x</td></tr>
+<tr><td>MAC-10 | Candy Apple</td><td>0.069</td><td>0.071</td><td>16.9x</td></tr>
+<tr><td>SSG 08 | Calligrafaux</td><td>0.069</td><td>0.071</td><td>11.7x</td></tr>
 </tbody>
 </table>
 
-<p>Every one of these crosses a 10x value line at float 0.07. The M4A1-S | Nightmare alone swings $215 across a float change you could not detect by looking at the weapon. If a trade-up's output lands at 0.069 instead of 0.071, that is the difference between the two columns.</p>
+<p>The float columns are the two sides of the 0.07 boundary: 0.069 is Factory New and 0.071 is Minimal Wear. Every one of these crosses a 10x value line there. The FN ÷ MW column is that gap. The M4A1-S | Nightmare ratio is 10.6x across a float change you could not detect by looking at the weapon.</p>
 
 <h2>Why this breaks naive profit estimates</h2>
 
@@ -973,7 +975,7 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <h2>FAQ</h2>
 
 <h3>How much does output float affect CS2 trade-up profit?</h3>
-<p>On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus around $40.50 Factory New versus $2.81 Minimal Wear. Within a single condition, price still drifts with float but less dramatically.</p>
+<p>On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus at 14.4x. Within a single condition, price still drifts with float but less dramatically.</p>
 
 <h3>Why does such a tiny float change matter so much?</h3>
 <p>Because CS2 wear conditions have hard cutoffs. An output at 0.069 is Factory New and one at 0.071 is Minimal Wear, and the market prices those two conditions very differently even though the skins look identical. The float change is invisible; the condition change is not.</p>
@@ -981,14 +983,14 @@ Skin B's adjusted float: 0.03 / 0.08 = 0.375</p>
 <h3>Can I predict the output float before buying inputs?</h3>
 <p>Yes. The output float is deterministic: it is the average of each input's adjusted float mapped onto the output skin's float range. A calculator computes it exactly from your ten inputs, so you can see which condition the output lands in and how close it is to the next boundary before spending anything.</p>
 
-<h3>Are these price numbers exact?</h3>
-<p>They are a dated snapshot. The per-condition prices were captured from live marketplace data (CSFloat sales) on 2026-06-24 and move with the market. The point is the size of the boundary effect — a roughly 10x-plus value change at float 0.07 — which holds even as absolute prices shift.</p>
+<h3>Are these ratios exact?</h3>
+<p>They are a dated snapshot. The FN ÷ MW ratios were captured from live marketplace data (CSFloat sales) on 2026-06-24 and move with the market. The point is the size of the boundary effect — a roughly 10x-plus value change at float 0.07 — which holds even as absolute prices shift.</p>
 `,
     faq: [
-      { question: "How much does output float affect CS2 trade-up profit?", answer: "On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus around $40.50 Factory New versus $2.81 Minimal Wear. Within a single condition, price still drifts with float but less dramatically." },
+      { question: "How much does output float affect CS2 trade-up profit?", answer: "On boundary-hugging contracts, enormously. Crossing the 0.07 Factory New / Minimal Wear line changes an output's value by roughly 10x to 17x on real skins — for example a USP-S | Black Lotus at 14.4x. Within a single condition, price still drifts with float but less dramatically." },
       { question: "Why does such a tiny float change matter so much?", answer: "Because CS2 wear conditions have hard cutoffs. An output at 0.069 is Factory New and one at 0.071 is Minimal Wear, and the market prices those two conditions very differently even though the skins look identical. The float change is invisible; the condition change is not." },
       { question: "Can I predict the output float before buying inputs?", answer: "Yes. The output float is deterministic: it is the average of each input's adjusted float mapped onto the output skin's float range. A calculator computes it exactly from your ten inputs, so you can see which condition the output lands in and how close it is to the next boundary before spending anything." },
-      { question: "Are these price numbers exact?", answer: "They are a dated snapshot. The per-condition prices were captured from live marketplace data (CSFloat sales) on 2026-06-24 and move with the market. The point is the size of the boundary effect — a roughly 10x-plus value change at float 0.07 — which holds even as absolute prices shift." },
+      { question: "Are these ratios exact?", answer: "They are a dated snapshot. The FN ÷ MW ratios were captured from live marketplace data (CSFloat sales) on 2026-06-24 and move with the market. The point is the size of the boundary effect — a roughly 10x-plus value change at float 0.07 — which holds even as absolute prices shift." },
     ],
   },
 

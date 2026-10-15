@@ -106,12 +106,12 @@ export function DemoAnimationMobile() {
         hideTip(); await sleep(200); await click();
         allPill.className = 'mdemo-tpill';
         knifePill.className = 'mdemo-tpill mdemo-tpill-knife';
-        statline.innerHTML = '8,421 found (<span class="mdemo-green">2,847 profitable</span>)';
+        statline.innerHTML = '5,000 found (<span class="mdemo-green">2,500 profitable</span>)';
         await sleep(800);
 
         // Hover profit on card
         await moveTo(profitEl);
-        showTip('<span class="mdemo-step-num">1</span> Sorted by <em>profit</em> — $306 on a $1,467 investment at <em>20.9% ROI</em>', profitEl);
+        showTip('<span class="mdemo-step-num">1</span> Sorted by <em>profit</em> — $300 on a $1,500 sample cost', profitEl);
         card0.classList.add('mdemo-card-hl');
         await sleep(3000); if (!runningRef.current) return;
         hideTip();
@@ -128,7 +128,7 @@ export function DemoAnimationMobile() {
 
         // Outcomes
         await moveTo(oc0);
-        showTip('<span class="mdemo-step-num">1</span> <em>24 possible glove outcomes</em> — Hedge Maze +$4,631, Pandora\'s Box +$4,116', oc0);
+        showTip('<span class="mdemo-step-num">1</span> <em>24 possible glove outcomes</em> — Hedge Maze +$5,000, Pandora\'s Box +$4,000', oc0);
         oc0.classList.add('mdemo-ocard-hl');
         await sleep(3500); if (!runningRef.current) return;
         oc0.classList.remove('mdemo-ocard-hl');
@@ -169,7 +169,7 @@ export function DemoAnimationMobile() {
         await sleep(500); hideTip();
 
         await moveTo(inp2);
-        showTip('<span class="mdemo-step-num">4</span> Buy all 5 inputs on <em>DMarket</em> and <em>CSFloat</em> — total: <em>$1,466.87</em>', inp2);
+        showTip('<span class="mdemo-step-num">4</span> Buy all 5 inputs on <em>DMarket</em> and <em>CSFloat</em> — total: <em>$1,500.00</em>', inp2);
         await sleep(3000); if (!runningRef.current) return;
         hideTip();
 
@@ -195,7 +195,7 @@ export function DemoAnimationMobile() {
         vb.className = 'mdemo-verify';
         knifePill.className = 'mdemo-tpill';
         allPill.className = 'mdemo-tpill mdemo-tpill-active';
-        statline.innerHTML = '592,938 found (<span class="mdemo-green">28,493 profitable</span>)';
+        statline.innerHTML = '500,000 found (<span class="mdemo-green">25,000 profitable</span>)';
         if (cardsEl) cardsEl.scrollTop = 0;
         const cur = cursorRef.current!;
         cur.style.transitionDuration = '400ms';
@@ -294,10 +294,13 @@ export function DemoAnimationMobile() {
           </div>
 
           {/* Stats */}
-          <div data-mstats className="px-4 py-1 text-[10px] text-[#525252]">592,938 found (<span className="mdemo-green">28,493 profitable</span>)</div>
+          <div className="px-4 py-1">
+            <div data-mstats className="text-[10px] leading-4 text-[#525252] whitespace-nowrap">500,000 found (<span className="mdemo-green">25,000 profitable</span>)</div>
+            <div className="h-4 text-[10px] leading-4 text-[#737373] whitespace-nowrap">Illustrative example, not live data</div>
+          </div>
 
           {/* Cards */}
-          <div data-cards className="px-3 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100% - 152px)', scrollbarWidth: 'none' }}>
+          <div data-cards className="px-3 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100% - 168px)', scrollbarWidth: 'none' }}>
             {/* Card 0 — interactive */}
             <div data-card="0" className="mdemo-card">
               <div className="px-3 pt-2.5 pb-1">
@@ -311,10 +314,10 @@ export function DemoAnimationMobile() {
                 <div className="flex gap-1 mt-1"><span className="inline-block text-[8.5px] px-[5px] py-px rounded-[3px] bg-[#1e293b] text-[#94a3b8] border border-[#334155]">Glove</span></div>
               </div>
               <div className="px-3 pb-2.5 flex items-center gap-2 flex-wrap">
-                <span data-mprofit className="text-[15px] font-bold mdemo-pos">$306.42</span>
-                <span className="text-[11px] px-[7px] py-0.5 rounded bg-green-500/15 text-green-500 font-semibold">20.9%</span>
+                <span data-mprofit className="text-[15px] font-bold mdemo-pos">$300.00</span>
+                <span className="text-[11px] px-[7px] py-0.5 rounded bg-green-500/15 text-green-500 font-semibold">20.0%</span>
                 <span className="text-[11px] px-[7px] py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">46% above cost</span>
-                <span className="text-[11px] text-[#737373] ml-auto">$1,466.87 cost</span>
+                <span className="text-[11px] text-[#737373] ml-auto">$1,500.00 cost</span>
               </div>
 
               {/* Expanded content */}
@@ -346,10 +349,10 @@ export function DemoAnimationMobile() {
                     <div className="mdemo-bar mdemo-bar-win" style={{ height: '36%' }}><span className="pct">12.5%</span></div>
                   </div>
                   <div className="flex justify-between text-[7px] mb-px">
-                    <span className="text-red-600/50">-$1,256</span><span className="text-red-600/50">-$500</span><span className="text-[#525252]">Loss | Profit</span><span className="text-green-600/50">$2,000</span><span className="text-green-600/50">$4,631</span>
+                    <span className="text-red-600/50">-$1,200</span><span className="text-red-600/50">-$500</span><span className="text-[#525252]">Loss | Profit</span><span className="text-green-600/50">$2,000</span><span className="text-green-600/50">$5,000</span>
                   </div>
                   <div className="flex justify-between text-[9px] text-[#525252] mt-[3px]">
-                    <span>EV: <strong className="text-green-500">$306.42</strong></span><span>24 outcomes in 6 bins</span>
+                    <span>EV: <strong className="text-green-500">$300.00</strong></span><span>24 outcomes in 6 bins</span>
                   </div>
                 </div>
 
@@ -357,10 +360,10 @@ export function DemoAnimationMobile() {
                 <div className="text-[10px] text-[#737373] uppercase tracking-wide px-3 mt-2 mb-1.5">Inputs (5) <span className="mdemo-verify" data-mverify>Verify (20/20)</span></div>
                 <div className="grid grid-cols-2 gap-1 px-3">
                   {[
-                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2484', pr: '$292.00', idx: 0 },
-                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2194', pr: '$292.00', idx: 1 },
-                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.1825', pr: '$293.93', idx: 2 },
-                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.3395', pr: '$293.94', idx: 3 },
+                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2484', pr: '$300.00', idx: 0 },
+                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.2194', pr: '$300.00', idx: 1 },
+                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.1825', pr: '$300.00', idx: 2 },
+                    { src: 'dm', name: 'M4A4 | Buzz Kill', fl: 'FT 0.3395', pr: '$300.00', idx: 3 },
                   ].map((inp) => (
                     <div key={inp.idx} className="mdemo-icard" data-minput={inp.idx}>
                       <div className="text-[9px] text-[#d4d4d4] font-medium whitespace-nowrap overflow-hidden text-ellipsis">
@@ -378,7 +381,7 @@ export function DemoAnimationMobile() {
                       <a>SSG 08 | Dragonfire</a> <span className="text-[7px] font-semibold text-green-500 float-right">✓</span>
                     </div>
                     <div className="text-[8px] text-[#737373] mt-px">FT 0.1513</div>
-                    <div className="text-[9px] text-white/80 font-semibold mt-px">$295.00</div>
+                    <div className="text-[9px] text-white/80 font-semibold mt-px">$300.00</div>
                   </div>
                 </div>
 
@@ -386,15 +389,15 @@ export function DemoAnimationMobile() {
                 <div className="text-[10px] text-[#737373] uppercase tracking-wide px-3 mt-2.5 mb-1.5">Possible Outcomes (24)</div>
                 <div className="flex flex-col gap-1 px-3 pb-3">
                   {[
-                    { name: 'Sport Gloves | Hedge Maze', prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,631.58', pos: true, data: '38 listings · 12 sales · CSFloat' },
-                    { name: "Sport Gloves | Pandora's Box", prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,116.30', pos: true, data: '22 listings · 8 sales' },
-                    { name: 'Moto Gloves | Spearmint', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,112.82', pos: true, data: '45 listings · 15 sales' },
-                    { name: 'Sport Gloves | Superconductor', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,030.35', pos: true, data: '31 listings · 11 sales' },
-                    { name: 'Specialist Gloves | Crimson Kimono', prob: '4.2%', fl: 'FT 0.3140', delta: '+$1,869.91', pos: true, data: '28 listings · 9 sales' },
-                    { name: 'Driver Gloves | Crimson Weave', prob: '4.2%', fl: 'FT 0.3140', delta: '+$786.68', pos: true, data: '19 listings · 6 sales' },
-                    { name: 'Hand Wraps | Leather', prob: '4.2%', fl: 'FT 0.3140', delta: '-$434.47', pos: false, data: '42 listings · 14 sales' },
-                    { name: 'Driver Gloves | Convoy', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,032.84', pos: false, data: '15 listings · 4 sales' },
-                    { name: 'Bloodhound Gloves | Snakebite', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,256.40', pos: false, data: '11 listings · 3 sales' },
+                    { name: 'Sport Gloves | Hedge Maze', prob: '4.2%', fl: 'FT 0.3140', delta: '+$5,000.00', pos: true, data: '38 listings · 12 sales · CSFloat' },
+                    { name: "Sport Gloves | Pandora's Box", prob: '4.2%', fl: 'FT 0.3140', delta: '+$4,000.00', pos: true, data: '22 listings · 8 sales' },
+                    { name: 'Moto Gloves | Spearmint', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,000.00', pos: true, data: '45 listings · 15 sales' },
+                    { name: 'Sport Gloves | Superconductor', prob: '4.2%', fl: 'FT 0.3140', delta: '+$2,000.00', pos: true, data: '31 listings · 11 sales' },
+                    { name: 'Specialist Gloves | Crimson Kimono', prob: '4.2%', fl: 'FT 0.3140', delta: '+$1,500.00', pos: true, data: '28 listings · 9 sales' },
+                    { name: 'Driver Gloves | Crimson Weave', prob: '4.2%', fl: 'FT 0.3140', delta: '+$800.00', pos: true, data: '19 listings · 6 sales' },
+                    { name: 'Hand Wraps | Leather', prob: '4.2%', fl: 'FT 0.3140', delta: '-$400.00', pos: false, data: '42 listings · 14 sales' },
+                    { name: 'Driver Gloves | Convoy', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,000.00', pos: false, data: '15 listings · 4 sales' },
+                    { name: 'Bloodhound Gloves | Snakebite', prob: '4.2%', fl: 'FT 0.3140', delta: '-$1,200.00', pos: false, data: '11 listings · 3 sales' },
                   ].map((o, i) => (
                     <div key={i} className="mdemo-ocard" {...(i === 0 ? { 'data-moutcome': '0' } : {})}>
                       <div className="flex justify-between items-baseline"><span className="text-[10px] text-[#d4d4d4] font-medium">{o.name}</span><span className="text-[9px] text-blue-400 font-semibold">{o.prob}</span></div>
@@ -408,10 +411,10 @@ export function DemoAnimationMobile() {
 
             {/* Other cards */}
             {[
-              { inputs: '3x M4A4 | Buzz Kill, 2x SSG 08 | Dragonfire', profit: '$298.43', roi: '20.4%', chance: '46%', cost: '$1,464.38', age: '2h' },
-              { inputs: '5x M4A4 | Buzz Kill', profit: '$296.58', roi: '20.3%', chance: '46%', cost: '$1,463.87', age: '1h' },
-              { inputs: '5x M4A4 | Buzz Kill', profit: '$296.03', roi: '20.2%', chance: '46%', cost: '$1,463.87', age: '1h' },
-              { inputs: '3x M4A4 | Buzz Kill, 2x SSG 08 | Dragonfire', profit: '$295.73', roi: '20.2%', chance: '42%', cost: '$1,464.38', age: '3h' },
+              { inputs: '3x M4A4 | Buzz Kill, 2x SSG 08 | Dragonfire', profit: '$280.00', roi: '20.0%', chance: '46%', cost: '$1,400.00', age: '2h' },
+              { inputs: '5x M4A4 | Buzz Kill', profit: '$260.00', roi: '20.0%', chance: '46%', cost: '$1,400.00', age: '1h' },
+              { inputs: '5x M4A4 | Buzz Kill', profit: '$240.00', roi: '15.0%', chance: '46%', cost: '$1,400.00', age: '1h' },
+              { inputs: '3x M4A4 | Buzz Kill, 2x SSG 08 | Dragonfire', profit: '$220.00', roi: '15.0%', chance: '42%', cost: '$1,400.00', age: '3h' },
             ].map((c, i) => (
               <div key={i} className="mdemo-card">
                 <div className="px-3 pt-2.5 pb-1">

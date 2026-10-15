@@ -56,9 +56,9 @@ const LOCKED: Record<(typeof SLUGS)[number], { title: string; excerpt: string; h
       "Discover the 7 best CS2 knife trade-up collections using real 2026 data on input prices, knife pools, and downside risk before buying.",
   },
   "profitable-trade-ups-theory-vs-reality": {
-    title: "CS2 Trade-Up Calculators Are Wrong: $2,778 Data Test",
+    title: "Why CS2 Trade-Up Calculators Overstate Profit: A Real-Listings Test",
     excerpt:
-      "See the $2,778 theory-vs-reality gap in CS2 trade-up calculators. Compare real listings, fees, and floats before you trust profit claims.",
+      "A theoretical calculator can overstate EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
   },
   "cs2-trade-up-marketplace-fees": {
     title: "CS2 Trade-Up Fees: CSFloat, DMarket & Skinport",

@@ -18,8 +18,8 @@ export const blogMeta: BlogMeta[] = [
   },
   {
     slug: "profitable-trade-ups-theory-vs-reality",
-    title: "CS2 Trade-Up Calculators Are Wrong: $2,778 Data Test",
-    excerpt: "See the $2,778 theory-vs-reality gap in CS2 trade-up calculators. Compare real listings, fees, and floats before you trust profit claims.",
+    title: "Why CS2 Trade-Up Calculators Overstate Profit: A Real-Listings Test",
+    excerpt: "A theoretical calculator can overstate EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
     publishedAt: "2026-03-16",
     readTime: "7 min read",
     author: "TradeUpBot Team",
