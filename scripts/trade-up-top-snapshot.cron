@@ -1,0 +1,1 @@
+15 4 * * * cd /opt/trade-up-bot && npx --no-install tsx scripts/snapshot-top-trade-ups.ts
