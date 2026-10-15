@@ -209,7 +209,7 @@ export function buildSeoHtml(meta: SeoMeta): string {
   const ogTitle = escapeHtml(meta.ogTitle ?? meta.title);
   const desc = escapeHtml(meta.description);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/og-default.jpg";
   const ogType = meta.ogType || "website";
 
   let jsonLdTag = "";
@@ -537,7 +537,7 @@ export function injectMetaIntoSpa(html: string, meta: SeoMeta): string {
   const desc = escapeHtml(meta.description);
   const url = escapeHtml(meta.url);
   const robots = meta.robots || "index, follow";
-  const ogImage = meta.ogImage || "https://tradeupbot.app/tradeuptable.jpg";
+  const ogImage = meta.ogImage || "https://tradeupbot.app/og-default.jpg";
 
   // Strip existing SEO tags (they come from the pre-rendered homepage)
   let result = html
