@@ -7,7 +7,7 @@ describe('Marketing assets', () => {
 
   // Optimised responsive variants that are actively referenced by LandingPage
   const assets = [
-    'tradeuptable.jpg',
+    'og-default.jpg',
   ];
 
   // Original full-size images deleted in plan-004 (unreferenced, >100 KB each).
@@ -17,6 +17,7 @@ describe('Marketing assets', () => {
     'expanded.png',
     'dataviewer.png',
     'tradeuptable.png',
+    'tradeuptable.jpg',
     // Originals removed in plan-004 (zero code refs, >100 KB)
     'collections.jpg',
     'expanded.jpg',

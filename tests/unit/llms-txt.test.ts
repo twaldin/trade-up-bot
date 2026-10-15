@@ -18,6 +18,11 @@ describe("llms.txt", () => {
     expect(LLMS_TXT).toContain("ten input");
   });
 
+  it("rejects chance in any form across the whole file", () => {
+    expect(LLMS_TXT).toContain("share of outcomes above cost");
+    expect(LLMS_TXT).not.toMatch(/chance/i);
+  });
+
   it("does not overclaim (no promised guarantees, no 'risk-free')", () => {
     const t = LLMS_TXT.toLowerCase();
     // Negated forms ("nothing is guaranteed") are fine — promising forms are not.

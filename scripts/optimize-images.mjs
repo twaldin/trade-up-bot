@@ -8,7 +8,7 @@ const RESPONSIVE_TARGETS = ["collections", "expanded", "dataviewer"];
 const WIDTHS = [375, 768, 1280];
 const JPEG_QUALITY = 82;
 const WEBP_QUALITY = 80;
-const OG_IMAGE = "tradeuptable.jpg";
+const OG_IMAGE = "og-default.jpg";
 const OG_MAX_BYTES = 150 * 1024;
 const OG_TARGET_WIDTH = 1200;
 

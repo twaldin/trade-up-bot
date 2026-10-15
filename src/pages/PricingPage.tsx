@@ -279,8 +279,8 @@ export function PricingPage() {
             </p>
             <div className="space-y-8">
               <div>
-                <img src="/tradeuptable.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
-                <p className="text-xs text-muted-foreground text-center mt-3">Trade-up table with profit, EV, chance to profit, and direct listing links</p>
+                <img src="/pricing-banner.jpg" alt="TradeUpBot — CS2 trade-ups ranked by EV after fees" width="1200" height="356" loading="lazy" className="rounded-lg border border-border shadow-lg w-full" />
+                <p className="text-xs text-muted-foreground text-center mt-3">TradeUpBot wordmark and tagline.</p>
               </div>
               <div>
                 <picture>

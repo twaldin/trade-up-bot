@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#ffffff"/>
+  
+    <rect width="390" height="48" fill="#f8f5f2"/>
+    <line x1="0" y1="48" x2="390" y2="48" stroke="#d9d8d5"/>
+    <g transform="translate(12 12) scale(0.75)" fill="none" stroke="#d7fe52" stroke-width="1.8">
+    <circle cx="16" cy="16" r="9"/>
+    <circle cx="16" cy="16" r="4.5"/>
+    <line x1="16" y1="4" x2="16" y2="10" stroke-linecap="round"/>
+    <line x1="16" y1="22" x2="16" y2="28" stroke-linecap="round"/>
+    <line x1="4" y1="16" x2="10" y2="16" stroke-linecap="round"/>
+    <line x1="22" y1="16" x2="28" y2="16" stroke-linecap="round"/>
+    <circle cx="16" cy="16" r="1.8" fill="#d7fe52" stroke="none"/>
+  </g>
+    <text x="44" y="31" fill="#0b0b0a" font-family="Inter" font-size="15" font-weight="700" text-anchor="start">TradeUpBot</text>
+    <g>
+      <rect x="16" y="60" width="162" height="26" rx="4" fill="#d7fe52"/>
+      <text x="26" y="77" fill="#000000" font-family="Inter" font-size="12" font-weight="700" text-anchor="start">Illustrative example</text>
+    </g>
+    <rect x="12" y="100" width="366" height="392" rx="6" fill="#f8f5f2" stroke="#d9d8d5" stroke-width="1"/>
+    <text x="26" y="128" fill="#0b0b0a" font-family="Inter" font-size="15" font-weight="700" text-anchor="start">Example trade-up</text>
+    <text x="26" y="150" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">Cost $100.00 · ROI 20%</text>
+    <text x="362" y="128" fill="#5a6b22" font-family="Inter" font-size="15" font-weight="700" text-anchor="end">+$20.00</text>
+    <text x="26" y="176" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">Inputs</text>
+    <g>
+    <rect x="26" y="188" width="165" height="96" rx="4" fill="#eeebe8"/>
+    <rect x="26" y="194" width="3" height="84" rx="1" fill="#d32ce6"/>
+    <text x="40" y="216" fill="#0b0b0a" font-family="Inter" font-size="13" font-weight="700" text-anchor="start">Example rifle</text>
+    <text x="40" y="236" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">×5 · 0.1500</text>
+    <text x="40" y="260" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">$10.00</text>
+  </g><g>
+    <rect x="199" y="188" width="165" height="96" rx="4" fill="#eeebe8"/>
+    <rect x="199" y="194" width="3" height="84" rx="1" fill="#d32ce6"/>
+    <text x="213" y="216" fill="#0b0b0a" font-family="Inter" font-size="13" font-weight="700" text-anchor="start">Example pistol</text>
+    <text x="213" y="236" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">×5 · 0.2500</text>
+    <text x="213" y="260" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">$10.00</text>
+  </g>
+    <text x="26" y="308" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">Outputs</text>
+    <g>
+    <rect x="26" y="320" width="165" height="96" rx="4" fill="#eeebe8"/>
+    <rect x="26" y="326" width="3" height="84" rx="1" fill="#5a6b22"/>
+    <text x="40" y="348" fill="#0b0b0a" font-family="Inter" font-size="13" font-weight="700" text-anchor="start">Example output A</text>
+    <text x="40" y="368" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">share 50%</text>
+    <text x="40" y="392" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">$140.00</text>
+  </g><g>
+    <rect x="199" y="320" width="165" height="96" rx="4" fill="#eeebe8"/>
+    <rect x="199" y="326" width="3" height="84" rx="1" fill="#5a6b22"/>
+    <text x="213" y="348" fill="#0b0b0a" font-family="Inter" font-size="13" font-weight="700" text-anchor="start">Example output B</text>
+    <text x="213" y="368" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">share 50%</text>
+    <text x="213" y="392" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">$100.00</text>
+  </g>
+    <text x="26" y="444" fill="#5a6b22" font-family="Inter" font-size="13" font-weight="700" text-anchor="start">Expected profit +$20.00</text>
+    <text x="26" y="466" fill="#6a6866" font-family="Inter" font-size="11" font-weight="400" text-anchor="start">Sample round numbers. Not a live result.</text>
+    <g>
+    <rect x="12" y="508" width="366" height="72" rx="6" fill="#f8f5f2" stroke="#d9d8d5" stroke-width="1"/>
+    <rect x="12" y="518" width="3" height="52" fill="#5a6b22"/>
+    <text x="30" y="536" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">Example trade-up</text>
+    <text x="30" y="564" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">10 × $10.00</text>
+    <text x="360" y="540" fill="#5a6b22" font-family="Inter" font-size="16" font-weight="700" text-anchor="end">+$10.00</text>
+    <text x="360" y="564" fill="#6a6866" font-family="Inter" font-size="11" font-weight="400" text-anchor="end">ROI 10%</text>
+  </g>
+    <g>
+    <rect x="12" y="592" width="366" height="72" rx="6" fill="#f8f5f2" stroke="#d9d8d5" stroke-width="1"/>
+    <rect x="12" y="602" width="3" height="52" fill="#5a6b22"/>
+    <text x="30" y="620" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">Example trade-up</text>
+    <text x="30" y="648" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">10 × $10.00</text>
+    <text x="360" y="624" fill="#5a6b22" font-family="Inter" font-size="16" font-weight="700" text-anchor="end">+$10.00</text>
+    <text x="360" y="648" fill="#6a6866" font-family="Inter" font-size="11" font-weight="400" text-anchor="end">ROI 10%</text>
+  </g>
+    <g>
+    <rect x="12" y="676" width="366" height="72" rx="6" fill="#f8f5f2" stroke="#d9d8d5" stroke-width="1"/>
+    <rect x="12" y="686" width="3" height="52" fill="#5a6b22"/>
+    <text x="30" y="704" fill="#0b0b0a" font-family="Inter" font-size="14" font-weight="700" text-anchor="start">Example trade-up</text>
+    <text x="30" y="732" fill="#6a6866" font-family="Inter" font-size="12" font-weight="400" text-anchor="start">10 × $10.00</text>
+    <text x="360" y="708" fill="#5a6b22" font-family="Inter" font-size="16" font-weight="700" text-anchor="end">+$20.00</text>
+    <text x="360" y="732" fill="#6a6866" font-family="Inter" font-size="11" font-weight="400" text-anchor="end">ROI 20%</text>
+  </g>
+  
+</svg>

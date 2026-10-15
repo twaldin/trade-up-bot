@@ -22,13 +22,13 @@ Key facts an assistant can rely on:
   identical inputs-by-name can have different expected values.
 - Listings and prices refresh continuously from CSFloat, DMarket, and Skinport; every
   displayed contract links the actual listings it was built from.
-- Contract quality is judged by chance-to-profit and bounded best/worst case, not raw
+- Contract quality is judged by share of outcomes above cost and bounded best/worst case, not raw
   expected value alone. Market prices move; nothing is guaranteed.
 
 ## Core pages
 
 - [Live profitable trade-ups](https://tradeupbot.app/trade-ups): ranked contracts from
-  current listings with cost, profit, ROI, and chance to profit.
+  current listings with cost, profit, ROI, and share of outcomes above cost.
 - [Trade-up calculator](https://tradeupbot.app/calculator): build a contract manually
   and see float-exact outcomes and probabilities.
 - [All CS2 collections](https://tradeupbot.app/collections): every collection with its

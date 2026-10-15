@@ -1,8 +1,6 @@
 /**
- * The device frames show a real capture of `/preview/trade-ups`, not live HTML
- * and not an invented chart. `scripts/preview-capture-device.mjs` refreshes the
- * four stills (desktop/mobile × dark/light) from the running preview host at
- * the end of a pass, so the lid always shows what shipped.
+ * Illustrative example stills for the landing device frames.
+ * Sample layouts with round figures, not a capture of the live board.
  */
 const SHOTS = {
   desktop: {
@@ -25,7 +23,7 @@ export function DeviceScreen({
   const src = SHOTS[compact ? "mobile" : "desktop"][mode];
   return (
     <div className={`tub-shot ${compact ? "tub-shot--phone" : ""}`}>
-      <img src={src} alt="The TradeUpBot board: input and output skins, payoff strip, and live listings." referrerPolicy="strict-origin" />
+      <img src={src} alt="Illustrative example of the TradeUpBot board." referrerPolicy="strict-origin" />
     </div>
   );
 }

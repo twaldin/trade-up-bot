@@ -76,11 +76,11 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
       <meta property="og:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
       <meta property="og:url" content="https://tradeupbot.app/" />
       <meta property="og:type" content="website" />
-      <meta property="og:image" content="https://tradeupbot.app/tradeuptable.jpg" />
+      <meta property="og:image" content="https://tradeupbot.app/og-default.jpg" />
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content="TradeUpBot — Find Profitable CS2 Trade-Ups from Real Listings" />
       <meta name="twitter:description" content="Find profitable CS2 trade-ups built from real, buyable listings. Verify availability and claim before anyone else." />
-      <meta name="twitter:image" content="https://tradeupbot.app/tradeuptable.jpg" />
+      <meta name="twitter:image" content="https://tradeupbot.app/og-default.jpg" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{__html: JSON.stringify({
         "@context": "https://schema.org",
         "@graph": [
