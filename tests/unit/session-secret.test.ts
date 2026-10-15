@@ -140,14 +140,14 @@ describe("production session secret boot guard", () => {
 describe("deploy session secret preflight", () => {
   const workflow = readFileSync(join(root, ".github/workflows/deploy.yml"), "utf8");
 
-  it("runs on the VPS after fetch and before pm2 reload", () => {
-    const line = workflow.split("\n").find((entry) => entry.includes("ssh ") && entry.includes("pm2 reload api"));
+  it("runs on the VPS after fetch and before the api reload", () => {
+    const line = workflow.split("\n").find((entry) => entry.includes("ssh ") && entry.includes("scripts/reload-api.ts"));
     expect(line).toBeDefined();
     const checkAt = line!.indexOf("npx --no-install tsx scripts/check-production-session-secret.ts");
-    const reloadAt = line!.indexOf("pm2 reload api");
+    const reloadAt = line!.indexOf("npx --no-install tsx scripts/reload-api.ts");
     expect(checkAt).toBeGreaterThan(line!.indexOf("git merge --ff-only origin/main"));
     expect(reloadAt).toBeGreaterThan(checkAt);
-    expect(line).toContain("npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api");
+    expect(line).toContain("npx --no-install tsx scripts/check-production-session-secret.ts && npx --no-install tsx scripts/reload-api.ts");
   });
 
   it("reads the first dotenv assignment the API loader would keep", () => {

@@ -127,6 +127,10 @@ describe("KNN cache stale-while-revalidate on the API path", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(unhandled).toEqual([]);
     expect(getKnnCacheSize()).toBe(size);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/\[knn-cache\] rebuild failed, cache age 15\ds:/),
+      expect.any(Error),
+    );
 
     script.fail = false;
     script.hold = null;
@@ -139,21 +143,48 @@ describe("KNN cache stale-while-revalidate on the API path", () => {
     process.off("unhandledRejection", onUnhandled);
   });
 
-  it("blocks an API request once the KNN cache is past three TTL periods", async () => {
+  it("returns a calculator request immediately when the KNN cache is past its cap", async () => {
+    const script: KnnScript = { hold: null, fail: false, empty: false, price: 1000, queries: 0 };
+    const pool = knnPool(script);
+    const first = await knnOutputPriceAtFloat(pool, SKIN, 0.2);
+    ageKnnCacheForTests(KNN_CAP_MS + 1_000);
+    const hold = armHold();
+    script.hold = hold.promise;
+    script.price = 500;
+    const before = script.queries;
+
+    let price: number | undefined;
+    const started = performance.now();
+    const pending = runWithRequestCachePolicy(() => knnOutputPriceAtFloat(pool, SKIN, 0.2))
+      .then((result) => { price = result?.priceCents; });
+    const again = runWithRequestCachePolicy(() => knnOutputPriceAtFloat(pool, SKIN, 0.2));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect(price).toBe(first?.priceCents);
+    expect(script.queries).toBe(before + 1);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining(
+      "[knn-cache] serving stale cache",
+    ));
+    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining("blocking until rebuild"));
+
+    hold.release();
+    await pending;
+    await again;
+  });
+
+  it("still waits for a non-request caller when the KNN cache is past its cap", async () => {
     const script: KnnScript = { hold: null, fail: false, empty: false, price: 1000, queries: 0 };
     const pool = knnPool(script);
     await knnOutputPriceAtFloat(pool, SKIN, 0.2);
     ageKnnCacheForTests(KNN_CAP_MS + 1_000);
     const hold = armHold();
     script.hold = hold.promise;
-    const errorSpy = vi.spyOn(console, "error");
 
     let resolved = false;
-    const pending = runWithRequestCachePolicy(() => knnOutputPriceAtFloat(pool, SKIN, 0.2))
-      .then(() => { resolved = true; });
+    const pending = knnOutputPriceAtFloat(pool, SKIN, 0.2).then(() => { resolved = true; });
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(resolved).toBe(false);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("[knn-cache] stale for"));
 
     hold.release();
     await pending;
