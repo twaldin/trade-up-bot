@@ -19,6 +19,7 @@ function board(props: Partial<Parameters<typeof PreviewBoard>[0]> = {}) {
     isFree: false,
     expandedId: null,
     onExpand: () => {},
+    user: { tier: "pro" },
     ...props,
   })));
 }

@@ -1254,17 +1254,18 @@
      that extra line inside the 144px slot. */
   .preview-delay p { line-height: 15px; }
 }
+/* 360–389. The count sentence shares this row with the label and the 44px control.
+   12px type wraps past the reserved box; 10px / 12px stays inside it. */
 @media (max-width: 389px) {
   .preview-delay { min-height: 126px; }
-  /* The count sentence shares this row with the label and the 44px control.
-     12px type wraps past the reserved box; 10px / 12px stays inside it. */
   .preview-delay p {
     font-size: 10px;
     line-height: 12px;
   }
 }
+/* 340–359 paints it at 180px. The old 144px step was short. */
 @media (max-width: 359px) {
-  .preview-delay { min-height: 144px; }
+  .preview-delay { min-height: 180px; }
 }
 @media (max-width: 339px) {
   .preview-delay { min-height: 162px; }
@@ -1284,6 +1285,12 @@
   border-color: transparent;
   background: transparent;
   color: transparent;
+}
+
+/* The banner is a full-width row of the card grid. It sits above the cards
+   in normal flow. It is never taken out of flow over a card. */
+.preview-bento > .preview-delay {
+  grid-column: 1 / -1;
 }
 
 .preview-delay p {

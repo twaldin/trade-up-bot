@@ -23,12 +23,17 @@ function pagePath(): string {
   return typeof window !== "undefined" ? window.location.pathname : "/";
 }
 
-function sendGa4(name: string, params: Record<string, string | number | GtagItem[]>): boolean {
+type Ga4Value = string | number | GtagItem[] | (() => void);
+
+function sendGa4(name: string, params: Record<string, Ga4Value>): boolean {
   const id = clientTracking().ga4MeasurementId;
   if (!id) return false;
   trackEvent(name, { ...params, send_to: id });
   return true;
 }
+
+/** How long a checkout hit may take before the Stripe redirect proceeds anyway. */
+export const CHECKOUT_SEND_TIMEOUT_MS = 500;
 
 function planItem(plan: TrackedPlan, value: number): GtagItem {
   return { item_id: plan, item_name: plan, price: value, quantity: 1 };
@@ -43,21 +48,28 @@ export function checkoutAttributionBody(): { attribution: Attribution } | null {
  * Checkout start, only after /api/subscribe returns 2xx. `value` is USD.
  * PR 164's checkout.ts should call checkoutAttributionBody() before the fetch and this after res.ok.
  */
-export function trackBeginCheckout(plan: string, value: number): void {
+function beginCheckoutParams(plan: string, value: number): Record<string, Ga4Value> {
   const tracked = trackedPlan(plan);
   const campaign = campaignParams(checkoutAttribution());
-  if (!clientTracking().ga4MeasurementId) {
-    trackEvent("begin_checkout", { item_name: plan });
-  } else if (tracked) {
-    sendGa4("begin_checkout", {
-      currency: "USD",
-      value,
-      items: [planItem(tracked, value)],
-      plan: tracked,
-      price_usd: value,
-      ...campaign,
-    });
-  }
+  if (!clientTracking().ga4MeasurementId || !tracked) return { item_name: plan };
+  return {
+    currency: "USD",
+    value,
+    items: [planItem(tracked, value)],
+    plan: tracked,
+    price_usd: value,
+    ...campaign,
+  };
+}
+
+/**
+ * Checkout start, only after /api/subscribe returns 2xx. `value` is USD.
+ * The hit uses beacon transport. The promise resolves on gtag's send callback
+ * or after a short timeout, so the caller can redirect without dropping it.
+ */
+export function trackBeginCheckout(plan: string, value: number): Promise<void> {
+  const tracked = trackedPlan(plan);
+  const campaign = campaignParams(checkoutAttribution());
   if (tracked) {
     pixelEvent("begin_checkout", {
       value,
@@ -66,6 +78,27 @@ export function trackBeginCheckout(plan: string, value: number): void {
       ...campaign,
     }, newEventId("checkout"));
   }
+  const params = beginCheckoutParams(plan, value);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    if (typeof gtag !== "function") {
+      finish();
+      return;
+    }
+    const timer = setTimeout(finish, CHECKOUT_SEND_TIMEOUT_MS);
+    const event_callback = () => {
+      clearTimeout(timer);
+      finish();
+    };
+    const hit = { ...params, transport_type: "beacon", event_callback, event_timeout: CHECKOUT_SEND_TIMEOUT_MS };
+    if (!clientTracking().ga4MeasurementId || !tracked) trackEvent("begin_checkout", hit);
+    else sendGa4("begin_checkout", hit);
+  });
 }
 
 /** Calculator returned a result. `source` is the example loader or a hand-entered contract. */
@@ -208,8 +241,10 @@ const PIXEL_UPGRADE_CTAS: ReadonlySet<string> = new Set<UpgradeCtaId>([
  */
 export function trackUpgradeCta(cta: UpgradeCtaId): void {
   const params = { cta, page_path: pagePath() };
+  // Go Pro navigates to Stripe as soon as /api/subscribe returns. Beacon survives that load.
+  const hit = cta === "pricing_go_pro" ? { ...params, transport_type: "beacon" } : params;
   try {
-    sendGa4("upgrade_cta_click", params);
+    sendGa4("upgrade_cta_click", hit);
     if (PIXEL_UPGRADE_CTAS.has(cta)) pixelEvent("upgrade_cta_click", params, newEventId("upgrade"));
   } catch {
     // A blocked tag must not swallow the click.

@@ -137,6 +137,7 @@ describe("board rate limit", () => {
       expandedId: null,
       onExpand: () => {},
       throttle: SLOW_DOWN_COPY,
+      user: { tier: "pro" },
     })));
     expect(html).toContain("preview-note");
     expect(html).toContain(SLOW_DOWN_COPY);

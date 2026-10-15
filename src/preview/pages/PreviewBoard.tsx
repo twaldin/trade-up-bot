@@ -9,7 +9,15 @@ import { TRADE_UPS_DOCUMENT_TITLE } from "../../../shared/types.js";
 import { formatDollars, sourceLabel } from "../../utils/format.js";
 import { collectionSlugFromPath, trackClaimTradeUp, trackTradeUpDetailOpen, trackUpgradeCta, trackVerifyClick } from "../../lib/conversions.js";
 import { authUserFrom } from "../lib/auth-state.js";
-import { boardDelaySentence, shouldFetchBoardDelay, useBoardDelay } from "../lib/board-delay.js";
+import {
+  AUTH_PAINT_WAIT_MS,
+  boardDelaySentence,
+  paintAccountFromBrowser,
+  shouldFetchBoardDelay,
+  useBoardDelay,
+  writeStoredBoardAccount,
+  type PaintAccount,
+} from "../lib/board-delay.js";
 import {
   bentoColumns,
   cdfCurve,
@@ -872,25 +880,61 @@ export function rankedMeta(count: number, pending: boolean): string {
   return `${formatLandingStat(count)} ranked`;
 }
 
-type BoardAccount = { tier?: string; lifetime?: boolean } | null | undefined;
+type BoardAccount = PaintAccount;
 
-/** Account from `/api/auth/me` when the board was not given one. `undefined` until that returns. */
-function useKnownAccount(given: BoardAccount): BoardAccount {
-  const [loaded, setLoaded] = useState<BoardAccount>(undefined);
+function accountFromAuth(data: unknown): { tier: string; lifetime?: boolean } | null {
+  if (!data || typeof data !== "object") return null;
+  const user = authUserFrom({
+    steam_id: Reflect.get(data, "steam_id"),
+    tier: Reflect.get(data, "tier"),
+    lifetime: Reflect.get(data, "lifetime"),
+  });
+  if (!user) return null;
+  const tier = typeof user.tier === "string" && user.tier !== "" ? user.tier : "free";
+  return user.lifetime === true ? { tier, lifetime: true } : { tier };
+}
+
+/**
+ * Account for the delay slot. A passed-in user is settled. Otherwise the first
+ * paint uses the stored tier. An unknown account (no saved tier) does not
+ * paint the hold: the session cookie is HttpOnly, so a first visit cannot
+ * tell a guest from a paid user.
+ */
+function useKnownAccount(given: BoardAccount): { account: BoardAccount; settled: boolean; authAnswered: boolean; authTimedOut: boolean } {
+  const [loaded, setLoaded] = useState<BoardAccount>(() => given !== undefined ? given : paintAccountFromBrowser().account);
+  const [settled, setSettled] = useState(() => given !== undefined || paintAccountFromBrowser().settled);
+  const [authAnswered, setAuthAnswered] = useState(given !== undefined);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
   useEffect(() => {
     if (given !== undefined) return;
     let live = true;
+    const timer = window.setTimeout(() => {
+      if (live) setAuthTimedOut(true);
+    }, AUTH_PAINT_WAIT_MS);
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (live) setLoaded(authUserFrom(data));
+      .then((data: unknown) => {
+        if (!live) return;
+        const next = accountFromAuth(data);
+        writeStoredBoardAccount(next);
+        setLoaded(next);
+        setSettled(true);
+        setAuthAnswered(true);
       })
       .catch(() => {
-        if (live) setLoaded(null);
+        if (!live) return;
+        writeStoredBoardAccount(null);
+        setLoaded(null);
+        setSettled(true);
+        setAuthAnswered(true);
       });
-    return () => { live = false; };
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
   }, [given]);
-  return given !== undefined ? given : loaded;
+  if (given !== undefined) return { account: given, settled: true, authAnswered: true, authTimedOut: false };
+  return { account: loaded, settled, authAnswered, authTimedOut };
 }
 
 /** First page of `/trade-ups` (`per_page` 12). Skeletons hold this many slots. */
@@ -912,6 +956,16 @@ function SkeletonTile({ output = false }: { output?: boolean }) {
         <b>&nbsp;</b>
         {output ? <span className="preview-skin__delta">&nbsp;</span> : null}
       </span>
+    </div>
+  );
+}
+
+function DelayBanner({ pending, sentence }: { pending: boolean; sentence: string | null }) {
+  return (
+    <div className={`preview-delay${pending ? " preview-delay--hold" : ""}`} aria-hidden={pending ? true : undefined} inert={pending ? true : undefined}>
+      <span className="preview-delay__label">Free tier</span>
+      <p>{DELAY_BANNER}{sentence ? ` ${sentence}` : ""}</p>
+      <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
     </div>
   );
 }
@@ -976,6 +1030,7 @@ export function PreviewBoard({
   lockedSkin,
   embed = false,
   user,
+  onPaidTail,
 }: {
   tradeUps: HydratedTradeUp[];
   loading: boolean;
@@ -1026,6 +1081,12 @@ export function PreviewBoard({
   embed?: boolean;
   /** Known account. Omit to read `/api/auth/me`. `null` is a guest. */
   user?: BoardAccount;
+  /**
+   * Fired once, after the guest list is on screen and auth then says paid.
+   * The caller appends rows the free list did not have. It must not replace
+   * the rows already painted.
+   */
+  onPaidTail?: () => void;
 }) {
   const navigate = useNavigate();
   const interstitial = useSteamInterstitial();
@@ -1076,13 +1137,59 @@ export function PreviewBoard({
     failed: Boolean(failed),
     filtered,
   });
-  const account = useKnownAccount(user);
-  const accountDelay = shouldFetchBoardDelay(account);
+  const known = useKnownAccount(user);
+  const account = known.account;
+  // First paint decides whether a paid board can gain a hold later. A stored
+  // paid account never does: a 401 must not insert one above the skeletons.
+  // A stored free tier is not trusted until /api/auth/me answers, so a buyer
+  // whose cache still says free does not paint a hold that then has to leave.
+  const paint = useRef(user !== undefined ? { account: user, settled: true } : paintAccountFromBrowser());
+  const startedPaid = paint.current.settled && !shouldFetchBoardDelay(paint.current.account);
+  const accountDelay = !startedPaid && known.settled && shouldFetchBoardDelay(account);
   const delayGap = useBoardDelay(accountDelay || isFree);
   const delaySentence = boardDelaySentence(delayGap);
-  // Guest and free reserve the banner before the list lands. Paid accounts
-  // render nothing, so their board does not jump when the list reports a tier.
-  const delayPending = accountDelay && loading && tradeUps.length === 0 && !isFree;
+  const confirmedGuest = !startedPaid && known.authAnswered && (isFree || shouldFetchBoardDelay(account));
+  const authSaysPaid = known.authAnswered && !shouldFetchBoardDelay(account);
+  // The list already carries the viewer's tier. A paid payload must not grow
+  // the free banner while auth is still out. Latch only once a free list is
+  // on screen. A later paid answer must not take that banner back out: that
+  // would pull the cards up. Page 2 sets `loading` again; that must not put
+  // the free banner back over a list that already said paid.
+  const paidList = useRef(false);
+  if (!loading && tradeUps.length > 0 && !isFree) paidList.current = true;
+  if (!loading && isFree) paidList.current = false;
+  const listSaysPaid = paidList.current;
+  const guestPainted = useRef(false);
+  const paintGuest = !embed && !startedPaid && !authSaysPaid && !listSaysPaid
+    && tradeUps.length > 0 && isFree
+    && (known.authTimedOut || (known.authAnswered && shouldFetchBoardDelay(account)));
+  if (paintGuest) guestPainted.current = true;
+  const guestLocked = guestPainted.current;
+  const askedTail = useRef(false);
+  useEffect(() => {
+    if (embed || !guestPainted.current || askedTail.current) return;
+    if (!known.authAnswered || shouldFetchBoardDelay(account)) return;
+    askedTail.current = true;
+    onPaidTail?.();
+  }, [embed, known.authAnswered, known.authTimedOut, account, onPaidTail]);
+  // No `window` means static markup (the load-more measurement). Show the rows.
+  // In the browser, hide a loaded list only until auth answers or the wait ends.
+  // A list that already says paid is not held for auth.
+  const withholdCards = typeof window !== "undefined"
+    && !embed
+    && !startedPaid
+    && !guestLocked
+    && !listSaysPaid
+    && !known.authAnswered
+    && !known.authTimedOut;
+  const delayEmbed = embed && (isFree || accountDelay);
+  // Timing out while the list is still out keeps the invisible hold. The free
+  // copy waits for a free list. A paid list drops the slot with the skeletons.
+  const delayPending = !guestLocked && (
+    !known.authTimedOut
+      ? (!confirmedGuest || (accountDelay && loading && tradeUps.length === 0 && !isFree))
+      : !listSaysPaid
+  );
   const suggestion = useLoosenProbe({
     enabled: notice === "filtered-empty",
     typing,
@@ -1248,8 +1355,16 @@ export function PreviewBoard({
   // board swaps them for one fold-height message so the FAQ stays below the
   // fold without a blank page of hidden cards.
   const countPending = tradeUps.length === 0 && (loading || Boolean(failed) || Boolean(throttle));
-  const showSkeletons = !embed && loading && tradeUps.length === 0 && notice == null;
+  // A loaded free list stays on skeletons only during the short auth wait.
+  // A paid list leaves the hold in the same render that swaps skeletons for
+  // cards. The banner is a row of the grid, so it never covers a card.
+  const showSkeletons = !embed && notice == null && (
+    (loading && tradeUps.length === 0) || (withholdCards && tradeUps.length > 0)
+  );
   const showStatus = !embed && tradeUps.length === 0 && !showSkeletons;
+  const showDelayInFlow = !embed && !startedPaid && !(notice === "error" && tradeUps.length === 0) && (
+    guestLocked || (!listSaysPaid && (withholdCards || showSkeletons || confirmedGuest))
+  );
   // One row of cards ends above the fold at desktop, so a short page would
   // pull the FAQ up into view. The floor holds that list to the viewport.
   const shortPage = !embed && tradeUps.length > 0 && tradeUps.length < BOARD_PAGE_CARDS;
@@ -1307,12 +1422,8 @@ export function PreviewBoard({
           onBlur={onFilterBlur}
         />
       )}
-      {(isFree || delayPending) && (
-        <div className={`preview-delay${delayPending ? " preview-delay--hold" : ""}`} aria-hidden={delayPending ? true : undefined} inert={delayPending ? true : undefined}>
-          <span className="preview-delay__label">Free tier</span>
-          <p>{DELAY_BANNER}{delaySentence ? ` ${delaySentence}` : ""}</p>
-          <Link className="preview-delay__cta preview-upgrade" to="/pricing" onClick={() => trackUpgradeCta("board_delay")}>See Pro</Link>
-        </div>
+      {delayEmbed && (
+        <DelayBanner pending={delayPending} sentence={delaySentence} />
       )}
       {!embed && <FeeLine line={boardFeeLine()} caveat />}
       {loading && tradeUps.length === 0 && notice !== "throttled" && !showStatus && (
@@ -1320,30 +1431,32 @@ export function PreviewBoard({
       )}
       {refreshing && <p className="preview-note" role="status" aria-live="polite">Updating trade-ups…</p>}
       {!showStatus && noticeNode}
-      {showSkeletons ? (
-        <div className="preview-bento preview-bento--reserved" aria-busy="true">
-          {Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)}
-        </div>
-      ) : showStatus ? (
-        <div className="preview-board-status">{noticeNode}</div>
+      {showStatus ? (
+        <>
+          {showDelayInFlow && <DelayBanner pending={delayPending} sentence={delaySentence} />}
+          <div className="preview-board-status">{noticeNode}</div>
+        </>
       ) : (
         <div
-          className={`preview-bento${refreshing ? " preview-bento--stale" : ""}${shortPage ? " preview-bento--floor" : ""}`}
-          aria-busy={loading || refreshing || undefined}
+          className={`preview-bento${showSkeletons ? " preview-bento--reserved" : ""}${refreshing ? " preview-bento--stale" : ""}${shortPage && !showSkeletons ? " preview-bento--floor" : ""}`}
+          aria-busy={showSkeletons || loading || refreshing || undefined}
         >
-          {ordered.map((tu) => (
-            <TradeUpCard
-              key={tu.id}
-              tu={tu}
-              expanded={expandedId === tu.id}
-              onExpand={onExpand}
-              onVerifyClaim={onVerifyClaim}
-              claimStatus={claimStatus}
-              confirming={confirmId === tu.id}
-              onConfirmClaim={onConfirmClaim}
-              onCancelClaim={() => setConfirmId(null)}
-            />
-          ))}
+          {showDelayInFlow && <DelayBanner pending={delayPending} sentence={delaySentence} />}
+          {showSkeletons
+            ? Array.from({ length: BOARD_PAGE_CARDS }, (_, index) => <BoardSkeletonCard key={index} />)
+            : ordered.map((tu) => (
+              <TradeUpCard
+                key={tu.id}
+                tu={tu}
+                expanded={expandedId === tu.id}
+                onExpand={onExpand}
+                onVerifyClaim={onVerifyClaim}
+                claimStatus={claimStatus}
+                confirming={confirmId === tu.id}
+                onConfirmClaim={onConfirmClaim}
+                onCancelClaim={() => setConfirmId(null)}
+              />
+            ))}
         </div>
       )}
       <span className="sr-only" role="status" aria-live="polite">{shownStatus}</span>
@@ -1459,6 +1572,7 @@ export function usePreviewTradeUps(options: {
   const inFlightRef = useRef(false);
   const attemptRef = useRef(0);
   const rowsRef = useRef<HydratedTradeUp[]>([]);
+  const paidTailRef = useRef(false);
   const openField = useRef<string | null>(null);
   const burstAt = useRef(0);
   const fromPop = useRef(false);
@@ -1725,6 +1839,31 @@ export function usePreviewTradeUps(options: {
     burstAt.current = 0;
   }, []);
 
+  // Paid rows the guest list did not include. Appended under the painted
+  // cards so the banner and the first page stay where they are.
+  const appendPaidTail = useCallback(() => {
+    if (paidTailRef.current) return;
+    paidTailRef.current = true;
+    const key = settledKey;
+    void (async () => {
+      try {
+        const res = await fetch(boardListUrl(key, 1), { credentials: "include" });
+        const data = await readPagedJson<BoardListPayload>(res);
+        const incoming = data.trade_ups ?? [];
+        const hydrated = await Promise.all(incoming.map((row) => hydrateBoardCard(row)));
+        const previous = rowsRef.current;
+        const seen = new Set(previous.map((row) => row.id));
+        const extra = hydrated.filter((row) => !seen.has(row.id));
+        if (extra.length === 0) return;
+        const next = [...previous, ...extra];
+        rowsRef.current = next;
+        setTradeUps(next);
+      } catch {
+        // The guest list stays. A retry would insert rows under a settled paint.
+      }
+    })();
+  }, [settledKey]);
+
   const onExpand = useCallback(async (id: number | null) => {
     setExpandedId(id);
     if (id == null) return;
@@ -1744,8 +1883,9 @@ export function usePreviewTradeUps(options: {
       search, onSearch: setSearch, onParsed: setParsed, onFilterBlur,
       loadMore, exhausted, endKind, throttle, pagingThrottle, retryReady,
       failed, retry, clearFilters, loadingMore, page, landedPage, shownStatus,
+      appendPaidTail,
     }),
     [tradeUps, loading, refreshing, isFree, signedIn, tier, expandedId, onExpand, query, search, loadMore, exhausted, throttle, retryReady, failed, retry,
-      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus],
+      clearFilters, onFilterBlur, faceTick, total, totalProfitable, rawTotal, deduped, totalProfitableCapped, loadingMore, endKind, pagingThrottle, page, landedPage, shownStatus, appendPaidTail],
   );
 }

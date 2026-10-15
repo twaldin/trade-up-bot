@@ -144,12 +144,26 @@ describe("free-tier banner reserves its height", () => {
     await page.close();
     expect(narrowHold.height).toBe(144);
     expect(narrowFilled.height).toBe(narrowHold.height);
+    expect(wideHold.height).toBe(54);
     expect(wideFilled.height).toBe(wideHold.height);
-    expect(wideHold.height).toBeLessThan(144);
+    expect(phone[360]?.held).toBe(126);
+    expect(phone[375]?.held).toBe(126);
     for (const [width, box] of Object.entries(phone)) {
       expect(box.filled, `${width} filled ${box.filled} hold ${box.held}`).toBe(box.held);
     }
   }, 45000);
+
+  it("matches the reserved height at 359, 360, 375, and 389", async () => {
+    const page = await browser.newPage();
+    const expected: Record<number, number> = { 359: 180, 360: 126, 375: 126, 389: 126, 390: 144, 1280: 54 };
+    for (const [width, height] of Object.entries(expected)) {
+      const held = await delayBox(page, Number(width), boardDocument(hold), null);
+      const filled = await delayBox(page, Number(width), boardDocument(banner), HIDDEN_COUNT_SENTENCE);
+      expect(held.height, width).toBe(height);
+      expect(filled.height, width).toBe(held.height);
+    }
+    await page.close();
+  }, 30000);
 
   it("reserves the slot for a guest and skips it for a paid account", () => {
     const paid = boardHtml({ loading: false, isFree: false, rows: [makeTradeUp({ id: 1 })], user: { tier: "pro" } });
@@ -173,11 +187,53 @@ describe("free-tier banner reserves its height", () => {
       expect(html).toContain("preview-card--skeleton");
     }
     expect(lifetime).not.toContain("preview-delay");
-    expect(unknown).not.toContain("preview-delay");
+    // No stored tier: the reserve is a row of the skeleton grid, not an overlay.
+    expect(unknown).toContain("preview-delay--hold");
+    expect(unknown).not.toContain("preview-delay--cover");
+    expect(unknown).toContain("preview-card--skeleton");
+    expect(unknown).toContain("Common questions");
     expect(free).toContain("preview-delay--hold");
+    expect(free).toContain("preview-card--skeleton");
     expect(hold).toContain("preview-delay--hold");
+    expect(hold).toContain("preview-card--skeleton");
+    expect(hold).toContain("Common questions");
     expect(hold).toContain('aria-hidden="true"');
     expect(banner).toContain("Free tier");
     expect(banner).not.toContain("preview-delay--hold");
+    expect(banner).not.toContain("preview-delay--cover");
   });
+
+  it("keeps the banner off the first card at 360, 375, 390, and 1280", async () => {
+    const page = await browser.newPage();
+    for (const width of [360, 375, 390, 1280]) {
+      await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
+      for (const html of [banner, hold]) {
+        await page.setContent(boardDocument(html), { waitUntil: "domcontentloaded" });
+        const hit = await page.evaluate(() => {
+          const bannerEl = document.querySelector(".preview-delay");
+          const card = document.querySelector(".preview-card");
+          if (!(bannerEl instanceof HTMLElement) || !(card instanceof HTMLElement)) {
+            return { ok: false, reason: "missing" };
+          }
+          const a = bannerEl.getBoundingClientRect();
+          const b = card.getBoundingClientRect();
+          const overlap = a.bottom > b.top + 0.5 && a.top < b.bottom && a.right > b.left && a.left < b.right;
+          const probe = document.elementFromPoint(b.left + 8, b.top + 8);
+          const onBanner = probe instanceof Element && probe.closest(".preview-delay") != null;
+          const positioned = getComputedStyle(bannerEl).position;
+          return {
+            ok: !overlap && !onBanner && positioned !== "absolute" && a.height > 40 && b.top >= a.bottom - 0.5,
+            overlap,
+            onBanner,
+            positioned,
+            bannerTop: a.top,
+            bannerBottom: a.bottom,
+            cardTop: b.top,
+          };
+        });
+        expect(hit.ok, `${width} ${JSON.stringify(hit)}`).toBe(true);
+      }
+    }
+    await page.close();
+  }, 30000);
 });

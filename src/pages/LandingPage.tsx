@@ -5,6 +5,7 @@ import { SiteNav } from '../components/SiteNav.js';
 import { blogMeta } from '../data/blog-meta.js';
 import { authHref } from '../lib/ref.js';
 import { trackDiscordCta, trackEvent } from '../lib/analytics.js';
+import { writeStoredBoardAccount } from '../preview/lib/board-delay.js';
 
 const IconSteam = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -65,7 +66,7 @@ const LandingPage = ({ user }: { user?: LandingUser | null }) => {
 
   const login = () => { trackEvent("sign_up_start", { location: "landing" }); window.location.href = authHref('/trade-ups'); };
   const goToDashboard = () => { window.location.href = '/trade-ups'; };
-  const logout = () => { window.location.href = '/auth/logout'; };
+  const logout = () => { writeStoredBoardAccount(null); window.location.href = '/auth/logout'; };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">

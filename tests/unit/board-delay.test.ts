@@ -7,6 +7,12 @@ import {
   parseBoardDelayPayload,
   parseBoardDelayRow,
 } from "../../shared/board-delay.js";
+import {
+  accountFromCheckoutUpgrade,
+  accountToPaint,
+  hasSessionCookie,
+  parseStoredBoardAccount,
+} from "../../src/preview/lib/board-delay.js";
 import { ACTIVE_CLAIM_PREDICATE } from "../../server/routes/active-claim.js";
 import { BOARD_DELAY_SQL } from "../../server/routes/board-delay.js";
 import { getTierConfig } from "../../server/auth.js";
@@ -15,6 +21,42 @@ import type { TierUser } from "../../shared/pro-access.js";
 function tierReq(user: TierUser): Request {
   return { user } as Request;
 }
+
+describe("board delay paint", () => {
+  it("leaves an unknown account unsettled and a stored paid tier settled", () => {
+    expect(hasSessionCookie("")).toBe(false);
+    expect(hasSessionCookie("other=1")).toBe(false);
+    expect(hasSessionCookie("connect.sid=")).toBe(false);
+    expect(hasSessionCookie("connect.sid=abc")).toBe(true);
+    expect(hasSessionCookie("a=b; connect.sid=abc")).toBe(true);
+
+    expect(accountToPaint("", null)).toEqual({ account: undefined, settled: false });
+    expect(accountToPaint("connect.sid=abc", null)).toEqual({ account: undefined, settled: false });
+    expect(accountToPaint("", JSON.stringify({ tier: "pro" }))).toEqual({
+      account: { tier: "pro" },
+      settled: true,
+    });
+    expect(accountToPaint("", null, JSON.stringify({ tier: "basic", steam_id: "765" }))).toEqual({
+      account: { tier: "basic" },
+      settled: true,
+    });
+    expect(accountToPaint("connect.sid=abc", "null")).toEqual({ account: null, settled: true });
+    expect(parseStoredBoardAccount("{")).toBeUndefined();
+    expect(parseStoredBoardAccount(JSON.stringify({ tier: "free", lifetime: true }))).toEqual({
+      tier: "free",
+      lifetime: true,
+    });
+  });
+
+  it("maps a confirmed checkout onto a paid tier", () => {
+    expect(accountFromCheckoutUpgrade("1")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro-yearly")).toEqual({ tier: "pro" });
+    expect(accountFromCheckoutUpgrade("pro-lifetime")).toEqual({ tier: "pro", lifetime: true });
+    expect(accountFromCheckoutUpgrade("lifetime")).toEqual({ tier: "pro", lifetime: true });
+    expect(accountFromCheckoutUpgrade("nope")).toBeNull();
+  });
+});
 
 describe("board delay gap", () => {
   it("uses the same 3-hour cut as the free list", () => {

@@ -3,7 +3,8 @@
 // index.html, so we reference the global binding directly.
 
 export type GtagItem = { item_id: string; item_name: string; price: number; quantity: number };
-type GtagParam = string | number | boolean | GtagItem[];
+type GtagCallback = () => void;
+type GtagParam = string | number | boolean | GtagItem[] | GtagCallback;
 type GtagParams = Record<string, GtagParam>;
 
 declare global {

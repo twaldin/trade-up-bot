@@ -207,6 +207,8 @@ describe("preview craft bar", () => {
     expect(css).toContain("min-height: 162px");
     expect(css).not.toContain("min-height: 216px");
     expect(css).toContain(".preview-delay--hold");
+    expect(css).not.toContain("preview-delay--cover");
+    expect(board).not.toContain("preview-delay--cover");
   });
 
   it("builds the data pages on the kit table and a real series chart", () => {
