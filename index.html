@@ -31,7 +31,7 @@
           if (upgraded || sessionId) {
             window.__tubCheckoutReturn = { upgraded: upgraded, sessionId: sessionId };
           }
-          if (tracked || lid || upgraded || sessionId || params.has("eid")) {
+          if (params.has("auth") || lid || upgraded || sessionId || params.has("eid")) {
             params.delete("auth");
             params.delete("lid");
             params.delete("eid");

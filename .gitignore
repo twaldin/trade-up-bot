@@ -54,6 +54,7 @@ handoffs/
 
 # Agent tooling artifacts
 .agents/
+/artifacts/
 .planning/
 .superpowers/
 AGENTS.md

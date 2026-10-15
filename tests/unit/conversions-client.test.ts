@@ -136,6 +136,22 @@ describe("GA4 events (GA4_MEASUREMENT_ID set)", () => {
     expect(body?.attribution).toMatchObject({ utm_source: "google", gclid: "Cj0K" });
   });
 
+  it("does not send a GA4 page_view on a client navigation; history measurement already does", () => {
+    globalThis.tubTracking = { ga4MeasurementId: "G-2474G4P5QE", metaPixelId: PIXEL };
+    installBrowser({
+      pathname: "/pricing",
+      search: "?utm_source=google&auth=failed&lid=123&session_id=cs_x&upgraded=1",
+    });
+    expect(shouldTrackSpaPageView(null, "/pricing")).toBe(false);
+    expect(shouldTrackSpaPageView("/faq", "/pricing")).toBe(true);
+    expect(shouldTrackSpaPageView("/trade-ups", "/calculator")).toBe(true);
+    expect(shouldTrackSpaPageView("/", "/pricing")).toBe(true);
+    trackSpaPageView();
+    expect(gtag).not.toHaveBeenCalled();
+    expect(fbq).toHaveBeenCalledTimes(1);
+    expect(fbq).toHaveBeenCalledWith("track", "PageView");
+  });
+
   it("keeps the Google final-URL suffix when the SPA navigates into /calculator", () => {
     const browser = installBrowser({
       pathname: "/",
