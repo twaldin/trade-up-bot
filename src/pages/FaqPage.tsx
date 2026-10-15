@@ -66,10 +66,10 @@ export function FaqPage() {
             },
             {
               "@type": "Question",
-              "name": "What does \"chance to profit\" mean?",
+              "name": "What does \"share of outcomes above cost\" mean?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "A trade-up contract can produce different output skins depending on which collections your inputs come from. Each possible output has a probability based on the proportion of inputs from its collection. \"Chance to profit\" is the summed probability of all outcomes where the output value exceeds the total input cost. For example, a trade-up with 70% chance to profit means that 70% of the possible outcomes (weighted by probability) would result in a net gain. TradeUpBot keeps trade-ups with over 25% chance to profit, even if the overall expected value is slightly negative."
+                "text": "A trade-up contract can produce different output skins depending on which collections your inputs come from. Each possible output has a probability based on the proportion of inputs from its collection. \"Share of outcomes above cost\" is the summed probability of all outcomes where the output value exceeds the total input cost. For example, a trade-up with 70% of outcomes above cost means that 70% of the possible outcomes (weighted by probability) would result in a net gain. TradeUpBot keeps trade-ups with over 25% of outcomes above cost, even if the overall expected value is slightly negative."
               }
             },
             {
@@ -133,7 +133,7 @@ export function FaqPage() {
               "name": "Can I lose money on a trade-up?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Yes. While TradeUpBot identifies trade-ups with favorable expected values, there is always risk involved: prices are estimates and can change before you sell the output; items purchased from marketplaces have trade lock periods during which prices may shift; you may receive a lower-value outcome (especially on trade-ups with less than 100% chance to profit); and marketplace fees reduce your effective return. TradeUpBot is an analysis tool, not financial advice. Never invest more than you can afford to lose."
+                "text": "Yes. While TradeUpBot identifies trade-ups with favorable expected values, there is always risk involved: prices are estimates and can change before you sell the output; items purchased from marketplaces have trade lock periods during which prices may shift; you may receive a lower-value outcome (especially on trade-ups with less than 100% of outcomes above cost); and marketplace fees reduce your effective return. TradeUpBot is an analysis tool, not financial advice. Never invest more than you can afford to lose."
               }
             },
             {
@@ -187,18 +187,18 @@ export function FaqPage() {
               <BlogLink slug="profitable-trade-ups-theory-vs-reality" title="Theory vs Reality" />
             </FaqItem>
 
-            <FaqItem question='What does "chance to profit" mean?'>
+            <FaqItem question='What does "share of outcomes above cost" mean?'>
               <p>
                 A trade-up contract can produce different output skins depending on which
                 collections your inputs come from. Each possible output has a probability
-                based on the proportion of inputs from its collection. "Chance to profit" is
+                based on the proportion of inputs from its collection. "Share of outcomes above cost" is
                 the summed probability of all outcomes where the output value exceeds the
                 total input cost.
               </p>
               <p>
-                For example, a trade-up with 70% chance to profit means that 70% of the
+                For example, a trade-up with 70% of outcomes above cost means that 70% of the
                 possible outcomes (weighted by probability) would result in a net gain.
-                TradeUpBot keeps trade-ups with over 25% chance to profit, even if the
+                TradeUpBot keeps trade-ups with over 25% of outcomes above cost, even if the
                 overall expected value is slightly negative.
               </p>
               <BlogLink slug="cs2-trade-up-probability-expected-value" title="Probability and Expected Value Guide" />
@@ -294,7 +294,7 @@ export function FaqPage() {
               <ul className="list-disc list-inside ml-2 space-y-1">
                 <li>Prices are estimates and can change before you sell the output</li>
                 <li>Items purchased from marketplaces have trade lock periods during which prices may shift</li>
-                <li>You may receive a lower-value outcome (especially on trade-ups with less than 100% chance to profit)</li>
+                <li>You may receive a lower-value outcome (especially on trade-ups with less than 100% of outcomes above cost)</li>
                 <li>Marketplace fees reduce your effective return</li>
               </ul>
               <p>
