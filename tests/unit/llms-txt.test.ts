@@ -16,6 +16,8 @@ describe("llms.txt", () => {
     expect(LLMS_TXT).toContain("DMarket");
     expect(LLMS_TXT).toContain("Skinport");
     expect(LLMS_TXT).toContain("ten input");
+    expect(LLMS_TXT).toContain("share of outcomes above cost");
+    expect(LLMS_TXT).not.toContain("chance to profit");
   });
 
   it("does not overclaim (no promised guarantees, no 'risk-free')", () => {

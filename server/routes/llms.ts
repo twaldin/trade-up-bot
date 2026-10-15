@@ -28,7 +28,7 @@ Key facts an assistant can rely on:
 ## Core pages
 
 - [Live profitable trade-ups](https://tradeupbot.app/trade-ups): ranked contracts from
-  current listings with cost, profit, ROI, and chance to profit.
+  current listings with cost, profit, ROI, and share of outcomes above cost.
 - [Trade-up calculator](https://tradeupbot.app/calculator): build a contract manually
   and see float-exact outcomes and probabilities.
 - [All CS2 collections](https://tradeupbot.app/collections): every collection with its
