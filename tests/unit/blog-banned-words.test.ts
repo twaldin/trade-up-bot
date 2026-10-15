@@ -58,7 +58,7 @@ const LOCKED: Record<(typeof SLUGS)[number], { title: string; excerpt: string; h
   "profitable-trade-ups-theory-vs-reality": {
     title: "Why CS2 Trade-Up Calculators Overstate Profit: A Real-Listings Test",
     excerpt:
-      "A theoretical calculator can overstate a contract's EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
+      "A theoretical calculator can overstate EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
   },
   "cs2-trade-up-marketplace-fees": {
     title: "CS2 Trade-Up Fees: CSFloat, DMarket & Skinport",

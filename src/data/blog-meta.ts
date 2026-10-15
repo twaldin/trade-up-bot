@@ -19,7 +19,7 @@ export const blogMeta: BlogMeta[] = [
   {
     slug: "profitable-trade-ups-theory-vs-reality",
     title: "Why CS2 Trade-Up Calculators Overstate Profit: A Real-Listings Test",
-    excerpt: "A theoretical calculator can overstate a contract's EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
+    excerpt: "A theoretical calculator can overstate EV after fees many times over compared with real listings. Compare floats and fees before you trust a profit estimate.",
     publishedAt: "2026-03-16",
     readTime: "7 min read",
     author: "TradeUpBot Team",
