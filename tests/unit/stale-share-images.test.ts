@@ -38,14 +38,17 @@ describe("retired share images", () => {
     expect(hits).toEqual([]);
   });
 
-  it("removes the retired file and serves a 1200x356 share image", async () => {
+  it("removes the retired file and serves a 1200x630 share image", async () => {
     expect(existsSync(join(root, "public", "tradeuptable.jpg"))).toBe(false);
     const share = join(root, "public", "og-default.jpg");
     expect(existsSync(share)).toBe(true);
     const meta = await sharp(share).metadata();
     expect(meta.width).toBe(1200);
-    expect(meta.height).toBe(356);
+    expect(meta.height).toBe(630);
     expect(meta.format).toBe("jpeg");
+    const banner = await sharp(join(root, "public", "pricing-banner.jpg")).metadata();
+    expect(banner.width).toBe(1200);
+    expect(banner.height).toBe(356);
   });
 
   it("keeps the device stills at the frame pixel size", async () => {
@@ -64,11 +67,13 @@ describe("retired share images", () => {
   });
 
   it("keeps dollar amounts, counts, and board rows off the share image source", () => {
-    const svg = readFileSync(join(root, "assets", "neutral-art", "og-default.svg"), "utf8");
-    const copy = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]).join(" ");
-    expect(copy).toContain("TradeUpBot");
-    expect(copy).toContain("CS2 trade-ups ranked by EV after fees");
-    expect(copy.replaceAll("CS2", "")).not.toMatch(/\$|\bROI\b|\d/);
+    for (const name of ["og-default.svg", "pricing-banner.svg"]) {
+      const svg = readFileSync(join(root, "assets", "neutral-art", name), "utf8");
+      const copy = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]).join(" ");
+      expect(copy, name).toContain("TradeUpBot");
+      expect(copy, name).toContain("CS2 trade-ups ranked by EV after fees");
+      expect(copy.replaceAll("CS2", ""), name).not.toMatch(/\$|\bROI\b|\d/);
+    }
   });
 
   it("labels device stills as an illustrative example and uses only sample figures", () => {
@@ -84,17 +89,39 @@ describe("retired share images", () => {
       expect(copy, name).toContain("Illustrative example");
       expect(copy, name).not.toMatch(banned);
       expect(copy, name).not.toMatch(/105[,.]?638|4[,.]?593|53\.14|3\.21|\b199\b/);
-      const dollars = copy.match(/\$\d+(?:\.\d+)?/g) ?? [];
-      expect(new Set(dollars), name).toEqual(new Set(["$10.00", "$20.00", "$100.00"]));
+      expect(copy, name).toContain("$140.00");
+      expect(copy, name).toContain("Expected profit +$20.00");
+      expect(copy, name).toContain("ROI 20%");
+      expect(copy, name).toContain("ROI 10%");
+      expect(svg, name).not.toMatch(/#eb4b4b|#ff5470|#c81e45|#ab2e26/i);
+    }
+    // Desktop main card: 0.5*140 + 0.3*100 + 0.2*100 = 120, profit 20, ROI 20/100.
+    expect(0.5 * 140 + 0.3 * 100 + 0.2 * 100 - 100).toBe(20);
+    expect(20 / 100).toBe(0.2);
+    // Mobile main card: 0.5*140 + 0.5*100 = 120. Slim rows: 10*10 = 100.
+    expect(0.5 * 140 + 0.5 * 100 - 100).toBe(20);
+    expect(10 / 100).toBe(0.1);
+    const desktop = readFileSync(join(root, "assets", "neutral-art", "board-desktop-dark.svg"), "utf8");
+    const panelHeight = Number(desktop.match(/<rect x="20" y="68" width="1400" height="(\d+)"/)?.[1]);
+    expect(panelHeight).toBeLessThanOrEqual(380);
+  });
+
+  it("keeps the pricing slot at 1200x356 and describes the banner", () => {
+    for (const rel of ["src/pages/PricingPage.tsx", "src/preview/pages/PreviewPricing.tsx"]) {
+      const pricing = readFileSync(join(root, rel), "utf8");
+      expect(pricing, rel).toContain('src="/pricing-banner.jpg"');
+      expect(pricing, rel).toContain('alt="TradeUpBot — CS2 trade-ups ranked by EV after fees"');
+      expect(pricing, rel).toContain("TradeUpBot wordmark and tagline.");
+      expect(pricing, rel).toContain('width="1200"');
+      expect(pricing, rel).toContain('height="356"');
+      expect(pricing, rel).not.toContain("/og-default.jpg");
+      expect(pricing, rel).not.toContain("Trade-up table");
     }
   });
 
-  it("describes the pricing caption as the share of outcomes above cost", () => {
-    const pricing = readFileSync(join(root, "src", "pages", "PricingPage.tsx"), "utf8");
-    expect(pricing).toContain("share of outcomes above cost");
-    expect(pricing).not.toContain("chance to profit");
-    expect(pricing).toContain('src="/og-default.jpg"');
-    expect(pricing).toContain('width="1200"');
-    expect(pricing).toContain('height="356"');
+  it("calls the device still an illustrative example", () => {
+    const device = readFileSync(join(root, "src/preview/components/DeviceScreen.tsx"), "utf8");
+    expect(device).toContain("Illustrative example of the TradeUpBot board.");
+    expect(device).not.toMatch(/live capture|real capture|live listings/i);
   });
 });

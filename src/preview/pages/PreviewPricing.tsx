@@ -230,8 +230,8 @@ export function PreviewPricing() {
         <p className="o-kicker">See it in action</p>
         <h2>Product screenshots from the TradeUpBot dashboard.</h2>
         <figure className="preview-shot">
-          <img src="/og-default.jpg" alt="Trade-up table" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
-          <figcaption>Trade-up table with expected profit, EV, share of outcomes above cost, and listing links on delayed trade-ups</figcaption>
+          <img src="/pricing-banner.jpg" alt="TradeUpBot — CS2 trade-ups ranked by EV after fees" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
+          <figcaption>TradeUpBot wordmark and tagline.</figcaption>
         </figure>
         <figure className="preview-shot">
           <picture>

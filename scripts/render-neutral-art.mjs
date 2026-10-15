@@ -18,7 +18,6 @@ const fontDir = path.join(artDir, "fonts");
 const publicDir = path.join(root, "public");
 
 const CLASSIFIED = "#d32ce6";
-const COVERT = "#eb4b4b";
 
 const themes = {
   dark: {
@@ -103,26 +102,36 @@ function panel(x, y, w, h, theme) {
   return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${theme.panel}" stroke="${theme.line}" stroke-width="1"/>`;
 }
 
-function slimRow(x, y, w, h, theme, { title, cost, delta }) {
+function slimRow(x, y, w, h, theme, { title, cost, delta, roi }) {
   return `<g>
     ${panel(x, y, w, h, theme)}
-    <rect x="${x}" y="${y + 10}" width="3" height="${h - 20}" fill="${COVERT}"/>
+    <rect x="${x}" y="${y + 10}" width="3" height="${h - 20}" fill="${theme.profit}"/>
     ${text(x + 18, y + 28, title, { size: 14, fill: theme.text, weight: 700 })}
     ${text(x + 18, y + h - 16, cost, { size: 12, fill: theme.muted })}
     ${text(x + w - 18, y + 32, delta, { size: 16, fill: theme.profit, weight: 700, anchor: "end" })}
-    ${text(x + w - 18, y + h - 16, "Illustrative example", { size: 11, fill: theme.muted, anchor: "end" })}
+    ${text(x + w - 18, y + h - 16, roi, { size: 11, fill: theme.muted, anchor: "end" })}
   </g>`;
 }
 
-function ogSvg() {
+function brandedSvg(width, height) {
+  const mark = height >= 500 ? 128 : 72;
+  const nameSize = height >= 500 ? 64 : 56;
+  const tagSize = height >= 500 ? 28 : 26;
+  const markX = height >= 500 ? 64 : 56;
+  const textX = height >= 500 ? 220 : 156;
+  const block = nameSize + 28 + tagSize;
+  const nameY = Math.round((height - block) / 2 + nameSize * 0.78);
+  const tagY = nameY + 56;
+  const markY = Math.round((height - mark) / 2);
+  const watermark = height >= 500 ? 220 : 180;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="356" viewBox="0 0 1200 356">
-  <rect width="1200" height="356" fill="#111110"/>
-  <rect width="8" height="356" fill="#d7fe52"/>
-  ${crosshair(56, 142, 72, "#d7fe52")}
-  ${text(156, 168, "TradeUpBot", { size: 56, fill: "#eeece7", weight: 700 })}
-  ${text(156, 214, "CS2 trade-ups ranked by EV after fees", { size: 26, fill: "#918f8b" })}
-  <g opacity="0.22">${crosshair(1008, 88, 180, "#d7fe52")}</g>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="#111110"/>
+  <rect width="8" height="${height}" fill="#d7fe52"/>
+  ${crosshair(markX, markY, mark, "#d7fe52")}
+  ${text(textX, nameY, "TradeUpBot", { size: nameSize, fill: "#eeece7", weight: 700 })}
+  ${text(textX, tagY, "CS2 trade-ups ranked by EV after fees", { size: tagSize, fill: "#918f8b" })}
+  <g opacity="0.18">${crosshair(width - watermark - 40, Math.round((height - watermark) / 2), watermark, "#d7fe52")}</g>
 </svg>`;
 }
 
@@ -141,15 +150,16 @@ function desktopBody(theme) {
     figure: "$10.00",
     figureFill: theme.text,
   }));
+  // 50% * 140 + 30% * 100 + 20% * 100 = 120. Profit 120 - 100 = 20. ROI 20/100.
   const outputs = [
-    ["Example output A", "share 50%"],
-    ["Example output B", "share 30%"],
-    ["Example output C", "share 20%"],
-  ].map(([title, meta]) => ({
-    rarity: COVERT,
+    ["Example output A", "share 50%", "$140.00"],
+    ["Example output B", "share 30%", "$100.00"],
+    ["Example output C", "share 20%", "$100.00"],
+  ].map(([title, meta, figure]) => ({
+    rarity: theme.profit,
     title,
     meta,
-    figure: "$20.00",
+    figure,
     figureFill: theme.text,
   }));
   const innerX = 36;
@@ -161,29 +171,30 @@ function desktopBody(theme) {
     ${text(50, 33, "TradeUpBot", { size: 16, fill: theme.text, weight: 700 })}
     ${label.markup}
     ${text(1288, 33, "Pricing", { size: 13, fill: theme.muted, anchor: "end" })}
-    ${panel(20, 68, 1400, 500, theme)}
-    ${text(36, 100, "Example trade-up", { size: 16, fill: theme.text, weight: 700 })}
-    ${text(1384, 78 + 22, "Expected profit +$20.00", { size: 14, fill: theme.profit, weight: 700, anchor: "end" })}
-    ${text(1384, 118, "Cost $100.00", { size: 12, fill: theme.muted, anchor: "end" })}
-    ${text(36, 136, "Inputs", { size: 12, fill: theme.muted })}
-    ${rowTiles(innerX, 148, innerW, 96, 10, theme, inputs)}
-    ${text(36, 270, "Outputs", { size: 12, fill: theme.muted })}
-    ${rowTiles(innerX, 282, innerW, 96, 10, theme, outputs)}
-    ${text(36, 412, "Sample round numbers. Not a live result.", { size: 12, fill: theme.muted })}
-    ${text(36, 436, "Cost $100.00", { size: 13, fill: theme.text, weight: 700 })}
-    ${text(160, 436, "Expected profit +$20.00", { size: 13, fill: theme.profit, weight: 700 })}
-    ${slimRow(20, 584, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00" })}
-    ${slimRow(20, 674, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00" })}
-    ${slimRow(20, 764, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$20.00" })}
-    ${slimRow(20, 854, 1400, 66, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00" })}
+    ${panel(20, 68, 1400, 376, theme)}
+    ${text(36, 96, "Example trade-up", { size: 16, fill: theme.text, weight: 700 })}
+    ${text(1384, 96, "Expected profit +$20.00", { size: 14, fill: theme.profit, weight: 700, anchor: "end" })}
+    ${text(1384, 116, "Cost $100.00 · ROI 20%", { size: 12, fill: theme.muted, anchor: "end" })}
+    ${text(36, 140, "Inputs", { size: 12, fill: theme.muted })}
+    ${rowTiles(innerX, 152, innerW, 92, 10, theme, inputs)}
+    ${text(36, 268, "Outputs", { size: 12, fill: theme.muted })}
+    ${rowTiles(innerX, 280, innerW, 92, 10, theme, outputs)}
+    ${text(36, 400, "Cost $100.00", { size: 13, fill: theme.text, weight: 700 })}
+    ${text(150, 400, "Expected profit +$20.00", { size: 13, fill: theme.profit, weight: 700 })}
+    ${text(360, 400, "ROI 20%", { size: 13, fill: theme.profit, weight: 700 })}
+    ${text(36, 422, "Sample round numbers. Not a live result.", { size: 12, fill: theme.muted })}
+    ${slimRow(20, 460, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00", roi: "ROI 10%" })}
+    ${slimRow(20, 550, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00", roi: "ROI 10%" })}
+    ${slimRow(20, 640, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$20.00", roi: "ROI 20%" })}
+    ${slimRow(20, 730, 1400, 78, theme, { title: "Example trade-up", cost: "10 × $10.00 · float 0.2000", delta: "+$10.00", roi: "ROI 10%" })}
   `;
 }
 
 function mobileBody(theme) {
   const label = chip(16, 60, "Illustrative example", theme);
   const inputs = [
-    ["Example rifle", "×2 · 0.1500"],
-    ["Example pistol", "×2 · 0.2500"],
+    ["Example rifle", "×5 · 0.1500"],
+    ["Example pistol", "×5 · 0.2500"],
   ].map(([title, meta]) => ({
     rarity: CLASSIFIED,
     title,
@@ -191,14 +202,15 @@ function mobileBody(theme) {
     figure: "$10.00",
     figureFill: theme.text,
   }));
+  // 50% * 140 + 50% * 100 = 120. Profit 120 - 100 = 20. ROI 20/100.
   const outputs = [
-    ["Example output A", "share 50%"],
-    ["Example output B", "share 50%"],
-  ].map(([title, meta]) => ({
-    rarity: COVERT,
+    ["Example output A", "share 50%", "$140.00"],
+    ["Example output B", "share 50%", "$100.00"],
+  ].map(([title, meta, figure]) => ({
+    rarity: theme.profit,
     title,
     meta,
-    figure: "$20.00",
+    figure,
     figureFill: theme.text,
   }));
   return `
@@ -207,20 +219,19 @@ function mobileBody(theme) {
     ${crosshair(12, 12, 24, theme.accent)}
     ${text(44, 31, "TradeUpBot", { size: 15, fill: theme.text, weight: 700 })}
     ${label.markup}
-    ${panel(12, 100, 366, 470, theme)}
+    ${panel(12, 100, 366, 392, theme)}
     ${text(26, 128, "Example trade-up", { size: 15, fill: theme.text, weight: 700 })}
-    ${text(26, 150, "Cost $100.00", { size: 12, fill: theme.muted })}
+    ${text(26, 150, "Cost $100.00 · ROI 20%", { size: 12, fill: theme.muted })}
     ${text(362, 128, "+$20.00", { size: 15, fill: theme.profit, weight: 700, anchor: "end" })}
-    ${text(26, 180, "Inputs", { size: 12, fill: theme.muted })}
-    ${rowTiles(26, 192, 338, 100, 8, theme, inputs)}
-    ${text(26, 316, "Outputs", { size: 12, fill: theme.muted })}
-    ${rowTiles(26, 328, 338, 100, 8, theme, outputs)}
-    ${text(26, 452, "Expected profit +$20.00", { size: 13, fill: theme.profit, weight: 700 })}
-    ${text(26, 474, "Sample round numbers. Not a live result.", { size: 11, fill: theme.muted })}
-    ${text(26, 496, "Cost $100.00", { size: 12, fill: theme.text, weight: 700 })}
-    ${slimRow(12, 586, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$10.00" })}
-    ${slimRow(12, 670, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$10.00" })}
-    ${slimRow(12, 754, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$20.00" })}
+    ${text(26, 176, "Inputs", { size: 12, fill: theme.muted })}
+    ${rowTiles(26, 188, 338, 96, 8, theme, inputs)}
+    ${text(26, 308, "Outputs", { size: 12, fill: theme.muted })}
+    ${rowTiles(26, 320, 338, 96, 8, theme, outputs)}
+    ${text(26, 444, "Expected profit +$20.00", { size: 13, fill: theme.profit, weight: 700 })}
+    ${text(26, 466, "Sample round numbers. Not a live result.", { size: 11, fill: theme.muted })}
+    ${slimRow(12, 508, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$10.00", roi: "ROI 10%" })}
+    ${slimRow(12, 592, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$10.00", roi: "ROI 10%" })}
+    ${slimRow(12, 676, 366, 72, theme, { title: "Example trade-up", cost: "10 × $10.00", delta: "+$20.00", roi: "ROI 20%" })}
   `;
 }
 
@@ -275,13 +286,21 @@ const boards = [
 mkdirSync(artDir, { recursive: true });
 mkdirSync(path.join(publicDir, "preview"), { recursive: true });
 
-const og = ogSvg();
+const og = brandedSvg(1200, 630);
 writeFileSync(path.join(artDir, "og-default.svg"), og);
 const ogSize = await writeRaster(og, path.join(publicDir, "og-default.jpg"), "jpeg");
-if (ogSize.width !== 1200 || ogSize.height !== 356) {
-  throw new Error(`og-default.jpg is ${ogSize.width}x${ogSize.height}, expected 1200x356`);
+if (ogSize.width !== 1200 || ogSize.height !== 630) {
+  throw new Error(`og-default.jpg is ${ogSize.width}x${ogSize.height}, expected 1200x630`);
 }
 console.log("og-default.jpg", ogSize.width, ogSize.height);
+
+const banner = brandedSvg(1200, 356);
+writeFileSync(path.join(artDir, "pricing-banner.svg"), banner);
+const bannerSize = await writeRaster(banner, path.join(publicDir, "pricing-banner.jpg"), "jpeg");
+if (bannerSize.width !== 1200 || bannerSize.height !== 356) {
+  throw new Error(`pricing-banner.jpg is ${bannerSize.width}x${bannerSize.height}, expected 1200x356`);
+}
+console.log("pricing-banner.jpg", bannerSize.width, bannerSize.height);
 
 for (const [name, width, height, viewWidth, viewHeight, mode, body] of boards) {
   const theme = themes[mode];
