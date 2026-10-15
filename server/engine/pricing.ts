@@ -9,9 +9,6 @@ import { knnOutputPriceAtFloat, computeConditionConfidence, getKnnConditionObsCo
 import { buildCurveCache, commitCurveCache, curveCacheIsFresh, resetCurveCacheForTests, type CurveScore } from "./curve-classification.js";
 import { buildConditionMultipliers, conditionMultiplierCache } from "./condition-multipliers.js";
 import { requestCacheServesStale, staleDecision } from "./request-cache-policy.js";
-import { visitRows } from "./event-loop.js";
-import { forEachReadOnlyCursor } from "./rebuild-io.js";
-import { enqueueRebuild, resetRebuildQueueForTests } from "./rebuild-queue.js";
 
 // KNN same-condition obs below this threshold → treat as sparse, apply tighter cap
 const SPARSE_CONDITION_OBS_THRESHOLD = 10;
@@ -101,7 +98,7 @@ async function loadCsfloatRefPrices(pool: pg.Pool, maps: PriceMaps): Promise<{ c
     SELECT skin_name, condition, min_price_cents, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_ref' AND volume >= 3
   `);
-  await visitRows(rows, (row) => {
+  for (const row of rows) {
     const price = row.median_price_cents > 0 ? row.median_price_cents : row.min_price_cents;
     if (price > 0) {
       const k = `${row.skin_name}:${row.condition}`;
@@ -109,7 +106,7 @@ async function loadCsfloatRefPrices(pool: pg.Pool, maps: PriceMaps): Promise<{ c
       maps.sources.set(k, `csfloat_ref (${row.volume} vol)`);
       cached++;
     }
-  });
+  }
   return { cached, totalRows: rows.length };
 }
 
@@ -120,7 +117,7 @@ async function fillCsfloatSalesGaps(pool: pg.Pool, maps: PriceMaps): Promise<num
     SELECT skin_name, condition, median_price_cents, volume
     FROM price_data WHERE source = 'csfloat_sales'
   `);
-  await visitRows(rows, (row) => {
+  for (const row of rows) {
     if (row.median_price_cents > 0 && row.volume >= 2) {
       const k = `${row.skin_name}:${row.condition}`;
       if (!maps.prices.has(k)) {
@@ -129,7 +126,7 @@ async function fillCsfloatSalesGaps(pool: pg.Pool, maps: PriceMaps): Promise<num
         count++;
       }
     }
-  });
+  }
   return count;
 }
 
@@ -155,11 +152,11 @@ async function overrideWithListingFloors(pool: pg.Pool, maps: PriceMaps): Promis
       GROUP BY s.name, s.rarity
     `, [cond.min, cond.max]);
 
-    await visitRows(rows, (row) => {
-      if (row.lowest_price <= 0) return;
+    for (const row of rows) {
+      if (row.lowest_price <= 0) continue;
       // Filter out outlier listings: >5x the per-condition reference price
       const ref = maps.ref.get(`${row.name}:${cond.name}`);
-      if (ref && row.lowest_price > ref * 5) return;
+      if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
       const existing = maps.prices.get(key);
@@ -179,7 +176,7 @@ async function overrideWithListingFloors(pool: pg.Pool, maps: PriceMaps): Promis
       }
       // For Extraordinary (knives/gloves): don't fill from listings alone —
       // let ref/steam/skinport prices fill first (listings can be inflated by rare patterns)
-    });
+    }
   }
   return { overrides, fills };
 }
@@ -199,10 +196,10 @@ async function fillKnifeLastResort(pool: pg.Pool, maps: PriceMaps): Promise<{ la
       GROUP BY s.name
     `, [cond.min, cond.max]);
 
-    await visitRows(rows, (row) => {
-      if (row.lowest_price <= 0) return;
+    for (const row of rows) {
+      if (row.lowest_price <= 0) continue;
       const ref = maps.ref.get(`${row.name}:${cond.name}`);
-      if (ref && row.lowest_price > ref * 5) return;
+      if (ref && row.lowest_price > ref * 5) continue;
 
       const key = `${row.name}:${cond.name}`;
       const existing = maps.prices.get(key);
@@ -215,7 +212,7 @@ async function fillKnifeLastResort(pool: pg.Pool, maps: PriceMaps): Promise<{ la
         maps.sources.set(key, `knife listing floor (lower than ${maps.sources.get(key)})`);
         overrides++;
       }
-    });
+    }
   }
   return { lastResort, overrides };
 }
@@ -358,7 +355,7 @@ async function rebuildPriceCache(pool: pg.Pool): Promise<void> {
 export async function buildPriceCache(pool: pg.Pool, force = false): Promise<void> {
   if (!force && isPriceCacheFresh()) return;
   if (!priceCacheRebuild) {
-    priceCacheRebuild = enqueueRebuild(() => rebuildPriceCache(pool)).finally(() => {
+    priceCacheRebuild = rebuildPriceCache(pool).finally(() => {
       priceCacheRebuild = null;
     });
   }
@@ -430,10 +427,10 @@ async function buildSourceFloorCaches(pool: pg.Pool, maps: PriceMaps) {
         HAVING COUNT(*) >= 2
       `, [cond.min, cond.max, source]);
 
-      await visitRows(rows, (row) => {
-        if (row.lowest_price <= 0) return;
+      for (const row of rows) {
+        if (row.lowest_price <= 0) continue;
         cache.set(`${row.name}:${cond.name}`, row.lowest_price);
-      });
+      }
     }
   }
 }
@@ -464,22 +461,6 @@ export interface OutputPriceResult {
 const _floatCeilingCache = new Map<string, { float: number; price: number }[]>();
 let _floatCeilingCacheBuiltAt = 0;
 const FLOAT_CEILING_CACHE_TTL_MS = 5 * 60 * 1000;
-/** Rows per FETCH. A keyset of 400 was 13s of DB time at 1.4M qualifying listings. */
-export const FLOAT_CEILING_FETCH_BATCH = 5000;
-
-let floatCeilingFetchBatch = FLOAT_CEILING_FETCH_BATCH;
-
-export function setFloatCeilingFetchBatchForTests(size: number): void {
-  if (!Number.isInteger(size) || size < 1) {
-    throw new Error("float ceiling batch must be a positive integer");
-  }
-  floatCeilingFetchBatch = size;
-}
-
-export function resetFloatCeilingFetchBatchForTests(): void {
-  floatCeilingFetchBatch = FLOAT_CEILING_FETCH_BATCH;
-}
-
 const FLOAT_CEILING_MAX_STALE_MS = FLOAT_CEILING_CACHE_TTL_MS * 3;
 
 let _floatCeilingBuildPromise: Promise<void> | null = null;
@@ -514,7 +495,7 @@ async function ensureFloatCeilingCache(pool: pg.Pool): Promise<void> {
 
 function startFloatCeilingRebuild(pool: pg.Pool): Promise<void> {
   if (!_floatCeilingBuildPromise) {
-    _floatCeilingBuildPromise = enqueueRebuild(() => rebuildFloatCeiling(pool)).finally(() => {
+    _floatCeilingBuildPromise = rebuildFloatCeiling(pool).finally(() => {
       _floatCeilingBuildPromise = null;
     });
   }
@@ -522,9 +503,6 @@ function startFloatCeilingRebuild(pool: pg.Pool): Promise<void> {
 }
 
 async function rebuildFloatCeiling(pool: pg.Pool): Promise<void> {
-  // Runs only after this job is dequeued, so a price rebuild that just
-  // committed the ceiling can skip a second full listing scan.
-  if (_floatCeilingCache.size > 0 && floatCeilingAgeMs() < FLOAT_CEILING_CACHE_TTL_MS) return;
   const epoch = _floatCeilingEpoch;
   try {
     const next = await queryFloatCeiling(pool, refPriceCache);
@@ -540,13 +518,6 @@ async function rebuildFloatCeiling(pool: pg.Pool): Promise<void> {
   }
 }
 
-interface CeilingListingRow extends pg.QueryResultRow {
-  skin_name: string;
-  float_value: number;
-  price_cents: number;
-  source: string;
-}
-
 async function queryFloatCeiling(
   pool: pg.Pool,
   refs: Map<string, number>,
@@ -556,62 +527,60 @@ async function queryFloatCeiling(
   // Listings-only ceiling: active market offers represent current reality.
   // Historical sales excluded — they introduce noise from below-market transactions
   // and Skinport fee differentials. KNN already handles sale history for estimation.
-  // One cursor, one REPEATABLE READ snapshot. A shared keyset across three
-  // UNION branches rescans: text order puts every dmarket: id after every
-  // numeric id. DMarket asks are ROUND(price * 1.025). A NULL source is
-  // labeled csfloat. Skinport stays out. The swap of `next` is synchronous.
+  const { rows } = await pool.query(`
+    SELECT skin_name, float_value, price_cents, source FROM (
+      -- Active CSFloat listings
+      SELECT s.name as skin_name, l.float_value, l.price_cents, 'csfloat' as source
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE (l.source = 'csfloat' OR l.source IS NULL) AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
+        AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL)
+      UNION ALL
+      -- Active DMarket listings (normalized with 2.5% buyer fee)
+      SELECT s.name, l.float_value, CAST(ROUND(l.price_cents * 1.025) AS INTEGER), 'dmarket'
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE l.source = 'dmarket' AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
+      UNION ALL
+      -- Active Buff listings (no buyer fee)
+      SELECT s.name, l.float_value, l.price_cents, 'buff'
+      FROM listings l JOIN skins s ON l.skin_id = s.id
+      WHERE l.source = 'buff' AND l.stattrak = false
+        AND l.float_value > 0 AND l.price_cents > 0
+    ) combined
+    ORDER BY skin_name, float_value
+  `);
+
   let buffFiltered = 0;
   let dmarketFiltered = 0;
-  await forEachReadOnlyCursor<CeilingListingRow>(
-    pool,
-    "float_ceiling",
-    `
-      SELECT s.name AS skin_name, l.float_value,
-        CASE WHEN l.source = 'dmarket'
-          THEN CAST(ROUND(l.price_cents * 1.025) AS INTEGER)
-          ELSE l.price_cents
-        END AS price_cents,
-        COALESCE(l.source, 'csfloat') AS source
-      FROM listings l JOIN skins s ON l.skin_id = s.id
-      WHERE l.stattrak = false AND l.float_value > 0 AND l.price_cents > 0
-        AND (
-          ((l.source = 'csfloat' OR l.source IS NULL)
-            AND (l.listing_type = 'buy_now' OR l.listing_type IS NULL))
-          OR l.source = 'dmarket'
-          OR l.source = 'buff'
-        )
-      ORDER BY skin_name, float_value
-    `,
-    floatCeilingFetchBatch,
-    (row) => {
-      // Filter outlier listings from Buff and DMarket: sticker/pattern premiums
-      // can be 10-100x market price. CSFloat listings are trusted (verified buy-now).
-      // Use refPriceCache (built by overrideWithListingFloors, includes Skinport fallback).
-      // Same filter applied to CSFloat input listings in data-load.ts.
-      if (row.source === "buff" || row.source === "dmarket") {
-        const condition = floatToCondition(row.float_value);
-        const ref = refs.get(`${row.skin_name}:${condition}`);
-        if (row.source === "buff") {
-          // Buff: filter if no ref OR >5x ref (conservative — Buff has many sticker premiums)
-          if (!ref || row.price_cents > ref * 5) {
-            buffFiltered++;
-            return;
-          }
-        } else {
-          // DMarket: filter only if >5x ref (DMarket data is generally reliable,
-          // but pattern premiums still exist). Don't filter when no ref — DMarket
-          // is a primary data source.
-          if (ref && row.price_cents > ref * 5) {
-            dmarketFiltered++;
-            return;
-          }
+  for (const row of rows) {
+    // Filter outlier listings from Buff and DMarket: sticker/pattern premiums
+    // can be 10-100x market price. CSFloat listings are trusted (verified buy-now).
+    // Use refPriceCache (built by overrideWithListingFloors, includes Skinport fallback).
+    // Same filter applied to CSFloat input listings in data-load.ts.
+    if (row.source === 'buff' || row.source === 'dmarket') {
+      const condition = floatToCondition(row.float_value);
+      const ref = refs.get(`${row.skin_name}:${condition}`);
+      if (row.source === 'buff') {
+        // Buff: filter if no ref OR >5x ref (conservative — Buff has many sticker premiums)
+        if (!ref || row.price_cents > ref * 5) {
+          buffFiltered++;
+          continue;
+        }
+      } else {
+        // DMarket: filter only if >5x ref (DMarket data is generally reliable,
+        // but pattern premiums still exist). Don't filter when no ref — DMarket
+        // is a primary data source.
+        if (ref && row.price_cents > ref * 5) {
+          dmarketFiltered++;
+          continue;
         }
       }
-      let arr = next.get(row.skin_name);
-      if (!arr) { arr = []; next.set(row.skin_name, arr); }
-      arr.push({ float: row.float_value, price: row.price_cents });
-    },
-  );
+    }
+    let arr = next.get(row.skin_name);
+    if (!arr) { arr = []; next.set(row.skin_name, arr); }
+    arr.push({ float: row.float_value, price: row.price_cents });
+  }
   if (buffFiltered > 0 || dmarketFiltered > 0) console.log(`  Float ceiling cache: filtered ${buffFiltered} Buff + ${dmarketFiltered} DMarket outlier listings (>5x ref)`);
   return next;
 }
@@ -1121,9 +1090,7 @@ export function resetPriceCacheForTests(): void {
   priceCacheBuiltAt = 0;
   priceCacheRebuild = null;
   _floatCeilingBuildPromise = null;
-  resetRebuildQueueForTests();
   resetCurveCacheForTests();
-  resetFloatCeilingFetchBatchForTests();
 }
 
 export function expirePriceCacheForTests(ageMs: number): void {
@@ -1137,10 +1104,6 @@ export function settlePriceCacheRebuildForTests(): Promise<void> {
 
 export function floatCeilingCacheSizeForTests(): number {
   return _floatCeilingCache.size;
-}
-
-export function floatCeilingRowsForTests(skinName: string): readonly { float: number; price: number }[] {
-  return _floatCeilingCache.get(skinName) ?? [];
 }
 
 export function ageFloatCeilingForTests(ageMs: number): void {
