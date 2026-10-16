@@ -17,13 +17,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nginx_conf import is_backup_name, with_backups_unloaded
+
 ROUTE = "best-cs2-trade-ups"
 CONF_ROOTS = (
     Path("/etc/nginx/sites-enabled"),
     Path("/etc/nginx/sites-available"),
     Path("/etc/nginx/conf.d"),
 )
-SKIP_SUFFIXES = (".bak", ".save", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
 
 LOCATION_RE = re.compile(
     r"location\s+(?P<mod>=|~\*|~|\^~)?\s*(?P<uri>[^{]+?)\{",
@@ -122,7 +124,7 @@ def iter_conf_files() -> list[Path]:
         if not root.is_dir():
             continue
         for path in sorted(root.iterdir()):
-            if not path.is_file() or path.name.endswith(SKIP_SUFFIXES):
+            if not path.is_file() or is_backup_name(path.name):
                 continue
             real = path.resolve()
             if real in seen:
@@ -133,6 +135,10 @@ def iter_conf_files() -> list[Path]:
 
 
 def apply_live() -> int:
+    return with_backups_unloaded(_apply_live)
+
+
+def _apply_live() -> int:
     changed: list[Path] = []
     backups: list[tuple[Path, Path]] = []
     already = False

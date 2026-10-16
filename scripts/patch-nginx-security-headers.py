@@ -22,20 +22,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nginx_conf import is_backup_name, with_backups_unloaded
+
 ROOT = Path(__file__).resolve().parents[1]
 CONF_ROOTS = (
     Path("/etc/nginx/sites-enabled"),
     Path("/etc/nginx/sites-available"),
     Path("/etc/nginx/conf.d"),
 )
-SKIP_SUFFIXES = (".bak", ".save", ".orig", ".old", "~", ".swp", ".disabled", ".dpkg-old", ".dpkg-dist", ".rpmnew", ".rpmsave")
-# Dated or tagged backups such as tradeup.bak-20260518220608 or tradeup.bak.1.
-BACKUP_NAME_RE = re.compile(r"[._-](?:bak\d*|backup|orig|old|save)(?:[-._]|$)", re.I)
-
-
-def is_backup_name(name: str) -> bool:
-    """True for editor/package/manual backup copies that nginx never loads."""
-    return name.endswith(SKIP_SUFFIXES) or bool(BACKUP_NAME_RE.search(name))
 HEADER_NAMES = (
     "Content-Security-Policy",
     "Referrer-Policy",
@@ -167,6 +162,10 @@ def iter_conf_files() -> list[Path]:
 
 
 def apply_live(headers: dict[str, str]) -> int:
+    return with_backups_unloaded(lambda: _apply_live(headers))
+
+
+def _apply_live(headers: dict[str, str]) -> int:
     changed: list[Path] = []
     backups: list[tuple[Path, Path]] = []
     already = False
