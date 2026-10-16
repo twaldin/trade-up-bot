@@ -2,7 +2,7 @@
  * First-load CLS on the built client. APIs and webfonts are delayed so a
  * skeleton that collapses, or a grid that pops in, fails this before it ships.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import puppeteer from "puppeteer";
 import { chromium, type Browser, type Page, type Route } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { startViteOnFreePort } from "../helpers/vite-dev-server.js";
 
 declare global {
   interface Window {
@@ -19,7 +20,6 @@ declare global {
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const dist = resolve(repo, "dist");
-const PREVIEW_PORT = 4187;
 const API_DELAY_MS = 2_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
@@ -84,10 +84,6 @@ function tradeUp(id: number) {
   });
 }
 
-function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "");
-}
-
 function sessionCls(entries: { value: number; startTime: number; hadRecentInput: boolean }[]): number {
   let max = 0;
   let session = 0;
@@ -110,33 +106,7 @@ async function startPreview(): Promise<{ child: ChildProcess; origin: string }> 
   if (!existsSync(resolve(dist, "index.html"))) {
     throw new Error("dist/index.html is missing. Run npm run build before the CLS check.");
   }
-  const child = spawn(
-    process.execPath,
-    [resolve(repo, "node_modules/vite/bin/vite.js"), "preview", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"],
-    {
-      cwd: repo,
-      env: { ...process.env, BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let logs = "";
-  const origin = await new Promise<string>((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(`vite preview did not start\n${logs}`)), 20_000);
-    const onData = (chunk: Buffer) => {
-      logs += chunk.toString();
-      const match = stripAnsi(logs).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
-      if (!match?.[1]) return;
-      clearTimeout(timer);
-      resolvePromise(match[1].replace(/\/$/, ""));
-    };
-    child.stdout?.on("data", onData);
-    child.stderr?.on("data", onData);
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`vite preview exited ${code ?? "null"}\n${logs}`));
-    });
-  });
-  return { child, origin };
+  return startViteOnFreePort({ cwd: repo, args: ["preview"] });
 }
 
 type Fixture = {

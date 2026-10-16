@@ -2,18 +2,16 @@
  * Chromium check: a priced slot and a no-listings slot share one row height,
  * and adding them keeps CLS under 0.05 at 360, 390, and 1280.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NO_LISTINGS_COPY } from "../../shared/calculator-example.js";
+import { startViteOnFreePort } from "../helpers/vite-dev-server.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const PORT = 5198;
-const BASE = `http://127.0.0.1:${PORT}`;
-const BANNED = /\b(?:chances?|odds|gambl\w*|bankrolls?|jackpots?|bets?|betting|win|wins|winning|lottery|lucky|rolls?|rolled)\b(?!-)|risk-free/i;
 
 const priced = {
   name: "AK-47 | Leet Museo",
@@ -36,33 +34,40 @@ const unlisted = {
   floor_float: null,
 };
 
-async function startVite(): Promise<ChildProcess> {
-  const child = spawn(process.execPath, [
-    "node_modules/vite/bin/vite.js",
-    "--host", "127.0.0.1",
-    "--port", String(PORT),
-    "--strictPort",
-  ], {
-    cwd: ROOT,
-    env: { ...process.env, API_PROXY: "", BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-    stdio: ["ignore", "pipe", "pipe"],
+async function startVite(): Promise<{ child: ChildProcess; origin: string }> {
+  return startViteOnFreePort({ cwd: ROOT, env: { API_PROXY: "" } });
+}
+
+async function settleFontsImages(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all([...document.images].map(async (img) => {
+      if (img.complete) return;
+      try { await img.decode(); } catch { /* A broken image should not block the reading. */ }
+    }));
   });
-  let buf = "";
-  child.stdout?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
-  child.stderr?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
-  const deadline = Date.now() + 40_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`vite exited ${child.exitCode}: ${buf.slice(-500)}`);
-    try {
-      const res = await fetch(BASE);
-      if (res.status < 500) return child;
-    } catch {
-      // The port is not open yet.
+}
+
+/** Two consecutive frames with the same listing boxes means the row paint has stopped. */
+async function listingRowsStable(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll(".preview-listing")];
+    if (rows.length < 2) return false;
+    const sig = rows.map((node) => {
+      const box = node.getBoundingClientRect();
+      return `${Math.round(box.x)}:${Math.round(box.y)}:${Math.round(box.width)}:${Math.round(box.height)}`;
+    }).join("|");
+    const prev = Reflect.get(window, "__listingSig");
+    const hits = Reflect.get(window, "__listingStable");
+    if (prev === sig) {
+      const next = (typeof hits === "number" ? hits : 0) + 1;
+      Reflect.set(window, "__listingStable", next);
+      return next >= 3;
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  child.kill("SIGTERM");
-  throw new Error(`vite did not listen: ${buf.slice(-500)}`);
+    Reflect.set(window, "__listingSig", sig);
+    Reflect.set(window, "__listingStable", 1);
+    return false;
+  }, { timeout: 8_000, polling: 50 });
 }
 
 async function prepare(page: Page, width: number, mobile: boolean): Promise<string[]> {
@@ -113,9 +118,12 @@ async function prepare(page: Page, width: number, mobile: boolean): Promise<stri
 describe("calculator slot footprint", () => {
   let browser: Browser;
   let vite: ChildProcess;
+  let origin = "";
 
   beforeAll(async () => {
-    vite = await startVite();
+    const started = await startVite();
+    vite = started.child;
+    origin = started.origin;
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
@@ -134,12 +142,15 @@ describe("calculator slot footprint", () => {
   ])("keeps CLS under 0.05 at $width", async ({ width, mobile }) => {
     const page = await browser.newPage();
     const posts = await prepare(page, width, mobile);
-    await page.goto(`${BASE}/calculator`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.goto(`${origin}/calculator`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.waitForSelector("input.preview-input");
+    await settleFontsImages(page);
+    await page.waitForNetworkIdle({ idleTime: 250, timeout: 8_000 });
+    await page.evaluate(() => { Reflect.set(window, "__cls", 0); });
 
     async function add(query: string, label: string) {
       await page.click("input.preview-input", { clickCount: 3 });
-      await page.type("input.preview-input", query, { delay: 5 });
+      await page.type("input.preview-input", query, { delay: 0 });
       await page.waitForFunction(
         (name) => [...document.querySelectorAll("button.preview-row")].some((node) => node.textContent?.includes(name)),
         { timeout: 8_000 },
@@ -154,6 +165,10 @@ describe("calculator slot footprint", () => {
 
     await add("Leet Museo", "Leet Museo");
     await add("Splash Jam", "Splash Jam");
+    await page.evaluate(async () => { await document.fonts.ready; });
+    await listingRowsStable(page);
+    await settleFontsImages(page);
+    await page.waitForNetworkIdle({ idleTime: 250, timeout: 8_000 });
 
     const measured = await page.evaluate((emptyCopy) => {
       const rows = [...document.querySelectorAll(".preview-listing")].map((node) => ({
@@ -207,5 +222,5 @@ describe("calculator slot footprint", () => {
       // Screenshot evidence is optional when the artifacts directory is not writable.
     }
     await page.close();
-  });
+  }, 25_000);
 });

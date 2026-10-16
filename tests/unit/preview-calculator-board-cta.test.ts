@@ -3,16 +3,15 @@
  * in-app link to the profit-sorted board, one cta_click, and a 44px target
  * at 390. happy-dom does not apply the narrow min-height.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { startViteOnFreePort } from "../helpers/vite-dev-server.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const PORT = 5193;
-const BASE = `http://127.0.0.1:${PORT}`;
 const CTA = "See live trade-ups above cost";
 const TYPE = "classified_covert";
 
@@ -44,35 +43,8 @@ const example = {
 
 const tradeUp = makeTradeUp({ type: TYPE });
 
-async function startVite(): Promise<ChildProcess> {
-  const child = spawn(process.execPath, [
-    "node_modules/vite/bin/vite.js",
-    "--host", "127.0.0.1",
-    "--port", String(PORT),
-    "--strictPort",
-  ], {
-    cwd: ROOT,
-    env: { ...process.env, API_PROXY: "", BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let buf = "";
-  child.stdout?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
-  child.stderr?.on("data", (chunk: Buffer) => { buf += chunk.toString(); });
-  const deadline = Date.now() + 40_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`vite exited ${child.exitCode}: ${buf.slice(-500)}`);
-    }
-    try {
-      const res = await fetch(BASE);
-      if (res.status < 500) return child;
-    } catch {
-      // The port is not open yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  child.kill("SIGTERM");
-  throw new Error(`vite did not listen: ${buf.slice(-500)}`);
+function startVite(): Promise<{ child: ChildProcess; origin: string }> {
+  return startViteOnFreePort({ cwd: ROOT, env: { API_PROXY: "" } });
 }
 
 async function stubApis(page: Page): Promise<void> {
@@ -128,9 +100,12 @@ async function prepare(page: Page, width: number, height: number, mobile: boolea
 describe("calculator next step to the profit-sorted board", () => {
   let browser: Browser;
   let vite: ChildProcess;
+  let origin = "";
 
   beforeAll(async () => {
-    vite = await startVite();
+    const started = await startVite();
+    vite = started.child;
+    origin = started.origin;
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
@@ -150,7 +125,7 @@ describe("calculator next step to the profit-sorted board", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(String(err)));
     await prepare(page, width, height, mobile);
-    await page.goto(`${BASE}/calculator`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.goto(`${origin}/calculator`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.waitForFunction(
       () => [...document.querySelectorAll("button")].some((node) => node.textContent?.includes("Load example")),
       { timeout: 20_000 },
