@@ -133,6 +133,29 @@ export const HERO_EMPTY_COPY = "No trade-ups to show right now.";
 
 export type HeroLoadPhase = "ready" | "throttled" | "error" | "slow" | "skeleton" | "empty";
 
+/** Desktop proof reserve. Loading and a rendered trade-up share 836px so the laptop does not move. Short answers do not. */
+export type ProofReserveState = "loading" | "live" | "empty" | "error" | "ratelimited";
+
+export function proofReserveState(phase: HeroLoadPhase): ProofReserveState {
+  switch (phase) {
+    case "skeleton":
+    case "slow":
+      return "loading";
+    case "ready":
+      return "live";
+    case "empty":
+      return "empty";
+    case "error":
+      return "error";
+    case "throttled":
+      return "ratelimited";
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
+}
+
 export function heroLoadPhase(state: {
   hasTradeUp: boolean;
   throttled: boolean;
@@ -265,6 +288,7 @@ export function HeroProof({
   return (
     <aside
       className="preview-proof o-lifted o-arrive"
+      data-state={proofReserveState(phase)}
       style={{ "--stagger": 3 } as CSSProperties}
       aria-label="Top trade-up on the board"
       aria-busy={!proof && loading}

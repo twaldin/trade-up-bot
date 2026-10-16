@@ -228,7 +228,7 @@ export function PreviewPricing() {
 
       <section className="preview-shots">
         <p className="o-kicker">See it in action</p>
-        <h2>What Pro shows you</h2>
+        <h2>TradeUpBot at a glance</h2>
         <figure className="preview-shot">
           <img src="/pricing-banner.jpg" alt="TradeUpBot — CS2 trade-ups ranked by EV after fees" width="1200" height="356" loading="lazy" referrerPolicy="strict-origin" />
           <figcaption>TradeUpBot wordmark and tagline.</figcaption>

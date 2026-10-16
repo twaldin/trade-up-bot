@@ -10,6 +10,7 @@ import puppeteer from "puppeteer";
 import { chromium, type Browser, type Page, type Route } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
+import { proofReserveState, type HeroLoadPhase } from "../../src/preview/pages/PreviewLanding.js";
 import { makeTradeUp } from "../helpers/fixtures.js";
 
 declare global {
@@ -21,11 +22,14 @@ declare global {
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const PORT = 5204;
 const BOARD_DELAY_MS = 1_500;
-const HEADING = "What Pro shows you";
+const HEADING = "TradeUpBot at a glance";
 const VIEWPORTS = [
   { width: 390, height: 844, slot: ".preview-phone" },
   { width: 1280, height: 1200, slot: ".preview-laptop" },
 ] as const;
+const SHORT_WIDTHS = [1280, 1920] as const;
+type BoardCase = "live" | "empty" | "error" | "ratelimited";
+const boardCase: { current: BoardCase } = { current: "live" };
 
 const SOURCES = ["csfloat", "dmarket", "skinport", "buff"] as const;
 const INPUT_NAMES = [
@@ -156,6 +160,27 @@ async function fulfill(route: Route): Promise<void> {
   let body: unknown = {};
   if (url.pathname === "/api/trade-ups") {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, BOARD_DELAY_MS));
+    if (boardCase.current === "empty") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ trade_ups: [], total: 0, total_profitable: 0, tier: "free", signed_in: false, page: 1, per_page: 3 }),
+      });
+      return;
+    }
+    if (boardCase.current === "error") {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Internal server error" }) });
+      return;
+    }
+    if (boardCase.current === "ratelimited") {
+      await route.fulfill({
+        status: 429,
+        headers: { "retry-after": "120" },
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Too many requests" }),
+      });
+      return;
+    }
     body = BOARD;
   } else if (url.pathname === "/api/global-stats") {
     body = {
@@ -210,6 +235,36 @@ async function slotBox(page: Page, selector: string): Promise<{ y: number; heigh
   });
 }
 
+const RESERVE: readonly HeroLoadPhase[] = ["skeleton", "slow", "ready", "empty", "error", "throttled"];
+
+describe("desktop proof reserve follows the board answer", () => {
+  it.each(RESERVE)("maps %s onto a proof data-state", (phase) => {
+    const state = proofReserveState(phase);
+    switch (phase) {
+      case "skeleton":
+      case "slow":
+        expect(state).toBe("loading");
+        break;
+      case "ready":
+        expect(state).toBe("live");
+        break;
+      case "empty":
+        expect(state).toBe("empty");
+        break;
+      case "error":
+        expect(state).toBe("error");
+        break;
+      case "throttled":
+        expect(state).toBe("ratelimited");
+        break;
+      default: {
+        const _exhaustive: never = phase;
+        expect(_exhaustive).toBeUndefined();
+      }
+    }
+  });
+});
+
 describe("homepage device preview does not shift when the live board arrives", () => {
   let browser: Browser;
   let vite: ChildProcess;
@@ -232,6 +287,7 @@ describe("homepage device preview does not shift when the live board arrives", (
   });
 
   it.each(VIEWPORTS)("keeps preview CLS under 0.005 at $width and renders the pricing heading", async ({ width, height, slot }) => {
+    boardCase.current = "live";
     const page = await open(browser, origin, width, height);
     await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
     await page.locator(slot).waitFor({ state: "attached" });
@@ -252,4 +308,44 @@ describe("homepage device preview does not shift when the live board arrives", (
     expect(await page.locator("body").innerText()).not.toContain("Product screenshots");
     await page.close();
   }, 30_000);
+
+  it.each(SHORT_WIDTHS.flatMap((width) => (["empty", "error", "ratelimited"] as const).map((kind) => ({ width, kind }))))(
+    "hugs the $kind proof at $width and keeps preview CLS under 0.005",
+    async ({ width, kind }) => {
+      boardCase.current = kind;
+      const page = await open(browser, origin, width, 1200);
+      await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" });
+      await page.locator(".preview-laptop").waitFor({ state: "attached" });
+      await page.waitForResponse((res) => res.url().includes("/api/trade-ups"));
+      await page.waitForTimeout(800);
+      const fit = await page.locator(".preview-proof").evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const clone = el.cloneNode(true);
+        if (!(clone instanceof HTMLElement) || !el.parentElement) return null;
+        clone.style.minHeight = "0";
+        clone.style.height = "auto";
+        clone.style.flexGrow = "0";
+        clone.style.position = "absolute";
+        clone.style.left = "-10000px";
+        clone.style.top = "0";
+        clone.style.visibility = "hidden";
+        clone.style.width = `${rect.width}px`;
+        for (const node of clone.querySelectorAll("*")) {
+          if (node instanceof HTMLElement) node.style.flexGrow = "0";
+        }
+        el.parentElement.appendChild(clone);
+        const content = clone.getBoundingClientRect().height;
+        clone.remove();
+        return { height: rect.height, content, state: el.getAttribute("data-state") };
+      });
+      const shifts = await page.evaluate(() => window.__previewClsShifts ?? []);
+      const previewCls = sessionCls(shifts.filter((entry) => entry.preview));
+      expect(fit, `${width} ${kind} proof`).not.toBeNull();
+      expect(fit!.state).toBe(kind);
+      expect(fit!.height, `${width} ${kind} proof height`).toBeLessThanOrEqual(fit!.content + 24);
+      expect(previewCls, `${width} ${kind} preview CLS`).toBeLessThan(0.005);
+      await page.close();
+    },
+    30_000,
+  );
 });

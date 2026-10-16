@@ -288,6 +288,10 @@
     gap: 56px;
     padding-top: 72px;
     padding-bottom: 72px;
+    /* Preflight uses border-box, so this is the 836px proof plus the 72px
+       padding above and below. The laptop follows the row: a short answer
+       shrinks the card, not the device. */
+    min-height: calc(836px + 72px + 72px);
   }
 
   /* Top-aligned, not centred: the panel's height depends on live data, and a
@@ -658,10 +662,20 @@
 .preview-hero__plot-skeleton { height: 216px; }
 
 /* A live proof at 520px (10 listings, four outcomes, the fee line, and the
-   free-tier note) is 835px. This follows the 501px rule so it wins, and it
-   keeps .preview-laptop from dropping when the board arrives. */
+   free-tier note) is 835px. Only loading and that rendered trade-up hold the
+   box, so an empty, failed, or rate-limited answer can sit at its own height.
+   These follow the 501px rule so they win, and loading → live does not move
+   .preview-laptop. */
 @media (min-width: 1080px) {
-  .preview-proof { min-height: 836px; }
+  .preview-proof[data-state="loading"],
+  .preview-proof[data-state="live"] { min-height: 836px; }
+
+  .preview-proof[data-state="empty"],
+  .preview-proof[data-state="error"],
+  .preview-proof[data-state="ratelimited"] {
+    min-height: 0;
+    align-self: start;
+  }
 }
 
 @media (max-width: 1079px) {
