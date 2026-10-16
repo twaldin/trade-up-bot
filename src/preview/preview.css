@@ -288,6 +288,10 @@
     gap: 56px;
     padding-top: 72px;
     padding-bottom: 72px;
+    /* Preflight uses border-box, so this is the 836px proof plus the 72px
+       padding above and below. The laptop follows the row: a short answer
+       shrinks the card, not the device. */
+    min-height: calc(836px + 72px + 72px);
   }
 
   /* Top-aligned, not centred: the panel's height depends on live data, and a
@@ -413,8 +417,8 @@
   width: 100%;
   max-width: 640px;
   min-width: 0;
-  /* Real hero is ~501px. Reserve that so skeleton, placeholder, and the
-     loaded panel share one box. Phones stack the KPI row, so they need more. */
+  /* Real hero skeleton is ~501px. Reserve that so the skeleton and the
+     placeholder share one box. Phones stack the KPI row, so they need more. */
   min-height: 501px;
   padding: 14px;
   border: 1px solid var(--line-hard);
@@ -657,6 +661,23 @@
 
 .preview-hero__plot-skeleton { height: 216px; }
 
+/* A live proof at 520px (10 listings, four outcomes, the fee line, and the
+   free-tier note) is 835px. Only loading and that rendered trade-up hold the
+   box, so an empty, failed, or rate-limited answer can sit at its own height.
+   These follow the 501px rule so they win, and loading → live does not move
+   .preview-laptop. */
+@media (min-width: 1080px) {
+  .preview-proof[data-state="loading"],
+  .preview-proof[data-state="live"] { min-height: 836px; }
+
+  .preview-proof[data-state="empty"],
+  .preview-proof[data-state="error"],
+  .preview-proof[data-state="ratelimited"] {
+    min-height: 0;
+    align-self: start;
+  }
+}
+
 @media (max-width: 1079px) {
   .preview-proof { display: none; }
 
@@ -690,7 +711,9 @@
 .preview-phone { display: block; padding: 0 24px; }
 
 @media (min-width: 860px) {
-  .preview-laptop { display: block; }
+  /* Lid is 528px and the scene pads 24px + 236px. The device does not scale
+     with the viewport, so one height covers every width where it is shown. */
+  .preview-laptop { display: block; min-height: 788px; }
   .preview-phone { display: none; }
 }
 
