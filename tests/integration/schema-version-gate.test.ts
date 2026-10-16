@@ -165,4 +165,36 @@ describe("schema version gate", () => {
       holder.release();
     }
   });
+
+  it("creates trade_up_top_snapshots indexed on snapshot_at with a unique (snapshot_at, trade_up_id)", async () => {
+    const { rows: cols } = await pool.query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'trade_up_top_snapshots'
+      ORDER BY ordinal_position
+    `);
+    expect(cols.map((col) => col.column_name)).toEqual([
+      "snapshot_at",
+      "trade_up_id",
+      "score",
+      "profit",
+      "cost",
+      "ev",
+      "roi",
+      "input_sources",
+      "collection",
+    ]);
+
+    const { rows: indexes } = await pool.query<{ indexname: string }>(`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = current_schema() AND tablename = 'trade_up_top_snapshots'
+    `);
+    expect(indexes.map((idx) => idx.indexname)).toContain("idx_trade_up_top_snapshots_at");
+
+    const { rows: unique } = await pool.query<{ def: string }>(`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conrelid = 'trade_up_top_snapshots'::regclass AND contype = 'u'
+    `);
+    expect(unique.map((row) => row.def)).toEqual(["UNIQUE (snapshot_at, trade_up_id)"]);
+  });
 });

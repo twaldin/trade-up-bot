@@ -2,6 +2,7 @@ import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
 import { classifyIndexError, ensureStripeCustomerIdUniqueIndex } from "./stripe-customer-index.js";
+import { TRADE_UP_TOP_SNAPSHOTS_DDL } from "./top-snapshot.js";
 
 const { Pool } = pg;
 
@@ -46,7 +47,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-10-02.4";
+export const SCHEMA_VERSION = "2026-10-15.1";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
 // Not the migration lock (key 1). CREATE INDEX CONCURRENTLY must not run while
@@ -768,6 +769,10 @@ async function migrateTables(pool: pg.Pool): Promise<void> {
       await pool.query("SET statement_timeout = '0'").catch(() => {});
     }
   }
+
+  // Daily top-1000 score snapshot. The cron script writes rows; startup only
+  // creates the table. CREATE INDEX on an empty table does not lock trade_ups.
+  await pool.query(TRADE_UP_TOP_SNAPSHOTS_DDL);
 
   // schema_version is recorded whether or not the customer index exists.
   // The index is built after this lock is released.
