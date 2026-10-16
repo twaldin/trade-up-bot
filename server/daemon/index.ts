@@ -29,7 +29,7 @@ import {
   skippedShareLockStats, updateCollectionScores, buildPriceCache, trimGlobalExcess,
   reviveStaleGunTradeUps, reviveStaleTradeUps,
   getKnifeFinishesWithPrices, CASE_KNIFE_MAP, GLOVE_GEN_SKINS,
-  cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap,
+  cascadeTradeUpStatuses, withRetry, assertDMarketRelinkMap, drainDMarketRelinkRecomputes,
   type FinishData,
 } from "../engine.js";
 import { mergeTaskTradeUps } from "./merge-task.js";
@@ -269,6 +269,14 @@ export async function main() {
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
+  }
+  try {
+    const drained = await drainDMarketRelinkRecomputes(pool);
+    if (drained.recomputed > 0 || drained.flagged > 0 || drained.requeued > 0) {
+      console.log(`  DMarket relink recompute: ${drained.recomputed} recomputed, ${drained.flagged} flagged, ${drained.requeued} requeued`);
+    }
+  } catch (err) {
+    console.error(`  DMarket relink recompute drain failed: ${err instanceof Error ? err.message : err}`);
   }
   const freshness = new FreshnessTracker();
   const daemonStartedAt = new Date().toISOString();

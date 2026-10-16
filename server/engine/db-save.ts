@@ -6,8 +6,9 @@ import pg from "pg";
 import { setSyncMeta } from "../db.js";
 import { type TradeUp, type TradeUpInput } from "../../shared/types.js";
 import { withRetry, computeChanceToProfit, computeBestWorstCase, listingSig, parseSig } from "./utils.js";
-import { cascadeTradeUpStatuses } from "./db-status.js";
+import { cascadeTradeUpStatuses, deleteTradeUpsAndInputsInIdOrder } from "./db-status.js";
 import { retargetDMarketTradeUps } from "./dmarket-relink-map.js";
+import { lockListingsInIdOrder, lockTradeUpInputsForTradeUps, lockTradeUpsInIdOrder } from "./lock-order.js";
 
 /** Same lock wait as applyDMarketRelinks. A 55P03 retries; it does not insert the stale id. */
 const MERGE_LOCK_TIMEOUT = "5s";
@@ -126,15 +127,8 @@ function dmarketListingIds(tradeUps: readonly TradeUp[]): string[] {
  * statement does not wait in that order. applyDMarketRelinks uses the same order.
  */
 async function shareLockListings(client: pg.PoolClient, ids: readonly string[]): Promise<Set<string>> {
-  const held = new Set<string>();
-  for (const id of [...ids].sort()) {
-    const { rows } = await client.query<{ id: string }>(
-      `SELECT id FROM listings WHERE id = $1 FOR KEY SHARE`,
-      [id],
-    );
-    if (rows[0]) held.add(rows[0].id);
-  }
-  return held;
+  const held = await lockListingsInIdOrder(client, ids, "KEY SHARE");
+  return new Set(held);
 }
 
 function pgErrorCode(err: unknown): string {
@@ -386,8 +380,17 @@ async function saveTradeUpsOnce(
     if (clearFirst) {
       // Preserve materialized results when discovery clears — they're found by a different process
       const sourceFilter = source === "discovery" ? " AND (source = 'discovery' OR source IS NULL)" : "";
-      await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id IN (SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter})`, [type, isTheoretical]);
-      await client.query(`DELETE FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter}`, [type, isTheoretical]);
+      const { rows: clearing } = await client.query<{ id: number }>(
+        `SELECT id FROM trade_ups WHERE type = $1 AND is_theoretical = $2${sourceFilter} ORDER BY id`,
+        [type, isTheoretical],
+      );
+      const clearingIds = clearing.map(row => Number(row.id));
+      await lockTradeUpsInIdOrder(client, clearingIds);
+      await lockTradeUpInputsForTradeUps(client, clearingIds);
+      if (clearingIds.length > 0) {
+        await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = ANY($1::int[])`, [clearingIds]);
+        await client.query(`DELETE FROM trade_ups WHERE id = ANY($1::int[])`, [clearingIds]);
+      }
     }
 
     for (const tu of resolved) {
@@ -470,6 +473,7 @@ async function updateMergeBatchOnce(
   let discard: Error | undefined;
   try {
     await client.query("BEGIN");
+    await lockTradeUpsInIdOrder(client, batch.map(row => row.existId));
     for (const { existId, tu } of batch) {
       const chanceToProfit = computeChanceToProfit(tu.outcomes, tu.total_cost_cents);
       const { bestCase, worstCase } = computeBestWorstCase(tu.outcomes, tu.total_cost_cents);
@@ -661,19 +665,9 @@ export async function trimGlobalExcess(pool: pg.Pool, maxTotal: number = 1_000_0
 
   if (count <= maxTotal) return 0;
 
-  const toDelete = count - maxTotal;
-  // Delete worst by ROI across all types
-  await pool.query(`
-    DELETE FROM trade_up_inputs WHERE trade_up_id IN (
-      SELECT id FROM trade_ups
-      WHERE is_theoretical = false
-      ORDER BY roi_percentage ASC
-      LIMIT $1
-    )
-  `, [toDelete]);
-
-  const deleted = await pool.query(`
-    DELETE FROM trade_ups WHERE is_theoretical = false
+  const { rows: victims } = await pool.query<{ id: number }>(`
+    SELECT id FROM trade_ups
+    WHERE is_theoretical = false
       AND id NOT IN (
         SELECT id FROM trade_ups
         WHERE is_theoretical = false
@@ -681,9 +675,9 @@ export async function trimGlobalExcess(pool: pg.Pool, maxTotal: number = 1_000_0
         LIMIT $1
       )
   `, [maxTotal]);
-
-  if ((deleted.rowCount ?? 0) > 0) {
-    console.log(`  Global trim: removed ${deleted.rowCount} worst-ROI trade-ups (cap ${maxTotal.toLocaleString()})`);
+  const deleted = await deleteTradeUpsAndInputsInIdOrder(pool, victims.map(row => Number(row.id)));
+  if (deleted > 0) {
+    console.log(`  Global trim: removed ${deleted} worst-ROI trade-ups (cap ${maxTotal.toLocaleString()})`);
   }
-  return deleted.rowCount ?? 0;
+  return deleted;
 }

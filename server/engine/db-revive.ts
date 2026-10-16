@@ -12,6 +12,13 @@ import { getOutcomesForCollections } from "./data-load.js";
 import { listingSig, computeChanceToProfit, computeBestWorstCase } from "./utils.js";
 import { recordProfitableCombo } from "./db-save.js";
 import { ensureInputReferences, isInputPriceOutlier, type InputRefLookup } from "./input-outlier.js";
+import { lockTradeUpInputsForTradeUps } from "./lock-order.js";
+import { getTierById } from "./rarity-tiers.js";
+
+export interface ReviveLockHooks {
+  /** After the trade_ups row is updated and before its inputs are locked and replaced. */
+  afterTradeUpUpdate?: () => Promise<void>;
+}
 
 /** Configuration for the generic revive function. */
 interface ReviveConfig {
@@ -42,7 +49,8 @@ const FULL_LISTING_SELECT = `
 async function reviveStaleGeneric(
   pool: pg.Pool,
   config: ReviveConfig,
-  limit: number
+  limit: number,
+  hooks?: ReviveLockHooks,
 ): Promise<{ checked: number; revived: number; improved: number }> {
   const { type, inputCount, inputRarity, evaluateFn, recordCombos } = config;
   const refLookup = await ensureInputReferences(pool);
@@ -191,7 +199,11 @@ async function reviveStaleGeneric(
         Math.max(result.profit_cents, 0), previousInputsJson, JSON.stringify(result.outcomes), tu.id
       ]);
 
-      // Replace inputs
+      if (hooks?.afterTradeUpUpdate) await hooks.afterTradeUpUpdate();
+
+      // Replace inputs. Lock the parent row (already updated) before the input
+      // rows, and lock those input rows in (trade_up_id, listing_id) order.
+      await lockTradeUpInputsForTradeUps(client, [tu.id]);
       await client.query(`DELETE FROM trade_up_inputs WHERE trade_up_id = $1`, [tu.id]);
       for (const inp of result.inputs) {
         await client.query(`
@@ -253,7 +265,8 @@ function firstCleanCandidate(
 export async function reviveStaleTradeUps(
   pool: pg.Pool,
   knifeFinishCache: Map<string, FinishData[]>,
-  limit = 100
+  limit = 100,
+  hooks?: ReviveLockHooks,
 ): Promise<{ checked: number; revived: number; improved: number }> {
   return reviveStaleGeneric(pool, {
     type: "covert_knife",
@@ -261,7 +274,7 @@ export async function reviveStaleTradeUps(
     inputRarity: "Covert",
     evaluateFn: (p, inputs) => evaluateKnifeTradeUp(p, inputs, knifeFinishCache),
     recordCombos: true,
-  }, limit);
+  }, limit, hooks);
 }
 
 /**
@@ -271,10 +284,9 @@ export async function reviveStaleTradeUps(
 export async function reviveStaleGunTradeUps(
   pool: pg.Pool,
   limit = 100,
-  type: string = "classified_covert"
+  type: string = "classified_covert",
+  hooks?: ReviveLockHooks,
 ): Promise<{ checked: number; revived: number; improved: number }> {
-  // Resolve input/output rarities from tier config (not hardcoded)
-  const { getTierById } = await import("./rarity-tiers.js");
   const tier = getTierById(type);
   if (!tier) return { checked: 0, revived: 0, improved: 0 };
   const inputRarity = tier.inputRarity;
@@ -291,5 +303,5 @@ export async function reviveStaleGunTradeUps(
       return evaluateTradeUp(p, inputs, outcomes);
     },
     recordCombos: false,
-  }, limit);
+  }, limit, hooks);
 }
