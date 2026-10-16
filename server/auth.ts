@@ -158,66 +158,15 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   // Trust nginx proxy (needed for secure cookies behind reverse proxy)
   app.set("trust proxy", 1);
 
-  // Create users table (also created in createTables, but safe as IF NOT EXISTS)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      steam_id TEXT PRIMARY KEY,
-      display_name TEXT,
-      avatar_url TEXT,
-      tier TEXT NOT NULL DEFAULT 'free',
-      is_admin BOOLEAN NOT NULL DEFAULT false,
-      stripe_customer_id TEXT,
-      signup_ref TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  // Idempotent migration: ensure signup_ref exists on pre-existing user tables.
-  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_ref TEXT");
-
-  // Migration: add is_admin column if missing + set admin flag
+  // Schema changes belong to npm run migrate. Startup only stamps the admin flag.
   const adminSteamId = process.env.ADMIN_STEAM_ID;
-  try {
-    const { rows: cols } = await pool.query(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
-    );
-    if (!cols.find((c: { column_name: string }) => c.column_name === "is_admin")) {
-      await pool.query("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT false");
-    }
-    if (adminSteamId) {
+  if (adminSteamId) {
+    try {
       await pool.query("UPDATE users SET is_admin = true WHERE steam_id = $1", [adminSteamId]);
       await pool.query("UPDATE users SET tier = 'pro' WHERE steam_id = $1 AND tier = 'admin'", [adminSteamId]);
+    } catch (e: unknown) {
+      console.error("Admin flag deferred:", e instanceof Error ? e.message : e);
     }
-  } catch (e: unknown) {
-    // Non-critical — admin flag will be set on next login
-    console.error("Admin migration deferred:", (e as Error).message);
-  }
-
-  // Migration: add discord_id/discord_tag columns for Discord account linking
-  try {
-    const { rows: cols2 } = await pool.query(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
-    );
-    if (!cols2.find((c: { column_name: string }) => c.column_name === "discord_id")) {
-      await pool.query("ALTER TABLE users ADD COLUMN discord_id TEXT UNIQUE");
-      await pool.query("ALTER TABLE users ADD COLUMN discord_tag TEXT");
-      console.log("Migration: added discord_id, discord_tag columns to users");
-    }
-  } catch (e: unknown) {
-    console.error("Discord column migration deferred:", (e as Error).message);
-  }
-
-  // Migration: add lifetime column for lifetime subscribers
-  try {
-    const { rows: cols3 } = await pool.query(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
-    );
-    if (!cols3.find((c: { column_name: string }) => c.column_name === "lifetime")) {
-      await pool.query("ALTER TABLE users ADD COLUMN lifetime BOOLEAN NOT NULL DEFAULT false");
-      console.log("Migration: added lifetime column to users");
-    }
-  } catch (e: unknown) {
-    console.error("Lifetime column migration deferred:", (e as Error).message);
   }
 
   const store = new SqliteSessionStore(DB_PATH);

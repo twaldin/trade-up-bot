@@ -9,6 +9,7 @@
     "dev:client": "vite",
     "build": "tsc && vite build",
     "postbuild": "npx tsx scripts/prerender.ts && npx tsx scripts/verify-seo-html.ts",
+    "migrate": "tsx scripts/migrate.ts",
     "sync": "tsx server/sync.ts",
     "daemon": "tsx server/daemon.ts",
     "test": "vitest run tests/unit/ tests/integration/",

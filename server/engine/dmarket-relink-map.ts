@@ -164,7 +164,7 @@ export async function assertDMarketRelinkMap(db: Queryable): Promise<void> {
   );
   if (!rows[0]?.present) {
     throw new Error(
-      "dmarket_listing_relinks is missing. The DMarket fetcher and API run createTables; start one of them before the daemon.",
+      "dmarket_listing_relinks is missing. Run npm run migrate or start the DMarket fetcher (createTables) before the daemon.",
     );
   }
 }

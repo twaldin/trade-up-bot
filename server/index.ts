@@ -4,12 +4,13 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
-import { initDb, createTables } from "./db.js";
+import { assertSchemaCurrent, initDb } from "./db.js";
 import { initRedis, startBoardFlushSubscriber } from "./redis.js";
 import { setupAuth } from "./auth.js";
 import { resolveSessionSecrets } from "./session-secret.js";
 import { CASE_KNIFE_MAP, GLOVE_GEN_SKINS } from "./engine/knife-data.js";
 import { warmCalculatorCaches } from "./engine.js";
+import { healthRouter } from "./routes/health.js";
 import { getGlobalStats, statusRouter } from "./routes/status.js";
 import { boardDelayRouter } from "./routes/board-delay.js";
 import { publicBoardWarmPaths, registerBoardWarmer, warmPublicBoardOnStartup } from "./routes/board-warm.js";
@@ -173,7 +174,7 @@ registerRobotsTxtRoute(app);
 registerLlmsTxtRoute(app);
 registerCanonicalRedirectRoutes(app);
 
-// Async startup: initialize PostgreSQL pool and create tables
+// Async startup: initialize PostgreSQL pool. DDL runs in scripts/migrate.ts, not here.
 (async () => {
   try {
     resolveSessionSecrets(process.env);
@@ -187,10 +188,11 @@ registerCanonicalRedirectRoutes(app);
   }
 
   const pool: pg.Pool = initDb();
-  if (process.env.SKIP_STARTUP_MIGRATIONS === "1") {
-    console.log("Skipping startup migrations");
-  } else {
-    await createTables(pool);
+  try {
+    await assertSchemaCurrent(pool);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Schema check failed");
+    process.exit(1);
   }
   initRedis();
 
@@ -198,6 +200,7 @@ registerCanonicalRedirectRoutes(app);
   await setupAuth(app, pool);
 
   // Mount route modules — all routes receive the pg pool
+  app.use(healthRouter(pool));
   app.use(statusRouter(pool));
   app.use(boardDelayRouter(pool));
   app.use(tradeUpsRouter(pool));

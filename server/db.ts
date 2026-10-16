@@ -47,7 +47,7 @@ export function initDb(): pg.Pool {
 // Bump this string whenever anything inside createTables changes.
 // CONTRACT: any edit to the createTables body MUST bump SCHEMA_VERSION or
 // production will skip the migration on the next deploy.
-export const SCHEMA_VERSION = "2026-10-15.1";
+export const SCHEMA_VERSION = "2026-10-16.1";
 
 const MIGRATION_LOCK_TIMEOUT = "30s";
 // Not the migration lock (key 1). CREATE INDEX CONCURRENTLY must not run while
@@ -73,10 +73,11 @@ export async function indexAfterMigration(migrate: () => Promise<void>, index: (
   await index();
 }
 
-/** Create all tables if they don't exist. Run once at startup.
+/** Create all tables and apply migrations.
+ *  The API does not call this. `scripts/migrate.ts` and the DMarket fetcher do.
  *  Skips the migration body when schema_version matches.
  *  The stripe customer index runs only after that lock is released. A failed
- *  migration skips it, and the next boot retries. */
+ *  migration skips it, and the next run retries. */
 export async function createTables(pool: pg.Pool): Promise<void> {
   await indexAfterMigration(
     () => migrateTables(pool),
@@ -84,7 +85,26 @@ export async function createTables(pool: pg.Pool): Promise<void> {
   );
 }
 
-async function migrateTables(pool: pg.Pool): Promise<void> {
+export interface MigrateTablesOptions {
+  /** Run on the migration session before DDL. The migrate script passes `SET lock_timeout = '5s'`. */
+  lockTimeoutSql?: string;
+}
+
+export class MigrationLockTimeoutError extends Error {
+  readonly statement: string;
+  constructor(statement: string) {
+    const flat = statement.replace(/\s+/g, " ").trim();
+    super(`migration lock timeout (55P03) blocked statement: ${flat}`);
+    this.name = "MigrationLockTimeoutError";
+    this.statement = flat;
+  }
+}
+
+function isLockTimeout(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "55P03";
+}
+
+export async function migrateTables(pool: pg.Pool, options?: MigrateTablesOptions): Promise<void> {
   // Fast path: skip the migration body if schema is already at this version.
   // getSyncMeta may throw if sync_meta doesn't exist yet (fresh DB) — catch and fall through.
   const current = await getSyncMeta(pool, "schema_version").catch(() => null);
@@ -94,16 +114,29 @@ async function migrateTables(pool: pg.Pool): Promise<void> {
   // while this lock is held. Session advisory lock is released in finally.
   const lockClient = await pool.connect();
   try {
+    const queryOnLock = async (text: string, values?: unknown[]) => {
+      try {
+        return await lockClient.query(text, values);
+      } catch (err) {
+        if (isLockTimeout(err)) throw new MigrationLockTimeoutError(text);
+        throw err;
+      }
+    };
     // Bound the wait. A second startup must fail instead of sitting on this lock forever.
-    await lockClient.query("SELECT set_config('lock_timeout', $1, false)", [MIGRATION_LOCK_TIMEOUT]);
-    await lockClient.query("SELECT pg_advisory_lock(1)");
+    // The migrate script passes SET lock_timeout = '5s' so a blocked ALTER fails fast.
+    if (options?.lockTimeoutSql) {
+      await queryOnLock(options.lockTimeoutSql);
+    } else {
+      await queryOnLock("SELECT set_config('lock_timeout', $1, false)", [MIGRATION_LOCK_TIMEOUT]);
+    }
+    await queryOnLock("SELECT pg_advisory_lock(1)");
     // The waiter may have blocked while the holder finished the migration.
     if (await schemaVersionOn(lockClient) === SCHEMA_VERSION) return;
     // Migration statements run on this session, so the same lock_timeout covers them.
     pool = new Proxy(pool, {
       get(target, prop, receiver) {
         if (prop === "query") {
-          return (text: string, values?: unknown[]) => lockClient.query(text, values);
+          return (text: string, values?: unknown[]) => queryOnLock(text, values);
         }
         const value = Reflect.get(target, prop, receiver);
         return typeof value === "function" ? value.bind(target) : value;
@@ -414,6 +447,9 @@ async function migrateTables(pool: pg.Pool): Promise<void> {
       is_admin BOOLEAN NOT NULL DEFAULT false,
       stripe_customer_id TEXT,
       signup_ref TEXT,
+      discord_id TEXT,
+      discord_tag TEXT,
+      lifetime BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -450,6 +486,21 @@ async function migrateTables(pool: pg.Pool): Promise<void> {
   // Migrations for existing databases
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_ref TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_tag TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS lifetime BOOLEAN NOT NULL DEFAULT false;
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id_uidx ON users (discord_id);
   `);
 
   await pool.query(`
@@ -840,6 +891,27 @@ export async function runStripeCustomerIndex(
 
 async function ensureStripeCustomerIndex(pool: pg.Pool): Promise<void> {
   await runStripeCustomerIndex(() => pool.connect());
+}
+
+export interface SchemaProbe {
+  query(sql: string, params?: readonly unknown[]): Promise<{ rows: ReadonlyArray<{ value?: string | null }> }>;
+}
+
+/** Read-only. The API calls this instead of running DDL at startup. */
+export async function assertSchemaCurrent(db: SchemaProbe): Promise<void> {
+  let version: string | null = null;
+  try {
+    const { rows } = await db.query("SELECT value FROM sync_meta WHERE key = $1", ["schema_version"]);
+    const raw = rows[0]?.value;
+    version = typeof raw === "string" && raw.length > 0 ? raw : null;
+  } catch {
+    version = null;
+  }
+  if (version !== SCHEMA_VERSION) {
+    throw new Error(
+      `Schema is not current (found ${version ?? "none"}, expected ${SCHEMA_VERSION}). Run npm run migrate.`,
+    );
+  }
 }
 
 export async function getSyncMeta(pool: pg.Pool, key: string): Promise<string | null> {

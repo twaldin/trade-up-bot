@@ -120,6 +120,23 @@ jobs:
       - name: Rsync dist to VPS
         run: rsync -avz --delete dist/ root@178.156.239.58:/opt/trade-up-bot/dist/
 
+      - name: Migrate with fetcher stopped
+        run: |
+          ssh root@178.156.239.58 "bash -s" << 'EOF'
+          set -euo pipefail
+          cd "${TRADEUP_ROOT:-/opt/trade-up-bot}"
+          git fetch origin main
+          git merge --ff-only origin/main
+          pm2 stop fetcher
+          migrate_rc=0
+          trap 'start_rc=0; pm2 start fetcher || start_rc=$?; if [ "$migrate_rc" -ne 0 ]; then exit "$migrate_rc"; fi; exit "$start_rc"' EXIT
+          set +e
+          npx --no-install tsx scripts/migrate.ts
+          migrate_rc=$?
+          set -e
+          exit "$migrate_rc"
+          EOF
+
       - name: Git pull main + session secret preflight + pm2 reload api
         run: |
           ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
@@ -147,19 +164,24 @@ jobs:
           ready=0
           deadline=$((SECONDS + 90))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            code="$(curl -sS -o /tmp/global-stats.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/global-stats" || true)"
-            if [ "$code" = "200" ] && python3 -c 'import json; json.load(open("/tmp/global-stats.json"))' >/dev/null 2>&1; then
+            code="$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/health" || true)"
+            if [ "$code" = "200" ] && python3 -c 'import json; body=json.load(open("/tmp/health.json")); assert body.get("ok") is True'; then
               ready=1
               break
             fi
-            echo "global-stats not ready (http=${code:-000})"
+            echo "health not ready (http=${code:-000})"
             sleep 3
           done
           if [ "$ready" != "1" ]; then
-            echo "::error::/api/global-stats did not return HTTP 200 with a JSON body within 90s (last http=${code:-000})"
+            echo "::error::/api/health did not return HTTP 200 {ok:true} within 90s (last http=${code:-000})"
             echo "----- pm2 jlist -----"
             timeout 30 ssh -o ConnectTimeout=10 -o BatchMode=yes root@178.156.239.58 "pm2 jlist 2>/dev/null | python3 -c 'import json,sys; exec(\"raw=sys.stdin.read()\\ndec=json.JSONDecoder()\\nprocs=None\\ni=raw.find(\\\"[\\\")\\nwhile i>=0:\\n    try:\\n        val,_=dec.raw_decode(raw,i)\\n    except Exception:\\n        i=raw.find(\\\"[\\\", i+1)\\n        continue\\n    if isinstance(val, list):\\n        procs=val\\n        break\\n    i=raw.find(\\\"[\\\", i+1)\\nif not isinstance(procs, list) or not procs:\\n    sys.exit(1)\\nfor p in procs:\\n    if not isinstance(p, dict):\\n        sys.exit(1)\\n    env=p.get(\\\"pm2_env\\\")\\n    if not isinstance(env, dict):\\n        env={}\\n    fields=(p.get(\\\"name\\\"), p.get(\\\"pm_id\\\"), env.get(\\\"status\\\"), env.get(\\\"restart_time\\\"), env.get(\\\"pm_uptime\\\"))\\n    if any(isinstance(v, (dict, list)) for v in fields):\\n        sys.exit(1)\\n    print(\\\"name=%s pm_id=%s status=%s restart_time=%s uptime=%s\\\"%fields)\\n\")' 2>/dev/null" 2>/dev/null || echo "pm2 summary unavailable"
             echo "see pm2 logs api on the VPS"
+            exit 1
+          fi
+          stats_code="$(curl -sS -o /tmp/global-stats.json -w "%{http_code}" --max-time 15 "https://tradeupbot.app/api/global-stats" || true)"
+          if [ "$stats_code" != "200" ]; then
+            echo "::error::/api/global-stats returned ${stats_code:-000} after /api/health was ready"
             exit 1
           fi
           TOTAL=$(python3 -c "import json; print(int(json.load(open('/tmp/global-stats.json')).get('total_trade_ups') or 0))")
