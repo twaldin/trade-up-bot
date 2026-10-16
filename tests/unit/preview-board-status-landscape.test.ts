@@ -2,13 +2,14 @@
  * A landscape phone is shorter than the 360px fold offset. The empty and
  * failed message must stay inside its block and off the FAQ.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LOAD_ERROR_COPY, UNFILTERED_EMPTY_COPY } from "../../src/preview/lib/board-notice.js";
+import { startViteOnFreePort } from "../helpers/vite-dev-server.js";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const VIEWPORTS = [
@@ -16,38 +17,8 @@ const VIEWPORTS = [
   { width: 844, height: 320 },
 ] as const;
 
-function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "");
-}
-
-async function startVite(): Promise<{ child: ChildProcess; origin: string }> {
-  const child = spawn(
-    process.execPath,
-    [resolve(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "5204", "--strictPort"],
-    {
-      cwd: repo,
-      env: { ...process.env, BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let logs = "";
-  const origin = await new Promise<string>((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(`vite did not start\n${logs}`)), 20_000);
-    const onData = (chunk: Buffer) => {
-      logs += chunk.toString();
-      const match = stripAnsi(logs).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
-      if (!match?.[1]) return;
-      clearTimeout(timer);
-      resolvePromise(match[1].replace(/\/$/, ""));
-    };
-    child.stdout?.on("data", onData);
-    child.stderr?.on("data", onData);
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`vite exited ${code ?? "null"}\n${logs}`));
-    });
-  });
-  return { child, origin };
+function startVite(): Promise<{ child: ChildProcess; origin: string }> {
+  return startViteOnFreePort({ cwd: repo });
 }
 
 interface BoxMetrics {

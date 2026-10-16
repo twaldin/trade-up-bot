@@ -13,6 +13,11 @@ describe("SPA shell serving", () => {
     expect(prerenderSource).toContain('"_shell.html"');
   });
 
+  it("prerender binds port 0 and uses the port the OS assigned", () => {
+    expect(prerenderSource).toContain('listen(0, "127.0.0.1"');
+    expect(prerenderSource).not.toContain("45678");
+  });
+
   it("server/index.ts reads _shell.html as the SPA shell", () => {
     expect(serverSource).toContain('_shell.html');
     expect(serverSource).toContain('shellHtml');

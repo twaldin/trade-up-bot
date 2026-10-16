@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { createServer } from "http";
+import { createServer, type Server } from "http";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "fs";
 import { join, extname, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -12,7 +12,6 @@ import { deferSameOriginSubresources } from "../shared/defer-same-origin-subreso
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = join(__dirname, "..", "dist");
-const PORT = 45678;
 
 const ROUTES = [
   "/",
@@ -45,8 +44,8 @@ const MIME_TYPES: Record<string, string> = {
   ".txt": "text/plain",
 };
 
-function startServer(): Promise<ReturnType<typeof createServer>> {
-  return new Promise((resolve) => {
+function startServer(): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       let url = (req.url ?? "/").split("?")[0];
 
@@ -81,14 +80,20 @@ function startServer(): Promise<ReturnType<typeof createServer>> {
       }
     });
 
-    server.listen(PORT, () => {
-      console.log(`Static server running on http://localhost:${PORT}`);
-      resolve(server);
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address == null || typeof address === "string") {
+        reject(new Error("prerender static server did not bind a TCP port"));
+        return;
+      }
+      console.log(`Static server running on http://127.0.0.1:${address.port}`);
+      resolve({ server, port: address.port });
     });
   });
 }
 
-async function prerenderRoute(browser: import("puppeteer").Browser, route: string): Promise<void> {
+async function prerenderRoute(browser: import("puppeteer").Browser, route: string, port: number): Promise<void> {
   const page = await browser.newPage();
   // A route that renders nothing used to be written out silently as an empty
   // body; surface the reason instead.
@@ -99,7 +104,7 @@ async function prerenderRoute(browser: import("puppeteer").Browser, route: strin
   await page.setRequestInterception(true);
   page.on("request", (req) => {
     const url = req.url();
-    if (url.startsWith(`http://localhost:${PORT}`)) {
+    if (url.startsWith(`http://127.0.0.1:${port}`)) {
       req.continue();
     } else {
       req.abort();
@@ -107,7 +112,7 @@ async function prerenderRoute(browser: import("puppeteer").Browser, route: strin
   });
 
   try {
-    await page.goto(`http://localhost:${PORT}${route}`, {
+    await page.goto(`http://127.0.0.1:${port}${route}`, {
       waitUntil: "networkidle0",
       timeout: 15000,
     });
@@ -158,7 +163,7 @@ async function main(): Promise<void> {
 
   console.log("Starting prerender...");
 
-  const server = await startServer();
+  const { server, port } = await startServer();
 
   let puppeteer: typeof import("puppeteer");
   try {
@@ -176,7 +181,7 @@ async function main(): Promise<void> {
 
   try {
     for (const route of ROUTES) {
-      await prerenderRoute(browser, route);
+      await prerenderRoute(browser, route, port);
     }
     const stats = await fetchLiveHomepageStats();
     if (writeHomepageFirstHtmlFile(join(DIST_DIR, "index.html"), stats)) {

@@ -2,13 +2,14 @@
  * Client navigations must replace the document canonical. A direct GET is
  * already correct; the bug is the tag left behind by the previous route.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeTradeUp } from "../helpers/fixtures.js";
+import { startViteOnFreePort, viteOriginFromLog } from "../helpers/vite-dev-server.js";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const tradeUp = makeTradeUp({ id: 42 });
@@ -24,38 +25,8 @@ function skinNameForSlug(slug: string): string {
   return "AK-47 | Redline";
 }
 
-function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "");
-}
-
-async function startVite(): Promise<{ child: ChildProcess; origin: string }> {
-  const child = spawn(
-    process.execPath,
-    [resolve(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "5197", "--strictPort"],
-    {
-      cwd: repo,
-      env: { ...process.env, BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let logs = "";
-  const origin = await new Promise<string>((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(`vite did not start\n${logs}`)), 20_000);
-    const onData = (chunk: Buffer) => {
-      logs += chunk.toString();
-      const match = stripAnsi(logs).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
-      if (!match?.[1]) return;
-      clearTimeout(timer);
-      resolvePromise(match[1].replace(/\/$/, ""));
-    };
-    child.stdout?.on("data", onData);
-    child.stderr?.on("data", onData);
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`vite exited ${code ?? "null"}\n${logs}`));
-    });
-  });
-  return { child, origin };
+function startVite(): Promise<{ child: ChildProcess; origin: string }> {
+  return startViteOnFreePort({ cwd: repo });
 }
 
 async function canonicalHrefs(page: Page): Promise<string[]> {
@@ -129,8 +100,7 @@ async function boardPage(browser: Browser, origin: string): Promise<Page> {
 
 it("reads a vite local URL when ANSI color splits the host and port", () => {
   const raw = "\u001b[32m➜\u001b[31m  \u001b[1mLocal\u001b[22m:   \u001b[36mhttp://127.0.0.1:\u001b[1m5197\u001b[22m/\u001b[39m";
-  const match = stripAnsi(raw).match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+\/)/);
-  expect(match?.[1]).toBe("http://127.0.0.1:5197/");
+  expect(viteOriginFromLog(raw)).toBe("http://127.0.0.1:5197");
 });
 
 describe("canonical after a client navigation", () => {
