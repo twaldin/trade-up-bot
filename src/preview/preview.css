@@ -413,8 +413,8 @@
   width: 100%;
   max-width: 640px;
   min-width: 0;
-  /* Real hero is ~501px. Reserve that so skeleton, placeholder, and the
-     loaded panel share one box. Phones stack the KPI row, so they need more. */
+  /* Real hero skeleton is ~501px. Reserve that so the skeleton and the
+     placeholder share one box. Phones stack the KPI row, so they need more. */
   min-height: 501px;
   padding: 14px;
   border: 1px solid var(--line-hard);
@@ -657,6 +657,13 @@
 
 .preview-hero__plot-skeleton { height: 216px; }
 
+/* A live proof at 520px (10 listings, four outcomes, the fee line, and the
+   free-tier note) is 835px. This follows the 501px rule so it wins, and it
+   keeps .preview-laptop from dropping when the board arrives. */
+@media (min-width: 1080px) {
+  .preview-proof { min-height: 836px; }
+}
+
 @media (max-width: 1079px) {
   .preview-proof { display: none; }
 
@@ -690,7 +697,9 @@
 .preview-phone { display: block; padding: 0 24px; }
 
 @media (min-width: 860px) {
-  .preview-laptop { display: block; }
+  /* Lid is 528px and the scene pads 24px + 236px. The device does not scale
+     with the viewport, so one height covers every width where it is shown. */
+  .preview-laptop { display: block; min-height: 788px; }
   .preview-phone { display: none; }
 }
 
