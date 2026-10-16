@@ -3,11 +3,13 @@
  * reserve and used to push .preview-laptop (prod CLS 0.0184 at 1280).
  * Chromium applies the media queries; happy-dom does not.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { createServer as createHttpServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { chromium, type Browser, type Page, type Route } from "playwright-core";
+import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TradeUp, TradeUpInput, TradeUpOutcome } from "../../shared/types.js";
 import { proofReserveState, type HeroLoadPhase } from "../../src/preview/pages/PreviewLanding.js";
@@ -20,7 +22,6 @@ declare global {
 }
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const PORT = 5204;
 const BOARD_DELAY_MS = 1_500;
 const HEADING = "TradeUpBot at a glance";
 const VIEWPORTS = [
@@ -118,37 +119,64 @@ function sessionCls(entries: { value: number; startTime: number; hadRecentInput:
   return max;
 }
 
-async function startVite(): Promise<{ child: ChildProcess; origin: string }> {
-  const child = spawn(
-    process.execPath,
-    [resolve(repo, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"],
-    {
-      cwd: repo,
-      env: { ...process.env, API_PROXY: "", BROWSER: "none", NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let logs = "";
-  const origin = await new Promise<string>((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error(`vite did not start\n${logs.slice(-500)}`)), 30_000);
-    const poke = () => {
-      if (child.exitCode !== null) {
-        clearTimeout(timer);
-        reject(new Error(`vite exited ${child.exitCode}\n${logs.slice(-500)}`));
-        return;
-      }
-      fetch(`http://127.0.0.1:${PORT}`).then((res) => {
-        if (res.status < 500) {
-          clearTimeout(timer);
-          resolvePromise(`http://127.0.0.1:${PORT}`);
-        } else setTimeout(poke, 200);
-      }).catch(() => setTimeout(poke, 200));
+function boundPort(address: string | AddressInfo | null): number {
+  if (typeof address === "string") throw new Error("dev server bound a pipe");
+  if (address === null) throw new Error("dev server did not bind a port");
+  return address.port;
+}
+
+function listen(server: Server): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const onError = (err: Error) => {
+      server.off("error", onError);
+      reject(err);
     };
-    child.stdout?.on("data", (chunk: Buffer) => { logs += chunk.toString(); });
-    child.stderr?.on("data", (chunk: Buffer) => { logs += chunk.toString(); });
-    setTimeout(poke, 200);
+    server.once("error", onError);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", onError);
+      resolvePromise();
+    });
   });
-  return { child, origin };
+}
+
+function closeHttp(server: Server): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    server.close((err) => (err ? reject(err) : resolvePromise()));
+  });
+}
+
+/**
+ * Vite treats port 0 as unset and falls back to 5173. Bind the HTTP server
+ * ourselves so the OS assigns the port, then read it from the address.
+ */
+async function startVite(): Promise<{ origin: string; close: () => Promise<void> }> {
+  const vite: ViteDevServer = await createViteServer({
+    root: repo,
+    configFile: resolve(repo, "vite.config.ts"),
+    appType: "spa",
+    logLevel: "error",
+    server: { middlewareMode: true, hmr: false, watch: null },
+  });
+  const http = createHttpServer((req, res) => {
+    vite.middlewares(req, res, () => {
+      res.statusCode = 404;
+      res.end();
+    });
+  });
+  try {
+    await listen(http);
+  } catch (err) {
+    await vite.close();
+    throw err;
+  }
+  const port = boundPort(http.address());
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    close: async () => {
+      await closeHttp(http);
+      await vite.close();
+    },
+  };
 }
 
 async function fulfill(route: Route): Promise<void> {
@@ -267,12 +295,12 @@ describe("desktop proof reserve follows the board answer", () => {
 
 describe("homepage device preview does not shift when the live board arrives", () => {
   let browser: Browser;
-  let vite: ChildProcess;
+  let stopVite: (() => Promise<void>) | undefined;
   let origin: string;
 
   beforeAll(async () => {
     const started = await startVite();
-    vite = started.child;
+    stopVite = started.close;
     origin = started.origin;
     browser = await chromium.launch({
       executablePath: puppeteer.executablePath(),
@@ -283,7 +311,7 @@ describe("homepage device preview does not shift when the live board arrives", (
 
   afterAll(async () => {
     await browser?.close();
-    if (vite && vite.exitCode === null && vite.pid) vite.kill("SIGTERM");
+    await stopVite?.();
   });
 
   it.each(VIEWPORTS)("keeps preview CLS under 0.005 at $width and renders the pricing heading", async ({ width, height, slot }) => {
