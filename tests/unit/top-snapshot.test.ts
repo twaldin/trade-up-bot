@@ -20,9 +20,29 @@ describe("top snapshot SQL", () => {
     expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(/LIMIT 1000/);
     expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(/listing_status = 'active'/);
     expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(/is_theoretical = false/);
-    expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(/ORDER BY t\.trade_up_score DESC NULLS LAST/);
+    expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(
+      /ORDER BY t\.trade_up_score DESC NULLS LAST, t\.id DESC/,
+    );
     expect(INSERT_TOP_SNAPSHOT_SQL).not.toMatch(/for\s+update/i);
     expect(INSERT_TOP_SNAPSHOT_SQL).not.toMatch(/lock\s+table/i);
+  });
+
+  it("stamps the UTC day and skips a second insert of the same trade-up", () => {
+    expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(/date_trunc\('day', now\(\)\)/);
+    expect(INSERT_TOP_SNAPSHOT_SQL).toMatch(
+      /ON CONFLICT \(snapshot_at, trade_up_id\) DO NOTHING/,
+    );
+    expect(INSERT_TOP_SNAPSHOT_SQL).not.toMatch(/SELECT\s+NOW\(\)/i);
+  });
+
+  it("describes a full scan of the raw top 1000", () => {
+    const src = readFileSync(path.join(root, "server/top-snapshot.ts"), "utf8");
+    expect(src).not.toMatch(/idx_tu_active_score/);
+    expect(src).toMatch(/full scan/);
+    expect(src).toMatch(/41 ms/);
+    expect(src).toMatch(
+      /The snapshot is the raw top 1000 by score, without the board's spread across collection combos\./,
+    );
   });
 
   it("deletes rows older than 14 days in a bounded index range", () => {

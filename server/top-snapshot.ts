@@ -1,6 +1,6 @@
 /**
  * Daily copy of the top 1000 active trade-ups by score.
- * One INSERT … SELECT, then bounded deletes of rows older than 14 days.
+ * One INSERT … SELECT per UTC day, then bounded deletes of rows older than 14 days.
  * Timeouts are local to the transaction so a slow lock gives up.
  */
 import pg from "pg";
@@ -68,20 +68,22 @@ CREATE INDEX IF NOT EXISTS idx_trade_up_top_snapshots_at
 `;
 
 /**
- * Plain read of trade_ups. is_theoretical = false matches idx_tu_active_score
- * so the top-N does not sort the whole table. NULL scores sort last.
+ * Plain read of trade_ups. The SELECT does a full scan, which is fine at
+ * about 41 ms. NULL scores sort last, then id descending.
+ * The snapshot is the raw top 1000 by score, without the board's spread across collection combos.
  */
 export const INSERT_TOP_SNAPSHOT_SQL = `
 INSERT INTO trade_up_top_snapshots (
   snapshot_at, trade_up_id, score, profit, cost, ev, roi, input_sources, collection
 )
-SELECT NOW(), t.id, t.trade_up_score, t.profit_cents, t.total_cost_cents,
+SELECT date_trunc('day', now()), t.id, t.trade_up_score, t.profit_cents, t.total_cost_cents,
        t.expected_value_cents, t.roi_percentage, t.input_sources, t.collection_names
 FROM trade_ups AS t
 WHERE t.listing_status = 'active'
   AND t.is_theoretical = false
-ORDER BY t.trade_up_score DESC NULLS LAST, t.id ASC
+ORDER BY t.trade_up_score DESC NULLS LAST, t.id DESC
 LIMIT ${TOP_SNAPSHOT_LIMIT}
+ON CONFLICT (snapshot_at, trade_up_id) DO NOTHING
 `;
 
 /** snapshot_at < cutoff can use idx_trade_up_top_snapshots_at. LIMIT bounds each batch. */

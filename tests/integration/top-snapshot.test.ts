@@ -1,6 +1,6 @@
 /**
- * Daily top-1000 snapshot: one INSERT … SELECT of active trade-ups by score,
- * then batched deletes of rows older than 14 days.
+ * Daily top-1000 snapshot: one INSERT … SELECT of active trade-ups by score
+ * for the current UTC day, then batched deletes of rows older than 14 days.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -177,6 +177,46 @@ describe("snapshotTopTradeUps", () => {
     expect(rows.map((row) => row.score)).toEqual([20, 10, null]);
   });
 
+  it("leaves 1000 rows when the same UTC day is snapshotted twice", async () => {
+    await seedActiveRange();
+
+    const first = await snapshotTopTradeUps(pool);
+    const second = await snapshotTopTradeUps(pool);
+    expect(first).toEqual({ inserted: 1000, gaveUp: false });
+    expect(second).toEqual({ inserted: 0, gaveUp: false });
+
+    const { rows } = await pool.query<{ n: number; days: number; aligned: boolean }>(`
+      SELECT COUNT(*)::int AS n,
+             COUNT(DISTINCT snapshot_at)::int AS days,
+             bool_and(snapshot_at = date_trunc('day', now())) AS aligned
+      FROM trade_up_top_snapshots
+    `);
+    expect(rows[0]).toEqual({ n: 1000, days: 1, aligned: true });
+  });
+
+  it("keeps the higher id when scores tie at the cutoff", async () => {
+    await pool.query(`
+      INSERT INTO trade_ups (
+        total_cost_cents, expected_value_cents, profit_cents, roi_percentage,
+        listing_status, is_theoretical, trade_up_score, input_sources, collection_names
+      )
+      SELECT 100, 150, 50, 0.5, 'active', false, 7, '{}', '{}'
+      FROM generate_series(1, 1002)
+    `);
+    await pool.query("UPDATE trade_ups SET trade_up_score = 100 WHERE id = 1");
+
+    const result = await snapshotTopTradeUps(pool);
+    expect(result).toEqual({ inserted: 1000, gaveUp: false });
+
+    const { rows } = await pool.query<{ trade_up_id: number }>(
+      "SELECT trade_up_id FROM trade_up_top_snapshots ORDER BY trade_up_id ASC",
+    );
+    expect(rows.map((row) => row.trade_up_id)).toEqual([
+      1,
+      ...Array.from({ length: 999 }, (_, i) => i + 4),
+    ]);
+  });
+
   it("gives up instead of waiting when trade_ups is locked", async () => {
     await pool.query(`
       INSERT INTO trade_ups (
@@ -235,6 +275,25 @@ describe("purgeOldTopSnapshots", () => {
       "SELECT trade_up_id FROM trade_up_top_snapshots ORDER BY trade_up_id",
     );
     expect(rows.map((row) => row.trade_up_id)).toEqual([90002, 90003]);
+  });
+
+  it("purges day-rounded snapshots older than 14 days and keeps newer days", async () => {
+    await pool.query(`
+      INSERT INTO trade_up_top_snapshots (
+        snapshot_at, trade_up_id, score, profit, cost, ev, roi, input_sources, collection
+      ) VALUES
+        (date_trunc('day', now()) - INTERVAL '15 days', 1, 1, 1, 1, 1, 0.1, '{}', '{}'),
+        (date_trunc('day', now()) - INTERVAL '13 days', 2, 2, 2, 2, 2, 0.2, '{}', '{}'),
+        (date_trunc('day', now()), 3, 3, 3, 3, 3, 0.3, '{}', '{}')
+    `);
+
+    const result = await purgeOldTopSnapshots(pool);
+    expect(result).toEqual({ purged: 1, gaveUp: false });
+
+    const { rows } = await pool.query<{ trade_up_id: number }>(
+      "SELECT trade_up_id FROM trade_up_top_snapshots ORDER BY trade_up_id",
+    );
+    expect(rows.map((row) => row.trade_up_id)).toEqual([2, 3]);
   });
 
   it("plans the delete as an index range on snapshot_at", async () => {
