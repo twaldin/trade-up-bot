@@ -133,6 +133,13 @@ try {
   assert.match(freshDaily.gitHeadAfter, /^[0-9a-f]{40}$/);
   assert.match(freshDaily.whatItDid, /heartbeat path/);
 
+  const monitorTests = spawnSync(process.execPath, [join(here, "test-engine-monitor.mjs")], {
+    cwd: repo,
+    env: environment,
+    encoding: "utf8",
+  });
+  assert.equal(monitorTests.status, 0, monitorTests.stderr || monitorTests.stdout);
+
   process.stdout.write(`PASS heartbeatStale=${stale.status} fresh=${fresh.status} artifactExpired=${expiredRead.status} dailyHeartbeat=${freshDaily.timestamp}\n`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
