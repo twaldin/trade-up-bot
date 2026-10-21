@@ -8,6 +8,11 @@ import {
   makeRunId,
   repoDir,
 } from "../lib/runtime.mjs";
+import {
+  applyRemoteObservation,
+  assembleRemoteProgram,
+  describeConcentration,
+} from "../lib/board-concentration.mjs";
 
 const SELF_TEST = process.argv.includes("--self-test");
 const started = new Date();
@@ -110,6 +115,9 @@ const boardRaw = execFileSync("psql", [databaseUrl, "-X", "-v", "ON_ERROR_STOP=1
   maxBuffer: 4 * 1024 * 1024,
 }).trim();
 const board = JSON.parse(boardRaw);
+const runOptionalQuery = __AUTORESEARCH_RUN_OPTIONAL_QUERY__;
+const groupsQuery = runOptionalQuery(execFileSync, databaseUrl, __AUTORESEARCH_GROUPS_SQL__, __AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__);
+const listingsQuery = runOptionalQuery(execFileSync, databaseUrl, __AUTORESEARCH_LISTINGS_SQL__, __AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__);
 
 const daemonErrorPath = "/root/.pm2/logs/daemon-error.log";
 const daemonOutPath = "/root/.pm2/logs/daemon-out.log";
@@ -129,12 +137,20 @@ process.stdout.write(JSON.stringify({
   prodHead,
   processes,
   board,
+  concentrationQueries: { groups: groupsQuery, listings: listingsQuery },
   latestLoopOrCycle: loopNumbers.at(-1) ?? null,
   daemonOut: fileMetadata(daemonOutPath),
   daemonError: fileMetadata(daemonErrorPath),
   breakSignalsInTail,
 }));
 `;
+
+const remoteProgram = assembleRemoteProgram(REMOTE_PROGRAM, SQL);
+// Test hook: print the program sent over SSH and do not heartbeat.
+if (process.argv.includes("--print-remote")) {
+  process.stdout.write(remoteProgram);
+  process.exit(0);
+}
 
 let exitStatus = 1;
 let details = null;
@@ -160,14 +176,14 @@ try {
       remoteHost,
       remoteCommand,
     ], {
-      input: REMOTE_PROGRAM.replace("__AUTORESEARCH_BOARD_SQL__", JSON.stringify(SQL)),
+      input: remoteProgram,
       encoding: "utf8",
       timeout: 90_000,
       maxBuffer: 16 * 1024 * 1024,
     });
     if (remote.error) throw remote.error;
     if (remote.status !== 0) throw new Error((remote.stderr || `ssh exited ${remote.status}`).trim());
-    details = JSON.parse(remote.stdout.trim());
+    details = applyRemoteObservation(JSON.parse(remote.stdout.trim()));
     for (const requiredName of ["daemon", "api"]) {
       const process = details.processes.find((entry) => entry.name === requiredName);
       if (!process || process.status !== "online") throw new Error(`${requiredName} is not online`);
@@ -189,7 +205,7 @@ const heartbeat = {
   gitHead: deckboxHead,
   exitStatus,
   whatItDid: exitStatus === 0
-    ? (SELF_TEST ? "Verified the engine-monitor heartbeat path without contacting production." : "Read PM2 health, production git head, board metrics, E2 provenance, daemon cadence, and error metadata.")
+    ? (SELF_TEST ? "Verified the engine-monitor heartbeat path without contacting production." : describeConcentration(details?.board))
     : "Engine monitoring failed before a complete production observation was collected.",
   details,
   selfTest: SELF_TEST,
