@@ -118,6 +118,7 @@ const board = JSON.parse(boardRaw);
 const runOptionalQuery = __AUTORESEARCH_RUN_OPTIONAL_QUERY__;
 const groupsQuery = runOptionalQuery(execFileSync, databaseUrl, __AUTORESEARCH_GROUPS_SQL__, __AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__);
 const listingsQuery = runOptionalQuery(execFileSync, databaseUrl, __AUTORESEARCH_LISTINGS_SQL__, __AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__);
+const partialQuery = runOptionalQuery(execFileSync, databaseUrl, __AUTORESEARCH_PARTIAL_SQL__, __AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__, "partial query failed");
 
 const daemonErrorPath = "/root/.pm2/logs/daemon-error.log";
 const daemonOutPath = "/root/.pm2/logs/daemon-out.log";
@@ -129,7 +130,8 @@ const breakPatterns = {
   database: /database error|connection terminated|ECONNREFUSED.*5432/i,
 };
 const breakSignalsInTail = Object.fromEntries(Object.entries(breakPatterns).map(([name, pattern]) => [name, pattern.test(errorTail)]));
-const loopNumbers = [...daemonTail.matchAll(/(?:loop|cycle)\s+#?(\d+)/gi)].map((match) => Number(match[1])).filter(Number.isFinite);
+const parseDaemonCadence = __AUTORESEARCH_PARSE_DAEMON_CADENCE__;
+const cadence = parseDaemonCadence(daemonTail);
 const prodHead = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", timeout: 10000 }).trim();
 
 process.stdout.write(JSON.stringify({
@@ -138,10 +140,12 @@ process.stdout.write(JSON.stringify({
   processes,
   board,
   concentrationQueries: { groups: groupsQuery, listings: listingsQuery },
-  latestLoopOrCycle: loopNumbers.at(-1) ?? null,
+  latestLoopOrCycle: cadence.latestLoopOrCycle,
   daemonOut: fileMetadata(daemonOutPath),
   daemonError: fileMetadata(daemonErrorPath),
   breakSignalsInTail,
+  partialQuery,
+  daemon: cadence.daemon,
 }));
 `;
 
@@ -167,6 +171,7 @@ try {
       board: null,
       latestLoopOrCycle: null,
       selfTest: true,
+      daemon: { lastCompletedCycle: null, lastCompletedCycleAt: null },
     };
   } else {
     const remoteCommand = `cd '${remoteRepo.replaceAll("'", "'\\''")}' && exec node --input-type=module`;
