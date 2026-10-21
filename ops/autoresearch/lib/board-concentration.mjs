@@ -3,9 +3,14 @@
 //
 // Active rows use the monitor's existing predicate. Profitable rows are that
 // same predicate plus profit_cents > 0 (the daemon's profitable count).
+// Partial rows are non-theoretical trade-ups with listing_status = 'partial'.
+// Their ge10/ge30 counts use trade_up_score, the same column as the board aggregate.
+
+import { parseDaemonCadence } from "./daemon-cadence.mjs";
 
 export const ACTIVE_TRADE_UP_PREDICATE = "is_theoretical = false AND listing_status = 'active'";
 export const PROFITABLE_TRADE_UP_PREDICATE = `${ACTIVE_TRADE_UP_PREDICATE} AND profit_cents > 0`;
+export const PARTIAL_TRADE_UP_PREDICATE = "is_theoretical = false AND listing_status = 'partial'";
 
 export const BOARD_PSQL_TIMEOUT_MS = 30_000;
 export const CONCENTRATION_STATEMENT_TIMEOUT = "5s";
@@ -103,18 +108,37 @@ CROSS JOIN LATERAL (
 ) AS inputs;
 `);
 
-export function runOptionalQuery(execFileSyncImpl, databaseUrl, sql, timeoutMs) {
+// Same read-only budget as the concentration scripts. idx_trade_ups_listing_status
+// can filter listing_status; this script does not create an index. A timeout or
+// error nulls the counts and records partialError. It does not fail the monitor.
+export const PARTIAL_SQL = boundedReadOnly(`
+SELECT json_build_object(
+  'partialGe10', (count(*) FILTER (WHERE trade_up_score >= 10))::int,
+  'partialGe30', (count(*) FILTER (WHERE trade_up_score >= 30))::int
+)::text
+FROM trade_ups
+WHERE ${PARTIAL_TRADE_UP_PREDICATE};
+`);
+
+export function runOptionalQuery(execFileSyncImpl, databaseUrl, sql, timeoutMs, failureLabel = "concentration query failed") {
+  function redactMonitorText(text) {
+    return String(text)
+      .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")
+      .replace(/password\s*=\s*(?:"[^"]*"|'[^']*'|[^\s;,&]*)/gi, "password=[redacted]");
+  }
+
   function describe(error) {
     const stderr = error && error.stderr != null ? String(error.stderr) : "";
     const code = error && error.code != null ? String(error.code) : "";
-    const signal = error && error.signal != null ? String(error.signal) : "";
-    const blob = `${stderr}\n${code}\n${signal}`;
-    if (/statement timeout|ETIMEDOUT/i.test(blob) || code === "ETIMEDOUT") return "statement timeout";
+    // Postgres names the cause in stderr. Node's execFileSync timeout sets
+    // code ETIMEDOUT after it kills psql, which is a different failure.
+    if (/statement timeout/i.test(stderr)) return "statement timeout";
     if (/lock timeout/i.test(stderr)) return "lock timeout";
-    const lines = stderr.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (code === "ETIMEDOUT") return "exec timeout";
+    const lines = redactMonitorText(stderr).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const errorLine = lines.find((line) => line.startsWith("ERROR:")) ?? lines[0];
-    if (!errorLine) return "concentration query failed";
-    return errorLine.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]").slice(0, 240);
+    if (!errorLine) return failureLabel;
+    return errorLine.slice(0, 240);
   }
 
   try {
@@ -139,9 +163,9 @@ export function runOptionalQuery(execFileSyncImpl, databaseUrl, sql, timeoutMs) 
   }
 }
 
-function asQueryResult(value) {
+function asQueryResult(value, label = "concentration query") {
   if (!value || typeof value !== "object") {
-    return { ok: false, message: "concentration query did not run" };
+    return { ok: false, message: `${label} did not run` };
   }
   if (value.ok === true) {
     return { ok: true, text: typeof value.text === "string" ? value.text : "" };
@@ -149,10 +173,10 @@ function asQueryResult(value) {
   if (value.ok === false) {
     const message = typeof value.message === "string" && value.message
       ? value.message
-      : "concentration query failed";
+      : `${label} failed`;
     return { ok: false, message };
   }
-  return { ok: false, message: "concentration query did not run" };
+  return { ok: false, message: `${label} did not run` };
 }
 
 function isGroupRow(row) {
@@ -211,6 +235,35 @@ function combineReasons(groups, listings) {
   return `distinctProfitableInputListings: ${listingsReason}`;
 }
 
+export function shapePartial(board, query) {
+  const next = { ...board };
+  const result = asQueryResult(query, "partial query");
+  if (!result.ok) {
+    next.partialGe10 = null;
+    next.partialGe30 = null;
+    next.partialError = result.message;
+    return next;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.text);
+  } catch {
+    parsed = null;
+  }
+  const ge10 = parsed?.partialGe10;
+  const ge30 = parsed?.partialGe30;
+  if (!Number.isInteger(ge10) || ge10 < 0 || !Number.isInteger(ge30) || ge30 < 0 || ge30 > ge10) {
+    next.partialGe10 = null;
+    next.partialGe30 = null;
+    next.partialError = "unexpected partial payload";
+    return next;
+  }
+  next.partialGe10 = ge10;
+  next.partialGe30 = ge30;
+  next.partialError = null;
+  return next;
+}
+
 export function shapeConcentration(board, queries) {
   const next = { ...board };
   const groups = interpretGroups(queries?.groups);
@@ -225,17 +278,21 @@ export function shapeConcentration(board, queries) {
 export function applyRemoteObservation(details) {
   if (!details || typeof details !== "object" || Array.isArray(details)) return details;
   const hasQueries = Object.hasOwn(details, "concentrationQueries");
+  const hasPartial = Object.hasOwn(details, "partialQuery");
   if (!details.board || typeof details.board !== "object" || Array.isArray(details.board)) {
-    if (!hasQueries) return details;
+    if (!hasQueries && !hasPartial) return details;
     const stripped = { ...details };
     delete stripped.concentrationQueries;
+    delete stripped.partialQuery;
     return stripped;
   }
+  const shaped = shapeConcentration(details.board, details.concentrationQueries);
   const next = {
     ...details,
-    board: shapeConcentration(details.board, details.concentrationQueries),
+    board: hasPartial ? shapePartial(shaped, details.partialQuery) : shaped,
   };
   delete next.concentrationQueries;
+  delete next.partialQuery;
   return next;
 }
 
@@ -252,9 +309,21 @@ function topGroupClause(board) {
   return top ? ` (${top})` : "";
 }
 
+function partialSentence(board) {
+  if (!board || typeof board !== "object" || Array.isArray(board) || !Object.hasOwn(board, "partialGe10")) return "";
+  const ge10 = board.partialGe10;
+  const ge30 = board.partialGe30;
+  if (Number.isInteger(ge10) && ge10 >= 0 && Number.isInteger(ge30) && ge30 >= 0) {
+    return ` Partial: ${ge10} ge10, ${ge30} ge30.`;
+  }
+  const error = typeof board.partialError === "string" && board.partialError ? board.partialError : "unknown error";
+  return ` Partial ge10/ge30 unavailable (${error}).`;
+}
+
 export function describeConcentration(board) {
+  const partial = partialSentence(board);
   if (!board || typeof board !== "object" || !Object.hasOwn(board, "distinctProfitableInputListings")) {
-    return MONITOR_SUCCESS_SUMMARY;
+    return MONITOR_SUCCESS_SUMMARY + partial;
   }
   const listings = board.distinctProfitableInputListings;
   const groups = board.profitableGroupCount;
@@ -262,15 +331,15 @@ export function describeConcentration(board) {
     ? board.concentrationError
     : "unknown error";
   if (listings == null && groups == null) {
-    return `${MONITOR_SUCCESS_SUMMARY} Concentration unavailable (${error}).`;
+    return `${MONITOR_SUCCESS_SUMMARY} Concentration unavailable (${error}).${partial}`;
   }
   if (listings != null && groups != null) {
-    return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${listings} distinct profitable input listings across ${groups} collection groups${topGroupClause(board)}.`;
+    return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${listings} distinct profitable input listings across ${groups} collection groups${topGroupClause(board)}.${partial}`;
   }
   if (listings == null) {
-    return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${groups} collection groups${topGroupClause(board)}; distinct profitable input listings unavailable (${error}).`;
+    return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${groups} collection groups${topGroupClause(board)}; distinct profitable input listings unavailable (${error}).${partial}`;
   }
-  return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${listings} distinct profitable input listings; collection groups unavailable (${error}).`;
+  return `${MONITOR_SUCCESS_SUMMARY} Concentration: ${listings} distinct profitable input listings; collection groups unavailable (${error}).${partial}`;
 }
 
 export function assembleRemoteProgram(template, boardSql) {
@@ -278,6 +347,8 @@ export function assembleRemoteProgram(template, boardSql) {
     .replaceAll("__AUTORESEARCH_BOARD_SQL__", () => JSON.stringify(boardSql))
     .replaceAll("__AUTORESEARCH_GROUPS_SQL__", () => JSON.stringify(GROUPS_SQL))
     .replaceAll("__AUTORESEARCH_LISTINGS_SQL__", () => JSON.stringify(LISTINGS_SQL))
+    .replaceAll("__AUTORESEARCH_PARTIAL_SQL__", () => JSON.stringify(PARTIAL_SQL))
     .replaceAll("__AUTORESEARCH_RUN_OPTIONAL_QUERY__", () => runOptionalQuery.toString())
+    .replaceAll("__AUTORESEARCH_PARSE_DAEMON_CADENCE__", () => parseDaemonCadence.toString())
     .replaceAll("__AUTORESEARCH_CONCENTRATION_TIMEOUT_MS__", () => String(CONCENTRATION_EXEC_TIMEOUT_MS));
 }
