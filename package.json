@@ -102,7 +102,7 @@
     "follow-redirects": "^1.16.1",
     "socket.io-parser": "^4.2.7",
     "undici": "^6.29.1",
-    "qs": "6.16.0",
+    "qs": "6.16.1",
     "@tailwindcss/typography": {
       "postcss-selector-parser": "7.1.6"
     },
@@ -116,7 +116,7 @@
       "esbuild": "$esbuild"
     },
     "get-uri": {
-      "basic-ftp": "6.2.1"
+      "basic-ftp": "6.2.3"
     }
   }
 }
