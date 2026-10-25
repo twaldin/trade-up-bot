@@ -125,11 +125,11 @@ jobs:
           ssh root@178.156.239.58 "bash -s" << 'EOF'
           set -euo pipefail
           cd "${TRADEUP_ROOT:-/opt/trade-up-bot}"
-          pre_merge_head="$(git rev-parse HEAD)"
           git fetch origin main
           git merge --ff-only origin/main
-          dependency_changes="$(git diff --name-only "$pre_merge_head" HEAD -- package.json package-lock.json)"
-          if [ -n "$dependency_changes" ]; then
+          deps_hash="$(sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1)"
+          deps_marker=node_modules/.tradeup-deps.sha256
+          if [ ! -f "$deps_marker" ] || [ "$(cat "$deps_marker")" != "$deps_hash" ]; then
             apps=(api daemon fetcher buff-fetcher checker discord-bot)
             trap '
               deploy_rc=$?
@@ -147,6 +147,7 @@ jobs:
               pm2 stop "$app"
             done
             npm ci --include=dev
+            printf '%s\n' "$deps_hash" > "$deps_marker"
             npx --no-install tsx scripts/migrate.ts
             exit 0
           fi

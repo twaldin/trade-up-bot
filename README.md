@@ -251,25 +251,33 @@ changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deploy
 job; any other changed path and manual workflow runs retain deployment after checks
 pass.
 
-If the deployed `package.json` or `package-lock.json` changes, deployment stops
-`api`, `daemon`, `fetcher`, `buff-fetcher`, `checker`, and `discord-bot` before
-running `npm ci --include=dev` and the migration. It then attempts to start all
-six apps, including when installation or migration fails. Other deployments
-retain the fetcher-only migration stop/start sequence. Neither sequence changes
-`pm2-logrotate`. The later session-secret preflight and API reload do not fetch
-or merge again, so they use the revision covered by the dependency check.
+After merging the source, deployment hashes `package.json` and `package-lock.json`.
+It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
+last successful install. A missing or different marker stops `api`, `daemon`,
+`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs `npm ci --include=dev`,
+writes the marker after installation succeeds, and runs the migration. It then
+attempts to start all six apps, including when installation or migration fails.
+The first deployment with this installer has no marker and installs dependencies.
+A matching marker retains the fetcher-only migration stop/start sequence.
+Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
+API reload do not fetch or merge again.
 
-Any failure, cancellation, or timeout after merging a dependency change needs
-manual recovery. The checkout has already advanced, so rerunning the workflow
-does not detect the dependency change again and does not reinstall packages.
-A failed install can leave `node_modules` incomplete, and an interrupted deploy
-can leave apps stopped or on old modules. The restart trap is best-effort.
-To recover, run the following in the deployed checkout. Do not proceed with
-installation unless stopping all six apps succeeds.
+Rerun a failed, cancelled, or timed-out deployment to recover. `npm ci` deletes
+`node_modules`, including its marker, before installation. A failed or interrupted
+install therefore leaves no matching marker, so a rerun on the same HEAD installs
+again. If installation succeeded but migration failed, the marker matches and the
+rerun retries migration without reinstalling.
+
+The restart trap is best-effort. If cancellation interrupts migration or restart
+after the marker was written, check that all six apps are running and start any
+stopped apps. The marker records installed dependencies, not PM2 process state.
+For manual recovery, run the following in the deployed checkout. Do not proceed
+with installation unless stopping all six apps succeeds.
 
 ```bash
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
 npm ci --include=dev &&
+sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
 npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
