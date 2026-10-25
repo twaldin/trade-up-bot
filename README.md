@@ -256,7 +256,8 @@ If the deployed `package.json` or `package-lock.json` changes, deployment stops
 running `npm ci --include=dev` and the migration. It then attempts to start all
 six apps, including when installation or migration fails. Other deployments
 retain the fetcher-only migration stop/start sequence. Neither sequence changes
-`pm2-logrotate`.
+`pm2-logrotate`. The later session-secret preflight and API reload do not fetch
+or merge again, so they use the revision covered by the dependency check.
 
 Any failure, cancellation, or timeout after merging a dependency change needs
 manual recovery. The checkout has already advanced, so rerunning the workflow

@@ -160,9 +160,9 @@ jobs:
           exit "$migrate_rc"
           EOF
 
-      - name: Git pull main + session secret preflight + pm2 reload api
+      - name: Session secret preflight + pm2 reload api
         run: |
-          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
 
       - name: Proxy /best-cs2-trade-ups to Node
         run: |

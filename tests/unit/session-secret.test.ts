@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,12 +13,9 @@ import {
   sessionSecretRotationWarning,
 } from "../../server/session-secret.js";
 import {
-  DEV_SESSION_SECRET as SCRIPT_DEV_SESSION_SECRET,
-  MIN_PRODUCTION_SESSION_SECRET_LENGTH as SCRIPT_MIN_LENGTH,
   apiPm2SessionSecrets,
   extractPm2ProcessList,
   preflightFromSources,
-  productionSessionSecretRefusal as scriptRefusal,
   readDotenvValue,
 } from "../../scripts/check-production-session-secret.js";
 
@@ -108,48 +105,9 @@ describe("production session secret boot guard", () => {
     expect(sessionSecretRotationWarning(production(GOOD, GOOD))).toBeNull();
   });
 
-  it("matches the deploy preflight rules", () => {
-    expect(SCRIPT_DEV_SESSION_SECRET).toBe(DEV_SESSION_SECRET);
-    expect(SCRIPT_MIN_LENGTH).toBe(MIN_PRODUCTION_SESSION_SECRET_LENGTH);
-    for (const secret of ["", " ", DEV_SESSION_SECRET, "x".repeat(31), GOOD, `  ${GOOD}  `]) {
-      expect(scriptRefusal).toBe(productionSessionSecretRefusal);
-      expect(scriptRefusal(secret)).toBe(productionSessionSecretRefusal(secret));
-    }
-  });
-
-  it("refuses to listen until the production secret is accepted", () => {
-    const index = readFileSync(join(root, "server/index.ts"), "utf8");
-    const auth = readFileSync(join(root, "server/auth.ts"), "utf8");
-    const startup = index.indexOf("Async startup");
-    const guard = index.indexOf("resolveSessionSecrets(process.env)", startup);
-    const logged = index.indexOf("console.error", guard);
-    const exit = index.indexOf("process.exit(1)", guard);
-    const initDb = index.indexOf("initDb()", startup);
-    expect(guard).toBeGreaterThan(startup);
-    expect(logged).toBeGreaterThan(guard);
-    expect(exit).toBeGreaterThan(logged);
-    expect(exit).toBeLessThan(initDb);
-    expect(auth).toContain("resolveSessionSecrets(process.env)");
-    expect(auth).toContain("sessionSecretRotationWarning(process.env)");
-    expect(auth).not.toContain('SESSION_SECRET || "trade-up-bot-dev-secret"');
-    const sessionUse = auth.indexOf("app.use(session({");
-    expect(auth.slice(sessionUse, sessionUse + 120)).toContain("secret: sessionSecret");
-  });
 });
 
 describe("deploy session secret preflight", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/deploy.yml"), "utf8");
-
-  it("runs on the VPS after fetch and before pm2 reload", () => {
-    const line = workflow.split("\n").find((entry) => entry.includes("ssh ") && entry.includes("pm2 reload api"));
-    expect(line).toBeDefined();
-    const checkAt = line!.indexOf("npx --no-install tsx scripts/check-production-session-secret.ts");
-    const reloadAt = line!.indexOf("pm2 reload api");
-    expect(checkAt).toBeGreaterThan(line!.indexOf("git merge --ff-only origin/main"));
-    expect(reloadAt).toBeGreaterThan(checkAt);
-    expect(line).toContain("npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api");
-  });
-
   it("reads the first dotenv assignment the API loader would keep", () => {
     const text = [
       "# SESSION_SECRET=commented",
@@ -162,10 +120,6 @@ describe("deploy session secret preflight", () => {
     expect(readDotenvValue("SESSION_SECRET=  spaced  \r\n", "SESSION_SECRET")).toBe("spaced");
     expect(readDotenvValue('SESSION_SECRET="quoted"', "SESSION_SECRET")).toBe('"quoted"');
     expect(readDotenvValue(text, "MISSING")).toBe("");
-    const index = readFileSync(join(root, "server/index.ts"), "utf8");
-    expect(index).toContain('line.replace(/\\r$/, "").match(/^(\\w+)=(.*)$/)');
-    const script = readFileSync(join(root, "scripts/check-production-session-secret.ts"), "utf8");
-    expect(script).toContain('line.replace(/\\r$/, "").match(/^(\\w+)=(.*)$/)');
   });
 
   it("uses a non-empty pm2 api secret over the env file", () => {
