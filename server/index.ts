@@ -115,7 +115,7 @@ app.use(cors({
   origin: [
     "https://tradeupbot.app",
     "https://www.tradeupbot.app",
-    ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://localhost:3001"] : []),
+    ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://127.0.0.1:3001"] : []),
   ],
   credentials: true,
 }));
@@ -1357,9 +1357,9 @@ registerCanonicalRedirectRoutes(app);
   logCapiOptOutIgnored();
 
   // Start listening
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, "127.0.0.1", () => {
     process.send?.("ready"); // signal PM2 wait_ready when configured
-    console.log(`Trade-Up Bot API running at http://localhost:${PORT}`);
+    console.log(`Trade-Up Bot API running at http://127.0.0.1:${PORT}`);
     void warmCalculatorCaches(pool).catch((err) => {
       console.error("Calculator cache warm failed:", err instanceof Error ? err.message : err);
     });
@@ -1405,7 +1405,7 @@ registerCanonicalRedirectRoutes(app);
             console.log(`Warming cache: skin-data ${rarity}...`);
             const t3 = Date.now();
             // Hit our own API to warm the cache (reuses all data.ts logic including collectionKnifePool)
-            await fetch(`http://localhost:${process.env.PORT || 3001}/api/skin-data?rarity=${encodeURIComponent(rarity)}`).catch(() => {});
+            await fetch(`http://127.0.0.1:${process.env.PORT || 3001}/api/skin-data?rarity=${encodeURIComponent(rarity)}`).catch(() => {});
             console.log(`Cache warmed: skin-data ${rarity} (${((Date.now() - t3) / 1000).toFixed(1)}s)`);
           }
         }

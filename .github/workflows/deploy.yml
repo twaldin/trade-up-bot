@@ -125,8 +125,31 @@ jobs:
           ssh root@178.156.239.58 "bash -s" << 'EOF'
           set -euo pipefail
           cd "${TRADEUP_ROOT:-/opt/trade-up-bot}"
+          pre_merge_head="$(git rev-parse HEAD)"
           git fetch origin main
           git merge --ff-only origin/main
+          dependency_changes="$(git diff --name-only "$pre_merge_head" HEAD -- package.json package-lock.json)"
+          if [ -n "$dependency_changes" ]; then
+            apps=(api daemon fetcher buff-fetcher checker discord-bot)
+            trap '
+              deploy_rc=$?
+              set +e
+              start_rc=0
+              for app in "${apps[@]}"; do
+                pm2 start "$app"
+                rc=$?
+                if [ "$start_rc" -eq 0 ]; then start_rc=$rc; fi
+              done
+              if [ "$deploy_rc" -ne 0 ]; then exit "$deploy_rc"; fi
+              exit "$start_rc"
+            ' EXIT
+            for app in "${apps[@]}"; do
+              pm2 stop "$app"
+            done
+            npm ci --include=dev
+            npx --no-install tsx scripts/migrate.ts
+            exit 0
+          fi
           pm2 stop fetcher
           migrate_rc=0
           trap 'start_rc=0; pm2 start fetcher || start_rc=$?; if [ "$migrate_rc" -ne 0 ]; then exit "$migrate_rc"; fi; exit "$start_rc"' EXIT

@@ -7,7 +7,7 @@
  *
  * Usage:
  *   npx tsx scripts/board-session-bench.ts                         # live site, 4 pages
- *   npx tsx scripts/board-session-bench.ts --base=http://localhost:3001 --pages=6
+ *   npx tsx scripts/board-session-bench.ts --base=http://127.0.0.1:3001 --pages=6
  */
 
 const BASE = process.argv.find((a) => a.startsWith("--base="))?.split("=")[1] ?? "https://tradeupbot.app";

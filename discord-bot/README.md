@@ -94,7 +94,7 @@ Pro users use `/alerts` to choose which tiers to get pinged for.
 
 ```
 Discord Bot (discord-bot/index.ts)
-  ├── Reads: localhost:3001 API (status, trade-ups, prices, discord-lookup)
+  ├── Reads: 127.0.0.1:3001 API (status, trade-ups, prices, discord-lookup)
   ├── Writes: Redis (role IDs on startup)
   └── Receives: slash command interactions
 

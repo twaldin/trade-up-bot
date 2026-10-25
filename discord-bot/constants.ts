@@ -156,5 +156,5 @@ export function formatDollars(cents: number): string {
 // API
 // ---------------------------------------------------------------------------
 
-export const API_BASE = process.env.API_BASE || "http://localhost:3001";
+export const API_BASE = process.env.API_BASE || "http://127.0.0.1:3001";
 export const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "";

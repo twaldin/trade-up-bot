@@ -6,7 +6,7 @@
  * Usage:
  *   npx tsx scripts/api-bench.ts
  *   npx tsx scripts/api-bench.ts --base=https://tradeupbot.app
- *   npx tsx scripts/api-bench.ts --base=http://localhost:3001
+ *   npx tsx scripts/api-bench.ts --base=http://127.0.0.1:3001
  */
 
 const BASE = process.argv.find(a => a.startsWith("--base="))?.split("=")[1] ?? "https://tradeupbot.app";

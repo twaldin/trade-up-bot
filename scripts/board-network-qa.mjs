@@ -2,14 +2,14 @@
  * Counts the /api requests a first-session visitor's browser makes.
  *
  *   QA_BASE=https://tradeupbot.app QA_PAGES=1 node scripts/board-network-qa.mjs
- *   QA_BASE=http://localhost:3001 QA_PAGES=6 node scripts/board-network-qa.mjs
+ *   QA_BASE=http://127.0.0.1:3001 QA_PAGES=6 node scripts/board-network-qa.mjs
  *
  * Use a production build (not the Vite dev server): StrictMode double-runs
  * effects in dev and doubles every count.
  */
 import puppeteer from "puppeteer";
 
-const BASE = process.env.QA_BASE ?? "http://localhost:3001";
+const BASE = process.env.QA_BASE ?? "http://127.0.0.1:3001";
 const PAGES = Number(process.env.QA_PAGES ?? 4);
 const SHOTS = process.env.QA_OUT;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

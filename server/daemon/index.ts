@@ -893,8 +893,8 @@ export async function main() {
       // Warm the route caches the web app reads first (was previously client-triggered).
       // Self-HTTP so the API's own route logic + cache keys are reused; failures are non-fatal.
       for (const url of [
-        "http://localhost:3001/api/collections",
-        "http://localhost:3001/api/skin-data?rarity=all&limit=200",
+        "http://127.0.0.1:3001/api/collections",
+        "http://127.0.0.1:3001/api/skin-data?rarity=all&limit=200",
       ]) {
         await fetch(url).then(r => r.body?.cancel?.(), () => {}).catch(() => {});
       }

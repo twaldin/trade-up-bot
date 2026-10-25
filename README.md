@@ -242,7 +242,7 @@ npm run typecheck           # TypeScript validation (no emit)
 npm run verify:seo:public   # Fetch tradeupbot.app as Googlebot; check titles, canonicals and h1s
 ```
 
-For another running server, pass `-- --base=http://localhost:3001`; optionally
+For another running server, pass `-- --base=http://127.0.0.1:3001`; optionally
 select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checked
 by `scripts/verify-seo-html.ts` during `npm run build`.
 
@@ -250,6 +250,27 @@ The `deploy` workflow runs its normal checks on every push to `main`. A push
 changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deployment
 job; any other changed path and manual workflow runs retain deployment after checks
 pass.
+
+If the deployed `package.json` or `package-lock.json` changes, deployment stops
+`api`, `daemon`, `fetcher`, `buff-fetcher`, `checker`, and `discord-bot` before
+running `npm ci --include=dev` and the migration. It then attempts to start all
+six apps, including when installation or migration fails. Other deployments
+retain the fetcher-only migration stop/start sequence. Neither sequence changes
+`pm2-logrotate`.
+
+A failed install can leave `node_modules` incomplete even though deployment
+attempts to restart the apps. To recover, run the following in the deployed
+checkout. Do not proceed with installation unless stopping all six apps succeeds.
+
+```bash
+pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
+npm ci --include=dev &&
+npx --no-install tsx scripts/migrate.ts &&
+pm2 start api daemon fetcher buff-fetcher checker discord-bot
+```
+
+If you revert the dependency PR, the next deployment detects the restored
+lockfile and installs its dependencies before migration and restart.
 
 ## SEO Infrastructure
 
