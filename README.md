@@ -258,9 +258,13 @@ six apps, including when installation or migration fails. Other deployments
 retain the fetcher-only migration stop/start sequence. Neither sequence changes
 `pm2-logrotate`.
 
-A failed install can leave `node_modules` incomplete even though deployment
-attempts to restart the apps. To recover, run the following in the deployed
-checkout. Do not proceed with installation unless stopping all six apps succeeds.
+Any failure, cancellation, or timeout after merging a dependency change needs
+manual recovery. The checkout has already advanced, so rerunning the workflow
+does not detect the dependency change again and does not reinstall packages.
+A failed install can leave `node_modules` incomplete, and an interrupted deploy
+can leave apps stopped or on old modules. The restart trap is best-effort.
+To recover, run the following in the deployed checkout. Do not proceed with
+installation unless stopping all six apps succeeds.
 
 ```bash
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
@@ -269,8 +273,12 @@ npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
 
-If you revert the dependency PR, the next deployment detects the restored
-lockfile and installs its dependencies before migration and restart.
+To roll back dependencies automatically, restore the previous `package.json` and
+`package-lock.json` while retaining the installer in `.github/workflows/deploy.yml`.
+The next deployment then installs the restored lockfile before migration and restart.
+A full revert of this bundled PR also removes the installer, so it does not
+reinstall the old lockfile automatically. After a full revert, run the manual
+recovery sequence above in the reverted checkout.
 
 ## SEO Infrastructure
 
