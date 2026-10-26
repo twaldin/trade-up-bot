@@ -176,9 +176,9 @@ The API reads directly from PostgreSQL on cache miss — no snapshot database or
 
 ## Running Locally
 
-```bash
-# Prerequisites: PostgreSQL 16, Redis, Node.js 20+
+Requires PostgreSQL 16, Redis, and Node.js 24.
 
+```bash
 # API server (auto-reloads)
 npx tsx watch server/index.ts
 
@@ -214,7 +214,8 @@ Browser ids are injected into `<head>` by the `tracking-head` Vite plugin, so ch
 
 ## Testing
 
-Use Node.js 20 (the CI version). Run `npm ci` and `npm run build` before
+Use Node.js 24 (the CI version). Node.js 20 reached end of life on 2026-04-30.
+Run `npm ci` and `npm run build` before
 the unit suite: some tests read generated `dist/index.html`.
 
 Integration tests and the concurrency stress tests require a disposable PostgreSQL
@@ -254,13 +255,18 @@ pass.
 After merging the source, deployment hashes `package.json` and `package-lock.json`.
 It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
 last successful install. A missing or different marker stops `api`, `daemon`,
-`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs `npm ci --include=dev`,
+`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs
+`PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev`,
 writes the marker after installation succeeds, and runs the migration. It then
 attempts to start all six apps, including when installation or migration fails.
 The first deployment with this installer has no marker and installs dependencies.
 A matching marker retains the fetcher-only migration stop/start sequence.
 Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
 API reload do not fetch or merge again.
+
+Production installs skip Puppeteer's browser downloads because the six PM2 apps
+and the cron job `scripts/snapshot-top-trade-ups.ts` do not launch browsers.
+CI installs keep browser downloads enabled for prerendering and browser tests.
 
 Rerun a failed, cancelled, or timed-out deployment to recover. `npm ci` deletes
 `node_modules`, including its marker, before installation. A failed or interrupted
@@ -276,7 +282,7 @@ with installation unless stopping all six apps succeeds.
 
 ```bash
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
-npm ci --include=dev &&
+PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev &&
 sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
 npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot

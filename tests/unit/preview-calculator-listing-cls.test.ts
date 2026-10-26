@@ -149,7 +149,7 @@ describe("calculator slot footprint", () => {
     await page.evaluate(() => { Reflect.set(window, "__cls", 0); });
 
     async function add(query: string, label: string) {
-      await page.click("input.preview-input", { clickCount: 3 });
+      await page.click("input.preview-input", { count: 3 });
       await page.type("input.preview-input", query, { delay: 0 });
       await page.waitForFunction(
         (name) => [...document.querySelectorAll("button.preview-row")].some((node) => node.textContent?.includes(name)),

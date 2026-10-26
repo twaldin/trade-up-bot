@@ -303,7 +303,7 @@ describe("homepage device preview does not shift when the live board arrives", (
     stopVite = started.close;
     origin = started.origin;
     browser = await chromium.launch({
-      executablePath: puppeteer.executablePath(),
+      executablePath: await puppeteer.executablePath(),
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
