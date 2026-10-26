@@ -26,7 +26,7 @@ process.env.STRIPE_SECRET_KEY = "sk_test_subscribe_guard";
 process.env.STRIPE_PRO_PRICE_ID = "price_pro_test";
 process.env.STRIPE_PRO_YEARLY_PRICE_ID = "price_year_test";
 process.env.STRIPE_PRO_LIFETIME_PRICE_ID = "price_life_test";
-process.env.BASE_URL = "http://localhost:3001";
+process.env.BASE_URL = "http://127.0.0.1:3001";
 
 const { stripeRouter } = await import("../../server/routes/stripe.js");
 

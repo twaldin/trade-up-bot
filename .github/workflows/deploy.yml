@@ -127,6 +127,30 @@ jobs:
           cd "${TRADEUP_ROOT:-/opt/trade-up-bot}"
           git fetch origin main
           git merge --ff-only origin/main
+          deps_hash="$(sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1)"
+          deps_marker=node_modules/.tradeup-deps.sha256
+          if [ ! -f "$deps_marker" ] || [ "$(cat "$deps_marker")" != "$deps_hash" ]; then
+            apps=(api daemon fetcher buff-fetcher checker discord-bot)
+            trap '
+              deploy_rc=$?
+              set +e
+              start_rc=0
+              for app in "${apps[@]}"; do
+                pm2 start "$app"
+                rc=$?
+                if [ "$start_rc" -eq 0 ]; then start_rc=$rc; fi
+              done
+              if [ "$deploy_rc" -ne 0 ]; then exit "$deploy_rc"; fi
+              exit "$start_rc"
+            ' EXIT
+            for app in "${apps[@]}"; do
+              pm2 stop "$app"
+            done
+            npm ci --include=dev
+            printf '%s\n' "$deps_hash" > "$deps_marker"
+            npx --no-install tsx scripts/migrate.ts
+            exit 0
+          fi
           pm2 stop fetcher
           migrate_rc=0
           trap 'start_rc=0; pm2 start fetcher || start_rc=$?; if [ "$migrate_rc" -ne 0 ]; then exit "$migrate_rc"; fi; exit "$start_rc"' EXIT
@@ -137,9 +161,9 @@ jobs:
           exit "$migrate_rc"
           EOF
 
-      - name: Git pull main + session secret preflight + pm2 reload api
+      - name: Session secret preflight + pm2 reload api
         run: |
-          ssh root@178.156.239.58 "cd /opt/trade-up-bot && git fetch origin main && git merge --ff-only origin/main && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
 
       - name: Proxy /best-cs2-trade-ups to Node
         run: |

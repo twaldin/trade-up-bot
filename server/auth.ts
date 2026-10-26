@@ -153,7 +153,7 @@ export async function setupAuth(app: Express, pool: pg.Pool) {
   const rotationWarning = sessionSecretRotationWarning(process.env);
   if (rotationWarning) console.warn(rotationWarning);
   const steamApiKey = process.env.STEAM_API_KEY;
-  const baseUrl = process.env.BASE_URL || "http://localhost:3001";
+  const baseUrl = process.env.BASE_URL || "http://127.0.0.1:3001";
 
   // Trust nginx proxy (needed for secure cookies behind reverse proxy)
   app.set("trust proxy", 1);

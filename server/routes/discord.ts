@@ -11,7 +11,7 @@ export function discordRouter(pool: pg.Pool): Router {
 
   const clientId = process.env.DISCORD_CLIENT_ID;
   const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-  const baseUrl = process.env.BASE_URL || "http://localhost:3001";
+  const baseUrl = process.env.BASE_URL || "http://127.0.0.1:3001";
   const internalToken = process.env.INTERNAL_API_TOKEN;
 
   // ---------------------------------------------------------------------------

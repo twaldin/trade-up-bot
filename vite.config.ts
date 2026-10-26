@@ -83,7 +83,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: process.env.API_PROXY || "http://localhost:3001",
+        target: process.env.API_PROXY || "http://127.0.0.1:3001",
         changeOrigin: true,
       },
       // Dev-only mirror of the live /skins pages, used by the og:image face

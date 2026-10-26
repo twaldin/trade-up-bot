@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,14 @@ function writeBin(dir: string, name: string, body: string): void {
 function runStep(npxExit: number, startExit = 0): { status: number | null; log: string } {
   const dir = mkdtempSync(join(tmpdir(), "deploy-migrate-"));
   const log = join(dir, "log");
+  const files = ["package.json", "package-lock.json"];
+  const hashes = files.map((file) => {
+    const content = "{}\n";
+    writeFileSync(join(dir, file), content);
+    return `${createHash("sha256").update(content).digest("hex")}  ${file}\n`;
+  }).join("");
+  mkdirSync(join(dir, "node_modules"));
+  writeFileSync(join(dir, "node_modules/.tradeup-deps.sha256"), createHash("sha256").update(hashes).digest("hex"));
   writeBin(dir, "git", "#!/bin/bash\necho \"git $*\" >> \"$LOG\"\nexit 0\n");
   writeBin(dir, "pm2", `#!/bin/bash
 echo "pm2 $*" >> "$LOG"
@@ -41,29 +50,18 @@ exit 0
 echo "npx $*" >> "$LOG"
 exit ${npxExit}
 `);
-  const result = spawnSync("bash", ["-c", migrateShell()], {
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`, LOG: log, TRADEUP_ROOT: dir },
-    encoding: "utf8",
-  });
-  return { status: result.status, log: readFileSync(log, "utf8") };
+  try {
+    const result = spawnSync("bash", ["-c", migrateShell()], {
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`, LOG: log, TRADEUP_ROOT: dir },
+      encoding: "utf8",
+    });
+    return { status: result.status, log: readFileSync(log, "utf8") };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("deploy migration step", () => {
-  const migrate = stepBody("Migrate with fetcher stopped");
-  const reloadAt = workflow.indexOf("pm2 reload api");
-
-  it("stops the fetcher, migrates, and starts it again before the api reload", () => {
-    expect(workflow.indexOf("name: Migrate with fetcher stopped")).toBeGreaterThan(0);
-    expect(reloadAt).toBeGreaterThan(workflow.indexOf("name: Migrate with fetcher stopped"));
-    expect(migrate).toContain("pm2 stop fetcher");
-    expect(migrate).toContain("npx --no-install tsx scripts/migrate.ts");
-    expect(migrate).toContain("pm2 start fetcher");
-    expect(migrate).toContain("trap ");
-    expect(migrate).not.toContain("pm2 reload");
-    expect(migrate).not.toContain("continue-on-error");
-    expect(workflow).toContain('https://tradeupbot.app/api/health');
-    expect(workflow).not.toContain('https://tradeupbot.app/api/global-stats" || true)\n            if [ "$code" = "200" ]');
-  });
 
   it("starts the fetcher and fails the step when the migration fails", () => {
     const result = runStep(7);

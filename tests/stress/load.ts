@@ -2,14 +2,14 @@
  * Stress test: concurrent HTTP load against the trade-up bot API.
  *
  * Usage:
- *   npx tsx tests/stress/load.ts                    # localhost:3001
+ *   npx tsx tests/stress/load.ts                    # 127.0.0.1:3001
  *   npx tsx tests/stress/load.ts https://tradeupbot.app  # production
  *
  * Runs 200 total requests (50 concurrent) against GET /api/trade-ups
  * and GET /api/global-stats, measuring P50/P95/P99 response times.
  */
 
-const BASE_URL = process.argv[2] || "http://localhost:3001";
+const BASE_URL = process.argv[2] || "http://127.0.0.1:3001";
 const TOTAL_REQUESTS = 200;
 const CONCURRENCY = 50;
 

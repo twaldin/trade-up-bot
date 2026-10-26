@@ -242,7 +242,7 @@ npm run typecheck           # TypeScript validation (no emit)
 npm run verify:seo:public   # Fetch tradeupbot.app as Googlebot; check titles, canonicals and h1s
 ```
 
-For another running server, pass `-- --base=http://localhost:3001`; optionally
+For another running server, pass `-- --base=http://127.0.0.1:3001`; optionally
 select routes with `--routes=/calculator,/faq`. Local prerendered HTML is checked
 by `scripts/verify-seo-html.ts` during `npm run build`.
 
@@ -250,6 +250,44 @@ The `deploy` workflow runs its normal checks on every push to `main`. A push
 changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deployment
 job; any other changed path and manual workflow runs retain deployment after checks
 pass.
+
+After merging the source, deployment hashes `package.json` and `package-lock.json`.
+It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
+last successful install. A missing or different marker stops `api`, `daemon`,
+`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs `npm ci --include=dev`,
+writes the marker after installation succeeds, and runs the migration. It then
+attempts to start all six apps, including when installation or migration fails.
+The first deployment with this installer has no marker and installs dependencies.
+A matching marker retains the fetcher-only migration stop/start sequence.
+Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
+API reload do not fetch or merge again.
+
+Rerun a failed, cancelled, or timed-out deployment to recover. `npm ci` deletes
+`node_modules`, including its marker, before installation. A failed or interrupted
+install therefore leaves no matching marker, so a rerun on the same HEAD installs
+again. If installation succeeded but migration failed, the marker matches and the
+rerun retries migration without reinstalling.
+
+The restart trap is best-effort. If cancellation interrupts migration or restart
+after the marker was written, check that all six apps are running and start any
+stopped apps. The marker records installed dependencies, not PM2 process state.
+For manual recovery, run the following in the deployed checkout. Do not proceed
+with installation unless stopping all six apps succeeds.
+
+```bash
+pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
+npm ci --include=dev &&
+sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
+npx --no-install tsx scripts/migrate.ts &&
+pm2 start api daemon fetcher buff-fetcher checker discord-bot
+```
+
+To roll back dependencies automatically, restore the previous `package.json` and
+`package-lock.json` while retaining the installer in `.github/workflows/deploy.yml`.
+The next deployment then installs the restored lockfile before migration and restart.
+A full revert of this bundled PR also removes the installer, so it does not
+reinstall the old lockfile automatically. After a full revert, run the manual
+recovery sequence above in the reverted checkout.
 
 ## SEO Infrastructure
 
