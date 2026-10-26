@@ -252,6 +252,9 @@ changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deploy
 job; any other changed path and manual workflow runs retain deployment after checks
 pass.
 
+Install Node.js 24 on the VPS before merging this runtime upgrade. The deploy
+must not install this lockfile while the box still runs Node.js 20.
+
 After merging the source, deployment hashes `package.json` and `package-lock.json`.
 It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
 last successful install. A missing or different marker stops `api`, `daemon`,
@@ -288,12 +291,18 @@ npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
 
-To roll back dependencies automatically, restore the previous `package.json` and
-`package-lock.json` while retaining the installer in `.github/workflows/deploy.yml`.
-The next deployment then installs the restored lockfile before migration and restart.
-A full revert of this bundled PR also removes the installer, so it does not
-reinstall the old lockfile automatically. After a full revert, run the manual
-recovery sequence above in the reverted checkout.
+To roll back this Node.js 24 upgrade, reinstall nodejs 20.20.2 first, restore the
+Node.js 20 `node_modules` backup, and reset the checkout to the recorded
+pre-upgrade revision. Then revert the upgrade PR and restart the six apps.
+The previous lockfile uses better-sqlite3 11.x, which has no Node.js 24 ABI-137
+prebuild. The VPS has no compiler, so installing that lockfile under Node.js 24
+fails after `npm ci` has already deleted `node_modules`.
+
+For other dependency rollbacks, confirm that the restored lockfile supports the
+installed Node.js version before restoring `package.json` and `package-lock.json`.
+Retain the installer in `.github/workflows/deploy.yml` so the next deployment
+installs the restored lockfile before migration and restart. If a revert also
+removes the installer, run the manual recovery sequence above.
 
 ## SEO Infrastructure
 
