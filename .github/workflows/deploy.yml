@@ -131,9 +131,11 @@ jobs:
           deps_marker=node_modules/.tradeup-deps.sha256
           if [ ! -f "$deps_marker" ] || [ "$(cat "$deps_marker")" != "$deps_hash" ]; then
             apps=(api daemon fetcher buff-fetcher checker discord-bot)
+            skip_pm2_start=0
             trap '
               deploy_rc=$?
               set +e
+              if [ "$skip_pm2_start" -eq 1 ]; then exit "$deploy_rc"; fi
               start_rc=0
               for app in "${apps[@]}"; do
                 pm2 start "$app"
@@ -148,8 +150,15 @@ jobs:
             done
             PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev
             printf '%s\n' "$deps_hash" > "$deps_marker"
+            if ! bash scripts/ensure-native-modules.sh; then
+              skip_pm2_start=1
+              exit 1
+            fi
             npx --no-install tsx scripts/migrate.ts
             exit 0
+          fi
+          if ! bash scripts/ensure-native-modules.sh; then
+            exit 1
           fi
           pm2 stop fetcher
           migrate_rc=0
@@ -161,9 +170,9 @@ jobs:
           exit "$migrate_rc"
           EOF
 
-      - name: Session secret preflight + pm2 reload api
+      - name: Native module + session secret preflight + pm2 reload api
         run: |
-          ssh root@178.156.239.58 "cd /opt/trade-up-bot && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
+          ssh root@178.156.239.58 "cd /opt/trade-up-bot && bash scripts/ensure-native-modules.sh && npx --no-install tsx scripts/check-production-session-secret.ts && pm2 reload api"
 
       - name: Proxy /best-cs2-trade-ups to Node
         run: |

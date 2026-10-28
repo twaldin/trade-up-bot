@@ -260,12 +260,27 @@ It compares that hash with `node_modules/.tradeup-deps.sha256`, which records th
 last successful install. A missing or different marker stops `api`, `daemon`,
 `fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs
 `PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev`,
-writes the marker after installation succeeds, and runs the migration. It then
-attempts to start all six apps, including when installation or migration fails.
+writes the marker after installation succeeds, proves native modules, and runs
+the migration. It then attempts to start all six apps, including when
+installation or migration fails. A failed native-module probe does not start
+them.
 The first deployment with this installer has no marker and installs dependencies.
 A matching marker retains the fetcher-only migration stop/start sequence.
 Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
 API reload do not fetch or merge again.
+
+Before either sequence restarts PM2, `bash scripts/ensure-native-modules.sh`
+runs on the box's Node. It loads `better-sqlite3` and opens an in-memory
+database (`node scripts/check-native-modules.mjs`). `node_modules/.tradeup-node-abi`
+stores that process's `NODE_MODULE_VERSION` (115 on Node 20, 137 on Node 24).
+A different marker, or a probe that fails, runs `npm rebuild better-sqlite3`
+so `prebuild-install` fetches the matching binary, then probes again. `sharp`,
+when installed, is rebuilt too; a sharp rebuild or load failure is only a
+warning. If the sqlite probe still fails, the deploy stops without a PM2
+restart. On a lockfile change the six apps are already stopped for `npm ci`,
+and a failed probe skips the start trap. When the lockfile marker matches, a
+failed probe returns before `pm2 stop fetcher`. The reload step runs the same
+script before `pm2 reload api`.
 
 Production installs skip Puppeteer's browser downloads because the six PM2 apps
 and the cron job `scripts/snapshot-top-trade-ups.ts` do not launch browsers.
@@ -287,6 +302,7 @@ with installation unless stopping all six apps succeeds.
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
 PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev &&
 sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
+bash scripts/ensure-native-modules.sh &&
 npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
