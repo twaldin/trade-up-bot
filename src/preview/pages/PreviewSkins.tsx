@@ -5,11 +5,12 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, Search } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
 import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
+import { removeCanonical, robotsForListingCount } from "../lib/document-head.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import {
   collectionsHref,
@@ -406,18 +407,15 @@ function skinDetailUrl(name: string): string {
 }
 
 /**
- * Unknown slugs take the hard-404 robots value. A found skin puts `index, follow`
- * back, including when the 404 left a bare `noindex`. Thin-skin `noindex, follow`
- * from the server shell is left in place.
+ * Unknown slugs take the hard-404 robots value. A found skin uses the same
+ * listing cutoff as the server document: fewer than five listings is
+ * `noindex, follow`. Until that count is known, leave the route-change default
+ * in place so a valid skin does not flash `noindex` while it loads.
  */
-function robotsForSkinPage(missing: boolean, name: string | null): string {
+function robotsForSkinPage(missing: boolean, listingCount: number | null): string {
   if (missing) return "noindex";
-  if (!name || typeof document === "undefined") return "";
-  const content = document.querySelector("meta[name='robots']")?.getAttribute("content");
-  if (content == null || content === "" || content === "index, follow" || content === "noindex") {
-    return "index, follow";
-  }
-  return "";
+  if (listingCount === null) return "";
+  return robotsForListingCount(listingCount);
 }
 
 function SkinDetailSkeleton({ name, throttled }: { name: string; throttled: boolean }) {
@@ -689,11 +687,14 @@ export function PreviewSkinPage() {
   // The hard 404 document has no canonical. A known skin points at itself.
   const canonical = !missing && name && slug ? `https://tradeupbot.app/skins/${slug}` : "";
   const emitCanonical = useCanonicalSlot(canonical);
-  useRobotsSlot(robotsForSkinPage(missing, name));
+  const listingCount = typeof detail.data?.stats.totalListings === "number"
+    ? detail.data.stats.totalListings
+    : null;
+  useRobotsSlot(robotsForSkinPage(missing, listingCount));
   useLayoutEffect(() => {
     if (!missing) return;
-    document.querySelectorAll("link[rel='canonical']").forEach((node) => node.remove());
-  }, [missing]);
+    removeCanonical();
+  }, [missing, slug]);
   const canonicalLink = emitCanonical && canonical
     ? <link rel="canonical" href={canonical} />
     : null;
@@ -704,6 +705,7 @@ export function PreviewSkinPage() {
       <div className="preview-page preview-page--stable preview-page--fold">
         <title>{SKIN_NOT_FOUND}</title>
         <p>{SKIN_NOT_FOUND}</p>
+        <p><Link className="preview-link" to="/skins">Browse skins</Link></p>
       </div>
     );
   }
@@ -941,6 +943,7 @@ export function PreviewCollectionsPage() {
   const [visible, setVisible] = useState(12);
   const sentinel = useRef<HTMLDivElement>(null);
   const emitCanonical = useCanonicalSlot("https://tradeupbot.app/collections");
+  const emitRobots = useRobotsSlot("index, follow");
 
   useEffect(() => {
     cacheNames(rows.map((row) => ({ name: row.name, kind: "collection" as const })));
@@ -1013,7 +1016,7 @@ export function PreviewCollectionsPage() {
     <div className={`preview-page preview-page--stable${shortIndex ? " preview-page--fold" : ""}`}>
       <title>CS2 Collections — Browse All Weapon Cases & Collections | TradeUpBot</title>
       <meta name="description" content="Browse all CS2 collections. See skins, float ranges, and trade-up opportunities for every weapon case and collection." />
-      <meta name="robots" content="index, follow" />
+      {emitRobots && <meta name="robots" content="index, follow" />}
       {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/collections" />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildCollectionsHubJsonLd([])) }} />
       <header className="preview-page__head">
@@ -1081,6 +1084,7 @@ export function PreviewCollectionsPage() {
 
 export function PreviewCollectionPage() {
   const { name = "" } = useParams();
+  const { pathname } = useLocation();
   const index = useCollectionsIndex();
   const title = index.rows.find((row) => previewCollectionHref(row.name).endsWith(`/${name}`))?.name ?? null;
   const [skins, setSkins] = useState<SkinRow[]>([]);
@@ -1172,7 +1176,7 @@ export function PreviewCollectionPage() {
     canonicalNode.current = first;
     first.href = `https://tradeupbot.app/collections/${name}`;
     for (const extra of links.slice(1)) extra.remove();
-  }, [title, name, unknown]);
+  }, [title, name, unknown, pathname]);
   useEffect(() => () => {
     const node = canonicalNode.current;
     const original = canonicalHref.current;

@@ -186,7 +186,8 @@ describe("client navigation to an unknown skin slug", () => {
 
     await go("bad");
     await until(() => {
-      expect(host.querySelector(".preview-page")?.textContent).toBe(direct.body);
+      expect(host.querySelector(".preview-page")?.textContent).toContain(direct.body);
+      expect(host.querySelector("a[href='/skins']")?.textContent).toBe("Browse skins");
       expect(document.title).toBe(direct.title);
       expect(robotsContents()).toEqual([direct.robots]);
       expect(canonicalHrefs()).toEqual([]);
@@ -204,13 +205,13 @@ describe("client navigation to an unknown skin slug", () => {
     expect(pageViews).toEqual([]);
   });
 
-  it("keeps a thin skin's noindex, follow while setting the skin title", async () => {
+  it("replaces a leftover noindex, follow when the skin has enough listings", async () => {
     await mount(["noindex, follow"]);
     await go("valid");
     await until(() => {
       expect(host.querySelector("h1")?.textContent).toBe("Asiimov");
       expect(document.title).toBe(VALID_TITLE);
-      expect(robotsContents()).toEqual(["noindex, follow"]);
+      expect(robotsContents()).toEqual(["index, follow"]);
       expect(canonicalHrefs()).toEqual([`https://tradeupbot.app/skins/${VALID_SLUG}`]);
     });
     expect(pageViews).toEqual([]);

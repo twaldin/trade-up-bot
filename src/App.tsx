@@ -23,6 +23,7 @@ const CalculatorPage = lazy(() => import("./pages/CalculatorPage.js").then(m => 
 const SkinPage = lazy(() => import("./pages/SkinPage.js").then(m => ({ default: m.SkinPage })));
 // The kit shell is the primary app now, so it is imported directly: as a lazy
 // chunk its CSS preload failed during prerender and "/" captured an empty body.
+import { RouteHeadReset } from "./preview/components/RouteHeadReset.js";
 import PreviewApp from "./preview/PreviewApp.js";
 import { consoleTargetFor, resolveConsolePage, type ConsolePage } from "./preview/lib/console-routes.js";
 
@@ -520,8 +521,10 @@ export default function App() {
   }, []);
 
   return (
-    <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
-      <Routes>
+    <>
+      <RouteHeadReset />
+      <Suspense fallback={<div className="text-center py-8 text-muted-foreground animate-pulse">Loading</div>}>
+        <Routes>
         <Route path="/faq" element={<ConsoleApp page="faq" />} />
         <Route path="/features" element={<ConsoleApp page="features" />} />
         <Route path="/pricing" element={<ConsoleApp page="pricing" />} />
@@ -551,7 +554,8 @@ export default function App() {
         <Route path="/listing-sniper" element={<ConsoleApp page="sniper" />} />
         <Route path="/" element={<ConsoleApp page="landing" />} />
         <Route path="*" element={<AuthGatedApp />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </>
   );
 }

@@ -1,29 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
+import { ensureSingleRobots } from "../lib/document-head.js";
 
 export function useRobotsSlot(content: string): boolean {
+  const { pathname } = useLocation();
   const [emit] = useState(() => {
     if (typeof document === "undefined") return true;
     return document.querySelector("meta[name='robots']") == null;
   });
   useEffect(() => {
-    if (!content || typeof document === "undefined") return;
-    const nodes = [...document.querySelectorAll("meta[name='robots']")].filter(
-      (node): node is HTMLMetaElement => node instanceof HTMLMetaElement,
-    );
-    let meta = nodes[0];
-    if (!meta) {
-      const created = document.createElement("meta");
-      created.setAttribute("name", "robots");
-      document.head.appendChild(created);
-      meta = created;
-    }
-    meta.setAttribute("content", content);
-    for (const extra of nodes.slice(1)) extra.remove();
-  }, [content]);
+    if (!content) return;
+    ensureSingleRobots(content);
+  }, [content, pathname]);
   return emit;
 }
 
 export function useCanonicalSlot(href: string): boolean {
+  const { pathname } = useLocation();
   const [emit] = useState(() => {
     if (typeof document === "undefined") return true;
     return document.querySelector("link[rel='canonical']") == null;
@@ -38,7 +31,7 @@ export function useCanonicalSlot(href: string): boolean {
       link = created;
     }
     link.setAttribute("href", href);
-  }, [href]);
+  }, [href, pathname]);
   return emit;
 }
 

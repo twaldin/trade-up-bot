@@ -4,7 +4,7 @@ import { trackDiscordCta } from "../lib/analytics.js";
 import { trackUpgradeCta } from "../lib/conversions.js";
 import { PreviewCurrency } from "./components/PreviewCurrency.js";
 import { PreviewMark } from "./components/PreviewMark.js";
-import { useCanonicalSlot } from "./components/PreviewSeo.js";
+import { useCanonicalSlot, useRobotsSlot } from "./components/PreviewSeo.js";
 import { buildHomepageJsonLd } from "../../shared/crawler-jsonld.js";
 import {
   PREVIEW_CTA_PRIMARY,
@@ -39,6 +39,7 @@ export function PreviewChrome({
   onMode: () => void;
   home?: boolean;
 }) {
+  const emitRobots = useRobotsSlot(home ? "index, follow" : "");
   const emitCanonical = useCanonicalSlot(home ? "https://tradeupbot.app/" : "");
   return (
     <div data-preview data-system="outlay" data-mode={mode} data-view="landing">
@@ -46,8 +47,8 @@ export function PreviewChrome({
         <>
           <title>{HOME_TITLE}</title>
           <meta name="description" content={HOME_DESCRIPTION} />
-          <meta name="robots" content="index, follow" />
-          {home && emitCanonical && <link rel="canonical" href="https://tradeupbot.app/" />}
+          {emitRobots && <meta name="robots" content="index, follow" />}
+          {emitCanonical && <link rel="canonical" href="https://tradeupbot.app/" />}
           <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildHomepageJsonLd()) }} />
         </>
       )}

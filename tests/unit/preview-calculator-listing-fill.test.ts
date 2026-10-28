@@ -3,6 +3,7 @@
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NO_LISTINGS_COPY } from "../../shared/calculator-example.js";
 import { PreviewCalculator } from "../../src/preview/pages/PreviewCalculator.js";
@@ -60,7 +61,7 @@ describe("calculator listing fill", () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
-    await act(async () => { root.render(createElement(PreviewCalculator)); });
+    await act(async () => { root.render(createElement(MemoryRouter, null, createElement(PreviewCalculator))); });
     await act(async () => { await Promise.resolve(); });
   }
 
