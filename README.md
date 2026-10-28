@@ -257,36 +257,69 @@ must not install this lockfile while the box still runs Node.js 20.
 
 After merging the source, deployment hashes `package.json` and `package-lock.json`.
 It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
-last successful install. A missing or different marker stops `api`, `daemon`,
-`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs
-`PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev`,
-writes the marker after installation succeeds, and runs the migration. It then
-attempts to start all six apps, including when installation or migration fails.
+last successful install. A missing or different marker installs into a temporary directory on the
+checkout filesystem (`mktemp -d -p /opt/trade-up-bot`). `git init` makes that
+directory a repository so the root `prepare` script can set `core.hooksPath`.
+Install scripts still run. `PUPPETEER_SKIP_DOWNLOAD=true timeout 600 npm ci
+--include=dev` fills the temp tree, then
+`timeout 30 node scripts/check-native-modules.mjs` probes it. PM2 is stopped
+only after the probe passes. A checkout with no `node_modules` skips the
+backup rename. The new `node_modules` then replaces the live one, the deps
+marker and the Node ABI marker are written, and the migration runs. The start
+trap starts all six apps, including when migration fails. If the swap fails,
+the trap restores `node_modules.tradeup-prev` and starts the apps. A failed
+probe deletes the temporary tree and exits without stopping PM2.
 The first deployment with this installer has no marker and installs dependencies.
 A matching marker retains the fetcher-only migration stop/start sequence.
 Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
 API reload do not fetch or merge again.
 
+Before either sequence restarts PM2, the box Node is compared with PM2.
+`node scripts/check-native-modules.mjs --pm2-node` reads `exec_interpreter` and
+`node_version` from `pm2 jlist` and exits if the major version or an absolute
+interpreter path does not match `process.execPath`. Each node probe is limited
+to 30 seconds and each `npm rebuild` to 180 seconds. A timeout is a failed probe.
+On a matching lockfile, `bash scripts/ensure-native-modules.sh` then loads
+`better-sqlite3` and opens an in-memory database. `node_modules/.tradeup-node-abi`
+stores that process's `NODE_MODULE_VERSION` (115 on Node 20, 137 on Node 24).
+A different marker, or a failed probe, runs `npm rebuild better-sqlite3` so
+`prebuild-install` fetches the matching binary, then probes again. `sharp`,
+when installed, is rebuilt too; a sharp rebuild or load failure is only a
+warning. If the sqlite probe still fails, the script exits before
+`pm2 stop fetcher`. A lockfile change probes the temporary install before any
+stop, so a failed probe leaves the six apps running. The reload step runs the
+same script before `pm2 reload api`.
+
 Production installs skip Puppeteer's browser downloads because the six PM2 apps
 and the cron job `scripts/snapshot-top-trade-ups.ts` do not launch browsers.
 CI installs keep browser downloads enabled for prerendering and browser tests.
 
-Rerun a failed, cancelled, or timed-out deployment to recover. `npm ci` deletes
-`node_modules`, including its marker, before installation. A failed or interrupted
-install therefore leaves no matching marker, so a rerun on the same HEAD installs
-again. If installation succeeded but migration failed, the marker matches and the
-rerun retries migration without reinstalling.
+Rerun a failed, cancelled, or timed-out deployment to recover. The staged
+`npm ci` does not delete the live `node_modules`. A failed probe leaves the
+previous marker in place, so a rerun installs again. After a successful swap
+the marker matches, and a later migration failure retries migration without
+reinstalling.
 
 The restart trap is best-effort. If cancellation interrupts migration or restart
-after the marker was written, check that all six apps are running and start any
-stopped apps. The marker records installed dependencies, not PM2 process state.
-For manual recovery, run the following in the deployed checkout. Do not proceed
-with installation unless stopping all six apps succeeds.
+after the swap, check that all six apps are running and start any stopped apps.
+If `node_modules.tradeup-prev` is still present, the swap did not finish; move
+it back to `node_modules` before starting apps. The marker records installed
+dependencies, not PM2 process state. For manual recovery, run the following in
+the deployed checkout. Do not stop the apps unless the staged probe succeeds.
 
 ```bash
+stage="$(mktemp -d -p /opt/trade-up-bot)"
+cp package.json package-lock.json "$stage/" &&
+git init "$stage" &&
+( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true timeout 600 npm ci --include=dev ) &&
+timeout 30 node scripts/check-native-modules.mjs --pm2-node &&
+NATIVE_MODULE_ROOT="$stage" timeout 30 node scripts/check-native-modules.mjs &&
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
-PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev &&
+if [ -d node_modules ]; then mv node_modules node_modules.tradeup-prev; fi &&
+mv "$stage/node_modules" node_modules &&
 sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
+node -p 'process.versions.modules' > node_modules/.tradeup-node-abi &&
+rm -rf node_modules.tradeup-prev "$stage" &&
 npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
