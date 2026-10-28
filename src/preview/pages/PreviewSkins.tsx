@@ -9,7 +9,7 @@ import { Link, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
-import { useCanonicalSlot } from "../components/PreviewSeo.js";
+import { useCanonicalSlot, useRobotsSlot } from "../components/PreviewSeo.js";
 import { PriceScatter, type ScatterPoint } from "../components/PriceScatter.js";
 import {
   collectionsHref,
@@ -394,9 +394,30 @@ const LISTING_PAGE = 40;
 /** Matches the server's 60s `skin_detail:` cache, so a revisit inside it is free. */
 const SKIN_DETAIL_TTL_MS = 60_000;
 const SKIN_SLUG_TTL_MS = 10 * 60_000;
+/** Same title and body as the direct-load hard 404 (`slugNotFoundHtml("Skin not found")`). */
+const SKIN_NOT_FOUND = "Skin not found";
+
+function skinDocumentTitle(name: string): string {
+  return `${name} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`;
+}
 
 function skinDetailUrl(name: string): string {
   return `/api/skin-data/${encodeURIComponent(name)}`;
+}
+
+/**
+ * Unknown slugs take the hard-404 robots value. A found skin puts `index, follow`
+ * back, including when the 404 left a bare `noindex`. Thin-skin `noindex, follow`
+ * from the server shell is left in place.
+ */
+function robotsForSkinPage(missing: boolean, name: string | null): string {
+  if (missing) return "noindex";
+  if (!name || typeof document === "undefined") return "";
+  const content = document.querySelector("meta[name='robots']")?.getAttribute("content");
+  if (content == null || content === "" || content === "index, follow" || content === "noindex") {
+    return "index, follow";
+  }
+  return "";
 }
 
 function SkinDetailSkeleton({ name, throttled }: { name: string; throttled: boolean }) {
@@ -656,11 +677,6 @@ export function SkinStats({ name, board }: { name: string; board?: ReactNode }) 
 
 export function PreviewSkinPage() {
   const { slug = "" } = useParams();
-  const canonical = slug ? `https://tradeupbot.app/skins/${slug}` : "";
-  const emitCanonical = useCanonicalSlot(canonical);
-  const canonicalLink = emitCanonical && canonical
-    ? <link rel="canonical" href={canonical} />
-    : null;
   const bySlug = useBrowseJson<{ name: string }>(`/api/skin-by-slug/${encodeURIComponent(slug)}`, SKIN_SLUG_TTL_MS);
   const name = bySlug.data?.name ?? null;
   // Same URL SkinStats reads, so the header and the stats card share one request.
@@ -669,15 +685,25 @@ export function PreviewSkinPage() {
     ? { rarity: detail.data.skin.rarity, collection: detail.data.skin.collection_name }
     : null;
   const settledWithoutSkin = !bySlug.pending && !bySlug.throttled && !name;
-  const error = bySlug.error || settledWithoutSkin ? "That skin is not in the live dataset." : null;
+  const missing = Boolean(bySlug.error || settledWithoutSkin);
+  // The hard 404 document has no canonical. A known skin points at itself.
+  const canonical = !missing && name && slug ? `https://tradeupbot.app/skins/${slug}` : "";
+  const emitCanonical = useCanonicalSlot(canonical);
+  useRobotsSlot(robotsForSkinPage(missing, name));
+  useLayoutEffect(() => {
+    if (!missing) return;
+    document.querySelectorAll("link[rel='canonical']").forEach((node) => node.remove());
+  }, [missing]);
+  const canonicalLink = emitCanonical && canonical
+    ? <link rel="canonical" href={canonical} />
+    : null;
   const board = usePreviewTradeUps({ skin: name ?? undefined, perPage: 6, enabled: Boolean(name) });
 
-  if (error) {
+  if (missing) {
     return (
       <div className="preview-page preview-page--stable preview-page--fold">
-        {canonicalLink}
-        <header className="preview-page__head"><div><h1>Skin</h1><p>{error}</p></div></header>
-        <Link className="preview-btn" to={skinsHref()}>Back to skins</Link>
+        <title>{SKIN_NOT_FOUND}</title>
+        <p>{SKIN_NOT_FOUND}</p>
       </div>
     );
   }
@@ -700,7 +726,7 @@ export function PreviewSkinPage() {
   return (
     <div className="preview-page preview-page--stable">
       {canonicalLink}
-      <title>{`${name} — CS2 Price, Float Range & Trade-Ups | TradeUpBot`}</title>
+      <title>{skinDocumentTitle(name)}</title>
       <header className="preview-page__head">
         <div>
           <h1>{finish}</h1>
