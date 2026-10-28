@@ -130,30 +130,52 @@ jobs:
           deps_hash="$(sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1)"
           deps_marker=node_modules/.tradeup-deps.sha256
           if [ ! -f "$deps_marker" ] || [ "$(cat "$deps_marker")" != "$deps_hash" ]; then
+            if ! timeout 30 node scripts/check-native-modules.mjs --pm2-node; then
+              exit 1
+            fi
+            stage="$(mktemp -d)"
+            trap 'rc=$?; rm -rf "$stage"; exit "$rc"' EXIT
+            cp package.json package-lock.json "$stage/"
+            if ! ( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev ); then
+              exit 1
+            fi
+            if ! NATIVE_MODULE_ROOT="$stage" timeout 30 node scripts/check-native-modules.mjs; then
+              echo "native preflight failed; leaving PM2 processes running" >&2
+              exit 1
+            fi
+            abi="$(node -p 'process.versions.modules')"
             apps=(api daemon fetcher buff-fetcher checker discord-bot)
-            skip_pm2_start=0
+            swapped=0
             trap '
               deploy_rc=$?
               set +e
-              if [ "$skip_pm2_start" -eq 1 ]; then exit "$deploy_rc"; fi
+              rm -rf "$stage"
+              if [ "$swapped" -ne 1 ] && [ -d node_modules.tradeup-prev ]; then
+                rm -rf node_modules
+                mv node_modules.tradeup-prev node_modules
+              fi
               start_rc=0
               for app in "${apps[@]}"; do
                 pm2 start "$app"
                 rc=$?
                 if [ "$start_rc" -eq 0 ]; then start_rc=$rc; fi
               done
+              rm -rf node_modules.tradeup-prev
               if [ "$deploy_rc" -ne 0 ]; then exit "$deploy_rc"; fi
               exit "$start_rc"
             ' EXIT
             for app in "${apps[@]}"; do
               pm2 stop "$app"
             done
-            PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev
-            printf '%s\n' "$deps_hash" > "$deps_marker"
-            if ! bash scripts/ensure-native-modules.sh; then
-              skip_pm2_start=1
+            rm -rf node_modules.tradeup-prev
+            mv node_modules node_modules.tradeup-prev
+            if ! mv "$stage/node_modules" node_modules; then
               exit 1
             fi
+            swapped=1
+            printf '%s\n' "$deps_hash" > "$deps_marker"
+            printf '%s\n' "$abi" > node_modules/.tradeup-node-abi
+            rm -rf node_modules.tradeup-prev "$stage"
             npx --no-install tsx scripts/migrate.ts
             exit 0
           fi

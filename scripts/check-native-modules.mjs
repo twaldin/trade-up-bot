@@ -2,11 +2,19 @@
 // Plain Node, not tsx: a native-addon mismatch must not depend on esbuild.
 // Never print secrets or the process environment.
 
+import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+
+function moduleRequire() {
+  const root = process.env.NATIVE_MODULE_ROOT;
+  if (typeof root === "string" && root.length > 0) return createRequire(join(root, "package.json"));
+  return require;
+}
 
 function errorText(err) {
   if (err instanceof Error) {
@@ -70,6 +78,89 @@ export function runCli(requireImpl) {
   }
 }
 
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+
+function majorOf(version) {
+  if (typeof version !== "string") return "";
+  const match = /^v?(\d+)\./.exec(version.trim());
+  return match ? match[1] : "";
+}
+
+function sameExecutable(left, right) {
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return left === right;
+  }
+}
+
+export function extractPm2ProcessList(raw) {
+  let from = 0;
+  while (from < raw.length) {
+    const start = raw.indexOf("[", from);
+    if (start < 0) return null;
+    const end = raw.lastIndexOf("]");
+    if (end <= start) return null;
+    try {
+      const value = JSON.parse(raw.slice(start, end + 1));
+      if (Array.isArray(value)) return value;
+    } catch {
+      // Banner text can contain brackets.
+    }
+    from = start + 1;
+  }
+  return null;
+}
+
+export function assessPm2Node(input) {
+  const ourMajor = majorOf(input.nodeVersion);
+  if (!ourMajor) return { ok: false, message: "Refusing to restart: could not read this Node version." };
+  if (!Array.isArray(input.procs)) {
+    return { ok: false, message: "Refusing to restart: could not read the PM2 process list." };
+  }
+  let sawVersion = false;
+  for (const proc of input.procs) {
+    if (!isRecord(proc) || !isRecord(proc.pm2_env)) continue;
+    const interpreter = typeof proc.pm2_env.exec_interpreter === "string" ? proc.pm2_env.exec_interpreter : "";
+    const theirMajor = majorOf(typeof proc.pm2_env.node_version === "string" ? proc.pm2_env.node_version : "");
+    const nodeProcess = theirMajor !== "" || interpreter === "node" || interpreter.endsWith("/node");
+    if (!nodeProcess) continue;
+    if (theirMajor) {
+      sawVersion = true;
+      if (theirMajor !== ourMajor) {
+        return {
+          ok: false,
+          message: `Refusing to restart: PM2 node major ${theirMajor} does not match this node major ${ourMajor}.`,
+        };
+      }
+    }
+    if (interpreter.startsWith("/") && !sameExecutable(interpreter, input.execPath)) {
+      return { ok: false, message: "Refusing to restart: PM2 exec_interpreter does not match this node." };
+    }
+  }
+  if (!sawVersion) return { ok: false, message: "Refusing to restart: PM2 process list has no node version." };
+  return { ok: true, message: "PM2 node matches" };
+}
+
+function pm2NodeCli() {
+  const pm2 = spawnSync("pm2", ["jlist"], {
+    encoding: "utf8",
+    timeout: 15_000,
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const procs = pm2.status === 0 && typeof pm2.stdout === "string" ? extractPm2ProcessList(pm2.stdout) : null;
+  const result = assessPm2Node({ execPath: process.execPath, nodeVersion: process.versions.node, procs });
+  if (!result.ok) {
+    console.error(result.message);
+    return 1;
+  }
+  console.log(result.message);
+  return 0;
+}
+
 function isDirectRun() {
   const entry = process.argv[1];
   if (!entry) return false;
@@ -81,5 +172,5 @@ function isDirectRun() {
 }
 
 if (isDirectRun()) {
-  process.exit(runCli(require));
+  process.exit(process.argv.includes("--pm2-node") ? pm2NodeCli() : runCli(moduleRequire()));
 }
