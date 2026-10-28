@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   process.stdout.write(curlText);
 
   const browser = await chromium.launch({
-    executablePath: puppeteer.executablePath(),
+    executablePath: await puppeteer.executablePath(),
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });

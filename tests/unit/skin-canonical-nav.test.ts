@@ -113,7 +113,7 @@ describe("canonical after a client navigation", () => {
     vite = started.child;
     origin = started.origin;
     browser = await chromium.launch({
-      executablePath: puppeteer.executablePath(),
+      executablePath: await puppeteer.executablePath(),
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });

@@ -259,7 +259,7 @@ try {
   });
   await page.waitForSelector(".preview-confirm", { timeout: 10000 });
   const priceInput = await page.$(".preview-confirm input[type='number']");
-  await priceInput.click({ clickCount: 3 });
+  await priceInput.click({ count: 3 });
   await priceInput.type("1916.00");
   await page.waitForFunction(() => document.body.innerText.includes("ROI"), { timeout: 5000 });
   await sleep(400);

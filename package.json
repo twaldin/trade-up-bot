@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/index.ts",
@@ -31,7 +34,7 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/typography": "^0.5.19",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.11.1",
     "better-sqlite3-session-store": "^0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -84,10 +87,10 @@
     "fast-check": "^4.6.0",
     "happy-dom": "^21.0.4",
     "playwright-core": "^1.63.0",
-    "puppeteer": "^24.40.0",
+    "puppeteer": "^25.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "shadcn": "^4.0.6",
+    "shadcn": "^4.22.1",
     "sharp": "^0.35.5",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.2.1",

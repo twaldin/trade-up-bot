@@ -176,9 +176,9 @@ The API reads directly from PostgreSQL on cache miss — no snapshot database or
 
 ## Running Locally
 
-```bash
-# Prerequisites: PostgreSQL 16, Redis, Node.js 20+
+Requires PostgreSQL 16, Redis, and Node.js 24.
 
+```bash
 # API server (auto-reloads)
 npx tsx watch server/index.ts
 
@@ -214,7 +214,8 @@ Browser ids are injected into `<head>` by the `tracking-head` Vite plugin, so ch
 
 ## Testing
 
-Use Node.js 20 (the CI version). Run `npm ci` and `npm run build` before
+Use Node.js 24 (the CI version). Node.js 20 reached end of life on 2026-04-30.
+Run `npm ci` and `npm run build` before
 the unit suite: some tests read generated `dist/index.html`.
 
 Integration tests and the concurrency stress tests require a disposable PostgreSQL
@@ -251,16 +252,24 @@ changing only `README.md` and/or `.github/workflows/deploy.yml` skips the deploy
 job; any other changed path and manual workflow runs retain deployment after checks
 pass.
 
+Install Node.js 24 on the VPS before merging this runtime upgrade. The deploy
+must not install this lockfile while the box still runs Node.js 20.
+
 After merging the source, deployment hashes `package.json` and `package-lock.json`.
 It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
 last successful install. A missing or different marker stops `api`, `daemon`,
-`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs `npm ci --include=dev`,
+`fetcher`, `buff-fetcher`, `checker`, and `discord-bot`, runs
+`PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev`,
 writes the marker after installation succeeds, and runs the migration. It then
 attempts to start all six apps, including when installation or migration fails.
 The first deployment with this installer has no marker and installs dependencies.
 A matching marker retains the fetcher-only migration stop/start sequence.
 Neither sequence changes `pm2-logrotate`. The later session-secret preflight and
 API reload do not fetch or merge again.
+
+Production installs skip Puppeteer's browser downloads because the six PM2 apps
+and the cron job `scripts/snapshot-top-trade-ups.ts` do not launch browsers.
+CI installs keep browser downloads enabled for prerendering and browser tests.
 
 Rerun a failed, cancelled, or timed-out deployment to recover. `npm ci` deletes
 `node_modules`, including its marker, before installation. A failed or interrupted
@@ -276,18 +285,24 @@ with installation unless stopping all six apps succeeds.
 
 ```bash
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
-npm ci --include=dev &&
+PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev &&
 sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
 npx --no-install tsx scripts/migrate.ts &&
 pm2 start api daemon fetcher buff-fetcher checker discord-bot
 ```
 
-To roll back dependencies automatically, restore the previous `package.json` and
-`package-lock.json` while retaining the installer in `.github/workflows/deploy.yml`.
-The next deployment then installs the restored lockfile before migration and restart.
-A full revert of this bundled PR also removes the installer, so it does not
-reinstall the old lockfile automatically. After a full revert, run the manual
-recovery sequence above in the reverted checkout.
+To roll back this Node.js 24 upgrade, reinstall nodejs 20.20.2 first, restore the
+Node.js 20 `node_modules` backup, and reset the checkout to the recorded
+pre-upgrade revision. Then revert the upgrade PR and restart the six apps.
+The previous lockfile uses better-sqlite3 11.x, which has no Node.js 24 ABI-137
+prebuild. The VPS has no compiler, so installing that lockfile under Node.js 24
+fails after `npm ci` has already deleted `node_modules`.
+
+For other dependency rollbacks, confirm that the restored lockfile supports the
+installed Node.js version before restoring `package.json` and `package-lock.json`.
+Retain the installer in `.github/workflows/deploy.yml` so the next deployment
+installs the restored lockfile before migration and restart. If a revert also
+removes the installer, run the manual recovery sequence above.
 
 ## SEO Infrastructure
 
