@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { ensureSingleRobots } from "../lib/document-head.js";
 
 export function useRobotsSlot(content: string): boolean {
   const [emit] = useState(() => {
@@ -6,19 +7,8 @@ export function useRobotsSlot(content: string): boolean {
     return document.querySelector("meta[name='robots']") == null;
   });
   useEffect(() => {
-    if (!content || typeof document === "undefined") return;
-    const nodes = [...document.querySelectorAll("meta[name='robots']")].filter(
-      (node): node is HTMLMetaElement => node instanceof HTMLMetaElement,
-    );
-    let meta = nodes[0];
-    if (!meta) {
-      const created = document.createElement("meta");
-      created.setAttribute("name", "robots");
-      document.head.appendChild(created);
-      meta = created;
-    }
-    meta.setAttribute("content", content);
-    for (const extra of nodes.slice(1)) extra.remove();
+    if (!content) return;
+    ensureSingleRobots(content);
   }, [content]);
   return emit;
 }
