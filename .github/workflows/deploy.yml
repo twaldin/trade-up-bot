@@ -133,10 +133,15 @@ jobs:
             if ! timeout 30 node scripts/check-native-modules.mjs --pm2-node; then
               exit 1
             fi
-            stage="$(mktemp -d)"
+            # Same filesystem as the checkout so the later rename is atomic.
+            stage="$(mktemp -d -p "${TRADEUP_ROOT:-/opt/trade-up-bot}")"
             trap 'rc=$?; rm -rf "$stage"; exit "$rc"' EXIT
             cp package.json package-lock.json "$stage/"
-            if ! ( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev ); then
+            # Root prepare runs `git config` and exits 128 outside a repository.
+            if ! git init "$stage"; then
+              exit 1
+            fi
+            if ! ( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true timeout 600 npm ci --include=dev ); then
               exit 1
             fi
             if ! NATIVE_MODULE_ROOT="$stage" timeout 30 node scripts/check-native-modules.mjs; then
@@ -167,8 +172,10 @@ jobs:
             for app in "${apps[@]}"; do
               pm2 stop "$app"
             done
-            rm -rf node_modules.tradeup-prev
-            mv node_modules node_modules.tradeup-prev
+            if [ -d node_modules ]; then
+              rm -rf node_modules.tradeup-prev
+              mv node_modules node_modules.tradeup-prev
+            fi
             if ! mv "$stage/node_modules" node_modules; then
               exit 1
             fi

@@ -257,10 +257,14 @@ must not install this lockfile while the box still runs Node.js 20.
 
 After merging the source, deployment hashes `package.json` and `package-lock.json`.
 It compares that hash with `node_modules/.tradeup-deps.sha256`, which records the
-last successful install. A missing or different marker installs into a temporary directory with
-`PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev` and probes that tree with
-`timeout 30 node scripts/check-native-modules.mjs`. PM2 is stopped only after
-the probe passes. The new `node_modules` then replaces the live one, the deps
+last successful install. A missing or different marker installs into a temporary directory on the
+checkout filesystem (`mktemp -d -p /opt/trade-up-bot`). `git init` makes that
+directory a repository so the root `prepare` script can set `core.hooksPath`.
+Install scripts still run. `PUPPETEER_SKIP_DOWNLOAD=true timeout 600 npm ci
+--include=dev` fills the temp tree, then
+`timeout 30 node scripts/check-native-modules.mjs` probes it. PM2 is stopped
+only after the probe passes. A checkout with no `node_modules` skips the
+backup rename. The new `node_modules` then replaces the live one, the deps
 marker and the Node ABI marker are written, and the migration runs. The start
 trap starts all six apps, including when migration fails. If the swap fails,
 the trap restores `node_modules.tradeup-prev` and starts the apps. A failed
@@ -304,14 +308,14 @@ dependencies, not PM2 process state. For manual recovery, run the following in
 the deployed checkout. Do not stop the apps unless the staged probe succeeds.
 
 ```bash
-stage="$(mktemp -d)"
+stage="$(mktemp -d -p /opt/trade-up-bot)"
 cp package.json package-lock.json "$stage/" &&
-( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true npm ci --include=dev ) &&
+git init "$stage" &&
+( cd "$stage" && PUPPETEER_SKIP_DOWNLOAD=true timeout 600 npm ci --include=dev ) &&
 timeout 30 node scripts/check-native-modules.mjs --pm2-node &&
 NATIVE_MODULE_ROOT="$stage" timeout 30 node scripts/check-native-modules.mjs &&
 pm2 stop api daemon fetcher buff-fetcher checker discord-bot &&
-rm -rf node_modules.tradeup-prev &&
-mv node_modules node_modules.tradeup-prev &&
+if [ -d node_modules ]; then mv node_modules node_modules.tradeup-prev; fi &&
 mv "$stage/node_modules" node_modules &&
 sha256sum package.json package-lock.json | sha256sum | cut -d ' ' -f 1 > node_modules/.tradeup-deps.sha256 &&
 node -p 'process.versions.modules' > node_modules/.tradeup-node-abi &&

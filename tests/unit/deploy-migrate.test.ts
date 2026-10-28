@@ -41,6 +41,7 @@ type StepOpts = {
   abiMarker?: string | null;
   depsMatch?: boolean;
   withSharp?: boolean;
+  liveNodeModules?: boolean;
 };
 
 function atLine(log: string, exact: string): number {
@@ -65,17 +66,19 @@ function runStep(opts: StepOpts = {}): {
     return `${createHash("sha256").update(content).digest("hex")}  ${file}\n`;
   }).join("");
   mkdirSync(join(dir, "scripts"));
-  mkdirSync(join(dir, "node_modules"));
-  writeFileSync(join(dir, "node_modules/.live-sentinel"), "live\n");
   copyFileSync(join(root, "scripts/ensure-native-modules.sh"), join(dir, "scripts/ensure-native-modules.sh"));
-  if (opts.withSharp) mkdirSync(join(dir, "node_modules/sharp"));
-  if (opts.depsMatch !== false) {
-    writeFileSync(join(dir, "node_modules/.tradeup-deps.sha256"), createHash("sha256").update(hashes).digest("hex"));
-  } else {
-    writeFileSync(join(dir, "node_modules/.tradeup-deps.sha256"), "stale\n");
-  }
-  if (opts.abiMarker !== null) {
-    writeFileSync(join(dir, "node_modules/.tradeup-node-abi"), `${opts.abiMarker ?? nodeAbi}\n`);
+  if (opts.liveNodeModules !== false) {
+    mkdirSync(join(dir, "node_modules"));
+    writeFileSync(join(dir, "node_modules/.live-sentinel"), "live\n");
+    if (opts.withSharp) mkdirSync(join(dir, "node_modules/sharp"));
+    if (opts.depsMatch !== false) {
+      writeFileSync(join(dir, "node_modules/.tradeup-deps.sha256"), createHash("sha256").update(hashes).digest("hex"));
+    } else {
+      writeFileSync(join(dir, "node_modules/.tradeup-deps.sha256"), "stale\n");
+    }
+    if (opts.abiMarker !== null) {
+      writeFileSync(join(dir, "node_modules/.tradeup-node-abi"), `${opts.abiMarker ?? nodeAbi}\n`);
+    }
   }
   writeBin(dir, "git", "#!/bin/bash\necho \"git $*\" >> \"$LOG\"\nexit 0\n");
   writeBin(dir, "pm2", `#!/bin/bash
@@ -150,6 +153,12 @@ describe("deploy migration step", () => {
     expect(ci).toBeGreaterThan(pm2Node);
     expect(probe).toBeGreaterThan(ci);
     expect(stop).toBeGreaterThan(probe);
+    expect(shell).toContain('mktemp -d -p "${TRADEUP_ROOT:-/opt/trade-up-bot}"');
+    expect(shell).toContain('git init "$stage"');
+    expect(shell.indexOf('git init "$stage"')).toBeLessThan(shell.indexOf("npm ci --include=dev"));
+    expect(shell).toContain("timeout 600 npm ci --include=dev");
+    expect(shell).toContain("if [ -d node_modules ]; then");
+    expect(shell).not.toContain("--ignore-scripts");
     expect(shell).toContain("node_modules.tradeup-prev");
     expect(shell).toContain('if [ "$swapped" -ne 1 ]');
     expect(shell).not.toContain("skip_pm2_start");
@@ -296,6 +305,18 @@ describe("deploy migration step", () => {
     expect(start).toBeGreaterThan(migrate);
     expect(result.log).not.toContain("npm rebuild");
     expect(result.marker).toBe("137\n");
+    expect(result.fromStage).toBe("staged\n");
+    expect(result.sentinel).toBe("");
+    expect(result.log.indexOf("git init")).toBeGreaterThanOrEqual(0);
+    expect(result.log.indexOf("git init")).toBeLessThan(result.log.indexOf("npm ci --include=dev"));
+  });
+
+  it("installs when the checkout has no node_modules and still starts PM2", () => {
+    const result = runStep({ liveNodeModules: false, npxExit: 0 });
+    expect(result.status).toBe(0);
+    expect(result.log.indexOf("git init")).toBeLessThan(result.log.indexOf("npm ci --include=dev"));
+    expect(atLine(result.log, "npm ci --include=dev")).toBeLessThan(atLine(result.log, "pm2 stop api"));
+    expect(atLine(result.log, "pm2 stop api")).toBeLessThan(atLine(result.log, "pm2 start api"));
     expect(result.fromStage).toBe("staged\n");
     expect(result.sentinel).toBe("");
   });
