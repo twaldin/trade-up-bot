@@ -15,7 +15,10 @@ const seoSource = readFileSync(join(__dir, "../../server/seo.ts"), "utf-8");
 const previewAppSource = readFileSync(join(__dir, "../../src/preview/PreviewApp.tsx"), "utf-8");
 const previewChromeSource = readFileSync(join(__dir, "../../src/preview/PreviewChrome.tsx"), "utf-8");
 const previewShellSource = readFileSync(join(__dir, "../../src/preview/PreviewShell.tsx"), "utf-8");
-const collectionsPageSource = readFileSync(join(__dir, "../../src/preview/pages/PreviewSkins.tsx"), "utf-8");
+const skinsPageSource = readFileSync(join(__dir, "../../src/preview/pages/PreviewSkins.tsx"), "utf-8");
+const collectionsPageStart = skinsPageSource.indexOf("export function PreviewCollectionsPage");
+const collectionDetailStart = skinsPageSource.indexOf("export function PreviewCollectionPage");
+const collectionsPageSource = skinsPageSource.slice(collectionsPageStart, collectionDetailStart);
 
 function graphTypes(jsonLd: Record<string, unknown>): string[] {
   const graph = jsonLd["@graph"];

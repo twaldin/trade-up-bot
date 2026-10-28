@@ -338,8 +338,8 @@ describe("built client first-load CLS", () => {
       { path: "/collections/phoenix", status: "empty", text: "That collection is not in the live dataset." },
       { path: "/skins", status: "error", text: "No skin matches that search." },
       { path: "/skins", status: "empty", text: "No skin matches that search." },
-      { path: "/skins/missing-skin", status: "error", text: "That skin is not in the live dataset." },
-      { path: "/skins/missing-skin", status: "empty", text: "That skin is not in the live dataset." },
+      { path: "/skins/missing-skin", status: "error", text: "Skin not found" },
+      { path: "/skins/missing-skin", status: "empty", text: "Skin not found" },
       { path: "/trade-ups/123", status: "error", text: "Failed to load", share: true },
       { path: "/trade-ups/123", status: "empty", text: "Trade-up not found", share: true },
     ];
