@@ -96,9 +96,9 @@ describe("server route canonical/noindex/404 behavior", () => {
   });
 
   it("noindex stays on low-listing skins, stale trade-up details, and bad trade-up ids", () => {
-    expect(source).toContain('const robots = listingCount < 5 ? "noindex, follow" : "index, follow"');
+    expect(source).toContain("skinRobotsForListingCount(listingCount)");
     expect(source).toContain('robots: isStale ? "noindex, follow" : "index, follow"');
     expect(source).toContain('robots: "noindex, follow"');
-    expect(countMatches(source, /noindex, follow/g)).toBe(3);
+    expect(countMatches(source, /noindex, follow/g)).toBe(2);
   });
 });

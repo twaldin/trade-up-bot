@@ -1,3 +1,5 @@
+import { SKIN_INDEX_MIN_LISTINGS, skinRobotsForListingCount } from "../../../shared/skin-robots.js";
+
 /**
  * One document head for the SPA. Route changes reset robots and canonical here;
  * each page's own head logic runs afterward and overrides the default.
@@ -5,16 +7,12 @@
 
 export const DEFAULT_ROBOTS = "index, follow";
 
-/**
- * Server skin SEO (`server/index.ts`) uses `listingCount < 5` for
- * `noindex, follow`. Five or more listings are `index, follow`.
- */
-export const SKIN_INDEX_MIN_LISTINGS = 5;
+export { SKIN_INDEX_MIN_LISTINGS };
 
 const CANONICAL_ORIGIN = "https://tradeupbot.app";
 
-export function robotsForListingCount(listingCount: number): string {
-  return listingCount < SKIN_INDEX_MIN_LISTINGS ? "noindex, follow" : DEFAULT_ROBOTS;
+export function robotsForListingCount(listingCount: number): "noindex, follow" | "index, follow" {
+  return skinRobotsForListingCount(listingCount);
 }
 
 export function canonicalForPath(pathname: string): string {

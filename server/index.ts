@@ -33,6 +33,7 @@ import { registerLlmsTxtRoute } from "./routes/llms.js";
 import { listingSniperRouter } from "./routes/listing-sniper.js";
 import { unknownApiJson404 } from "./unknown-api.js";
 import { buildSeoHtml, dedupeHead, isCrawler, injectMetaIntoSpa, escapeHtml, renderCollectionsHub, renderTradeUpsHub, buildSkinResearchParagraphs, ensureHomepageCrawlerHead, buildCollectionsHubJsonLd, sendSlugNotFound } from "./seo.js";
+import { skinRobotsForListingCount } from "../shared/skin-robots.js";
 import { toSlug, collectionToSlug } from "../shared/slugs.js";
 import { tradeUpCountPhrase, tradeUpPair } from "../shared/copy.js";
 import { TRADE_UP_TYPE_LABELS, TRADE_UPS_DOCUMENT_TITLE } from "../shared/types.js";
@@ -679,7 +680,7 @@ registerCanonicalRedirectRoutes(app);
       const minPrice = skinMeta.min_price ? (skinMeta.min_price / 100).toFixed(2) : "N/A";
       const maxPrice = skinMeta.max_price ? (skinMeta.max_price / 100).toFixed(2) : "N/A";
       const floatRangeText = `${skinMeta.min_float.toFixed(2)}\u2013${skinMeta.max_float.toFixed(2)}`;
-      const robots = listingCount < 5 ? "noindex, follow" : "index, follow";
+      const robots = skinRobotsForListingCount(listingCount);
 
       // Run all independent queries in parallel. outputStats wrapped to avoid rejecting on
       // databases that predate the output_skin_names column (preserve existing resilience).

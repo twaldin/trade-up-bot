@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, Search } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { buildCollectionsHubJsonLd } from "../../../shared/crawler-jsonld.js";
 import { formatDollars, listingUrl, sourceLabel } from "../../utils/format.js";
 import { PreviewTable, type Column } from "../components/PreviewTable.js";
@@ -694,7 +694,7 @@ export function PreviewSkinPage() {
   useLayoutEffect(() => {
     if (!missing) return;
     removeCanonical();
-  }, [missing]);
+  }, [missing, slug]);
   const canonicalLink = emitCanonical && canonical
     ? <link rel="canonical" href={canonical} />
     : null;
@@ -1084,6 +1084,7 @@ export function PreviewCollectionsPage() {
 
 export function PreviewCollectionPage() {
   const { name = "" } = useParams();
+  const { pathname } = useLocation();
   const index = useCollectionsIndex();
   const title = index.rows.find((row) => previewCollectionHref(row.name).endsWith(`/${name}`))?.name ?? null;
   const [skins, setSkins] = useState<SkinRow[]>([]);
@@ -1175,7 +1176,7 @@ export function PreviewCollectionPage() {
     canonicalNode.current = first;
     first.href = `https://tradeupbot.app/collections/${name}`;
     for (const extra of links.slice(1)) extra.remove();
-  }, [title, name, unknown]);
+  }, [title, name, unknown, pathname]);
   useEffect(() => () => {
     const node = canonicalNode.current;
     const original = canonicalHref.current;
