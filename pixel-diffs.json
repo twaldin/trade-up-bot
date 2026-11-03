@@ -1,0 +1,58 @@
+[
+  {
+    "id": 784267566,
+    "baseline": "old",
+    "pixels": 20606,
+    "total": 756000,
+    "percent": 2.7256613756613755
+  },
+  {
+    "id": 784267566,
+    "baseline": "live",
+    "pixels": 24400,
+    "total": 756000,
+    "percent": 3.2275132275132274
+  },
+  {
+    "id": 784265956,
+    "baseline": "old",
+    "pixels": 9767,
+    "total": 756000,
+    "percent": 1.291931216931217
+  },
+  {
+    "id": 784265956,
+    "baseline": "live",
+    "pixels": 13708,
+    "total": 756000,
+    "percent": 1.813227513227513
+  },
+  {
+    "id": 784250262,
+    "baseline": "old",
+    "pixels": 17899,
+    "total": 756000,
+    "percent": 2.3675925925925925
+  },
+  {
+    "id": 784250262,
+    "baseline": "live",
+    "pixels": 23190,
+    "total": 756000,
+    "percent": 3.067460317460317
+  },
+  {
+    "id": 900000001,
+    "baseline": "old",
+    "pixels": 11990,
+    "total": 756000,
+    "percent": 1.5859788359788358
+  },
+  {
+    "id": 900000002,
+    "baseline": "old",
+    "pixels": 18489,
+    "total": 756000,
+    "percent": 2.445634920634921
+  }
+]
