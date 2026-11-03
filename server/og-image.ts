@@ -15,9 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(__dirname, "fonts");
 
 // Fetch fonts once at startup (satori needs ttf/otf, not woff/woff2)
-let fontsLoaded: { regular: ArrayBuffer; bold: ArrayBuffer } | null = null;
+let fontsLoaded: { regular: Buffer | ArrayBuffer; bold: Buffer | ArrayBuffer } | null = null;
 
-async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }> {
+async function loadFonts(): Promise<{ regular: Buffer | ArrayBuffer; bold: Buffer | ArrayBuffer }> {
   if (fontsLoaded) return fontsLoaded;
 
   // Prefer vendored TTFs in server/fonts/ — eliminates Google Fonts network dependency
@@ -25,8 +25,8 @@ async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }>
   const boldPath = path.join(FONTS_DIR, "Inter-Bold.ttf");
   if (fs.existsSync(regularPath) && fs.existsSync(boldPath)) {
     fontsLoaded = {
-      regular: fs.readFileSync(regularPath).buffer as ArrayBuffer,
-      bold: fs.readFileSync(boldPath).buffer as ArrayBuffer,
+      regular: fs.readFileSync(regularPath),
+      bold: fs.readFileSync(boldPath),
     };
     return fontsLoaded;
   }

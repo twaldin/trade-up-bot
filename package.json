@@ -56,7 +56,7 @@
     "react-day-picker": "^9.14.0",
     "react-router-dom": "^7.18.2",
     "recharts": "^3.10.1",
-    "satori": "^0.25.0",
+    "satori": "^0.33.5",
     "socket.io-client": "^4.8.3",
     "socket.io-msgpack-parser": "^3.0.2",
     "stripe": "^20.4.1",
@@ -103,6 +103,9 @@
   "overrides": {
     "axios": "^1.20.0",
     "follow-redirects": "^1.16.1",
+    "satori": {
+      "fflate": "0.7.5"
+    },
     "socket.io-parser": "^4.2.7",
     "undici": "^6.29.1",
     "qs": "6.16.1",
